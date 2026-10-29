@@ -81,12 +81,12 @@ describe('delegate with Work across machines', () => {
     }
     expect(DELEGATION_TOOL_DEFINITIONS).toEqual(delegationToolDefinitions(false, false))
   })
-  it('offers a machine, a system and the machine list while it is on, and says a delegated thread starts on This computer for now', () => {
+  it('offers a machine, a system and the machine list while it is on, and says a machine that is not connected is refused', () => {
     for (const roles of [false, true]) {
       const definitions = delegationToolDefinitions(roles, true), delegate = tool(definitions, 'delegate')!
       expect(delegate.schema.properties['machine']!.description).toContain(LIST_MACHINES_TOOL)
       expect(delegate.schema.properties['os']!.enum).toEqual(['windows', 'macos', 'linux'])
-      expect(delegate.description).toContain('a delegated thread starts only on This computer for now')
+      expect(delegate.description).toContain('only while that machine is connected')
       expect(tool(definitions, LIST_MACHINES_TOOL)!.description).toContain('newWorkersStart')
     }
   })
@@ -98,6 +98,7 @@ describe('starting from a branch with Work across machines', () => {
     for (const roles of [false, true]) for (const machines of [false, true]) {
       const properties = tool(watcherToolDefinitions(roles, machines), 'start_thread')!.schema.properties
       expect(properties).not.toHaveProperty('fromMove')
+      expect(properties).not.toHaveProperty('fromOrigin')
       for (const name of ['fromThread', 'testRun']) expect(Object.hasOwn(properties, name)).toBe(machines)
       expect(tool(watcherToolDefinitions(roles, machines), 'start_thread')!.description.includes('fromThread')).toBe(machines)
     }
@@ -112,14 +113,14 @@ describe('starting from a branch with Work across machines', () => {
       expect(delegate.description.includes('One check runs at a time on a machine')).toBe(machines)
       expect(delegate.description.includes('the verdict, the counts and the failing lines, inside 32 KiB')).toBe(machines)
     }
-    // A thread on a headless host is offered test_run with its own machine's queue, shared with Watcher's checks there, but
-    // no branch to start from (#1312). With Work across machines off it is offered neither.
+    // A thread on a headless host is offered test_run with its own machine's queue, shared with Watcher's checks there, and
+    // from_my_branch, its branch or a check's snapshot (#1312, #1316 part 2). With Work across machines off it is offered neither.
     for (const machines of [false, true]) {
       const hosted = tool(delegationToolDefinitions(false, machines, 'this-machine'), 'delegate')!
       expect(Object.hasOwn(hosted.schema.properties, 'test_run')).toBe(machines)
-      expect(Object.hasOwn(hosted.schema.properties, 'from_my_branch')).toBe(false)
+      expect(Object.hasOwn(hosted.schema.properties, 'from_my_branch')).toBe(machines)
       expect(hosted.description.includes('One check runs at a time on this machine, yours and Watcher\'s alike')).toBe(machines)
-      expect(hosted.description).not.toContain('snapshot')
+      expect(hosted.description.includes('snapshot')).toBe(machines)
     }
   })
 })

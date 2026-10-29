@@ -2,6 +2,7 @@ import { join } from 'node:path'
 import type { AgentThread, ProviderId } from '../../shared/agents'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
 import type { AppSettings } from '../../shared/settings'
+import type { ProjectSetupRequest } from '../../shared/workerMachine'
 import { babysitEndedReasonSchema, type BabysitEndedReason } from '../../shared/babysitting'
 import { ShortTextWriter } from '../llm/shortTextWriter'
 import { firstMessageTitleWriter, threadTitleWriter } from '../llm/threadTitle'
@@ -33,7 +34,7 @@ import { WatcherService, type WatcherAutoSettleEvent } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
 import { DelegationService } from './delegation'
-import { hostname } from 'node:os'
+import { homedir, hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
 import type { PackageInstaller } from './checkWorktree'
 import { ContinueService } from './continueThread'
@@ -64,12 +65,15 @@ import { mayGrantLocally } from './authority'
 import { HostFactsSource, hostMachineReport, type MachineWork } from './hostFacts'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import { readProjectOrigins } from './projectOrigins'
+import { ProjectCopies } from './projectSetup'
 import { threadDelegations } from './agentsView'
 import { BranchBundles } from './branchBundles'
-import { desktopBranchMoves, foldersOfSnapshot } from './branchMoves'
+import { DesktopBranchMoves, desktopBranchMoves, foldersOfSnapshot } from './branchMoves'
 import { DesktopDefaultsStore, hostDelegationMachines } from './hostDelegation'
 import type { HostDelegationRelay } from './delegationRelayHost'
+import type { HostRemoteCallers } from './delegationRemoteHost'
 import { DesktopDelegationRelay } from './delegationRelayDesktop'
+import { DesktopRemoteDelegations } from './delegationRemoteDesktop'
 import type { DelegationNews } from '../../shared/delegation'
 import type { RelayedReply } from '../../shared/delegationRelay'
 import { machineWorkingThreadsWarning } from '../../shared/workingThreads'
@@ -107,7 +111,7 @@ export interface AgentRuntimeOptions {
   /** Clearing settled threads (ADR-0140): the Owl list's answer, read once at start. Absent, nothing is deleted. */
   clearThreadsEnabled?: boolean
   /** What clearing did, as stable event names with a count or a reason's code. */
-  clearLog?: (event: 'threads-cleared' | 'thread-clear-kept', detail: string) => void
+  clearLog?: (event: 'threads-cleared' | 'thread-clear-kept' | 'unsent-threads-removed', detail: string) => void
   /**
    * Keep main up to date (ADR-0142): the Owl list's answer, read once by the process owner, and its log of stable event
    * names. Absent fails closed, and a headless host builds none whatever it says.
@@ -140,7 +144,9 @@ export interface AgentRuntimeOptions {
    */
   hostDelegation?: { counts(clientId: string): boolean; roles: boolean; revoked?(clientId: string): boolean
     /** The desktop relay (#1316): a thread here delegates to other machines through a desktop that relays, while one is connected. */
-    relay?: HostDelegationRelay }
+    relay?: HostDelegationRelay
+    /** A desktop's delegations here for threads on other machines (#1316 part 2), admitted as this host's own threads' are. */
+    remote?: HostRemoteCallers }
   /**
    * The Owl list's answer for attaching any file (ADR-0131), read once by the process owner. With it the store keeps files
    * that are not images and the host lists `file-staging`. Absent fails closed: only the four image types are kept.
@@ -380,6 +386,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // turns on Work across machines (#1310), each on its own machine, with its own tool tokens.
   let delegation: DelegationService | undefined
   let delegationRelay: DesktopDelegationRelay | undefined
+  let delegationRemote: DesktopRemoteDelegations | undefined
   const hostDelegation = options.runsAs === 'headless-host' && options.crossMachineEnabled === true ? options.hostDelegation : undefined
   // The desktop defaults a desktop sent this host: the only new-thread default and roles its delegations use.
   const desktopDefaults = hostDelegation ? new DesktopDefaultsStore(directory) : undefined
@@ -397,10 +404,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // moves branches, asked once here with the Owl answer. Its own bundles wait in its data folder while they cross.
   // The mover reaches hosts through Watcher's view of them, which exists only once Watcher is made below.
   const moving: { watcher?: WatcherService | undefined } = {}
-  const branchMoves = desktopBranchMoves(crossMachine && options.runsAs !== 'headless-host', {
-    bundles: new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'), recordsPath: join(directory, 'branch-moves.json') }),
-    folders: foldersOfSnapshot(() => agentControl.watcherSnapshot()), host: hostId => moving.watcher?.branchMoveHost(hostId),
-    hostName: hostId => moving.watcher?.machineName(hostId) ?? 'That machine' })
+  // One set of bundles per data folder: a headless host's socket moves use these too, so its records have one writer.
+  const branchBundles = crossMachine ? new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'), recordsPath: join(directory, 'branch-moves.json') }) : undefined
+  const branchMoves = branchBundles ? desktopBranchMoves(options.runsAs !== 'headless-host', {
+    bundles: branchBundles, folders: foldersOfSnapshot(() => agentControl.watcherSnapshot()), host: hostId => moving.watcher?.branchMoveHost(hostId),
+    hostName: hostId => moving.watcher?.machineName(hostId) ?? 'That machine' }) : undefined
+  // A headless host's own threads start from their branch on this machine, and let go of a branch a desktop landed here
+  // for a start that never ran (#1316 part 2). Only this machine's folders: it reaches no other machine.
+  const hostBranchMoves = branchBundles && options.runsAs === 'headless-host'
+    ? new DesktopBranchMoves({ bundles: branchBundles, folders: foldersOfSnapshot(() => agentControl.watcherSnapshot()), host: () => undefined, hostName: () => 'That machine' }) : undefined
   // One check queue per machine (#1312): this machine's delegations and Watcher's starts marked as checks wait in the same
   // one, in the order asked. On the desktop it is This computer's; on a headless host, the host's own, which the desktop's
   // Watcher starts there share with the host's own delegations. Only while Work across machines is on. A host names itself
@@ -408,8 +420,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const relayed = options.runsAs === 'headless-host' ? options.hostDelegation?.relay : undefined
   const checks = crossMachine ? new CheckQueue(options.runsAs !== 'headless-host' ? 'This computer'
     : () => relayed?.hereName() ?? (hostname().trim().slice(0, 64) || 'this machine')) : undefined
+  // A machine with no copy of a start's project gets one (#1690): This computer's set up by the desktop, a host's by the
+  // host, each through its own coordinator. Sotto's own data folder, where Watcher works, never says where projects go.
+  const projectCopies = crossMachine ? new ProjectCopies({ projects: () => agentControl.watcherSnapshot().projects, projectsDirectory: () => agentControl.projectsDirectory(),
+    home: homedir(), ownFolder: directory, addProject: (title, path) => agentControl.addProjectForPlacement(title, path) }) : undefined
   const placing = crossMachine && options.runsAs !== 'headless-host'
     ? { workerMachine: () => options.settings().newWorkerMachine, projectOrigins: () => readProjectOrigins(agentControl.watcherSnapshot().projects),
+      ...projectCopies ? { setUpProject: (request: ProjectSetupRequest) => projectCopies.setUp(request) } : {},
       ...branchMoves ? { branchMoves } : {} } : {}
   const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
@@ -424,19 +441,28 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     const placingWatcher = 'workerMachine' in placing ? watcher : undefined
     // The desktop relay (#1316): a host's threads delegate to This computer through this desktop, placed as its own are.
     if (placingWatcher) {
-      delegationRelay = new DesktopDelegationRelay(directory, { placement: placingWatcher, localHostId: () => agentControl.hostId() })
+      // This computer's delegations start threads on its paired hosts too (#1316 part 2), each admitted there by that host.
+      // A branch landed on a host for a start an exact read proves never made is let go of there (#1316 part 2).
+      delegationRemote = new DesktopRemoteDelegations(directory, { machineName: hostId => placingWatcher.machineName(hostId),
+        ...branchMoves ? { letGo: async landed => { const here = agentControl.hostId(); if (here) await branchMoves.forget({ ...landed, here }) } } : {} })
+      await delegationRemote.load()
+      const remoteStarts = delegationRemote
+      placingWatcher.useDelegationStarts(hostId => remoteStarts.pendingStarts(hostId))
+      delegationRelay = new DesktopDelegationRelay(directory, { placement: placingWatcher, localHostId: () => agentControl.hostId(), elsewhere: true })
       await delegationRelay.load()
     }
-    const relaying = delegationRelay
+    const relaying = delegationRelay, remote = delegationRemote
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
       tool: threadId => babysitTool(threadId), ...roles,
       ...placingWatcher ? { machines: { list: () => placingWatcher.machines(), place: (ask, project, setting) => placingWatcher.placement(ask, project, setting),
         name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {},
       // Offered with the machines, as the tool server offers from_my_branch and test_run only with them (#1033). This
-      // computer's checks run one at a time, in the order asked (#1312).
-      ...placingWatcher && branchMoves && checks ? { branchMoves, checks, ...options.clockTime ? { clockTime: options.clockTime } : {} } : {},
+      // computer's checks run one at a time, in the order asked (#1312), and the window's row of one quotes its reply's
+      // first line and reads the rest on a press (Zach's pick C, October 28, 2026).
+      ...placingWatcher && branchMoves && checks ? { branchMoves, checks, checkReplies: true, ...options.clockTime ? { clockTime: options.clockTime } : {} } : {},
       // A delegated thread's own worktree is made from the delegating thread's branch, so it can bring changes back (#1030).
       ...crossMachine ? { bringBack: true } : {},
+      ...remote ? { remote } : {},
       ...relaying ? { relayedCallers: { caller: (threadId: string) => relaying.caller(threadId), tell: (threadId: string, news: DelegationNews, replies: readonly RelayedReply[]) => relaying.tell(threadId, news, replies) } } : {} })
     relaying?.useDelegation(delegation)
   } else if (hostDelegation && desktopDefaults) {
@@ -448,11 +474,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       newThreadCeiling: () => defaults.ceiling(clientId => hostDelegation.counts(clientId), clientId => hostDelegation.revoked?.(clientId) === true),
       ...hostDelegation.roles ? { roles: () => defaults.roles(clientId => hostDelegation.counts(clientId)) } : {},
       warning: count => machineWorkingThreadsWarning(count, 'this machine'),
-      // A check here waits in this host's own queue, shared with the desktop's Watcher starts on it (#1312).
-      ...checks ? { checks } : {},
+      // A check here waits in this host's own queue, shared with the desktop's Watcher starts on it (#1312). A thread here
+      // starts from its branch on this machine, and a branch the desktop landed here for a start is let go if it never runs.
+      ...checks ? { checks } : {}, ...hostBranchMoves && checks ? { branchMoves: hostBranchMoves, ...options.clockTime ? { clockTime: options.clockTime } : {} } : {},
       ...hostDelegation.relay ? { relay: hostDelegation.relay } : {},
+      // A thread on another machine that delegates here through the desktop (#1316 part 2) is admitted as one of this host's own.
+      ...hostDelegation.remote ? { relayedCallers: hostDelegation.remote, hereName: () => relayed?.hereName() ?? (hostname().trim().slice(0, 64) || 'this machine') } : {},
       machines: hostDelegationMachines(() => agentControl.hostId(), facts, () => agentControl.watcherSnapshot().threads, hostDelegation.relay) })
   }
+  if (delegation && hostDelegation?.remote) hostDelegation.remote.useDelegation(delegation)
   // A cleared thread's finished delegations and links go with it (ADR-0140 decision 4), on the desktop and on a host alike.
   if (delegation) {
     const record = delegation
@@ -463,7 +493,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ? new ContinueService({ control: agentControl, host: agentHost }) : undefined
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
-    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine }); agentHost.useWatcherTools(watcherTools) }
+    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired }); agentHost.useWatcherTools(watcherTools) }
   }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's
@@ -479,6 +509,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // never a headless host's, which has no Settings to choose it in (clearsOnItsOwn).
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
+    removeUnsentThreads: () => agentControl.removeUnsentThreads(),
     ...clearsOnItsOwn(options) ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays,
       clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => agentControl.clearSettledThreads(days, keep) } } : {},
     ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {},
@@ -565,6 +596,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     watcher?.close()
     delegation?.close()
     delegationRelay?.close()
+    delegationRemote?.close()
     continuation?.close()
     closingWatcherTools = watcherTools?.close()
   }
@@ -599,6 +631,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const prepareForShutdown = (): Promise<void> => {
     if (preparingForShutdown) return preparingForShutdown
     worktreeCleanup.dispose()
+    projectCopies?.close()
     void mainCheckout?.close()
     void babysitter?.close().catch(() => undefined)
     void watchedPullRequests?.close().catch(() => undefined)
@@ -611,6 +644,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
       // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
       stopWatcher()
+      projectCopies?.close()
       await worktreeCleanup.close()
       if (mainCheckout) await mainCheckout.close()
       if (babysitter) await babysitter.close()
@@ -653,10 +687,13 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
+    ...(projectCopies ? { setUpProject: (request: ProjectSetupRequest) => projectCopies.setUp(request) } : {}),
     // A headless host that runs delegation for its own threads keeps the desktop defaults a desktop sends it (#1310).
     ...(desktopDefaults ? { desktopDefaults } : {}),
     // And answers the desktop window's read of those threads' delegations, for its Tools › Agents and rows of delegated work (#1310).
     ...(desktopDefaults && delegationRecord ? { delegationViews: delegationRecord } : {}),
+    // And sends its own check queue to those desktops' windows, for the machine's panel and Tools › Agents (#1312).
+    ...(checks && options.runsAs === 'headless-host' ? { checks } : {}),
     ...(crossMachine && gitStatus ? { bringBack: true } : {}),
     prompts: { threadPrompts: (threadId, beforeMessageId) => agentHost.threadPrompts(threadId, beforeMessageId) },
     ...(options.threadStartsEnabled === true ? { threadStarts: { startHandover: (threadId: string) => agentHost.startHandover(threadId) } } : {}),
@@ -692,5 +729,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, delegationRemote, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, prepareForShutdown, close }
 }

@@ -56,6 +56,7 @@ export function MainCheckoutLine({ line, title, bridge = window.sotto?.mainCheck
       <button ref={toggle} type="button" className="thread-folder__main-press tt-focusable" aria-expanded={open} aria-controls={listId}
         aria-label={open ? t`Hide the list in ${title}` : t`What changed in ${title}`} onClick={() => setOpen(!open)}>{open ? hide : t`What changed`}</button>
       <button type="button" className="thread-folder__main-dismiss tt-focusable" aria-label={t`Dismiss dependencies changed in ${title}`}
+        title={t`Dismiss dependencies changed in ${title}`}
         onClick={() => { void bridge.command({ type: 'dismiss-dependencies', projectId: line.projectId }).catch(() => undefined) }}><X size={13} aria-hidden="true" /></button>
     </p>}
     {open ? <div id={listId} className="thread-folder__main-list">

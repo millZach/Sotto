@@ -34,7 +34,7 @@ struct ComputersView: View {
         .refreshable { await model.refresh() }
         .navigationTitle("Computers")
         .toolbar(.hidden, for: .navigationBar)
-        .navigationDestination(for: ComputerRoute.self) { ComputerDetailView(hostID: $0.hostID) }
+        .navigationDestination(for: ComputerRoute.self) { ComputerDetailView(hostID: $0.hostID).toolbar(.hidden, for: .tabBar) }
     }
 }
 
@@ -45,6 +45,7 @@ private struct ComputerCard: View {
     @Environment(\.dynamicTypeSize) private var textSize
     let hostID: String
     let name: String
+    @State private var retries = 0
     private var status: ComputerStatus { model.status(hostID) }
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -61,10 +62,11 @@ private struct ComputerCard: View {
             .buttonStyle(PressStyle())
             if status == .unreachable {
                 HStack(spacing: Space.s3) {
-                    Button { Task { await model.connect(hostID) } } label: {
+                    Button { retries += 1; Task { await model.connect(hostID) } } label: {
                         Label("Try again", systemImage: "arrow.clockwise")
                     }
                     .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                    .sensoryFeedback(.impact(flexibility: .soft), trigger: retries)
                     .accessibilityLabel("Try reaching \(name) again")
                     Spacer(minLength: 0)
                 }
@@ -162,7 +164,7 @@ struct ComputerDetailView: View {
         Group {
             if let computer = model.computer(hostID) { ComputerDetails(computer: computer) } else { Color.clear }
         }
-        .background(Palette.canvas)
+        .pageGround()
         .navigationTitle(model.name(hostID)).navigationBarTitleDisplayMode(.inline)
         .toolbarBackground(Palette.canvas, for: .navigationBar)
         .onChange(of: model.computer(hostID) == nil) { _, gone in if gone { dismiss() } }
@@ -175,6 +177,7 @@ private struct ComputerDetails: View {
     @State private var confirmRemove = false
     @State private var renaming = false
     @State private var newName = ""
+    @State private var removals = 0
     private var hostID: String { computer.hostID }
     private var status: ComputerStatus { model.status(hostID) }
     var body: some View {
@@ -221,10 +224,11 @@ private struct ComputerDetails: View {
         // A computer that gave up waits for its Reconnect; pulling leaves it alone, as it does on the lists.
         .refreshable { if model.status(hostID) != .unreachable { await model.connect(hostID) } }
         .confirmationDialog(String(localized: "computer-remove.title", defaultValue: "Remove \(computer.name)?", comment: "Asks before removing a computer from this iPhone. %@ is the computer's name"), isPresented: $confirmRemove, titleVisibility: .visible) {
-            Button("Remove from this iPhone", role: .destructive) { Task { await model.remove(hostID) } }
+            Button("Remove from this iPhone", role: .destructive) { removals += 1; Task { await model.remove(hostID) } }
         } message: {
             Text("This iPhone stops showing its threads. If \(computer.name) can’t be reached, remove this iPhone there too: in Settings › Hosts & phones, or for a computer without a screen, with Phones on its row in Settings › Hosts & phones on your main computer.")
         }
+        .sensoryFeedback(.impact(weight: .medium), trigger: removals)
         .alert("Rename \(computer.name)", isPresented: $renaming) {
             TextField("Name", text: $newName)
             Button("Save") { model.rename(hostID, to: newName) }
@@ -245,6 +249,7 @@ private struct ComputerStatusCard: View {
     @EnvironmentObject var model: AppModel
     let hostID: String
     let status: ComputerStatus
+    @State private var retries = 0
     var body: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             HStack(spacing: Space.s3) {
@@ -258,8 +263,9 @@ private struct ComputerStatusCard: View {
                     .paragraphDirection()
                 Text("Work carries on there. Your drafts are kept.").font(.sotto(.small)).foregroundStyle(Palette.muted)
                     .paragraphDirection()
-                Button { Task { await model.connect(hostID) } } label: { Label("Reconnect", systemImage: "arrow.clockwise") }
+                Button { retries += 1; Task { await model.connect(hostID) } } label: { Label("Reconnect", systemImage: "arrow.clockwise") }
                     .buttonStyle(ActionStyle(wide: true)).padding(.top, Space.s1)
+                    .sensoryFeedback(.impact(flexibility: .soft), trigger: retries)
                     .accessibilityLabel("Reconnect to \(model.name(hostID))")
             }
         }

@@ -30,7 +30,7 @@ struct ThreadView: View {
             shown = request.id
             open = request
         }
-        .background(Palette.canvas)
+        .pageGround()
         .navigationTitle(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -40,13 +40,15 @@ struct ThreadView: View {
                     if let agents = model.agentsCount(ref) { AgentsButton(count: agents) { agentsOpen = true } }
                     barPill
                     if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title) }
-                    if model.compactionOffered(ref) { ThreadMenu(ref: ref) }
+                    if model.compactionOffered(ref) || model.shelfAction(ref) != nil { ThreadMenu(ref: ref) }
                 }
             }
+            .horizontalOnly()
         }
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(stuck ? .visible : .hidden, for: .navigationBar)
         .toolbar(.hidden, for: .tabBar)
+        .coversTabs()
         // While a request sheet is up its keyboard never squeezes the page behind it, so the conversation keeps its
         // size and its place.
         .ignoresSafeArea(open != nil ? SafeAreaRegions.keyboard : [], edges: .bottom)
@@ -81,6 +83,19 @@ struct ThreadView: View {
         guard open == nil, !agentsOpen, !agentsCovered, let request = thread?.requests.first(where: { !setAside.contains($0.id) }) else { return }
         shown = request.id
         open = request
+    }
+}
+
+extension ToolbarContent {
+    /// Keeps an item in the bar over the page. Where iOS 27.1 stands a vertical bar beside the page, as in the iPhone
+    /// Duo cover screen's strip, it would otherwise move the item there, where only an icon fits (ADR-0151, amended).
+    /// CI's Xcode 26.6 has no iOS 27.1 SDK, hence the compiler check (Swift 6.4 came with Xcode 27).
+    @ToolbarContentBuilder func horizontalOnly() -> some ToolbarContent {
+        #if compiler(>=6.4)
+        if #available(iOS 27.1, *) { axisBehavior(.horizontalOnly) } else { self }
+        #else
+        self
+        #endif
     }
 }
 
@@ -140,11 +155,13 @@ private struct WatchToggle: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let title: String?
+    @State private var presses = 0
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         let watched = model.watchedByWatcher(ref)
         let compact = typeSize.isAccessibilitySize
-        Button { Task { await model.setWatched(ref, !watched, title: title) } } label: {
+        Button { presses += 1; Task { await model.setWatched(ref, !watched, title: title) } } label: {
             HStack(spacing: 6) {
                 if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else { WatcherOwlMark(size: 17).accessibilityHidden(true) }
                 if !compact { Text("Watch").lineLimit(1) }
@@ -159,6 +176,8 @@ private struct WatchToggle: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: watched)
+        .sensoryFeedback(.selection, trigger: presses)
         .disabled(!model.canChangeWatch(ref))
         .accessibilityLabel("Watch")
         .accessibilityValue(watched ? String(localized: "On", comment: "Whether Watcher watches this thread") : String(localized: "Off", comment: "Whether Watcher watches this thread"))
@@ -167,21 +186,35 @@ private struct WatchToggle: View {
     }
 }
 
-/// The thread's actions behind ••• beside its state: Compact context, while the thread's provider offers it. A press asks
-/// the provider to compact; one that can't go now says why under its name. Its progress shows as Compacting in the bar.
+/// The thread's actions behind ••• beside its state: Compact context, while the thread's provider offers it, and Settle
+/// or Restore, as on the desktop. A press asks the thread's computer; one that can't go now says why under its name.
+/// Compacting shows its progress in the bar, and a confirmed Settle or Restore says so in the banner.
 private struct ThreadMenu: View {
     @EnvironmentObject var model: AppModel
     /// Watched so whether there is history to compact follows the thread as it is read.
     @EnvironmentObject var detailStore: DetailStore
     let ref: ThreadRef
+    @State private var acted = 0
     var body: some View {
-        let held = model.compactionHeld(ref)
         Menu {
-            Button { Task { await model.compact(ref) } } label: {
-                Text("Compact context")
-                Text(held ?? String(localized: "Summarize earlier messages to free room"))
+            if model.compactionOffered(ref) {
+                let held = model.compactionHeld(ref)
+                Button { acted += 1; Task { await model.compact(ref) } } label: {
+                    Text("Compact context")
+                    Text(held ?? String(localized: "Summarize earlier messages to free room"))
+                }
+                .disabled(held != nil)
             }
-            .disabled(held != nil)
+            if let action = model.shelfAction(ref) {
+                let held = model.actionHeld(ref)
+                Button { acted += 1; Task { await model.shelve(ref, action) } } label: {
+                    Text(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
+                         : String(localized: "Restore", comment: "Restore a settled thread to open work."))
+                    if let held { Text(held) }
+                }
+                .disabled(held != nil)
+                .accessibilityIdentifier(action == .settle ? "thread-settle" : "thread-restore")
+            }
         } label: {
             Image(systemName: "ellipsis")
                 .font(.system(size: 15, weight: .semibold))
@@ -194,6 +227,7 @@ private struct ThreadMenu: View {
         }
         .accessibilityLabel("Show thread actions")
         .accessibilityIdentifier("thread-actions")
+        .sensoryFeedback(.impact(weight: .medium), trigger: acted)
     }
 }
 
@@ -315,6 +349,7 @@ private struct Conversation: View {
         ScrollViewReader { proxy in
             ScrollView {
                 page(detail: detail, rows: rows, pending: pending, scroll: proxy).readingWidth()
+                    .environment(\.replyQuoteBox, ReplyQuoteBox(key: ref.id) { [model, ref] in model.quoteReply($0, into: ref.id) })
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
@@ -796,7 +831,7 @@ private struct MessageView: View, Equatable {
     private func content(ink: ThemeRole, drawn: Set<String> = []) -> some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             if !message.text.isEmpty {
-                MarkdownText(text: message.text).equatable().foregroundStyle(ink)
+                MarkdownText(text: message.text, quotable: message.role == "assistant").equatable().foregroundStyle(ink)
             }
             // A user's photo its computer keeps is drawn above; any other photo is named, and so is a file, with a
             // document symbol (ADR-0131). Only the four photo types are photos: an SVG or a HEIC is a file here.
@@ -815,13 +850,15 @@ private struct MessageView: View, Equatable {
 /// Drawn again only when its words change; a message streaming in draws again only the blocks its new words changed.
 struct MarkdownText: View, Equatable {
     let text: String
+    /// An agent's reply, whose selected words offer Add to prompt when the page has a reply box (ADR-0129).
+    var quotable = false
     @Environment(\.sottoDensity) private var density
-    static func == (a: Self, b: Self) -> Bool { a.text == b.text }
+    static func == (a: Self, b: Self) -> Bool { a.text == b.text && a.quotable == b.quotable }
     var body: some View {
         let blocks = SottoCore.Markdown.cachedBlocks(text)
         VStack(alignment: .leading, spacing: Space.dense(Space.s3, density)) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
-                MarkdownBlockView(block: block, first: index == 0).equatable()
+                MarkdownBlockView(block: block, first: index == 0, quotable: quotable).equatable()
             }
         }
     }
@@ -830,7 +867,9 @@ struct MarkdownText: View, Equatable {
 private struct MarkdownBlockView: View, Equatable {
     let block: MarkdownBlock
     let first: Bool
-    static func == (a: Self, b: Self) -> Bool { a.first == b.first && a.block == b.block }
+    let quotable: Bool
+    static func == (a: Self, b: Self) -> Bool { a.first == b.first && a.block == b.block && a.quotable == b.quotable }
+    @Environment(\.replyQuoteBox) private var quoteBox
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoDensity) private var density
     var body: some View {
@@ -842,22 +881,32 @@ private struct MarkdownBlockView: View, Equatable {
                 .padding(.top, first ? 0 : Space.dense(Space.s2, density))
                 .accessibilityAddTraits(.isHeader)
         case .paragraph(let text):
-            Text(InlineStyle.render(text, theme: theme))
-                .font(.sotto(.body))
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            if quotable, let quoteBox {
+                ReplyText(inline: text, ink: .ink, box: quoteBox)
+            } else {
+                Text(InlineStyle.render(text, theme: theme))
+                    .font(.sotto(.body))
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.enabled)
+            }
         case .list(let items):
-            MarkdownListView(items: items)
+            MarkdownListView(items: items, quoteBox: quotable ? quoteBox : nil)
         case .code(let language, let code):
             CodeBlockView(language: language, code: code)
         case .quote(let text):
-            Text(InlineStyle.render(text, theme: theme))
-                .font(.sotto(.body))
-                .foregroundStyle(Palette.muted)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .textSelection(.enabled)
+            Group {
+                if quotable, let quoteBox {
+                    ReplyText(inline: text, ink: .muted, box: quoteBox)
+                } else {
+                    Text(InlineStyle.render(text, theme: theme))
+                        .font(.sotto(.body))
+                        .foregroundStyle(Palette.muted)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .textSelection(.enabled)
+                }
+            }
                 .padding(.leading, Space.s3)
                 .overlay(alignment: .leading) { Capsule().fill(Palette.border).frame(width: 3) }
         case .rule:
@@ -1034,6 +1083,8 @@ private struct CappedWidth: Layout {
 /// A list with hanging indents: the marker in its own column, muted, and the words aligned after it.
 private struct MarkdownListView: View {
     let items: [MarkdownListItem]
+    /// Set when the list is in an agent's reply on a page with a reply box (ADR-0129).
+    let quoteBox: ReplyQuoteBox?
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoDensity) private var density
     @ScaledMetric(relativeTo: .body) private var digit: CGFloat = 9
@@ -1043,11 +1094,15 @@ private struct MarkdownListView: View {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                     marker(item.marker, width: width)
-                    Text(InlineStyle.render(item.text, theme: theme))
-                        .font(.sotto(.body))
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .textSelection(.enabled)
+                    if let quoteBox {
+                        ReplyText(inline: item.text, ink: .ink, box: quoteBox)
+                    } else {
+                        Text(InlineStyle.render(item.text, theme: theme))
+                            .font(.sotto(.body))
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
                 }
                 .padding(.leading, CGFloat(item.depth) * (width + Space.s2))
             }
@@ -1147,6 +1202,38 @@ private enum InlineStyle {
         }
         return out
     }
+    /// The words as `render` draws them at the body step, for a text view: Figtree in the ink given, code on the code
+    /// surface, a key chord on the raised one, scaled to the text size in `traits`.
+    static func attributed(_ inline: MarkdownInline, ink: ThemeRoleName, theme: ThemeSwatch, traits: UITraitCollection) -> NSAttributedString {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = 3
+        let regular = UIFont.figtree(TextScale.body.size, .body, traits: traits)
+        let bold = UIFont.figtree(TextScale.body.size, .body, .bold, traits: traits)
+        let parsed = inline.cachedAttributed()
+        let out = NSMutableAttributedString()
+        for run in parsed.runs {
+            var words = String(parsed[run.range].characters)
+            let intent = run.inlinePresentationIntent ?? []
+            var style: [NSAttributedString.Key: Any] = [.paragraphStyle: paragraph, .foregroundColor: UIColor(theme.color(ink)),
+                                                        .font: intent.contains(.stronglyEmphasized) ? bold : regular]
+            if run.attributes[KeyChordAttribute.self] == true {
+                words = "\u{202F}" + words + "\u{202F}"
+                style[.font] = UIFont.figtree(12.5, .footnote, .semibold, traits: traits)
+                style[.foregroundColor] = UIColor(theme.color(.ink))
+                style[.backgroundColor] = UIColor(theme.color(.raised))
+            } else if intent.contains(.code) {
+                style[.font] = UIFont.monospacedSystemFont(ofSize: UIFont.preferredFont(forTextStyle: .footnote, compatibleWith: traits).pointSize, weight: .regular)
+                style[.foregroundColor] = UIColor(theme.color(.codeInk))
+                style[.backgroundColor] = UIColor(theme.color(.code))
+            }
+            // Figtree has no italic face; the slant stands in for it.
+            if intent.contains(.emphasized) { style[.obliqueness] = 0.18 }
+            if intent.contains(.strikethrough) { style[.strikethroughStyle] = NSUnderlineStyle.single.rawValue }
+            if let link = run.link { style[.link] = link }
+            out.append(NSAttributedString(string: words, attributes: style))
+        }
+        return out
+    }
     private static func codeStyle(_ theme: ThemeSwatch) -> AttributeContainer {
         var style = AttributeContainer()
         style[AttributeScopes.SwiftUIAttributes.FontAttribute.self] = Font.system(.footnote, design: .monospaced)
@@ -1160,6 +1247,95 @@ private enum InlineStyle {
         style[AttributeScopes.SwiftUIAttributes.ForegroundColorAttribute.self] = theme.color(.ink)
         style[AttributeScopes.SwiftUIAttributes.BackgroundColorAttribute.self] = theme.color(.raised)
         return style
+    }
+}
+
+// MARK: - Reply quotes
+
+/// Where words quoted from an agent's reply go: the reply box on the reply's page, by its draft key (ADR-0129). Nil
+/// where no box takes them. Equal by the box, so a page drawing again draws no reply again.
+struct ReplyQuoteBox: Equatable {
+    let key: String
+    /// Adds the words to the box and focuses it; false when they are only white space.
+    let add: @MainActor (String) -> Bool
+    static func == (a: Self, b: Self) -> Bool { a.key == b.key }
+}
+
+private struct ReplyQuoteBoxKey: EnvironmentKey { static let defaultValue: ReplyQuoteBox? = nil }
+
+extension EnvironmentValues {
+    var replyQuoteBox: ReplyQuoteBox? {
+        get { self[ReplyQuoteBoxKey.self] }
+        set { self[ReplyQuoteBoxKey.self] = newValue }
+    }
+}
+
+/// A block of an agent's reply in a read-only text view, so a selection of any part of it offers **Add to prompt**
+/// before Copy, as the desktop's button above a selection does (ADR-0129). SwiftUI's selectable `Text` takes no action
+/// of the app's own. The words are drawn as `InlineStyle` draws them.
+private struct ReplyText: UIViewRepresentable {
+    let inline: MarkdownInline
+    let ink: ThemeRoleName
+    let box: ReplyQuoteBox
+    @Environment(\.sottoTheme) private var theme
+    /// Read so a change of text size draws the words again.
+    @Environment(\.dynamicTypeSize) private var typeSize
+
+    func makeCoordinator() -> Coordinator { Coordinator(box: box) }
+
+    func makeUIView(context: Context) -> UITextView {
+        let view = Words()
+        view.isEditable = false
+        view.isScrollEnabled = false
+        view.backgroundColor = .clear
+        view.textContainerInset = .zero
+        view.textContainer.lineFragmentPadding = 0
+        view.dataDetectorTypes = []
+        view.delegate = context.coordinator
+        view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return view
+    }
+
+    func updateUIView(_ view: UITextView, context: Context) {
+        context.coordinator.box = box
+        // Set only when the words or their look change, so a selection survives the page drawing again.
+        let words = InlineStyle.attributed(inline, ink: ink, theme: theme, traits: view.traitCollection)
+        if view.attributedText != words { view.attributedText = words }
+        view.linkTextAttributes = [.foregroundColor: UIColor(theme.color(.accentText))]
+        view.tintColor = UIColor(theme.color(.accent))
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
+        // Asked without a width, or with an unbounded one, it answers as Text does: its words on one line.
+        let bounded = proposal.width.flatMap { $0.isFinite ? $0 : nil }
+        let fitted = uiView.sizeThatFits(CGSize(width: bounded ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+        return CGSize(width: bounded ?? ceil(fitted.width), height: fitted.height)
+    }
+
+    /// Reads to VoiceOver, and to the UI journeys, as the words themselves, the way a selectable `Text` does.
+    final class Words: UITextView {
+        override var accessibilityLabel: String? { get { text } set {} }
+        override var accessibilityValue: String? { get { nil } set {} }
+        override var accessibilityTraits: UIAccessibilityTraits { get { .staticText } set {} }
+    }
+
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var box: ReplyQuoteBox
+        init(box: ReplyQuoteBox) { self.box = box }
+
+        func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
+            // A key chord's narrow spaces are drawing, not words.
+            let words = (textView.text as NSString).substring(with: range).replacingOccurrences(of: "\u{202F}", with: "")
+            guard !words.allSatisfy(\.isWhitespace) else { return nil }
+            let box = box
+            let add = UIAction(title: String(localized: "Add to prompt", comment: "Edit menu action on words selected in an agent's reply: adds them to the reply box as a quote"),
+                               image: UIImage(systemName: "text.quote")) { _ in
+                guard box.add(words) else { return }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                textView.selectedRange = NSRange(location: 0, length: 0)
+            }
+            return UIMenu(children: [add] + suggestedActions)
+        }
     }
 }
 
@@ -1646,6 +1822,8 @@ private struct UnconfirmedRow: View {
         case "steer": return (String(localized: "Steering…", comment: "A queued message being sent into the running turn"), String(localized: "Steer isn’t confirmed. Check the thread before you steer again."))
         case "remove": return (String(localized: "Removing…", comment: "A queued message being taken out of the queue"), String(localized: "Removing isn’t confirmed. Check the thread’s queue before you remove it again."))
         case "compact": return (String(localized: "Compacting…", comment: "A request to compact the thread's context on its way"), String(localized: "Compacting isn’t confirmed. Check the thread before you compact it again."))
+        case "settle": return (String(localized: "Settling…", comment: "A request to settle the thread on its way"), String(localized: "Settling isn’t confirmed. Check the thread before you settle it again."))
+        case "restore": return (String(localized: "Restoring…", comment: "A request to take the thread off the Settled shelf on its way"), String(localized: "Restoring isn’t confirmed. Check the thread before you restore it again."))
         case "babysit": return (String(localized: "Starting babysitting…", comment: "A request to babysit a pull request on its way"), String(localized: "Babysitting isn’t confirmed. Check the pull request before you press it again."))
         case "stop-babysitting": return (String(localized: "Stopping babysitting…", comment: "A request to stop babysitting a pull request on its way"), String(localized: "Stopping babysitting isn’t confirmed. Check the pull request before you press it again."))
         default: return (String(localized: "Sending…", comment: "A reply on its way to the thread's computer"), String(localized: "Not confirmed. Check the thread before you send it again."))
@@ -1703,6 +1881,8 @@ private struct ReplyDock: View, Equatable {
     @FocusState private var focused: Bool
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var sent = 0
+    @State private var stopped = 0
 
     var body: some View {
         VStack(spacing: Space.s2) {
@@ -1799,7 +1979,7 @@ private struct ReplyDock: View, Equatable {
             // Photos wait inside the reply box, above the words, as in Messages, and files under them as pills.
             VStack(alignment: .leading, spacing: Space.s2) {
                 if !photos.isEmpty { DraftPhotoStrip(box: .thread(ref)).padding(.top, Space.s1) }
-                if !files.isEmpty { DraftFilePills(ref: ref).padding(.top, photos.isEmpty ? Space.s1 : 0) }
+                if !files.isEmpty { DraftFilePills(box: .thread(ref)).padding(.top, photos.isEmpty ? Space.s1 : 0) }
                 if let notice = model.photoNotices[ref.id] {
                     Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true).paragraphDirection()
                         .accessibilityAddTraits(.updatesFrequently)
@@ -1809,15 +1989,21 @@ private struct ReplyDock: View, Equatable {
                     .foregroundStyle(Palette.ink)
                     .lineLimit(1...6)
                     .focused($focused)
+                    // Words added from a reply put the caret after them, here (ADR-0129).
+                    .onChange(of: draftStore.focus) { _, focus in if focus?.key == ref.id { focused = true } }
                     .padding(.vertical, 11)
                     .accessibilityLabel("Reply to this thread")
                     .accessibilityIdentifier("thread-reply")
+                    .pasteAttaches(to: .thread(ref))
+                    .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == ref.id { model.focusRequest = nil; focused = true } }
                     // Locked while the reply's photos are staged, so nothing typed now joins it.
                     .disabled(model.preparingSends.contains(ref.id))
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             trailingButtons
         }
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canInterrupt(ref))
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written)
         .padding(6)
         .glass(in: shape)
         .overlay(shape.strokeBorder(theme.color(.accent).opacity(focused ? 0.55 : 0), lineWidth: 1))
@@ -1825,24 +2011,28 @@ private struct ReplyDock: View, Equatable {
         .background {
             ZStack {
                 SoftShadow(shape: shape, color: Color.black.opacity(0.22), radius: 16, y: 8).opacity(focused ? 0 : 1)
-                SoftShadow(shape: shape, color: theme.color(.accent).opacity(0.35), radius: 18).opacity(focused ? 1 : 0)
+                GlowShadow(shape: shape, color: theme.color(.accent), alpha: 0.35, radius: 18).opacity(focused ? 1 : 0)
             }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: focused)
+    }
+
+    /// Whether the box holds something to send: words, photos or files.
+    private var written: Bool {
+        !(model.drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.photos(ref).isEmpty
+            || !model.files(ref).isEmpty
     }
 
     /// Stop while the turn can be stopped, and beside it, once the box holds something, the button that queues it for
     /// after the turn. Otherwise Send, as before.
     @ViewBuilder private var trailingButtons: some View {
         let stops = model.canInterrupt(ref)
-        let written = !(model.drafts[ref.id] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !model.photos(ref).isEmpty
-            || !model.files(ref).isEmpty
-        if stops { stopButton }
-        if !stops || written { sendButton }
+        if stops { stopButton.transition(.scale(scale: 0.8).combined(with: .opacity)) }
+        if !stops || written { sendButton.transition(.scale(scale: 0.8).combined(with: .opacity)) }
     }
 
     private var stopButton: some View {
-        Button { Task { await model.interrupt(ref) } } label: {
+        Button { stopped += 1; Task { await model.interrupt(ref) } } label: {
             RoundedRectangle(cornerRadius: 3.5, style: .continuous)
                 .frame(width: 13, height: 13)
                 .frame(width: 44, height: 44)
@@ -1852,6 +2042,7 @@ private struct ReplyDock: View, Equatable {
                 .contentShape(Circle())
         }
         .buttonStyle(PressStyle())
+        .sensoryFeedback(.impact(weight: .medium), trigger: stopped)
         .accessibilityLabel("Stop this turn")
     }
 
@@ -1860,7 +2051,7 @@ private struct ReplyDock: View, Equatable {
         let preparing = model.preparingSends.contains(ref.id)
         let canSend = model.canSendReply(ref)
         let queues = model.queuesReply(ref)
-        return Button { Task { await model.send(ref) } } label: {
+        return Button { sent += 1; Task { await model.send(ref) } } label: {
             Group {
                 if preparing { ProgressView().tint(Palette.onAccent) }
                 else { Image(systemName: queues ? "text.badge.plus" : "arrow.up").font(.system(size: 17, weight: .semibold)) }
@@ -1871,6 +2062,9 @@ private struct ReplyDock: View, Equatable {
             .contentShape(Circle())
         }
         .buttonStyle(PressStyle())
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: queues)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
         .disabled(!canSend)
         .accessibilityLabel(queues ? (preparing ? String(localized: "Queuing reply") : String(localized: "Queue for after this turn")) : (preparing ? String(localized: "Sending reply") : String(localized: "Send reply")))
     }
@@ -1910,6 +2104,8 @@ private struct FollowupCard: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let item: Followup
+    @State private var steerPresses = 0
+    @State private var removePresses = 0
     var body: some View {
         let steers = model.steerOffered(item, in: ref)
         let removable = FollowupQueue.removable(item)
@@ -1931,17 +2127,25 @@ private struct FollowupCard: View {
             if steers || removable {
                 HStack(spacing: Space.s2) {
                     if steers {
-                        Button { Task { await model.steer(item, in: ref) } } label: {
+                        Button {
+                            steerPresses += 1
+                            Task { await model.steer(item, in: ref) }
+                        } label: {
                             Label("Steer now", systemImage: "arrow.turn.up.right")
                         }
                         .buttonStyle(PillButtonStyle(kind: .primary))
+                        .sensoryFeedback(.impact(flexibility: .soft), trigger: steerPresses)
                         .disabled(!model.canSteer(item, in: ref))
                         .accessibilityHint("Sends this message now instead of after the turn.")
                     }
                     if removable {
-                        Button("Remove") { Task { await model.removeFollowup(item, in: ref) } }
-                            .buttonStyle(PillButtonStyle(kind: .ghost))
-                            .disabled(!model.canRemove(item, in: ref))
+                        Button("Remove") {
+                            removePresses += 1
+                            Task { await model.removeFollowup(item, in: ref) }
+                        }
+                        .buttonStyle(PillButtonStyle(kind: .ghost))
+                        .sensoryFeedback(.impact(flexibility: .soft), trigger: removePresses)
+                        .disabled(!model.canRemove(item, in: ref))
                             .accessibilityLabel(item.wakeUp == true ? String(localized: "Remove the wake-up from the queue") : String(localized: "Remove this message from the queue"))
                     }
                 }
@@ -1997,6 +2201,7 @@ struct RequestSheet: View {
     @State private var answers: [String: QuestionAnswer] = [:]
     @State private var choice: String?
     @State private var text = ""
+    @State private var answered = 0
     /// Questions whose own-answer box is open.
     @State private var writing: Set<String> = []
     /// The question's page open in the in-app browser over the sheet (ADR-0085).
@@ -2031,6 +2236,7 @@ struct RequestSheet: View {
         .presentationCornerRadius(Radius.xl)
         .onChange(of: current == nil && !model.hasPending(at: place)) { _, gone in if gone { dismiss() } }
         .sheet(item: $opening) { row in SafariPage(url: row.url).ignoresSafeArea() }
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: answered)
     }
 
     @ViewBuilder private func content(_ current: AgentRequest, threadTitle: String, providerID: String?) -> some View {
@@ -2185,7 +2391,10 @@ struct RequestSheet: View {
     }
 
     /// Sends against the request as the computer holds it now, never the copy the sheet opened with.
-    private func send(_ current: AgentRequest, choice: String) { Task { await model.answer(current, at: place, choice: choice) } }
+    private func send(_ current: AgentRequest, choice: String) {
+        answered += 1
+        Task { await model.answer(current, at: place, choice: choice) }
+    }
 
     /// Allow once first, then the other allows, then deny and the rest.
     private static func rank(_ choice: PermissionChoice) -> Int {
@@ -2353,6 +2562,7 @@ struct RequestSheet: View {
     }
 
     private func sendAnswer(_ current: AgentRequest) {
+        answered += 1
         focus = nil
         Task {
             if current.questions?.isEmpty == false { await model.answer(current, at: place, answers: answers) }
@@ -2483,7 +2693,7 @@ private struct OptionLabel: View {
                 .opacity(chosen ? 1 : 0)
         }
         .frame(width: 22, height: 22)
-        .softShadow(Circle(), color: theme.color(.accent).opacity(0.6), radius: 6, showing: chosen)
+        .glow(Circle(), color: theme.color(.accent), alpha: 0.6, radius: 6, showing: chosen)
         .animation(.easeInOut(duration: 0.25), value: chosen)
         .accessibilityHidden(true)
     }
@@ -2504,7 +2714,7 @@ private struct PermissionCommand: View {
         .padding(Space.s4)
         .background(Palette.code, in: shape)
         .overlay(shape.strokeBorder(theme.color(.warning).opacity(0.3), lineWidth: 1))
-        .softShadow(shape, color: theme.color(.warning).opacity(0.3), radius: 16, y: 8)
+        .glow(shape, color: theme.color(.warning), alpha: 0.3, radius: 16, y: 8)
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Command: \(command)")
     }

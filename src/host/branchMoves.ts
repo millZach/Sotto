@@ -82,7 +82,7 @@ export class HostBranchMoves {
         const holding: Transfer = { owner }
         this.transfers.set(request.moveId, holding)
         try {
-          const source = await this.bundles.sourceOf(folder, request.snapshot === true)
+          const source = await this.bundles.sourceOf(folder, request.snapshot === true, request.pinned)
           if ('type' in source) { this.release(request.moveId, holding); return source }
           const prepared = await this.bundles.prepare({ repository: folder, moveId: request.moveId, commit: source.commit, bases: request.bases })
           if (prepared.type === 'present') { this.release(request.moveId, holding); return { type: 'present', branch: source.branch, commit: source.commit, ...source.snapshot ? { snapshot: source.snapshot } : {} } }

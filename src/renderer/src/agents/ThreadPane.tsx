@@ -370,8 +370,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {renaming
           ? <h2><ThreadNameField title={thread.title} label={t`Rename ${title}`} className="thread-workspace__rename tt-focusable"
             onRename={next => void command({ type: 'rename-thread', threadId: thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} /></h2>
-          : <h2>{thread.title}</h2>}
-        <span className="thread-workspace__crumb" data-has-working-copy={Boolean(workingCopy) || undefined}><span>{row.project?.title ?? row.provider}</span>{workingCopy}
+          : <h2 title={thread.title}>{thread.title}</h2>}
+        <span className="thread-workspace__crumb" data-has-working-copy={Boolean(workingCopy) || undefined}><span title={row.project?.title ?? row.provider}>{row.project?.title ?? row.provider}</span>{workingCopy}
           {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag"><Trans>Settled</Trans></span> : null}
           {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{t({ message: `${provider} disconnected`, comment: '{provider} is the provider\'s name, such as Codex.' })}</span> : null}
         </span>
@@ -405,8 +405,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         observation={state.connection === 'connecting' ? 'loading' : !rowConnected ? 'disconnected' : thread.historyStatus === 'loading' ? 'loading' : thread.historyStatus === 'error' ? 'unavailable' : 'ready'}
         observed={JSON.stringify([rowConnected, state.connection, thread.historyStatus, thread.status, closed, thread.requests.map(request => [request.id, request.delivery, request.questions])])} />
     </ThreadTranscript></RunCommands></ThreadWebLinks>
-    <div className="thread-greeting-slot" ref={setGreetingSlot} />
-    <div className="thread-workspace__compose" ref={compose} data-slim={slim || undefined} onMouseDown={slim ? pressSlim : undefined}
+    <div className="thread-greeting-slot" data-room-backdrop="" ref={setGreetingSlot} />
+    <div className="thread-workspace__compose" data-room-backdrop="" ref={compose} data-slim={slim || undefined} onMouseDown={slim ? pressSlim : undefined}
       onFocus={() => setComposeFocused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setComposeFocused(false) }}>
       {/* What a Watch or Stop watching press did, just above the focused pane's composer (Owl only). */}
       {focused ? <WatchToast /> : null}
@@ -433,7 +433,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       </div>
     </div>
     {/* Under a greeting, the room below the composer matches the room above, so the two sit in the middle. */}
-    <div className="thread-pane__balance" aria-hidden="true" />
+    <div className="thread-pane__balance" data-room-backdrop="" aria-hidden="true" />
     {drawer}
   </>
 }

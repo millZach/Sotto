@@ -20,7 +20,7 @@ import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
 import { bringBackAwaySchema, bringBackSchema, worktreeMadeFromSchema } from './bringChangesBack'
 import type { GitRefsPage, GitRefsRequest } from './gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
-import { GIT_PULL_REQUEST_LINKS_MAX, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
+import { GIT_PULL_REQUEST_LINKS_MAX, gitCommitIdSchema, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersResult } from './hostFolders'
 
 export const AGENT_GET = 'sotto:agents:get'
@@ -198,6 +198,13 @@ export function hasRasterImageSignature(attachment: Pick<AgentAttachment, 'mimeT
 export function bytesHaveRasterSignature(mimeType: string, bytes: Uint8Array): boolean {
   return rasterHeaderMatches(mimeType, String.fromCharCode(...bytes.subarray(0, 16)))
 }
+/**
+ * Point at something's feedback, carried by its picture's handle (ADR-0154): the element's `label` and the user's
+ * `comment`, which the composer's chip shows, and `context` (the page, the element and where it is outlined), which
+ * is written into the message for the provider only when it is sent. Removing the picture removes all of it.
+ */
+export const agentBrowserFeedbackSchema = z.object({ label: z.string().trim().min(1).max(600), comment: z.string().max(8000), context: z.string().max(4000) }).strict()
+export type AgentBrowserFeedback = z.infer<typeof agentBrowserFeedbackSchema>
 /** The SHA-256 of a staged image's bytes, as lowercase hex: the content a handle names. */
 export const attachmentDigestSchema = z.string().regex(/^[a-f0-9]{64}$/u)
 /**
@@ -209,6 +216,8 @@ export const agentAttachmentHandleSchema = z.object({
   mimeType: agentMimeTypeSchema, sizeBytes: z.number().int().min(1).max(AGENT_MAX_FILE_BYTES), digest: attachmentDigestSchema,
   /** The sizes the composer attached and staged it at, when it knew them (issue #321). */
   dimensions: agentAttachmentDimensionsSchema.optional(),
+  /** Set when the image is Point at something's picture (ADR-0154): what travels with it until the message is sent. */
+  browserFeedback: agentBrowserFeedbackSchema.optional(),
 }).strict().refine(handle => handle.sizeBytes <= attachmentLimitBytes(handle.mimeType), 'An image must be no larger than 10 MiB.')
 export type AgentAttachmentHandle = z.infer<typeof agentAttachmentHandleSchema>
 /** The bytes a set of staged attachments holds between them: what the 50 MiB total is measured on. */
@@ -261,11 +270,16 @@ export type AgentAttachmentPreviewResult = z.infer<typeof agentAttachmentPreview
 export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(),
   /** Supplied by Sotto for submitted images; never a filesystem path or a provider URL. */
   preview: agentAttachmentPreviewSchema.optional(),
+  /** Point at something's picture (ADR-0154), whose feedback went to the provider in a note Sotto reads back off. */
+  pointed: z.literal(true).optional(),
 })
 export type AgentAttachmentReference = z.infer<typeof agentAttachmentReferenceSchema>
-/** The references a message records for its attachments: each one's ID, name, type and size, and nothing more. */
-export function attachmentReferences(attachments: readonly Pick<AgentAttachmentReference, 'id' | 'name' | 'mimeType' | 'sizeBytes'>[]): AgentAttachmentReference[] {
-  return attachments.map(({ id, name, mimeType, sizeBytes }) => ({ id, name, mimeType, sizeBytes }))
+/**
+ * The references a message records for its attachments: each one's ID, name, type and size, whether it was Point at
+ * something's picture, and nothing more.
+ */
+export function attachmentReferences(attachments: readonly (Pick<AgentAttachmentReference, 'id' | 'name' | 'mimeType' | 'sizeBytes'> & { readonly browserFeedback?: unknown })[]): AgentAttachmentReference[] {
+  return attachments.map(({ id, name, mimeType, sizeBytes, browserFeedback }) => ({ id, name, mimeType, sizeBytes, ...(browserFeedback ? { pointed: true as const } : {}) }))
 }
 /**
  * A permission setting a provider names itself, for providers whose own modes are not Sotto's four. `name`
@@ -736,8 +750,8 @@ export type ClientChannel = z.infer<typeof clientChannelSchema>
 /**
  * Why an update did not finish, as a code the tile words for itself: `download` when the installer could not fetch the
  * new version, `install-step` when mise installed Grok Build but its package's own install step did not finish,
- * `not-listed` when mise's version list did not have the published version even after Sotto cleared mise's cache of it,
- * so nothing was installed, and `installer` for anything else the installer refused.
+ * `not-listed` when mise's version list did not have the published version even after Sotto cleared mise's cache of it
+ * and either held another build of it, so nothing was installed, or installing it anyway failed, and `installer` for anything else the installer refused.
  */
 export const clientUpdateFailureSchema = z.enum(['download', 'install-step', 'installer', 'not-listed'])
 export type ClientUpdateFailure = z.infer<typeof clientUpdateFailureSchema>
@@ -1397,7 +1411,23 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * close or reopen, update the branch (`method` rebase for Update with rebase), or turn auto-merge on or off. Only for a
    * pull request the thread knows: its branch's own or one linked to it. */
   z.object({ type: z.literal('git-pull-request-action'), threadId: id, url: gitPullRequestUrlSchema, action: gitPullRequestActionSchema,
-    method: gitPullRequestMergeMethodSchema.optional() }).strict(),
+    method: gitPullRequestMergeMethodSchema.optional(),
+    /**
+     * From a paired client, the confirmation receipt its host gave for this very press (#1691): a merge, a close or an
+     * auto-merge without one is refused. The desktop's router asks for one after the user confirms in the window, and a
+     * window never names one itself.
+     */
+    confirmation: z.uuid().optional(),
+    /**
+     * From the desktop's window only: the read ID of the reading of the pull request the window showed when the user
+     * pressed, which its router names when it asks a paired host for a confirmation receipt, and never sends on (#1691).
+     */
+    readId: z.uuid().optional(),
+    /**
+     * Set only by the host's own socket server, from a receipt: the head commit the pull request must still be on, which
+     * `gh pr merge --match-head-commit` holds GitHub to. A paired client that sends it is refused.
+     */
+    matchHeadCommit: gitCommitIdSchema.optional() }).strict(),
   /** Link a pull request to the thread by a GitHub URL or `#42`, or take the link away again. */
   z.object({ type: z.literal('git-link-pull-request'), threadId: id, reference: z.string().min(1).max(2_048) }).strict(),
   z.object({ type: z.literal('git-unlink-pull-request'), threadId: id, url: gitPullRequestUrlSchema }).strict(),

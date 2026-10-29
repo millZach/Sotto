@@ -14,6 +14,7 @@ struct SettingsView: View {
             VStack(spacing: Space.s3) {
                 AppearancePanel()
                 ThemePanel { toast = $0 }
+                GlowPanel()
                 TextSizePanel()
                 DensityPanel()
             }
@@ -83,11 +84,11 @@ private struct ThemeChoice: View {
     var body: some View {
         Button(action: pick) {
             VStack(alignment: .leading, spacing: 6) {
-                ThemeRoom(swatch: palette.swatch(dark: dark))
+                ThemeRoom(swatch: palette.swatch(dark: dark), glass: palette.id == ThemePalettes.glass.id ? ThemePalettes.glassTints(dark: dark) : nil)
                     .padding(3)
                     .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous)
                         .strokeBorder(selected ? theme.color(.accent) : Color.clear, lineWidth: 2))
-                    .softShadow(RoundedRectangle(cornerRadius: 17, style: .continuous), color: theme.color(.accent).opacity(0.45), radius: 10, showing: selected)
+                    .glow(RoundedRectangle(cornerRadius: 17, style: .continuous), color: theme.color(.accent), alpha: 0.45, radius: 10, showing: selected)
                 HStack(spacing: 6) {
                     Text(palette.name).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink).lineLimit(1).minimumScaleFactor(0.8)
                     if selected {
@@ -101,6 +102,7 @@ private struct ThemeChoice: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
+        .sensoryFeedback(trigger: selected) { _, isSelected in isSelected ? .selection : nil }
         .accessibilityLabel("\(palette.name) theme")
         .accessibilityValue(selected ? String(localized: "Selected", comment: "Accessibility value: this choice is the one in use.") : String(localized: "Not selected", comment: "Accessibility value: this choice is not the one in use."))
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -108,12 +110,20 @@ private struct ThemeChoice: View {
     }
 }
 
-/// The room inside a theme choice, in that palette's own colours rather than the current theme's.
+/// The room inside a theme choice, in that palette's own colours rather than the current theme's. Glass's is its room
+/// over its backdrop.
 private struct ThemeRoom: View {
     let swatch: ThemeSwatch
+    let glass: GlassTints?
     var body: some View {
         let room = RoundedRectangle(cornerRadius: 14, style: .continuous)
         room.fill(swatch.canvas.color)
+            .overlay {
+                if let glass {
+                    LinearGradient(colors: glass.backdrop.map(\.color), startPoint: .topLeading, endPoint: .bottomTrailing)
+                        .overlay(glass.room.fill)
+                }
+            }
             .overlay {
                 RadialGradient(colors: [swatch.accent.color.opacity(0.45), swatch.accent.color.opacity(0)],
                                center: UnitPoint(x: 0.15, y: 0), startRadius: 0, endRadius: 80)
@@ -128,7 +138,7 @@ private struct ThemeRoom: View {
                         Capsule().fill(swatch.messageSurface.color).frame(width: width * 0.46, height: 14)
                             .offset(x: width * 0.54 - 10, y: 44)
                         Capsule().fill(swatch.accent.color).frame(width: 26, height: 12)
-                            .softShadow(Capsule(), color: swatch.accent.color, radius: 6)
+                            .glow(Capsule(), color: swatch.accent.color, alpha: 1, radius: 6)
                             .offset(x: 10, y: height - 22)
                     }
                     .frame(width: width, height: height, alignment: .topLeading)
@@ -189,12 +199,13 @@ private struct TextSizeStep: View {
                     if selected {
                         shape.fill(scheme == .dark ? Palette.raised : Palette.surface)
                             .overlay(shape.strokeBorder(theme.color(.accent).opacity(0.35), lineWidth: 1))
-                            .softShadow(shape, color: theme.color(.accent).opacity(0.4), radius: 8)
+                            .glow(shape, color: theme.color(.accent), alpha: 0.4, radius: 8)
                     }
                 }
                 .contentShape(shape)
         }
         .buttonStyle(PressStyle())
+        .sensoryFeedback(trigger: selected) { _, isSelected in isSelected ? .selection : nil }
         .accessibilityLabel(size.title)
         .accessibilityValue(selected ? String(localized: "Selected", comment: "Accessibility value: this choice is the one in use.") : String(localized: "Not selected", comment: "Accessibility value: this choice is not the one in use."))
         .accessibilityAddTraits(selected ? .isSelected : [])
@@ -217,6 +228,30 @@ private struct TextSample: View {
         .background(Palette.canvas, in: shape)
         .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
         .accessibilityHidden(true)
+    }
+}
+
+/// How strongly the lights shine, from none to twice the look as drawn. The page under the finger follows as it moves,
+/// and the light beside the slider shows it at once.
+private struct GlowPanel: View {
+    @AppStorage(PhonePreferenceKey.glow) private var glow = PhoneGlow.standard
+    @Environment(\.sottoTheme) private var theme
+    var body: some View {
+        let value = glow == 0 ? String(localized: "Off") : (Double(glow) / 100).formatted(.percent)
+        VStack(alignment: .leading, spacing: Space.s3) {
+            PanelHeader(title: String(localized: "Glow", comment: "Settings panel heading and slider name: how strongly the lights around working threads, questions and chosen controls shine."), value: value)
+            HStack(spacing: Space.s4) {
+                Light(tone: .accent, size: 10, breathing: true)
+                    .frame(width: 24)
+                Slider(value: Binding(get: { Double(glow) }, set: { glow = Int($0.rounded()) }), in: 0...100, step: 5)
+                    .tint(theme.color(.accent))
+                    .accessibilityLabel("Glow")
+                    .accessibilityValue(value)
+                    .accessibilityIdentifier("setting-glow")
+            }
+            .frame(minHeight: 44)
+        }
+        .card()
     }
 }
 
@@ -502,14 +537,18 @@ private struct AboutPanel: View {
             Text("S").font(.custom("Figtree-Bold", fixedSize: 20)).foregroundStyle(Palette.onAccent)
                 .frame(width: 44, height: 44)
                 .background(Palette.accent, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                .softShadow(RoundedRectangle(cornerRadius: 13, style: .continuous), color: theme.color(.accent).opacity(0.5), radius: 10)
+                .glow(RoundedRectangle(cornerRadius: 13, style: .continuous), color: theme.color(.accent), alpha: 0.5, radius: 10)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text("Sotto \(version)").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
                 Text(connection).font(.sotto(.small)).foregroundStyle(Palette.muted)
+                Text(verbatim: layout).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
             }
         }
         .card()
+        // Read again whenever the card's width settles, as it does after the Duo folds and the insets change.
+        .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { _ in layout = Self.windowLayout() }
+        .onAppear { layout = Self.windowLayout() }
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("setting-about")
     }
@@ -520,6 +559,18 @@ private struct AboutPanel: View {
         let short = info?["CFBundleShortVersionString"] as? String ?? "?"
         guard let build = info?["CFBundleVersion"] as? String, !build.isEmpty else { return short }
         return "\(short) (\(build))"
+    }
+
+    /// The window against the screen, then its safe-area insets top, left, bottom and right, as numbers only:
+    /// "466×678 (0,0) / 466×678 · 0 0 34 84". It tells whether the Duo cover screen's strip is inside the window
+    /// (ADR-0151), and goes once the phone has settled that.
+    @State private var layout = ""
+    private static func windowLayout() -> String {
+        guard let scene = UIApplication.shared.connectedScenes.compactMap({ $0 as? UIWindowScene }).first,
+              let window = scene.keyWindow ?? scene.windows.first else { return "" }
+        let screen = scene.screen.bounds.size, frame = window.frame, inset = window.safeAreaInsets
+        func n(_ value: CGFloat) -> String { String(Int(value.rounded())) }
+        return "\(n(frame.width))×\(n(frame.height)) (\(n(frame.minX)),\(n(frame.minY))) / \(n(screen.width))×\(n(screen.height)) · \(n(inset.top)) \(n(inset.left)) \(n(inset.bottom)) \(n(inset.right))"
     }
 
     private var connection: String {

@@ -16,7 +16,7 @@ import { useRoomWatcherThreadId } from '../watcher/watcherRoom'
 import { useAgents, type AgentConnection } from './AgentContext'
 import { creationErrorWords, draftThreads, gateOnCreation, overlayDraftThreads, useDraftThreads } from './draftThreads'
 import { shownWords, type LaterWords } from './interfaceWords'
-import { describeThreads, EMPTY_NEEDS_YOU, organizeWorkspace, type ThreadRow } from './threadFacts'
+import { EMPTY_NEEDS_YOU, organizeWorkspace, threadDescriber, useWordsRevision, type ThreadRow } from './threadFacts'
 import { useContinueEnabled } from './continuations'
 import { NewThreadDialog } from './NewThreadDialog'
 import { beginNewThread, unusedNewThread, type ThreadCreationStart } from './newThread'
@@ -87,7 +87,8 @@ export interface ThreadsViewProps {
   readonly paneAreaHeight?: number | undefined
 }
 export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneActions, paneActions, paneWorkingCopy, paneNotice, paneDrawer, onPaneThreadsChange, layoutStore = splitLayoutStore, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
-  const { t, i18n: { locale } } = useLingui()
+  const { t } = useLingui()
+  const words = useWordsRevision()
   const agents = useAgents()
   const app = useOptionalApp()
   const watcherEnabled = useWatcherEnabled()
@@ -121,15 +122,17 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   useEffect(() => { publishedRef.current = published; draftThreads.reconcile(published) }, [published])
   // Derived facts are shared with the ones on screen: an update that did not touch a thread leaves its row,
   // its folder and its pane label at the same reference, so the memoised sidebar and panes below skip it.
-  // Rows and folders carry words in the interface language, so a change of language describes them again.
+  // Rows and folders carry words in the interface language, so a change of language or of its messages describes them
+  // again. Otherwise the describer describes only the threads an update changed and hands back the rest as they were.
   const continued = useContinueEnabled()
-  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued, locale]))
+  const [describeRows] = useState(threadDescriber)
+  const rows = useShared(useMemo(() => state === null ? [] : describeRows(state, now, { continued }), [state, now, continued, words]))
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
   const labels = useShared(useMemo(() => new Map<string, PaneLabel>(rows.map(row => [row.thread.id, { title: row.thread.title, providerId: row.providerId, provider: row.provider }] as const)), [rows]))
   // Delegated threads have no row of their own: they live in their delegating thread's Tools › Agents (ADR-0081; Owl only).
   const delegation = useOwlFeature('thread-delegation')
   const sidebarRows = useListedRows(agents.threadDrafts, rows)
-  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now), [state, sidebarRows, query, delegation, now, locale]))
+  const organization = useShared(useMemo(() => state === null ? { open: [], settled: [], needsYou: EMPTY_NEEDS_YOU, matching: 0 } : organizeWorkspace(state, sidebarRows, query, state.activeProjectId, delegation, now), [state, sidebarRows, query, delegation, now, words]))
   const originalStored = useSplitLayout(layoutStore)
   const stored = useMemo(() => qualifyLegacyLayout(originalStored, state?.hostId), [originalStored, state?.hostId])
   useEffect(() => { if (stored !== originalStored) layoutStore.set(stored) }, [stored, originalStored, layoutStore])
@@ -320,7 +323,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} actions={actions} drawer={paneDrawer?.(slot)} />
   }
 
-  return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} onKeyDown={grid.onKeyDown} {...marks}>
+  return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} data-room-backdrop="" onKeyDown={grid.onKeyDown} {...marks}>
     {chooser !== null && <NewThreadDialog state={state} command={command}
       onClose={() => setChooser(null)}
       onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
@@ -329,11 +332,11 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       currentThreadId={focusedId} listedThreadId={listedThreadId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
       newThreadError={shownWords(newThreadError)} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} shortcutsLive
       restartThreads={published?.host.threads} />
-    <section className="thread-workspace" aria-label={t`Thread workspace`}>
+    <section className="thread-workspace" data-room-backdrop="" aria-label={t`Thread workspace`}>
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}
       {updateAll ? null : <HostUpdateControl />}
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}
-      <div className="thread-workspace__body" data-panes={paneIds.length > 0 || undefined}>
+      <div className="thread-workspace__body" data-room-backdrop="" data-panes={paneIds.length > 0 || undefined}>
         {paneIds.length || dragging !== null
           ? <ThreadPanes layout={layout} paneIds={paneIds} rows={labels} focusedId={focusedId} dragging={dragging} renderPane={renderPane}
             onFocusPane={focusPane} onLayoutChange={next => layoutStore.set(next)} onDrop={(threadId, target) => { setDragging(null); grid.onDrop(threadId, target) }} onClosePane={grid.close} measuredWidth={paneAreaWidth} measuredHeight={paneAreaHeight} />

@@ -42,13 +42,15 @@
 .thread-workspace__error { margin: 12px 24px 0; }
 
 /* The header's icon buttons: the Tools toggle, the More menu, and anything a pane adds beside them. */
-.pane-action { display: grid; place-items: center; width: 30px; height: 30px; flex: none; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.pane-action { display: grid; place-items: center; width: 30px; height: 30px; flex: none; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .pane-action:hover:not(:disabled), .pane-action[aria-pressed='true'], .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.pane-action:active:not(:disabled):not([aria-pressed='true']):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .pane-action:disabled { opacity: .5; cursor: default; }
 
 /* The More menu hangs under its button, inside the header, so the pane keeps the focus the menu hands out. */
 .pane-menu { position: relative; display: flex; }
 .pane-menu__list { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; display: grid; min-width: 212px; padding: 6px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .pane-menu__list { animation: tt-pop-down 120ms ease-out; } }
 .pane-menu__list hr { margin: 6px 0; border: 0; border-top: 1px solid var(--tt-hairline); }
 .pane-menu__item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
 .pane-menu__item > svg { flex: none; color: var(--tt-text-muted); }
@@ -68,7 +70,7 @@
 .thread-workspace__transcript:focus-visible { outline: 2px solid var(--tt-focus-ring, var(--threads-field-focus)); outline-offset: -2px; }
 .thread-transcript__earlier { display: flex; justify-content: center; margin: 0 0 20px; }
 .thread-transcript__earlier .tt-button { font-size: 13px; }
-.thread-transcript__jump { position: absolute; bottom: 14px; left: 50%; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--threads-field-border); border-radius: 6px; background: var(--threads-field); box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; transform: translateX(-50%); }
+.thread-transcript__jump { position: absolute; bottom: 14px; left: 50%; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--threads-field-border); border-radius: 6px; background: var(--threads-field); box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; transform: translateX(-50%); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease; }
 .thread-transcript__jump:hover { border-color: var(--threads-field-focus); }
 .thread-transcript__jump:active { filter: brightness(.96); }
 .thread-transcript__jump[data-unseen] { border-color: var(--threads-field-focus); }
@@ -94,15 +96,17 @@
 .thread-message__work {
   display: inline-flex; align-items: center; gap: 4px; min-height: 24px; margin: -2px 0 -2px -4px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm);
   background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; font-variant-numeric: tabular-nums; cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .thread-message__work:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-message__work:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text-2); }
 .thread-message[data-turn-outcome='failed'] .thread-message__work { color: var(--tt-error-text); }
 .thread-message__work-body { margin: 0 0 12px 1px; padding: 4px 0 4px 14px; border-left: 1px solid var(--tt-hairline); }
 .thread-message__work-body > .thread-activity:last-child { margin-bottom: 0; }
 /* The copy control sits in the message's bottom-left corner and appears while the message is hovered,
    holds focus, or is mid-confirmation. A message that has one keeps room for it under its last line:
    replies line its icon up with their text, user bubbles pin it inside their padding. */
-.thread-message__copy { position: absolute; bottom: 0; left: -5px; display: inline-flex; align-items: center; gap: 5px; min-width: 28px; height: 28px; min-height: 28px; padding: 0 5px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity 120ms ease; }
+.thread-message__copy { position: absolute; bottom: 0; left: -5px; display: inline-flex; align-items: center; gap: 5px; min-width: 28px; height: 28px; min-height: 28px; padding: 0 5px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease; }
 .thread-message__copy:hover { background: var(--tt-hover); color: var(--tt-text); }
 .thread-message__copy:active { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-message__copy[data-copied] { color: var(--tt-success); }
@@ -212,12 +216,10 @@
 .prompt-editor p { margin: 0; }
 .prompt-editor[data-empty="true"]::before { content: attr(data-placeholder); color: var(--placeholder-ink); float: left; height: 0; pointer-events: none; }
 .prompt-editor[aria-disabled="true"] { cursor: not-allowed; }
-/* The resize grip is drawn only while the pointer is over the box or it has focus (Drake's ask, October 27, 2026);
-   the box stays resizable from its corner at rest. */
-.prompt-editor:not(:hover):not(:focus-within)::-webkit-resizer { display: none; }
 .followup-editor .prompt-editor { display: block; width: 100%; min-height: 104px; max-height: min(320px, calc(100vh - 200px)); overflow-y: auto; padding: 10px 12px; border: 1px solid var(--tt-field-border, var(--tt-hairline)); border-radius: 12px; outline: 0; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.55; resize: vertical; scrollbar-width: thin; }
 .followup-editor .prompt-editor:focus { border-color: var(--tt-field-border-focus, var(--tt-focus-ring)); }
 .thread-prompt__notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: -2px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--tt-hairline); color: var(--threads-warning-text); font-size: 13px; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .thread-prompt__notice { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); } }
 .thread-prompt__notice .tt-button { min-height: 30px; font-size: 13px; }
 /* One row under the prompt: what the thread is set to, then the key that sends it. A caption long enough to
    need words of its own wraps below the pill rather than squeezing either end of the row. */
@@ -229,19 +231,33 @@
 .thread-prompt__status[data-tone='warning'] { color: var(--threads-warning-text); }
 .thread-prompt__link { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
 .thread-prompt__actions { display: flex; flex: none; align-items: center; gap: 6px; }
-/* The composer's keys (ADR-0153): each button says what it does and the key that does the same. The one filled button
-   is always what Enter does, the theme's own ink on its text colour (the pill pair every theme keeps apart); Stop beside
-   typed text and Steer now are flat keys. The full names live in the label and the title, so Queue prompt is never
-   called Send. */
-.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer) { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; height: 28px; min-height: 28px; padding: 0 4px 0 8px; border: 1px solid transparent; border-radius: 6px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+/* The composer's keys (ADR-0153): each button is its glyph and the key that does the same (Drake's pick 2.2 of
+   docs/prototypes/prompt-send-refine-2.html). The one filled button is always what Enter does, the theme's own ink on its
+   text colour (the pill pair every theme keeps apart); Stop beside typed text and Steer now are flat keys. The full
+   names live in the label and the title, so Queue prompt is never called Send. */
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer) { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; height: 28px; min-height: 28px; padding: 0 4px 0 7px; border: 1px solid transparent; border-radius: 6px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):not([data-wide]):not(:has(> .thread-prompt__key)) { width: 28px; padding: 0; }
+.thread-prompt__glyph { flex: none; }
 .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop) { background: var(--tt-pill); color: var(--tt-pill-ink); }
-.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):hover:not(:disabled) { border-color: transparent; background: var(--tt-pill); color: var(--tt-pill-ink); filter: brightness(1.08); }
-.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):active:not(:disabled) { background: var(--tt-pill); filter: brightness(.94); }
-.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer):disabled { opacity: .45; }
+/* Pointed at and pressed, the plate mixes toward the card: brightness() cannot lighten a plate that is already white. */
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):hover:not(:disabled) { border-color: transparent; background: color-mix(in oklab, var(--tt-pill) 84%, var(--tt-card)); color: var(--tt-pill-ink); filter: none; }
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):active:not(:disabled) { background: color-mix(in oklab, var(--tt-pill) 70%, var(--tt-card)); filter: none; transform: scale(.94); }
+.thread-prompt__actions > :is(.thread-prompt__stop, .thread-prompt__steer):disabled { opacity: .45; }
+/* With nothing to send the plate dims rather than lets the card through, so its glyph stays a glyph. */
+.thread-prompt__actions > .thread-prompt__send:disabled { opacity: 1; background: color-mix(in oklab, var(--tt-pill) 16%, var(--tt-card)); color: var(--tt-text-muted); }
+/* The plate fills as text arrives and springs back from a press (ADR-0153); the rest of the row's motion is in composerPlate.tsx. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop) {
+    transition: background-color 160ms cubic-bezier(.2, .8, .2, 1), color 160ms cubic-bezier(.2, .8, .2, 1), transform 220ms cubic-bezier(.2, .9, .3, 1.3), border-color 120ms ease, filter 120ms ease, opacity 120ms ease; }
+  :root:not([data-reduced-motion='on']) .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):active:not(:disabled) { transition-duration: 160ms, 160ms, 80ms, 120ms, 120ms, 120ms; transition-timing-function: ease-out; }
+}
+:root[data-reduced-motion='on'] .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):active { transform: none; }
+@media (prefers-reduced-motion: reduce) { .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):active { transform: none; } }
 .thread-prompt__key { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 4px; background: color-mix(in oklab, currentcolor 14%, transparent); font: inherit; font-size: 11.5px; letter-spacing: .02em; }
 /* Beside typed text, Stop steps back to a flat key so the filled button is the one Enter presses. */
 .thread-prompt__actions > .thread-prompt__stop[data-beside], .thread-prompt__actions > .thread-prompt__stop[data-beside]:is(:hover, :active):not(:disabled) { background: transparent; color: var(--tt-text-muted); filter: none; }
 .thread-prompt__actions > .thread-prompt__stop[data-beside]:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.thread-prompt__actions > .thread-prompt__stop[data-beside]:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 /* While a turn runs, a light runs round Stop (docs/prototypes/prompt-send-stop-prototype.html, 9b): the control that
    ends the turn is the sign that it is running, and it stays on Stop when the button steps back. Only `transform`
    animates, so the compositor turns it without a repaint; a static mask keeps it to a 1.5px band round the button. */
@@ -259,7 +275,7 @@
 /* A narrow pane, as the 820px window with its sidebar open leaves, and the slim composer show the keys alone. */
 @container thread-pane (max-width: 600px) {
   .thread-prompt__actions > * > .thread-prompt__word:has(+ .thread-prompt__key) { display: none; }
-  .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer):has(> .thread-prompt__key) { padding: 0 4px; }
+  .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer):has(> .thread-prompt__word + .thread-prompt__key) { padding: 0 4px; }
 }
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
 /* The saved draft is read, not edited: its words lie on the card with no field around them. */
@@ -282,7 +298,7 @@
 /* The thread's model, reasoning and permissions are three chips in the composer footer, each opening its own list. */
 .threads-view .thread-options-bar { position: relative; display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
 .threads-view .thread-options-bar > small { margin-top: 0; font-size: 12px; }
-.threads-view .screenshot-previews figcaption, .threads-view .screenshot-previews__resized, .threads-view .screenshot-input__tools small { font-size: 12px; }
+.threads-view .screenshot-previews figcaption, .threads-view .screenshot-previews__note, .threads-view .screenshot-input__tools small { font-size: 12px; }
 .threads-view .screenshot-input__tools .tt-button { width: 30px; min-height: 30px; border-radius: 8px; }
 
 
@@ -308,8 +324,9 @@
 .thread-greeting__where > span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .thread-greeting__where svg { flex: none; }
 .thread-greeting__project { min-width: 0; max-width: 100%; }
-.pane-menu__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin: -2px -6px; padding: 2px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.pane-menu__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin: -2px -6px; padding: 2px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .pane-menu__trigger:hover, .pane-menu__trigger[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.pane-menu__trigger:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-greeting__project-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .thread-greeting__project .pane-menu__list { right: auto; left: 50%; transform: translateX(-50%); max-height: 260px; overflow-y: auto; text-align: left; }
 @container thread-pane (max-width: 720px) { .thread-greeting h3 { font-size: 23px; } }
@@ -350,18 +367,12 @@
   .thread-prompt .prompt-editor { min-height: 36px; max-height: 150px; }
   .thread-workspace__compose .thread-options-bar .thread-options { row-gap: 0; }
   .thread-workspace__compose .thread-options-bar > small { margin-top: 0; }
-  /* An attached image rests as one row, thumbnail, name and remove, so the card keeps its prompt and actions above the footer. */
-  .threads-view .thread-workspace__compose .screenshot-previews { gap: 6px; margin-top: 6px; }
-  .threads-view .thread-workspace__compose .screenshot-previews figure { display: grid; grid-template-columns: 40px minmax(0, 1fr) 24px; align-items: center; gap: 8px; width: auto; max-width: 240px; padding: 3px; }
-  .threads-view .thread-workspace__compose .screenshot-previews img { width: 40px; height: 30px; border-radius: 5px; }
-  .threads-view .thread-workspace__compose .screenshot-previews figcaption { margin-top: 0; }
-  /* A scaled-down image says so under its name, and its thumbnail and remove button span both lines. */
-  .threads-view .thread-workspace__compose .screenshot-previews figure:has(.screenshot-previews__resized) { row-gap: 0; }
-  .threads-view .thread-workspace__compose .screenshot-previews figure:has(.screenshot-previews__resized) img { grid-row: 1 / span 2; }
-  .threads-view .thread-workspace__compose .screenshot-previews figure:has(.screenshot-previews__resized) button { grid-column: 3; grid-row: 1 / span 2; }
-  .threads-view .thread-workspace__compose .screenshot-previews__resized { grid-column: 2; grid-row: 2; margin-top: 0; }
-  .threads-view .thread-workspace__compose .screenshot-previews button { position: static; width: 24px; height: 24px; border-color: transparent; background: transparent; color: var(--tt-text-muted); }
-  .threads-view .thread-workspace__compose .screenshot-previews button:hover:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
+  /* Attached images are shorter, so the card keeps its prompt and actions above the footer; Point at something's picture
+     (ADR-0154) puts its name and comment beside the picture rather than under it. */
+  .threads-view .thread-workspace__compose .screenshot-previews { margin-top: 8px; }
+  .threads-view .thread-workspace__compose .screenshot-previews img, .threads-view .thread-workspace__compose .screenshot-previews__placeholder { height: 48px; }
+  .threads-view .thread-workspace__compose .screenshot-previews figure[data-pointed] { display: grid; grid-template-columns: 128px minmax(0, 1fr); align-items: center; gap: 8px; width: 280px; max-width: 100%; }
+  .threads-view .thread-workspace__compose .screenshot-previews figure[data-pointed] figcaption { margin-top: 0; }
 }
 
 /* The copy control's reveal and check pop are motion; reduced motion keeps them instant. */

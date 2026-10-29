@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import { openHostCredentials } from './credentials'
 import { PairedClients } from '../main/agents/pairing'
 import { startSocketServer } from './socketServer'
+import { PullRequestConfirmations } from './pullRequestConfirmations'
 import { githubPullRequestMerged, githubPullRequestState } from '../main/agents/worktreeCleanup'
 import { acquireHostLock, HOST_LOCK_HELD_EXIT_CODE, HostLockError, HostLockHeldError, readBootId, releaseHostLock, type HostLease } from './lock'
 import { ProviderSignIns, type ProviderSignInOptions } from './providerSignIn'
@@ -31,6 +32,7 @@ import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import { createHostSelfUpdate } from './selfUpdate'
 import { HostBranchMoves } from './branchMoves'
 import { HostDelegationRelay } from '../main/agents/delegationRelayHost'
+import { HostRemoteCallers } from '../main/agents/delegationRemoteHost'
 import { BranchBundles } from '../main/agents/branchBundles'
 import { foldersOf } from '../main/agents/branchMoves'
 import { DelegationToolServer } from '../main/agents/delegationTools'
@@ -159,6 +161,13 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const desktopCounts = (clientId: string): boolean => pairing.isPaired(clientId) && (policy?.mayGrant({ clientId, user: 'Paired desktop', transport: 'socket' }).allowed ?? false)
     const delegationRelay = crossMachineEnabled ? new HostDelegationRelay(directory, { counts: desktopCounts, ...(options.log ? { log: event => options.log?.(event) } : {}) }) : undefined
     await delegationRelay?.load()
+    // A desktop's delegations here for threads on other machines (#1316 part 2), on the same Owl answer. Its callers are
+    // read before the threads start, so news of what they made can find them.
+    // A desktop's callers are held to its own standing here: still recorded, and Ask for approval without an answers grant.
+    let recordedDesktop: (clientId: string) => boolean = () => false
+    const delegationRemote = crossMachineEnabled ? new HostRemoteCallers(directory, { recorded: clientId => recordedDesktop(clientId), mayAnswer: desktopCounts,
+      ...options.log ? { log: (event: 'delegation-remote-news-failed') => options.log?.(event) } : {} }) : undefined
+    await delegationRemote?.load()
     const runtime = await createAgentRuntime({
       observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, clearThreadsEnabled,
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
@@ -170,7 +179,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // A grant taken away, as `--deny-answers` does, is said as such, since setting the desktop up again does not restore it.
         // An expired grant or one held behind an always-confirm boundary is not revoked: it says the answers grant is missing.
         revoked: clientId => policy?.remoteAnswersRevoked(clientId) ?? false,
-        ...delegationRelay ? { relay: delegationRelay } : {} },
+        ...delegationRelay ? { relay: delegationRelay } : {}, ...delegationRemote ? { remote: delegationRemote } : {} },
       historyEnabled: () => startup.historyEnabled,
       gitStatus: { fetchIntervalMs: () => startup.gitFetchIntervalSeconds * 1000, foreground: () => peersConnected(), log: event => options.log?.(event) },
       // Restart stopped threads retires babysitting here too (ADR-0144): the host lists no `pull-request-babysit`, so the
@@ -236,10 +245,13 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // The host's two listeners keep one set of command receipts, so a desktop that moves between them never runs a
         // retried command twice (ADR-0053).
         const receipts = new CommandReceipts()
+        // And one set of confirmation receipts, so a receipt given on one listener is spent once on either (#1691).
+        const pullRequestConfirmations = new PullRequestConfirmations()
         // Phone access opens its own loopback listener, on a port it remembers, for Tailscale Serve to carry: the tailnet
         // listener, which carries desktops the launch script recorded as well as phones (ADR-0053). This one, with the
         // administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
         const desktops = new DesktopClients(directory, options.log)
+        recordedDesktop = clientId => desktops.has(clientId)
         // One for both listeners, so an update one desktop runs over either is the only one running (ADR-0088).
         const selfUpdate = options.entryPath ? createHostSelfUpdate({ entry: options.entryPath, dataDirectory: directory, port: options.port,
           hostId, sottoVersion: options.sottoVersion ?? packageVersion, startedBy: options.startedBy,
@@ -247,20 +259,21 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         if (selfUpdate && !selfUpdate.ok) options.log?.(selfUpdate.reason === 'update-not-owned' ? 'host-update-not-owned' : 'host-update-layout-unknown')
         const hostUpdate = selfUpdate?.ok ? { hostUpdate: selfUpdate.update } : {}
         // One for both listeners, so a move begun on one is the same move on the other. Bundles wait in the data folder.
-        const branchMoves = crossMachineEnabled ? new HostBranchMoves(new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'),
+        // The runtime's own bundles where it has them, so this host's delegations and its socket moves keep one record (#1316 part 2).
+        const branchMoves = crossMachineEnabled ? new HostBranchMoves(runtime.branchBundles ?? new BranchBundles({ stagingDirectory: join(directory, 'branch-moves'),
           recordsPath: join(directory, 'branch-moves.json') }), foldersOf(() => runtime.hostService.view())) : undefined
         await branchMoves?.start().catch(() => options.log?.('branch-moves-staging-clear-failed'))
-        const moves = { ...branchMoves ? { branchMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {} }
+        const moves = { ...branchMoves ? { branchMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}
         phones = startHostPhoneAccess({ directory, service: runtime.hostService, pairing, policy, settings, startup,
-          desktops, listener: { signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, about, delegation, ...hostUpdate, ...moves, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
+          desktops, listener: { signIns, ...opencodeSignIn, watcherDesktops: desktops, clientUpdates: true, receipts, pullRequestConfirmations, about, delegation, ...hostUpdate, ...moves, ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}) },
           ...(options.tailscale ? { tailscale: options.tailscale } : {}), ...(options.log ? { log: options.log } : {}) })
         const tailnet = phones
         listener = await startSocketServer({ service: runtime.hostService, pairing, port: options.port, signIns, ...opencodeSignIn, clientUpdates: true, phones: tailnet.administration,
           watcherDesktops: desktops, delegation, ...hostUpdate, ...moves,
           ...(options.origins ? { origins: options.origins } : {}), ...(options.sottoVersion ? { sottoVersion: options.sottoVersion } : {}),
-          receipts, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => tailnet.revoked(clientId),
+          receipts, pullRequestConfirmations, about, phoneAccess: () => tailnet.summary(), onRevoked: clientId => tailnet.revoked(clientId),
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
           setAnswers: (clientId, allowed) => {
             if (!policy) throw new Error('Permission policies are unavailable on this host.')

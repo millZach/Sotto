@@ -2,7 +2,8 @@
 import { describe, expect, it } from 'vitest'
 import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_HOST_UPDATE_ACTIONS, REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
-import { HOST_FEATURES, HOST_UPDATE_REQUEST_ACTIONS, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
+import { HOST_DESKTOP_FEATURES, HOST_FEATURES, HOST_UPDATE_REQUEST_ACTIONS, hostPushSchema, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
+import { CHECK_QUEUE_VIEW_MAX } from '../../../src/shared/checkQueue'
 import { watcherToolSchemas } from '../../../src/shared/watcher'
 
 /** Commands that stay on the host machine. A new command type must land here or in REMOTE_COMMANDS. */
@@ -13,7 +14,9 @@ const HOST_LOCAL = ['set-aside-send', 'credential', 'check-reasoning', 'update-c
 // A desktop window names the machine a command acts on and its router never sends the name on (ADR-0074, ADR-0077):
 // a settings save, Update all, and Settings > Providers' presses on this computer's own clients.
 const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure: ['hostId'], 'queue-client-updates': ['hostId'],
-  connect: ['hostId'], disconnect: ['hostId'], refresh: ['hostId'], 'check-client-updates': ['hostId'], 'update-client': ['hostId'] }
+  connect: ['hostId'], disconnect: ['hostId'], refresh: ['hostId'], 'check-client-updates': ['hostId'], 'update-client': ['hostId'],
+  // The reading the window showed, which the router names when it asks a paired host for a confirmation receipt (#1691).
+  'git-pull-request-action': ['readId'] }
 /**
  * Fields only the host's own socket server sets, on what it tells its host service: which observed threads its paired
  * desktops show (ADR-0092). A paired client never sends them; one that tries is refused.
@@ -21,7 +24,9 @@ const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure
 const HOST_INTERNAL: Partial<Record<AgentCommand['type'], string[]>> = { 'observe-threads': ['shownThreadIds'],
   // A worker started from a moved branch (#1033): only the host's own Watcher or delegation names the move it starts from,
   // and the thread whose branch it was (#1030), and that a start is a check its queue runs (#1312).
-  'create-thread': ['startFromMove', 'madeFrom', 'check'] }
+  'create-thread': ['startFromMove', 'madeFrom', 'check'],
+  // The head a confirmation receipt was given on, set from the receipt as the socket server spends it (#1691).
+  'git-pull-request-action': ['matchHeadCommit'] }
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {
   const types = option.shape.type.options ?? [option.shape.type.value!]
@@ -30,6 +35,13 @@ const schemaFields = new Map((agentCommandSchema.options as unknown as Option[])
 const refuse = (command: AgentCommand, mayAnswer = false, askingProviderModes?: string[]) => remoteCommandRefusal(command, { mayAnswer, askingProviderModes })
 
 describe('remote command allow-list', () => {
+  it('lets a paired client carry a confirmation receipt on a pull request press, never the head it holds (#1691)', () => {
+    const merge = { type: 'git-pull-request-action', threadId: 'thread', url: 'https://github.com/o/r/pull/1', action: 'merge', method: 'squash' } as const
+    expect(refuse({ ...merge, confirmation: '11111111-1111-4111-8111-111111111111' })).toBeNull()
+    expect(refuse({ ...merge, matchHeadCommit: 'a'.repeat(40) }, true)).toBe('forbidden')
+    expect(refuse({ ...merge, readId: '11111111-1111-4111-8111-111111111111' }, true)).toBe('forbidden')
+    expect(agentCommandSchema.safeParse({ ...merge, matchHeadCommit: '--admin' }).success).toBe(false)
+  })
   it('keeps unconfirmed-send recovery desktop-only', () => {
     const command = agentCommandSchema.parse({ type: 'set-aside-send', threadId: 'thread', draftId: 'bc746d85-565c-4e06-b091-556d98551676' })
     expect(refuse(command, true)).toBe('forbidden')
@@ -129,6 +141,9 @@ describe('remote command allow-list', () => {
       'host-facts',
       // Each project's GitHub repository, read only by a desktop that lists project-origins, to place a worker (#1032).
       'project-origins',
+      // A copy of a GitHub repository set up for a worker placed there (#1690), only for a desktop that lists project-setup,
+      // as create-project already takes a path from a paired client. It answers nothing and grants nothing.
+      'project-setup',
       // A recorded desktop's new-thread default and worker roles for host delegation (#1310): settings, never a grant.
       'desktop-defaults',
       // A host thread's delegations and a delegated thread's newest brief, reads for a recorded desktop's window on a
@@ -150,7 +165,13 @@ describe('remote command allow-list', () => {
       // listener that offers delegation-relay, from a recorded desktop whose hello accepted it. Neither answers or grants anything.
       'delegation-relay-answer', 'delegation-relay-news',
       // The name the relaying desktop saved for this host, kept as words for the away refusal (Zach, October 27, 2026).
-      'delegation-relay-name']
+      'delegation-relay-name',
+      // A delegation on this host for a thread on another machine, asked by a recorded desktop on a listener that offers
+      // delegation-remote (#1316 part 2): admitted by the host's own delegation under its own rules, never a grant.
+      'delegation-remote-ask',
+      // A confirmation receipt for the merge, close or auto-merge the client sends next (#1691): evidence of a second step,
+      // never a grant, given only for a pull request the host read for that client.
+      'pull-request-confirmation']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })
@@ -164,6 +185,26 @@ describe('remote command allow-list', () => {
     for (const value of [false, 'yes', 1]) expect(check.safeParse(value).success).toBe(false)
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops).not.toContain('check')
+  })
+  it('takes a waiting check out of a host’s queue with watcher-control’s own stop_thread, no operation or field of its own, under watcher-check-stop (#1637)', () => {
+    // The stop names the waiting start's target, as a stop names any thread's; the host answers it exactly, as it answers
+    // any operation it admitted, so a lost answer is read back by its receipt.
+    expect(HOST_FEATURES).toContain('watcher-check-stop')
+    const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
+    expect(ops.filter(op => op.includes('stop')).sort()).toEqual(['watcher-phone-prepare-stop-all', 'watcher-phone-stop-all'])
+    expect(Object.keys(watcherToolSchemas.stop_thread.input.shape).sort()).toEqual(['requestId', 'retryKey', 'target'])
+  })
+  it('sends a host\u2019s own check queue to a recorded desktop as a push under check-queue-views, no request of its own, and only ids and names (#1312)', () => {
+    expect(HOST_FEATURES).toContain('check-queue-views')
+    expect(HOST_DESKTOP_FEATURES).toContain('check-queue-views')
+    const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
+    expect(ops.filter(op => op.includes('check'))).toEqual(['check-answer'])
+    const push = (checks: unknown) => hostPushSchema.safeParse({ v: 1, event: 'check-queue', checks })
+    expect(push([{ id: 'ticket', whose: 'thread', thread: 'child', by: 'parent', title: 'Linux journeys', work: 'building', provider: 'codex' }]).success).toBe(true)
+    expect(push([]).success).toBe(true)
+    // A brief, a reply or anything else is refused, and so is a queue longer than the panel lists.
+    expect(push([{ id: 'ticket', brief: 'Run the suite' }]).success).toBe(false)
+    expect(push(Array.from({ length: CHECK_QUEUE_VIEW_MAX + 1 }, (_, index) => ({ id: `t${index}` }))).success).toBe(false)
   })
   it('lets only a recorded desktop that may answer have its host update itself, naming a version and never a URL or path (ADR-0088)', () => {
     expect([...REMOTE_HOST_UPDATE_ACTIONS]).toEqual([...HOST_UPDATE_REQUEST_ACTIONS])
@@ -327,5 +368,12 @@ describe('remote command allow-list', () => {
     expect(refuse({ type: 'configure-thread', threadId: 'thread', providerMode: 'smart' }, false, ['plan'])).toBe('forbidden')
     expect(refuse({ type: 'reclaim-thread-worktree', threadId: 'thread', withUncommittedChanges: false })).toBeNull()
     expect(refuse({ type: 'restore-thread-branch', threadId: 'thread' })).toBeNull()
+  })
+  it('lets a paired iPhone settle and restore a thread without the answer policy, carrying only its ID', () => {
+    // The iPhone's ••• menu sends these (ADR-0033). Settling stops nothing and grants nothing, so pairing is enough.
+    for (const type of ['settle-thread', 'restore-thread'] as const) {
+      expect(refuse({ type, threadId: 'thread' }), type).toBeNull()
+      expect(refuse({ type, threadId: 'thread', projectId: 'project' } as unknown as AgentCommand), type).toBe('forbidden')
+    }
   })
 })

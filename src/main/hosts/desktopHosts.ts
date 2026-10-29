@@ -41,6 +41,8 @@ import { isProviderSignInPage, type HostOpenCodeSignInRequest, type HostClientUp
 /** Files from before the switch have no `sshPort` or `enabled` and still read: both are optional, and no `enabled` means on. */
 const savedHostSchema = remoteHostSchema.extend({ hostId: z.uuid().optional(), clientId: z.string().optional() })
 type SavedHost = z.infer<typeof savedHostSchema>
+/** What a row shows of a saved host, read for every row each time Hosts publishes. */
+const hostFieldsSchema = remoteHostSchema.strip()
 type Connection = Omit<RemoteHost, 'enabled'>
 /** What Settings > Hosts & phones asks of the host setup (ADR-0035), which runs beside the saved hosts and reports into them. */
 export interface HostSetupSource {
@@ -725,7 +727,7 @@ export class DesktopHosts {
   subscribe(listener: (state: HostsState) => void): () => void { this.listeners.add(listener); return () => this.listeners.delete(listener) }
   /** What a row shows of a saved host: its connection, with `enabled` read as on when an older file left it out. */
   private fields(host: SavedHost): Omit<HostStatus, 'phase'> {
-    const { enabled, ...fields } = remoteHostSchema.strip().parse(host)
+    const { enabled, ...fields } = hostFieldsSchema.parse(host)
     return { ...fields, enabled: enabled !== false }
   }
   /** What a row and Edit connection show of how a saved host is reached (ADR-0053): the owner's choice, and the tailnet address last learned. */
@@ -1579,6 +1581,7 @@ export class DesktopHosts {
       activityBody: (threadId, activityId) => socket.activityBody(threadId, activityId),
       stage: image => socket.stageAttachment(image), content: digest => socket.attachmentContent(digest),
       gitRefs: request => socket.gitRefs(request), gitChangedFiles: request => socket.gitChangedFiles(request), gitPullRequest: request => socket.gitPullRequest(request),
+      confirmPullRequestAction: request => socket.pullRequestConfirmation(request),
       hostFolders: request => socket.hostFolders(request), offersClientUpdates: () => socket.offersClientUpdates(), keepsClientOutcomes: () => socket.keepsClientOutcomes(), offersBabysitting: () => socket.supportsBabysitting,
       // A question's pages are served by the host's own listener, which this computer reaches where its socket does (ADR-0085).
       pageAddress: token => new URL(`/page/${token}/`, target.browserUrl ?? target.url).href,
@@ -1587,6 +1590,8 @@ export class DesktopHosts {
       gitChanges: request => socket.gitChanges(request), gitReview: request => socket.gitReview(request),
       subagentPage: request => socket.subagentPage(request), subagentAssignments: request => socket.subagentAssignments(request),
       subscribeDetail: listener => socket.subscribeThreadDetail(listener), available: () => connected,
+      // How this host names this computer's threads that delegated there (#1316 part 3).
+      clientId: hello.clientId,
     }
     // Back from an update's restart: the new connection takes the place its threads kept on the page.
     // A move to the tailnet takes the place the connection it leaves has on the page.

@@ -75,7 +75,7 @@
 
 /* A host's client updates (#480): the chip beside Show providers, and what a tile says about its client's update. */
 .host-providers__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; justify-self: start; min-width: 0; }
-.host-client-updates__chip { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; border: 1px solid color-mix(in srgb, var(--tt-update) 45%, transparent); border-radius: 5px; background: var(--tt-update-surface); color: var(--tt-update-text); padding: 0 10px; font: 600 12px var(--tt-font-ui); white-space: nowrap; cursor: pointer; }
+.host-client-updates__chip { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; border: 1px solid color-mix(in srgb, var(--tt-update) 45%, transparent); border-radius: 5px; background: var(--tt-update-surface); color: var(--tt-update-text); padding: 0 10px; font: 600 12px var(--tt-font-ui); white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .host-client-updates__chip:hover, .host-client-updates__chip[aria-expanded='true'] { border-color: var(--tt-update); }
 .host-client-updates__chip[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); color: var(--tt-error-text); }
 .host-client-updates__chip[data-tone='error']:hover, .host-client-updates__chip[data-tone='error'][aria-expanded='true'] { border-color: var(--tt-error); }
@@ -102,7 +102,7 @@
 .host-client-update__printed pre { margin: 6px 0 0; max-height: 120px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); padding: 6px 8px; color: var(--tt-code-text); font: 11.5px/1.5 var(--tt-font-mono); }
 
 /* Client updates on forge: one row per client, Not now and Update all. Fixed, so it opens above the chip when below has no room. */
-.host-client-updates__panel { position: fixed; z-index: 40; display: grid; gap: 10px; width: 340px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow: auto; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-overlay); padding: 14px; }
+.host-client-updates__panel { position: fixed; z-index: 40; display: grid; gap: 10px; width: 340px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow: auto; overscroll-behavior: contain; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-overlay); padding: 14px; }
 .host-client-updates__panel h6 { margin: 0; color: var(--tt-text); font-size: 14px; font-weight: 600; }
 .hosts-settings .host-client-updates__panel p { margin: 0; color: var(--tt-text-muted); font-size: 12.5px; }
 .hosts-settings .host-client-updates__panel .host-client-updates__status { color: var(--tt-text); }

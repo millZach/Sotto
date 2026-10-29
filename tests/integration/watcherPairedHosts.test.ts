@@ -22,7 +22,7 @@ import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../src/main/hosts/inactiveLocalHost'
 import { DESKTOP_CLIENTS_FILE } from '../../src/shared/desktopClients'
 import { watcherToolSchemas, type WatcherThreadTarget, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
-import { watcherHostControlSchema, type WatcherHostControl, type WatcherHostProjection } from '../../src/shared/watcherHost'
+import { watcherHostControlSchema, watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostProjection } from '../../src/shared/watcherHost'
 import type { HostOperation } from '../../src/shared/hostProtocol'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -241,6 +241,11 @@ it('shows each machine’s live load and work placed but not started with Work a
   // Once the host holds it, it is counted once, by the host or as running there, and never twice.
   for (let index = 0; index < 5; index++) expect((await machines())[1]!.placedNotStarted).toBeLessThanOrEqual(1)
   await expect.poll(async () => (await machines())[1]).toMatchObject({ placedNotStarted: 0 })
+  // A delegated start this desktop asked the host for, not yet settled, counts there too (#1316 review): before the host is
+  // asked and after it answers, as Watcher's own reservations do.
+  f.watcher.useDelegationStarts(hostId => hostId === f.pairing.hostId ? ['synthetic-remote-delegation'] : [])
+  expect((await machines())[1]).toMatchObject({ placedNotStarted: 1 })
+  f.watcher.useDelegationStarts(() => [])
   // A host whose own answer has the feature off sends its facts alone, as it did before: its load reads unknown.
   const report = await f.socket.hostFacts()
   vi.spyOn(f.socket, 'hostFacts').mockResolvedValue({ facts: report.facts, runningThreads: report.runningThreads })
@@ -1714,12 +1719,18 @@ it('keeps a start that reuses a worktree or a base branch read here on This comp
   expect(f.socket.shell().host.threads.filter(thread => ['Synthetic reused worktree', 'Synthetic base branch', 'Synthetic named machine'].includes(thread.title))).toEqual([])
 })
 
-it('refuses in plain words a machine with no copy of the project, and sends it nothing (#1032)', async () => {
+it('refuses in plain words a machine with no copy of the project whose Sotto cannot set one up, and sends it nothing (#1032, #1690)', async () => {
   const f = await acrossMachines()
+  expect(f.hello.features).toContain('project-setup')
   await git('git', ['-C', f.project.path, 'remote', 'set-url', 'origin', 'https://github.com/someone/Elsewhere.git'])
+  // As an older host that lists no project-setup: a host that does would clone the repository from GitHub.
+  const socket = f.socket as unknown as { features: readonly string[] }
+  socket.features = socket.features.filter(feature => feature !== 'project-setup')
+  expect(f.router.watcherHosts().hosts()[0]).toMatchObject({ origins: true, setUp: false })
   const writes = vi.spyOn(f.socket, 'watcherControl')
   const refused = await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId })
-  expect(refused).toMatchObject({ status: 'refused', code: 'UNKNOWN_TARGET', message: `Synthetic remote has no copy of ${f.local.title}. Add the project on Synthetic remote first. Nothing was started.` })
+  expect(refused).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE',
+    message: `Synthetic remote has no copy of ${f.local.title}, and its Sotto is too old to set one up. Update Sotto on it, or add the project there. Nothing was started.` })
   expect(writes).not.toHaveBeenCalled()
   expect(f.control.watcherRecord().operations).toHaveLength(0)
 })
@@ -1813,6 +1824,8 @@ it('refuses a start from a thread with uncommitted work in the move’s words, a
   expect(await f.run('stash', 'list')).toBe('')
   // Watcher never names a move itself.
   expect(await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromMove: randomUUID() })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  // Nor the fetched branch a copy Sotto set up starts from (#1690).
+  expect(await f.startHere({ ...f.staysHere(), workingCopy: { kind: 'new-worktree' }, fromOrigin: 'main' })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
 })
 
 for (const where of ['paired', 'here'] as const) {
@@ -2158,6 +2171,7 @@ it('counts a start the paired machine lists before its first prompt is confirmed
 it('refuses a machine or system while Work across machines is off, and lists no default (#1032)', async () => {
   const f = await master()
   expect(f.hello.features).not.toContain('project-origins')
+  expect(f.hello.features).not.toContain('project-setup')
   expect(await f.call('start_thread', { ...f.start(), machine: f.pairing.hostId })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   expect(await f.call('start_thread', { ...f.start(), os: family })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
   // Nor a thread's branch to start from, or a test run (#1033).
@@ -2393,4 +2407,193 @@ it('has a host whose Owl answer is off refuse a start marked as a check, startin
   const refused = watcherToolSchemas.start_thread.output.parse(await mutate(f.id, 'start_thread', { ...f.start(), title: 'Synthetic stable check', check: true }))
   expect(refused).toMatchObject({ status: 'refused', code: 'HOST_FEATURE_UNAVAILABLE' })
   expect(f.socket.shell().host.threads.some(thread => thread.title === 'Synthetic stable check')).toBe(false)
+})
+
+// Watcher's stop_thread reaches a check waiting in a paired host's own queue (#1637).
+async function waitingOnHost() {
+  const f = await fromBranch()
+  await writeFile(join(f.local.path, 'new.txt'), 'new\n')
+  vi.spyOn(f.socket, 'supportsWatcherCheckQueue', 'get').mockReturnValue(true)
+  const start = async (title: string, input: Record<string, unknown> = {}) => {
+    const started = watcherToolSchemas.start_thread.output.parse(await f.watcher.invoke(f.id, 'start_thread', { ...f.start(), title, testRun: true, ...input }))
+    if (started.status !== 'ok' || !('target' in started)) throw new Error(`${title}-refused`)
+    return started
+  }
+  const first = await start('Synthetic first remote check')
+  await expect.poll(() => f.socket.shell().host.threads.some(thread => thread.id === first.target.threadId)).toBe(true)
+  const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', '--format=%(refname)', 'refs/sotto'])).stdout.trim()
+  const before = new Set((await refs()).split('\n'))
+  const waiting = await start('Synthetic waiting remote check', { ...f.onThisComputer(), machine: f.pairing.hostId, workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread })
+  const landed = (await refs()).split('\n').filter(ref => ref && !before.has(ref))
+  expect(landed).toHaveLength(1)
+  const made = (threadId: string) => f.socket.shell().host.threads.some(thread => thread.id === threadId)
+  const operation = (operationId: string) => f.control.watcherRecord().operations.find(item => item.id === operationId)!
+  // The host's own copy of a start, as its projection gives it to this desktop.
+  const there = async (operationId: string) => watcherHostProjectionSchema.parse(await f.socket.watcherRead({ master: f.watcher.state().current! })).operations.find(item => item.id === operationId)
+  const stop = (target: { hostId: string; threadId: string }, retryKey: string = randomUUID()) => f.watcher.invoke(f.id, 'stop_thread', { requestId: f.requestId, retryKey, target })
+  return { ...f, start, first, waiting, landed: landed[0]!, refs, made, operation, there, stop }
+}
+
+it('has Watcher’s stop_thread take a check out of a paired host’s queue: it starts nothing there, reads stopped, and its branch goes once the host has failed it (#1637)', async () => {
+  const f = await waitingOnHost()
+  expect(f.hello.features).toContain('watcher-check-stop')
+  expect(f.router.watcherHosts().hosts()[0]).toMatchObject({ checks: true, checkStop: true })
+  // Its waiting words now say what This computer's do.
+  expect(f.waiting.check).toEqual({ ahead: 1, note: 'Waiting for Synthetic remote\'s check to finish. 1 ahead. One check runs at a time on a machine, so its outcome stays working until it has run. Its thread is made when its turn comes. stop_thread on its target, or the user\'s Stop, takes it out of the queue.' })
+  const forget = vi.spyOn(DesktopBranchMoves.prototype, 'forget')
+  const stopped = await f.stop(f.waiting.target)
+  expect(stopped).toMatchObject({ status: 'ok', stopRequested: true, receipt: { deliveryState: 'accepted', target: f.waiting.target } })
+  // The host failed its start in the change that accepted the stop, and this desktop reads it stopped.
+  expect(await f.there(f.waiting.receipt!.operationId)).toMatchObject({ deliveryState: 'failed', refusalCode: 'REQUEST_NOT_ACTIVE' })
+  await vi.waitFor(() => expect(f.watcher.outcomeOf(f.operation(f.waiting.receipt!.operationId))).toBe('stopped'))
+  await expect.poll(f.refs, { timeout: 10_000 }).not.toContain(f.landed)
+  expect(forget).toHaveBeenCalledTimes(1)
+  // It holds no place there: a check asked now has only the running one ahead, and is made when that one ends, while the
+  // stopped one never is.
+  const third = await f.start('Synthetic third remote check')
+  expect(third.check?.ahead).toBe(1)
+  const native = (await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic first remote check')!
+  const brief = native.messages.find(message => message.role === 'user')!
+  remote.native.event({ type: 'ready', threadId: native.id, text: 'Synthetic verdict: passed',
+    activities: markTurnActivity([], { provider: 'codex', turnId: brief.id, status: 'completed' }) })
+  await f.socket.command({ type: 'refresh', provider: 'codex' })
+  await expect.poll(() => f.made(third.target.threadId), { timeout: 5_000 }).toBe(true)
+  expect(f.made(f.waiting.target.threadId)).toBe(false)
+  // A check whose turn has come and whose first prompt has gone is stopped as any thread is, by a stop of its own: its
+  // start stands. Its thread is made before its first prompt goes, so the host's record of the start is what says the
+  // prompt went; a stop before that cancels it (the next test).
+  await vi.waitFor(async () => expect(['queued', 'dispatching']).not.toContain((await f.there(third.receipt!.operationId))?.deliveryState), { timeout: 10_000 })
+  const running = await f.stop(third.target)
+  const ownStop = f.control.watcherRecord().operations.filter(item => item.action === 'stop' && item.target.threadId === third.target.threadId)
+  expect(ownStop).toHaveLength(1)
+  expect((running as { receipt?: { operationId: string } }).receipt?.operationId).toBe(ownStop[0]!.id)
+  expect(f.operation(third.receipt!.operationId).deliveryState).not.toBe('failed')
+})
+
+it('has Watcher’s stop of a check whose thread is made but whose first prompt has not gone stop it as any thread, cancelling that prompt (#1637)', async () => {
+  const f = await waitingOnHost()
+  // The host makes the waiting check's thread when its turn comes; its first prompt is held on the way.
+  const control = Object.getPrototypeOf(f.control) as { commandFromWatcher: (...args: unknown[]) => Promise<unknown> }
+  const commandFromWatcher = control.commandFromWatcher
+  const reached = deferred<void>(), held = deferred<void>()
+  vi.spyOn(control, 'commandFromWatcher').mockImplementation(async function (this: unknown, ...args: unknown[]) {
+    const command = args[0] as { type: string; threadId?: string }
+    if (command.type === 'manual-send' && command.threadId === f.waiting.target.threadId) { reached.resolve(); await held.promise }
+    return commandFromWatcher.apply(this, args)
+  })
+  const native = (await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic first remote check')!
+  const brief = native.messages.find(message => message.role === 'user')!
+  remote.native.event({ type: 'ready', threadId: native.id, text: 'Synthetic verdict: passed',
+    activities: markTurnActivity([], { provider: 'codex', turnId: brief.id, status: 'completed' }) })
+  await f.socket.command({ type: 'refresh', provider: 'codex' })
+  await reached.promise
+  await expect.poll(() => f.made(f.waiting.target.threadId), { timeout: 5_000 }).toBe(true)
+  // The host decides: the check is no longer waiting, so the stop takes the normal path. It stops the thread, and the first
+  // prompt still on its way is cancelled with it, as a stop cancels any prompt waiting for its thread.
+  expect(await f.there(f.waiting.receipt!.operationId)).toMatchObject({ deliveryState: 'dispatching' })
+  const fast = vi.spyOn(WatcherService.prototype as unknown as { stopQueuedCheck(stop: unknown): Promise<boolean> }, 'stopQueuedCheck')
+  await f.stop(f.waiting.target)
+  // The host did not take it out as a waiting check: it was no longer one.
+  expect(fast).toHaveBeenCalled()
+  expect(await Promise.all(fast.mock.results.map(result => result.value as Promise<boolean>))).toEqual(fast.mock.results.map(() => false))
+  held.resolve()
+  expect(f.control.watcherRecord().operations.filter(item => item.action === 'stop' && item.target.threadId === f.waiting.target.threadId)).toHaveLength(1)
+  await vi.waitFor(async () => expect(await f.there(f.waiting.receipt!.operationId)).toMatchObject({ deliveryState: 'failed', refusalCode: 'REQUEST_NOT_ACTIVE' }), { timeout: 10_000 })
+  await vi.waitFor(() => expect(f.watcher.outcomeOf(f.operation(f.waiting.receipt!.operationId))).toBe('stopped'), { timeout: 10_000 })
+  const made = (await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic waiting remote check')
+  expect(made?.messages.some(message => message.role === 'user') ?? false).toBe(false)
+})
+
+it('reads back a Watcher stop of a check on a paired host whose answer was lost, so the check is neither left queued nor stopped twice (#1637)', async () => {
+  const f = await waitingOnHost()
+  const control = f.socket.watcherControl.bind(f.socket)
+  const lost = vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (...args) => { await control(...args); throw new Error('synthetic lost answer') })
+  const retryKey = randomUUID()
+  expect(await f.stop(f.waiting.target, retryKey)).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+  lost.mockRestore()
+  // The host stopped it; reconciling reads that, and the branch goes.
+  expect(await f.there(f.waiting.receipt!.operationId)).toMatchObject({ deliveryState: 'failed', refusalCode: 'REQUEST_NOT_ACTIVE' })
+  await vi.waitFor(() => expect(f.watcher.outcomeOf(f.operation(f.waiting.receipt!.operationId))).toBe('stopped'), { timeout: 10_000 })
+  await expect.poll(f.refs, { timeout: 10_000 }).not.toContain(f.landed)
+  // The same call again answers with the one stop's receipt, and sends nothing new.
+  const sent = vi.spyOn(f.socket, 'watcherControl')
+  const again = await f.stop(f.waiting.target, retryKey)
+  expect(again).toMatchObject({ status: 'ok', stopRequested: true, receipt: { deliveryState: 'accepted' } })
+  expect(sent).not.toHaveBeenCalled()
+  expect(f.control.watcherRecord().operations.filter(item => item.action === 'stop')).toHaveLength(1)
+})
+
+it('keeps a host check’s waiting words on the user’s Stop, and refuses Watcher’s stop_thread as before, for a host without watcher-check-stop (#1637)', async () => {
+  vi.spyOn(SocketHostService.prototype, 'supportsWatcherCheckStop', 'get').mockReturnValue(false)
+  const f = await waitingOnHost()
+  expect(f.waiting.check?.note).toMatch(/Its thread is made when its turn comes\. The user's Stop takes it out of the queue\.$/u)
+  const sent = vi.spyOn(f.socket, 'watcherControl')
+  expect(await f.stop(f.waiting.target)).toMatchObject({ status: 'refused', code: 'UNKNOWN_TARGET' })
+  expect(sent).not.toHaveBeenCalled()
+  expect(await f.there(f.waiting.receipt!.operationId)).toMatchObject({ deliveryState: 'queued' })
+  expect(f.operation(f.waiting.receipt!.operationId).deliveryState).toBe('queued')
+  expect(await f.refs()).toContain(f.landed)
+})
+
+it('refuses Watcher’s stop of a check waiting on a paired host when its Watcher was replaced while the stop was being admitted, leaving the check waiting (#1637)', async () => {
+  const f = await waitingOnHost()
+  // The host's own Watcher holds the stop between admitting it and acting on it; meanwhile the host hears of a newer
+  // Watcher conversation on this desktop, so the old one's authority is gone.
+  type HostWatcher = { record(): { remoteMasters?: { clientId: string; masterHostId: string; createdAt: string }[]; operations: { id: string; deliveryState: string }[] }
+    options: { control: { updateWatcher(update: (record: { remoteMasters?: { clientId: string; masterHostId: string; creationOperationId: string; createdAt: string }[] }) => void): Promise<void> } } }
+  const prototype = WatcherService.prototype as unknown as { stopQueuedCheck(this: HostWatcher, stop: unknown): Promise<boolean> }
+  const original = prototype.stopQueuedCheck, reached = deferred<HostWatcher>(), held = deferred<void>()
+  vi.spyOn(prototype, 'stopQueuedCheck').mockImplementation(async function (this: HostWatcher, stop) { reached.resolve(this); await held.promise; return original.call(this, stop) })
+  const stopping = f.stop(f.waiting.target)
+  const host = await reached.promise
+  const master = f.watcher.state().current!
+  await host.options.control.updateWatcher(record => {
+    const later = new Date(Date.parse(master.createdAt) + 60_000).toISOString()
+    const retained = record.remoteMasters?.find(item => item.clientId === f.pairing.clientId && item.masterHostId === master.target.hostId)
+    if (retained) { retained.createdAt = later; retained.creationOperationId = randomUUID() }
+    else (record.remoteMasters ??= []).push({ clientId: f.pairing.clientId, masterHostId: master.target.hostId, creationOperationId: randomUUID(), createdAt: later })
+  })
+  held.resolve()
+  expect(await stopping).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
+  // The check still waits there, and its branch stays.
+  expect(host.record().operations.find(item => item.id === f.waiting.receipt!.operationId)?.deliveryState).toBe('queued')
+  expect(await f.refs()).toContain(f.landed)
+})
+
+it('stops a check waiting on a paired host whose start’s answer was lost, once reconciling reads it queued: it never starts, and its branch goes once (#1637)', async () => {
+  const f = await fromBranch()
+  await writeFile(join(f.local.path, 'new.txt'), 'new\n')
+  vi.spyOn(f.socket, 'supportsWatcherCheckQueue', 'get').mockReturnValue(true)
+  const first = watcherToolSchemas.start_thread.output.parse(await f.watcher.invoke(f.id, 'start_thread', { ...f.start(), title: 'Synthetic first remote check', testRun: true }))
+  if (first.status !== 'ok' || !('target' in first)) throw new Error('first-refused')
+  await expect.poll(() => f.socket.shell().host.threads.some(thread => thread.id === first.target.threadId)).toBe(true)
+  const refs = async () => (await git('git', ['-C', f.project.path, 'for-each-ref', '--format=%(refname)', 'refs/sotto'])).stdout.trim()
+  const before = new Set((await refs()).split('\n'))
+  // The host queues the second check, and its answer is lost on the way back.
+  const control = f.socket.watcherControl.bind(f.socket)
+  vi.spyOn(f.socket, 'watcherControl').mockImplementationOnce(async (...args) => { await control(...args); throw new Error('synthetic lost answer') })
+  const lost = watcherToolSchemas.start_thread.output.parse(await f.watcher.invoke(f.id, 'start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId,
+    title: 'Synthetic lost remote check', workingCopy: { kind: 'new-worktree' }, fromThread: f.fromThread, testRun: true }))
+  expect(lost).toMatchObject({ status: 'refused', code: 'DELIVERY_UNCERTAIN' })
+  const operationId = lost.receipt!.operationId, target = lost.receipt!.target
+  const landed = (await refs()).split('\n').filter(ref => ref && !before.has(ref))
+  expect(landed).toHaveLength(1)
+  // Reconciling reads the host's receipt: the check waits there.
+  await vi.waitFor(() => expect(f.control.watcherRecord().operations.find(item => item.id === operationId)?.deliveryState).toBe('queued'), { timeout: 10_000 })
+  const forget = vi.spyOn(DesktopBranchMoves.prototype, 'forget')
+  expect(await f.watcher.invoke(f.id, 'stop_thread', { requestId: f.requestId, retryKey: randomUUID(), target })).toMatchObject({ status: 'ok', stopRequested: true })
+  await vi.waitFor(() => expect(f.watcher.outcomeOf(f.control.watcherRecord().operations.find(item => item.id === operationId)!)).toBe('stopped'))
+  await expect.poll(refs, { timeout: 10_000 }).not.toContain(landed[0])
+  // The check ahead ends; a check asked after the stopped one is made, and the stopped one never is.
+  const third = watcherToolSchemas.start_thread.output.parse(await f.watcher.invoke(f.id, 'start_thread', { ...f.start(), title: 'Synthetic third remote check', testRun: true }))
+  if (third.status !== 'ok' || !('target' in third)) throw new Error('third-refused')
+  expect(third.check?.ahead).toBe(1)
+  const native = (await remote.native.snapshot()).threads.find(item => item.title === 'Synthetic first remote check')!
+  const brief = native.messages.find(message => message.role === 'user')!
+  remote.native.event({ type: 'ready', threadId: native.id, text: 'Synthetic verdict: passed',
+    activities: markTurnActivity([], { provider: 'codex', turnId: brief.id, status: 'completed' }) })
+  await f.socket.command({ type: 'refresh', provider: 'codex' })
+  await expect.poll(() => f.socket.shell().host.threads.some(thread => thread.id === third.target.threadId), { timeout: 5_000 }).toBe(true)
+  expect(f.socket.shell().host.threads.some(thread => thread.id === target.threadId)).toBe(false)
+  expect(forget).toHaveBeenCalledTimes(1)
 })

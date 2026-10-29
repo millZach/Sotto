@@ -1,0 +1,42 @@
+<!doctype html><html><head><meta charset="utf-8"><title>Rail section dividers — 10 variants</title>
+<style>
+:root{--bg:#121211;--rail:#1a1a19;--tile:#1f1f1e;--line:#3a3a37;--fg:#e8e6df;--mute:#8a877d;--acc:#f2d14b;--sel:#2a3340}
+body{margin:0;background:#0b0b0a;color:var(--fg);font:13px Figtree,system-ui,sans-serif;padding:24px}
+h1{font-size:15px;font-weight:600;margin:0 0 20px}
+.grid{display:flex;flex-wrap:wrap;gap:28px}
+figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:10px}
+figcaption{color:var(--mute);max-width:120px;text-align:center;line-height:1.35}
+figcaption b{color:var(--fg);display:block}
+.rail{width:64px;background:var(--rail);border-right:1px solid #2a2a28;padding:10px 0 16px;display:flex;flex-direction:column;align-items:center}
+.sec{display:flex;flex-direction:column;align-items:center;gap:8px;width:100%}
+.t{position:relative;width:40px;height:40px;border:1.5px solid #4a4a46;border-radius:10px;background:var(--tile);display:grid;place-items:center;font-size:14px}
+.t.home{width:44px;height:44px}
+.t.home::before{content:"◕‿◕";font-size:11px}
+.t.sel{background:var(--sel);border-color:#e8e6df}
+.t::after{content:"";position:absolute;right:-3px;bottom:-3px;width:9px;height:9px;border-radius:50%;border:1.5px solid #6a6a64;background:var(--rail)}
+.t.sel::after{border-color:var(--acc);border-left-color:transparent}
+.t i{position:absolute;left:-6px;top:-6px;font-style:normal;font-size:8px;background:#fff;color:#000;border-radius:4px;padding:0 2px}
+.top{width:16px;height:14px;border:1.5px solid var(--fg);border-radius:3px;margin-bottom:12px}
+/* variants */
+.sec+.sec{margin-top:12px}
+.r1 .grp{width:54px;padding:8px 0;border-radius:16px;background:#20201e}
+.r2 .grp{width:54px;padding:8px 0;border-radius:16px;background:#1c1c1a;box-shadow:inset 0 0 0 1px #2c2c29}
+.r3 .grp{width:54px;padding:8px 0;border-radius:16px;background:rgb(var(--h)/.07);box-shadow:inset 0 0 0 1px rgb(var(--h)/.22)}
+.r3 .grp:nth-of-type(3){--h:242 209 75}.r3 .grp:nth-of-type(4){--h:110 180 255}.r3 .grp:nth-of-type(5){--h:120 220 150}.r3 .grp:nth-of-type(6){--h:235 130 200}
+.r4 .grp .t{border-color:rgba(242,209,75,.35);background:rgba(242,209,75,.06)}
+.r5 .grp .t{border-color:rgba(242,209,75,.28)}.r5 .grp .t::after{border-color:rgba(242,209,75,.5)}
+.r6 .grp{width:54px;padding:8px 0;border-radius:16px;background:rgba(242,209,75,.045)}.r6 .grp .t{border-color:rgba(242,209,75,.3)}
+</style></head><body>
+<h1>Thread rail: A colour per group</h1>
+<div class="grid" id="g"></div>
+<script>
+const V=[["r3","Tray, own colour","Watched groups have the owl badge; the other two are not watched."]];
+const tile=(l,c="",b="")=>`<div class="t ${c}">${b?'<i>◕◕</i>':''}${l}</div>`;
+document.getElementById('g').innerHTML=V.map(([c,n,d])=>`<figure><div class="rail ${c}"><div class="top"></div>
+<div class="sec solo">${tile('','home')}</div>
+<div class="sec grp">${['Wc','Rg','Ft','Ut'].map(x=>tile(x,'',1)).join('')}</div>
+<div class="sec grp">${tile('Iw','sel')}${tile('Ta')}</div>
+<div class="sec grp">${['Db','Ux','Ci'].map(x=>tile(x,'',1)).join('')}</div>
+<div class="sec grp">${['Pr','Mk','Nb'].map(x=>tile(x)).join('')}</div></div>
+<figcaption><b>${V.findIndex(v=>v[0]==c)+1}. ${n}</b>${d}</figcaption></figure>`).join('');
+</script></body></html>

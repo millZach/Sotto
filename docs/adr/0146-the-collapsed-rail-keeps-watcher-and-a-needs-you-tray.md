@@ -6,6 +6,8 @@ Accepted October 26, 2026. Drake picked **Owl apart** (column D of `tray.html`) 
 
 Amended October 27, 2026: the rail's group holds the threads Watcher watches, not the threads that wait on the user, and the tray is gone (below, "October 27, 2026 amendment: Watcher's threads").
 
+Amended October 28, 2026: rounded trays in their own colours replace the rail's hairlines (below, "October 28, 2026 amendment: group trays").
+
 Amends ADR-0135 in one place: "The collapsed rail is unchanged" holds while this feature is off. While it is on, the rail says need by putting waiting threads first, in the same Needs you queue order the card uses, with an amber edge (a tray until the October 27 amendment). Nothing in ADR-0004 changes: the rail opens threads and answers nothing.
 
 ## Context
@@ -41,3 +43,9 @@ Items 3 to 5 of the decision become:
 5. Inside each of the two parts the order is what waits on the user first, in the Needs you queue's order and settled threads that wait included, then the moving threads, then the resting ones as smaller tiles in muted text. In the other threads a hairline comes before the resting ones; among Watcher's threads it does not.
 
 A thread that waits on the user, watched or not, takes the attention colour on its whole edge as well as its ring, except the focused thread, whose edge keeps the current look as every focused tile does (its ring still says it waits); the full colour keeps the edge above 3:1 on the light sidebar, where a part-strength edge falls under it. There is no tray and no count: Watcher's tile shows only its own ring, and the Needs you queue in the expanded sidebar keeps the count. Not picked: the neutral card (amber kept one meaning there too, but a card is one more container on a narrow strip), the amber panel (amber would mean two things), and the accent card (in Citrine the accent is also the working arc).
+
+## October 28, 2026 amendment: group trays
+
+Drake did not like the hairlines that split the rail's parts. Of ten ways to draw the split, he took two further, a tray and a tint, and picked the tinted tray, then asked that each group take its own colour. This supersedes the October 27 amendment's "no box" in one respect: a part now sits in a box. Amber still means only that something waits, because a tray is a faint wash, never the attention colour on a tile's edge.
+
+The hairlines go, the one under Watcher's tile included. Each of the rail's parts (Watcher's threads, the other moving threads, the resting threads) that holds two or more tiles sits in a rounded tray, a 7% wash and a 1px edge at 22% in that tray's colour. A part with one tile stands bare. Trays take four theme-derived colours in turn, `--tt-rail-group-1` to `-4` (`tokens.css`): the accent, then the accent turned round the hue wheel at its own lightness and chroma. A grey accent such as Graphite's borrows the Owl night's blue, and a turned hue that lands on red, orange or amber turns further so a tray never reads as an error or as waiting. On Citrine the trays are yellow, blue, green and pink. Not picked: wider gaps, a short dash, a dot, a faded rule, a spine down the group, round tiles, a segmented stack, smaller tiles, and the tinted tiles without a tray.

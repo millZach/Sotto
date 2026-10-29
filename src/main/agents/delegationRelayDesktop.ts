@@ -39,15 +39,23 @@ export interface RelayPlacement {
 }
 
 /**
- * The words for a relayed start that would go to a third machine, which this part of the relay does not carry (#1316
- * part 1): This computer only. Not settled with Zach; named here so it changes in one place.
+ * The words for a relayed start that would go to a third machine while this desktop cannot start threads on its paired
+ * hosts (#1316 part 1): This computer only. Not settled with Zach; named here so it changes in one place.
  */
 export const RELAY_THIS_COMPUTER_ONLY = (asked: string, from: string): string =>
   `A thread on ${from} can start threads on ${from} or on This computer for now, so it cannot start on ${asked}. Name This computer, or leave out the machine and system to start it on ${from}. Nothing was started.`
+/**
+ * What a thread on `from` is told when it asked for `asked`, a machine this computer knows but is not connected to now,
+ * while this computer is connected to `from` (#1316 part 2). Nothing is queued. Not settled with Zach; named here so it
+ * changes in one place. It differs from the away refusal, which is about this computer not being connected to `from`.
+ */
+export const RELAY_TARGET_AWAY = (asked: string, from: string): string =>
+  `This computer isn't connected to ${asked}, so nothing was started there. Start it on ${from} or on This computer instead, or try again when ${asked} is connected.`
 const RELAY_BACK_HOME = (from: string): string => `That is ${from}, where this thread runs. Leave out the machine and system to start it there. Nothing was started.`
 const NOT_HELD = 'This computer holds no delegation for that ask, so Sotto cannot prove whether it started. Nothing was sent again.'
 
 const id = z.string().min(1).max(512)
+const uuidSchema = z.uuid()
 const callerSchema = z.object({ id, projectId: id, runtimeMode: agentRuntimeModeSchema, levels: z.number().int().min(0).max(8), rootUserMessageId: id,
   callerMessageId: id.optional() }).strict()
 const fileSchema = z.object({ version: z.literal(1), callers: z.array(callerSchema).max(100_000),
@@ -81,6 +89,8 @@ export class DesktopDelegationRelay {
   constructor(directory: string, private readonly options: {
     readonly placement: RelayPlacement
     readonly localHostId: () => string | undefined
+    /** Whether this computer's own delegation starts threads on its paired hosts (#1316 part 2): then a relayed start may go to a third machine. */
+    readonly elsewhere?: boolean
     readonly log?: (event: 'delegation-relay-answer-failed' | 'delegation-relay-news-failed') => void
   }) {
     this.store = new AtomicJsonStore(join(directory, 'delegation-relay-callers.json'), input => fileSchema.parse(input), (): RelayFile => ({ version: 1, callers: [], asks: [] }))
@@ -148,25 +158,50 @@ export class DesktopDelegationRelay {
       if (!this.callers.has(key)) return { status: 'refused', code: 'UNKNOWN_DELEGATION', message: NOT_HELD }
       return await delegation.cancel(key, { delegation: ask.delegation })
     }
+    if (ask.type === 'send') {
+      // A second brief (#1316 part 2): the caller's turn may have moved on, so its word is taken again, and the brief is
+      // charged on this computer against the same four per thread per user message as any.
+      const projectId = this.callers.get(key)?.projectId ?? ask.projectId
+      this.callers.delete(key)
+      this.callers.set(key, { id: key, projectId, runtimeMode: ask.runtimeMode, levels: this.provedLevels(hostId, ask.threadId, ask.levels),
+        rootUserMessageId: ask.rootUserMessageId, ...(ask.callerMessageId ? { callerMessageId: ask.callerMessageId } : {}) })
+      return await this.delegateFor(key, ask)
+    }
     const from = this.options.placement.machineName(hostId) ?? 'that machine'
     let placed: WorkerPlacement | WatcherRefusal
     try { placed = await this.options.placement.placement({ machine: ask.machine, os: ask.os }, { hostId, projectId: ask.projectId }, 'this-computer') }
     catch { return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'This computer could not read the machines just now. Nothing was started. Try again.' } }
-    if ('status' in placed) return { status: 'refused', code: 'MACHINE_UNAVAILABLE', message: placed.message }
+    // A machine this computer knows but is not connected to now is named as such (#1316 part 2).
+    const named = ask.machine !== undefined ? this.options.placement.machineName(ask.machine) : undefined
+    if ('status' in placed) return { status: 'refused', code: 'MACHINE_UNAVAILABLE', message: placed.code === 'HOST_DISCONNECTED' && named ? RELAY_TARGET_AWAY(named, from) : placed.message }
     if (placed.hostId === hostId) return { status: 'refused', code: 'MACHINE_UNAVAILABLE', message: RELAY_BACK_HOME(from) }
-    if (placed.hostId !== this.options.localHostId()) return { status: 'refused', code: 'MACHINE_UNAVAILABLE', message: RELAY_THIS_COMPUTER_ONLY(placed.receipt.name, from) }
+    const third = placed.hostId !== this.options.localHostId()
+    if (third && this.options.elsewhere !== true) return { status: 'refused', code: 'MACHINE_UNAVAILABLE', message: RELAY_THIS_COMPUTER_ONLY(placed.receipt.name, from) }
     this.callers.delete(key)
     this.callers.set(key, { id: key, projectId: placed.projectId, runtimeMode: ask.runtimeMode, levels: this.provedLevels(hostId, ask.threadId, ask.levels), rootUserMessageId: ask.rootUserMessageId,
       ...(ask.callerMessageId ? { callerMessageId: ask.callerMessageId } : {}) })
-    const retryKey = typeof ask.input.retry_key === 'string' && z.uuid().safeParse(ask.input.retry_key).success ? ask.input.retry_key : ask.relayId
+    // A third machine is started by this computer's own delegation on that machine's host (#1316 part 2), where it was placed.
+    const result = await this.delegateFor(key, ask, third ? placed : undefined)
+    return isObject(result) && result.status === 'ok' && !third ? { ...result, placement: { ...placed.receipt, awayFromDefault: false } } : result
+  }
+  /**
+   * Runs one relayed `delegate` call as this computer's own delegation, under the retry key it gave or the ask's `relayId`,
+   * saved before the call runs, so a read after a lost answer, or after a restart, finds what it made.
+   */
+  private async delegateFor(key: string, ask: Extract<DelegationRelayAsk, { type: 'start' | 'send' }>, placement?: WorkerPlacement): Promise<unknown> {
+    const delegation = this.delegation!
+    const retryKey = typeof ask.input.retry_key === 'string' && uuidSchema.safeParse(ask.input.retry_key).success ? ask.input.retry_key : ask.relayId
     this.asks.push({ key, relayId: ask.relayId, retryKey })
     // Saved before the start, so a read after a lost answer finds the ask by its retry key, and an ask never recorded reads as unproved.
     await this.save()
     const input = { ...ask.input, retry_key: retryKey }
-    const result = await delegation.delegate(key, input, { waitMs: ask.waitMs + 2_000 })
+    // A check's snapshot was taken and pinned on the asking thread's machine as it asked, and its words say when, as that
+    // machine writes the time (#1316 part 2).
+    const takenAt = ask.type === 'start' ? ask.takenAt : undefined, pinned = ask.type === 'start' ? ask.pinned : undefined
+    const result = await delegation.delegate(key, input, { waitMs: ask.waitMs + 2_000, ...placement ? { placement } : {}, ...takenAt ? { takenAt } : {}, ...pinned ? { pinned } : {} })
     const made = isObject(result) && isObject(result.delegation) && typeof result.delegation.id === 'string' ? result.delegation.id : undefined
     if (made) { const saved = this.asks.findLast(item => item.key === key && item.relayId === ask.relayId); if (saved) saved.delegation = made; await this.save().catch(() => undefined) }
-    return isObject(result) && result.status === 'ok' ? { ...result, placement: { ...placed.receipt, awayFromDefault: false } } : result
+    return result
   }
   /**
    * How many threads delegated above the asking one, as far as this computer can prove from its own read of that host's

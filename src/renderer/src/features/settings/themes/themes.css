@@ -209,6 +209,7 @@
   cursor: se-resize;
   touch-action: none;
   user-select: none;
+  transition: color 120ms ease;
 }
 
 .theme-editor__grip svg { width: 10px; height: 10px; }
@@ -351,7 +352,7 @@
 
 /* Colour fields and picker ---------------------------------------------------- */
 
-.theme-color-field { display: grid; gap: 8px; margin: 0 -6px; padding: 3px 6px; border-radius: 8px; }
+.theme-color-field { display: grid; gap: 8px; margin: 0 -6px; padding: 3px 6px; border-radius: 8px; transition: background-color 120ms ease, box-shadow 120ms ease; }
 .theme-color-field[data-selected] { background: var(--tt-accent-wash); box-shadow: inset 0 0 0 1px var(--tt-focus-ring); }
 
 .theme-color-field__usage {
@@ -365,6 +366,7 @@
   font-size: 14px;
   text-align: left;
   cursor: pointer;
+  transition: color 120ms ease;
 }
 
 .theme-color-field__usage:hover, .theme-color-field__usage[aria-pressed='true'] { color: var(--tt-text); }
@@ -454,6 +456,16 @@
 
 .theme-import[open] { display: flex; flex-direction: column; }
 .theme-import::backdrop { background: var(--tt-overlay); }
+
+/* Arrive as the app's dialogs do: the card settles while its dimming fades in, and the global rule does not reach ::backdrop. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .theme-import[open] {
+    animation: tt-dialog-rise 160ms cubic-bezier(.2, .8, .2, 1);
+  }
+  :root:not([data-reduced-motion='on']) .theme-import[open]::backdrop {
+    animation: tt-dialog-dim 160ms ease-out;
+  }
+}
 
 .theme-import__head {
   display: flex;

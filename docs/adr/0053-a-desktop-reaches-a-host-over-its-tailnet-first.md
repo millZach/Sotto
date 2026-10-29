@@ -65,6 +65,10 @@ The owner decided on October 16, 2026 that Sotto leans on Tailscale and that a h
 - **Tailscale's approval no longer gates Update** on the tailnet connection: the owner's Update press is the consent.
 - **After a restart over the tailnet, the tailnet alone for the restart's budget.** For the retries after a restart Update sent over the socket, step 6's first minute is `HOST_UPDATE_RESTART_BUDGET_MS` from when it was sent, as `connectOrder`'s `tailnetOnlyMs` (ADR-0088, October 16 amendment, as built). In that time only a tailnet that does not answer is tried again with no SSH, as in the first minute; afterwards the normal rules apply. A restart over SSH, and a start at boot change, keep the first minute.
 
+## October 28 amendment: a stolen desktop token and the confirmation receipt
+
+A merge, a close or turning on auto-merge from a paired client now needs the host's own confirmation receipt for that press ([ADR-0027, October 28 amendment](0027-git-the-way-t3-code-does-it.md#amendment-october-28-2026-a-paired-clients-merge-close-and-auto-merge-take-the-hosts-confirmation-receipt-1691), #1691). The host's two listeners share their receipts, as they share command receipts, so a desktop that moves between its SSH and tailnet connections between asking for one and using it is not refused. The first consequence below is otherwise unchanged: the receipt adds a step the client must take, not a grant, and whoever holds a stolen desktop token can ask for a receipt and use it as the desktop would. `--deny-answers` does not take it away, since a receipt reads no `remote-answer` policy; revoking the token does.
+
 ## Context
 
 A desktop reaches a remote host only through an SSH port forward (ADR-0025). Every connect is an `ssh` sign-in, and on a tailnet whose policy holds Tailscale SSH in `check` mode, every connect after the check period has lapsed waits for the owner to approve it in a browser. On October 5 forge, the owner's headless host, asked for an approval on every relaunch of Sotto, and a host Sotto started does not come back after its machine restarts until a desktop connects over SSH and starts it.

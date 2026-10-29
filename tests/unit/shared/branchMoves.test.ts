@@ -52,6 +52,9 @@ describe('a worker started from a thread’s branch (#1033)', () => {
   it('asks for a snapshot or a same-machine copy only in the shapes it names', () => {
     const moveId = '5c4f1d3e-6f0a-4d4e-9b8a-1c2d3e4f5a6b'
     expect(hostBranchMoveRequestSchema.safeParse({ action: 'send-begin', moveId, threadId: 't', bases: [], snapshot: true }).success).toBe(true)
+    // A check snapshot its host pinned when its thread asked (#1316 part 2), named by its pin and nothing else.
+    expect(hostBranchMoveRequestSchema.safeParse({ action: 'send-begin', moveId, threadId: 't', bases: [], snapshot: true, pinned: moveId }).success).toBe(true)
+    expect(hostBranchMoveRequestSchema.safeParse({ action: 'send-begin', moveId, threadId: 't', bases: [], snapshot: true, pinned: 'last-one' }).success).toBe(false)
     expect(hostBranchMoveRequestSchema.safeParse({ action: 'copy', moveId, threadId: 't', projectId: 'p', snapshot: false }).success).toBe(true)
     expect(hostBranchMoveRequestSchema.safeParse({ action: 'copy', moveId, threadId: 't', projectId: 'p', path: '/tmp' }).success).toBe(false)
     expect(hostBranchMoveRequestSchema.safeParse({ action: 'forget', moveId, projectId: 'p' }).success).toBe(true)

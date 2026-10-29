@@ -455,6 +455,8 @@ export function SettingsView({
   const menuBarOwlOn = useOwlFeature('menu-bar-owl')
   const nightFallsOn = useOwlFeature('night-falls') && watcherOn
   const creatureToggle = useOwlFeature('creature-toggle')
+  const clickEffect = useOwlFeature('click-effect')
+  const usageOn = useOwlFeature('usage')
   const cleanupModelOn = useOwlFeature('cleanup-model')
   const clearThreadsOn = useOwlFeature('clear-threads')
   const ownServersBridge = useOwnServersBridge()
@@ -464,7 +466,7 @@ export function SettingsView({
   const ownCleanup = ownServerCleanupOn && ownServersBridge ? window.sotto?.ownServerCleanup : undefined
   const keepMainCurrent = useOwlFeature('keep-main-current')
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn }
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.

@@ -48,7 +48,6 @@ const sends = (live: ReturnType<typeof liveAgentState>): Extract<AgentCommand, {
   live.command.mock.calls.map(([request]) => request).filter((request): request is Extract<AgentCommand, { type: 'manual-send' }> => request.type === 'manual-send')
 const ghost = (): HTMLElement | null => document.querySelector('.prompt-editor__ghost')
 const list = (): HTMLElement | null => screen.queryByRole('listbox', { name: 'Next prompts' })
-const nextButton = (): HTMLElement | null => screen.queryByRole('button', { name: 'Next' })
 
 beforeEach(() => { owl.next = true; vi.mocked(useAgents).mockReset() })
 afterEach(() => { cleanup(); nextPromptStore.sent(THREAD, '\u0000') })
@@ -93,14 +92,14 @@ describe('the next prompt in an empty composer', () => {
 
   it('offers nothing while a turn runs, for a turn that is over, or while the Owl feature is off', () => {
     mount({ running: true })
-    expect(ghost()).toBeNull(); expect(nextButton()).toBeNull()
+    expect(ghost()).toBeNull()
     cleanup()
     mount({ afterUserMessageId: 'an-older-message' })
-    expect(ghost()).toBeNull(); expect(nextButton()).toBeNull()
+    expect(ghost()).toBeNull()
     cleanup()
     owl.next = false
     const { prompt } = mount()
-    expect(ghost()).toBeNull(); expect(nextButton()).toBeNull()
+    expect(ghost()).toBeNull()
     fireEvent.keyDown(prompt(), { key: 'ArrowUp' })
     expect(list()).toBeNull()
   })
@@ -153,28 +152,6 @@ describe('the Next list', () => {
     fireEvent.keyDown(prompt(), { key: 'ArrowUp' })
     expect(prompt()).toHaveAttribute('aria-activedescendant', within(list()!).getAllByRole('option')[0]!.id)
     nextPromptStore.sent('other', '')
-  })
-
-  it('opens from Next in the footer, and Escape hands focus back to it', () => {
-    const { prompt } = mount()
-    const button = nextButton()!
-    expect(button).toHaveAttribute('aria-expanded', 'false')
-    button.focus()
-    fireEvent.click(button)
-    expect(list()).not.toBeNull()
-    expect(button).toHaveAttribute('aria-expanded', 'true')
-    expect(prompt()).toHaveFocus()
-    fireEvent.keyDown(prompt(), { key: 'Escape' })
-    expect(list()).toBeNull()
-    expect(button).toHaveFocus()
-  })
-
-  it('writes a suggestion after what is already typed, on a line of its own', () => {
-    const { prompt } = mount()
-    setPromptText(prompt(), 'First this.')
-    fireEvent.click(nextButton()!)
-    fireEvent.click(within(list()!).getByText('Commit it'))
-    expect(promptText(prompt())).toBe('First this.\nCommit this with a plain message')
   })
 
   it('sends an answer at once as the user\'s own message, and the suggestion goes with the send', async () => {

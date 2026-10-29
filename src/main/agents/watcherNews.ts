@@ -138,14 +138,20 @@ export function watcherNewsText(news: WatcherNews, detail?: WatcherNewsDetail, h
 /**
  * The start of a finished turn's reply, for its news (#1190): `reply`, the newest turn's own reply (watcherNewestTurnReply),
  * while that turn is the one the news is of and nothing runs. Labelled as the worker's words, and cut at
- * WATCHER_NEWS_REPLY_CHARS characters; read_operation has the rest when the turn answers an operation (`operation`), and
- * read_thread when it does not. A reply given whole says so, since that is what lets Watcher act on it without a read (#1419).
+ * WATCHER_NEWS_REPLY_CHARS characters; read_operation has the rest when the turn answers an operation (`operation`) with that
+ * one reply, and read_thread when it does not. A reply given whole says so, since that is what lets Watcher act on it without a read (#1419).
+ * "Whole" is said only when the message is all the turn said (#1434): when it said more before this one (`more`), the
+ * line names it the last message and sends Watcher to read_thread for the turn's earlier messages, since read_operation
+ * carries only the one reply an operation answers with.
  */
-export function watcherReplyStart(thread: Pick<AgentThread, 'status' | 'lastTurn'>, turnId: string | undefined, reply: Pick<AgentMessage, 'text'> | undefined, operation = false): string | undefined {
+export function watcherReplyStart(thread: Pick<AgentThread, 'status' | 'lastTurn'>, turnId: string | undefined, reply: Pick<AgentMessage, 'text'> | undefined, operation = false, more = false): string | undefined {
   if (thread.status === 'running' || !thread.lastTurn || thread.lastTurn.id !== turnId || !reply?.text.trim()) return undefined
   const characters = [...reply.text.trim()]
   const cut = characters.length > WATCHER_NEWS_REPLY_CHARS
-  return `${cut ? 'Its reply begins' : 'Its whole reply'}, in the worker's words: ${JSON.stringify(characters.slice(0, WATCHER_NEWS_REPLY_CHARS).join(''))}${cut ? ` (cut; ${operation ? 'read_operation' : 'read_thread'} has the rest)` : ''}.`
+  const said = JSON.stringify(characters.slice(0, WATCHER_NEWS_REPLY_CHARS).join(''))
+  if (cut) return `Its reply begins, in the worker's words: ${said} (cut; ${operation && !more ? 'read_operation' : 'read_thread'} has the rest).`
+  if (more) return `Its last message, in the worker's words: ${said} (the turn said more before it; read_thread has the rest).`
+  return `Its whole reply, in the worker's words: ${said}.`
 }
 const ATTENTION_WORDS: Record<Exclude<WatcherAttentionKind, 'remarks'>, string> = {
   'checks-failed': 'checks failed on its newest commit', 'checks-passed': 'all checks passed on its newest commit',

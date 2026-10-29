@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
 import { isDeepStrictEqual } from 'node:util'
-import { MAX_ACTIVITY_TEXT, compactAgentIdentity, isTerminalActivity, mergeAgentActivities, planSteps, type AgentActivity, type ObservedAgent, type WorkflowProgress } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, compactAgentIdentity, findAgentActivity, isTerminalActivity, mergeAgentActivities, planSteps, type AgentActivity, type ObservedAgent, type WorkflowProgress } from '../../shared/agentActivity'
 import { observedSubagentStatus } from '../../shared/subagents'
 import { object, type ClaudeFrame } from './claudeProtocol'
 import { claudeText } from './claudeSessionLog'
-import { ClaudeThinking, THINKING_BLOCKS, claudeThinkingId, claudeThinkingRow } from './claudeThinking'
+import { ClaudeThinking, THINKING_BLOCKS, claudeNarration, claudeThinkingId, claudeThinkingRow } from './claudeThinking'
 import { thinkingSettledAs } from './thinkingActivity'
 import { CLAUDE_TRANSCRIPT_ID, type ClaudeModelTarget, type ClaudeSubagentTranscript } from './claudeSubagentModels'
 
@@ -57,11 +57,7 @@ function workflowAgent(entry: Record<string, unknown>, workflow: ObservedAgent, 
  * that everything changed.
  */
 function mergeChanged(previous: AgentActivity[], rows: readonly AgentActivity[]): AgentActivity[] {
-  if (!rows.length) return previous
-  const merged = mergeAgentActivities(previous, rows)
-  if (merged.length !== previous.length) return merged
-  for (const [index, record] of merged.entries()) if (record !== previous[index] && !isDeepStrictEqual(record, previous[index])) return merged
-  return previous
+  return rows.length ? mergeAgentActivities(previous, rows, isDeepStrictEqual) : previous
 }
 
 /** How far a workflow's agents have got, as its row's count and strip show it. */
@@ -104,6 +100,13 @@ export class ClaudeActivity {
    * result says: a turn the user stopped is interrupted whatever its `is_error`. Without it the result's own word stands.
    */
   apply(previous: AgentActivity[], frame: ClaudeFrame, turnId: string, afterMessageId: string | undefined, cwd: string, live = false, turnEnd?: AgentActivity['status']): AgentActivity[] {
+    this.narration.clear()
+    const rows = this.project(previous, frame, turnId, afterMessageId, cwd, live, turnEnd)
+    return this.narration.size && rows.some(row => this.narration.has(row.id)) ? rows.filter(row => !this.narration.has(row.id)) : rows
+  }
+  /** Thinking rows of narration blocks this frame showed to be the reply's words, which `apply` takes back out. */
+  private readonly narration = new Set<string>()
+  private project(previous: AgentActivity[], frame: ClaudeFrame, turnId: string, afterMessageId: string | undefined, cwd: string, live: boolean, turnEnd?: AgentActivity['status']): AgentActivity[] {
     const rows: AgentActivity[] = []
     const observedAt = typeof frame.timestamp === 'string' && Number.isFinite(Date.parse(frame.timestamp))
       ? new Date(frame.timestamp).toISOString() : live ? new Date().toISOString() : undefined
@@ -140,7 +143,7 @@ export class ClaudeActivity {
       if (typeof block.id !== 'string' || typeof block.name !== 'string') return
       const input = object(block.input)
       const name = block.name
-      const old = previous.find(row => row.id === `claude-tool-${block.id}`) ?? this.readActivity?.(`claude-tool-${block.id}`)
+      const old = findAgentActivity(previous, `claude-tool-${block.id}`) ?? this.readActivity?.(`claude-tool-${block.id}`)
       const kind = /^(Bash|PowerShell|Shell)$/u.test(name) ? 'command' : /^(Write|Edit|MultiEdit|NotebookEdit)$/u.test(name) ? 'file-change'
         : /^(Agent|Task)$/u.test(name) ? 'subagent' : /^Todo(Write|Update)$/u.test(name) ? 'plan' : 'tool'
       let child: ObservedAgent | undefined
@@ -179,7 +182,10 @@ export class ClaudeActivity {
         // started it under, so a replayed block lands on the row the live one made. A live frame carries no index,
         // and a block the stream already showed needs nothing more from it.
         const index = typeof frame.apiBlockIndex === 'number' && blocks.length === 1 ? frame.apiBlockIndex : position
-        if (!(live && typeof frame.apiBlockIndex !== 'number' && this.thinking.showed(replyId))) {
+        // Narration with words is the thread's own reply, which its message carries (`claudeText`). A subagent's has no
+        // message to carry it, and a block without words has nothing to show there, so both stay Thinking.
+        if (!parentTool && typeof block.thinking === 'string' && block.thinking && claudeNarration(block)) this.narration.add(claudeThinkingId(replyId, index))
+        else if (!(live && typeof frame.apiBlockIndex !== 'number' && this.thinking.showed(replyId))) {
           const words = typeof block.thinking === 'string' ? block.thinking : ''
           const durationMs = typeof frame.thinkingDurationMs === 'number' && Number.isFinite(frame.thinkingDurationMs) && frame.thinkingDurationMs >= 0 ? frame.thinkingDurationMs : undefined
           // The line is written when the block ends, so its own time is the end and the reported duration gives the start.
@@ -189,7 +195,7 @@ export class ClaudeActivity {
         }
       }
       if (block.type === 'tool_result' && typeof block.tool_use_id === 'string') {
-        const old = previous.find(row => row.id === `claude-tool-${block.tool_use_id}`) ?? this.readActivity?.(`claude-tool-${block.tool_use_id}`)
+        const old = findAgentActivity(previous, `claude-tool-${block.tool_use_id}`) ?? this.readActivity?.(`claude-tool-${block.tool_use_id}`)
         const result = object(frame.tool_use_result)
         // A replayed transcript files the same launch result as `toolUseResult`. Only its model and
         // transcript identities are read from there; its status stays with the live stream's shape.
@@ -256,9 +262,12 @@ export class ClaudeActivity {
       if (event?.type === 'content_block_delta' && delta?.type === 'thinking_delta' && typeof delta.thinking === 'string' && typeof event.index === 'number') {
         rows.push(...this.thinking.grew(stream, event.index, delta.thinking))
       }
+      if (event?.type === 'content_block_delta' && delta?.type === 'signature_delta' && typeof delta.signature === 'string' && typeof event.index === 'number') {
+        this.thinking.signed(stream, event.index, delta.signature)
+      }
       if (event?.type === 'content_block_stop') {
         this.blocks.delete(key)
-        if (typeof event.index === 'number') rows.push(...this.thinking.stopped(stream, event.index, observedAt))
+        if (typeof event.index === 'number') rows.push(...this.thinking.stopped(stream, event.index, observedAt, parentTool ? undefined : this.narration))
       }
     }
     // A turn that ends with a block still open (stopped mid-thought) settles its row, and those of subagents it ran in the foreground.
@@ -267,7 +276,7 @@ export class ClaudeActivity {
     if (frame.type === 'result' && !parentTool) for (const [key, open] of this.blocks) {
       if (!key.startsWith('main:')) continue
       this.blocks.delete(key)
-      const old = typeof open.block.id === 'string' ? previous.find(row => row.id === `claude-tool-${open.block.id}`) ?? this.readActivity?.(`claude-tool-${open.block.id}`) : undefined
+      const old = typeof open.block.id === 'string' ? findAgentActivity(previous, `claude-tool-${open.block.id}`) ?? this.readActivity?.(`claude-tool-${open.block.id}`) : undefined
       if (old && !isTerminalActivity(old.status)) rows.push({ ...old, status: (turnEnd ?? (frame.is_error === true ? 'failed' : 'interrupted')) === 'failed' ? 'failed' : 'interrupted', ...(observedAt ? { completedAt: observedAt } : {}) })
     }
     if (frame.type === 'system' && ['task_started', 'task_progress', 'task_notification'].includes(String(frame.subtype)) && typeof frame.task_id === 'string') {
@@ -275,8 +284,8 @@ export class ClaudeActivity {
       // A task that ended ends the stream of the subagent it ran, whatever else this notification is kept from changing.
       const ending = frame.subtype === 'task_notification' ? typeof frame.tool_use_id === 'string' ? frame.tool_use_id : this.toolByTask.get(frame.task_id) : undefined
       if (ending) rows.push(...this.thinking.streamEnded(ending, thinkingSettledAs(status), observedAt))
-      const owner = typeof frame.tool_use_id === 'string' ? previous.find(row => row.id === `claude-tool-${frame.tool_use_id}`) ?? this.readActivity?.(`claude-tool-${frame.tool_use_id}`) : undefined
-      const old = previous.find(row => row.id === `claude-task-${frame.task_id}`) ?? this.readActivity?.(`claude-task-${frame.task_id}`)
+      const owner = typeof frame.tool_use_id === 'string' ? findAgentActivity(previous, `claude-tool-${frame.tool_use_id}`) ?? this.readActivity?.(`claude-tool-${frame.tool_use_id}`) : undefined
+      const old = findAgentActivity(previous, `claude-task-${frame.task_id}`) ?? this.readActivity?.(`claude-task-${frame.task_id}`)
       // A restored row is positive task evidence even when this projector resumed after its start.
       // Retire a reassigned identity on that history row so cursor resume preserves the exclusion.
       if (frame.subtype === 'task_started') {

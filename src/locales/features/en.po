@@ -34,9 +34,21 @@ msgstr "{about}, {system}. No account with Sotto and no telemetry.<0/>Transcript
 msgid "{activeThreads, plural, one {{detail} · {sessions} provider session} other {{detail} · {sessions} provider sessions}}"
 msgstr "{activeThreads, plural, one {{detail} · {sessions} provider session} other {{detail} · {sessions} provider sessions}}"
 
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "{ahead, plural, one {Waiting for {machine}’s check to finish. # ahead.} other {Waiting for {machine}’s checks to finish. # ahead.}}"
+msgstr "{ahead, plural, one {Waiting for {machine}’s check to finish. # ahead.} other {Waiting for {machine}’s checks to finish. # ahead.}}"
+
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "{ahead, plural, one {Waiting for this computer’s check to finish. # ahead.} other {Waiting for this computer’s checks to finish. # ahead.}}"
+msgstr "{ahead, plural, one {Waiting for this computer’s check to finish. # ahead.} other {Waiting for this computer’s checks to finish. # ahead.}}"
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "{all} tokens in all"
 msgstr "{all} tokens in all"
+
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "{at, plural, one {# ahead} other {# ahead}}"
+msgstr "{at, plural, one {# ahead} other {# ahead}}"
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "{authority} (memory does not grant permission)"
@@ -82,6 +94,10 @@ msgstr "{count, plural, one {{range}: {shown} prompt} other {{range}: {shown} pr
 msgid "{count, plural, one {{shown} prompt in this range} other {{shown} prompts in this range}}"
 msgstr "{count, plural, one {{shown} prompt in this range} other {{shown} prompts in this range}}"
 
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "{count, plural, one {# check waiting} other {# checks waiting}}"
+msgstr "{count, plural, one {# check waiting} other {# checks waiting}}"
+
 #: src/renderer/src/watcher/machineWords.ts
 msgid "{count, plural, one {# more machine. Show every machine} other {# more machines. Show every machine}}"
 msgstr "{count, plural, one {# more machine. Show every machine} other {# more machines. Show every machine}}"
@@ -89,6 +105,10 @@ msgstr "{count, plural, one {# more machine. Show every machine} other {# more m
 #: src/renderer/src/watcher/machineWords.ts
 msgid "{count, plural, one {# more} other {# more}}"
 msgstr "{count, plural, one {# more} other {# more}}"
+
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "{count, plural, one {# waiting} other {# waiting}}"
+msgstr "{count, plural, one {# waiting} other {# waiting}}"
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "{count, plural, one {Stop # thread} other {Stop # threads}}"
@@ -299,6 +319,10 @@ msgstr "{longestStreak, plural, one {Longest # day} other {Longest # days}}"
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{lower} window"
 msgstr "{lower} window"
+
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "{machine} runs one check at a time. The rest wait here in the order they were asked for, whoever asked."
+msgstr "{machine} runs one check at a time. The rest wait here in the order they were asked for, whoever asked."
 
 #: src/renderer/src/watcher/machineWords.ts
 msgid "{machines, plural, one {# machine} other {# machines}}"
@@ -724,6 +748,10 @@ msgstr "<0>{sottoShare}</0> of tokens and <1>{sottoPromptShare}</1> of prompts w
 msgid "<0>Ready.</0> {size} on this computer."
 msgstr "<0>Ready.</0> {size} on this computer."
 
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "A check"
+msgstr "A check"
+
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "A dash means the provider didn't report that number. It isn't zero. A ≥ means some records left a number out, so the figure is at least that."
 msgstr "A dash means the provider didn't report that number. It isn't zero. A ≥ means some records left a number out, so the figure is at least that."
@@ -763,6 +791,11 @@ msgstr "A thread no longer here"
 #: src/renderer/src/features/onboarding/ThreadsTour.tsx
 msgid "A thread shows the agent's work, and the questions and permissions it asks you to answer."
 msgstr "A thread shows the agent's work, and the questions and permissions it asks you to answer."
+
+#. Whose a check is: a thread delegated it.
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "A thread’s"
+msgstr "A thread’s"
 
 #. Heading over the running version and what Sotto sends where
 #: src/renderer/src/features/help/HelpView.tsx
@@ -902,6 +935,11 @@ msgstr "Allowed: {action}"
 msgid "Already on this computer:"
 msgstr "Already on this computer:"
 
+#. Heading over the threads working on a machine besides its checks.
+#: src/renderer/src/watcher/WatcherMachines.tsx
+msgid "Also working"
+msgstr "Also working"
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Always confirm: {action}"
 msgstr "Always confirm: {action}"
@@ -1025,6 +1063,12 @@ msgstr "Bars"
 #: src/renderer/src/features/performance/MainActivityParts.tsx
 msgid "blocked"
 msgstr "blocked"
+
+#. The kind of work a delegated thread or check was asked for.
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgctxt "kind of work"
+msgid "Building"
+msgstr "Building"
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Busiest hour"
@@ -1187,6 +1231,18 @@ msgstr "Checking which threads are Watcher’s…"
 msgid "Checking…"
 msgstr "Checking…"
 
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "Checks on {machine}, one at a time"
+msgstr "Checks on {machine}, one at a time"
+
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "Checks on this computer, one at a time"
+msgstr "Checks on this computer, one at a time"
+
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "Checks, one at a time"
+msgstr "Checks, one at a time"
+
 #: src/renderer/src/languages.ts
 msgid "Chinese"
 msgstr "Chinese"
@@ -1292,6 +1348,12 @@ msgstr "Close to {point}."
 msgid "Close: the recording stays in its folder"
 msgstr "Close: the recording stays in its folder"
 
+#. The kind of work a delegated thread or check was asked for.
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgctxt "kind of work"
+msgid "Code review"
+msgstr "Code review"
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Codex app"
 msgstr "Codex app"
@@ -1364,6 +1426,12 @@ msgstr "Computer"
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Computer {number}"
 msgstr "Computer {number}"
+
+#. The kind of work a delegated thread or check was asked for.
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgctxt "kind of work"
+msgid "Computer use"
+msgstr "Computer use"
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Confidence"
@@ -1580,6 +1648,10 @@ msgstr "Default"
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Default is the model Sotto tested for cleanup. If the chosen one fails or runs long, Mercury 2 steps in, or Default when Mercury 2 is the one chosen."
 msgstr "Default is the model Sotto tested for cleanup. If the chosen one fails or runs long, Mercury 2 steps in, or Default when Mercury 2 is the one chosen."
+
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "Delegated by {by}"
+msgstr "Delegated by {by}"
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "delegated by {parent}"
@@ -2173,6 +2245,18 @@ msgstr "Installed, but Sotto could not start it."
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
 msgid "Installed. Sign in to it, then check again."
 msgstr "Installed. Sign in to it, then check again."
+
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "installing packages first, because package-lock.json changed"
+msgstr "installing packages first, because package-lock.json changed"
+
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "Installing packages first, because package-lock.json changed since the last check on {machine}. The checks start when that finishes."
+msgstr "Installing packages first, because package-lock.json changed since the last check on {machine}. The checks start when that finishes."
+
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "Installing packages first, because package-lock.json changed since the last check on this computer. The checks start when that finishes."
+msgstr "Installing packages first, because package-lock.json changed since the last check on this computer. The checks start when that finishes."
 
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Installs {ready}."
@@ -3792,6 +3876,12 @@ msgstr "Replaced by"
 msgid "Replacement memory"
 msgstr "Replacement memory"
 
+#. The kind of work a delegated thread or check was asked for.
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgctxt "kind of work"
+msgid "Research"
+msgstr "Research"
+
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Reset safely"
 msgstr "Reset safely"
@@ -3880,6 +3970,11 @@ msgstr "Room left on each subscription"
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Run agents on another computer"
 msgstr "Run agents on another computer"
+
+#. The check whose turn it is on its machine.
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "running"
+msgstr "running"
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Save memory"
@@ -4068,8 +4163,8 @@ msgid "Shortcut conflicts"
 msgstr "Shortcut conflicts"
 
 #: src/renderer/src/features/help/HelpView.tsx
-msgid "Shortcuts for working in threads — New thread, Settle, and the rest — are listed in Settings › Keyboard, where each can be changed."
-msgstr "Shortcuts for working in threads — New thread, Settle, and the rest — are listed in Settings › Keyboard, where each can be changed."
+msgid "Shortcuts for switching pages and working in threads — New thread, Settle, and the rest — are listed in Settings › Keyboard, where each can be changed."
+msgstr "Shortcuts for switching pages and working in threads — New thread, Settle, and the rest — are listed in Settings › Keyboard, where each can be changed."
 
 #: src/renderer/src/App.tsx
 msgid "Shortcuts, privacy, and troubleshooting."
@@ -5031,6 +5126,10 @@ msgstr "This computer does not report the memory a new process could have, so Wa
 msgid "This computer runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
 msgstr "This computer runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
 
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "This computer runs one check at a time. The rest wait here in the order they were asked for, whoever asked."
+msgstr "This computer runs one check at a time. The rest wait here in the order they were asked for, whoever asked."
+
 #: src/renderer/src/watcher/WatcherMachines.tsx
 msgid "This computer’s load and what runs there"
 msgstr "This computer’s load and what runs there"
@@ -5286,6 +5385,12 @@ msgstr "Turning speech into text."
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Type"
 msgstr "Type"
+
+#. The kind of work a delegated thread or check was asked for.
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgctxt "kind of work"
+msgid "UI work"
+msgstr "UI work"
 
 #: src/renderer/src/features/usage/UsageCharts.tsx
 #: src/renderer/src/features/usage/UsageModels.tsx
@@ -5584,6 +5689,11 @@ msgstr "Watcher message"
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Watcher stopped watching <0>{title}</0>."
 msgstr "Watcher stopped watching <0>{title}</0>."
+
+#. Whose a check is: Watcher started it.
+#: src/renderer/src/watcher/checkQueueWords.ts
+msgid "Watcher’s"
+msgstr "Watcher’s"
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Watcher’s context"

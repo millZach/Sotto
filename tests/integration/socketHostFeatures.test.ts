@@ -119,6 +119,48 @@ describe('host facts over the socket (#1031)', () => {
   })
 })
 
+describe('setting up a copy of a project over the socket (#1690)', () => {
+  const request = { repository: { host: 'github.com', owner: 'millZach', name: 'Sotto' }, title: 'Sotto' }
+  const service = (setUp: HostService['setUpProject']): HostService => ({
+    shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(), threadDetail: id => fixture.host.service.threadDetail(id),
+    command: (command, identity) => fixture.host.service.command(command, identity), events: () => [], subscribe: () => () => undefined,
+    supportsProjectSetup: true, ...setUp ? { setUpProject: setUp } : {},
+  })
+  it('answers a desktop with the project it set up, or its refusal in plain words, and refuses only a setup that did not answer', async () => {
+    const asked: unknown[] = []
+    let answer: unknown = { ok: true, projectId: 'p-1', title: 'Sotto', path: '/home/zach/Projects/Sotto', how: 'cloned', current: true }
+    const server = await startSocketServer({ service: service(async setUp => { asked.push(setUp); if (answer instanceof Error) throw answer; return answer as never }), pairing: fixture.host.pairing })
+    try {
+      const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Desktop')
+      const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+      expect((await client.connect()).features).toContain('project-setup')
+      expect(client.supportsProjectSetup).toBe(true)
+      expect(await client.setUpProject(request)).toEqual(answer)
+      expect(asked).toEqual([request])
+      answer = { ok: false, message: 'There is already a folder named Sotto in /home/zach/Projects that is not a copy of millZach/Sotto.' }
+      expect(await client.setUpProject(request)).toEqual(answer)
+      // A failure of its own, whatever it said, crosses as the host's refusal and never as its words.
+      answer = new Error('fatal: /secret/path')
+      await expect(client.setUpProject(request)).rejects.toMatchObject({ code: 'unavailable' })
+    } finally { await server.close() }
+  })
+  it('is offered only to a desktop by a host that sets up copies, and never by the desktop’s phone listener', async () => {
+    for (const [hosted, admin] of [[service(undefined), undefined], [service(async () => ({ ok: false, message: 'No.' })), false]] as const) {
+      const server = await startSocketServer({ service: hosted, pairing: fixture.host.pairing, ...(admin === false ? { admin } : {}) })
+      try {
+        expect(server.descriptor.features).not.toContain('project-setup')
+        const paired = await fixture.host.pairing.redeem(fixture.host.pairing.issuePairingCode().code, 'Older desktop')
+        const client = new SocketHostService({ url: 'http://127.0.0.1:' + server.descriptor.port, token: paired.token }); fixture.clients.push(client)
+        expect((await client.connect()).features).not.toContain('project-setup')
+        expect(client.supportsProjectSetup).toBe(false)
+        await expect(client.setUpProject(request)).rejects.toMatchObject({ code: 'version_mismatch' })
+        const raw = client as unknown as { call(op: HostOperation): Promise<unknown> }
+        await expect(raw.call({ op: 'project-setup', request })).rejects.toMatchObject({ code: 'invalid_request' })
+      } finally { await server.close() }
+    }
+  })
+})
+
 describe('the iPhone’s pull request sheet (#1281)', () => {
   it('is offered, phones included, only by a host whose Owl answer turns it on, and leaves the pull request read and babysitting as they were', async () => {
     const base: HostService = {
@@ -175,8 +217,8 @@ describe('the iPhone’s pull request sheet (#1281)', () => {
 
 describe('host version and features', () => {
   /** What a host lists whatever its Owl answers say, in health and its listener file, and in the hello to a paired client. */
-  const LISTED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'watcher-cursor', 'client-update-not-listed', 'thread-prompts']
-  const GREETED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'client-update-not-listed', 'thread-prompts']
+  const LISTED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'watcher-cursor', 'client-update-not-listed', 'thread-prompts', 'pull-request-confirmation']
+  const GREETED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'client-update-not-listed', 'thread-prompts', 'pull-request-confirmation']
   /**
    * Features a host offers only where its own version's Owl answer is on (ADR-0072), and the answer each reads. Its OpenCode
    * sign-in also needs OpenCode's own adapter, which this host's fake is not; `hostOpenCode.test.ts` has that one.

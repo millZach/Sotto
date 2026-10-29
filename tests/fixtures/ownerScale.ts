@@ -74,3 +74,15 @@ export function ownerRequestDrafts(local: readonly string[], remote: { readonly 
   return JSON.stringify({ version: 2, drafts: [], retirements,
     watcherOwners: Array.from({ length: counts.watcherOwners }, (_, index) => owner(local[local.length - 1 - index]!)) })
 }
+
+/**
+ * The most settled delegations on paired hosts the desktop keeps as history (#1316 part 2): the longest history its remote
+ * delegation record can hold, which an outcome update must neither read nor write again.
+ */
+export const REMOTE_DELEGATION_HISTORY = 2_000
+
+/** `count` long-answered delegations on `hostId` for `callerId`, as the desktop's record keeps them. Identities only. */
+export function remoteDelegationHistory(hostId: string, callerId: string, count: number): Record<string, unknown>[] {
+  return Array.from({ length: count }, (_, index) => ({ id: randomUUID(), hostId, callerId, action: 'start', work: 'code-review', projectId: 'synthetic-project',
+    delegation: randomUUID(), thread: `synthetic-child-${index}`, machine: 'the Mac', outcome: 'answered', told: 'answered', createdAt: AT, updatedAt: AT }))
+}

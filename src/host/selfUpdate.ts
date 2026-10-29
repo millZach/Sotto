@@ -117,6 +117,8 @@ const pause = (ms: number): Promise<void> => new Promise(done => setTimeout(done
 const OUTPUT_LIMIT = 65_536
 const fetchResult = z.union([hostUpdateFetchedSchema, hostUpdateErrorSchema])
 const installResult = z.union([hostUpdateInstalledSchema, hostUpdateErrorSchema])
+/** One line of the update script's progress, read for every line it prints. */
+const updateStepLine = z.object({ type: z.literal('update-step'), step: z.enum(HOST_UPDATE_STEPS) })
 const invalid = (): HostUpdateAnswer => ({ type: 'error', reason: 'update-invalid' })
 /** The status file as read, with how long ago it was last written. */
 interface StatusRead { readonly status: HostUpdateStatus; readonly age: number }
@@ -368,7 +370,7 @@ export class HostSelfUpdate {
       if (!line.startsWith('{')) return
       let value: unknown
       try { value = JSON.parse(line) } catch { return }
-      const step = z.object({ type: z.literal('update-step'), step: z.enum(HOST_UPDATE_STEPS) }).safeParse(value)
+      const step = updateStepLine.safeParse(value)
       if (step.success) onStep(step.data.step)
       else result = value
     }

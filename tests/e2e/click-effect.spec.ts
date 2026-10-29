@@ -1,0 +1,213 @@
+import { mkdir } from 'node:fs/promises'
+import { resolve } from 'node:path'
+
+import { expect, test, type Page } from '@playwright/test'
+
+import { withSotto } from '../fixtures/designCaptureProfile'
+import { evidenceDirectory } from '../fixtures/evidence'
+import { onReleaseTrack } from './support/releaseTrack'
+import { captureWindow } from './support/sottoCapture'
+import { openPage, openThreads } from './support/sottoLaunch'
+import { resizeContentWindow } from './support/sottoWindow'
+import { seedWatcherRoom } from './support/watcherRoom'
+
+// The click effect (ADR-0156): a press sends waves of 0s and 1s in the accent through the room, under the page.
+const evidence = evidenceDirectory('artifacts/click-effect')
+
+function launchOptions(appearance: 'dark' | 'light', options: { readonly clickEffect?: boolean; readonly motion?: 'normal' | 'reduced' } = {}) {
+  return {
+    onboardingComplete: true, appearance, scenario: 'design-threads', agents: 'design-threads',
+    motion: options.motion ?? 'normal', clickEffect: options.clickEffect ?? true,
+    ...(appearance === 'dark' ? { darkTheme: 't3-code' } : { lightTheme: 't3-code' }),
+  } as const
+}
+
+const layer = (page: Page) => page.locator('canvas.click-effect')
+const glyphs = (page: Page): Promise<number> => layer(page).evaluate(canvas => Number((canvas as HTMLCanvasElement).dataset.clickEffectGlyphs ?? 0))
+const running = (page: Page): Promise<boolean> => layer(page).evaluate(canvas => (canvas as HTMLCanvasElement).dataset.clickEffectRunning === 'true')
+const frames = (page: Page): Promise<number> => layer(page).evaluate(canvas => Number((canvas as HTMLCanvasElement).dataset.clickEffectFrames ?? 0))
+
+async function openConversation(page: Page): Promise<void> {
+  await openThreads(page)
+  const toggle = page.getByRole('button', { name: 'Footer links', exact: true })
+  await toggle.click({ position: { x: 16, y: 12 } })
+  await expect(page.getByLabel('Thread transcript')).toContainText('Fixing the footer links')
+}
+
+interface Part { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
+
+/** How many of the click effect canvas's pixels are lit in a part of the window, given in CSS pixels. */
+function litIn(page: Page, part: Part): Promise<number> {
+  return page.evaluate(({ left, top, right, bottom }) => {
+    const canvas = document.querySelector<HTMLCanvasElement>('canvas.click-effect')!, scale = canvas.width / innerWidth
+    const { data } = canvas.getContext('2d')!.getImageData(Math.round(left * scale), Math.round(top * scale), Math.max(1, Math.round((right - left) * scale)), Math.max(1, Math.round((bottom - top) * scale)))
+    let n = 0
+    for (let i = 3; i < data.length; i += 4) if (data[i]) n++
+    return n
+  }, part)
+}
+
+/**
+ * A point on the conversation's bare backdrop, beside or between its messages: the nearest to the given shares of the
+ * transcript's width and height where nothing but the backdrop is under the pointer.
+ */
+async function openSpace(page: Page, share: number, across = 0.5): Promise<{ x: number; y: number }> {
+  return page.getByLabel('Thread transcript').evaluate((transcript, [at, from]) => {
+    const box = transcript.getBoundingClientRect(), y = box.top + box.height * at, start = box.left + box.width * from
+    for (let step = 0; step < box.width; step += 8) {
+      for (const x of [start - step, start + step]) {
+        if (x > box.left && x < box.right && document.elementFromPoint(x, y)?.hasAttribute('data-room-backdrop')) return { x, y }
+      }
+    }
+    throw new Error('Nothing but the backdrop at that height')
+  }, [share, across] as const)
+}
+
+test.describe('the click effect', () => {
+  test.describe.configure({ timeout: 4 * 60_000 })
+
+  for (const appearance of ['dark', 'light'] as const) {
+    test(`a press sends waves under the page that leave the press its target and stop when calm, ${appearance}`, async () => {
+      await onReleaseTrack('owl', () => withSotto(launchOptions(appearance), async (launched) => {
+        const { page } = launched
+        await resizeContentWindow(launched, 1280, 800)
+        await openConversation(page)
+        await expect(layer(page)).toHaveCount(1)
+        await expect(layer(page)).toHaveAttribute('aria-hidden', 'true')
+        // Whatever earlier presses sent calms, and then nothing runs until the next press that counts.
+        await expect.poll(() => running(page), { timeout: 30_000 }).toBe(false)
+        const calm = await frames(page)
+        // Only a press on the bare backdrop sends waves: none for the sidebar's rows, the composer, a message's words, its
+        // copy action, an answer to a request, or Settings.
+        await page.getByRole('button', { name: 'Footer links', exact: true }).click({ position: { x: 16, y: 12 } })
+        const composer = page.locator('.thread-prompt :is(.prompt-editor, textarea)').first()
+        await composer.click()
+        await page.locator('.thread-prompt').first().click({ position: { x: 8, y: 8 } })
+        const transcript = page.getByLabel('Thread transcript')
+        await transcript.locator('.rich-message p').first().click()
+        await transcript.getByRole('button', { name: 'Copy message as Markdown' }).first().click()
+        await page.getByRole('button', { name: 'Visual gate flake', exact: true }).click({ position: { x: 16, y: 12 } })
+        await transcript.getByRole('button', { name: 'Allow', exact: true }).click()
+        await openPage(page, 'Settings')
+        await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
+        await page.locator('.settings-scroll').click({ position: { x: 8, y: 8 } })
+        await openConversation(page)
+        await page.waitForTimeout(400)
+        expect(await running(page)).toBe(false)
+        expect(await frames(page)).toBe(calm)
+
+        await mkdir(evidence, { recursive: true })
+        for (const [index, share] of [0.3, 0.55, 0.42].entries()) {
+          const at = await openSpace(page, share, 0.3 + index * 0.2)
+          await page.mouse.click(at.x, at.y)
+          await page.waitForTimeout(140)
+        }
+        await expect.poll(() => glyphs(page)).toBeGreaterThan(200)
+        for (const name of ['spreading', 'crossing']) {
+          await captureWindow(launched.app, resolve(evidence, `${name}-${appearance}.png`))
+          await page.waitForTimeout(450)
+        }
+
+        // While waves run, a press still reaches what it was aimed at: the composer takes focus and a thread opens.
+        const prompt = page.locator('.thread-prompt :is(.prompt-editor, textarea)').first()
+        await prompt.click()
+        await expect(prompt).toBeFocused()
+        const other = page.getByRole('button', { name: 'Streaming WAV stall', exact: true })
+        await other.click({ position: { x: 16, y: 12 } })
+        await expect(other).toHaveAttribute('aria-current', 'page')
+
+        // The water calms, the canvas is cleared and the loop stops.
+        await expect.poll(() => running(page), { timeout: 30_000 }).toBe(false)
+        expect(await glyphs(page)).toBe(0)
+        const stopped = await frames(page)
+        await page.waitForTimeout(600)
+        expect(await frames(page)).toBe(stopped)
+      }))
+    })
+  }
+
+  for (const [width, height] of [[1600, 1000], [820, 560]] as const) {
+    test(`fills the window at ${width} by ${height}, at full opacity`, async () => {
+      await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async (launched) => {
+        const { page } = launched
+        await resizeContentWindow(launched, width, height)
+        await openConversation(page)
+        await expect.poll(() => running(page), { timeout: 30_000 }).toBe(false)
+        const at = await openSpace(page, 0.4)
+        await page.mouse.click(at.x, at.y)
+        await expect.poll(() => glyphs(page)).toBeGreaterThan(50)
+        const drawn = await layer(page).evaluate(canvas => {
+          const c = canvas as HTMLCanvasElement
+          return { width: c.width / devicePixelRatio, height: c.height / devicePixelRatio, innerWidth, innerHeight, opacity: Number(getComputedStyle(c).opacity) }
+        })
+        expect(drawn.width).toBe(drawn.innerWidth)
+        expect(drawn.height).toBe(drawn.innerHeight)
+        expect(drawn.opacity).toBe(1)
+        await mkdir(evidence, { recursive: true })
+        await page.waitForTimeout(300)
+        await captureWindow(launched.app, resolve(evidence, `spreading-dark-${width}x${height}.png`))
+      }))
+    })
+  }
+
+  test("in Watcher's room a press in the margin sends waves", async () => {
+    await onReleaseTrack('owl', () => withSotto({ ...launchOptions('dark'), scenario: 'phase3-workspace' }, async (launched) => {
+      const { page } = launched
+      await openThreads(page)
+      await seedWatcherRoom(page, { watched: ['footer-links', 'visual-gate', 'weekly-note'], idPrefix: 'column' })
+      await page.getByRole('tablist', { name: 'Page' }).getByRole('tab', { name: 'Watcher', exact: true }).click()
+      await expect(page.getByRole('heading', { level: 1, name: 'Watcher' })).toBeVisible()
+      await resizeContentWindow(launched, 1280, 800)
+      await expect.poll(() => running(page), { timeout: 30_000 }).toBe(false)
+      // Halfway up the margin, left of the column and its scrubber, where only the backdrop is under the pointer.
+      const press = await page.evaluate(() => {
+        const card = document.querySelector('#watcher-pane > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
+        const y = card.top * 0.5
+        for (let x = card.left - 40; x > 0; x -= 8) if (document.elementFromPoint(x, y)?.hasAttribute('data-room-backdrop')) return { x, y }
+        throw new Error('Nothing but the backdrop in the margin')
+      })
+      await page.mouse.click(press.x, press.y)
+      await expect.poll(() => glyphs(page)).toBeGreaterThan(50)
+      const margin = await page.evaluate(() => {
+        const card = document.querySelector('#watcher-pane > .thread-workspace__compose > .thread-prompt')!.getBoundingClientRect()
+        return { left: 0, right: card.left - 2, top: 120, bottom: innerHeight - 10 }
+      })
+      expect(await litIn(page, margin)).toBeGreaterThan(0)
+    }))
+  })
+
+  test('a theme changed while waves run takes the new accent in the next frames', async () => {
+    await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async ({ page }) => {
+      await openConversation(page)
+      await expect.poll(() => running(page), { timeout: 30_000 }).toBe(false)
+      const at = await openSpace(page, 0.4)
+      await page.mouse.click(at.x, at.y)
+      await expect.poll(() => running(page)).toBe(true)
+      const before = await layer(page).evaluate(canvas => (canvas as HTMLCanvasElement).dataset.clickEffectInk)
+      await page.evaluate(() => window.sotto!.updateSettings({ appearance: 'light' }))
+      await expect.poll(() => layer(page).evaluate(canvas => (canvas as HTMLCanvasElement).dataset.clickEffectInk)).not.toBe(before)
+      expect(await running(page)).toBe(true)
+    }))
+  })
+
+  test('the switch in Settings turns it off, and the setting is saved', async () => {
+    await onReleaseTrack('owl', () => withSotto(launchOptions('dark'), async ({ page }) => {
+      await openConversation(page)
+      await expect(layer(page)).toHaveCount(1)
+      await page.evaluate(() => window.sotto!.updateSettings({ clickEffect: false }))
+      await expect(layer(page)).toHaveCount(0)
+      expect(await page.evaluate(() => window.sotto!.getSettings().then(settings => settings.clickEffect))).toBe(false)
+    }))
+  })
+
+  test('stable holds it, and reduced motion leaves nothing of it', async () => {
+    await onReleaseTrack('stable', () => withSotto(launchOptions('dark'), async ({ page }) => {
+      await openConversation(page)
+      await expect(layer(page)).toHaveCount(0)
+    }))
+    await onReleaseTrack('owl', () => withSotto(launchOptions('dark', { motion: 'reduced' }), async ({ page }) => {
+      await openConversation(page)
+      await expect(layer(page)).toHaveCount(0)
+    }))
+  })
+})

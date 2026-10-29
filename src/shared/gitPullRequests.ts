@@ -11,6 +11,28 @@ export const GIT_PULL_REQUEST_MERGE_METHOD_LABELS: Record<GitPullRequestMergeMet
 /** What a press on the Pull request surface asks GitHub to do, each through `gh` on the user's own sign-in. */
 export const gitPullRequestActionSchema = z.enum(['merge', 'ready', 'draft', 'close', 'reopen', 'update-branch', 'enable-auto-merge', 'disable-auto-merge'])
 export type GitPullRequestAction = z.infer<typeof gitPullRequestActionSchema>
+/**
+ * The presses a paired client makes only with a **confirmation receipt** from the host that runs them (#1691, ADR-0027,
+ * October 28 amendment): merging, turning on auto-merge and closing. The window's own presses on this computer's threads
+ * need none; its confirmation dialog is the confirmation.
+ */
+export const CONFIRMED_PULL_REQUEST_ACTIONS = ['merge', 'enable-auto-merge', 'close'] as const satisfies readonly GitPullRequestAction[]
+export type ConfirmedPullRequestAction = typeof CONFIRMED_PULL_REQUEST_ACTIONS[number]
+export const needsConfirmationReceipt = (action: GitPullRequestAction): action is ConfirmedPullRequestAction =>
+  (CONFIRMED_PULL_REQUEST_ACTIONS as readonly string[]).includes(action)
+/** A Git commit's full object ID, SHA-1 or SHA-256, in GitHub's lowercase hex: never anything `gh` could read as an option. */
+export const gitCommitIdSchema = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u)
+/**
+ * One press on a pull request as the host runs it: what to do, its merge method, and, only from a paired client's
+ * confirmation receipt, the head commit a merge or an auto-merge is held to (#1691). Carried whole from the coordinator
+ * to `gh`, so the binding never comes apart on the way.
+ */
+export interface GitPullRequestPress {
+  readonly url: string
+  readonly action: GitPullRequestAction
+  readonly method?: GitPullRequestMergeMethod | undefined
+  readonly matchHeadCommit?: string | undefined
+}
 
 /** A GitHub pull request URL, the only kind Sotto links or acts on (ADR-0027: GitHub only). */
 export const GITHUB_PULL_REQUEST_URL = /^https:\/\/github\.com\/([^/\s?#]+)\/([^/\s?#]+)\/pull\/(\d+)(?:[/?#][^\s]*)?$/iu
@@ -143,6 +165,17 @@ export const gitPullRequestDetailSchema = z.object({
    */
   files: z.array(gitPullRequestFileSchema).max(GIT_PULL_REQUEST_FILES_MAX).optional(),
   changedFiles: z.number().int().nonnegative().optional(),
+  /**
+   * The commit the pull request's head is on, as GitHub said. A host binds the confirmation receipt it gives a paired
+   * client to the head of the reading that client names by `readId` (#1691). Absent when GitHub did not say.
+   */
+  headId: z.string().max(64).optional(),
+  /**
+   * The host's ID for this reading, from a host that lists `pull-request-confirmation` (#1691). A client that is about to
+   * merge, close or turn on auto-merge names the reading it shows by it, and the host binds the receipt to that reading's
+   * head. Absent from this computer's own reads.
+   */
+  readId: z.uuid().optional(),
 })
 export type GitPullRequestDetail = z.infer<typeof gitPullRequestDetailSchema>
 
@@ -172,6 +205,17 @@ export const GIT_PULL_REQUEST_READ_FAILURES = ['gh-missing', 'gh-signed-out', 'o
 export type GitPullRequestReadFailure = typeof GIT_PULL_REQUEST_READ_FAILURES[number]
 /** Whether a read was held back by GitHub's rate limit rather than answered. */
 export const isPullRequestLimited = (read: GitPullRequestRead): read is GitPullRequestLimited => read !== null && 'limited' in read
+/**
+ * What a paired client asks its host for before it sends a merge, a close or an auto-merge (`pull-request-confirmation`,
+ * #1691): the press it is about to send, field for field as the command will carry it, and the read ID of the reading of
+ * that pull request it shows. A request without one is refused in words.
+ */
+export const pullRequestConfirmationRequestSchema = z.object({ threadId: id, url: gitPullRequestUrlSchema, action: z.enum(CONFIRMED_PULL_REQUEST_ACTIONS),
+  method: gitPullRequestMergeMethodSchema.optional(), readId: z.uuid().optional() }).strict()
+export type PullRequestConfirmationRequest = z.infer<typeof pullRequestConfirmationRequestSchema>
+/** The host's answer: the receipt's ID, which the command carries as `confirmation`, and when it stops counting. */
+export const pullRequestConfirmationSchema = z.object({ confirmation: z.uuid(), expiresAt: z.string().max(64) }).strict()
+export type PullRequestConfirmation = z.infer<typeof pullRequestConfirmationSchema>
 export const AGENT_GIT_PULL_REQUEST = 'sotto:agents:git-pull-request'
 
 /** The URL of the pull request on the branch a thread's folder is on, as the host last read it. */

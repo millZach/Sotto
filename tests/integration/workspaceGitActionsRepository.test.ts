@@ -68,7 +68,8 @@ describe("durable project/thread organization", () => {
     service.view.mockRejectedValueOnce(new GitPullRequestLimited(Date.parse('2026-10-07T12:00:00Z'), Date.parse('2026-10-07T11:40:00Z')))
     await expect(f.host.readThreadPullRequest({ threadId: 'local' })).resolves.toEqual({ limited: { retryAt: '2026-10-07T12:00:00.000Z' } })
     const done = await f.host.runPullRequestAction({ threadId: 'local', url, action: 'merge', method: 'squash' })
-    expect(service.act).toHaveBeenCalledWith(project.path, url, 'merge', 'squash')
+    // The window's own press holds GitHub to no head; only a paired client's confirmation receipt names one (#1691).
+    expect(service.act).toHaveBeenCalledWith(project.path, { url, action: 'merge', method: 'squash' })
     expect(done.notice).toBe('Pull request merged.')
     expect(record().pullRequests).toEqual([expect.objectContaining({ number: 74, state: 'merged', source: 'linked' })])
     // Local checks the pull request out in the thread's folder and links it, as T3 does.

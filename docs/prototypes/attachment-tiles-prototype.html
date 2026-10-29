@@ -1,0 +1,201 @@
+<!doctype html>
+<!--
+  Throwaway prototype. Not product code.
+  Question: the composer's image tiles carry a chin (the name, then "Resized from 3456 x 2086 to 2576 x 1555" over three
+  lines) that is taller than the picture. What should an attached image look like?
+  Variants: Now, and 1-10 below. Each composer holds a resized screenshot, one that was not resized, and a file pill.
+  "Hover" pins the hover state so the remove button and any hover detail show in a screenshot.
+  Picked: 6, the deck, the user's pick on 2026-10-28: hover fans it out.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composer: attached images</title>
+<style>
+  :root, [data-theme='dark'] {
+    --canvas: #121211; --card: #1c1c1b; --field: #232322; --field-border: #3a3936; --hover: #2a2a28; --hover-strong: #33332f;
+    --text: #faf7ec; --text-2: #d0cdc0; --muted: #a3a197; --accent: #e8c64a; --on-accent: #1a1600; --shadow: rgb(0 0 0 / .45);
+    --shot-a: #1d2733; --shot-b: #2b3a4c; --shot-c: #0f1115;
+  }
+  [data-theme='light'] {
+    --canvas: oklch(.972 .008 98.9); --card: oklch(.945 .007 92); --field: oklch(.985 .004 95); --field-border: oklch(.85 .01 92);
+    --hover: oklch(.92 .007 92); --hover-strong: oklch(.89 .008 92); --text: oklch(.20 .03 93); --text-2: oklch(.40 .02 93);
+    --muted: oklch(.48 .018 93); --accent: #8a6d00; --on-accent: #fff; --shadow: rgb(60 50 20 / .16);
+    --shot-a: #dfe6ee; --shot-b: #c4d0dd; --shot-c: #f5f6f8;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--canvas); color: var(--text); font: 13px/1.4 Figtree, ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif; }
+  .bar { position: sticky; top: 0; z-index: 9; display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 10px 16px; border-bottom: 1px solid var(--field-border); background: var(--canvas); }
+  .seg { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--field-border); border-radius: 8px; }
+  .seg button { min-height: 26px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text-2); font: inherit; cursor: pointer; }
+  .seg button[aria-pressed='true'] { background: var(--hover-strong); color: var(--text); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(460px, 1fr)); gap: 22px; padding: 18px 16px 40px; }
+  .cell h2 { margin: 0 0 3px; font-size: 13px; font-weight: 600; }
+  .cell p { margin: 0 0 9px; color: var(--muted); font-size: 12px; }
+  .composer { padding: 10px 12px 8px; border: 1px solid var(--field-border); border-radius: 14px; background: var(--card); }
+  .prompt { min-height: 22px; color: var(--muted); }
+  .footer { display: flex; align-items: center; gap: 14px; margin-top: 8px; color: var(--text-2); font-size: 12.5px; }
+  .footer .clip { width: 16px; height: 16px; color: var(--muted); }
+  .footer .send { margin-left: auto; width: 26px; height: 26px; border-radius: 50%; background: var(--accent); }
+
+  /* Shared fake screenshots. */
+  .shot { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .shot.a { background: linear-gradient(var(--shot-c) 0 12%, transparent 12%), linear-gradient(90deg, transparent 30%, var(--shot-b) 30% 72%, transparent 72%) 0 30% / 100% 45% no-repeat, repeating-linear-gradient(var(--shot-a) 0 6px, var(--shot-c) 6px 9px); }
+  .shot.b { background: linear-gradient(90deg, var(--shot-c) 0 26%, var(--field-border) 26% 27%, var(--shot-a) 27%), radial-gradient(circle at 14% 30%, var(--accent) 0 3px, transparent 4px), radial-gradient(circle at 14% 55%, var(--muted) 0 3px, transparent 4px); background-blend-mode: normal; }
+  .x { display: grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; }
+  .x svg { width: 11px; height: 11px; }
+  .x:hover { background: var(--hover); color: var(--text); }
+  .pill { display: inline-flex; align-items: center; gap: 7px; height: 32px; padding: 0 4px 0 9px; border: 1px solid var(--field-border); border-radius: 8px; background: var(--field); font-size: 12.5px; white-space: nowrap; }
+  .pill i { width: 14px; height: 16px; border: 1.5px solid var(--muted); border-radius: 2px; }
+  .pill .size { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  .row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
+  .muted { color: var(--muted); }
+  .tab { font-variant-numeric: tabular-nums; }
+
+  /* Now: today's tile. */
+  .v0 figure { position: relative; width: 88px; margin: 0; padding: 4px; border: 1px solid var(--field-border); border-radius: 9px; background: var(--field); }
+  .v0 .thumb { width: 78px; height: 60px; border-radius: 5px; overflow: hidden; }
+  .v0 figcaption, .v0 small { display: block; margin-top: 4px; overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+  .v0 small { white-space: normal; margin-top: 2px; }
+  .v0 .x { position: absolute; top: -6px; right: -6px; width: 20px; height: 20px; border: 1px solid var(--field-border); border-radius: 4px; background: var(--hover-strong); color: var(--text); }
+
+  /* 1 Bare thumbnail: the picture is the tile. Name and size live in the tooltip; X shows on hover. */
+  .v1 figure { position: relative; width: 72px; height: 54px; margin: 0; border-radius: 8px; overflow: hidden; box-shadow: 0 0 0 1px var(--field-border); }
+  .v1 .x { position: absolute; top: 3px; right: 3px; background: rgb(0 0 0 / .62); color: #fff; opacity: 0; }
+  .v1 figure:hover .x, .hov .v1 figure .x { opacity: 1; }
+
+  /* 2 Name on the picture: a scrim at the bottom carries the name; the tile is only as tall as the image. */
+  .v2 figure { position: relative; width: 112px; height: 72px; margin: 0; border-radius: 9px; overflow: hidden; box-shadow: 0 0 0 1px var(--field-border); }
+  .v2 figcaption { position: absolute; inset: auto 0 0; padding: 14px 7px 4px; overflow: hidden; background: linear-gradient(transparent, rgb(0 0 0 / .78)); color: #fff; font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+  .v2 .x { position: absolute; top: 4px; right: 4px; background: rgb(0 0 0 / .62); color: #fff; opacity: 0; }
+  .v2 figure:hover .x, .hov .v2 figure .x { opacity: 1; }
+
+  /* 3 Same pill as files: a small thumbnail where the file icon goes. Images and files read as one list. */
+  .v3 .pill { padding-left: 3px; }
+  .v3 .pill .t { width: 34px; height: 24px; border-radius: 5px; overflow: hidden; }
+  .v3 .pill .name { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+
+  /* 4 Thumbnail with a corner badge: "Resized" shrinks to a tag on the picture, the full sizes on hover. */
+  .v4 figure { position: relative; width: 84px; height: 60px; margin: 0; border-radius: 9px; overflow: hidden; box-shadow: 0 0 0 1px var(--field-border); }
+  .v4 .badge { position: absolute; left: 4px; bottom: 4px; padding: 1px 5px; border-radius: 4px; background: rgb(0 0 0 / .66); color: #fff; font-size: 9.5px; font-variant-numeric: tabular-nums; }
+  .v4 .x { position: absolute; top: 3px; right: 3px; background: rgb(0 0 0 / .62); color: #fff; opacity: 0; }
+  .v4 figure:hover .x, .hov .v4 figure .x { opacity: 1; }
+
+  /* 5 Wide card: picture left, two short lines right. 44px tall, same height as the composer's controls row. */
+  .v5 figure { position: relative; display: flex; align-items: center; gap: 8px; width: 196px; height: 46px; margin: 0; padding: 4px 4px 4px 4px; border: 1px solid var(--field-border); border-radius: 10px; background: var(--field); }
+  .v5 .t { flex: none; width: 50px; height: 36px; border-radius: 6px; overflow: hidden; }
+  .v5 .meta { min-width: 0; flex: 1; line-height: 1.25; }
+  .v5 .name { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .v5 .sub { color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+  /* 6 Deck: several screenshots stack into one tile with a count; click opens the row. */
+  .v6 .deck { position: relative; width: 104px; height: 66px; margin: 0 10px 0 0; }
+  .v6 .deck > div { position: absolute; inset: 0; border-radius: 9px; overflow: hidden; box-shadow: 0 0 0 1px var(--field-border), 0 2px 6px var(--shadow); }
+  .v6 .deck > div:nth-child(1) { transform: translate(10px, -4px) rotate(4deg); }
+  .v6 .deck > div:nth-child(2) { transform: translate(5px, -2px) rotate(2deg); }
+  .v6 .count { position: absolute; right: -6px; bottom: -6px; z-index: 2; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 10px; background: var(--accent); color: var(--on-accent); font-size: 11px; font-weight: 600; line-height: 20px; text-align: center; }
+
+  /* 7 Filmstrip: one edge-to-edge band at the top of the composer, thumbnails only, hairline under it. */
+  .v7 .composer { padding-top: 0; }
+  .v7 .strip { display: flex; gap: 6px; margin: 0 -12px 10px; padding: 8px 12px; border-bottom: 1px solid var(--field-border); }
+  .v7 figure { position: relative; width: 60px; height: 44px; margin: 0; border-radius: 6px; overflow: hidden; box-shadow: 0 0 0 1px var(--field-border); }
+  .v7 .x { position: absolute; inset: 0; width: auto; height: auto; border-radius: 0; background: rgb(0 0 0 / .55); color: #fff; opacity: 0; }
+  .v7 .x svg { width: 14px; height: 14px; }
+  .v7 figure:hover .x, .hov .v7 figure:first-child .x { opacity: 1; }
+  .v7 .pill { height: 44px; }
+
+  /* 8 Polaroid-lite: today's frame kept, one line under it (name, then a small resize mark). */
+  .v8 figure { position: relative; width: 96px; margin: 0; padding: 3px 3px 0; border: 1px solid var(--field-border); border-radius: 9px; background: var(--field); }
+  .v8 .thumb { height: 60px; border-radius: 6px; overflow: hidden; }
+  .v8 figcaption { display: flex; align-items: center; gap: 4px; height: 20px; padding: 0 3px; color: var(--muted); font-size: 10.5px; }
+  .v8 figcaption span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v8 figcaption svg { flex: none; width: 10px; height: 10px; color: var(--accent); }
+  .v8 .x { position: absolute; top: 6px; right: 6px; background: rgb(0 0 0 / .62); color: #fff; opacity: 0; }
+  .v8 figure:hover .x, .hov .v8 figure .x { opacity: 1; }
+
+  /* 9 Square tiles in the composer's corner radius, larger, nothing but the picture and a round X outside the corner. */
+  .v9 figure { position: relative; width: 64px; height: 64px; margin: 0; border-radius: 12px; box-shadow: 0 0 0 1px var(--field-border); }
+  .v9 figure .clipb { width: 100%; height: 100%; border-radius: 12px; overflow: hidden; }
+  .v9 .x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; border-radius: 50%; background: var(--text); color: var(--canvas); box-shadow: 0 0 0 2px var(--card); opacity: 0; }
+  .v9 figure:hover .x, .hov .v9 figure .x { opacity: 1; }
+  .v9 .pill { height: 64px; border-radius: 12px; flex-direction: column; justify-content: center; align-items: flex-start; gap: 1px; padding: 0 12px; }
+
+  /* 10 Inline tokens: tiny chips in the same line as file pills, hover lifts a big preview. */
+  .v10 .tok { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 26px; padding: 0 3px 0 3px; border: 1px solid var(--field-border); border-radius: 7px; background: var(--field); font-size: 12px; }
+  .v10 .tok .t { width: 20px; height: 20px; border-radius: 4px; overflow: hidden; }
+  .v10 .tok .name { max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .v10 .tok .pop { position: absolute; bottom: calc(100% + 8px); left: 0; z-index: 3; width: 220px; padding: 5px; border: 1px solid var(--field-border); border-radius: 10px; background: var(--card); box-shadow: 0 10px 28px var(--shadow); opacity: 0; pointer-events: none; transition: opacity .12s; }
+  .v10 .tok .pop .big { height: 132px; border-radius: 6px; overflow: hidden; }
+  .v10 .tok .pop small { display: block; padding: 5px 3px 1px; color: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .v10 .tok:hover .pop, .hov .v10 .tok:first-child .pop { opacity: 1; }
+  .v10 .composer { margin-top: 0; }
+  .hov .v10 .composer { margin-top: 160px; }
+  .v10 .pill { height: 26px; font-size: 12px; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+</head>
+<body>
+<div class="bar">
+  <b>Attached images</b>
+  <span class="seg" id="theme"><button aria-pressed="true" data-v="dark">Dark</button><button aria-pressed="false" data-v="light">Light</button></span>
+  <span class="seg" id="hov"><button aria-pressed="false" data-v="off">Rest</button><button aria-pressed="true" data-v="on">Hover</button></span>
+</div>
+<main class="grid hov" id="grid"></main>
+
+<template id="x"><button class="x" type="button" aria-label="Remove"><svg viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 3l6 6M9 3l-6 6"/></svg></button></template>
+
+<script>
+const X = document.getElementById('x').innerHTML
+const R = '<svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M2 8l6-6M4 2h4v4"/></svg>'
+const shots = [
+  { cls: 'a', name: 'CleanShot 2026-10-28 at 09.14.22.png', resized: true },
+  { cls: 'b', name: 'CleanShot 2026-10-28 at 09.15.07.png', resized: false },
+]
+const tip = s => `${s.name}${s.resized ? ' — resized from 3456 × 2086 to 2576 × 1555' : ''}`
+const file = `<span class="pill"><i></i><span>notes.md</span><span class="size">4 KB</span>${X}</span>`
+const shot = s => `<div class="shot ${s.cls}"></div>`
+
+const variants = [
+  ['Now', 'Today: frame, name, then three lines of resize text. The chin is taller than the picture.', () =>
+    `<div class="row">${shots.map(s => `<figure><div class="thumb">${shot(s)}</div><figcaption>${s.name}</figcaption>${s.resized ? '<small>Resized from 3456 x 2086 to 2576 x 1555</small>' : ''}${X}</figure>`).join('')}</div><div class="row">${file}</div>`],
+  ['1 · Bare thumbnail', 'The picture is the tile. Name and resize live in the tooltip and accessible name. X on hover.', () =>
+    `<div class="row">${shots.map(s => `<figure title="${tip(s)}">${shot(s)}${X}</figure>`).join('')}${file}</div>`],
+  ['2 · Name on the picture', 'A dark scrim at the bottom of the image carries the name. No chin at all.', () =>
+    `<div class="row">${shots.map(s => `<figure title="${tip(s)}">${shot(s)}<figcaption>${s.name}</figcaption>${X}</figure>`).join('')}${file}</div>`],
+  ['3 · Same pill as files', 'An image is a file pill with a thumbnail for its icon. One row, one shape, 32px tall.', () =>
+    `<div class="row">${shots.map(s => `<span class="pill" title="${tip(s)}"><span class="t">${shot(s)}</span><span class="name">${s.name}</span>${s.resized ? '<span class="size">2576 px</span>' : ''}${X}</span>`).join('')}${file}</div>`],
+  ['4 · Corner badge', 'Resize becomes a small tag on the picture (the size sent). Full sizes in the tooltip.', () =>
+    `<div class="row">${shots.map(s => `<figure title="${tip(s)}">${shot(s)}${s.resized ? '<span class="badge">2576 × 1555</span>' : ''}${X}</figure>`).join('')}${file}</div>`],
+  ['5 · Wide card', 'Picture left, name and size right on two short lines. Readable without hover, 46px tall.', () =>
+    `<div class="row">${shots.map(s => `<figure title="${tip(s)}"><span class="t">${shot(s)}</span><span class="meta"><div class="name">${s.name}</div><div class="sub">${s.resized ? '3456 → 2576 px' : '1920 × 1080'}</div></span>${X}</figure>`).join('')}${file}</div>`],
+  ['6 · Deck', 'Screenshots stack into one tile with a count. Smallest footprint when many are attached.', () =>
+    `<div class="row"><div class="deck" title="2 screenshots">${shots.map(shot).map(h => `<div>${h}</div>`).join('')}<div>${shot(shots[0])}</div><span class="count">3</span></div>${file}</div>`],
+  ['7 · Filmstrip', 'One band across the top of the composer, separated by a hairline. Hover darkens the tile to an X.', () =>
+    `<div class="strip">${shots.map(s => `<figure title="${tip(s)}">${shot(s)}${X}</figure>`).join('')}${file}</div>`],
+  ['8 · One-line caption', 'Today\'s frame, but one line under it: the name, and a small arrow mark if it was resized.', () =>
+    `<div class="row">${shots.map(s => `<figure title="${tip(s)}"><div class="thumb">${shot(s)}</div><figcaption><span>${s.name}</span>${s.resized ? R : ''}</figcaption>${X}</figure>`).join('')}${file}</div>`],
+  ['9 · Rounded squares', 'Square tiles at the composer\'s radius, a round X just outside the corner (Messages, ChatGPT).', () =>
+    `<div class="row">${shots.map(s => `<figure title="${tip(s)}"><div class="clipb">${shot(s)}</div>${X}</figure>`).join('')}<span class="pill"><span>notes.md</span><span class="size">4 KB</span></span></div>`],
+  ['10 · Inline tokens', 'Tiny chips that sit in one line with file pills; hover lifts a large preview with the sizes.', () =>
+    `<div class="row">${shots.map(s => `<span class="tok"><span class="t">${shot(s)}</span><span class="name">${s.name}</span>${X}<span class="pop"><div class="big">${shot(s)}</div><small>${s.resized ? 'Resized from 3456 × 2086 to 2576 × 1555' : '1920 × 1080'}</small></span></span>`).join('')}${file}</div>`],
+]
+
+document.getElementById('grid').innerHTML = variants.map(([title, note, body], i) =>
+  `<section class="cell v${i}"><h2>${title}</h2><p>${note}</p><div class="composer">${body()}<div class="prompt">Ask anything…</div><div class="footer"><svg class="clip" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M11 6l-4.5 4.5a1.8 1.8 0 01-2.5-2.5L9 3a3 3 0 014 4l-5 5"/></svg><span>Opus 5.5</span><span>Medium</span><span>Full access</span><span class="send"></span></div></div></section>`).join('')
+
+const seg = (id, fn) => document.getElementById(id).addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return
+  for (const o of b.parentElement.children) o.setAttribute('aria-pressed', String(o === b))
+  fn(b.dataset.v)
+})
+const params = new URLSearchParams(location.search)
+const setTheme = v => document.documentElement.dataset.theme = v
+const setHov = v => document.getElementById('grid').classList.toggle('hov', v === 'on')
+seg('theme', setTheme); seg('hov', setHov)
+if (params.get('theme')) setTheme(params.get('theme'))
+if (params.get('hover') === 'off') setHov('off')
+</script>
+</body>
+</html>

@@ -140,6 +140,29 @@ const settingsNotification = z.object({ threadId: z.string(), threadSettings: z.
   model: z.string(), effort: z.string().nullish(), approvalPolicy: z.string(), approvalsReviewer: z.string(), sandboxPolicy: z.object({ type: z.string() }),
   serviceTier: z.string().nullish(),
 }) })
+/** Codex's answers and frames, built once: a schema built per answer or frame costs main its construction every time. */
+const invalidRequestError = z.object({ code: z.literal(-32600), message: z.string() })
+const methodNotFoundError = z.object({ code: z.literal(-32601) })
+const initializeResponse = z.object({ userAgent: z.string().optional(), version: z.string().optional() })
+const modelListResponse = z.object({ data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean().optional(),
+  supportedReasoningEfforts: z.array(z.object({ reasoningEffort: z.string() })).optional(), defaultReasoningEffort: z.string().optional(), inputModalities: z.array(z.string()).default(['text', 'image']),
+  // The tiers a model offers (codex-cli 0.164.0). `additionalSpeedTiers` is deprecated and not read.
+  serviceTiers: z.array(z.object({ id: z.string(), description: z.string().optional() })).optional().catch(undefined),
+})), nextCursor: z.string().nullish() })
+const accountResponse = z.object({ account: z.object({ type: z.string() }).passthrough().nullable(), requiresOpenaiAuth: z.boolean().optional() })
+const configResponse = z.object({ config: z.object({ developer_instructions: z.string().nullish() }) })
+/** A read whose thread carries a turns list, which makes it the thread's complete history. */
+const threadWithTurns = z.object({ thread: z.object({ turns: z.array(z.unknown()) }) })
+/** Only a reply that says it carries the full items counts; turnSchema would take a missing itemsView as full. */
+const fullTurnsPage = z.object({ data: z.array(turnSchema.extend({ itemsView: z.literal('full') })) })
+const rollbackResponse = z.object({ thread: threadSchema.extend({ turns: z.array(turnSchema) }) })
+const threadRecordResponse = z.object({ thread: z.record(z.string(), z.unknown()) })
+const turnsPage = z.object({ data: z.array(z.unknown()), nextCursor: z.string().nullish() })
+const emptyResponse = z.object({})
+const steerResponse = z.object({ turnId: z.string() })
+const turnResponse = z.object({ turn: turnSchema })
+const threadIdParams = z.object({ threadId: z.string() })
+const itemIdParams = z.object({ itemId: z.string().optional() })
 /** Codex's own id for its Fast service tier (codex-cli 0.164.0), which fast mode is (ADR-0143). */
 const FAST_SERVICE_TIER = 'priority'
 /**
@@ -191,8 +214,8 @@ class Rejected extends Error {
   readonly unknownTurnId: string | undefined
   constructor(value: unknown) {
     super('Codex rejected the operation. Review the thread before retrying.')
-    const error = z.object({ code: z.literal(-32600), message: z.string() }).safeParse(value)
-    this.methodNotFound = z.object({ code: z.literal(-32601) }).safeParse(value).success
+    const error = invalidRequestError.safeParse(value)
+    this.methodNotFound = methodNotFoundError.safeParse(value).success
     this.unknownVariant = error.success ? /^Invalid request: unknown variant `([^`]+)`/.exec(error.data.message)?.[1] : undefined
     this.unmaterializedThreadId = error.success
       ? /^thread (\S+) is not materialized yet; includeTurns is unavailable before first user message$/.exec(error.data.message)?.[1]
@@ -617,7 +640,7 @@ export class CodexAppServerHost implements AgentHost {
   private async probe(server: CodexProcess): Promise<{ version: string; models: ModelList | undefined }> {
     let version = ''
     await this.rpc('initialize', clientInfo, value => {
-      const result = z.object({ userAgent: z.string().optional(), version: z.string().optional() }).parse(value)
+      const result = initializeResponse.parse(value)
       version = result.version ?? result.userAgent ?? ''
     }, undefined, server)
     server.write({ method: 'initialized' })
@@ -627,11 +650,7 @@ export class CodexAppServerHost implements AgentHost {
       let cursor: string | undefined
       do {
         await this.rpc('model/list', { limit: 100, includeHidden: false, ...(cursor ? { cursor } : {}) }, value => {
-          const result = z.object({ data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean().optional(),
-            supportedReasoningEfforts: z.array(z.object({ reasoningEffort: z.string() })).optional(), defaultReasoningEffort: z.string().optional(), inputModalities: z.array(z.string()).default(['text', 'image']),
-            // The tiers a model offers (codex-cli 0.164.0). `additionalSpeedTiers` is deprecated and not read.
-            serviceTiers: z.array(z.object({ id: z.string(), description: z.string().optional() })).optional().catch(undefined),
-          })), nextCursor: z.string().nullish() }).parse(value)
+          const result = modelListResponse.parse(value)
           models.push(...result.data.filter(m => !m.hidden).map(m => ({ id: m.model, name: m.displayName, provider: 'Codex', ready: true,
             reasoningEfforts: orderReasoningEfforts(m.supportedReasoningEfforts?.map(option => option.reasoningEffort) ?? []),
             ...(m.defaultReasoningEffort ? { defaultReasoningEffort: m.defaultReasoningEffort } : {}),
@@ -945,7 +964,7 @@ export class CodexAppServerHost implements AgentHost {
     let required = true
     try {
       await this.rpc('account/read', { refreshToken: false }, value => {
-        const result = z.object({ account: z.object({ type: z.string() }).passthrough().nullable(), requiresOpenaiAuth: z.boolean().optional() }).parse(value)
+        const result = accountResponse.parse(value)
         account = result.account; required = result.requiresOpenaiAuth !== false
       })
     } catch { return }
@@ -1045,7 +1064,7 @@ export class CodexAppServerHost implements AgentHost {
     try {
       let instructions: unknown
       await this.rpc('config/read', { cwd, includeLayers: false }, value => {
-        const parsed = z.object({ config: z.object({ developer_instructions: z.string().nullish() }) }).safeParse(value)
+        const parsed = configResponse.safeParse(value)
         instructions = parsed.success ? parsed.data.config.developer_instructions ?? '' : undefined
       })
       if (typeof instructions !== 'string') throw new Error('Invalid native instructions')
@@ -1151,7 +1170,7 @@ export class CodexAppServerHost implements AgentHost {
           const apply = async (value: unknown): Promise<void> => {
             // A late read must not overwrite streamed text, a completion, or a permission.
             if (!current || generation !== this.generation || revision !== this.revisions.get(id)) return
-            this.applyThread(id, threadResponse.parse(value).thread, z.object({ thread: z.object({ turns: z.array(z.unknown()) }) }).safeParse(value).success); await this.persist(); applied = true
+            this.applyThread(id, threadResponse.parse(value).thread, threadWithTurns.safeParse(value).success); await this.persist(); applied = true
             this.settleRead(id)
           }
           if (alias.historyMode === 'paginated') await this.readPaged(id, apply)
@@ -1212,8 +1231,7 @@ export class CodexAppServerHost implements AgentHost {
     try {
       await this.rpc('thread/turns/list', { threadId: alias.codexThreadId, limit: 1, sortDirection: 'desc', itemsView: 'full' }, async value => {
         if (!current || generation !== this.generation || revision !== this.revisions.get(id)) return
-        // Only a reply that says it carries the full items counts; turnSchema would take a missing itemsView as full.
-        const page = z.object({ data: z.array(turnSchema.extend({ itemsView: z.literal('full') })) }).safeParse(value)
+        const page = fullTurnsPage.safeParse(value)
         const turn = page.success && page.data.data.length === 1 ? page.data.data[0]! : undefined
         if (!turn || turn.id !== newest.turnId || turn.status === 'inProgress' || alias.rewoundTurnIds.includes(turn.id)) return
         // Reconcile onto a copy of the newest turn's identities and of the origins, both of which reconciling writes to.
@@ -1631,7 +1649,7 @@ export class CodexAppServerHost implements AgentHost {
       await this.persist()
       sent = true
       await this.rpc('thread/rollback', { threadId: alias.codexThreadId, numTurns: removedTurns.length }, async value => {
-        const response = z.object({ thread: threadSchema.extend({ turns: z.array(turnSchema) }) }).parse(value)
+        const response = rollbackResponse.parse(value)
         this.touch(id); this.applyThread(id, response.thread, true); await this.persist(); this.emit()
       }, async () => { delete alias.pendingRollback; await this.persist() })
       return alias.pendingRollback ? { accepted: false, uncertain: true } : { accepted: true }
@@ -1737,13 +1755,13 @@ export class CodexAppServerHost implements AgentHost {
   private async readPaged(id: string, apply: (value: unknown) => Promise<void>): Promise<void> {
     const alias = this.aliases[id]!
     let thread: Record<string, unknown> | undefined
-    await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: false }, value => { thread = z.object({ thread: z.record(z.string(), z.unknown()) }).parse(value).thread })
+    await this.rpc('thread/read', { threadId: alias.codexThreadId, includeTurns: false }, value => { thread = threadRecordResponse.parse(value).thread })
     const turns: unknown[] = []
     let cursor: string | undefined
     for (let page = 0; page < PAGED_READ_PAGES; page++) {
       let next: string | null | undefined
       await this.rpc('thread/turns/list', { threadId: alias.codexThreadId, sortDirection: 'asc', itemsView: 'full', limit: PAGED_READ_TURNS, ...(cursor ? { cursor } : {}) }, value => {
-        const answer = z.object({ data: z.array(z.unknown()), nextCursor: z.string().nullish() }).parse(value)
+        const answer = turnsPage.parse(value)
         turns.push(...answer.data); next = answer.nextCursor
       })
       if (!next) break
@@ -1873,7 +1891,7 @@ export class CodexAppServerHost implements AgentHost {
               ...(serviceTier ? { serviceTier } : {}),
               approvalPolicy: policy.approvalPolicy, approvalsReviewer: policy.approvalsReviewer,
               sandboxPolicy: { type: policy.sandbox === 'read-only' ? 'readOnly' : policy.sandbox === 'workspace-write' ? 'workspaceWrite' : 'dangerFullAccess' },
-            }, value => { z.object({}).parse(value) }, async () => {
+            }, value => { emptyResponse.parse(value) }, async () => {
               if (alias.pendingSettings !== desired) return
               if (previousPendingSettings) alias.pendingSettings = previousPendingSettings
               else delete alias.pendingSettings
@@ -1930,7 +1948,7 @@ export class CodexAppServerHost implements AgentHost {
             const save = this.saveBehindResponse()
             try {
               await this.rpc('turn/steer', { threadId: alias.codexThreadId, expectedTurnId, clientUserMessageId: command.messageId, input }, value => {
-                const response = z.object({ turnId: z.string() }).parse(value)
+                const response = steerResponse.parse(value)
                 if (response.turnId !== expectedTurnId) throw new Error('Codex acknowledged steering a different turn.')
                 if (!this.log.has(id, origin.messageId)) this.addMessage(id, { id: origin.messageId, commandId: origin.commandId, role: 'user', text: command.text, createdAt: origin.createdAt, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
                 this.unconfirmedDispatchSessionIds.delete(id); this.emit(); save.start()
@@ -2014,7 +2032,7 @@ export class CodexAppServerHost implements AgentHost {
                   ? { additionalContext: command.watcherRequestNote
                     ? { [WATCHER_REQUEST_CONTEXT]: { value: command.watcherRequestNote, kind: 'application' } }
                     : { [WATCHER_NEWS_CONTEXT]: { value: command.watcherNews, kind: 'application' } } } : {}) }, value => {
-                const { turn } = z.object({ turn: turnSchema }).parse(value)
+                const { turn } = turnResponse.parse(value)
                 origin.turnId = turn.id
                 if (this.usageEnabled) this.usageTurnStarts.set(JSON.stringify([id, turn.id]), origin.createdAt)
                 this.applyTurn(id, turn)
@@ -2079,9 +2097,9 @@ export class CodexAppServerHost implements AgentHost {
         try { await this.checkLaunchProfile(owner) } catch { return }
         if (!current()) return
       }
-      const params = z.object({ threadId: z.string() }).safeParse(frame.params)
+      const params = threadIdParams.safeParse(frame.params)
       const id = params.success ? this.sessionId(params.data.threadId) : undefined
-      const item = z.object({ itemId: z.string().optional() }).safeParse(frame.params)
+      const item = itemIdParams.safeParse(frame.params)
       const parsed = id ? pendingRequest(frame.id, frame.method, frame.params, id,
         this.fileSummaries.get(turnKey(id!, item.success ? item.data.itemId ?? '' : ''))) : undefined
       if (!parsed) {

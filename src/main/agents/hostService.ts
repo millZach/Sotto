@@ -23,15 +23,19 @@ import type { HostThreadToolReads } from './threadToolReads'
 import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
-import type { ProjectOrigins } from '../../shared/workerMachine'
+import type { ProjectOrigins, ProjectSetupRequest, ProjectSetupResult } from '../../shared/workerMachine'
 import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
-import type { DelegationRelayAsk, RelayedReply } from '../../shared/delegationRelay'
+import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { DelegationNews } from '../../shared/delegation'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
 import type { DelegationViews } from './delegationIpc'
+import type { CheckQueue } from './checkQueue'
+import type { CheckQueueEntry } from '../../shared/checkQueue'
 import type { QuestionPageTarget } from './questionPages'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema, type UsageLocalClearRequest, type UsageLocalClearResult, type UsageLocalHostRead, type UsageLocalQuery, type UsageProviderId } from '../../shared/usageDashboard'
+
+const usageProviderIdsSchema = usageProviderIdSchema.array().max(usageProviderIdSchema.options.length)
 
 type RequestAnswerCheckRefusalReason = 'stale-question' | 'provider-disconnected' | 'forbidden' | 'unsupported' | 'answer-in-progress' | 'answer-changed'
 const requestAnswerCheckRefusals: Record<RequestAnswerCheckRefusalReason, { code: HostErrorCode; message: string }> = {
@@ -96,6 +100,8 @@ export interface HostService {
    * check running there, its own delegations' checks included. Only where its Owl answer turns on Work across machines.
    */
   readonly supportsWatcherCheckQueue?: boolean
+  /** Watcher's stop_thread on a check waiting in the host's queue takes it out of that queue (`watcher-check-stop`, #1637). */
+  readonly supportsWatcherCheckStop?: boolean
   /** The host takes requests from a Watcher on Muse; without it a desktop whose Watcher is on Muse leaves the host alone. */
   readonly supportsWatcherMuse?: boolean
   /** The host lists `watcher-cursor`: it takes Watcher requests whose identity names Cursor (ADR-0128). */
@@ -121,6 +127,12 @@ export interface HostService {
    */
   readonly supportsProjectOrigins?: boolean
   projectOrigins?(): Promise<ProjectOrigins>
+  /**
+   * The host sets up a copy of a GitHub repository for a worker placed on it (#1690), present exactly where it reports its
+   * projects' origins. A setup that cannot finish answers in plain words; only a host out of reach rejects.
+   */
+  readonly supportsProjectSetup?: boolean
+  setUpProject?(request: ProjectSetupRequest): Promise<ProjectSetupResult>
   /** The host moves branches with this desktop over its socket (`branch-moves`, ADR-0105 decision 8); a remote host's only. */
   readonly supportsBranchMoves?: boolean
   branchMove?(request: HostBranchMoveRequest): Promise<unknown>
@@ -142,6 +154,15 @@ export interface HostService {
   delegationBrief?(threadId: string): Promise<DelegationBrief>
   subscribeDelegationViews?(listener: (change: DelegationViewsChange) => void): () => void
   /**
+   * The host's own check queue as its machine's panel shows it (`check-queue-views`, #1312, fourth part), the running check
+   * first, present only where it keeps one. Thread IDs are the host's own. `subscribeCheckQueue` hears it change; on a
+   * desktop's connection to a host, `checkQueue` is what the host last pushed, and undefined before a push or while the
+   * host does not send one.
+   */
+  readonly supportsCheckQueueViews?: boolean
+  checkQueue?(): readonly CheckQueueEntry[] | undefined
+  subscribeCheckQueue?(listener: () => void): () => void
+  /**
    * The host's threads delegate to other machines through this desktop (`delegation-relay`, #1316), on a desktop's
    * connection to a host whose hello it accepted: `subscribeDelegationRelay` hears each ask the host pushes,
    * `answerDelegationRelay` answers it, and `delegationRelayNews` tells the host a relayed delegation's outcome moved.
@@ -151,6 +172,18 @@ export interface HostService {
   answerDelegationRelay?(askId: string, answer: unknown): Promise<void>
   delegationRelayName?(name: string): Promise<void>
   delegationRelayNews?(threadId: string, news: DelegationNews, replies?: readonly RelayedReply[]): Promise<void>
+  /**
+   * This desktop asks the host for delegations there for threads on other machines (`delegation-remote`, #1316 part 2):
+   * `delegationRemoteAsk` asks and returns the host's own delegation's result, and `subscribeDelegationRemoteNews` hears
+   * the host say one moved, naming the caller as this desktop named it.
+   */
+  readonly supportsDelegationRemote?: boolean
+  /** Whether the host takes second briefs relayed from its threads (`delegation-relay-send`). */
+  readonly supportsDelegationRelaySend?: boolean
+  /** Whether a delegated start there may begin from a landed branch or be a check, either way (`delegation-branch-starts`). */
+  readonly supportsDelegationBranchStarts?: boolean
+  delegationRemoteAsk?(ask: DelegationRemoteAsk, timeoutMs: number): Promise<unknown>
+  subscribeDelegationRemoteNews?(listener: (caller: string, news: DelegationNews, replies: readonly RelayedReply[]) => void): () => void
   /** The host continues agents as threads and forks at a reply (#1028): it takes `continue-agent` and reads `startHandover`. */
   readonly supportsThreadStarts?: boolean
   /** The host keeps which failed threads have been seen and takes `dismiss-failures` (ADR-0092); without it its failed
@@ -358,10 +391,14 @@ export class LocalHostService implements HostService {
     agentsView?: { delegations?(threadId: string, threads: readonly AgentThread[]): HostThreadDelegations }
     /** Each project's GitHub origin (#1032), present only when the host's Owl answer turns on Work across machines. */
     projectOrigins?: (projects: readonly AgentProject[]) => Promise<ProjectOrigins>
+    /** Setting up a copy of a repository for a worker placed here (#1690), present only where `projectOrigins` is. */
+    setUpProject?: (request: ProjectSetupRequest) => Promise<ProjectSetupResult>
     /** Where a headless host keeps the desktop defaults (#1310), present only where it runs delegation for its own threads. */
     desktopDefaults?: { record(clientId: string, defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> }
     /** Delegation's own record of the host's threads (#1310), present only where a headless host runs delegation for them. */
     delegationViews?: DelegationViews
+    /** The host's own check queue (#1312), present only where a headless host keeps one: what its desktops' windows show of it. */
+    checks?: CheckQueue
     /** Bringing changes back (#1030), true only when the host's Owl answer turns it on and it runs Git. */
     bringBack?: boolean }) {
     this.control = options.control
@@ -376,6 +413,11 @@ export class LocalHostService implements HostService {
   get supportsHostFacts(): boolean { return this.options.facts !== undefined }
   get supportsThreadStarts(): boolean { return this.options.threadStarts !== undefined }
   get supportsProjectOrigins(): boolean { return this.options.projectOrigins !== undefined }
+  get supportsProjectSetup(): boolean { return this.options.setUpProject !== undefined }
+  setUpProject(request: ProjectSetupRequest): Promise<ProjectSetupResult> {
+    if (!this.options.setUpProject) return Promise.reject(new Error('This host does not set up copies of projects.'))
+    return this.options.setUpProject(request)
+  }
   get supportsHostDelegation(): boolean { return this.options.desktopDefaults !== undefined }
   /** Keeps a desktop's defaults for the client that sent them; the socket listener admits only a recorded desktop. */
   desktopDefaults(defaults: DesktopDefaultsInput, client: ClientIdentity): Promise<DesktopDefaultsReceipt> {
@@ -397,6 +439,10 @@ export class LocalHostService implements HostService {
   subscribeDelegationViews(listener: (change: DelegationViewsChange) => void): () => void {
     return this.options.delegationViews?.onViewsChanged(threadIds => listener({ threadIds })) ?? (() => undefined)
   }
+  get supportsCheckQueueViews(): boolean { return this.options.checks !== undefined }
+  /** The queue's own view, taken only after it changed, so a read copies nothing. */
+  checkQueue(): readonly CheckQueueEntry[] | undefined { return this.options.checks?.view() }
+  subscribeCheckQueue(listener: () => void): () => void { return this.options.checks?.subscribe(listener) ?? (() => undefined) }
   /** Read from the projects as the host last published them, without copying them. */
   projectOrigins(): Promise<ProjectOrigins> {
     if (!this.options.projectOrigins) return Promise.reject(new Error('This host does not report the repositories of its projects.'))
@@ -433,7 +479,7 @@ export class LocalHostService implements HostService {
   }
   usageRefresh(providerIds?: ProviderId[], background = false): Promise<UsageLocalHostRead> {
     if (!this.usage) return Promise.reject(new Error('Usage is unavailable on this host.'))
-    const named = providerIds === undefined ? undefined : usageProviderIdSchema.array().max(usageProviderIdSchema.options.length).parse(providerIds)
+    const named = providerIds === undefined ? undefined : usageProviderIdsSchema.parse(providerIds)
     return background ? this.usage.refresh(named, true) : this.usage.refresh(named)
   }
   usageClear(request: UsageLocalClearRequest, client: ClientIdentity): Promise<UsageLocalClearResult> {

@@ -116,7 +116,7 @@ interface Downstream {
  * the first's reads the workspace's thread changes, the second's its activity snapshots. Each usage reads usage through
  * `visitUsage`, which fails for the sessions in `failingUsage`.
  */
-async function stack(control: TestControlOptions = {}, threads = 6, projectEach = false) {
+async function stack(control: TestControlOptions = {}, threads = 6, projectEach = false, reconnects = true) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-coordinator-changes-'))
   cleanup.push(() => rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 }))
   await mkdir(join(root, 'project'), { recursive: true })
@@ -147,6 +147,12 @@ async function stack(control: TestControlOptions = {}, threads = 6, projectEach 
     if (name === 'whole') (coordinator as unknown as { acceptsWhole: boolean }).acceptsWhole = true
     // Sotto's note to a thread about its prototype question is taken by the provider, as one that goes through is.
     vi.spyOn(coordinator as unknown as { sendPrototypeQuestionBack(): Promise<boolean> }, 'sendPrototypeQuestionBack').mockResolvedValue(true)
+    // Each coordinator retries a disconnected provider it counts as enabled (codex, the default) on a real five-second timer,
+    // and the retry connects the provider both share. A long run outlasts it on a loaded runner: the first timer's retry
+    // connects codex and names it enabled, and the second finds it connected and names nothing, so the two differ by when a
+    // timer fired, not by how they take changes in (#1597). Reconnecting is not what the long runs compare, so there neither
+    // retries.
+    if (!reconnects) vi.spyOn(coordinator as unknown as { scheduleProviderReconnects(): void }, 'scheduleProviderReconnects').mockImplementation(() => undefined)
     const requests = sottoRequests()
     coordinator.useSottoRequests(requests.requests)
     await coordinator.start()
@@ -263,6 +269,9 @@ async function differences({ changed, whole }: Stack): Promise<string[]> {
     return activity && { ...activity, metadata: { ...activity.metadata, startedAt: undefined } }
   }
   const [changedUsage, wholeUsage] = [await saved(changed), await saved(whole)]
+  const pageBookkeeping = (seen: Downstream) => (seen.control as unknown as { questionPages: { entries: Map<string, { goneAt?: number }>; lingering: Set<string> } }).questionPages
+  const lingeringPages = (seen: Downstream) => [...pageBookkeeping(seen).lingering].sort()
+  const gonePages = (seen: Downstream) => [...pageBookkeeping(seen).entries].filter(([, entry]) => entry.goneAt !== undefined).map(([key]) => key).sort()
   const targets = changed.targets()
   const aspects: [string, unknown, unknown][] = [
     ['the coordinator\'s host snapshot', changed.control.watcherSnapshot(), whole.control.watcherSnapshot()],
@@ -275,6 +284,8 @@ async function differences({ changed, whole }: Stack): Promise<string[]> {
     ['the threads whose usage was read', usage(changed), usage(whole)],
     ['the usage records saved', changedUsage, wholeUsage],
     ['the prototype and page records', records(changed), records(whole)],
+    ['the question pages lingering', lingeringPages(changed), lingeringPages(whole)],
+    ['the question pages gone', gonePages(changed), gonePages(whole)],
   ]
   return aspects.flatMap(([aspect, left, right]) => { const a = text(left), b = text(right); return a === b ? [] : [`${aspect} ${where(a, b)}`] })
 }
@@ -336,7 +347,7 @@ function prng(seed: number): (below: number) => number {
 /** The seeded run, with every operation family once in a fixed order first and then a seeded mix of them. */
 async function equivalenceRun(control: TestControlOptions, seed: number, rounds = 110) {
   vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
-  const made = await stack(control)
+  const made = await stack(control, 6, false, false)
   const { adapter, workspace, changed, whole, sessions, sotto, at, publish, failingUsage } = made
   const both = [changed, whole]
   // The changes path takes most publications in as changes; the whole path never subscribes to them.
@@ -494,6 +505,38 @@ describe('the coordinator at its limits', () => {
   }, 120_000)
 
   /**
+   * #1535: a thread whose kept reply another thread's mark lets go is read again at its place in the same pass, but the
+   * pages read in (a) still had that reply kept. The next change has to name it, as the whole path examines every thread
+   * there, or its old page never starts lingering and its token keeps being served.
+   */
+  it('examines the page of a thread whose kept reply a mark let go on the next change', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    const made = await stack({ watcherEnabled: true }, 6, false, false)
+    const { changed, whole, sotto, at, publish } = made
+    for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
+    const [n, c] = ['s2', 's5']
+    // N and C are marked; N is archived, which lets its kept reply go while its page stays found.
+    await markWithPages(made, [n])
+    await markWithPages(made, [c])
+    at(n).archivedAt = AT; publish(n)
+    await agree(made, 'N archived')
+    // C keeps its page through its kept reply alone once it replies naming no page.
+    made.adapter.log.add(c, { id: 'plain-c', role: 'assistant', text: 'Nothing else to show.', createdAt: new Date().toISOString() }); publish(c)
+    await agree(made, 'C replying again')
+    // The kept marks are filled past C, so C's is the oldest.
+    for (const each of [changed, whole]) fillKept(each, 'old')
+    expect(keptOf(changed)[0]).toBe(sotto(c))
+    // C and N are named in one change: (a) reads C with its kept reply still kept, then N's mark lets it go.
+    at(c).title = 'Thread C again'; at(n).archivedAt = undefined
+    publish(c, n)
+    await expect.poll(() => [keptOf(changed).includes(sotto(c)), keptOf(whole).includes(sotto(c))], { timeout: 10_000 }).toEqual([false, false])
+    // The whole path reads C without its kept reply here; the changes path has to name C again on the next change.
+    made.adapter.log.add('s1', { id: 'unrelated', role: 'user', text: 'Unrelated', createdAt: AT }); publish()
+    await quiet()
+    expect(await differences(made)).toEqual([])
+  }, 120_000)
+
+  /**
    * Codex's case (#925 review): N comes before 65 threads whose kept marks are the oldest, in display order, the first 64
    * kept through their newest reply and the 65th through an older one. N taking its mark back lets the first go; read
    * again, each takes its mark back and lets the next go, until the 65th, which cannot, loses its mark. The chain is read
@@ -566,7 +609,7 @@ describe('the coordinator at its limits', () => {
    */
   it.each([['before', 's1', 's2'], ['after', 's5', 's2']] as const)('clears a mark whose kept reply another thread\'s mark let go, with that thread %s it', async (_order, a, b) => {
     vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
-    const made = await stack({ watcherEnabled: true })
+    const made = await stack({ watcherEnabled: true }, 6, false, false)
     const { adapter, changed, whole, sotto, at, publish } = made
     for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
     // Dated now: a coordinator marks only replies written after its marks began, when it was made.

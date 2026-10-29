@@ -128,8 +128,10 @@ export function delegationRefusalLine(view: Pick<RefusedView, 'action' | 'refusa
     const machine = parentMachine
     // The desktop relay (#1316): This computer was not connected to that machine, so nothing started and nothing was queued (Zach, October 23, 2026).
     if (view.away === true) return t`This computer isn't connected to ${machine}, so nothing was started there. Start it on ${machine} instead, or try again when this computer is back.`
-    // This computer refused a start relayed to it: another machine, or one without the project (Zach, October 27, 2026).
-    if (view.relayed === true && asked !== undefined) return t`Asked for ${asked}. ${machine} can start threads on ${machine} or on This computer for now.`
+    // This computer refused a start relayed to it (#1316 part 2): the machine asked for was not connected, had no copy of the
+    // project, or was the thread's own. Since This computer starts relayed threads on its paired hosts too, Zach's words of
+    // October 27 ("can start threads on forge or on This computer for now") are no longer true. Not settled with Zach.
+    if (view.relayed === true && asked !== undefined) return t`Asked for ${asked}. This computer couldn't start it there, so nothing was started.`
     return asked !== undefined ? t`Asked for ${asked}. ${machine} can start threads only on ${machine} for now. Nothing was started.`
       : t`This thread runs on ${machine}, and a thread on ${machine} can start threads only on ${machine}. Nothing was started. Ask again without naming a machine to start it on ${machine}.`
   }
@@ -279,14 +281,17 @@ export function delegatedNote(parent: string, newest: Pick<DelegatedView, 'outco
 
 /**
  * What kind of delegated work a delegation is, as its row's mark and word say it: a code review, a code review on Muse,
- * or any other kind of work. Not "subagent", which is a provider's own agent (CONTEXT.md, Delegation).
+ * a **check** (#1312, Zach's pick C on October 28, 2026), where Work across machines shows checks, or any other kind of
+ * work. Not "subagent", which is a provider's own agent (CONTEXT.md, Delegation).
  */
-export type DelegatedKind = 'review' | 'muse-review' | 'work'
-export const delegatedKind = (work: DelegationWork, provider: string | undefined): DelegatedKind =>
-  work !== 'code-review' ? 'work' : provider === 'muse' ? 'muse-review' : 'review'
+export type DelegatedKind = 'review' | 'muse-review' | 'check' | 'work'
+export const delegatedKind = (work: DelegationWork, provider: string | undefined, check = false): DelegatedKind =>
+  check ? 'check' : work !== 'code-review' ? 'work' : provider === 'muse' ? 'muse-review' : 'review'
 export const delegatedKindWord = (kind: DelegatedKind, work: DelegationWork): string =>
   kind === 'muse-review' ? t({ message: 'Muse review', comment: 'A kind of delegated work: a code review done on Muse.' })
-    : kind === 'review' ? t({ message: 'Review', context: 'delegated work', comment: 'A kind of delegated work: a code review.' }) : DELEGATION_WORK_TITLES[work]
+    : kind === 'review' ? t({ message: 'Review', context: 'delegated work', comment: 'A kind of delegated work: a code review.' })
+      : kind === 'check' ? t({ message: 'Check', context: 'delegated work', comment: 'A kind of delegated work: a thread started to run tests, which the user calls a check. Not a pull request\'s CI checks.' })
+        : DELEGATION_WORK_TITLES[work]
 
 /**
  * Where a row of delegated work stands: the outcome, told apart where the row says more than the outcome does. A brief
@@ -297,7 +302,7 @@ export type DelegatedState = DelegationOutcome | 'starting' | 'needs-you' | 'ret
 export function delegatedState(view: DelegationView, kind: DelegatedKind, asking: boolean): { readonly id: DelegatedState; readonly word: string } {
   if (!settledDelegation(view) && asking) return { id: 'needs-you', word: t({ message: 'Needs you', context: 'delegated work', comment: 'A delegated thread\'s state: it waits on the user\'s answer.' }) }
   if (view.outcome === 'working' && view.waiting && !view.wait) return { id: 'starting', word: t({ message: 'Starting', comment: 'A delegated thread\'s state: its brief is still being started or sent.' }) }
-  if (view.outcome === 'answered' && kind !== 'work') return { id: 'returned', word: t({ message: 'Returned', comment: 'A delegated review\'s state: it answered, and what it found is in its thread.' }) }
+  if (view.outcome === 'answered' && (kind === 'review' || kind === 'muse-review')) return { id: 'returned', word: t({ message: 'Returned', comment: 'A delegated review\'s state: it answered, and what it found is in its thread.' }) }
   return { id: view.outcome, word: DELEGATION_OUTCOME_WORDS[view.outcome] }
 }
 
@@ -342,22 +347,24 @@ export function delegatedLine(view: DelegationView, state: DelegatedState, now: 
 /**
  * A turn's delegated work in a few words, after its Worked for line: how many of each kind were started or sent, then
  * how many wait on the user, failed, are unknown or were refused, so a closed fold still says so. A refused delegation
- * started nothing, so it counts only as refused. Empty when there is none.
+ * started nothing, so it counts only as refused. With `checks`, where Work across machines shows them, a check counts as
+ * a check (#1312). Empty when there is none.
  */
-export function delegatedSummary(views: readonly DelegationView[], threadOf: (view: DelegationView) => Pick<AgentThread, 'providerId' | 'requests' | 'settledAt' | 'settledOverride' | 'archivedAt'> | undefined): string {
-  const kinds: Record<DelegatedKind, number> = { work: 0, review: 0, 'muse-review': 0 }
+export function delegatedSummary(views: readonly DelegationView[], threadOf: (view: DelegationView) => Pick<AgentThread, 'providerId' | 'requests' | 'settledAt' | 'settledOverride' | 'archivedAt'> | undefined, checks = false): string {
+  const kinds: Record<DelegatedKind, number> = { work: 0, check: 0, review: 0, 'muse-review': 0 }
   let asking = 0, failed = 0, unknown = 0, refused = 0
   for (const view of views) {
     if (view.outcome === 'refused') { refused++; continue }
     const thread = threadOf(view)
-    kinds[delegatedKind(view.work, thread?.providerId)]++
+    kinds[delegatedKind(view.work, thread?.providerId, checks && view.check === true)]++
     if (pendingRequestOf(view, thread)) asking++
     if (view.outcome === 'failed') failed++
     if (view.outcome === 'unknown') unknown++
   }
-  const work = kinds.work, reviews = kinds.review, museReviews = kinds['muse-review']
+  const work = kinds.work, checked = kinds.check, reviews = kinds.review, museReviews = kinds['muse-review']
   return [
     work && plural(work, { one: '# delegated thread', other: '# delegated threads' }),
+    checked && plural(checked, { one: '# check', other: '# checks' }),
     reviews && plural(reviews, { one: '# review', other: '# reviews' }),
     museReviews && plural(museReviews, { one: 'Muse review', other: '# Muse reviews' }),
     asking && plural(asking, { one: '# needs you', other: '# need you' }),

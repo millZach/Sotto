@@ -65,6 +65,12 @@ export const codexItemSchema = z.preprocess(value => {
   kind: z.string().optional(), agentThreadId: z.string().optional(), agentPath: z.string().optional(),
 }))
 type Item = z.infer<typeof codexItemSchema>
+/**
+ * A sub-agent's own notifications, parsed for every one Codex sends while sub-agents work. Built once here: a zod schema
+ * built per notification cost main 1.4 s a minute (October 2026), and `zodSchemaSites.test.ts` keeps it that way.
+ */
+const childItemNotificationSchema = z.object({ turnId: z.string(), item: codexItemSchema, startedAtMs: z.number().nullish(), completedAtMs: z.number().nullish() })
+const childTurnNotificationSchema = z.object({ turn: z.object({ id: z.string().optional(), status: z.string(), startedAt: z.number().nullish(), completedAt: z.number().nullish(), durationMs: z.number().nonnegative().nullish(), error: z.object({ message: z.string() }).nullish() }).optional(), status: z.object({ type: z.string() }).optional() })
 /** One agent as a conversation observed it: where it was last reported, and its compact identity. */
 type Child = { thread: ActivityConversation; turnId: string; activityId: string; agent: ObservedAgent; path?: string }
 type Context = { turnId: string; afterMessageId?: string | undefined; phase: 'started' | 'completed' | 'history'; startedAtMs?: number | undefined; completedAtMs?: number | undefined; terminal?: boolean | undefined }
@@ -83,10 +89,11 @@ const mappedStatus = (status: string | undefined, fallback: AgentActivity['statu
   status === 'inProgress' || status === 'running' || status === 'pendingInit' ? 'running'
     : status === 'completed' ? 'completed' : status === 'failed' || status === 'errored' || status === 'declined' || status === 'notFound' ? 'failed'
       : status === 'interrupted' || status === 'shutdown' ? 'interrupted' : fallback
+const textPartSchema = z.object({ type: z.enum(['text', 'inputText', 'input_text']), text: z.string() })
 const contentText = (value: unknown[] | null | undefined): string | undefined => {
   if (!value) return undefined
   return value.flatMap(part => {
-    const parsed = z.object({ type: z.enum(['text', 'inputText', 'input_text']), text: z.string() }).safeParse(part)
+    const parsed = textPartSchema.safeParse(part)
     return parsed.success ? [parsed.data.text] : []
   }).join('\n')
 }
@@ -470,13 +477,13 @@ export class CodexActivityProjection {
     let owner = this.owners.get(child)
     if (!owner) return undefined
     if (method === 'item/started' || method === 'item/completed') {
-      const nested = z.object({ turnId: z.string(), item: codexItemSchema, startedAtMs: z.number().nullish(), completedAtMs: z.number().nullish() }).safeParse(params)
+      const nested = childItemNotificationSchema.safeParse(params)
       if (!nested.success || nested.data.item.type !== 'collabAgentToolCall' && nested.data.item.type !== 'subAgentActivity') return undefined
       this.item(owner.thread, { ...nested.data.item, senderThreadId: child }, { turnId: nested.data.turnId,
         phase: method === 'item/started' ? 'started' : 'completed', startedAtMs: nested.data.startedAtMs ?? undefined, completedAtMs: nested.data.completedAtMs ?? undefined }, owner.path)
       return owner.thread
     }
-    const payload = z.object({ turn: z.object({ id: z.string().optional(), status: z.string(), startedAt: z.number().nullish(), completedAt: z.number().nullish(), durationMs: z.number().nonnegative().nullish(), error: z.object({ message: z.string() }).nullish() }).optional(), status: z.object({ type: z.string() }).optional() }).safeParse(params)
+    const payload = childTurnNotificationSchema.safeParse(params)
     if (!payload.success) return undefined
     const status = method === 'turn/started' ? 'running' : method === 'turn/completed' ? payload.data.turn?.status
       : method === 'thread/status/changed' ? ({ active: 'running', idle: 'unknown', systemError: 'errored', notLoaded: 'unknown' } as Record<string, string>)[payload.data.status?.type ?? ''] : undefined

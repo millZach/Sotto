@@ -18,6 +18,14 @@ private struct DensityKey: EnvironmentKey {
     static var defaultValue: PhoneDensity { PhonePreferences().density }
 }
 
+private struct GlowKey: EnvironmentKey {
+    static var defaultValue: PhoneGlow { PhonePreferences().glow }
+}
+
+private struct ScreenKey: EnvironmentKey {
+    static let defaultValue = CGSize(width: 430, height: 932)
+}
+
 extension EnvironmentValues {
     /// The chosen palette's id. Set once at the root from the stored preference.
     var sottoThemeID: String {
@@ -28,6 +36,22 @@ extension EnvironmentValues {
     var sottoDensity: PhoneDensity {
         get { self[DensityKey.self] }
         set { self[DensityKey.self] = newValue }
+    }
+    /// How strongly the lights shine. Set once at the root from the stored preference.
+    var sottoGlow: PhoneGlow {
+        get { self[GlowKey.self] }
+        set { self[GlowKey.self] = newValue }
+    }
+    /// The whole screen's size, safe areas included, set at the root. Glass's backdrop is laid across it.
+    var sottoScreen: CGSize {
+        get { self[ScreenKey.self] }
+        set { self[ScreenKey.self] = newValue }
+    }
+    /// Glass's tints while Glass paints see-through (ADR-0150). Nil for every other theme, and for Glass under Reduce
+    /// Transparency, which paints Glass's solid roles as any theme paints its own.
+    var sottoGlass: GlassTints? {
+        guard sottoThemeID == ThemePalettes.glass.id, !accessibilityReduceTransparency else { return nil }
+        return ThemePalettes.glassTints(dark: colorScheme == .dark)
     }
     /// The chosen palette in the appearance in effect here. Read it with `@Environment(\.sottoTheme)` where a
     /// view needs a `Color` (gradients, shadows); everywhere else, `Palette` roles resolve it themselves.
@@ -41,6 +65,15 @@ extension ThemePalettes {
         let current = PhoneThemeID.current(id)
         return all.first { $0.id == current } ?? sotto
     }
+}
+
+extension ThemePalettes {
+    static func glassTints(dark: Bool) -> GlassTints { dark ? glassTintsDark : glassTintsLight }
+}
+
+extension ThemeTint {
+    /// The tint as SwiftUI lays it over what is under it.
+    var fill: Color { color.color.opacity(alpha) }
 }
 
 extension ThemePalette {
@@ -217,6 +250,10 @@ extension Font {
     /// the root's typesetting language points at the interface language (ADR-0123). Urdu is set in the iPhone's
     /// Nastaliq face, the way Urdu is written, rather than the Naskh shapes the fallback would give it.
     static func figtree(_ size: CGFloat, _ style: Font.TextStyle, _ weight: Font.Weight = .regular) -> Font {
+        .custom(figtreeFace(weight), size: size, relativeTo: style)
+    }
+    /// The face `figtree` draws a weight in.
+    static func figtreeFace(_ weight: Font.Weight) -> String {
         let bold: Bool
         let face: String
         switch weight {
@@ -224,12 +261,18 @@ extension Font {
         case .semibold, .medium: face = "Figtree-SemiBold"; bold = true
         default: face = "Figtree-Regular"; bold = false
         }
-        if Interface.languageCode == "ur" {
-            return .custom(bold ? "NotoNastaliqUrdu-Bold" : "NotoNastaliqUrdu", size: size, relativeTo: style)
-        }
-        return .custom(face, size: size, relativeTo: style)
+        if Interface.languageCode == "ur" { return bold ? "NotoNastaliqUrdu-Bold" : "NotoNastaliqUrdu" }
+        return face
     }
     static let mono = Font.system(.subheadline, design: .monospaced)
+}
+
+extension UIFont {
+    /// Figtree as `Font.figtree` draws it, for a text view, scaled to the text size in `traits`.
+    static func figtree(_ size: CGFloat, _ style: UIFont.TextStyle, _ weight: Font.Weight = .regular, traits: UITraitCollection) -> UIFont {
+        let base = UIFont(name: Font.figtreeFace(weight), size: size) ?? .systemFont(ofSize: size)
+        return UIFontMetrics(forTextStyle: style).scaledFont(for: base, compatibleWith: traits)
+    }
 }
 
 /// The spacing scale.
@@ -306,7 +349,7 @@ extension PhoneTextSize {
     }
 }
 
-/// Applies this iPhone's display preferences to everything under it: theme, appearance, text size and density.
+/// Applies this iPhone's display preferences to everything under it: theme, appearance, text size, density and glow.
 /// Nothing here changes a computer's settings.
 struct PhoneDisplayPreferences: ViewModifier {
     @AppStorage(PhonePreferenceKey.theme) private var themeID = ThemePalettes.defaultID
@@ -314,6 +357,7 @@ struct PhoneDisplayPreferences: ViewModifier {
     @AppStorage(PhonePreferenceKey.textSize) private var textSize = ""
     @AppStorage(PhonePreferenceKey.legacyLargerText) private var legacyLarger = false
     @AppStorage(PhonePreferenceKey.density) private var density = PhoneDensity.comfortable.rawValue
+    @AppStorage(PhonePreferenceKey.glow) private var glow = PhoneGlow.standard
     @Environment(\.dynamicTypeSize) private var systemSize
     func body(content: Content) -> some View {
         let palette = ThemePalettes.named(themeID)
@@ -321,6 +365,7 @@ struct PhoneDisplayPreferences: ViewModifier {
         return content
             .environment(\.sottoThemeID, palette.id)
             .environment(\.sottoDensity, PhoneDensity(rawValue: density) ?? .comfortable)
+            .environment(\.sottoGlow, PhoneGlow(glow))
             .tint(palette.adaptive(.accent))
             .preferredColorScheme((PhoneAppearance(rawValue: appearance) ?? .dark).scheme)
             .dynamicTypeSize(size.applied(to: systemSize))
@@ -337,6 +382,7 @@ struct Light: View {
     var size: CGFloat = 8
     var breathing = false
     @Environment(\.sottoTheme) private var theme
+    @Environment(\.sottoGlow) private var glow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         Group {
@@ -344,27 +390,30 @@ struct Light: View {
                 Circle().strokeBorder(theme.color(.muted), lineWidth: 1.5)
             } else if moving {
                 // The same dot and halo drawn by Core Animation, which breathes it without the app's help.
-                BreathingLight(color: theme.rgb(role))
+                BreathingLight(color: theme.rgb(role), glow: glow)
                     .allowsHitTesting(false)
             } else {
                 // A gradient halo rather than a shadow: it costs nothing to move or fade.
                 Circle().fill(color)
-                    .background(
-                        Circle()
-                            .fill(RadialGradient(colors: [color.opacity(Light.haloStrength), color.opacity(0)], center: .center,
-                                                 startRadius: size * 0.3, endRadius: Light.haloRadius(size)))
-                            .frame(width: Light.haloRadius(size) * 2, height: Light.haloRadius(size) * 2)
-                    )
+                    .background {
+                        if glow.shows {
+                            let reach = Light.haloRadius(size, glow)
+                            Circle()
+                                .fill(RadialGradient(colors: [color.opacity(glow.alpha(Light.haloStrength)), color.opacity(0)], center: .center,
+                                                     startRadius: size * 0.3, endRadius: reach))
+                                .frame(width: reach * 2, height: reach * 2)
+                        }
+                    }
             }
         }
         .frame(width: size, height: size)
         .accessibilityHidden(true)
     }
     private var moving: Bool { breathing && !reduceMotion && tone != .off && !DebugFlags.still }
-    /// The halo reaches as far past the dot as the shadow it replaced did (about 13 points, whatever the dot's size),
-    /// starting a little softer than the dot so the core stays the dot itself.
+    /// At the standard glow the halo reaches as far past the dot as the shadow it replaced did (about 13 points, whatever
+    /// the dot's size), starting a little softer than the dot so the core stays the dot itself.
     static let haloStrength = 0.45
-    static func haloRadius(_ size: CGFloat) -> CGFloat { size / 2 + 13 }
+    static func haloRadius(_ size: CGFloat, _ glow: PhoneGlow) -> CGFloat { size / 2 + CGFloat(glow.radius(13)) }
     private var role: ThemeRoleName {
         switch tone {
         case .accent: return .accent
@@ -379,15 +428,17 @@ struct Light: View {
 /// A breathing light: the dot and its halo shrink to 0.88 and dim to 0.55 and back, 1.3 seconds each way.
 private struct BreathingLight: UIViewRepresentable {
     let color: ThemeRGB
+    let glow: PhoneGlow
     func makeUIView(context: Context) -> LightLoopView { LightLoopView(frame: .zero) }
     func updateUIView(_ view: LightLoopView, context: Context) {
-        view.paint(color)
+        view.paint(color, glow: glow)
         view.running = true
     }
 }
 
 /// `Light`'s dot and halo as layers. The halo is the same radial fade as a still light's (`Light.haloStrength` of the
-/// colour at 0.3 of the dot's size out to clear at `Light.haloRadius`), so a breathing light looks like a still one.
+/// colour at 0.3 of the dot's size out to clear at `Light.haloRadius`, both scaled by the glow), so a breathing light
+/// looks like a still one. With no glow the halo layer is removed.
 final class LightLoopView: LoopingView {
     private let halo = CAGradientLayer()
     private let dot = CALayer()
@@ -396,26 +447,35 @@ final class LightLoopView: LoopingView {
         halo.type = .radial
         halo.startPoint = CGPoint(x: 0.5, y: 0.5)
         halo.endPoint = CGPoint(x: 1, y: 1)
-        stage.layer.addSublayer(halo)
         stage.layer.addSublayer(dot)
     }
     required init?(coder: NSCoder) { fatalError("LightLoopView is made in code") }
     private var painted: ThemeRGB?
-    func paint(_ color: ThemeRGB) {
+    private var glow = PhoneGlow(PhoneGlow.standard)
+    func paint(_ color: ThemeRGB, glow: PhoneGlow) {
         // A layer given its colours again, even the same ones, is drawn again; the view around it redraws far more often.
-        guard color != painted else { return }
+        guard color != painted || glow != self.glow else { return }
+        let reaches = glow != self.glow
         painted = color
+        self.glow = glow
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         dot.backgroundColor = color.uiColor(1).cgColor
-        halo.colors = [color.uiColor(Light.haloStrength).cgColor, color.uiColor(0).cgColor]
+        // With no glow there is no halo layer at all.
+        if !glow.shows {
+            halo.removeFromSuperlayer()
+        } else if halo.superlayer == nil {
+            stage.layer.insertSublayer(halo, below: dot)
+        }
+        halo.colors = [color.uiColor(glow.alpha(Light.haloStrength)).cgColor, color.uiColor(0).cgColor]
         CATransaction.commit()
+        if reaches { setNeedsLayout() }
     }
     override func layoutStage() {
         let side = min(bounds.width, bounds.height)
         dot.frame = CGRect(x: bounds.midX - side / 2, y: bounds.midY - side / 2, width: side, height: side)
         dot.cornerRadius = side / 2
-        let radius = Light.haloRadius(side)
+        let radius = Light.haloRadius(side, glow)
         halo.frame = CGRect(x: bounds.midX - radius, y: bounds.midY - radius, width: radius * 2, height: radius * 2)
         halo.locations = [NSNumber(value: Double(side * 0.3 / radius)), NSNumber(value: 1.0)]
     }
@@ -662,7 +722,7 @@ struct SheetPage<Content: View>: View {
             }
         }
         .coordinateSpace(.named("sheet-page"))
-        .background(Palette.canvas)
+        .pageGround()
         .overlay(alignment: .top) { StatusBarFade().opacity(fade) }
     }
     /// The fade comes in over the first 24 points of travel and is clear at rest.
@@ -672,15 +732,15 @@ struct SheetPage<Content: View>: View {
     }
 }
 
-/// The canvas fading in under the status bar.
+/// The page's ground fading in under the status bar.
 private struct StatusBarFade: View {
-    @Environment(\.sottoTheme) private var theme
     var body: some View {
         GeometryReader { proxy in
-            LinearGradient(stops: [
-                Gradient.Stop(color: theme.canvas.color, location: 0.62),
-                Gradient.Stop(color: theme.canvas.color.opacity(0), location: 1)
-            ], startPoint: .top, endPoint: .bottom)
+            PageGround()
+                .mask(LinearGradient(stops: [
+                    Gradient.Stop(color: .black, location: 0.62),
+                    Gradient.Stop(color: .clear, location: 1)
+                ], startPoint: .top, endPoint: .bottom))
                 .frame(height: proxy.safeAreaInsets.top + 10)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
@@ -726,15 +786,53 @@ extension PageHeading where Trailing == EmptyView {
 
 // MARK: - Glass
 
+/// What a page stands on: the canvas, or under Glass the room's tint over Glass's backdrop (ADR-0150). The backdrop is
+/// laid across the whole screen wherever a page is cut from it, so pages, the tabs' bar and the status bar's fade meet
+/// without a seam.
+struct PageGround: View {
+    @Environment(\.sottoGlass) private var glass
+    @Environment(\.sottoScreen) private var screen
+    var body: some View {
+        if let glass {
+            GeometryReader { proxy in
+                let frame = proxy.frame(in: .global)
+                let width = max(frame.width, 1), height = max(frame.height, 1)
+                LinearGradient(colors: glass.backdrop.map(\.color),
+                               startPoint: UnitPoint(x: -frame.minX / width, y: -frame.minY / height),
+                               endPoint: UnitPoint(x: (screen.width - frame.minX) / width, y: (screen.height - frame.minY) / height))
+                    .overlay(glass.room.fill)
+            }
+        } else {
+            Rectangle().fill(Palette.canvas)
+        }
+    }
+}
+
+extension View {
+    /// The page's ground behind this view, reaching under the safe areas.
+    func pageGround() -> some View {
+        background { PageGround().ignoresSafeArea().accessibilityHidden(true) }
+    }
+}
+
 /// Frosted glass: a material with a translucent tint of the surface and a hairline highlight. Under Reduce
-/// Transparency it is a solid surface.
+/// Transparency it is a solid surface. Under the Glass theme on iOS 26 and later it is the system's own Liquid Glass,
+/// tinted as much as the frosted glass is, so its words read the same.
 struct GlassSurface<S: InsettableShape>: ViewModifier {
     let shape: S
     var strong = false
     @Environment(\.sottoTheme) private var theme
+    @Environment(\.sottoGlass) private var glass
     @Environment(\.colorScheme) private var scheme
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-    func body(content: Content) -> some View {
+    @ViewBuilder func body(content: Content) -> some View {
+        if glass != nil, #available(iOS 26, *) {
+            content.glassEffect(.regular.tint(theme.color(strong ? .overlay : .surface).opacity(tintAmount)), in: shape)
+        } else {
+            frosted(content)
+        }
+    }
+    private func frosted(_ content: Content) -> some View {
         content
             .background {
                 if reduceTransparency {
@@ -768,20 +866,30 @@ extension View {
 /// How a card is lit. Needs you carries a warm glow, working a breathing accent halo, answered an accent glow.
 enum CardTone { case plain, needsYou, answered, working, online }
 
-/// A card's surface: radius 20, a hairline, a highlight along the top edge, and the glow its tone carries.
+/// A card's surface: radius 20, a hairline, a highlight along the top edge, and the glow its tone carries. Under Glass
+/// the card is the raised tint over the room, its tone a tint over that, and its glow shines through it.
 struct CardSurface: ViewModifier {
     let tone: CardTone
     var radius: CGFloat = Radius.lg
     @Environment(\.sottoTheme) private var theme
+    @Environment(\.sottoGlass) private var glass
     @Environment(\.colorScheme) private var scheme
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return content
             .background {
-                shape.fill(LinearGradient(stops: [
-                    Gradient.Stop(color: top, location: 0),
-                    Gradient.Stop(color: theme.color(.surface), location: 0.72)
-                ], startPoint: .top, endPoint: .bottom))
+                if let glass {
+                    shape.fill(glass.raised.fill)
+                        .overlay(shape.fill(LinearGradient(stops: [
+                            Gradient.Stop(color: toneTint, location: 0),
+                            Gradient.Stop(color: toneTint.opacity(0), location: 0.72)
+                        ], startPoint: .top, endPoint: .bottom)))
+                } else {
+                    shape.fill(LinearGradient(stops: [
+                        Gradient.Stop(color: top, location: 0),
+                        Gradient.Stop(color: theme.color(.surface), location: 0.72)
+                    ], startPoint: .top, endPoint: .bottom))
+                }
             }
             .clipShape(shape)
             .overlay(shape.strokeBorder(ring, lineWidth: 1))
@@ -790,10 +898,22 @@ struct CardSurface: ViewModifier {
     }
     @ViewBuilder private var glow: some View {
         switch tone {
-        case .needsYou: GlowLayer(radius: radius, color: theme.rgb(.warning), alpha: 0.5, base: theme.rgb(.surface), period: 6)
-        case .working: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.5, base: theme.rgb(.surface), period: 4.4)
-        case .answered: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.6, base: theme.rgb(.surface), period: nil)
+        case .needsYou: GlowLayer(radius: radius, color: theme.rgb(.warning), alpha: 0.5, base: base, period: 6)
+        case .working: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.5, base: base, period: 4.4)
+        case .answered: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.6, base: base, period: nil)
         case .plain, .online: EmptyView()
+        }
+    }
+    /// What the glow fills the card's shape with: the surface, or nothing under Glass, where the card is see-through.
+    private var base: ThemeRGB? { glass == nil ? theme.rgb(.surface) : nil }
+    /// The tone's tint at the card's top, laid over the glass.
+    private var toneTint: Color {
+        switch tone {
+        case .plain: return .clear
+        case .needsYou: return theme.color(.warning).opacity(Tint.needsYou)
+        case .answered: return theme.color(.accent).opacity(Tint.answered)
+        case .working: return theme.color(.accent).opacity(Tint.working)
+        case .online: return theme.color(.accent).opacity(Tint.online)
         }
     }
     private var top: Color {
@@ -858,24 +978,55 @@ extension View {
     }
 }
 
+/// A coloured glow under a control: a `SoftShadow` whose reach and strength follow the glow, and nothing at all when
+/// there is no glow. `alpha` is the glow's strength at the standard glow.
+struct GlowShadow<S: Shape>: View {
+    let shape: S
+    let color: Color
+    let alpha: Double
+    let radius: CGFloat
+    var y: CGFloat = 0
+    @Environment(\.sottoGlow) private var glow
+    var body: some View {
+        if glow.shows {
+            SoftShadow(shape: shape, color: color.opacity(glow.alpha(alpha)), radius: CGFloat(glow.radius(Double(radius))),
+                       y: CGFloat(glow.radius(Double(y))))
+        }
+    }
+}
+
+extension View {
+    /// A coloured glow under this view; see `GlowShadow`. `showing` false draws nothing.
+    func glow<S: Shape>(_ shape: S, color: Color, alpha: Double, radius: CGFloat, y: CGFloat = 0, showing: Bool = true) -> some View {
+        background {
+            if showing { GlowShadow(shape: shape, color: color, alpha: alpha, radius: radius, y: y) }
+        }
+    }
+}
+
 /// The light behind a card, breathing slowly when it has a period. Still under Reduce Motion. Takes the card's corner
 /// radius and resolved colours: the glow's colour opaque, with how strongly it shows as `alpha`.
 private struct GlowLayer: View {
     let radius: CGFloat
     let color: ThemeRGB
     let alpha: CGFloat
-    let base: ThemeRGB
+    /// What the card's shape is filled with under the glow; nil leaves it clear.
+    let base: ThemeRGB?
     let period: Double?
+    @Environment(\.sottoGlow) private var glow
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         Group {
-            if breathing {
+            if !glow.shows {
+                EmptyView()
+            } else if breathing {
                 // Drawn by Core Animation, which fades it between 0.55 and full, half the period each way. It spills
                 // past the card on purpose, so nothing here clips it.
-                BreathingGlow(radius: radius, color: color, alpha: alpha, base: base, breath: (period ?? 4) / 2)
+                BreathingGlow(radius: radius, color: color, alpha: CGFloat(glow.alpha(Double(alpha))), base: base,
+                              blur: blur, drop: drop, breath: (period ?? 4) / 2)
             } else {
-                GlowImage(shape: RoundedRectangle(cornerRadius: radius, style: .continuous), color: color.color.opacity(Double(alpha)),
-                          base: base.color)
+                GlowImage(shape: RoundedRectangle(cornerRadius: radius, style: .continuous),
+                          color: color.color.opacity(glow.alpha(Double(alpha))), base: base?.color ?? .clear, blur: blur, drop: drop)
                     .opacity(level)
             }
         }
@@ -883,6 +1034,9 @@ private struct GlowLayer: View {
         .accessibilityHidden(true)
     }
     private var breathing: Bool { period != nil && !reduceMotion && !DebugFlags.still }
+    /// The glow's blur and how far it falls below the card: 18 and 10 at the standard glow.
+    private var blur: CGFloat { CGFloat(glow.radius(18)) }
+    private var drop: CGFloat { CGFloat(glow.radius(10)) }
     /// How bright the glow holds when it is not breathing.
     private var level: Double {
         if period == nil { return 1 }
@@ -896,8 +1050,10 @@ private struct GlowImage: View {
     let shape: RoundedRectangle
     let color: Color
     let base: Color
+    let blur: CGFloat
+    let drop: CGFloat
     var body: some View {
-        shape.fill(base).softShadow(shape, color: color, radius: 18, y: 10)
+        shape.fill(base).softShadow(shape, color: color, radius: blur, y: drop)
     }
 }
 
@@ -906,20 +1062,22 @@ private struct BreathingGlow: UIViewRepresentable {
     let radius: CGFloat
     let color: ThemeRGB
     let alpha: CGFloat
-    let base: ThemeRGB
+    let base: ThemeRGB?
+    let blur: CGFloat
+    let drop: CGFloat
     /// Seconds each way.
     let breath: Double
     func makeUIView(context: Context) -> GlowLoopView { GlowLoopView(frame: .zero) }
     func updateUIView(_ view: GlowLoopView, context: Context) {
-        view.paint(radius: radius, glow: color, alpha: alpha, base: base)
+        view.paint(radius: radius, glow: color, alpha: alpha, base: base, blur: blur, drop: drop)
         view.breath = breath
         view.running = true
     }
 }
 
 /// `GlowImage` as one layer: the card's shape filled with the surface, and the glow as its shadow. The shadow has an
-/// explicit path, so Core Animation draws it without an offscreen pass. Its shadow radius is the still glow's blur of
-/// 18: compared against CI captures, Core Animation's shadow radius and SwiftUI's blur radius spread the same distance.
+/// explicit path, so Core Animation draws it without an offscreen pass. Its shadow radius is the still glow's blur, 18
+/// at the standard glow: compared against CI captures, Core Animation's shadow radius and SwiftUI's blur radius spread the same distance.
 /// The loop fades the whole of it between 0.55 and full, `breath` seconds each way.
 final class GlowLoopView: LoopingView {
     private let card = CALayer()
@@ -934,21 +1092,22 @@ final class GlowLoopView: LoopingView {
         stage.clipsToBounds = false
         card.masksToBounds = false
         card.cornerCurve = .continuous
-        card.shadowOffset = CGSize(width: 0, height: 10)
-        card.shadowRadius = 18
         stage.layer.addSublayer(card)
     }
     required init?(coder: NSCoder) { fatalError("GlowLoopView is made in code") }
-    private var painted: (CGFloat, ThemeRGB, CGFloat, ThemeRGB)?
-    func paint(radius: CGFloat, glow: ThemeRGB, alpha: CGFloat, base: ThemeRGB) {
+    private var painted: (CGFloat, ThemeRGB, CGFloat, ThemeRGB?, CGFloat, CGFloat)?
+    func paint(radius: CGFloat, glow: ThemeRGB, alpha: CGFloat, base: ThemeRGB?, blur: CGFloat, drop: CGFloat) {
         // A layer given its colours again, even the same ones, is drawn again; the view around it redraws far more often.
-        if let painted, painted == (radius, glow, alpha, base) { return }
-        painted = (radius, glow, alpha, base)
+        if let painted, painted == (radius, glow, alpha, base, blur, drop) { return }
+        painted = (radius, glow, alpha, base, blur, drop)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        card.backgroundColor = base.uiColor(1).cgColor
+        // Clear, the shadow still follows its path.
+        card.backgroundColor = base?.uiColor(1).cgColor ?? UIColor.clear.cgColor
         card.shadowColor = glow.uiColor(1).cgColor
         card.shadowOpacity = Float(alpha)
+        card.shadowRadius = blur
+        card.shadowOffset = CGSize(width: 0, height: drop)
         if card.cornerRadius != radius {
             card.cornerRadius = radius
             shapeShadow()
@@ -987,7 +1146,7 @@ struct FailedEdge: ViewModifier {
                         .fill(theme.color(.danger))
                         .frame(width: 3)
                         .padding(.vertical, 10)
-                        .softShadow(Rectangle(), color: theme.color(.danger), radius: 7)
+                        .glow(Rectangle(), color: theme.color(.danger), alpha: 1, radius: 7)
                         .opacity(0.8)
                         .accessibilityHidden(true)
                 }
@@ -1259,8 +1418,8 @@ private struct PillBody: View {
             .padding(.vertical, Space.s2)
             .frame(maxWidth: wide ? .infinity : nil, minHeight: compact ? 40 : 44)
             .foregroundStyle(foreground)
-            .background(fill, in: Capsule())
-            .softShadow(Capsule(), color: theme.color(.accent).opacity(0.4), radius: 10, y: 6, showing: kind == .primary && enabled)
+            .modifier(PillGround(fill: fill, glass: kind == .soft))
+            .glow(Capsule(), color: theme.color(.accent), alpha: 0.4, radius: 10, y: 6, showing: kind == .primary && enabled)
             .contentShape(Capsule())
             .opacity(enabled ? 1 : 0.42)
             .scaleEffect(pressed && !reduceMotion ? 0.972 : 1)
@@ -1324,7 +1483,7 @@ private struct ChoiceBody: View {
             .foregroundStyle(Palette.ink)
             .background(shape.fill(chosen ? theme.color(.accent).opacity(0.12) : theme.color(.fillSofter)))
             .overlay(shape.strokeBorder(chosen ? theme.color(.accent).opacity(0.8) : theme.color(.hairline), lineWidth: chosen ? 1.5 : 1))
-            .softShadow(shape, color: theme.color(.accent).opacity(0.35), radius: 10, showing: chosen)
+            .glow(shape, color: theme.color(.accent), alpha: 0.35, radius: 10, showing: chosen)
             .contentShape(shape)
             .opacity(!enabled ? 0.5 : 1)
             .scaleEffect(pressed && !reduceMotion ? 0.985 : 1)
@@ -1356,9 +1515,10 @@ private struct ChipBody: View {
             .padding(.vertical, Space.s2)
             .frame(minHeight: 44)
             .foregroundStyle(Palette.ink)
-            .background(Capsule().fill(selected ? theme.tinted(.surface, with: .accent, Tint.chosen) : theme.color(.fillSoft)))
+            .modifier(PillGround(fill: selected ? ThemeRole.clear : Palette.fillSoft, glass: !selected))
+            .background { if selected { Capsule().fill(theme.tinted(.surface, with: .accent, Tint.chosen)) } }
             .overlay(Capsule().strokeBorder(selected ? theme.color(.accent) : theme.color(.hairline), lineWidth: selected ? 1.5 : 1))
-            .softShadow(Capsule(), color: theme.color(.accent).opacity(0.45), radius: 9, showing: selected)
+            .glow(Capsule(), color: theme.color(.accent), alpha: 0.45, radius: 9, showing: selected)
             .contentShape(Capsule())
             .opacity(enabled ? 1 : 0.5)
             .scaleEffect(pressed && !reduceMotion ? 0.972 : 1)
@@ -1386,14 +1546,41 @@ private struct GlassCircleBody: View {
             .font(.system(size: 20, weight: .semibold))
             .foregroundStyle(Palette.accentText)
             .frame(width: 44, height: 44)
-            .glass(in: Circle())
-            .overlay(Circle().strokeBorder(theme.color(.accent).opacity(0.28), lineWidth: 1))
-            .softShadow(Circle(), color: theme.color(.accent).opacity(0.6), radius: 12, y: 6)
+            .modifier(CircleGround(ring: theme.color(.accent).opacity(0.28), tint: theme.color(.accent)))
+            .glow(Circle(), color: theme.color(.accent), alpha: 0.6, radius: 12, y: 6)
             .contentShape(Circle())
             .opacity(enabled ? 1 : 0.42)
             .scaleEffect(pressed && !reduceMotion ? 0.94 : 1)
             .opacity(pressed && reduceMotion ? 0.7 : 1)
             .animation(.easeOut(duration: 0.16), value: pressed)
+    }
+}
+
+/// A pill's fill. Under Glass on iOS 26 and later a soft pill or chip is Liquid Glass that answers the touch instead.
+private struct PillGround: ViewModifier {
+    let fill: ThemeRole
+    let glass: Bool
+    @Environment(\.sottoGlass) private var tints
+    @ViewBuilder func body(content: Content) -> some View {
+        if glass, tints != nil, #available(iOS 26, *) {
+            content.glassEffect(.regular.interactive(), in: Capsule())
+        } else {
+            content.background(fill, in: Capsule())
+        }
+    }
+}
+
+/// The round button's glass, ringed in the accent; under Glass on iOS 26 and later, Liquid Glass lightly tinted with it.
+private struct CircleGround: ViewModifier {
+    let ring: Color
+    let tint: Color
+    @Environment(\.sottoGlass) private var tints
+    @ViewBuilder func body(content: Content) -> some View {
+        if tints != nil, #available(iOS 26, *) {
+            content.glassEffect(.regular.tint(tint.opacity(0.18)).interactive(), in: Circle())
+        } else {
+            content.glass(in: Circle()).overlay(Circle().strokeBorder(ring, lineWidth: 1))
+        }
     }
 }
 
@@ -1487,7 +1674,7 @@ extension View {
 extension View {
     /// A tab's pushed page: the canvas behind it and a title.
     func page(_ title: String) -> some View {
-        background(Palette.canvas).navigationTitle(title)
+        pageGround().navigationTitle(title)
             .toolbarBackground(Palette.canvas, for: .navigationBar)
     }
     /// A text field's box.

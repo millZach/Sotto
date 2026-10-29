@@ -222,6 +222,7 @@ private struct DraftPhotoView: View {
     let count: Int
     let locked: Bool
     let remove: () -> Void
+    @State private var removed = 0
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Group {
@@ -235,12 +236,15 @@ private struct DraftPhotoView: View {
             .accessibilityElement()
             .accessibilityLabel("Photo \(number) of \(count)")
             .accessibilityValue(photo.preparing ? String(localized: "Getting it ready", comment: "Accessibility value: a photo in the reply box is being prepared.") : photo.staging ? String(localized: "Sending it to the computer", comment: "Accessibility value: a photo in the reply box is being sent to the computer.") : String(localized: "Ready", comment: "Accessibility value: a photo in the reply box is ready to send."))
-            Button(action: remove) {
+            Button {
+                removed += 1
+                remove()
+            } label: {
                 Image(systemName: "xmark").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.canvas)
                     .frame(width: 22, height: 22).background(Palette.ink.opacity(0.85), in: Circle())
                     .frame(width: 44, height: 44, alignment: .topTrailing).padding(4).contentShape(Rectangle())
             }
-            .buttonStyle(.plain).offset(x: 4, y: -4).disabled(locked)
+            .buttonStyle(.plain).sensoryFeedback(.impact(flexibility: .soft), trigger: removed).offset(x: 4, y: -4).disabled(locked)
             .accessibilityLabel("Remove photo \(number)")
         }
     }
@@ -253,9 +257,9 @@ private struct DraftPhotoView: View {
 
 // MARK: Choosing photos
 
-/// The reply box's + button: Photo library or Camera, and in a thread's box Files (ADR-0131). When the box can't take
-/// photos, or files, those choices stay in the menu, unavailable, with the reason beneath them. A thread's box and
-/// Watcher's work the same way for photos; Watcher's takes no files yet.
+/// The reply box's + button: Photo library, Camera and Files (ADR-0131). When the box can't take photos, or files, those
+/// choices stay in the menu, unavailable, with the reason beneath them. A thread's box and Watcher's work the same way.
+/// Whatever goes into the box, from here, a paste or the share sheet, answers with the same tap.
 struct AttachPhotosButton: View {
     @EnvironmentObject var model: AppModel
     let box: PhotoBox
@@ -273,21 +277,18 @@ struct AttachPhotosButton: View {
                     .disabled(reason != nil || !CameraPicker.available)
                 if let reason { Text(reason) }
             }
-            if !watcher {
-                Section {
-                    Button { choosingFiles = true } label: { Label("Files", systemImage: "folder") }
-                        .disabled(fileReason != nil)
-                    if let fileReason { Text(fileReason) }
-                }
+            Section {
+                Button { choosingFiles = true } label: { Label("Files", systemImage: "folder") }
+                    .disabled(fileReason != nil)
+                if let fileReason { Text(fileReason) }
             }
         } label: {
             Image(systemName: "plus").fontWeight(.semibold).frame(width: 44, height: 44)
-                .foregroundStyle(reason == nil || (!watcher && fileReason == nil) ? Palette.ink : Palette.muted)
+                .foregroundStyle(reason == nil || fileReason == nil ? Palette.ink : Palette.muted)
                 .background(Palette.raised, in: Circle())
         }
-        .accessibilityLabel(watcher ? String(localized: "Attach photos") : String(localized: "Attach photos or files"))
-        .accessibilityHint(watcher ? reason ?? String(localized: "Choose photos from the library, or take one with the camera.")
-            : [reason, fileReason].compactMap { $0 }.first ?? String(localized: "Choose photos from the library, take one with the camera, or choose files."))
+        .accessibilityLabel(String(localized: "Attach photos or files"))
+        .accessibilityHint([reason, fileReason].compactMap { $0 }.first ?? String(localized: "Choose photos from the library, take one with the camera, or choose files."))
         .accessibilityIdentifier(watcher ? "watcher-attach-photos" : "thread-attach-photos")
         .photosPicker(isPresented: $choosing, selection: $picked, maxSelectionCount: max(1, room),
                       selectionBehavior: .ordered, matching: .images, preferredItemEncoding: .current)
@@ -314,6 +315,7 @@ struct AttachPhotosButton: View {
                 }])
             }.ignoresSafeArea()
         }
+        .sensoryFeedback(.selection, trigger: model.attachHaptics[box.id] ?? 0)
     }
     private var watcher: Bool { if case .watcher = box { return true }; return false }
     /// Photos and files count toward the same eight.
@@ -328,32 +330,18 @@ struct AttachPhotosButton: View {
         return model.files(box).isEmpty ? box.photoLimitWords : FileWords.full
     }
     private var fileReason: String? {
-        guard case .thread(let ref) = box else { return nil }
-        if let reason = model.fileSupport(ref).reason(computer: model.name(box.hostID)) { return reason }
-        if model.preparingSends.contains(box.id) { return String(localized: "Your reply is being sent.") }
+        if let reason = model.fileSupport(box).reason(computer: model.name(box.hostID)) { return reason }
+        if model.preparingSends.contains(box.id) {
+            return watcher ? String(localized: "Your message is being sent.", comment: "A message to Watcher is on its way, so its photos can't change")
+                : String(localized: "Your reply is being sent.")
+        }
         return room > 0 ? nil : FileWords.full
     }
-    /// A photo chosen in Files goes as a photo, made ready as one from the library is, and is refused in the photos' own
-    /// words where the thread's model can't take photos. Everything else goes as a file. The whole choice is checked
-    /// first: when its files are past the limits, counting the photos chosen with them, nothing of it is attached.
     private func pickedFiles(_ urls: [URL]) {
-        guard case .thread(let ref) = box, !urls.isEmpty else { return }
         let photos = urls.filter { PhotoLimits.mimeTypes.contains(Files.mimeType(forName: $0.lastPathComponent)) }
-        let files = urls.filter { !photos.contains($0) }.map(PickedFile.source)
-        let photoRefusal = photos.isEmpty ? nil : model.photoSupport(box).reason(computer: model.name(box.hostID))
-        let chosenPhotos = photoRefusal == nil ? photos.count : 0
-        let others = model.photos(box).map { $0.prepared?.byteCount ?? 0 } + model.files(box).map(\.sizeBytes) + Array(repeating: 0, count: chosenPhotos)
-        if !files.isEmpty, let refusal = Files.refusal(adding: files.map { $0.sizeBytes ?? 0 }, to: others) {
-            model.photoNotices[box.id] = refusal
-            return
-        }
-        if !files.isEmpty { model.attachFiles(ref, from: files) }
-        if let photoRefusal { model.photoNotices[box.id] = photoRefusal }
-        else if !photos.isEmpty {
-            model.attachPhotos(box, from: photos.map { url in
-                PhotoSource(name: url.deletingPathExtension().lastPathComponent) { try await Task.detached { try PickedFile.read(url) }.value }
-            })
-        }
+        model.attach(box, photos: photos.map { url in
+            PhotoSource(name: url.deletingPathExtension().lastPathComponent) { try await Task.detached { try PickedFile.read(url) }.value }
+        }, files: urls.filter { !photos.contains($0) }.map(PickedFile.source))
     }
     /// The camera asks for access the first time. Once it has been refused, iOS won't ask again, so say where to turn it on.
     private func openCamera() {

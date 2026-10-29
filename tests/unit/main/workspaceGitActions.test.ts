@@ -108,7 +108,7 @@ describe("durable project/thread organization", () => {
     // The branch's own pull request is known without a link, and the surface says it is the branch's.
     await expect(f.host.readThreadPullRequest({ threadId: 'local' })).resolves.toMatchObject({ number: 9, branch: true, linked: null })
     await f.host.runPullRequestAction({ threadId: 'local', url: 'https://github.com/o/r/pull/9', action: 'ready' })
-    expect(service.act).toHaveBeenCalledWith(project.path, 'https://github.com/o/r/pull/9', 'ready', undefined)
+    expect(service.act).toHaveBeenCalledWith(project.path, { url: 'https://github.com/o/r/pull/9', action: 'ready' })
     await f.host.runGitAction({ threadId: 'local', actionId: 'action-1', action: 'create_pr' })
     expect(thread().pullRequests).toEqual([expect.objectContaining({ number: 9, source: 'created', title: 'Branch PR' })])
   })

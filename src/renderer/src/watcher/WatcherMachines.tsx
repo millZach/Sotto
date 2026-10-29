@@ -14,6 +14,9 @@ import { machinesStore, useMachines } from './useMachines'
 import { savedMachines, useHostsState } from '../state/hostsState'
 import type { HostsBridge } from '../../../shared/hosts'
 import { threadAddressIndex, useWatcherRoom } from './watcherRoom'
+import { checksWaiting, type MachineChecks } from '../../../shared/checkQueue'
+import { machineChecksOf, useCheckQueues } from './checkQueues'
+import { CheckQueueList, CheckQueueNote } from './CheckQueueList'
 
 /** How many working threads a machine's panel names before it counts the rest. */
 const NAMED = 6
@@ -52,8 +55,10 @@ function MachineIcon({ entry, size = 14 }: { readonly entry: MachineEntry; reado
  * and a way to change where new workers start. It opens with focus in it, keeps Tab inside, and closes on Escape, which
  * returns focus to the name that opened it, or on a press outside it.
  */
-function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose, onChangeDefault }: {
+function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose, onChangeDefault, checks }: {
   readonly entry: MachineEntry
+  /** Its checks, the running one first (#1312, Owl only); undefined where it keeps none the window can read. */
+  readonly checks?: MachineChecks | undefined
   readonly threads: readonly AgentThread[]
   readonly watcherIds: ReadonlySet<string>
   readonly now: number
@@ -122,8 +127,11 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
   }
 
   const machine = entry.machine
-  const working = workingOn(entry, threads)
   const byId = new Map(threads.map(thread => [thread.id, thread] as const))
+  // Its checks are listed in their own order (Zach's pick C), so the threads working there besides them follow as Also working.
+  const queued = checks !== undefined && checks.checks.length > 0 ? checks : undefined
+  const checkThreads = new Set(queued?.checks.flatMap(check => check.thread !== undefined ? [check.thread] : []))
+  const working = workingOn(entry, threads).filter(thread => !checkThreads.has(thread.id))
   const who = (thread: AgentThread): string => {
     if (watcherIds.has(thread.id)) return 'Watcher'
     if (thread.delegatedBy === undefined) return t`your thread`
@@ -145,6 +153,7 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
     style={place ? { top: place.top, left: place.left, maxHeight: place.maxHeight } : { visibility: 'hidden' }}>
     <h2 id={heading}><MachineIcon entry={entry} size={15} /><span>{name}</span></h2>
     <button type="button" className="watcher-machine-panel__close tt-focusable" aria-label={entry.thisComputer ? t`Close this computer’s panel` : t`Close ${name}’s panel`}
+      title={entry.thisComputer ? t`Close this computer’s panel` : t`Close ${name}’s panel`}
       onClick={() => onClose(true)}><X size={14} aria-hidden="true" /></button>
     {/* A stop in the Tab order between Close and Change where new workers start, so what does not fit can be scrolled
         from the keyboard as well as read. */}
@@ -162,6 +171,9 @@ function MachinePanel({ entry, threads, watcherIds, now, anchor, frame, onClose,
       {why !== null ? <p className="tt-paragraph">{why}</p> : null}
       <p className="watcher-machine-panel__count tt-paragraph">{entry.isDefault ? <Trans><b>{count}</b>. New workers start here.</Trans> : <b>{count}</b>}</p>
       {over !== null ? <p className="tt-paragraph" data-warn="true">{over}</p> : null}
+      {queued ? <><CheckQueueList checks={queued} machine={null} thisComputer={entry.thisComputer} threadOf={id => byId.get(id)} />
+        <CheckQueueNote machine={name} thisComputer={entry.thisComputer} /></> : null}
+      {queued && (working.length > 0 || entry.starting > 0) ? <h3 className="check-queue__head">{t({ message: 'Also working', comment: 'Heading over the threads working on a machine besides its checks.' })}</h3> : null}
       {working.length > 0 || entry.starting > 0 ? <ul>
         {working.slice(0, NAMED).map(thread => <li key={thread.id}><span className="watcher-row__ring" data-tone="working" aria-hidden="true" />
           <span className="watcher-machine-panel__title">{thread.title}</span><span className="watcher-machine-panel__who">{who(thread)}</span></li>)}
@@ -191,6 +203,8 @@ export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.host
   const room = useWatcherRoom()
   const app = useOptionalApp()
   const { machines, read } = useMachines(room?.readMachines ?? null)
+  // Each machine's checks (#1312, Owl only): how many wait after its working count, and its panel's list.
+  const queues = useCheckQueues()
   const hostsState = useHostsState(bridge)
   const saved = useMemo(() => savedMachines(hostsState), [hostsState])
   // Machine facts are read when Watcher places work (Zach, October 23, 2026): once for each placement the room has not
@@ -225,6 +239,8 @@ export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.host
   }
   const label = useId()
   const short = shortLine(entries)
+  const waitingOf = (entry: MachineEntry): number => entry.connected ? checksWaiting(machineChecksOf(queues, entry)?.checks) : 0
+  const allWaiting = entries.reduce((sum, entry) => sum + waitingOf(entry), 0)
   // Show every machine moves focus to the first machine the short line left out, since the press itself goes away.
   const expanded = useRef(false)
   useLayoutEffect(() => {
@@ -235,13 +251,14 @@ export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.host
     at?.focus()
   }, [all, entries, short.shown])
   const name = (entry: MachineEntry, withStarting: boolean): ReactNode => {
-    const count = countWords(entry, withStarting)
+    const waiting = waitingOf(entry)
+    const count = countWords(entry, withStarting, waiting)
     // The count and the problem's words are one list in the reader's language, the words drawn in the warning ink.
     const whole = listWords([count, ...entry.problems.map(problemWords)])
     const words = entry.problems.length === 0 ? '' : count && whole.startsWith(count) ? whole.slice(count.length) : ` ${whole}`
     return <span className="watcher-machines__machine" data-host={entry.thisComputer ? THIS_COMPUTER : entry.hostId}>
       <button type="button" className="watcher-machines__name tt-focusable" aria-haspopup="dialog" aria-expanded={open === keyOf(entry)}
-        aria-label={machineLabel(entry, withStarting)} title={lineText(entry, withStarting)} onClick={event => toggle(keyOf(entry), event.currentTarget)}>
+        aria-label={machineLabel(entry, withStarting, waiting)} title={lineText(entry, withStarting, waiting)} onClick={event => toggle(keyOf(entry), event.currentTarget)}>
         <span>{machineName(entry)}</span></button>
       {count && words !== ` ${whole}` ? <span className="watcher-machines__count" aria-hidden="true"> {count}</span> : null}
       {words ? <span className="watcher-machines__words" aria-hidden="true">{words}</span> : null}
@@ -260,9 +277,9 @@ export function WatcherMachines({ state, now, hosts: bridge = window.sotto?.host
         <button type="button" className="watcher-machines__more tt-focusable" aria-expanded={all} aria-label={moreLabel(short.more)}
           onClick={() => setAll(true)}>{moreWords(short.more)}</button></> : null}
       {short.more > 0 && short.shown.length === 0 ? <button type="button" className="watcher-machines__more tt-focusable" aria-expanded={all}
-        aria-label={calmLabel(entries)} onClick={() => setAll(true)}>{calmWords(entries)}</button> : null}
+        aria-label={calmLabel(entries, allWaiting)} onClick={() => setAll(true)}>{calmWords(entries, allWaiting)}</button> : null}
     </span>
     {opened !== null ? <MachinePanel key={keyOf(opened)} entry={opened} threads={threads ?? []} watcherIds={watcherIds} now={now ?? Date.now()}
-      anchor={opener.current} frame={line.current} onClose={close} onChangeDefault={changeDefault} /> : null}
+      anchor={opener.current} frame={line.current} onClose={close} onChangeDefault={changeDefault} checks={opened.connected ? machineChecksOf(queues, opened) : undefined} /> : null}
   </div>
 }

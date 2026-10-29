@@ -1,0 +1,699 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question (#1312, its last piece): a check is a delegation with test_run, and its brief asks the check's thread to
+  reply first with the verdict, the counts and the failing lines, inside the 32 KiB Sotto passes on (ADR-0082, check
+  queue decision 5, "The reply is the contract"). Today a check's row of delegated work shows only the brief's title and
+  the outcome, never the reply. How should the row show the reply's opening (verdict, counts, failing lines), quoted and
+  attributed as the thread's own words, without the card turning into a log viewer?
+
+  Fixed by Zach on October 23, and not varied here: the card shows the reply's verdict, counts and failing lines, marked
+  as the thread's words. The outcome stays Answered: no new outcome word, no pass or fail state. Sotto never reads pass or
+  fail from the reply, so nothing is coloured, badged or iconed green or red, and nothing says Passed or Failed except
+  the thread's own text, quoted as it wrote it. The name in the UI is "check".
+
+  Three variants on ?variant=a|b|c, switchable with the bar (Left/Right arrows too):
+    A  Quoted lead       the reply's first two lines quoted under the row, attributed; more lines on a press, then
+                         Open the check for the rest
+    B  In the fold       the row unchanged but for a Reply disclosure; it opens the reply's opening in a scroll-capped
+                         monospace block with an attribution header and Open the check
+    C  Excerpt and tray  the reply's first line, in quotes, as a second line on the row; the rest in a tray over the
+                         bottom of the transcript, only on a press
+
+  Every variant draws the same two turns of one delegating thread, so they compare in context:
+    Turn 1 (older):  a Building row (not a check), a check on the Mac mini whose reply passed, and a check on forge
+                     whose reply does not follow the contract (it opens with prose).
+    Turn 2 (newest): a check on forge whose reply failed 2 tests, a check on this computer whose reply was cut at
+                     32 KiB (truncated: true), and a check still Working, waiting its turn on forge.
+  A check's row is marked Check with a flask, the kind word and mark this prototype gives it (Tools › Agents already
+  marks a waiting check "Check"). Every disclosure answers Escape; a second Escape closes the Worked for fold, as the
+  real fold does. What a press would open in Sotto (a thread) is said in the bar instead.
+
+  Bar: A/B/C and the arrows (Left/Right keys too), Size (1280x800 or the 820x560 minimum; the window is drawn at that
+  size, sidebar at its default width), Reduced motion (also follows the OS setting), Light, and Show, which scrolls a
+  sample into view. URL: variant, theme, motion, size.
+  Palette: SOTTO_DARK/LIGHT through --tt-* roles, copied from delegated-work-prototype.html; the roles that file lacks
+  (activity, error-text, warning-text, link, code, sidebar, card, shadow) are derived as tokens.css derives them.
+  Rows: the markup, classes and spacing of DelegatedWork.tsx and delegation.css on main, October 28, 2026.
+
+  Picked: C, Excerpt and tray (Zach, 2026-10-28), with the row saying Check and a flask in place of its kind of
+  work, and a card whose reply was not kept saying "Its reply wasn't kept here. Open the check to read it in its
+  thread." The waiting check shows no queue line (ADR-0082, check queue decision 1).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto - a check's reply on its row of delegated work, three variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; font-display: swap; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+
+/* Palette: copied from delegated-work-prototype.html, then the roles it lacks, derived as tokens.css derives them. */
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265); --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-hover: oklch(0.2 0.01 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092); --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-error: oklch(0.72 0.17 22); --tt-success: oklch(0.79 0.13 165); --tt-warning: oklch(0.83 0.14 80);
+  --tt-message: oklch(0.2 0.01 265);
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  /* Derived roles (tokens.css). */
+  --tt-hover-strong: oklch(0.235 0.012 265);
+  --tt-sidebar: oklch(0.13 0.008 265);
+  --tt-card: color-mix(in oklab, var(--tt-text) 4%, var(--tt-canvas));
+  --tt-code-bg: var(--tt-surface-sunken);
+  --tt-activity: var(--tt-accent-text); --tt-link: var(--tt-accent-text);
+  --tt-error-text: var(--tt-error); --tt-warning-text: var(--tt-warning);
+  --tt-focus-ring: var(--tt-accent);
+  --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
+  --tt-radius-sm: 6px; --tt-radius-md: 10px; --tt-radius-lg: 14px;
+  --tt-font-mono: 'Spline Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85); --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-hover: oklch(0.93 0.008 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-hairline: oklch(0.86 0.012 80); --tt-field-border: oklch(0.8 0.016 80);
+  --tt-accent: oklch(0.5 0.09 183); --tt-accent-text: oklch(0.42 0.08 183);
+  --tt-error: oklch(0.52 0.18 25); --tt-success: oklch(0.5 0.12 160); --tt-warning: oklch(0.55 0.13 70);
+  --tt-message: oklch(0.94 0.006 85);
+  --tt-hover-strong: oklch(0.905 0.01 85);
+  --tt-sidebar: oklch(0.965 0.005 85);
+  --tt-shadow-lg: 0 24px 60px rgb(20 24 22 / 18%);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.5 var(--tt-font-ui); }
+button { font: inherit; color: inherit; }
+.tt-focusable:focus-visible, .bar button:focus-visible, [tabindex]:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
+.tt-visually-hidden { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.tt-paragraph { text-wrap: pretty; }
+
+/* ---------- prototype bar (not part of the design) ---------- */
+body { display: grid; grid-template-rows: auto minmax(0, 1fr); }
+.bar { display: grid; gap: 4px; padding: 6px 10px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); font-size: 12px; }
+.bar__row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+.bar b { margin-right: 2px; font-size: 13px; font-weight: 600; }
+.bar button { padding: 2px 8px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: transparent; font-size: 12px; cursor: pointer; }
+.bar button[aria-pressed='true'] { border-color: var(--tt-field-border); background: var(--tt-surface-elevated); color: var(--tt-accent-text); }
+.bar .tag { padding: 1px 6px; border: 1px dashed var(--tt-field-border); border-radius: 4px; color: var(--tt-text-muted); font-size: 11px; }
+.bar .lbl { margin-left: 6px; color: var(--tt-text-muted); }
+.bar .sp { flex: 1; }
+.bar .name { min-width: 0; color: var(--tt-text-2); }
+.bar .said { color: var(--tt-text-2); font-style: italic; }
+.bar [role='group'] { display: inline-flex; flex-wrap: wrap; gap: 4px; }
+
+/* ---------- the window, framed at the chosen size ---------- */
+.stage { min-height: 0; overflow: auto; padding: 14px; }
+.frame { position: relative; display: grid; grid-template-rows: 32px minmax(0, 1fr); margin: 0 auto; overflow: hidden; border: 1px solid var(--tt-field-border); border-radius: 10px; background: var(--tt-canvas); box-shadow: var(--tt-shadow-lg); }
+.frame[data-size='1280x800'] { width: 1280px; height: 800px; --sidebar: 280px; }
+.frame[data-size='820x560'] { width: 820px; height: 560px; --sidebar: 260px; }
+.app-strip { display: flex; align-items: center; gap: 10px; padding-left: 14px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
+.app-strip b { color: var(--tt-text-2); font-weight: 600; }
+.app-strip .wc { display: flex; margin-left: auto; height: 100%; }
+.app-strip .wc > span { display: grid; place-items: center; width: 42px; }
+.threads-view { display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); min-height: 0; }
+.thread-nav { display: flex; flex-direction: column; gap: 2px; min-height: 0; padding: 10px; overflow: hidden; border-right: 1px solid var(--tt-hairline); background: var(--tt-sidebar); font-size: 13.5px; }
+.thread-nav__new { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; color: var(--tt-text-2); }
+.thread-nav__project { margin: 12px 8px 4px; color: var(--tt-text-muted); font-size: 12px; }
+.thread-nav__item { display: grid; grid-template-columns: 10px minmax(0, 1fr); align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: 8px; color: var(--tt-text-2); }
+.thread-nav__item span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-nav__item[data-current] { background: var(--tt-hover-strong); color: var(--tt-text); }
+.thread-workspace { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.thread-workspace__head { display: flex; flex: none; align-items: center; gap: 10px; height: 44px; padding: 0 6px 0 18px; }
+.thread-workspace__head h2 { min-width: 3em; margin: 0; overflow: hidden; font-size: 15px; font-weight: 500; letter-spacing: -.2px; text-overflow: ellipsis; white-space: nowrap; }
+.thread-workspace__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.thread-workspace__crumb::before { content: '/'; }
+.thread-workspace__actions { display: flex; gap: 2px; margin-left: auto; color: var(--tt-text-muted); }
+.thread-workspace__actions > span { display: grid; place-items: center; width: 30px; height: 30px; }
+.thread-pane { position: relative; display: flex; flex: 1; flex-direction: column; min-height: 0; }
+.thread-workspace__transcript { flex: 1; min-height: 0; overflow-y: auto; padding: 28px max(24px, calc((100% - 760px) / 2)); scrollbar-width: thin; }
+.thread-workspace__transcript:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
+.thread-workspace__compose { flex: none; padding: 8px max(24px, calc((100% - 760px) / 2)) 20px; }
+.thread-prompt { display: grid; gap: 10px; padding: 14px 16px 10px; border: 1px solid transparent; border-radius: 16px; background: var(--tt-card); }
+.thread-prompt__text { color: var(--tt-text-muted); font-size: 15px; }
+.thread-prompt__bar { display: flex; align-items: center; gap: 10px; color: var(--tt-text-muted); font-size: 12.5px; }
+.thread-prompt__send { display: grid; place-items: center; width: 28px; height: 28px; margin-left: auto; border-radius: 50%; background: var(--tt-text); color: var(--tt-canvas); }
+/* The real narrow (980px) and short (760px) window rules, applied by the frame's size rather than the page's. */
+.frame[data-size='820x560'] .thread-workspace__head { padding-left: 14px; }
+.frame[data-size='820x560'] .thread-workspace__crumb { display: none; }
+.frame[data-size='820x560'] .thread-workspace__transcript { padding: 18px 18px; }
+.frame[data-size='820x560'] .thread-workspace__compose { padding: 6px 16px 12px; }
+.frame[data-size='820x560'] .thread-prompt { padding: 10px 14px 8px; gap: 6px; }
+.frame[data-size='820x560'] .thread-message[data-role='user'] { margin-left: 24px; }
+
+/* ---------- transcript: messages and the Worked for fold (threads.css, activity.css, rich-messages.css) ---------- */
+.thread-message { position: relative; margin: 0 0 28px; }
+.thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.thread-message__who { color: var(--tt-text-2); font-weight: 500; }
+.thread-message time { font-size: 12px; font-variant-numeric: tabular-nums; }
+.thread-message[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; border: 1px solid transparent; border-radius: 14px 14px 4px 14px; background: var(--tt-message); }
+.thread-message[data-role='user'] p { margin: 0; color: var(--tt-text); font-size: 15px; line-height: 1.6; }
+.rich-message { min-width: 0; color: var(--tt-text-2); font-size: 15px; line-height: 1.6; overflow-wrap: anywhere; }
+.rich-message p { margin: 0 0 12px; } .rich-message p:last-child { margin: 0; }
+.rich-message code { padding: 1px 5px; border: 1px solid var(--tt-hairline); border-radius: 5px; background: var(--tt-code-bg); font-family: var(--tt-font-mono); font-size: 13.5px; }
+.thread-work { margin: 0 0 20px; border-bottom: 1px solid var(--tt-field-border); }
+.thread-message + .thread-work { margin-top: -8px; }
+.thread-work__summary { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 32px; margin: 0 0 8px -6px; padding: 0 8px 0 6px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font-size: 14px; font-variant-numeric: tabular-nums; text-align: left; cursor: pointer; }
+.thread-work__summary:hover { background: var(--tt-hover); color: var(--tt-text-2); }
+.thread-work__summary > svg { flex: none; transition: rotate 120ms ease; }
+.thread-work[data-expanded] .thread-work__summary > svg { rotate: 90deg; }
+.thread-work__body { padding: 8px 0 4px; }
+
+/* ---------- delegated work: delegation.css as on main ---------- */
+.delegated-work { display: grid; gap: 10px; margin: 0 0 16px; padding: 0; list-style: none; }
+.thread-message ~ .delegated-work { margin-top: -12px; margin-bottom: 28px; }
+.thread-work__body > ul.delegated-work { margin: 4px 0 12px 1px; padding-left: 10px; border-left: 1px solid var(--tt-hairline); }
+.delegated-work__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 2px 8px; min-width: 0; font-size: 14px; }
+.delegated-work__glyph { flex: none; color: var(--tt-text-muted); }
+.delegated-work__name { display: flex; align-items: baseline; gap: 8px; min-width: 0; color: var(--tt-text); font-weight: 500; white-space: nowrap; }
+.delegated-work__name > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.delegated-work__kind { flex: none; color: var(--tt-text-2); font-weight: 400; }
+.delegated-work__state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
+.delegated-work__meta, .delegated-work__line { grid-column: 2 / -1; margin: 0; font-size: 12.5px; line-height: 1.5; }
+.delegated-work__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; color: var(--tt-text-muted); }
+.delegated-work__machine { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.delegated-work__machine > svg { flex: none; }
+.delegated-work__machine[data-kind='remote'] > svg { color: var(--tt-accent-text, var(--tt-text-muted)); }
+.delegated-work__line { color: var(--tt-text-2); }
+.provider-mark { flex: none; color: var(--tt-text-muted); }
+.delegated-work-still { display: grid; gap: 8px; margin: -12px 0 28px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
+.delegated-work-still__heading { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.delegated-work-still > .delegated-work { margin: 0; }
+.thread-work__delegated { color: var(--tt-text-muted); }
+.delegation-link { display: inline; min-width: 0; max-width: 100%; overflow: hidden; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-text); font: inherit; font-weight: 500;
+  text-align: left; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-overflow: ellipsis; text-underline-offset: 3px; white-space: nowrap; cursor: pointer; }
+.delegation-link:hover { text-decoration-color: currentColor; }
+.delegated-work__state:is([data-state='working']) { color: var(--tt-activity); }
+.delegated-work__state:is([data-state='answered']) { color: var(--tt-text-muted); }
+.delegation-ring { display: block; flex: none; width: 10px; height: 10px; box-sizing: border-box; border: 1.5px solid var(--tt-hairline); border-radius: 50%; }
+.delegation-ring[data-outcome='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
+.delegation-ring[data-outcome='answered'] { border-color: var(--tt-text-muted); background: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); }
+@keyframes delegation-ring { to { rotate: 360deg; } }
+
+/* ---------- new: a check's reply, as the thread wrote it ----------
+   Shared by the variants: another thread's words wear a dashed edge in field-border, as a brief the delegating
+   thread sent does in the delegated thread (delegation.css, data-from='delegation'). No status colour anywhere. */
+.check-ghost { display: inline-flex; flex: none; align-items: center; gap: 4px; min-height: 24px; margin: 0 0 0 -6px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); font-size: 12.5px; cursor: pointer; }
+.check-ghost:hover { background: var(--tt-hover); color: var(--tt-text); }
+.check-ghost > svg { flex: none; transition: rotate 120ms ease; }
+.check-ghost[aria-expanded='true'] > svg { rotate: 90deg; }
+.check-open { flex: none; min-height: 24px; padding: 0; border: 0; border-radius: 2px; background: transparent; color: var(--tt-link); font-size: 12.5px; font-weight: 600; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; cursor: pointer; }
+.check-cut { margin: 0; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.check-pre { margin: 0; color: var(--tt-text); font: 12.5px/1.55 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; }
+
+/* A: Quoted lead. */
+.check-reply { grid-column: 2 / -1; min-width: 0; margin: 6px 0 2px; }
+.check-reply__who { display: flex; align-items: center; gap: 6px; margin: 0 0 4px; color: var(--tt-text-2); font-size: 12.5px; }
+.check-reply__who > svg { flex: none; color: var(--tt-text-muted); }
+.check-reply__quote { margin: 0; padding: 1px 0 1px 12px; border-left: 2px dashed var(--tt-field-border); color: var(--tt-text); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
+.check-reply__quote p { margin: 0; white-space: pre-wrap; }
+.check-reply__quote p + p { margin-top: 2px; }
+.check-reply__quote .check-reply__gap { height: 6px; }
+.check-reply__quote[data-clamped] { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 4; overflow: hidden; }
+.check-reply__more { margin: 0; padding: 6px 0 2px 12px; border-left: 2px dashed var(--tt-field-border); }
+.check-reply__more .check-pre { color: var(--tt-text-2); }
+.check-reply__foot { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; margin: 4px 0 0; color: var(--tt-text-2); font-size: 12.5px; }
+.check-reply__cut { margin-top: 6px; }
+
+/* B: In the fold. The disclosure sits under the state, on the meta line's row. */
+.delegated-work__row[data-b-reply] > .delegated-work__meta { grid-column: 2; grid-row: 2; }
+.delegated-work__row[data-b-reply] > .check-ghost { grid-column: 3; grid-row: 2; justify-self: end; margin: 0 -6px 0 0; }
+.check-fold { grid-column: 2 / -1; min-width: 0; margin: 6px 0 2px; border: 1px dashed var(--tt-field-border); border-radius: var(--tt-radius-md); background: var(--tt-code-bg); }
+.check-fold__head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; padding: 7px 10px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 12.5px; }
+.check-fold__who { display: inline-flex; flex: 1 1 220px; align-items: baseline; gap: 6px; min-width: 0; }
+.check-fold__who > svg { flex: none; align-self: center; color: var(--tt-text-muted); }
+.check-fold__who b { color: var(--tt-text); font-weight: 500; }
+.check-fold__text { max-height: calc(14 * 1.55em + 8px); overflow: auto; padding: 8px 10px; font-size: 12.5px; scrollbar-width: thin; }
+.frame[data-size='820x560'] .check-fold__text { max-height: calc(9 * 1.55em + 8px); }
+/* A scroll-capped reply fades its last line while more of it is below. */
+:is(.check-fold__text, .check-tray__text)[data-more] { mask-image: linear-gradient(to bottom, currentColor calc(100% - 1.8em), transparent); }
+.check-fold__foot { margin: 0; padding: 6px 10px 7px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 12.5px; }
+
+/* C: Excerpt on the row, the rest in a tray. */
+.check-excerpt { display: flex; grid-column: 2 / -1; align-items: baseline; gap: 6px; min-width: 0; margin: 1px 0 1px; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.check-excerpt__who { flex: none; color: var(--tt-text-muted); }
+.check-excerpt q { min-width: 0; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; white-space: nowrap; }
+.check-excerpt__cut { flex: none; color: var(--tt-text-muted); font-size: 12.5px; }
+.check-excerpt .check-open { margin-left: 4px; }
+.delegated-work__row[data-tray-open] { border-radius: 6px; box-shadow: 0 0 0 4px var(--tt-hover), inset 0 0 0 100vmax var(--tt-hover); }
+.check-tray { position: absolute; bottom: 0; left: max(24px, calc((100% - 760px) / 2)); right: max(24px, calc((100% - 760px) / 2)); z-index: 3; display: flex; flex-direction: column; max-height: min(400px, 74%);
+  border: 1px solid var(--tt-field-border); border-bottom: 0; border-radius: var(--tt-radius-lg) var(--tt-radius-lg) 0 0; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); }
+.frame[data-size='820x560'] .check-tray { left: 18px; right: 18px; }
+.check-tray:focus { outline: none; }
+.check-tray:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: -3px; }
+.check-tray__head { display: flex; flex: none; align-items: flex-start; gap: 10px; padding: 10px 8px 8px 14px; border-bottom: 1px solid var(--tt-hairline); }
+.check-tray__who { display: grid; flex: 1; gap: 1px; min-width: 0; margin: 0; color: var(--tt-text-2); font-size: 12.5px; font-weight: 400; }
+.check-tray__who b { overflow: hidden; color: var(--tt-text); font-size: 13.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.check-tray__close { display: grid; flex: none; place-items: center; width: 28px; height: 28px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); cursor: pointer; }
+.check-tray__close:hover { background: var(--tt-hover); color: var(--tt-text); }
+.check-tray__text { flex: 1 1 auto; min-height: 0; overflow: auto; margin: 0 4px 0 0; padding: 10px 10px 10px 14px; border-left: 2px dashed var(--tt-field-border); margin-left: 14px; font-size: 12.5px; scrollbar-width: thin; }
+.check-tray__foot { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 2px 14px; margin: 0; padding: 7px 14px 9px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 12.5px; }
+
+/* Motion: a reveal as something opens, the working ring's turn. Off with Reduced motion or the OS setting. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .delegation-ring[data-outcome='working'] { animation: delegation-ring 1.1s linear infinite; }
+  :root:not([data-reduced-motion='on']) [data-reveal] { animation: reveal 160ms ease-out; }
+  :root:not([data-reduced-motion='on']) .check-tray[data-reveal] { animation: rise 180ms cubic-bezier(.2, .8, .2, 1); }
+}
+:root[data-reduced-motion='on'] *, :root[data-reduced-motion='on'] *::before { transition: none !important; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@keyframes reveal { from { opacity: 0; translate: 0 -3px; } }
+@keyframes rise { from { opacity: 0; translate: 0 16px; } }
+</style>
+</head>
+<body>
+<div class="bar" role="toolbar" aria-label="Prototype controls">
+  <div class="bar__row">
+    <b>Check reply card</b><span class="tag">Prototype · throwaway</span>
+    <button id="prev" aria-label="Previous variant">←</button>
+    <span role="group" aria-label="Variant" id="vbtns"></span>
+    <button id="next" aria-label="Next variant">→</button>
+    <span class="lbl">Size</span>
+    <span role="group" aria-label="Window size" id="sizes">
+      <button data-size="1280x800" aria-label="Window 1280 by 800">1280×800</button>
+      <button data-size="820x560" aria-label="Window 820 by 560, the minimum">820×560</button>
+    </span>
+    <button id="motion" aria-pressed="false">Reduced motion</button>
+    <button id="theme" aria-pressed="false">Light</button>
+  </div>
+  <div class="bar__row">
+    <span class="name" id="vname"></span>
+    <span class="sp"></span>
+    <span class="lbl">Show</span>
+    <span role="group" aria-label="Scroll a sample into view" id="jumps"></span>
+  </div>
+  <div class="bar__row"><span class="said" id="said" aria-live="polite"></span></div>
+</div>
+<main class="stage">
+  <div class="frame" id="frame" data-size="1280x800">
+    <div class="app-strip" aria-hidden="true"><b>Sotto</b><span>Threads</span>
+      <span class="wc"><span>–</span><span>▢</span><span>✕</span></span></div>
+    <div class="threads-view">
+      <nav class="thread-nav" aria-label="Threads (drawn, not wired)">
+        <div class="thread-nav__new">＋ New thread</div>
+        <p class="thread-nav__project">Sotto</p>
+        <div class="thread-nav__item" data-current><span></span><span>Make Stop reach waiting checks</span></div>
+        <div class="thread-nav__item"><span></span><span>Tighten the iPhone reply quote</span></div>
+        <div class="thread-nav__item"><span></span><span>Linux tray icon at night</span></div>
+        <div class="thread-nav__item"><span></span><span>Owl release notes for 0.49</span></div>
+      </nav>
+      <section class="thread-workspace" aria-label="Make Stop reach waiting checks">
+        <header class="thread-workspace__head">
+          <span id="headmark"></span><h2>Make Stop reach waiting checks</h2>
+          <span class="thread-workspace__crumb"><span>Sotto</span></span>
+          <span class="thread-workspace__actions" aria-hidden="true"><span>⎇</span><span>⋯</span></span>
+        </header>
+        <div class="thread-pane">
+          <div class="thread-workspace__transcript" id="transcript" tabindex="0" aria-label="Conversation"></div>
+          <div id="trayslot"></div>
+        </div>
+        <div class="thread-workspace__compose">
+          <div class="thread-prompt" aria-hidden="true">
+            <span class="thread-prompt__text">Ask for a change</span>
+            <span class="thread-prompt__bar"><span>Opus 5.5 · High</span><span>Ask for approval</span><span class="thread-prompt__send">↑</span></span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</main>
+<script>
+'use strict'
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+const P = {
+  fork: '<circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"/><path d="M12 12v3"/>',
+  flask: '<path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2"/><path d="M6.453 15h11.094"/><path d="M8.5 2h7"/>',
+  laptop: '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
+  server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/>',
+  chev: '<path d="m9 18 6-6-6-6"/>',
+  quote: '<path d="M17 6H3"/><path d="M21 12H8"/><path d="M21 18H8"/><path d="M3 12v6"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+}
+const icon = (name, size = 14, cls = '') => `<svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${P[name]}</svg>`
+const MARK = {
+  claude: s => `<svg class="provider-mark" width="${s}" height="${s}" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4l-9.2 9.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  codex: s => `<svg class="provider-mark" width="${s}" height="${s}" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M8 1.6 13.6 4.8v6.4L8 14.4 2.4 11.2V4.8z"/><path d="M5.8 6.4 7.6 8 5.8 9.6M8.6 10h1.8" stroke-linecap="round"/></svg>`,
+}
+const PROVIDER = { claude: 'Claude Code', codex: 'Codex' }
+const MACHINE = { forge: { name: 'forge', remote: true }, mac: { name: 'Mac mini', remote: true }, here: { name: 'This computer', in: 'this computer', remote: false } }
+const on = m => MACHINE[m].in ?? MACHINE[m].name
+
+/* ---------- the replies, each as its thread wrote it ---------- */
+const FAIL = `Failed: 2 of 1,214 tests.
+1,209 passed, 2 failed, 3 skipped, in 4 min 38 s. npm test -- --maxWorkers=2 at 7c1e0d4 with your uncommitted changes.
+
+Failing:
+tests/unit/agents/checkQueue.test.ts:212  Stop on a waiting check takes it out of the queue
+  AssertionError: expected [ 'c2', 'c3' ] to deeply equal [ 'c3' ]
+  at src/main/agents/checkQueue.ts:141:11
+tests/unit/agents/checkQueue.test.ts:248  a check holds its place through background work
+  AssertionError: expected 'released' to be 'held'
+  at src/main/agents/checkQueue.ts:188:7
+
+I changed nothing. The full log is below.
+
+ RUN  v3.2.4 /home/zach/.config/sotto/check-worktrees/sotto-2f1c
+ ✓ tests/unit/shared/settings.test.ts (48 tests) 212ms
+ ✓ tests/unit/shared/delegation.test.ts (61 tests) 188ms
+ ✓ tests/unit/shared/channels.test.ts (12 tests) 31ms
+ ✓ tests/unit/agents/delegationWords.test.ts (74 tests) 141ms
+ ✓ tests/unit/agents/threadWorktrees.test.ts (57 tests) 2304ms
+ ✓ tests/unit/agents/branchBundles.test.ts (33 tests) 1811ms
+ ❯ tests/unit/agents/checkQueue.test.ts (39 tests | 2 failed) 1204ms
+   ✓ a machine runs one check at a time 12ms
+   ✓ a later check waits behind the running one 9ms
+   × Stop on a waiting check takes it out of the queue 31ms
+   ✓ a restart empties the queue and starts none of it 8ms
+   × a check holds its place through background work 44ms
+   ✓ a waiting check's outcome stays working 6ms
+ ✓ tests/unit/agents/checkWorktree.test.ts (28 tests) 3120ms
+ ✓ tests/unit/host/remoteCommands.test.ts (19 tests) 77ms
+ ✓ tests/unit/renderer/agents/DelegatedWork.test.tsx (44 tests) 902ms
+ ✓ tests/unit/renderer/tools/WaitingChecks.test.tsx (21 tests) 655ms
+ ✓ tests/unit/renderer/tools/AgentsSurface.test.tsx (63 tests) 1408ms
+ ✓ tests/unit/main/ipc/registerIpc.test.ts (88 tests) 990ms
+ ✓ tests/unit/shared/themes/themeTokens.test.ts (9 tests) 411ms
+
+ FAIL  tests/unit/agents/checkQueue.test.ts > Stop on a waiting check takes it out of the queue
+AssertionError: expected [ 'c2', 'c3' ] to deeply equal [ 'c3' ]
+ ❯ tests/unit/agents/checkQueue.test.ts:212:31
+    210|     queue.stop('c1')
+    211|     await settle()
+    212|     expect(queue.waiting()).toEqual(['c3'])
+       |                               ^
+ FAIL  tests/unit/agents/checkQueue.test.ts > a check holds its place through background work
+AssertionError: expected 'released' to be 'held'
+ ❯ tests/unit/agents/checkQueue.test.ts:248:28
+
+ Test Files  1 failed | 312 passed (313)
+      Tests  2 failed | 1209 passed | 3 skipped (1214)
+   Start at  14:33:51
+   Duration  278.40s`
+
+const PASS = `Passed: 1,214 tests, 3 skipped.
+npm test -- --maxWorkers=2 at 7c1e0d4, 5 min 2 s. I ran checkQueue.test.ts a second time on its own and it passed again.`
+
+const PROSE = `I ran the suite on forge. Most of it passed, but two specs in machinePanel.spec.ts timed out waiting for the Checks heading, and one of them passed when I ran it again on its own. I haven't changed anything.
+
+Here's what I ran:
+npm run build && npx playwright test tests/e2e/machinePanel.spec.ts tests/e2e/agentsSurface.spec.ts
+
+machinePanel.spec.ts:88   the panel lists the running check first
+  TimeoutError: waiting for getByRole('heading', { name: 'Checks, one at a time' }) (30000ms)
+machinePanel.spec.ts:131  a waiting check names whose it is
+  TimeoutError: waiting for getByText('Delegated by Make Stop reach waiting checks') (30000ms), passed on retry
+agentsSurface.spec.ts: 23 passed
+
+So that's 23 passed, 1 failed and 1 flaky, out of 25. My guess is the panel opens before the queue's first read arrives from forge, but I haven't confirmed it.`
+
+const LONG = (() => {
+  const files = ['adapterContract.claude', 'adapterContract.codex', 'adapterContract.grok', 'hostServiceContract.socket', 'hostServiceContract.headless', 'settingsHistoryIpc', 'delegationNews', 'checkQueueHost']
+  const names = ['starts a thread and streams a reply', 'answers a permission request', 'stops a running turn', 'resumes after a restart', 'keeps the reply\'s words out of the log']
+  const fails = []
+  for (let i = 0; i < 37; i++) fails.push(`tests/integration/${files[i % 8]}.test.ts:${44 + (i * 17) % 260}  ${names[i % 5]}`, '  Error: spawn node ENOENT', `  at tests/fixtures/fakeProvider.ts:${88 + i % 3}:15`)
+  const dirs = ['agents', 'shared', 'main', 'renderer/agents', 'host', 'renderer/tools']
+  const units = ['delegation', 'settings', 'threadWorktrees', 'checkQueue', 'channels', 'themeTokens', 'branchBundles', 'copySites', 'zodSchemaSites', 'interfaceWords', 'threadFacts', 'sidebarSize']
+  const log = []
+  for (let i = 0; i < 420; i++) log.push(` ✓ tests/unit/${dirs[i % 6]}/${units[(i * 5) % 12]}.test.ts (${(i * 7) % 60 + 3} tests) ${(i * 37) % 400 + 12}ms`)
+  return ['Failed: 37 of 1,214 tests.',
+    '1,174 passed, 37 failed, 3 skipped, in 9 min 12 s. Nearly all the failures are in tests/integration, where the fake providers did not start (spawn node ENOENT). The full output follows, as you asked.',
+    '', ...fails, '', ' RUN  v3.2.4 C:/Users/zach/AppData/Roaming/sotto/check-worktrees/sotto-9a0e', ...log].join('\n')
+})()
+
+/* ---------- the thread: two turns, six rows ---------- */
+const ROWS = {
+  build: { kindWord: 'Building', title: 'Let Stop take a waiting check out of its queue', provider: 'codex', machine: 'here', outcome: 'answered',
+    line: 'Answered in 6 min 12 s, while this thread waited for it.' },
+  pass: { check: true, title: 'Unit suite on the Mac', provider: 'codex', machine: 'mac', outcome: 'answered', at: '2:04 PM', reply: PASS,
+    line: 'Answered in 6 min 3 s, while this thread waited for it.' },
+  prose: { check: true, title: 'Playwright specs for the machine panel', provider: 'claude', machine: 'forge', outcome: 'answered', at: '2:05 PM', reply: PROSE,
+    line: 'Answered in 7 min 40 s, while this thread waited for it.' },
+  fail: { check: true, title: 'Unit suite after the Stop fix', provider: 'claude', machine: 'forge', outcome: 'answered', at: '2:39 PM', reply: FAIL,
+    line: 'Answered in 5 min 40 s, while this thread waited for it.' },
+  cut: { check: true, title: 'Full suite with logs', provider: 'codex', machine: 'here', outcome: 'answered', at: '2:46 PM', reply: LONG, truncated: true,
+    line: 'Answered in 13 min 2 s, after this thread went on. This thread has been told.' },
+  wait: { check: true, title: 'Unit suite again on forge', provider: 'claude', machine: 'forge', outcome: 'working', noThread: true,
+    line: 'This thread waited 1 min, then went on. The answer comes back as a wake-up.' },
+}
+for (const [id, r] of Object.entries(ROWS)) r.id = id
+const TURNS = [
+  { id: 't1', user: 'Make Stop take a waiting check out of the queue. Then run the unit suite on the Mac and the Playwright specs for the machine panel on forge.', userAt: '1:52 PM',
+    worked: 'Worked for 14m 06s · 31 steps', rows: ['build', 'pass', 'prose'], replyAt: '2:06 PM',
+    reply: ['Stop now takes a waiting check out of its machine\'s queue, and the rest keep their order (<code>checkQueue.ts</code>, <code>control.ts</code>).',
+      'The unit suite passed on the Mac. The Playwright check on forge didn\'t open with a verdict; from its reply, two machine panel specs timed out and one passed on a retry, so I\'ll look at the panel\'s first read next.'] },
+  { id: 't2', user: 'Run the unit suite on forge too, and the full suite with logs here. Run forge\'s unit suite again once you\'ve fixed whatever fails.', userAt: '2:31 PM',
+    worked: 'Worked for 12m 10s · 26 steps', rows: ['fail', 'cut', 'wait'], replyAt: '2:43 PM',
+    reply: ['forge\'s unit suite failed two tests in <code>checkQueue.test.ts</code>. Both still expected the old order after a Stop, so I\'ve updated them.',
+      'The full suite on this computer is still running. I\'ve asked for the unit suite on forge again; it\'s waiting behind another thread\'s check there.'] },
+]
+
+/* ---------- reading a reply: lines only, never its meaning ---------- */
+const linesOf = r => r.reply.split('\n')
+const filled = ls => ls.filter(l => l.trim() !== '').length
+/** The first n lines with words in them, blank lines between kept, and where they end. */
+function firstLines(ls, from, n) {
+  let i = from, got = 0
+  while (i < ls.length && ls[i].trim() === '') i++
+  const start = i
+  while (i < ls.length && got < n) { if (ls[i].trim() !== '') got++; i++ }
+  return { lines: ls.slice(start, i), end: i }
+}
+const MOST_B = 60 // B and C show the reply's first 60 lines, then send you to its thread
+const restWords = (r, shownTo) => {
+  const ls = linesOf(r), left = filled(ls.slice(shownTo))
+  if (r.truncated) return 'The rest is in its thread.'
+  return left ? `${left} more lines are in its thread.` : ''
+}
+const cutWords = 'Its reply was longer than 32 KiB, so this thread was given only the first 32 KiB. All of it is in the check\'s thread.'
+const whoWords = r => `${esc(r.title)} replied on ${esc(on(r.machine))} · ${r.at}`
+const openName = r => `Open ${r.title}, the check on ${on(r.machine)}, to read all of its reply`
+
+/* ---------- state ---------- */
+const params = new URLSearchParams(location.search)
+const VARIANTS = [
+  { k: 'a', n: 'Quoted lead', why: 'The reply\'s first two lines quoted under the row; more lines on a press, then Open the check.' },
+  { k: 'b', n: 'In the fold', why: 'The row is unchanged but for Reply, which opens the reply\'s opening in a scroll-capped monospace block.' },
+  { k: 'c', n: 'Excerpt and tray', why: 'The reply\'s first line in quotes on the row; the rest in a tray over the transcript, on a press.' },
+]
+const S = {
+  v: VARIANTS.some(v => v.k === params.get('variant')) ? params.get('variant') : 'a',
+  theme: params.get('theme') === 'light' ? 'light' : 'dark',
+  motion: params.get('motion') === 'reduce' ? 'reduce' : 'full',
+  size: params.get('size') === '820x560' ? '820x560' : '1280x800',
+  folds: { t1: true, t2: true }, aOpen: new Set(), bOpen: new Set(), tray: null,
+}
+const root = document.documentElement, frame = document.getElementById('frame')
+const tx = document.getElementById('transcript'), trayslot = document.getElementById('trayslot')
+let reveal = null // what just opened, drawn with its reveal once
+
+/* ---------- a row of delegated work ---------- */
+function row(r) {
+  const m = MACHINE[r.machine], kindWord = r.check ? 'Check' : r.kindWord
+  const state = r.outcome === 'working' ? 'Working' : 'Answered'
+  const hasReply = r.reply !== undefined
+  const name = r.noThread ? `<span title="${esc(r.title)}">${esc(r.title)}</span>`
+    : `<button type="button" class="delegation-link tt-focusable" data-act="open" data-row="${r.id}" data-key="open-${r.id}" aria-label="Open ${esc(r.title)}" aria-describedby="${r.id}-meta ${r.id}-line" title="${esc(r.title)}">${esc(r.title)}</button>`
+  const meta = `<p id="${r.id}-meta" class="delegated-work__meta">${MARK[r.provider](12)}<span>${PROVIDER[r.provider]}</span><span aria-hidden="true">·</span><span class="delegated-work__machine" data-kind="${m.remote ? 'remote' : 'local'}">${icon(m.remote ? 'server' : 'laptop', 12)}${m.name}</span><span class="tt-visually-hidden">, ${state}.</span></p>`
+  const line = `<p id="${r.id}-line" class="delegated-work__line tt-paragraph">${esc(r.line)}</p>`
+  let before = '', after = '', attrs = ''
+  if (hasReply && S.v === 'a') after = quotedLead(r)
+  if (hasReply && S.v === 'b') { attrs = ' data-b-reply'; after = foldToggle(r) + line + (S.bOpen.has(r.id) ? foldBlock(r) : '') }
+  if (hasReply && S.v === 'c') { before = excerpt(r); if (S.tray === r.id) attrs = ' data-tray-open' }
+  const label = `${kindWord}: ${r.title}, ${state}`
+  return `<li class="delegated-work__row" id="row-${r.id}" data-outcome="${r.outcome}" data-state="${r.outcome}"${attrs} aria-label="${esc(label)}">
+    ${icon(r.check ? 'flask' : 'fork', 14, 'delegated-work__glyph')}
+    <span class="delegated-work__name"><span class="delegated-work__kind">${kindWord}</span>${name}</span>
+    <span class="delegated-work__state" data-state="${r.outcome}"><span class="delegation-ring" data-outcome="${r.outcome}" aria-hidden="true"></span>${state}</span>
+    ${before}${meta}${S.v === 'b' && hasReply ? after : line + after}</li>`
+}
+
+/* A: the first two lines, quoted and attributed, under the row; up to ten more on a press. */
+function quotedLead(r) {
+  const ls = linesOf(r), lead = firstLines(ls, 0, 2), more = firstLines(ls, lead.end, 10)
+  const open = S.aOpen.has(r.id), long = lead.lines.join(' ').length > 260
+  const moreCount = filled(more.lines)
+  const toggle = moreCount || long
+    ? `<button type="button" class="check-ghost tt-focusable" data-act="a-more" data-row="${r.id}" data-key="a-${r.id}" aria-expanded="${open}" aria-controls="more-${r.id}"
+        aria-label="${open ? 'Show fewer lines of its reply' : `Show ${moreCount ? moreCount + ' more lines' : 'all'} of its reply`}">${icon('chev', 13)}${open ? 'Show fewer lines' : moreCount ? `Show ${moreCount} more lines` : 'Show all of it'}</button>` : ''
+  const shownTo = open ? more.end : lead.end
+  const rest = restWords(r, shownTo)
+  const openBtn = rest || r.truncated ? `<button type="button" class="check-open tt-focusable" data-act="open" data-row="${r.id}" data-key="aopen-${r.id}" aria-label="${esc(openName(r))}">Open the check</button>` : ''
+  return `<figure class="check-reply" aria-label="Reply from ${esc(r.title)}, the check on ${esc(on(r.machine))}, in its own words">
+    <figcaption class="check-reply__who">${icon('quote', 13)}<span>The check on ${esc(on(r.machine))} replied at ${r.at}:</span></figcaption>
+    <blockquote class="check-reply__quote"${long && !open ? ' data-clamped' : ''}>${lead.lines.map(l => l.trim() === '' ? '<p class="check-reply__gap" aria-hidden="true"></p>' : `<p>${esc(l)}</p>`).join('')}</blockquote>
+    ${open && moreCount ? `<div class="check-reply__more" id="more-${r.id}"${reveal === r.id ? ' data-reveal' : ''}><pre class="check-pre">${esc(more.lines.join('\n'))}</pre></div>` : `<div id="more-${r.id}" hidden></div>`}
+    ${toggle || rest || openBtn ? `<p class="check-reply__foot">${toggle}${open || !toggle ? `<span>${esc(rest)}</span>` : ''}${openBtn}</p>` : ''}
+    ${r.truncated ? `<p class="check-cut check-reply__cut tt-paragraph">${cutWords}</p>` : ''}
+  </figure>`
+}
+
+/* B: Reply, under the state, opens the reply's opening in a scroll-capped block. */
+function foldToggle(r) {
+  const open = S.bOpen.has(r.id)
+  return `<button type="button" class="check-ghost tt-focusable" data-act="b-reply" data-row="${r.id}" data-key="b-${r.id}" aria-expanded="${open}" aria-controls="fold-${r.id}"
+    aria-label="Reply from ${esc(r.title)}, the check on ${esc(on(r.machine))}">${icon('chev', 13)}Reply</button>`
+}
+function foldBlock(r) {
+  const ls = linesOf(r), shown = ls.slice(0, MOST_B), rest = restWords(r, Math.min(ls.length, MOST_B))
+  const scrolls = shown.length > 9
+  return `<section class="check-fold" id="fold-${r.id}" aria-label="Reply from ${esc(r.title)}, the check on ${esc(on(r.machine))}, in its own words"${reveal === r.id ? ' data-reveal' : ''}>
+    <div class="check-fold__head"><span class="check-fold__who">${icon('quote', 13)}<span><b>${esc(r.title)}</b> replied on ${esc(on(r.machine))} · ${r.at}</span></span>
+      <button type="button" class="check-open tt-focusable" data-act="open" data-row="${r.id}" data-key="bopen-${r.id}" aria-label="${esc(openName(r))}">Open the check</button></div>
+    <div class="check-fold__text"${scrolls ? ` tabindex="0" role="region" aria-label="${shown.length < ls.length ? `The reply's first ${MOST_B} lines` : 'Its whole reply'}" data-key="bpre-${r.id}"` : ''}><pre class="check-pre">${esc(shown.join('\n'))}</pre></div>
+    ${rest || r.truncated ? `<p class="check-fold__foot tt-paragraph">${shown.length < ls.length ? `Its first ${MOST_B} lines. ` : ''}${r.truncated ? cutWords : esc(rest)}</p>` : ''}
+  </section>`
+}
+
+/* C: the first line in quotes on the row; the tray opens on a press. */
+function excerpt(r) {
+  const first = linesOf(r).find(l => l.trim() !== '')
+  const open = S.tray === r.id
+  return `<p class="check-excerpt"><span class="check-excerpt__who">It replied</span><q title="${esc(first)}">${esc(first)}</q>${r.truncated ? '<span class="check-excerpt__cut">· cut at 32 KiB</span>' : ''}
+    <button type="button" class="check-open tt-focusable" data-act="c-tray" data-row="${r.id}" data-key="c-${r.id}" aria-expanded="${open}" aria-controls="check-tray"
+      aria-label="Read the reply from ${esc(r.title)}, the check on ${esc(on(r.machine))}">Read its reply</button></p>`
+}
+function tray(r) {
+  const ls = linesOf(r), shown = ls.slice(0, MOST_B), rest = restWords(r, Math.min(ls.length, MOST_B))
+  return `<section class="check-tray" id="check-tray" role="dialog" aria-modal="false" tabindex="-1" aria-labelledby="tray-who" data-key="tray"${reveal === 'tray' ? ' data-reveal' : ''}>
+    <div class="check-tray__head">
+      <h3 class="check-tray__who" id="tray-who"><b>${esc(r.title)}</b><span>Its reply, in its own words, on ${esc(on(r.machine))} · ${r.at}</span></h3>
+      <button type="button" class="check-tray__close tt-focusable" data-act="c-close" data-key="tclose" aria-label="Close the reply">${icon('x', 16)}</button>
+    </div>
+    <div class="check-tray__text"${shown.length > 8 ? ` tabindex="0" role="region" aria-label="${shown.length < ls.length ? `The reply's first ${MOST_B} lines` : 'Its whole reply'}" data-key="tpre"` : ''}><pre class="check-pre">${esc(shown.join('\n'))}</pre></div>
+    <p class="check-tray__foot tt-paragraph"><span>${shown.length < ls.length ? `Its first ${MOST_B} lines. ` : ''}${r.truncated ? cutWords : esc(rest || 'That is all of its reply.')}</span>
+      <button type="button" class="check-open tt-focusable" data-act="open" data-row="${r.id}" data-key="topen" aria-label="${esc(openName(r))}">Open the check</button></p>
+  </section>`
+}
+
+/* ---------- the transcript ---------- */
+function turn(T) {
+  const rows = T.rows.map(id => ROWS[id]), open = S.folds[T.id]
+  const checks = rows.filter(r => r.check).length, others = rows.length - checks
+  const summary = [others && `${others} delegated thread${others > 1 ? 's' : ''}`, checks && `${checks} check${checks > 1 ? 's' : ''}`].filter(Boolean).join(' · ')
+  const still = rows.filter(r => r.outcome === 'working')
+  return `<article class="thread-message" data-role="user"><p>${esc(T.user)}</p></article>
+  <section class="thread-work"${open ? ' data-expanded' : ''} data-turn="${T.id}" aria-labelledby="${T.id}-headline">
+    <button type="button" class="thread-work__summary tt-focusable" data-act="fold" data-turn="${T.id}" data-key="fold-${T.id}" aria-expanded="${open}" aria-controls="${T.id}-body">
+      <span id="${T.id}-headline">${T.worked}<span class="thread-work__delegated"> · ${summary}</span></span>${icon('chev', 14)}</button>
+    ${open ? `<div class="thread-work__body" id="${T.id}-body"><ul class="delegated-work" aria-label="Delegated work">${rows.map(row).join('')}</ul></div>` : ''}
+  </section>
+  <article class="thread-message" data-role="assistant"><header><span class="thread-message__who">Claude Code</span><time>${T.replyAt}</time></header>
+    <div class="rich-message">${T.reply.map(p => `<p>${p}</p>`).join('')}</div></article>
+  ${!open && still.length ? `<section class="delegated-work-still" aria-labelledby="${T.id}-still"><p id="${T.id}-still" class="delegated-work-still__heading">Still working after this reply</p>
+    <ul class="delegated-work">${still.map(row).join('')}</ul></section>` : ''}`
+}
+
+function render(focusKey, keepScroll = true) {
+  const top = tx.scrollTop
+  tx.innerHTML = TURNS.map(turn).join('')
+  trayslot.innerHTML = S.v === 'c' && S.tray ? tray(ROWS[S.tray]) : ''
+  const t = trayslot.firstElementChild
+  if (t) fitTray(); else tx.style.paddingBottom = ''
+  document.querySelectorAll('.check-fold__text, .check-tray__text').forEach(moreBelow)
+  if (keepScroll) tx.scrollTop = top
+  reveal = null
+  if (focusKey) document.querySelector(`[data-key="${focusKey}"]`)?.focus({ preventScroll: true })
+}
+function settings() {
+  root.dataset.theme = S.theme
+  if (S.motion === 'reduce') root.dataset.reducedMotion = 'on'; else delete root.dataset.reducedMotion
+  frame.dataset.size = S.size
+  document.getElementById('theme').setAttribute('aria-pressed', String(S.theme === 'light'))
+  document.getElementById('motion').setAttribute('aria-pressed', String(S.motion === 'reduce'))
+  document.querySelectorAll('#sizes [data-size]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.size === S.size)))
+  document.querySelectorAll('#vbtns [data-v]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === S.v)))
+  const v = VARIANTS.find(x => x.k === S.v)
+  document.getElementById('vname').textContent = `${v.k.toUpperCase()}. ${v.n}: ${v.why}`
+  try { const u = new URL(location.href); for (const [k, val] of [['variant', S.v], ['theme', S.theme], ['motion', S.motion], ['size', S.size]]) u.searchParams.set(k, val); history.replaceState(null, '', u) } catch { /* sandboxed */ }
+}
+/** A thread opens at its newest turn: its user message at the top. */
+function toNewest() { const last = [...tx.querySelectorAll('.thread-message[data-role="user"]')].at(-1); if (last) tx.scrollTop += last.getBoundingClientRect().top - tx.getBoundingClientRect().top - 12 }
+function setVariant(k) { S.v = k; S.aOpen.clear(); S.bOpen.clear(); S.tray = null; settings(); render(undefined, false); toNewest() }
+function say(words) { document.getElementById('said').textContent = words }
+/** The tray stops short of its row's height, so the row fits above it; the transcript gains room to scroll under it. */
+function fitTray() {
+  const t = trayslot.firstElementChild, el = document.getElementById(`row-${S.tray}`); if (!t || !el) return
+  t.style.maxHeight = `${Math.max(200, Math.min(400, tx.clientHeight - el.getBoundingClientRect().height - 28))}px`
+  tx.style.paddingBottom = `${t.offsetHeight + 16}px`
+  moreBelow(t.querySelector('.check-tray__text'))
+}
+/** Keeps a row in view above the tray. */
+function keepAbove(el) {
+  const t = trayslot.firstElementChild; if (!el || !t) return
+  // The tray stops short of its row, which stays in view at the transcript's top, however short the window.
+  const view = tx.getBoundingClientRect()
+  fitTray()
+  const r = el.getBoundingClientRect(), limit = trayslot.firstElementChild.getBoundingClientRect().top - 10
+  if (r.bottom > limit || r.top < view.top) tx.scrollTop += r.top - view.top - 8
+}
+
+function moreBelow(el) { if (el.scrollTop + el.clientHeight < el.scrollHeight - 2) el.dataset.more = ''; else delete el.dataset.more }
+document.addEventListener('scroll', e => { if (e.target.matches?.('.check-fold__text, .check-tray__text')) moreBelow(e.target) }, true)
+
+/* ---------- presses ---------- */
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]'); if (!b) return
+  const r = ROWS[b.dataset.row]
+  switch (b.dataset.act) {
+    case 'fold': S.folds[b.dataset.turn] = !S.folds[b.dataset.turn]; render(b.dataset.key); break
+    case 'a-more': S.aOpen.has(r.id) ? S.aOpen.delete(r.id) : (S.aOpen.add(r.id), reveal = r.id); render(b.dataset.key); break
+    case 'b-reply': S.bOpen.has(r.id) ? S.bOpen.delete(r.id) : (S.bOpen.add(r.id), reveal = r.id); render(b.dataset.key); break
+    case 'c-tray':
+      if (S.tray === r.id) { S.tray = null; render(b.dataset.key); break }
+      S.tray = r.id; reveal = 'tray'; render('tray'); keepAbove(document.getElementById(`row-${r.id}`)); break
+    case 'c-close': { const from = S.tray; S.tray = null; render(`c-${from}`); break }
+    case 'open': say(`Pressed Open: in Sotto this opens "${r.title}" in this pane, with its whole reply, as a row's link does.`); break
+  }
+})
+document.getElementById('vbtns').innerHTML = VARIANTS.map(v => `<button data-v="${v.k}" aria-label="Variant ${v.k.toUpperCase()}, ${v.n}">${v.k.toUpperCase()}</button>`).join('')
+document.getElementById('vbtns').addEventListener('click', e => { const b = e.target.closest('[data-v]'); if (b) setVariant(b.dataset.v) })
+const step = d => setVariant(VARIANTS[(VARIANTS.findIndex(v => v.k === S.v) + d + VARIANTS.length) % VARIANTS.length].k)
+document.getElementById('prev').addEventListener('click', () => step(-1))
+document.getElementById('next').addEventListener('click', () => step(1))
+document.getElementById('sizes').addEventListener('click', e => { const b = e.target.closest('[data-size]'); if (b) { S.size = b.dataset.size; settings(); render(); if (S.tray) keepAbove(document.getElementById(`row-${S.tray}`)) } })
+document.getElementById('theme').addEventListener('click', () => { S.theme = S.theme === 'light' ? 'dark' : 'light'; settings() })
+document.getElementById('motion').addEventListener('click', () => { S.motion = S.motion === 'reduce' ? 'full' : 'reduce'; settings() })
+const JUMPS = [['fail', 'Failing'], ['pass', 'Passing'], ['prose', 'Prose first'], ['cut', 'Cut at 32 KiB'], ['wait', 'Waiting'], ['build', 'Not a check']]
+document.getElementById('jumps').innerHTML = JUMPS.map(([id, w]) => `<button data-jump="${id}" aria-label="Scroll to the ${w.toLowerCase()} sample">${w}</button>`).join('')
+document.getElementById('jumps').addEventListener('click', e => {
+  const b = e.target.closest('[data-jump]'); if (!b) return
+  const T = TURNS.find(t => t.rows.includes(b.dataset.jump))
+  if (!S.folds[T.id] && b.dataset.jump !== 'wait') { S.folds[T.id] = true; render() }
+  const el = document.getElementById(`row-${b.dataset.jump}`)
+  if (el) tx.scrollTop += el.getBoundingClientRect().top - tx.getBoundingClientRect().top - 12
+})
+
+/* ---------- keys: Left/Right switch variants; Escape closes what is open nearest focus ---------- */
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    const a = document.activeElement
+    if (S.tray && (trayslot.contains(a) || a?.dataset.act === 'c-tray' || !a || a === document.body || tx.contains(a))) { const from = S.tray; S.tray = null; render(`c-${from}`); e.preventDefault(); return }
+    const li = a?.closest?.('.delegated-work__row')
+    const id = li?.id.replace('row-', '')
+    if (id && S.v === 'a' && S.aOpen.has(id)) { S.aOpen.delete(id); render(`a-${id}`); e.preventDefault(); return }
+    if (id && S.v === 'b' && S.bOpen.has(id)) { S.bOpen.delete(id); render(`b-${id}`); e.preventDefault(); return }
+    const fold = a?.closest?.('.thread-work[data-expanded]')
+    if (fold) { S.folds[fold.dataset.turn] = false; render(`fold-${fold.dataset.turn}`); e.preventDefault() }
+    return
+  }
+  if (e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return
+  if (e.target.closest?.('input, textarea, select, [contenteditable]')) return
+  if (e.key === 'ArrowRight') { step(1); e.preventDefault() } else if (e.key === 'ArrowLeft') { step(-1); e.preventDefault() }
+})
+document.getElementById('headmark').innerHTML = MARK.claude(15)
+if (S.motion === 'full' && matchMedia('(prefers-reduced-motion: reduce)').matches) say('Your system asks for reduced motion, so nothing here moves whatever the toggle says.')
+settings(); render(undefined, false); toNewest()
+</script>
+</body>
+</html>

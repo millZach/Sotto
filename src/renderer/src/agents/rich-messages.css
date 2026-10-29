@@ -172,7 +172,7 @@
 .rich-message__feedback { margin-top: 8px; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; color: var(--rich-muted); font-size: 13px; }
 .rich-message__feedback:empty { display: none; }
 .rich-message__feedback > span { color: var(--tt-error); }
-.rich-message__feedback-action { min-height: 32px; padding: 0 12px; border: 1px solid var(--tt-border-faint); border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; }
+.rich-message__feedback-action { min-height: 32px; padding: 0 12px; border: 1px solid var(--tt-border-faint); border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .rich-message__feedback-action:hover { background: var(--tt-hover); }
 .rich-message__feedback-action:active { background: var(--tt-hover-strong); }
 

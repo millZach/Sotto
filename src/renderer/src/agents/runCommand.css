@@ -39,6 +39,7 @@
   transition: color 160ms ease, background-color 160ms ease;
 }
 .rich-code__run:hover { background: var(--tt-hover); color: var(--tt-text); }
+.rich-code__run:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .rich-code__run:hover svg { color: var(--tt-primary); }
 .rich-code__run[data-state='ran'] svg { color: var(--tt-success); }
 .rich-code__run[aria-disabled='true'] { cursor: progress; }

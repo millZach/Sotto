@@ -67,8 +67,9 @@
 .branch-toolbar__badges > small { padding: 1px 6px; border: 1px solid transparent; border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: 10.5px; line-height: 1.4; }
 .branch-toolbar__badges > small[data-badge='current'] { border-color: var(--tt-activity); color: var(--tt-activity); }
 .branch-toolbar__badges > small[data-badge='default'] { color: var(--tt-text-2); }
-.branch-toolbar__more { min-height: 30px; margin: 2px 0 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }
+.branch-toolbar__more { min-height: 30px; margin: 2px 0 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .branch-toolbar__more:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.branch-toolbar__more:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .branch-toolbar__empty { margin: 0; padding: 10px; color: var(--tt-text-muted); font-size: 12.5px; }
 .branch-toolbar__switch { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; margin: 4px 2px 0; padding: 8px 8px 6px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; cursor: pointer; }
 .branch-toolbar__switch > input { margin: 0; accent-color: var(--tt-accent); }

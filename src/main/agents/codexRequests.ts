@@ -37,6 +37,8 @@ const amendmentSchema = z.union([
 ])
 
 const elicitedToolSchema = z.object({ name: z.string(), arguments: z.unknown().optional() })
+const formAnswerSchema = z.record(z.string(), z.unknown())
+const questionAnswersSchema = z.record(z.string(), z.union([z.string(), z.array(z.string())]))
 /**
  * Codex confirms an app tool through an elicitation and names the server beside it, so one about
  * Sotto's own browser can be said plainly. The body's own shape is not established against a real
@@ -144,7 +146,7 @@ export function answerRequest(pending: CodexPendingRequest, answer: string, appr
       const answered = questionValues(pending.request, questionAnswers)
       content = Object.fromEntries(Object.keys(answered).map(id => [id, questionAnswers[id]!.optionIds[0] ?? questionAnswers[id]!.text]))
     } else {
-      try { content = z.record(z.string(), z.unknown()).parse(JSON.parse(answer)) }
+      try { content = formAnswerSchema.parse(JSON.parse(answer)) }
       catch { if (keys.length !== 1) throw new Error('Answer this form with a JSON object keyed by its fields.'); content = { [keys[0]!]: answer } }
     }
     for (const key of form.required ?? []) if (!(key in content)) throw new Error(`Answer the required field: ${key}.`)
@@ -166,7 +168,7 @@ export function answerRequest(pending: CodexPendingRequest, answer: string, appr
   if (questionAnswers) return { answers: Object.fromEntries(Object.entries(questionValues(pending.request, questionAnswers)).map(([id, answers]) => [id, { answers }])) }
   let values: Record<string, string | string[]> = {}
   if (questions.length > 1) {
-    try { values = z.record(z.string(), z.union([z.string(), z.array(z.string())])).parse(JSON.parse(answer)) }
+    try { values = questionAnswersSchema.parse(JSON.parse(answer)) }
     catch {
       const numbered = new Map<number, string>()
       for (const line of answer.split(/\r?\n/u)) {

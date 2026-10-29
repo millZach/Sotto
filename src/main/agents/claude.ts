@@ -44,7 +44,7 @@ import { verifyFileMentions } from './promptFiles'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { ClaudeProtocol, ClaudeRejected, ClaudeWritePending, object, type ClaudeFrame } from './claudeProtocol'
 import { claudeLimitStop, claudeTurnAborted, claudeTurnFailure } from './claudeTurnFailure'
-import { authoredClaudeUser, claudeDigest, ClaudeSessionLog, claudeText, claudeUserText } from './claudeSessionLog'
+import { authoredClaudeUser, claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText, firstUnread, type OriginBucket } from './claudeSessionLog'
 import { carriesAttachedFiles, deliverAttachments } from './attachedFiles'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { unreadableRequest } from './nativeRequests'
@@ -60,7 +60,20 @@ import { ReadsBeforeSend } from './readsBeforeSend'
 import { MAX_AGENT_ACTIVITIES, type AgentActivity } from '../../shared/agentActivity'
 import { markSendStage } from './sendStages'
 
-const originSchema = z.object({ messageId: z.string(), commandId: z.string(), uuid: z.string().uuid(), digest: z.string(), createdAt: z.string(), attachments: z.array(agentAttachmentReferenceSchema).optional() })
+/**
+ * `delivered`: for a prompt Sotto sent with notes after the user's words (an attached file's, Point at something's;
+ * ADR-0131, ADR-0154), the digest of the whole text it delivered, flattened as the session log reads it back, and the
+ * length of the notes at its end. A digest and a length only, never the text. Records written before it have none.
+ */
+/**
+ * A thread's origins by digest: of the text Sotto delivered with notes (`byDelivered`), of the user's words for every
+ * origin (`byWords`), and of the words for origins recorded before the delivered digest existed that carry notes
+ * (`legacyByWords`).
+ */
+type Bucket = OriginBucket<Alias['origins'][number]>
+interface OriginIndex { indexed: number; byDelivered: Map<string, Bucket>; byWords: Map<string, Bucket>; legacyByWords: Map<string, Bucket> }
+const originSchema = z.object({ messageId: z.string(), commandId: z.string(), uuid: z.string().uuid(), digest: z.string(), createdAt: z.string(), attachments: z.array(agentAttachmentReferenceSchema).optional(),
+  delivered: z.object({ digest: z.string(), suffixLength: z.number().int().nonnegative() }).optional() })
 /**
  * Transcript cursor: how far a thread's native transcript had been read when Sotto last stopped, whose
  * file that was, and what the reader had already matched there. Reconnecting seeks to it instead of
@@ -185,6 +198,13 @@ export function settingsSteps(from: ClaudeSettings, to: ClaudeSettings, ultracod
 }
 /** Appended to Claude Code's own system prompt on every thread process, Watcher's included (ADR-0080). */
 const CLAUDE_QUESTIONS = questionInstructions('AskUserQuestion', false)
+/**
+ * The server may return prose a model writes between tool calls as narration: a thinking block in place of the text
+ * (`claudeNarration`). Asked for no thinking text, the block comes back empty and the reply is lost; summarized, it holds
+ * the server's summary of that prose, which Sotto shows as the reply. Claude Code's own default asks for summaries of
+ * narration only when a feature gate allows, so Sotto asks for them on every launch (October 28, 2026).
+ */
+const THINKING_DISPLAY = ['--thinking-display', 'summarized']
 function permissionArguments(mode: AgentRuntimeMode = 'approval-required'): string[] {
   // Two flags, and both are needed. `--permission-prompts host` only says prompts are not force-denied;
   // `--permission-prompt-tool stdio` is what makes this process the surface that answers them, the way
@@ -410,10 +430,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.threadChanges.publish()
   }, () => adapterItemCount(this.messageLog, this.threads.values()))
   private readonly acknowledgements = new Map<string, (delivered?: boolean) => void>()
-  /** For each origin whose send is waiting: records the prompt from what was sent and acknowledges it, for when Claude Code takes it without an echo. */
+  /** For each origin whose send is waiting: records the prompt from what was sent and acknowledges it, for when Claude Code takes it before or without an echo. */
   private readonly recordUnechoed = new Map<string, () => void>()
-  /** Origins Claude Code has said it started running, whose echo has not come. */
-  private readonly startedOrigins = new Set<string>()
   /**
    * Steers Claude Code holds and has not read, by origin. It queues a prompt sent while a turn runs. One sent now cuts
    * the turn and starts the next; one sent while a tool call runs is read into the turn once the call returns, and is
@@ -437,6 +455,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   /** The classification on a turn's last assistant message, when Claude Code gave one for a failed API call. */
   private readonly assistantErrors = new Map<string, string>()
   private readonly logOrigins = new Map<string, Set<string>>()
+  /** Each thread's origins by the digest of the text Sotto delivered with notes, keyed by the origin list it indexes. */
+  private readonly deliveredIndex = new WeakMap<Alias['origins'], OriginIndex>()
   private readonly lastLogDigest = new Map<string, string>()
   /**
    * Threads whose transcript is read from its first byte into a log already told what the store holds.
@@ -1051,13 +1071,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
           await this.persist(); throw error
         }
         let timer: ReturnType<typeof setTimeout> | undefined
-        const forget = (): void => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); this.recordUnechoed.delete(origin.uuid); this.startedOrigins.delete(origin.uuid) }
+        const forget = (): void => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); this.recordUnechoed.delete(origin.uuid) }
         const acknowledged = new Promise<boolean>(resolve => {
           timer = setTimeout(() => { forget(); resolve(false) }, this.options.requestTimeoutMs ?? 15000)
           this.acknowledgements.set(origin.uuid, (delivered = true) => { forget(); resolve(delivered) })
         })
-        // Claude Code answers a slash command it cannot run here, such as /chrome, with a reply of its own. It never echoes
-        // the prompt, so the prompt is recorded from what was sent.
+        // Claude Code echoes the prompt only as the model's reply begins, and never echoes a slash command it cannot run
+        // here, such as /chrome, which it answers with a reply of its own. So once it takes the prompt without its echo,
+        // the prompt is recorded from what was sent.
         this.recordUnechoed.set(origin.uuid, () => {
           this.addMessage(id, { id: origin.messageId, role: 'user', text: nativeText, createdAt: origin.createdAt, commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
           if (!this.completedOrigins.has(origin.uuid)) { thread.status = 'running'; this.markTurn(id, 'running'); this.changed(id) }
@@ -1471,7 +1492,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const roles = profile ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
     const effort = nativeEffort(alias.reasoningEffort, this.ultracodeAt(alias.modelId))
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-      '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
+      '--include-partial-messages', '--replay-user-messages', ...THINKING_DISPLAY, ...permissionArguments(alias.runtimeMode),
       '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : roles?.instructions ? `${CLAUDE_QUESTIONS}\n\n${roles.instructions}` : CLAUDE_QUESTIONS,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(effort.effortLevel ? ['--effort', effort.effortLevel] : []),
       ...flagSettingsArguments(fastModeRuns(this.state, alias.modelId, alias.fastMode), effort.ultracode)]
@@ -1757,16 +1778,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
       return
     }
     if (frame.type === 'control_cancel_request' && typeof frame.request_id === 'string') { runtime.requests.delete(frame.request_id); thread.requests = [...runtime.requests.values()].map(value => value.request) }
-    // A prompt Claude Code took without an echo is taken when its local command replies, which puts it above the reply.
-    // A result naming it is the last word. Any other reply may belong to a turn the prompt is still held behind.
-    if (frame.type === 'command_lifecycle' && frame.state === 'started' && typeof frame.command_uuid === 'string' && this.recordUnechoed.has(frame.command_uuid)) this.startedOrigins.add(frame.command_uuid)
+    // A waiting prompt is taken once Claude Code says its turn started, which it says as it takes the prompt. Its echo
+    // comes only as the model's reply begins, and the first reply after a restart can begin past the deadline (#1511).
+    // Recorded now, the prompt sits above anything its turn says. One held behind Claude Code's own turn starts only once
+    // that turn ends. A result naming a prompt is the last word, for a client that never said the prompt started.
+    if (frame.type === 'command_lifecycle' && frame.state === 'started' && typeof frame.command_uuid === 'string') this.recordUnechoed.get(frame.command_uuid)?.()
     // Any word of a steer's place in Claude Code's own queue means it holds the steer.
     if (frame.type === 'command_lifecycle' && typeof frame.command_uuid === 'string' && this.steers.has(frame.command_uuid)) this.acknowledgements.get(frame.command_uuid)?.()
-    if (this.recordUnechoed.size && !frame.parent_tool_use_id) {
-      const localReply = frame.type === 'assistant' && typeof frame.local_command_source === 'string'
-      const resultFor = frame.type === 'result' && typeof frame.user_message_uuid === 'string' ? frame.user_message_uuid : undefined
-      if (localReply || resultFor) for (const origin of alias.origins) if (origin.uuid === resultFor || localReply && this.startedOrigins.has(origin.uuid)) this.recordUnechoed.get(origin.uuid)?.()
-    }
+    if (frame.type === 'result' && !frame.parent_tool_use_id && typeof frame.user_message_uuid === 'string') this.recordUnechoed.get(frame.user_message_uuid)?.()
     // A result ends its turn, and the turn's own outcome is decided before its activity settles, so a block the turn
     // left open settles the way the turn ended. A turn the user stopped is no failure of Claude Code's, nor finished.
     const ending = frame.type === 'result' && !frame.parent_tool_use_id ? this.resultEnding(id, frame) : undefined
@@ -1875,10 +1894,43 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const thread = this.threads.get(id)
     if (thread) { delete thread.monitoring; delete thread.backgroundWork; this.changed(id) }
   }
-  /** A sent prompt the transcript has not yet given back, found by its text. */
+  /**
+   * A sent prompt the transcript has not yet given back, found by the digest of the whole text Sotto delivered with its
+   * notes. One map lookup per frame: the index follows the thread's origins, adding the ones pushed since it was last
+   * read and rebuilt only when the list itself is replaced, so a frame's work does not grow with the thread's history.
+   */
+  private deliveredOrigin(id: string, digest: string): Alias['origins'][number] | undefined {
+    return this.indexedOrigin(id, 'byDelivered', digest)
+  }
+  /**
+   * An origin recorded before the delivered digest existed, with notes Sotto appended, found by its words' digest: how
+   * such a prompt was read back before, kept for those origins alone. One map lookup, as for the delivered digest.
+   */
+  private legacyOrigin(id: string, digest: string): Alias['origins'][number] | undefined {
+    return this.indexedOrigin(id, 'legacyByWords', digest)
+  }
+  /** A sent prompt the transcript has not yet given back, found by its words' digest, the first sent first. */
   private unreadOrigin(id: string, digest: string): Alias['origins'][number] | undefined {
-    const consumed = this.logOrigins.get(id)
-    return this.aliases[id]?.origins.find(origin => !consumed?.has(origin.uuid) && origin.digest === digest)
+    return this.indexedOrigin(id, 'byWords', digest)
+  }
+  private indexedOrigin(id: string, map: 'byDelivered' | 'byWords' | 'legacyByWords', digest: string): Alias['origins'][number] | undefined {
+    const origins = this.aliases[id]?.origins
+    if (!origins) return undefined
+    let index = this.deliveredIndex.get(origins)
+    if (!index) { index = { indexed: 0, byDelivered: new Map(), byWords: new Map(), legacyByWords: new Map() }; this.deliveredIndex.set(origins, index) }
+    const add = (into: Map<string, Bucket>, key: string, origin: Alias['origins'][number]): void => {
+      const bucket = into.get(key)
+      if (bucket) bucket.origins.push(origin); else into.set(key, { origins: [origin], start: 0, consumed: undefined })
+    }
+    for (; index.indexed < origins.length; index.indexed++) {
+      const origin = origins[index.indexed]!
+      add(index.byWords, origin.digest, origin)
+      if (origin.delivered) add(index.byDelivered, origin.delivered.digest, origin)
+      else if (carriesAttachedFiles(origin.attachments)) add(index.legacyByWords, origin.digest, origin)
+    }
+    // Origins only ever leave a thread by the list being replaced, so every origin indexed for this list is still in it.
+    const bucket = index[map].get(digest)
+    return bucket ? firstUnread(bucket, this.logOrigins.get(id)) : undefined
   }
   /** Claude Code writes a slash command it ran itself into the transcript as a local command, not as a prompt. One
    * Sotto sent is read back as that prompt. Any other stays out of the record, as its reply does. */
@@ -1904,11 +1956,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (frame.type === 'user' && !authoredClaudeUser(frame)) return
     const alias = this.aliases[id]!; const uuid = typeof frame.uuid === 'string' ? frame.uuid : ''
     let origin = alias.origins.find(value => value.uuid === uuid)
-    // A prompt's words without the note naming its attached files, only when the origin it matches recorded one (ADR-0131).
-    const words = frame.type === 'user' ? claudeUserText(message?.content) : text
-    if (words !== text) {
-      const owner = origin ?? (fromLog ? this.unreadOrigin(id, claudeDigest(words)) : undefined)
-      if (owner && carriesAttachedFiles(owner.attachments)) { text = words; origin = owner }
+    // A prompt's words without the notes Sotto appended, only when the origin it matches recorded an attached file or
+    // a Point at something picture, and only the notes Sotto appended for that origin (ADR-0131, ADR-0154).
+    if (frame.type === 'user') {
+      const read = claudeReadBack(message?.content, origin, fromLog ? {
+        delivered: digest => this.deliveredOrigin(id, digest), words: digest => this.unreadOrigin(id, digest), legacy: digest => this.legacyOrigin(id, digest),
+      } : {})
+      text = read.text; origin = read.origin
     }
     const digest = claudeDigest(text)
     if (fromLog && frame.type === 'user') {
@@ -2115,7 +2169,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       ...(typeof nativePrompt === 'string' ? (nativePrompt ? [{ type: 'text', text: nativePrompt }] : []) : nativePrompt),
       ...(delivered.note ? [{ type: 'text', text: delivered.note }] : []),
     ] : nativePrompt
-    return { content, nativeText, origin }
+    // With notes after the user's words, the whole delivered text is what the log gives back, so its digest finds this
+    // origin exactly and the notes' length says what to take off; nothing is guessed from a block's shape.
+    const flattened = claudeText(content)
+    const notes = delivered.note && flattened.startsWith(nativeText) ? { delivered: { digest: claudeDigest(flattened), suffixLength: flattened.length - nativeText.length } } : {}
+    return { content, nativeText, origin: { ...origin, ...notes } }
   }
   /**
    * Steering: a prompt written to the CLI while its turn runs. Claude Code queues it and says so at once, which is the
@@ -2200,8 +2258,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch)); this.activity.set(id, projector) }
     const watcherTurn = live && this.runtimes.get(id)?.watcher && thread.lastTurn?.status === 'running' ? thread.lastTurn.messageId : undefined
     const turnId = watcherTurn ?? this.lastUserMessageId(id) ?? 'native-history'
-    const rows = projector.apply(thread.activities ?? [], frame, turnId, this.lastTextMessageId(id), this.aliases[id]!.cwd, live, turnEnd)
-    if (rows.length) {
+    const previous = thread.activities ?? []
+    const rows = projector.apply(previous, frame, turnId, this.lastTextMessageId(id), this.aliases[id]!.cwd, live, turnEnd)
+    // A narration row taken back out can leave no rows at all, which is still a change.
+    if (rows.length || rows !== previous) {
       // Transcript replay may place a tool after a folded steer. Its already-observed tool identity
       // still belongs to the native turn that wrote it; replay must not move it to the steer.
       if (!live && this.resolvedWatcherProfiles.has(id)) {

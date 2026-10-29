@@ -91,6 +91,7 @@
 .pr-surface__link:first-child { border-top: 0; }
 .pr-surface__link-open { display: grid; width: 100%; grid-template-columns: 15px auto minmax(0, 1fr); grid-template-areas: 'icon number title' '. source source'; align-items: center; column-gap: 8px; row-gap: 2px; min-width: 0; padding: 9px 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; }
 .pr-surface__link-open:hover { background: var(--tt-hover); }
+.pr-surface__link-open:active:not(:disabled) { background: var(--tt-hover-strong); }
 .pr-surface__link-open > svg { grid-area: icon; }
 .pr-surface__link-number { grid-area: number; color: var(--tt-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; }
 .pr-surface__link-title { grid-area: title; overflow: hidden; font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }

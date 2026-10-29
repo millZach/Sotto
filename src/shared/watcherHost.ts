@@ -3,7 +3,7 @@ import { agentRuntimeModeSchema, type AgentHostSnapshot, type AgentRuntimeMode }
 import { watcherIdentitySchema, type WatcherIdentity, watcherOperationSchema, watcherRequestSchema, watcherToolSchemas, watcherEvidenceSchema, watcherThreadTargetSchema, watcherStandingWatchSchema } from './watcher'
 import type { WatcherRoomState } from './watcherRoom'
 import type { HostMachineReport } from './hostFacts'
-import type { ProjectOrigins } from './workerMachine'
+import type { ProjectOrigins, ProjectSetupRequest, ProjectSetupResult } from './workerMachine'
 import type { HostBranchMoveRequest } from './branchMoves'
 
 /** Text-free attribution, bound by the host to its authenticated SSH-recorded desktop. No local tool token travels. */
@@ -48,11 +48,11 @@ export type WatcherRoomThreadInput = Pick<WatcherRoomState['watchedThreads'][num
 export interface WatcherRemoteHosts {
   /**
    * `name` is the machine's name as this computer saved it; `facts` says whether the host lists `host-facts` (#1031), and
-   * `origins` whether it lists `project-origins` (#1032).
+   * `origins` whether it lists `project-origins` (#1032), and `setUp` whether it lists `project-setup` (#1690).
    * `permissionCeiling` is the widest mode the host lets this computer give a thread there: Full access where this
    * computer may answer on it, Ask for approval where it may not.
    */
-  hosts(): { hostId: string; name?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; origins?: boolean; checks?: boolean; muse?: boolean; cursor?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
+  hosts(): { hostId: string; name?: string; control: boolean; reads: boolean; standingWatch?: boolean; workSettled?: boolean; outcomes?: boolean; facts?: boolean; origins?: boolean; setUp?: boolean; checks?: boolean; checkStop?: boolean; muse?: boolean; cursor?: boolean; connected: boolean; permissionCeiling: AgentRuntimeMode }[]
   read(hostId: string, request: WatcherHostRead): Promise<unknown>
   control(hostId: string, request: WatcherHostControl): Promise<unknown>
   snapshot(hostId: string): AgentHostSnapshot | undefined
@@ -69,6 +69,11 @@ export interface WatcherRemoteHosts {
   machineFacts?(hostId: string): Promise<HostMachineReport | undefined>
   /** A connected host's projects' GitHub origins, or undefined when it does not report them (#1032). */
   projectOrigins?(hostId: string): Promise<ProjectOrigins | undefined>
+  /**
+   * Sets up a copy of a repository on a connected host for a worker placed there (#1690), or undefined when it does not
+   * list `project-setup`. Rejects when the host is out of reach; a setup that cannot finish answers in plain words.
+   */
+  setUpProject?(hostId: string, request: ProjectSetupRequest): Promise<ProjectSetupResult | undefined>
   /**
    * A connected host's socket for moving a branch (#1033), whatever it lists, or undefined when it is not connected. The
    * mover says in plain words when the host does not list `branch-moves`.

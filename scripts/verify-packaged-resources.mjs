@@ -312,6 +312,7 @@ export async function verifyPackagedResources(input, options = {}) {
     'out/main/index.js',
     'out/main/gitLauncherWorker.js',
     'out/main/threadStoreWorker.js',
+    'out/main/usageStoreWorker.js',
     'out/main/hangWatchdogWorker.js',
     'out/main/external-dependencies.json',
     'out/preload/index.js',

@@ -43,10 +43,10 @@ const ACROSS_MACHINES = { machine: true, os: true, fromThread: true, testRun: tr
 /** The start's schema as offered: no machine, system or branch to start from while Work across machines is off, and never a move. */
 const offeredStart = (roles: boolean, machines: boolean): z.ZodType => {
   if (roles) {
-    const start = watcherToolSchemas.start_thread.input.omit({ fromMove: true, madeFrom: true, check: true })
+    const start = watcherToolSchemas.start_thread.input.omit({ fromMove: true, madeFrom: true, check: true, fromOrigin: true })
     return machines ? start : start.omit(ACROSS_MACHINES)
   }
-  const start = startByModel.omit({ fromMove: true, madeFrom: true, check: true })
+  const start = startByModel.omit({ fromMove: true, madeFrom: true, check: true, fromOrigin: true })
   return machines ? start : start.omit(ACROSS_MACHINES)
 }
 
@@ -84,11 +84,14 @@ export class WatcherToolServer implements WatcherProfileTools {
   readonly instructions: string | undefined
   private readonly transport: ThreadToolServer
   private running = 0
-  /** `machines` is the Owl answer for Work across machines (ADR-0082), as `roles` is for worker roles. */
-  constructor(private readonly service: WatcherService, options: { roles?: boolean; machines?: boolean } = {}) {
-    const roles = options.roles === true, machines = options.machines === true
+  /**
+   * `machines` is the Owl answer for Work across machines (ADR-0082), as `roles` is for worker roles; `pullRequestNews`
+   * says Watcher's pull request news runs (ADR-0144).
+   */
+  constructor(private readonly service: WatcherService, options: { roles?: boolean; machines?: boolean; pullRequestNews?: boolean } = {}) {
+    const roles = options.roles === true, machines = options.machines === true, pullRequestNews = options.pullRequestNews === true
     this.definitions = roles || machines ? watcherToolDefinitions(roles, machines) : WATCHER_TOOL_DEFINITIONS
-    this.instructions = roles || machines ? watcherSystemPrompt(roles, machines) : undefined
+    this.instructions = roles || machines || pullRequestNews ? watcherSystemPrompt(roles, machines, pullRequestNews) : undefined
     this.transport = new ThreadToolServer({ name: this.name, serverName: 'Sotto threads',
       instructions: 'Use explicit Sotto host and thread IDs. Use the requestId supplied with the user’s Watcher instruction. Native project reads use your own tools. No tool answers a request, approves a permission or changes policy. A send steers unless you name now or queue, and its result says when a steer went now or queued instead; queue only a prompt that must wait for the turn to end. Read receipts instead of replaying uncertain delivery.',
       unavailable: 'Watcher’s thread tools are unavailable.', failed: 'This Watcher call could not be completed. Check its receipt before trying again.' },

@@ -40,6 +40,41 @@ describe('screenshot attachment input', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Remove shot.png' }))
     expect(screen.queryByRole('img')).not.toBeInTheDocument()
   })
+  it('shows the picture from Point at something as one item, named after the element with the comment under it, and removes all of it (ADR-0154)', () => {
+    const pointed: AgentAttachmentHandle = { ...attached('pointed', 100), name: 'button · Sign in', browserFeedback: { label: 'button · Sign in', comment: 'Match the header', context: 'Selector: #sign-in' } }
+    function Pointed() {
+      const [images, setImages] = useState<AgentAttachmentHandle[]>([pointed])
+      return <ScreenshotInput target="workshop" attachments={images} onChange={setImages} disabled={false} supported><textarea aria-label="Prompt" /></ScreenshotInput>
+    }
+    render(<Pointed />)
+    const chip = screen.getByText('button · Sign in').closest('figure')!
+    expect(chip).toHaveTextContent('Match the header')
+    expect(chip.textContent).not.toContain('#sign-in')
+    fireEvent.click(screen.getByRole('button', { name: 'Remove button · Sign in' }))
+    expect(screen.queryByText('Match the header')).not.toBeInTheDocument()
+  })
+  it('stacks plain images into one deck with their count, and keeps Point at something\'s picture a tile of its own (ADR-0154)', () => {
+    const resized: AgentAttachmentHandle = { ...attached('pointed', 100), name: 'button · Sign in', dimensions: { original: { width: 3840, height: 2160 }, sent: { width: 2576, height: 1449 } },
+      browserFeedback: { label: 'button · Sign in', comment: 'Match the header', context: 'Selector: #sign-in' } }
+    render(<ScreenshotInput target="workshop" attachments={[attached('one', 100), resized, attached('two', 100)]} onChange={() => undefined} disabled={false} supported><textarea aria-label="Prompt" /></ScreenshotInput>)
+    const deck = document.querySelector('.screenshot-deck')!
+    expect([...deck.querySelectorAll('figure')].map(figure => figure.title)).toEqual(['one.png', 'two.png'])
+    expect(deck.querySelector('.screenshot-deck__count')).toHaveTextContent('2')
+    // Plain images carry no caption; each keeps its own remove button, reached in order.
+    expect(deck.querySelector('figcaption')).toBeNull()
+    expect([...deck.querySelectorAll('button')].map(button => button.getAttribute('aria-label'))).toEqual(['Remove one.png', 'Remove two.png'])
+    const chip = screen.getByText('button · Sign in').closest('figure')!
+    expect(deck).not.toContainElement(chip)
+    expect(chip).toHaveTextContent('Match the header')
+    // The resize badge sits on the picture, and the tile's title says both.
+    expect(chip.querySelector('.screenshot-previews__picture .screenshot-previews__resized')).toHaveTextContent('Resized from 3840 x 2160 to 2576 x 1449')
+    expect(chip).toHaveAttribute('title', 'button · Sign in\nResized from 3840 by 2160 to 2576 by 1449 pixels')
+  })
+  it('shows one plain image with no count', () => {
+    render(<ScreenshotInput target="workshop" attachments={[attached('one', 100)]} onChange={() => undefined} disabled={false} supported><textarea aria-label="Prompt" /></ScreenshotInput>)
+    expect(document.querySelector('.screenshot-deck figure')).toBeInTheDocument()
+    expect(document.querySelector('.screenshot-deck__count')).toBeNull()
+  })
   it('accepts pasted screenshot files without inserting clipboard text', async () => {
     render(<Harness />)
     fireEvent.paste(screen.getByRole('textbox'), { clipboardData: { items: [{ kind: 'file', getAsFile: file }] } })
@@ -185,7 +220,7 @@ describe('scaling screenshots down to the bound', () => {
     expect(staged.at(-1)).toMatchObject({ mimeType: 'image/png', dimensions: attachment.dimensions })
     expect(stagedBytes()).toBe(12)
     rerender([attachment])
-    // Both sizes are on the chip itself, where a keyboard user sees them too, and a screen reader reads them as words.
+    // Both sizes are in a badge on the picture, where a keyboard user sees them too, and a screen reader reads them as words.
     expect(screen.getByText('Resized from 3840 x 2160 to 2576 x 1449', { exact: true })).toBeVisible()
     expect(screen.getByText('Resized from 3840 x 2160 to 2576 x 1449', { exact: true }).parentElement).not.toHaveAttribute('title')
     expect(screen.getByText('Resized from 3840 by 2160 to 2576 by 1449 pixels')).toHaveClass('tt-visually-hidden')

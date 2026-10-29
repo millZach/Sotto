@@ -1,4 +1,6 @@
 import { t } from '@lingui/core/macro'
+import { CascadedSettles, delegatedElsewhere, LeftTally, restoreLeftWords, settledWithParent, settleLeftWords, stopLeftWords, type DelegatedElsewhere } from './crossMachineCascade'
+import type { StopLeft } from '../agents/delegationRelayHost'
 import type { AgentThreadPrompts, AgentThreadPromptsRequest } from '../../shared/threadPrompts'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { startsThread, THREAD_STARTS_UNSUPPORTED } from '../../shared/threadStarts'
@@ -26,7 +28,7 @@ import { LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, type Host
 import { NEW_THREAD_DEFAULT_FIELDS } from '../../shared/newThreadDefaults'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
+import { needsConfirmationReceipt, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
 import type { FileListing, FileListRequest, FilePath, FilePreview, FileRequest, FilesResult } from '../../shared/files'
 import type { GitChangeListing, GitPathRequest, GitReview, GitReviewRequest } from '../../shared/gitChanges'
@@ -34,8 +36,9 @@ import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage,
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import type { HostThreadToolReads } from '../agents/threadToolReads'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
+import type { CheckQueueEntry, MachineChecks } from '../../shared/checkQueue'
 import { RemoteDelegationReads } from './remoteDelegations'
-import { HostConnectionError, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
+import { HostConnectionError, HostRequestUnanswered, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
 import { USAGE_HOSTS_MAX, usageClearQuerySchema, usageDashboardReadSchema, usageLocalClearResultSchema, usageLocalHostReadSchema, usageProviderIdSchema, usageQuerySchema, usageRefreshQuerySchema, type UsageClearQuery, type UsageClearResult, type UsageDashboardRead, type UsageHostRead, type UsageProviderId, type UsageQuery, type UsageRefreshQuery } from '../../shared/usageDashboard'
 
 /** A thread's Files, Changes and Agents reads (ADR-0025, October 5 amendment), by the host's own IDs; absent on a connection that has none. */
@@ -43,7 +46,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName'>
+  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -53,6 +56,11 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
+  /**
+   * The host's confirmation receipt for one merge, close or auto-merge, by the host's own IDs, or null from a host that
+   * takes the press without one (#1691). Absent on this computer, whose window's confirmation is the confirmation.
+   */
+  confirmPullRequestAction?(request: PullRequestConfirmationRequest): Promise<string | null>
   hostFolders?(request: HostFoldersRequest): Promise<HostFoldersResult>
   /** Whether this host lists `client-updates`: only then do its client updates reach the window (#480). */
   offersClientUpdates?(): boolean
@@ -73,6 +81,11 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   questionPageOpened?(token: string): void
   /** Where a remote host serves a question page, as this computer's browser reaches it (ADR-0085). */
   pageAddress?(token: string): string | undefined
+  /**
+   * The client ID a remote host knows this computer by, as its hello authenticated it: how that host names this computer's
+   * threads that delegated to its threads (`relay:<client>:<caller>`, #1316 part 3).
+   */
+  clientId?: string
 }
 
 /**
@@ -222,10 +235,13 @@ export class DesktopHostRouter {
       } } : {},
       hosts: () => this.options.watcherEnabled !== true ? [] : [...this.hosts.values()].filter(item => item.connection.kind === 'remote').map(({ connection: host }) => ({
         hostId: host.hostId, name: host.name, facts: host.service.supportsHostFacts === true && host.service.hostFacts !== undefined,
-        origins: host.service.supportsProjectOrigins === true && host.service.projectOrigins !== undefined, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
+        origins: host.service.supportsProjectOrigins === true && host.service.projectOrigins !== undefined,
+        setUp: host.service.supportsProjectSetup === true && host.service.setUpProject !== undefined, control: host.service.supportsWatcherControl === true, reads: host.service.supportsWatcherReads === true, standingWatch: host.service.supportsWatcherStandingWatch === true,
         workSettled: host.service.supportsWatcherWorkSettled === true, outcomes: host.service.supportsWatcherOutcomes === true,
         // The host keeps its own check queue, which a Watcher start marked as a check waits in (#1312).
         checks: host.service.supportsWatcherCheckQueue === true,
+        // Watcher's stop_thread takes a check out of that queue (#1637).
+        checkStop: host.service.supportsWatcherCheckStop === true,
         muse: host.service.supportsWatcherMuse === true, cursor: host.service.supportsWatcherCursor === true,
         connected: !this.reconnecting.has(host.hostId) && host.available?.() !== false,
         // Read only when asked, and without a copy: Watcher lists hosts on every pass (#1023). The host's own stored default
@@ -278,6 +294,10 @@ export class DesktopHostRouter {
         const host = connection(id)
         return host.service.supportsProjectOrigins === true && host.service.projectOrigins ? host.service.projectOrigins() : undefined
       },
+      setUpProject: async (id, request) => {
+        const host = connection(id)
+        return host.service.supportsProjectSetup === true && host.service.setUpProject ? host.service.setUpProject(request) : undefined
+      },
       branchMoves: id => {
         const entry = this.hosts.get(id)?.connection
         if (!entry || entry.kind !== 'remote' || this.reconnecting.has(id) || entry.available?.() === false) return undefined
@@ -305,6 +325,7 @@ export class DesktopHostRouter {
   /** Told once of each host connection the router takes, new or in place of one it had, as it takes it. */
   private readonly connectedListeners = new Set<(connection: DesktopHostConnection) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
+  private readonly checkListeners = new Set<() => void>()
   /** The window's reads of each remote host's own threads' delegations, and what Sotto last read there (#1310). */
   private readonly delegations = new RemoteDelegationReads({
     connection: hostId => { const connection = this.hosts.get(hostId)?.connection; return connection?.kind === 'remote' ? connection : undefined },
@@ -346,6 +367,8 @@ export class DesktopHostRouter {
   private readonly dormantProviderIds = new Map<string, Map<string, DormantProviderThread>>()
   /** The providers held to Owl on this run, read once at start (ADR-0072). */
   private readonly held: HeldProviders
+  /** What the window's Settles did to delegated threads elsewhere (#1316 part 3, Owl `cross-machine-work`). */
+  private readonly cascadedSettles: CascadedSettles
   /** Counts the window's own selections, so a command that ends after one does not undo it. */
   private selections = 0
   /** Receipt reads share a connection and owner state; no answer is replayed or held draft released. */
@@ -370,8 +393,25 @@ export class DesktopHostRouter {
      * This desktop's Owl answer for Restart stopped threads (ADR-0144), read once at start: with it, the window offers
      * Babysit pull request on no host's threads, and refuses a press that reaches it anyway.
      */
-    babysittingRetired?: boolean } = {}) {
+    babysittingRetired?: boolean
+    /**
+     * This desktop's Owl answer for Work across machines, read once at start: with it, Stop, Settle and Restore of a thread
+     * reach the threads it delegated to on other machines and say which they could not move, and a delegated thread's link
+     * is keyed on whichever machine the thread that delegated runs (#1316 part 3).
+     */
+    crossMachineWork?: boolean
+    /**
+     * This computer's delegation's account of the user's Stop on one of its own threads (#1316 part 3): the delegated threads
+     * on other machines its cancels did not see stop, once they have all answered. Asked once, right after the Stop went.
+     */
+    stopsLeft?: (threadId: string) => Promise<readonly StopLeft[]> | undefined
+    /**
+     * Where the window's Settle of a thread keeps which of its delegated threads elsewhere it settled, and which it could
+     * not, for its Restore and a later Settle (#1316 part 3). Absent, they are kept in memory.
+     */
+    cascadedSettles?: CascadedSettles } = {}) {
     this.held = heldProvidersOption(options)
+    this.cascadedSettles = options.cascadedSettles ?? new CascadedSettles()
   }
 
   setUsageSavedHosts(hostIds: readonly string[]): void { this.usageSavedHostIds = [...new Set(hostIds)].slice(0, USAGE_HOSTS_MAX) }
@@ -552,6 +592,9 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote' && connection.service.subscribeDelegationViews) off.push(connection.service.subscribeDelegationViews(change => {
       if (this.hosts.get(connection.hostId)?.connection === connection) this.delegations.heard(connection.hostId, change)
     }))
+    if (connection.kind === 'remote' && connection.service.subscribeCheckQueue) off.push(connection.service.subscribeCheckQueue(() => {
+      if (this.hosts.get(connection.hostId)?.connection === connection) this.checksChanged()
+    }))
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
       if (!this.watcherAvailable(connection, detail.threadId)) return
       const scoped = this.toWindowRevisions(connection, this.hosts.get(connection.hostId)?.run, mapHostReferences(detail, id => hostEntityKey(connection.hostId, id)))
@@ -568,6 +611,8 @@ export class DesktopHostRouter {
     this.emit()
     this.connected(connection)
     if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
+    // The host pushed its check queue after the hello, before this connection was taken, so the queue it holds is told now.
+    if (connection.kind === 'remote' && connection.service.checkQueue?.() !== undefined) this.checksChanged()
   }
   /**
    * Hears each host connection as the router takes it, new or in place of one it had (a reconnect), so what a host must
@@ -599,6 +644,8 @@ export class DesktopHostRouter {
     this.emit()
     this.connected(connection)
     if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
+    // In place of the old connection's queue, the one this connection's hello brought, or none.
+    if (connection.kind === 'remote') this.checksChanged()
   }
   /** Marks a connected host's threads as reconnecting, or no longer: while it is set they read Reconnecting, not Disconnected. */
   setReconnecting(hostId: string, value: boolean): void {
@@ -621,6 +668,32 @@ export class DesktopHostRouter {
     if (this.selectedThreadId && parseHostEntityKey(this.selectedThreadId)?.hostId === hostId) this.selectedThreadId = null
     this.emit()
     this.delegations.removed(hostId)
+    this.checksChanged()
+  }
+  /**
+   * Every connected host's own check queue as it last pushed it (#1312, fourth part), each thread by the window's key for
+   * it. Read only when a queue changed or the window asks, never on the update path. A host that sends none, or whose
+   * connection is closed, is left out: the window says nothing of a queue it cannot read now.
+   */
+  hostCheckQueues(): MachineChecks[] {
+    const machines: MachineChecks[] = []
+    for (const [hostId, { connection }] of this.hosts) {
+      if (connection.kind !== 'remote') continue
+      const checks = connection.service.checkQueue?.()
+      if (checks === undefined) continue
+      machines.push({ hostId, thisComputer: false, checks: checks.map((check): CheckQueueEntry => ({ ...check,
+        ...check.thread !== undefined ? { thread: hostEntityKey(hostId, check.thread) } : {},
+        ...check.by !== undefined ? { by: hostEntityKey(hostId, check.by) } : {} })) })
+    }
+    return machines
+  }
+  /** Hears a connected host's check queue change, or a host with one leave. Returns the way to stop. */
+  subscribeCheckQueues(listener: () => void): () => void {
+    this.checkListeners.add(listener)
+    return () => { this.checkListeners.delete(listener) }
+  }
+  private checksChanged(): void {
+    for (const listener of [...this.checkListeners]) { try { listener() } catch { /* A listener's failure is its own. */ } }
   }
   /**
    * Main reports the window's focus as it moves. Each remote host that keeps what is shown hears it with the threads the
@@ -737,10 +810,16 @@ export class DesktopHostRouter {
   private build(read: (connection: DesktopHostConnection) => AgentState, publish = false): AgentState {
     this.settleAnswerNotice()
     const multiple = this.hosts.size > 1
+    // With Work across machines on, a delegated thread's link to the thread that delegated to it is keyed on whichever
+    // machine that thread runs (#1316 part 3): a host's thread that this computer's own thread delegated to names it by
+    // this computer's own ID, under the client ID that host knows this computer by. Stable keys every link by its own host.
+    const across = this.options.crossMachineWork === true
+    let desktopHostId: string | undefined
+    if (across) for (const { connection } of this.hosts.values()) if (connection.kind === 'local') desktopHostId = connection.hostId
     const entries = [...this.hosts.values()].map(({ connection }) => {
       const original = this.visibleState(read(connection), connection.hostId)
       const last = this.built.get(connection.hostId)
-      const projection = projectClientAgentState(original, last?.projection)
+      const projection = projectClientAgentState(original, last?.projection, across ? { desktopHostId, clientId: connection.clientId } : undefined)
       const threads = this.windowThreads(connection, original, projection.output, multiple, last)
       if (publish) this.built.set(connection.hostId, { projection, threads })
       return { connection, original, state: projection.output, threads: threads.made, remade: threads.remade, before: last?.threads.made }
@@ -1312,6 +1391,9 @@ export class DesktopHostRouter {
     const { activeThreadId, activeProjectId } = connection.service.shell()
     const selections = this.selections
     const windowShowed = { hostId: this.selectedHostId, threadId: this.selectedThreadId }
+    // Stop and settle reach a thread's delegated threads on other machines too (#1316 part 3), as the window saw them before.
+    const across = this.options.crossMachineWork === true && (command.type === 'interrupt' || command.type === 'settle-thread' || command.type === 'restore-thread')
+      ? this.delegatedAcross(connection.hostId, command.threadId) : undefined
     let refused = false
     let repeatedUnsupportedCompose = false
     // Continuing an agent or forking at a reply answers where it was asked (#1028): its refusal is this command's alone.
@@ -1335,12 +1417,28 @@ export class DesktopHostRouter {
           request.questions?.length ? command.questionAnswers : { [request.id]: { optionIds: [command.answer] } })
         }
       }
+      // A merge, close or auto-merge on a paired host goes with that host's confirmation receipt (#1691). Only the window's
+      // press reaches this router, after the user's yes in its confirmation dialog, so this is the one place a receipt is
+      // asked for, and the command that follows spends it at once. The window names the reading it showed, which the host
+      // binds the receipt's head to; it never names a receipt, nor the head one holds, and the reading goes no further.
+      let sent: AgentCommand = command
+      if (command.type === 'git-pull-request-action') {
+        const { confirmation: _named, matchHeadCommit: _head, readId, ...press } = command
+        void _named; void _head
+        sent = press
+        const { action } = press
+        if (connection.kind === 'remote' && needsConfirmationReceipt(action) && connection.confirmPullRequestAction) {
+          const confirmation = await connection.confirmPullRequestAction({ threadId: press.threadId, url: press.url, action, ...(press.method ? { method: press.method } : {}),
+            ...(readId ? { readId } : {}) })
+          if (confirmation) sent = { ...press, confirmation }
+        }
+      }
       // A host from before continuing agents (#1028) would refuse the command as unknown; it is told why here instead.
       const result = startsThread(command) && connection.kind === 'remote' && connection.service.supportsThreadStarts !== true ? { error: THREAD_STARTS_UNSUPPORTED }
         // A host from before bringing changes back (#1030), or one whose Owl answer leaves it off, is told apart here too.
         : command.type === 'bring-changes-back' && connection.kind === 'remote' && connection.service.supportsBringBack !== true ? { error: BRING_BACK_INTERFACE_WORDS.unsupported() }
         : await (decisionId ? connection.service.command(command as AgentCommand, client, decisionId)
-          : connection.service.command(command as AgentCommand, client))
+          : connection.service.command(sent, client))
       // Bringing changes back's own refusals arrive in English from this computer's workspace or a host; they are said
       // in the interface language here, and Git's words stay as Git wrote them.
       if (result.error && command.type === 'bring-changes-back') result.error = bringBackInInterfaceLanguage(result.error)
@@ -1370,6 +1468,7 @@ export class DesktopHostRouter {
       if (SELECTING_COMMANDS.has(command.type) && selections === this.selections) this.follow(connection, { activeThreadId, activeProjectId })
     }
     if (refused) for (const undo of unmark) undo()
+    if (across && !refused && (command.type === 'interrupt' || command.type === 'settle-thread' || command.type === 'restore-thread')) await this.cascadeAcross(command.type, across, connection, command.threadId, client)
     // Only while the window still shows what it did when the creation began: any other move meanwhile wins.
     const unmoved = selections === this.selections && this.selectedHostId === windowShowed.hostId && this.selectedThreadId === windowShowed.threadId
     if (command.type === 'create-thread' && command.threadId !== undefined && connection.kind === 'remote' && !refused && unmoved) {
@@ -1379,6 +1478,9 @@ export class DesktopHostRouter {
     // A delete the host did not refuse deleted the thread: it answers an error for every thread it keeps.
     if (command.type === 'delete-thread' && connection.kind === 'remote' && !refused) {
       try { this.options.threadsDeleted?.([hostEntityKey(connection.hostId, command.threadId)]) } catch { /* Each listener keeps its own record. */ }
+      // So does what its Settle did to its delegated threads elsewhere (#1316 part 3). This computer's own threads' go as
+      // its coordinator deletes them, whoever asked (`onThreadsDeleted`).
+      await this.cascadedSettles.forget(hostEntityKey(connection.hostId, command.threadId))
     }
     if (!repeatedUnsupportedCompose) this.emit()
     const shell = agentShell(this.shell())
@@ -1387,6 +1489,102 @@ export class DesktopHostRouter {
     // as a thread answers in the agent's row with its own refusal alone (#1028).
     return command.type === 'configure' || hostNamed ? { ...shell, error: refused ? this.notice?.message ?? null : null }
       : startsThread(command) ? { ...shell, error: inPlace ?? null } : shell
+  }
+  /**
+   * The thread the window names on `hostId`, as the window last showed it, with its delegated threads, both levels, that its
+   * own machine's cascade does not reach (`delegatedElsewhere`, #1316 part 3). Read in place from what was last published,
+   * never a copy.
+   */
+  private delegatedAcross(hostId: string, threadId: string): { readonly settledAt: string | null; readonly elsewhere: readonly DelegatedElsewhere[] } {
+    const key = hostEntityKey(hostId, threadId), threads = this.lastPublished().host.threads
+    return { settledAt: threads.find(thread => thread.id === key)?.workspaceSettledAt ?? null, elsewhere: delegatedElsewhere(threads, key) }
+  }
+  /**
+   * After the window's own Stop, Settle or Restore of a thread went through (#1316 part 3, Owl `cross-machine-work`). Stop: the
+   * thread's delegation stops those on other machines through its own asks there, so here the window is told which working
+   * ones it could not reach, by machine, and, for a thread on this computer, which its cancels did not see stop once they
+   * answer. Settle: those still open elsewhere are settled there, once, as the thread goes from open to settled, and those it
+   * could not settle are tried again by a later Settle of the settled thread. Restore: those its Settle settled there, still
+   * settled with it, are restored. Which it settled is kept in `cascadedSettles`. Settle and Restore say, by machine, the
+   * ones they could not move; a machine not connected keeps its own.
+   */
+  private async cascadeAcross(type: 'interrupt' | 'settle-thread' | 'restore-thread', across: { readonly settledAt: string | null; readonly elsewhere: readonly DelegatedElsewhere[] },
+    connection: DesktopHostConnection, threadId: string, client: ClientIdentity): Promise<void> {
+    const reachable = (hostId: string): DesktopHostConnection | undefined => {
+      const connection = this.hosts.get(hostId)?.connection
+      return connection && connection.available?.() !== false ? connection : undefined
+    }
+    if (type === 'interrupt') {
+      const away = new LeftTally(), unconfirmed = new LeftTally()
+      const name = (hostId: string, saved?: string): string => this.hosts.get(hostId)?.connection.name ?? saved ?? t`Remote host`
+      for (const child of across.elsewhere) if (child.running && !reachable(child.hostId)) away.add(child.hostId, name(child.hostId), child.key)
+      const said = stopLeftWords(away, unconfirmed)
+      const notice = said === undefined ? undefined : { message: said }
+      if (notice) this.notice = notice
+      // What the thread's own delegation did not see stop comes after, once each cancel it sent has answered or been lost.
+      const later = connection.kind === 'local' ? this.options.stopsLeft?.(threadId) : undefined
+      if (later) void later.then(left => {
+        left.forEach((item, index) => {
+          const machine = item.hostId ?? `\n${item.machine}`, key = item.hostId !== undefined && item.thread !== undefined ? hostEntityKey(item.hostId, item.thread) : `${machine}\n${index}`
+          const named = item.hostId === undefined ? item.machine : name(item.hostId, item.machine)
+          // A cancel that went stays unconfirmed, though its machine has gone since: it may have stopped the thread.
+          if (item.reason === 'away') away.add(machine, named, key)
+          else if (!away.holds(machine, key)) unconfirmed.add(machine, named, key)
+        })
+        const message = stopLeftWords(away, unconfirmed)
+        // A notice another command set since, waiting on an answer or a compose, is not replaced.
+        if (message === undefined || message === said || this.notice !== notice && (this.notice?.answer !== undefined || this.notice?.unsupportedCompose !== undefined)) return
+        this.notice = { message }
+        this.emit()
+      }, () => undefined)
+      return
+    }
+    const parent = hostEntityKey(connection.hostId, threadId), record = this.cascadedSettles.of(parent)
+    // Each delegated thread elsewhere by its key, read once, so what follows does no more work than there are threads.
+    const children = new Map(across.elsewhere.map(child => [child.key, child] as const))
+    const shown = (keys: Iterable<string>, wanted: (child: DelegatedElsewhere) => boolean): DelegatedElsewhere[] => {
+      const found: DelegatedElsewhere[] = []
+      for (const key of keys) { const child = children.get(key); if (child && wanted(child)) found.push(child) }
+      return found
+    }
+    const settle = type === 'settle-thread'
+    // Settle: as the thread goes from open to settled, each open one elsewhere; once settled, those an earlier Settle of it
+    // never got a settle to that are still open, so none is left open behind it. Restore: only those its Settle settled, and
+    // those whose settle's answer was lost, still settled with it.
+    const targets = settle ? across.settledAt === null ? across.elsewhere.filter(child => child.settledAt === null)
+      : shown(record?.left ?? [], child => child.settledAt === null)
+      : across.settledAt === null ? [] : shown(new Set([...record?.settled ?? [], ...record?.uncertain ?? []]), child => settledWithParent(across.settledAt, child.settledAt))
+    if (!targets.length && record === undefined) return
+    const left = new LeftTally(), moved = new Set<string>(), lost = new Set<string>()
+    await Promise.all(targets.map(async child => {
+      const there = reachable(child.hostId)
+      let outcome: 'moved' | 'left' | 'lost' = 'left'
+      if (there) {
+        try { outcome = (await there.service.command({ type, threadId: child.id }, client)).error ? 'left' : 'moved' }
+        // A host's refusal moved nothing, and nor did a request that never left this computer; an answer lost on the way, once
+        // the request went, may have moved it.
+        catch (error) {
+          const went = error instanceof HostRequestUnanswered ? error.stage !== 'unsent' : !(error instanceof HostConnectionError) || error.code === 'disconnected'
+          outcome = there.kind === 'remote' && went ? 'lost' : 'left'
+        }
+      }
+      if (outcome === 'moved') { moved.add(child.key); return }
+      if (outcome === 'lost') lost.add(child.key)
+      left.add(child.hostId, this.hosts.get(child.hostId)?.connection.name ?? t`Remote host`, child.key)
+    }))
+    const counts = left.counts()
+    if (counts.length) this.notice = { message: settle ? settleLeftWords(counts) : restoreLeftWords(counts) }
+    if (!settle) { await this.cascadedSettles.forget(parent); return }
+    // What this Settle settled joins what an earlier one did. One whose answer was lost is kept apart: its Restore brings it
+    // back only if it is seen settled with the thread, and no Settle sends it again. One that was never sent a settle stays
+    // to be tried again, unless it has been settled since: that settle is someone else's, so it keeps its own and leaves
+    // the record. One not shown now is kept as it was.
+    const earlier = across.settledAt === null ? undefined : record
+    const settled = new Set([...earlier?.settled ?? [], ...moved]), uncertain = new Set([...earlier?.uncertain ?? [], ...lost]), still = new Set<string>()
+    for (const key of earlier?.left ?? []) if (!children.has(key)) still.add(key)
+    for (const child of targets) if (!moved.has(child.key) && !lost.has(child.key)) still.add(child.key)
+    if (settled.size || uncertain.size || still.size) await this.cascadedSettles.keep(parent, { settled, left: still, uncertain })
+    else await this.cascadedSettles.forget(parent)
   }
   /** A clearing or deleting command's answer (ADR-0140): the shell as it is now, built only when one answers, with its outcome. */
   private answer(outcome: Partial<AgentState>, withoutHistory = false): AgentState {

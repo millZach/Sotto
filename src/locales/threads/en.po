@@ -36,6 +36,11 @@ msgstr "(optional)"
 msgid "(recommended)"
 msgstr "(recommended)"
 
+#. placeholder {0}: lines.left
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "{0, plural, one {# more line is in its thread.} other {# more lines are in its thread.}}"
+msgstr "{0, plural, one {# more line is in its thread.} other {# more lines are in its thread.}}"
+
 #. placeholder {0}: blocked.ahead
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "{0, plural, one {a local commit blocks the update} other {{commits} local commits block the update}}"
@@ -124,6 +129,10 @@ msgstr "{branch} was made from {target}."
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{changed, plural, one {changed {fileCount} file} other {changed {fileCount} files}}"
 msgstr "{changed, plural, one {changed {fileCount} file} other {changed {fileCount} files}}"
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "{checked, plural, one {# check} other {# checks}}"
+msgstr "{checked, plural, one {# check} other {# checks}}"
 
 #. {choice} is the provider's words for an answer, such as Allow once; {title} is a thread's title.
 #: src/renderer/src/agents/NeedsYouQueue.tsx
@@ -464,8 +473,8 @@ msgid "{installed} is installed. Devin updates with the Devin app."
 msgstr "{installed} is installed. Devin updates with the Devin app."
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
-msgid "{installed} is installed. mise does not list {to} yet, even with its cache cleared, so Sotto did not install it. Try again later."
-msgstr "{installed} is installed. mise does not list {to} yet, even with its cache cleared, so Sotto did not install it. Try again later."
+msgid "{installed} is installed. mise does not list {to} yet, so Sotto could not install it. Try again later."
+msgstr "{installed} is installed. mise does not list {to} yet, so Sotto could not install it. Try again later."
 
 #. {installed} is a version number.
 #: src/renderer/src/agents/ProvidersSettings.tsx
@@ -1720,6 +1729,10 @@ msgstr "Already the project {existingTitle}"
 msgid "An answer from an earlier thread is saved."
 msgstr "An answer from an earlier thread is saved."
 
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "An earlier send is still on its way; Steer waits for it"
+msgstr "An earlier send is still on its way; Steer waits for it"
+
 #: src/renderer/src/agents/MessageScrubber.tsx
 msgid "An empty message"
 msgstr "An empty message"
@@ -1847,12 +1860,12 @@ msgid "Ask for approval"
 msgstr "Ask for approval"
 
 #: src/renderer/src/agents/delegationWords.ts
-msgid "Asked for {asked}. {machine} can start threads on {machine} or on This computer for now."
-msgstr "Asked for {asked}. {machine} can start threads on {machine} or on This computer for now."
-
-#: src/renderer/src/agents/delegationWords.ts
 msgid "Asked for {asked}. {machine} can start threads only on {machine} for now. Nothing was started."
 msgstr "Asked for {asked}. {machine} can start threads only on {machine} for now. Nothing was started."
+
+#: src/renderer/src/agents/delegationWords.ts
+msgid "Asked for {asked}. This computer couldn't start it there, so nothing was started."
+msgstr "Asked for {asked}. This computer couldn't start it there, so nothing was started."
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Asking the server for its models…"
@@ -2161,6 +2174,12 @@ msgstr "changed the page size"
 msgid "Changes"
 msgstr "Changes"
 
+#. A kind of delegated work: a thread started to run tests, which the user calls a check. Not a pull request's CI checks.
+#: src/renderer/src/agents/delegationWords.ts
+msgctxt "delegated work"
+msgid "Check"
+msgstr "Check"
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Check {name} again"
 msgstr "Check {name} again"
@@ -2412,6 +2431,10 @@ msgstr "Close page"
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Close pane"
 msgstr "Close pane"
+
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Close the reply"
+msgstr "Close the reply"
 
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "Close without adding a model source"
@@ -3274,6 +3297,11 @@ msgstr "Cursor’s plan"
 #: src/renderer/src/agents/CursorConnection.tsx
 msgid "Cursor’s sign-in is not available right now. Nothing was changed."
 msgstr "Cursor’s sign-in is not available right now. Nothing was changed."
+
+#. Sotto passed on only the first {kib} KiB of a check's reply.
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "cut at {kib} KiB"
+msgstr "cut at {kib} KiB"
 
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "DeepSeek Harness denies a first write or command and the model then asks you to allow the retry. A model that does not ask simply fails the write."
@@ -4375,6 +4403,11 @@ msgstr "It had stopped at {time}, when Sotto last read it."
 msgid "It had stopped when Sotto last read it."
 msgstr "It had stopped when Sotto last read it."
 
+#. Before a quote of the first line of a check's reply, in the check's own words.
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "It replied"
+msgstr "It replied"
+
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "It runs with OpenCode."
 msgstr "It runs with OpenCode."
@@ -4452,6 +4485,10 @@ msgstr "Its checksum has to match the release’s."
 msgid "Its delivery is still unknown. Sotto has not sent it again."
 msgstr "Its delivery is still unknown. Sotto has not sent it again."
 
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Its first {count} lines."
+msgstr "Its first {count} lines."
+
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Its host is restarting after an update. Your draft stays here."
 msgstr "Its host is restarting after an update. Your draft stays here."
@@ -4492,6 +4529,24 @@ msgstr "its provider"
 msgid "Its provider did not confirm the brief arrived. Sotto has not sent it again. Open it to see whether it is working on it."
 msgstr "Its provider did not confirm the brief arrived. Sotto has not sent it again. Open it to see whether it is working on it."
 
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Its reply was longer than {kib} KiB, so this thread was given only the first {kib} KiB. All of it is in the check's thread."
+msgstr "Its reply was longer than {kib} KiB, so this thread was given only the first {kib} KiB. All of it is in the check's thread."
+
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Its reply wasn't kept here. Open the check to read it in its thread."
+msgstr "Its reply wasn't kept here. Open the check to read it in its thread."
+
+#. Heads the tray with a check's reply. {machine} is "this computer" or a host's name.
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Its reply, in its own words, on {machine}"
+msgstr "Its reply, in its own words, on {machine}"
+
+#. Heads the tray with a check's reply. {machine} is "this computer" or a host's name; {time} is when it answered.
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Its reply, in its own words, on {machine} · {time}"
+msgstr "Its reply, in its own words, on {machine} · {time}"
+
 #: src/renderer/src/agents/InteractiveVisualCard.tsx
 msgid "Its steps are below."
 msgstr "Its steps are below."
@@ -4525,6 +4580,10 @@ msgstr "Its threads and agents run on the computer you choose. You can follow th
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Its turn ended with background work still running. {Who} hears when it settles."
 msgstr "Its turn ended with background work still running. {Who} hears when it settles."
+
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Its whole reply"
+msgstr "Its whole reply"
 
 #: src/renderer/src/agents/threadClearWords.ts
 msgid "its worktree could not be removed; delete it on its own to see why"
@@ -4766,8 +4825,8 @@ msgid "Minimal"
 msgstr "Minimal"
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
-msgid "mise does not list {name} {to} yet, even with its cache cleared, so Sotto did not install it. {installed} is still installed. Try again later."
-msgstr "mise does not list {name} {to} yet, even with its cache cleared, so Sotto did not install it. {installed} is still installed. Try again later."
+msgid "mise does not list {name} {to} yet, so Sotto could not install it. {installed} is still installed. Try again later."
+msgstr "mise does not list {name} {to} yet, so Sotto could not install it. {installed} is still installed. Try again later."
 
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "mise does not list {to} yet"
@@ -5086,12 +5145,6 @@ msgstr "New worktree pending"
 #. Before the message the queue sends next.
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgctxt "queued message"
-msgid "Next"
-msgstr "Next"
-
-#. Opens the list of suggested next prompts.
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgctxt "suggested prompts"
 msgid "Next"
 msgstr "Next"
 
@@ -5482,6 +5535,11 @@ msgstr "Open {title} on {name}, the thread that continues this one"
 msgid "Open {title} to answer"
 msgstr "Open {title} to answer"
 
+#. {title} is the check's thread; {machine} is "this computer" or a host's name.
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Open {title}, the check on {machine}, to read all of its reply"
+msgstr "Open {title}, the check on {machine}, to read all of its reply"
+
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "Open {title}, the thread this one continues"
 msgstr "Open {title}, the thread this one continues"
@@ -5589,6 +5647,10 @@ msgstr "Open the {sourceName} sign-in page in your browser"
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "Open the {title} folder"
 msgstr "Open the {title} folder"
+
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Open the check"
+msgstr "Open the check"
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Open the link"
@@ -6066,9 +6128,7 @@ msgstr "Question from {ownerTitle}"
 msgid "Question skipped."
 msgstr "Question skipped."
 
-#. Button: puts the typed prompt in the queue to send when the turn ends.
 #. The follow-up queue's heading when it holds nothing yet.
-#: src/renderer/src/agents/ThreadComposer.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Queue"
 msgstr "Queue"
@@ -6113,9 +6173,18 @@ msgstr "Read all"
 msgid "Read it"
 msgstr "Read it"
 
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Read its reply"
+msgstr "Read its reply"
+
 #: src/renderer/src/agents/ThreadStart.tsx
 msgid "Read the handover, word for word"
 msgstr "Read the handover, word for word"
+
+#. {title} is the check's thread; {machine} is "this computer" or a host's name.
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Read the reply from {title}, the check on {machine}"
+msgstr "Read the reply from {title}, the check on {machine}"
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Read your saved servers again"
@@ -6766,11 +6835,6 @@ msgstr "Select a thread to read its messages and continue working."
 msgid "Select ref"
 msgstr "Select ref"
 
-#. Button: sends the typed prompt or answer.
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Send"
-msgstr "Send"
-
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Send answer"
@@ -7337,6 +7401,10 @@ msgstr "Sotto could not tell how it stood when it last read it."
 msgid "Sotto couldn’t load skills."
 msgstr "Sotto couldn’t load skills."
 
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check."
+msgstr "Sotto couldn't read its reply just now. Nothing was lost. Try Read its reply again, or open the check."
+
 #. {provider} is a provider's name or "The provider"; {wanted} is the chosen model, effort or permission mode.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Sotto did not get {provider}'s answer about {wanted}, so the chip shows what the thread last reported. Try again to send it once more."
@@ -7561,11 +7629,6 @@ msgstr "Starts from {branch}’s last commit. Uncommitted changes stay where the
 msgid "Status"
 msgstr "Status"
 
-#. Button: sends the typed prompt into the running turn now. Its full name is Steer now.
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Steer"
-msgstr "Steer"
-
 #: src/renderer/src/agents/ThreadComposer.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Steer now"
@@ -7635,9 +7698,7 @@ msgid "Still working after this reply"
 msgstr "Still working after this reply"
 
 #. Button on the line of a turn that is waiting on the user’s own model server: stops the turn.
-#. Button: stops the running turn.
 #: src/renderer/src/agents/ownServerTurnWords.ts
-#: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Stop"
 msgstr "Stop"
 
@@ -7691,14 +7752,6 @@ msgstr "Stopped. Nothing more will come of it."
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Suggested next prompt: {ghostText}. Press Tab to take it, or Up for more."
 msgstr "Suggested next prompt: {ghostText}. Press Tab to take it, or Up for more."
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Suggested next prompts"
-msgstr "Suggested next prompts"
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Suggested next prompts (Up in an empty prompt)"
-msgstr "Suggested next prompts (Up in an empty prompt)"
 
 #. A step in the browser line; starts lowercase.
 #: src/renderer/src/agents/browserLine.ts
@@ -7760,6 +7813,10 @@ msgstr "tapped in the page"
 #: src/renderer/src/agents/browserLine.ts
 msgid "tapped the screen"
 msgstr "tapped the screen"
+
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "That is all of its reply."
+msgstr "That is all of its reply."
 
 #: src/renderer/src/agents/movedWorktreeWords.ts
 msgid "That is not a branch Sotto moved here. Nothing was made."
@@ -8067,6 +8124,10 @@ msgstr "the published version"
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx
 msgid "The recovery record retention period has ended."
 msgstr "The recovery record retention period has ended."
+
+#: src/renderer/src/agents/CheckReply.tsx
+msgid "The reply's first {count} lines"
+msgstr "The reply's first {count} lines"
 
 #. Part of what a handover carried, inside a sentence.
 #: src/renderer/src/agents/ThreadStart.tsx
@@ -8961,6 +9022,14 @@ msgstr "Visibility"
 #: src/renderer/src/agents/VisualCardShell.tsx
 msgid "Visual: {title}"
 msgstr "Visual: {title}"
+
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "Wait for the answer to be sent"
+msgstr "Wait for the answer to be sent"
+
+#: src/renderer/src/agents/ThreadComposer.tsx
+msgid "Wait for the attachment to be read"
+msgstr "Wait for the attachment to be read"
 
 #: src/renderer/src/agents/ForkFromHere.tsx
 msgid "Wait for this turn to finish before forking"

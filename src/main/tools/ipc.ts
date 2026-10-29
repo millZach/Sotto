@@ -13,6 +13,10 @@ import type { BrowserService } from './browser'
 import type { GitChangesService } from './gitChanges'
 import { INVALID_REQUEST } from './common'
 
+/** Each call's arguments, checked against schemas built once rather than on every call. */
+const oneArgument = z.tuple([z.unknown()])
+const focusedSchema = z.boolean()
+
 /**
  * Changes for a thread on a paired host, read on that host through the router (ADR-0025, October 5 amendment): the
  * change list, Working tree and Branch changes, and Copy path of the host's own path. Reveal, the watch and the turn
@@ -37,7 +41,7 @@ export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: Term
   const register = (channel: string, operation: (payload: unknown) => unknown): void => {
     ipc.handle(channel, (event, ...args) => {
       if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('TOOLS_MAIN_WINDOW_REQUIRED')
-      const [payload] = z.tuple([z.unknown()]).parse(args)
+      const [payload] = oneArgument.parse(args)
       return operation(payload)
     })
     channels.push(channel)
@@ -53,8 +57,8 @@ export function registerToolsIpc(ipc: IpcMainAdapter, services: { terminal: Term
     return { ok: false, error: { code: 'unavailable', message: i18n._(NOT_ON_HOST[method] ?? NO_CHECKPOINTS) } }
   }
   for (const method of ['list', 'create', 'read', 'write', 'resize', 'interrupt', 'close', 'reopen', 'pasteImage'] as const) register(TERMINAL_CHANNEL + method, payload => services.terminal[method](payload))
-  register(TERMINAL_CHANNEL + 'focus', payload => { services.onTerminalFocus?.(z.boolean().parse(payload)); return { ok: true, value: undefined } })
-  for (const method of ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture'] as const) register(BROWSER_CHANNEL + method, payload => services.browser[method](payload))
+  register(TERMINAL_CHANNEL + 'focus', payload => { services.onTerminalFocus?.(focusedSchema.parse(payload)); return { ok: true, value: undefined } })
+  for (const method of ['list', 'create', 'navigate', 'back', 'forward', 'reload', 'close', 'mount', 'openLink', 'tasks', 'share', 'controlTask', 'answerAction', 'stopGrant', 'viewport', 'capture', 'point'] as const) register(BROWSER_CHANNEL + method, payload => services.browser[method](payload))
   for (const method of GIT_CHANGES_METHODS) register(GIT_CHANGES_CHANNEL + method, payload => namesHostThread(payload) ? onHost(method, payload) : services.gitChanges[method](payload))
   return () => {
     for (const channel of channels) ipc.removeHandler(channel)

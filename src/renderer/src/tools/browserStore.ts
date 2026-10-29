@@ -1,7 +1,7 @@
 import { useCallback, useSyncExternalStore } from 'react'
 import type { MessageDescriptor } from '@lingui/core'
 import { msg, t } from '@lingui/core/macro'
-import { safeBrowserUrl, type BrowserBounds, type BrowserBridge, type BrowserEvent, type BrowserPage, type BrowserGrantView, type BrowserTask } from '../../../shared/browser'
+import { BROWSER_WAITING_TO_OPEN, safeBrowserUrl, type BrowserBounds, type BrowserBridge, type BrowserEvent, type BrowserPage, type BrowserGrantView, type BrowserTask } from '../../../shared/browser'
 import type { FileWorkspace } from '../../../shared/files'
 import type { ToolsError, ToolsResult } from '../../../shared/tools'
 import type { LaterWords } from '../features/settings/laterWords'
@@ -22,6 +22,8 @@ export interface ThreadBrowser {
   readonly placementProblem: { readonly pageId: string; readonly message: LaterWords } | null
   /** The thread's browser grant while it lives: it opens, navigates, clicks and types without asking (ADR-0029). */
   readonly grant: BrowserGrantView | null
+  /** Counts the times the pane was turned to a page an agent just opened (ADR-0154; Owl only), so it can leave New page. */
+  readonly revealed?: number
 }
 
 const unavailable = ownError('unavailable', msg`Browser is not available in this window.`)
@@ -125,6 +127,19 @@ export class BrowserStore {
   }
   private emit(): void { for (const listener of [...this.listeners]) listener() }
   private readonly threads = new Map<string, ThreadBrowser>()
+  /** The addresses each thread's browser opened this session, newest first, held only here (ADR-0154). */
+  private readonly opened = new Map<string, readonly string[]>()
+  /**
+   * Per thread, where each of its open pages was last seen and whether it was loading, so only a visit moves an
+   * address to the front: a page arriving somewhere new, or starting to load again (a reload, or the same address
+   * submitted again), but not a title or sharing update. Rebuilt from the thread's pages each time, so a closed page
+   * keeps nothing here.
+   */
+  private readonly lastSeen = new Map<string, ReadonlyMap<string, { readonly url: string; readonly loading: boolean }>>()
+  /** Off until the quiet pane is on (Owl): stable keeps no addresses (ADR-0072). */
+  private remembering = false
+  /** A page to show in a thread's browser as soon as it is listed: one its agent just opened (ADR-0154). */
+  private readonly wanted = new Map<string, string>()
   private readonly listeners = new Set<() => void>()
   private readonly listTokens = new Map<string, number>()
   private subscribed: BrowserBridge | null = null
@@ -141,6 +156,31 @@ export class BrowserStore {
   }
 
   thread(threadId: string): ThreadBrowser | undefined { return this.threads.get(threadId) }
+  private static readonly NONE: readonly string[] = []
+  /** The addresses this thread's browser opened this session, newest first. Never saved. */
+  openedAddresses = (threadId: string): readonly string[] => this.opened.get(threadId) ?? BrowserStore.NONE
+
+  /** Makes `pageId` the thread's active page now, or as soon as the page is listed. */
+  showPage(threadId: string, pageId: string): void {
+    const thread = this.threads.get(threadId)
+    if (thread?.pages.some(page => page.id === pageId && !page.device)) {
+      this.wanted.delete(threadId)
+      this.patch(threadId, { activePageId: pageId, notice: null, revealed: (thread.revealed ?? 0) + 1 })
+      return
+    }
+    this.wanted.set(threadId, pageId)
+  }
+
+  /**
+   * Whether to keep the addresses each thread's browser opens this session: on only while the quiet pane is (ADR-0154,
+   * an Owl feature). Turning it off forgets them.
+   */
+  setRemembering(on: boolean): void {
+    if (this.remembering === on) return
+    this.remembering = on
+    if (on) { for (const thread of this.threads.values()) this.remember(thread) } else { this.opened.clear(); this.lastSeen.clear() }
+    this.emit()
+  }
 
   async activate(bridge: BrowserBridge | undefined, threadId: string): Promise<void> {
     if (!this.threads.has(threadId)) this.setThread({ threadId, workspace: null, status: 'loading', error: null, pages: [], activePageId: null, busy: false, notice: null, placementProblem: null, grant: null })
@@ -281,9 +321,18 @@ export class BrowserStore {
     this.patch(threadId, { busy: true, notice: null })
     const result = await settle(run({ threadId, workspaceId: workspace.workspaceId }))
     if (!result.ok) { this.fail(bridge, threadId, result.error, words); return false }
+    // A navigation the user asked for is a visit even to the same address, whether or not main reports it loading.
+    this.forgetSeen(threadId, pageId)
     this.upsert(result.value)
     this.patch(threadId, { busy: false })
     return true
+  }
+  private forgetSeen(threadId: string, pageId: string): void {
+    const seen = this.lastSeen.get(threadId)
+    if (!seen?.has(pageId)) return
+    const next = new Map(seen)
+    next.delete(pageId)
+    this.lastSeen.set(threadId, next)
   }
 
   private listen(bridge: BrowserBridge): void {
@@ -298,6 +347,8 @@ export class BrowserStore {
     if (event.type === 'task') { this.receiveTask(event.task); return }
     // A thread this window has not listed learns its grant when it is listed.
     if (event.type === 'browser-grant') { this.patch(event.threadId, { grant: event.grant }); return }
+    // Point at something belongs to the pane that turned it on, which listens for it itself.
+    if (event.type === 'point') return
     if (event.type === 'page') {
       const thread = this.threads.get(event.page.workspace.threadId)
       if (!thread || (thread.workspace !== null && thread.workspace.workspaceId !== event.page.workspace.workspaceId)) return
@@ -343,8 +394,36 @@ export class BrowserStore {
   }
 
   private setThread(next: ThreadBrowser): void {
+    const wanted = this.wanted.get(next.threadId)
+    if (wanted !== undefined && next.pages.some(page => page.id === wanted && !page.device)) {
+      this.wanted.delete(next.threadId)
+      next = { ...next, activePageId: wanted, notice: null, revealed: (next.revealed ?? 0) + 1 }
+    }
     this.threads.set(next.threadId, next)
+    if (this.remembering) this.remember(next)
     this.emit()
+  }
+
+  /**
+   * Records where a thread's pages are, newest first and at most eight: a page that arrives at an address, a revisit
+   * included, moves it to the front. A page still waiting to be opened, or one that could not load, has opened nothing.
+   */
+  private remember(thread: ThreadBrowser): void {
+    const before = this.opened.get(thread.threadId) ?? BrowserStore.NONE
+    const seen = this.lastSeen.get(thread.threadId)
+    const next = new Map<string, { readonly url: string; readonly loading: boolean }>()
+    let list = before
+    for (const page of thread.pages) {
+      if (page.device || page.status === 'unavailable' || page.error === BROWSER_WAITING_TO_OPEN) continue
+      const last = seen?.get(page.id)
+      const loading = page.status === 'loading'
+      next.set(page.id, { url: page.url, loading })
+      if (last !== undefined && last.url === page.url && (last.loading || !loading)) continue
+      list = [page.url, ...list.filter(url => url !== page.url)].slice(0, 8)
+    }
+    if (next.size > 0) this.lastSeen.set(thread.threadId, next)
+    else this.lastSeen.delete(thread.threadId)
+    if (list !== before) this.opened.set(thread.threadId, list)
   }
 }
 
@@ -364,6 +443,11 @@ async function settle<T>(request: Promise<ToolsResult<T>>): Promise<ToolsResult<
 
 export function useThreadBrowser(store: BrowserStore, threadId: string | null): ThreadBrowser | undefined {
   const read = useCallback(() => threadId === null ? undefined : store.thread(threadId), [store, threadId])
+  return useSyncExternalStore(store.subscribe, read)
+}
+
+export function useOpenedAddresses(store: BrowserStore, threadId: string): readonly string[] {
+  const read = useCallback(() => store.openedAddresses(threadId), [store, threadId])
   return useSyncExternalStore(store.subscribe, read)
 }
 

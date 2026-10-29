@@ -8,6 +8,7 @@ import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
 import { appRooms, roomFor, RoomTabFace, useRoomSwitch } from '../components/AppShell'
+import { pageShortcutFor, usePageShortcutLabels } from '../components/pageShortcuts'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { useOptionalApp, type AppNavigation } from '../state/AppContext'
@@ -91,7 +92,7 @@ export function RoomSwitch({ className, iconOnly = false }: { readonly className
       const tab = roomSwitch.tab(target, index)
       // Where the lit tile shows no name (the sidebar foot), every tile names itself on hover, the lit one too.
       return <button key={target.id} type="button" role="tab" className="tt-focusable" data-room={target.id} {...tab}
-        title={iconOnly ? target.label : tab.title}>
+        title={iconOnly ? tab.title ?? target.label : tab.title}>
         <RoomTabFace room={target} named={!iconOnly} /></button>
     })}
   </div>
@@ -103,12 +104,17 @@ export function PageLinks({ className, linkClassName }: { readonly className: st
   const memory = useMemoryEnabled()
   const usage = useOwlFeature('usage')
   const { t } = useLingui()
+  const keys = usePageShortcutLabels()
   const pages = PAGES.filter(page => (page.id !== 'memory' || memory) && (page.id !== 'usage' || usage)).map(page => ({ ...page, label: t(page.label) }))
   return <nav className={className} aria-label={t`Pages`}>
-    {pages.map(({ id, label, Icon }) => <a key={id} href={`#${id}`} className={`${linkClassName} tt-focusable`} title={label}
-      aria-current={app?.navigation === id ? 'page' : undefined} onClick={event => { event.preventDefault(); app?.actions.navigate(id) }}>
+    {pages.map(({ id, label, Icon }) => {
+      const page = pageShortcutFor(id)
+      const shortcut = page === undefined ? undefined : keys[page]
+      return <a key={id} href={`#${id}`} className={`${linkClassName} tt-focusable`} title={shortcut ? `${label} ${shortcut.suffix}` : label}
+      aria-keyshortcuts={shortcut?.keys} aria-current={app?.navigation === id ? 'page' : undefined} onClick={event => { event.preventDefault(); app?.actions.navigate(id) }}>
       <Icon size={16} aria-hidden="true" /><span className="tt-visually-hidden">{label}</span>
-    </a>)}
+    </a>
+    })}
   </nav>
 }
 
@@ -151,13 +157,10 @@ function RailWatcher(): ReactNode {
   const { t } = useLingui()
   const thread = watcherId === null ? undefined : threads?.find(item => item.id === watcherId)
   const ring = thread === undefined ? 'done' : thread.requests.length ? 'needs' : thread.status === 'running' ? 'working' : 'done'
-  return <>
-    <button type="button" className="thread-nav__rail-thread thread-nav__rail-watcher tt-focusable" aria-label={t`Open Watcher`} title={t`Open Watcher`}
-      aria-current={app?.navigation === 'watcher' ? 'page' : undefined} onClick={() => app?.actions.navigate('watcher')}>
-      <WatcherOwl size={18} /><span className="thread-nav__ring" data-state={ring} aria-hidden="true" />
-    </button>
-    <span className="thread-nav__rail-rule" aria-hidden="true" />
-  </>
+  return <button type="button" className="thread-nav__rail-thread thread-nav__rail-watcher tt-focusable" aria-label={t`Open Watcher`} title={t`Open Watcher`}
+    aria-current={app?.navigation === 'watcher' ? 'page' : undefined} onClick={() => app?.actions.navigate('watcher')}>
+    <WatcherOwl size={18} /><span className="thread-nav__ring" data-state={ring} aria-hidden="true" />
+  </button>
 }
 
 type SidebarSize = ReturnType<typeof useSidebarSize>
@@ -264,8 +267,8 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     </label>
     {afterSearch}
     {addProject.dialog}
-    {addProject.error ? <p className="thread-nav__error tt-paragraph" role="alert">{addProject.error}<button type="button" className="thread-nav__action tt-focusable" aria-label={t`Dismiss`} onClick={addProject.clearError}><X size={14} aria-hidden="true" /></button></p> : null}
-    {extraError ? <p className="thread-nav__error tt-paragraph" role="alert">{extraError}{onDismissExtraError ? <button type="button" className="thread-nav__action tt-focusable" aria-label={t`Dismiss`} onClick={onDismissExtraError}><X size={14} aria-hidden="true" /></button> : null}</p> : null}
+    {addProject.error ? <p className="thread-nav__error tt-paragraph" role="alert">{addProject.error}<button type="button" className="thread-nav__action tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`} onClick={addProject.clearError}><X size={14} aria-hidden="true" /></button></p> : null}
+    {extraError ? <p className="thread-nav__error tt-paragraph" role="alert">{extraError}{onDismissExtraError ? <button type="button" className="thread-nav__action tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`} onClick={onDismissExtraError}><X size={14} aria-hidden="true" /></button> : null}</p> : null}
     {notice}
     <div className="thread-nav__scroll">{children}</div>
     {size.collapsed ? null : foot ?? <SidebarFoot />}

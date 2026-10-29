@@ -56,9 +56,13 @@ function resizedDescription({ original, sent }: AgentAttachmentDimensions): stri
   return t`Resized from ${{ fromWidth: original.width }} by ${{ fromHeight: original.height }} to ${{ toWidth: sent.width }} by ${{ toHeight: sent.height }} pixels`
 }
 
-/** One attached image: its thumbnail, drawn in this window, or a placeholder with its name while the thumbnail is read and when there is none. */
-function Chip({ target, attachment, disabled, onRemove, removeLabel }: { readonly target: string | null; readonly attachment: AgentAttachmentHandle; readonly disabled: boolean; readonly onRemove: () => void
-  readonly removeLabel?: string }): ReactNode {
+/**
+ * One attached image: its thumbnail, drawn in this window, or a placeholder while the thumbnail is read and when there
+ * is none. A plain image is a bare card in the deck; Point at something's picture (ADR-0154) is its own tile, named
+ * after the element with the comment under it. A scaled-down image says so in a badge on the picture (ADR-0030).
+ */
+function Chip({ target, attachment, disabled, onRemove, removeLabel, count, index }: { readonly target: string | null; readonly attachment: AgentAttachmentHandle; readonly disabled: boolean
+  readonly onRemove: () => void; readonly removeLabel?: string; readonly count?: number; readonly index?: number }): ReactNode {
   const { t } = useLingui()
   const thumbnail = useThumbnail(target, attachment)
   const name = attachment.name
@@ -66,12 +70,18 @@ function Chip({ target, attachment, disabled, onRemove, removeLabel }: { readonl
   const from = dimensions === undefined ? '' : shownSize(dimensions.original)
   const to = dimensions === undefined ? '' : shownSize(dimensions.sent)
   const remove = removeLabel ?? t`Remove ${name}`
-  return <figure>
-    {thumbnail ? <img src={thumbnail} alt={attachment.name} /> : <span className="screenshot-previews__placeholder" role="img" aria-label={attachment.name} />}
-    <figcaption title={attachment.name}>{attachment.name}</figcaption>
-    {dimensions !== undefined && <small className="screenshot-previews__resized">
-      <span aria-hidden="true"><Trans>Resized from {from} to&nbsp;{to}</Trans></span>
-      <span className="tt-visually-hidden">{resizedDescription(dimensions)}</span></small>}
+  const pointed = attachment.browserFeedback
+  const comment = pointed?.comment ?? ''
+  return <figure data-pointed={pointed ? '' : undefined} title={dimensions === undefined ? name : `${name}\n${resizedDescription(dimensions)}`}
+    style={index === undefined ? undefined : { '--i': index } as React.CSSProperties}>
+    <span className="screenshot-previews__picture">
+      {thumbnail ? <img src={thumbnail} alt={name} /> : <span className="screenshot-previews__placeholder" role="img" aria-label={name} />}
+      {dimensions !== undefined && <small className="screenshot-previews__resized">
+        <span aria-hidden="true"><Trans>Resized from {from} to&nbsp;{to}</Trans></span>
+        <span className="tt-visually-hidden">{resizedDescription(dimensions)}</span></small>}
+    </span>
+    {pointed && <figcaption><span>{name}</span>{comment ? <small className="screenshot-previews__note" title={comment}>{comment}</small> : null}</figcaption>}
+    {count !== undefined && count > 1 && <span className="screenshot-deck__count" aria-hidden="true">{count}</span>}
     <button type="button" title={remove} aria-label={remove} disabled={disabled} onClick={onRemove}><X size={12} /></button>
   </figure>
 }
@@ -227,6 +237,11 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
   const remove = (id: string): void => onChange(current.current.filter(item => item.id !== id))
   const images = anyFile ? attachments.filter(attachment => isImageAttachment(attachment.mimeType)) : attachments
   const files = anyFile ? attachments.filter(attachment => !isImageAttachment(attachment.mimeType)) : []
+  const plain = images.filter(attachment => !attachment.browserFeedback)
+  const pointed = images.filter(attachment => attachment.browserFeedback)
+  const chip = (attachment: AgentAttachmentHandle, deck: { readonly index?: number; readonly count?: number }): ReactNode =>
+    <Chip key={attachment.id} target={target} attachment={attachment} disabled={disabled || busy} onRemove={() => remove(attachment.id)} {...deck}
+      {...anyFile ? { removeLabel: words.removeAttachment(attachment.name) } : {}} />
   const endDrag = (): void => { dragDepth.current = 0; setDragging(false) }
   return <div className="screenshot-input" data-dragging={anyFile && dragging ? true : undefined} onPaste={event => {
     const files = [...event.clipboardData.items].filter(item => item.kind === 'file').map(item => item.getAsFile()).filter((file): file is File => file !== null)
@@ -242,9 +257,11 @@ export function ScreenshotInput({ target, attachments, onChange, disabled, suppo
     if (event.dataTransfer.files.length) { event.preventDefault(); void add([...event.dataTransfer.files]) }
   }}>
     {children}
-    {images.length > 0 && <div className="screenshot-previews" aria-label={anyFile ? words.attachedImages() : t`Attached screenshots`}>{images.map(attachment =>
-      <Chip key={attachment.id} target={target} attachment={attachment} disabled={disabled || busy} onRemove={() => remove(attachment.id)}
-        {...anyFile ? { removeLabel: words.removeAttachment(attachment.name) } : {}} />)}</div>}
+    {images.length > 0 && <div className="screenshot-previews" aria-label={anyFile ? words.attachedImages() : t`Attached screenshots`}>
+      {/* Plain images rest as one deck, which fans out into a row under the pointer or the keyboard. */}
+      {plain.length > 0 && <div className="screenshot-deck">{plain.map((attachment, index) => chip(attachment, { index, ...index === 0 ? { count: plain.length } : {} }))}</div>}
+      {pointed.map(attachment => chip(attachment, {}))}
+    </div>}
     {files.length > 0 && <ul className="attached-files" aria-label={words.attachedFiles()}>{files.map(attachment =>
       <FilePill key={attachment.id} attachment={attachment} disabled={disabled || busy} onRemove={() => remove(attachment.id)} />)}</ul>}
     <div className="screenshot-input__tools">

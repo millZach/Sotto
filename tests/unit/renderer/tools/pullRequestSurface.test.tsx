@@ -477,6 +477,24 @@ describe('the Pull request surface', () => {
     await waitFor(() => expect(mergeButton()).not.toHaveAttribute('aria-disabled'))
     expect(screen.queryByRole('button', { name: 'Update branch' })).toBeNull()
   })
+  it('names the reading it shows when it presses, never one a Refresh overtook, so a paired host binds the merge to it (#1691)', async () => {
+    const [opening, stale, shown] = ['1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d', '2b3c4d5e-6f7a-4b2c-9d3e-4f5a6b7c8d9e', '3c4d5e6f-7a8b-4c3d-8e4f-5a6b7c8d9e0f']
+    const pending: Array<(value: GitPullRequestDetail) => void> = []
+    let reads = 0
+    const { command } = mount({ detail: (() => { reads += 1; if (reads === 1) return detail({ readId: opening })
+      const read = deferred<GitPullRequestDetail>(); pending.push(read.resolve); return read.promise }) as unknown as () => GitPullRequestRead })
+    await opened()
+    // Two Refreshes in flight; the second is answered first, and the first, answered after it, is thrown away.
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh pull request' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Refresh pull request' }))
+    await waitFor(() => expect(pending).toHaveLength(2))
+    await act(async () => { pending[1]!(detail({ readId: shown })) })
+    await act(async () => { pending[0]!(detail({ readId: stale })) })
+    await waitFor(() => expect(mergeButton()).not.toHaveAttribute('aria-disabled'))
+    fireEvent.click(mergeButton())
+    fireEvent.click(within(screen.getByRole('dialog', { name: 'Merge pull request?' })).getByRole('button', { name: 'Merge' }))
+    await waitFor(() => expect(sent(command)).toEqual([{ type: 'git-pull-request-action', threadId: 'thread-1', url: URL, action: 'merge', method: 'merge', readId: shown }]))
+  })
   it('reads an open request for changes with nobody approving without claiming an approval', async () => {
     mount({ detail: detail({ reviewDecision: null, reviews: [review('ola', 'changes_requested')] }) })
     await opened()

@@ -5,6 +5,7 @@ import { registerHostQuitDrain, type HostQuitHandles } from './app/hostQuitDrain
 import { HOSTS_CHANGED } from '../shared/hosts'
 import { hostEntityKey, parseHostEntityKey } from '../shared/clientIdentity'
 import { DesktopHostRouter } from './hosts/desktopHostRouter'
+import { CascadedSettles } from './hosts/crossMachineCascade'
 import { questionPageDestination } from './hosts/questionPageDestination'
 import { DesktopHosts } from './hosts/desktopHosts'
 import { HostSetup, hostSetupRequests } from './hosts/hostSetup'
@@ -14,6 +15,7 @@ import { PullRequestToolServer } from './agents/pullRequestTools'
 import { DelegationToolServer } from './agents/delegationTools'
 import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
 import { registerDelegationIpc } from './agents/delegationIpc'
+import { registerCheckQueueIpc } from './agents/checkQueueIpc'
 import { registerContinueIpc } from './agents/continueThreadIpc'
 import { registerNextPromptIpc, windowNextPrompt } from './agents/nextPromptIpc'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
@@ -242,6 +244,7 @@ import { MAIN_ACTIVITY_CHANGED, MAIN_ACTIVITY_RENDERER_ARGUMENT } from '../share
 import { DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT, NOTIFICATION_OPENED } from '../shared/desktopNotifications'
 import { INTERFACE_LANGUAGE_CHANGED, interfaceLanguageArgument } from '../shared/interfaceLanguageBridge'
 import { MainInterfaceLanguage, preferredSystemLanguages } from './interfaceLanguage'
+import { INTERFACE_LANGUAGE_SHOWN } from '../shared/interfaceLanguages'
 import { interfaceClockTime } from './interfaceClock'
 import { USAGE_RENDERER_ARGUMENT } from '../shared/usageDashboard'
 import { OPENCODE_HOSTS_RENDERER_ARGUMENT, OPENCODE_RENDERER_ARGUMENT } from '../shared/opencodeSignIn'
@@ -740,6 +743,8 @@ async function createRuntime(): Promise<NativeRuntimeController> {
 const cleanupModelEnabled = owlFeatures['cleanup-model']
   const delegationEnabled = owlFeatures['thread-delegation']
   const workerRolesEnabled = owlFeatures['worker-roles']
+  // The interface language (ADR-0123) also waits on its catalogs (#1684): until they are drafted Owl is English, as stable is.
+  const interfaceLanguageEnabled = owlFeatures['interface-language'] && INTERFACE_LANGUAGE_SHOWN
   const threadStartsEnabled = owlFeatures['continue-agent-thread']
   // The iPhone's Agents view (ADR-0103): offered to a paired iPhone only when the Owl list turns it on.
   const agentsViewEnabled = owlFeatures['iphone-agents-view']
@@ -782,7 +787,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     Date.now,
     platformDefaults,
     logOperational,
-    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled: owlFeatures['interface-language'], ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -803,7 +808,6 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // The interface language (ADR-0123), read before the tray, the menu or a window shows a word. An end-to-end run reads
   // English as the computer's language, so every test and design capture reads English on any machine; the setting still
   // applies there, and SOTTO_E2E_SYSTEM_LANGUAGES stands in for the computer's list.
-  const interfaceLanguageEnabled = owlFeatures['interface-language']
   const interfaceLanguage = new MainInterfaceLanguage({
     enabled: interfaceLanguageEnabled,
     systemLanguages: e2eConfiguration === null ? preferredSystemLanguages(app) : (process.env.SOTTO_E2E_SYSTEM_LANGUAGES ?? 'en-US').split(','),
@@ -1067,8 +1071,14 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // The runtime builds the worktree cleanup (ADR-0041). Only the local host has worktrees on this
   // computer; with it off the inactive host's cleanup does nothing, and no terminal check is wired.
   const worktreeCleanup = startupSettings.localHostEnabled ? localRuntime.worktreeCleanup : null
-  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'],
+  // Which delegated threads elsewhere the window's Settles settled, for their Restores, after a restart too (#1316 part 3).
+  const cascadedSettles = crossMachineEnabled ? new CascadedSettles(userDataPath) : undefined
+  await cascadedSettles?.load()
+  const hostRouter = new DesktopHostRouter(() => emptyDesktopState(agentControl.hostId()), { watcherEnabled, heldProviders, crossMachineWork: crossMachineEnabled, streamingPublishCost: owlFeatures['streaming-publish-cost'],
     ...babysittingRetired ? { babysittingRetired: true } : {},
+    // What the user's Stop on a thread here left on other machines, which the window says once the cancels answer (#1316 part 3).
+    ...crossMachineEnabled && 'delegation' in localRuntime && localRuntime.delegation ? { stopsLeft: (threadId: string) => localRuntime.delegation?.stopsLeft(threadId) } : {},
+    ...cascadedSettles ? { cascadedSettles } : {},
     attachAnyFile: owlFeatures['attach-any-file'],
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     // A paired host's deleted thread takes the answer drafts this computer kept for it (ADR-0140).
@@ -1090,6 +1100,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   // The desktop relay (#1316): each host whose threads delegate to This computer through this desktop is heard from here.
   const delegationRelay = 'delegationRelay' in localRuntime ? localRuntime.delegationRelay : undefined
   delegationRelay?.useHosts(hostRouter)
+  // This computer's delegations on its paired hosts (#1316 part 2): each host is heard from, and read again, as it connects.
+  if ('delegationRemote' in localRuntime) localRuntime.delegationRemote?.useHosts(hostRouter)
   // A child on another machine brings its changes back by moving its branch first (#1030), only while Work across machines is on.
   if (localRuntime.branchMoves) hostRouter.useBranchMoves(localRuntime.branchMoves)
   // Desktop defaults (#1310): this computer's new-thread default and, while worker roles are on, its worker roles, sent to
@@ -1265,6 +1277,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   localRuntime?.agentControl.onThreadsDeleted(threadIds => {
     const hostId = agentControl.hostId()
     void requestDrafts.forgetThreads(new Set(threadIds.flatMap(id => [id, hostEntityKey(hostId, id)]))).catch(() => undefined)
+    // And what their Settles did to delegated threads elsewhere, whether the window, Clear now, the hourly clear or a phone
+    // deleted them (#1316 part 3).
+    void cascadedSettles?.forgetAll(threadIds.map(id => hostEntityKey(hostId, id))).catch(() => undefined)
   })
   const unsubscribeRequestDrafts = requestDrafts.onChanged(owner => windows.sendToMain(REQUEST_DRAFT_CHANGED, owner))
   mainActivity?.subscribe(state => { windows.sendToMain(MAIN_ACTIVITY_CHANGED, state) })
@@ -2036,8 +2051,14 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         refresh: query => hostRouter.usageRefresh(query), clear: query => hostRouter.usageClear(query) }, () => windows.getTrustedRenderers(), usageEnabled)
       // The delegating thread's cards read delegation's own record (#1029); stable built no service, so nothing is registered.
       // A thread on another machine is read on that machine where Work across machines is on (#1310); stable reads none.
+      // A check's reply is read on a press only where checks are offered, with Watcher and Work across machines on (#1312).
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
-        (channel, payload) => { windows.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined)
+        (channel, payload) => { windows.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined, watcherEnabled && crossMachineEnabled)
+      // Every machine's check queue for its panel and Tools › Agents (#1312), only where Watcher and Work across machines are
+      // both on, as the machines line is, so stable registers nothing. With the local host off, This computer keeps no queue
+      // and each host's is still read.
+      const cleanupCheckQueues = registerCheckQueueIpc(ipcMain, watcherEnabled && crossMachineEnabled, 'checks' in localRuntime ? localRuntime.checks : undefined,
+        () => windows.getTrustedRenderers(), () => agentControl.hostId(), (channel, payload) => { windows.sendToMain(channel, payload) }, hostRouter)
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
       const cleanupNextPrompts = registerNextPromptIpc(ipcMain, localRuntime.nextPrompts, () => agentControl.hostId(), () => windows.getTrustedRenderers())
       const cleanupNotifications = registerNotificationIpc(ipcMain, desktopNotifier, () => windows.getTrustedRenderers())
@@ -2070,6 +2091,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         destination: async () => (await settingsCoordinator.getSettings()).webLinkDestination,
         openExternal: url => shell.openExternal(url),
         byDefault: () => workingCopySettings.browserWithoutAsking,
+        pointAtSomething: owlFeatures['quiet-browser'],
       })
       cloudIphoneService = new CloudIphoneService({
         files, credentials,
@@ -2286,6 +2308,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         cleanupSubagents()
         cleanupUsage()
         cleanupDelegations()
+        cleanupCheckQueues()
         cleanupContinue()
         cleanupNextPrompts()
         cleanupMainActivity()

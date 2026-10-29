@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>PROTOTYPE — a press sends waves of 0s and 1s through the room</title>
+<!--
+  THROWAWAY PROTOTYPE. Not product code.
+  Question: Zach wants a click anywhere in Sotto to send the accent through that part of the page as 0s and 1s, in place
+  of today's click ripple (a press in Watcher's open margin; the moon's ripple when an owl arrives stays).
+  Round one (October 27, 2026): A Spark, B Lens, C Glitch, D Decode. D came closest, but Zach wanted a wave, not a disc.
+  Round two: E Wave, F Wave and echo, G Swell, all clean expanding rings. "You still have everything circular."
+  Round three, from Zach's video of the Claude desktop app: a field of characters over the whole window, unseen until a
+  click disturbs it. A click is a splash in a 2D wave simulation; the waves run out, reflect off the window's edges,
+  cross each other and die away over a few seconds, and a cell's 0 or 1 shows as strongly as the water there is high or
+  low. Cards with their own surface (the composer, the bubbles, the sidebar) sit over the field, so it never covers
+  what was pressed. Four strengths:
+    H Like the video   under the page, dies away in about 4 s
+    I Quicker          under the page, about 1.5 s
+    J Over the page    the same waves drawn over everything, fainter, so the words stay readable through them
+    K Bolder           under the page, stronger, about 6 s
+  Round four: "H is the closest but it is too close to the ripple effect, it needs more abstraction to how it goes out."
+  L bends the fronts with water that is faster in some places than others, M throws a handful of drops per press so
+  their waves break each other up, N does both with speckled edges. H stays for comparison.
+  Zach's answers so far: an Owl feature; nothing at all with motion reduced; a switch in Settings, on to start.
+  Pick with the bar, the keys 1-4, or left/right. ?v=J opens on a variant; ?at=640,300;900,500&t=0.8 splashes there and
+  holds the picture 0.8 s later.
+-->
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('figtree-latin.woff2') format('woff2'), url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: #1d1e22; color: #f1f1f3; font: 14px/1.4 system-ui, 'Segoe UI', sans-serif; display: flex; flex-direction: column; overflow: hidden; -webkit-tap-highlight-color: transparent; }
+
+/* ---------- Prototype chrome (not the design) ---------- */
+.proto-top { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 9px 14px; background: #121316; border-bottom: 1px solid #3a3b42; font-family: system-ui, 'Segoe UI', sans-serif; }
+.proto-tag { padding: 2px 7px; border-radius: 5px; background: #ffd34d; color: #222; font-size: 11px; font-weight: 800; }
+.proto-top h1 { margin: 0; font-size: 13.5px; font-weight: 600; }
+.proto-group { display: flex; gap: 4px; align-items: center; }
+.proto-group > span { color: #9a9ba4; font-size: 12px; margin-right: 2px; }
+.proto-btn { min-height: 28px; padding: 0 9px; border: 0; border-radius: 6px; background: #33353c; color: #e9e9ee; font: inherit; font-size: 12.5px; cursor: pointer; }
+.proto-btn[aria-pressed='true'] { background: #f1f1f3; color: #1d1e22; font-weight: 650; }
+.swatch { width: 22px; height: 22px; min-height: 22px; padding: 0; border-radius: 50%; border: 2px solid transparent; }
+.swatch[aria-pressed='true'] { border-color: #f1f1f3; }
+.proto-bar { position: fixed; right: 12px; top: 44px; z-index: 50; display: flex; align-items: center; gap: 6px; padding: 6px; border-radius: 999px; background: #ffd34d; color: #1d1e22; box-shadow: 0 6px 24px rgba(0,0,0,.45); font-family: system-ui, 'Segoe UI', sans-serif; white-space: nowrap; }
+.proto-bar button { width: 34px; height: 34px; border: 0; border-radius: 50%; background: #1d1e22; color: #ffd34d; font-size: 16px; cursor: pointer; }
+.proto-bar output { min-width: 230px; text-align: center; font-size: 13px; }
+.proto-bar output b { font-weight: 800; }
+.proto-bar output small { display: block; font-size: 11px; opacity: .75; }
+
+/* ---------- A Sotto-like room: theme tokens, as the default theme's first paint ---------- */
+.th-dark { --tt-canvas: oklch(0.115 0.008 265); --tt-sidebar: oklch(0.145 0.009 265); --tt-card: oklch(0.19 0.012 265);
+  --tt-text: oklch(0.985 0.005 280); --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-bubble: oklch(0.205 0.014 265); --tt-hover: oklch(0.24 0.012 265); --tt-code: oklch(0.16 0.01 265); --tt-hairline: oklch(0.25 0.01 265); }
+.th-light { --tt-canvas: oklch(0.978 0.004 85); --tt-sidebar: oklch(0.955 0.006 85); --tt-card: oklch(0.995 0.002 85);
+  --tt-text: oklch(0.235 0.014 75); --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-bubble: oklch(0.93 0.012 85); --tt-hover: oklch(0.92 0.01 85); --tt-code: oklch(0.95 0.008 85); --tt-hairline: oklch(0.88 0.01 85); }
+.th-dark.ac-teal { --tt-accent: oklch(0.714 0.104 183); --tt-accent-text: oklch(0.83 0.08 183); }
+.th-light.ac-teal { --tt-accent: oklch(0.53 0.095 186); --tt-accent-text: oklch(0.43 0.08 186); }
+.th-dark.ac-rose { --tt-accent: oklch(0.7 0.16 10); --tt-accent-text: oklch(0.8 0.12 10); }
+.th-light.ac-rose { --tt-accent: oklch(0.55 0.17 10); --tt-accent-text: oklch(0.47 0.15 10); }
+.th-dark.ac-violet { --tt-accent: oklch(0.68 0.16 290); --tt-accent-text: oklch(0.8 0.11 290); }
+.th-light.ac-violet { --tt-accent: oklch(0.52 0.18 290); --tt-accent-text: oklch(0.45 0.16 290); }
+.th-dark.ac-amber { --tt-accent: oklch(0.8 0.14 75); --tt-accent-text: oklch(0.85 0.11 75); }
+.th-light.ac-amber { --tt-accent: oklch(0.6 0.13 65); --tt-accent-text: oklch(0.48 0.11 65); }
+
+.app { flex: 1; min-height: 0; display: grid; grid-template-rows: 34px 1fr; background: var(--tt-canvas); color: var(--tt-text); font-family: 'Figtree', system-ui, sans-serif; }
+.strip { display: flex; align-items: center; gap: 10px; padding: 0 14px; background: var(--tt-sidebar); color: var(--tt-text-muted); font-size: 12.5px; }
+.strip b { color: var(--tt-text); font-weight: 600; }
+.strip .tabs { display: flex; gap: 2px; margin-left: 12px; }
+.strip .tabs button { min-height: 24px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.strip .tabs button[aria-current] { background: var(--tt-hover); color: var(--tt-text); }
+.room { display: grid; grid-template-columns: 240px 1fr; min-height: 0; }
+.side { padding: 10px 8px; background: var(--tt-sidebar); overflow: auto; }
+.side h2 { margin: 6px 8px 6px; color: var(--tt-text-muted); font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+.side button { display: flex; width: 100%; align-items: center; gap: 8px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13.5px; text-align: left; cursor: pointer; }
+.side button:hover { background: var(--tt-hover); }
+.side button[aria-current] { background: var(--tt-hover); color: var(--tt-text); }
+.side i { width: 7px; height: 7px; flex: none; border-radius: 50%; background: var(--tt-text-muted); opacity: .5; }
+.side i.on { background: var(--tt-accent); opacity: 1; }
+.thread { display: grid; grid-template-rows: 1fr auto; min-height: 0; }
+.transcript { overflow: auto; padding: 22px max(24px, calc((100% - 760px) / 2)) 30px; }
+.msg-user { margin: 0 0 20px 22%; padding: 11px 15px; border-radius: 14px 14px 4px 14px; background: var(--tt-bubble); font-size: 15px; line-height: 1.5; }
+.msg-agent { margin: 0 0 22px; font-size: 15px; line-height: 1.6; }
+.msg-agent p { margin: 0 0 10px; }
+.msg-agent a { color: var(--tt-accent-text); }
+.msg-agent code { padding: 1px 5px; border-radius: 5px; background: var(--tt-code); font: 13px 'Cascadia Mono', ui-monospace, monospace; }
+pre { margin: 0 0 12px; padding: 12px 14px; border-radius: 10px; background: var(--tt-code); font: 12.5px/1.55 'Cascadia Mono', ui-monospace, monospace; overflow: auto; color: var(--tt-text-2); }
+.tools { display: flex; gap: 6px; }
+.tools button { min-height: 28px; padding: 0 9px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; }
+.tools button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.compose { padding: 0 max(20px, calc((100% - 780px) / 2)) 16px; }
+/* The composer has no border (Zach, October 26). */
+.prompt { display: grid; grid-template-columns: 1fr auto; align-items: end; gap: 8px; padding: 12px 12px 10px 16px; border: 0; border-radius: 18px; background: var(--tt-card); box-shadow: 0 8px 30px rgb(0 0 0 / .18); }
+.prompt textarea { min-height: 52px; border: 0; outline: 0; resize: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; }
+.prompt textarea::placeholder { color: var(--tt-text-muted); }
+.send { display: flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border: 0; border-radius: 9px; background: var(--tt-accent); color: oklch(0.15 0.01 265); font: inherit; font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.th-light .send { color: #fff; }
+.meta { margin: 7px 6px 0; color: var(--tt-text-muted); font-size: 12px; }
+.meta output { color: var(--tt-text-2); }
+
+/* ---------- The field: one canvas over the room's own background and under its content ---------- */
+.app { position: relative; }
+.app > :not(#fx) { position: relative; z-index: 1; }
+#fx { position: absolute; inset: 0; z-index: 0; width: 100%; height: 100%; pointer-events: none; color: var(--tt-accent); }
+body[data-over] #fx { position: fixed; z-index: 40; }
+</style>
+</head>
+<body class="th-dark ac-teal">
+
+<header class="proto-top proto-chrome">
+  <span class="proto-tag">PROTOTYPE</span>
+  <h1>Press anywhere in the room below</h1>
+  <div class="proto-group" role="group" aria-label="Theme"><span>Theme</span>
+    <button class="proto-btn" data-theme="th-dark" aria-pressed="true">Dark</button>
+    <button class="proto-btn" data-theme="th-light" aria-pressed="false">Light</button>
+  </div>
+  <div class="proto-group" role="group" aria-label="Accent"><span>Accent</span>
+    <button class="proto-btn swatch" data-accent="ac-teal" aria-pressed="true" aria-label="Teal" style="background:oklch(0.714 0.104 183)"></button>
+    <button class="proto-btn swatch" data-accent="ac-rose" aria-pressed="false" aria-label="Rose" style="background:oklch(0.7 0.16 10)"></button>
+    <button class="proto-btn swatch" data-accent="ac-violet" aria-pressed="false" aria-label="Violet" style="background:oklch(0.68 0.16 290)"></button>
+    <button class="proto-btn swatch" data-accent="ac-amber" aria-pressed="false" aria-label="Amber" style="background:oklch(0.8 0.14 75)"></button>
+  </div>
+  <div class="proto-group">
+    <button class="proto-btn" id="reduce" aria-pressed="false">Reduce motion</button>
+    <button class="proto-btn" id="burst">Fire 12 fast presses</button>
+  </div>
+</header>
+
+<div class="app">
+  <canvas id="fx" aria-hidden="true"></canvas>
+  <div class="strip"><b>Sotto</b><nav class="tabs"><button aria-current="page">Threads</button><button>Watcher</button><button>Dictation</button><button>Settings</button></nav></div>
+  <div class="room">
+    <aside class="side">
+      <h2>Sotto</h2>
+      <button aria-current="true"><i class="on"></i>Replace the click ripple</button>
+      <button><i class="on"></i>Watcher night scene places</button>
+      <button><i></i>Skip any question</button>
+      <button><i></i>iPhone duo columns</button>
+      <h2>Fleet</h2>
+      <button><i></i>Sync the skills</button>
+      <button><i></i>Forge disk report</button>
+    </aside>
+    <section class="thread">
+      <div class="transcript">
+        <div class="msg-user">When I click, I'd like the accent colour to distort that part of the page with 0s and 1s in the accent colour.</div>
+        <div class="msg-agent">
+          <p>Today's click ripple only shows in Watcher's open margin, where it bends the night scene's glyphs. The moon's ripple, when a new owl arrives, is drawn by the same code, so I'll leave that code alone and replace only the press.</p>
+          <pre>// WatcherNightScene.tsx
+const press = (event: PointerEvent): void =&gt; {
+  ripples = addRipple(liveRipples(ripples, t, still), { x, y, t })
+  look = { x, y, t }
+}</pre>
+          <p>The new effect is drawn on a layer over the whole window that never takes the pointer, so every press still reaches the <a href="#" onclick="return false">control it was aimed at</a>. It reads <code>--tt-accent</code>, so it follows the theme.</p>
+          <div class="tools"><button id="copy">Copy</button><button>Quote</button><button>Read aloud</button></div>
+        </div>
+        <div class="msg-user">Show me a few so we get it right.</div>
+        <div class="msg-agent"><p>Round three, from your video: a field of 0s and 1s lies over the whole room, unseen until a press sends waves through it. They run out, bounce off the window's edges, cross each other and die away. Press a few times in a row.</p></div>
+      </div>
+      <div class="compose">
+        <form class="prompt" onsubmit="return false">
+          <textarea placeholder="Message Claude…" aria-label="Message"></textarea>
+          <button class="send" id="send" type="button">Send</button>
+        </form>
+        <p class="meta">Opus 5.5 · high · <output id="count">Sent 0 times</output></p>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="proto-bar proto-chrome" role="group" aria-label="Variant">
+  <button id="prev" aria-label="Previous variant">←</button>
+  <output id="label"></output>
+  <button id="next" aria-label="Next variant">→</button>
+</div>
+
+<script>
+const VARIANTS = {
+  H: { name: 'Like the video (last round)', note: 'Clean rings · for comparison', life: 4, alpha: 0.6, over: false },
+  L: { name: 'Uneven water', note: 'The room is faster in some places · fronts bend into blobs', life: 4, alpha: 0.6, over: false, uneven: 1, ragged: 0.5 },
+  M: { name: 'Scattered splash', note: 'A press throws a handful of drops · the front breaks into cells', life: 4, alpha: 0.6, over: false, scatter: 6, ragged: 0.5 },
+  N: { name: 'Both, ragged', note: 'Uneven water, scattered drops, speckled edges · most abstract', life: 4, alpha: 0.65, over: false, uneven: 1, scatter: 6, ragged: 1 },
+}
+const keys = Object.keys(VARIANTS)
+const query = new URLSearchParams(location.search)
+let current = query.get('v')?.toUpperCase()
+if (!VARIANTS[current]) current = 'L'
+
+// ---------- The water: a wave simulation on a square grid, SIM pixels a cell ----------
+const SIM = 8, STEP_HZ = 60, C2 = 0.45
+// The glyph grid the 0s and 1s sit on, as dense as the video's.
+const GW = 7, GH = 13, FONT = "500 11px 'Cascadia Mono', ui-monospace, 'SF Mono', monospace"
+const canvas = document.getElementById('fx')
+const ctx = canvas.getContext('2d')
+let W = 0, H = 0, cols = 0, rows = 0, prev, cur, next, bits, jit, speed, sprites = null
+let running = false, last = 0, peak = 0
+
+function resize() {
+  const over = document.body.hasAttribute('data-over')
+  const box = canvas.parentElement.getBoundingClientRect()
+  W = Math.ceil(over ? innerWidth : box.width)
+  H = Math.ceil(over ? innerHeight : box.height)
+  const dpr = devicePixelRatio || 1
+  canvas.width = Math.round(W * dpr); canvas.height = Math.round(H * dpr)
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
+  cols = Math.ceil(W / SIM) + 2; rows = Math.ceil(H / SIM) + 2
+  prev = new Float32Array(cols * rows); cur = new Float32Array(cols * rows); next = new Float32Array(cols * rows)
+  bits = new Uint8Array(Math.ceil(W / GW + 1) * Math.ceil(H / GH + 1)).map(() => Math.random() < 0.5 ? 1 : 0)
+  // Each glyph's own threshold, so a band's edge is speckled rather than a clean line.
+  jit = new Float32Array(bits.length).map(() => Math.random() * 2 - 1)
+  // How fast the water is in each cell: smooth noise, so fronts bend and break into blobs instead of staying round.
+  speed = new Float32Array(cols * rows)
+  const octaves = [[9, 1], [4, 0.5]].map(([size, weight]) => {
+    const gw = Math.ceil(cols / size) + 2, gh = Math.ceil(rows / size) + 2
+    return { size, weight, gw, values: Float32Array.from({ length: gw * gh }, () => Math.random()) }
+  })
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    let n = 0
+    for (const { size, weight, gw, values } of octaves) {
+      const fx = x / size, fy = y / size, ix = Math.floor(fx), iy = Math.floor(fy)
+      const sx = (fx - ix) ** 2 * (3 - 2 * (fx - ix)), sy = (fy - iy) ** 2 * (3 - 2 * (fy - iy))
+      const v = (a, b) => values[b * gw + a]
+      n += weight * ((v(ix, iy) * (1 - sx) + v(ix + 1, iy) * sx) * (1 - sy) + (v(ix, iy + 1) * (1 - sx) + v(ix + 1, iy + 1) * sx) * sy)
+    }
+    speed[y * cols + x] = n / 1.5
+  }
+  sprites = null
+}
+
+/** A 0 and a 1 in the accent, drawn once and stamped wherever the water lights them. */
+function makeSprites() {
+  const dpr = devicePixelRatio || 1
+  const accent = getComputedStyle(canvas).color
+  return ['0', '1'].map(ch => {
+    const c = document.createElement('canvas'); c.width = Math.ceil(GW * dpr * 1.4); c.height = Math.ceil(GH * dpr)
+    const g = c.getContext('2d'); g.scale(dpr, dpr); g.font = FONT; g.fillStyle = accent; g.textAlign = 'center'; g.textBaseline = 'middle'
+    g.fillText(ch, c.width / dpr / 2, GH / 2)
+    return c
+  })
+}
+
+function damping() { return Math.pow(0.02, 1 / (VARIANTS[current].life * STEP_HZ)) }
+
+function step(damp) {
+  const uneven = VARIANTS[current].uneven ?? 0
+  let top = 0
+  for (let y = 1; y < rows - 1; y++) {
+    const row = y * cols
+    for (let x = 1; x < cols - 1; x++) {
+      const i = row + x, c = cur[i]
+      const c2 = uneven ? 0.06 + 0.42 * speed[i] : C2
+      const v = (2 * c - prev[i] + c2 * (cur[i - 1] + cur[i + 1] + cur[i - cols] + cur[i + cols] - 4 * c)) * damp
+      next[i] = v
+      const a = v < 0 ? -v : v
+      if (a > top) top = a
+    }
+  }
+  const t = prev; prev = cur; cur = next; next = t
+  peak = top
+}
+
+/** A press drops a splash into the water. */
+function splash(px, py) {
+  const scatter = VARIANTS[current].scatter ?? 0
+  if (!scatter) return drop(px, py, VARIANTS[current].splash ?? 1, 7, 12.5)
+  // A handful of drops around the press, each its own size and strength, so their waves cross and break up at once.
+  drop(px, py, 0.8, 5, 6)
+  for (let n = 0; n < scatter; n++) {
+    const a = Math.random() * Math.PI * 2, d = 12 + Math.random() * 46
+    drop(px + Math.cos(a) * d, py + Math.sin(a) * d, (0.35 + Math.random() * 0.6) * (Math.random() < 0.5 ? 1 : -1), 4, 2 + Math.random() * 6)
+  }
+}
+
+function drop(px, py, k, R, spread) {
+  const cx = px / SIM + 1, cy = py / SIM + 1
+  for (let y = Math.max(1, Math.floor(cy - R)); y <= Math.min(rows - 2, Math.ceil(cy + R)); y++)
+    for (let x = Math.max(1, Math.floor(cx - R)); x <= Math.min(cols - 2, Math.ceil(cx + R)); x++) {
+      const d2 = (x - cx) ** 2 + (y - cy) ** 2
+      cur[y * cols + x] += 4 * k * Math.exp(-d2 / spread)
+    }
+  peak = Math.max(peak, 4)
+}
+
+function draw() {
+  ctx.clearRect(0, 0, W, H)
+  sprites ??= makeSprites()
+  const top = VARIANTS[current].alpha, gc = Math.ceil(W / GW + 1), ragged = VARIANTS[current].ragged ?? 0
+  const sw = sprites[0].width / (devicePixelRatio || 1), sh = sprites[0].height / (devicePixelRatio || 1)
+  for (let gy = 0; gy * GH < H; gy++) {
+    for (let gx = 0; gx * GW < W; gx++) {
+      const px = gx * GW + GW / 2, py = gy * GH + GH / 2
+      const i = (Math.floor(py / SIM) + 1) * cols + Math.floor(px / SIM) + 1
+      const h = cur[i]
+      // Only the crests and troughs show; the water between them stays clear, as in the video.
+      const lift = (Math.abs(h) - 0.14 * (1 + ragged * 0.85 * jit[gy * gc + gx])) / 0.4
+      if (lift <= 0) continue
+      const a = Math.min(1, lift) ** 1.3 * top
+      if (a < 0.035) continue
+      // The page under a crest leans toward it: each glyph is pushed along the water's slope.
+      const dx = Math.max(-5, Math.min(5, (cur[i + 1] - cur[i - 1]) * 6))
+      const dy = Math.max(-5, Math.min(5, (cur[i + cols] - cur[i - cols]) * 6))
+      // A 0 on a crest is a 1 in a trough, so the digits flip as the water passes.
+      const b = bits[gy * gc + gx] ^ (h > 0 ? 1 : 0)
+      ctx.globalAlpha = a
+      ctx.drawImage(sprites[b], px - sw / 2 + dx, py - sh / 2 + dy, sw, sh)
+    }
+  }
+  ctx.globalAlpha = 1
+}
+
+function frame(now) {
+  if (!running) return
+  const due = Math.min(4, Math.max(1, Math.round((now - last) / (1000 / STEP_HZ))))
+  last = now
+  const damp = damping()
+  for (let s = 0; s < due; s++) step(damp)
+  draw()
+  // Calm water: the loop stops and the canvas is left empty. Nothing runs until the next press.
+  if (peak < 0.012) { running = false; ctx.clearRect(0, 0, W, H); prev.fill(0); cur.fill(0); return }
+  requestAnimationFrame(frame)
+}
+
+let reduced = matchMedia('(prefers-reduced-motion: reduce)').matches
+function press(x, y) {
+  // With motion reduced, nothing (Zach's pick, October 27, 2026).
+  if (reduced) return
+  const r = canvas.getBoundingClientRect()
+  splash(x - r.left, y - r.top)
+  if (!running) { running = true; last = performance.now(); requestAnimationFrame(frame) }
+}
+document.addEventListener('pointerdown', e => {
+  if (e.button !== 0 || e.target.closest('.proto-chrome')) return
+  press(e.clientX, e.clientY)
+}, { capture: true, passive: true })
+
+// ---------- Prototype wiring ----------
+function setVariant(k) {
+  current = k
+  const v = VARIANTS[k]
+  document.body.toggleAttribute('data-over', v.over)
+  resize()
+  document.getElementById('label').innerHTML = `<b>${k} · ${v.name}</b><small>${v.note}</small>`
+  const url = new URL(location.href); url.searchParams.set('v', k); history.replaceState(null, '', url)
+}
+const stepVariant = n => setVariant(keys[(keys.indexOf(current) + n + keys.length) % keys.length])
+document.getElementById('prev').onclick = () => stepVariant(-1)
+document.getElementById('next').onclick = () => stepVariant(1)
+addEventListener('keydown', e => {
+  if (e.target.closest('textarea, input')) return
+  if (e.key === 'ArrowRight') stepVariant(1)
+  else if (e.key === 'ArrowLeft') stepVariant(-1)
+  else if (keys[Number(e.key) - 1]) setVariant(keys[Number(e.key) - 1])
+})
+addEventListener('resize', resize)
+for (const b of document.querySelectorAll('[data-theme]')) b.onclick = () => {
+  document.body.classList.remove('th-dark', 'th-light'); document.body.classList.add(b.dataset.theme)
+  for (const o of document.querySelectorAll('[data-theme]')) o.setAttribute('aria-pressed', String(o === b))
+  sprites = null
+}
+for (const b of document.querySelectorAll('[data-accent]')) b.onclick = () => {
+  for (const o of document.querySelectorAll('[data-accent]')) { document.body.classList.remove(o.dataset.accent); o.setAttribute('aria-pressed', String(o === b)) }
+  document.body.classList.add(b.dataset.accent)
+  sprites = null
+}
+const reduceBtn = document.getElementById('reduce')
+reduceBtn.setAttribute('aria-pressed', String(reduced))
+reduceBtn.onclick = () => { reduced = !reduced; reduceBtn.setAttribute('aria-pressed', String(reduced)) }
+document.getElementById('burst').onclick = () => {
+  const room = document.querySelector('.thread').getBoundingClientRect()
+  for (let i = 0; i < 12; i++) setTimeout(() => press(room.left + 40 + Math.random() * (room.width - 80), room.top + 40 + Math.random() * (room.height - 120)), i * 55)
+}
+let sent = 0
+document.getElementById('send').onclick = () => { document.getElementById('count').textContent = `Sent ${++sent} time${sent === 1 ? '' : 's'}` }
+document.getElementById('copy').onclick = e => { e.currentTarget.textContent = 'Copied'; setTimeout(() => (e.target.textContent = 'Copy'), 900) }
+
+setVariant(current)
+document.querySelector(`[data-theme="th-${query.get('theme')}"]`)?.click()
+document.querySelector(`[data-accent="ac-${query.get('accent')}"]`)?.click()
+// ?at=640,300;900,500&t=0.8: splash there (in the room's own coordinates), run the water 0.8 s, and hold that picture.
+const at = query.get('at')
+const hold = Number(query.get('t')) || 0
+function shot() {
+  resize()
+  for (const [n, pt] of at.split(';').entries()) {
+    const [x, y] = pt.split(',').map(Number)
+    // Each later splash lands a quarter second after the last.
+    if (n > 0) { const damp = damping(); for (let s = 0; s < 15; s++) step(damp) }
+    splash(x, y)
+  }
+  const damp = damping()
+  for (let s = 0; s < hold * STEP_HZ; s++) step(damp)
+  draw()
+}
+if (at) addEventListener('load', () => setTimeout(() => {
+  if (hold) { shot(); addEventListener('resize', () => setTimeout(shot, 50)); return }
+  const r = canvas.getBoundingClientRect()
+  at.split(';').forEach((pt, n) => { const [x, y] = pt.split(',').map(Number); setTimeout(() => press(r.left + x, r.top + y), n * 250) })
+}, 100))
+</script>
+</body>
+</html>

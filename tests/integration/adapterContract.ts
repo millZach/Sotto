@@ -210,6 +210,11 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
         await step(() => skips.questions ? f.driver.raisePermission(sessionId, 'Run build?') : f.driver.raiseQuestion(sessionId, 'Which color?'), () => shown()?.requests.length === 1)
         const request = shown()!.requests[0]!
         await step(() => f.host.execute({ type: 'answer', commandId: randomUUID(), threadId: sessionId, requestId: request.id, answer: skips.questions ? '' : 'Blue', ...(skips.questions ? { approved: false } : {}) }), () => shown()?.requests.length === 0)
+        // The adapter wrote its answer before the request left the thread, but a fake takes scripted actions on a timer and
+        // reads its input separately, so it can end the turn below before it reads that answer and then judge it an answer
+        // to a request its turn's end had cancelled. The turn ends once the fake has the answer.
+        await expect.poll(async () => skips.questions ? (await f.driver.requests()).some(record => permissionDecision(record) === false)
+          : JSON.stringify(await f.driver.requests()).includes('Blue')).toBe(true)
         await step(() => f.driver.completeTurn(sessionId, 'Completed reply'), () => shown()?.status === 'idle'
           && (shown(forms[1])?.summary?.lastAssistant?.text ?? '').includes('Completed reply'))
         for (const form of forms) {

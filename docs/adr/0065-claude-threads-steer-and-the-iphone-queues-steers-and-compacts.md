@@ -6,6 +6,8 @@ Accepted October 9, 2026, by the owner's choice. The owner asked to steer Claude
 
 Decision 2 amended October 11, 2026, by ADR-0075: a steer that lands while Claude thinks or writes cuts that step, and the steer runs as the next turn. One that lands while a tool call runs is still read into the turn once the call returns.
 
+Decision 1 extended October 28, 2026 (#1511): a prompt sent between turns is acknowledged the same way, by the `started` lifecycle frame or the echo, whichever comes first, and the thread shows the message from then. Claude Code 2.1.312 says `queued` and `started` within a second of taking a prompt, but echoes it only as the model's reply begins, just before `message_start`. With the reply held back 20 seconds, the echo came after 21.4. So a send that waited for the echo read uncertain whenever the reply took longer than the 15-second deadline to begin, as the first one after a restart can. A send waits for `started` rather than `queued`, so a prompt Claude Code holds behind a turn of its own still keeps the thread running until it starts.
+
 ## Context
 
 Steering is the user's explicit submission of new input into a provider's running turn through a native mechanism (`CONTEXT.md`). Only Codex had one, `turn/steer` (ADR-0005). The Claude adapter refused a steer outright and wrote prompts only between turns (ADR-0038: one Claude Code CLI per thread over stream-json).

@@ -373,4 +373,26 @@ describe('branch bundles between two repositories (ADR-0082, ADR-0105 decision 8
     }
     expect(await readdir(machines.data('laptop').stagingDirectory)).toEqual([])
   })
+
+  it('sends the check snapshot pinned when the check was asked for, never one with work changed after (#1316 part 2)', async () => {
+    const laptop = new BranchBundles(machines.data('laptop'))
+    await writeFile(join(machines.laptop, 'notes.txt'), 'as asked\n')
+    const pinned = await laptop.pin(machines.laptop)
+    if ('type' in pinned) throw new Error('The laptop could not pin its work.')
+    expect(pinned.source).toMatchObject({ branch: 'main', snapshot: { untracked: ['notes.txt'], untrackedCount: 1 } })
+    // Work changed after the check was asked for stays out of what is sent.
+    await writeFile(join(machines.laptop, 'notes.txt'), 'changed later\n')
+    await writeFile(join(machines.laptop, 'later.txt'), 'new\n')
+    const sent = await laptop.sourceOf(machines.laptop, true, pinned.pinned)
+    expect(sent).toEqual(pinned.source)
+    if ('type' in sent) throw new Error('The pinned snapshot was not sent.')
+    expect(git(machines.laptop, 'show', `${sent.commit}:notes.txt`)).toBe('as asked')
+    expect(git(machines.laptop, 'ls-tree', '--name-only', sent.commit)).not.toContain('later.txt')
+    // A pin is the working copy's own: another, or one never pinned, is refused rather than snapshotted afresh.
+    expect(await laptop.sourceOf(machines.forge, true, pinned.pinned)).toEqual({ type: 'refused', reason: 'failed', message: branchMoveWords.snapshotGone })
+    expect(await laptop.sourceOf(machines.laptop, true, randomUUID())).toEqual({ type: 'refused', reason: 'failed', message: branchMoveWords.snapshotGone })
+    // Once its move has its answer it is let go of, so finished pins never crowd out one still waiting for its move.
+    laptop.unpin(pinned.pinned)
+    expect(await laptop.sourceOf(machines.laptop, true, pinned.pinned)).toEqual({ type: 'refused', reason: 'failed', message: branchMoveWords.snapshotGone })
+  })
 })

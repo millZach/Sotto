@@ -5,12 +5,13 @@ import { msg, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 
 import type { SottoPlatform } from '../../../../shared/platform'
-import type { InterfaceLanguageSetting } from '../../../../shared/interfaceLanguages'
+import { INTERFACE_LANGUAGE_SHOWN, type InterfaceLanguageSetting } from '../../../../shared/interfaceLanguages'
 import type { AppSettings, ReducedMotion, SettingsPatch } from '../../../../shared/settings'
 import { APPEARANCE_CONTRAST, type ThemeDefinition } from '../../../../shared/themes/library'
 import { Button } from '../../components/Button'
 import { Card } from '../../components/Card'
 import { Field } from '../../components/Field'
+import { Toggle } from '../../components/Toggle'
 import { Select } from '../../components/Select'
 import { platformCopy } from '../../platformCopy'
 import { appearancePreview, glassPaints, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
@@ -81,7 +82,9 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, on
   const creatureToggle = useOwlFeature('creature-toggle')
   // A creature this build holds (Lardo, outside Owl) shows and is marked as Sotto's own; the saved choice stays as it was.
   const creature = creatureShown(settings.creature, useLardoOffered())
-  const interfaceLanguage = useOwlFeature('interface-language')
+  const clickEffect = useOwlFeature('click-effect')
+  // Hidden on Owl too until the desktop catalogs are drafted (#1684).
+  const interfaceLanguage = useOwlFeature('interface-language') && INTERFACE_LANGUAGE_SHOWN
   const watcherOn = useOwlFeature('watcher')
   const nightFalls = useOwlFeature('night-falls') && watcherOn
   const { system: computerLanguage } = useInterfaceLanguageState()
@@ -197,6 +200,8 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, on
               <option value="on">{t`Reduce motion`}</option>
             </Select>
           </Field>
+          {clickEffect ? <Toggle setting="click-effect" label={t`Click effect`} checked={settings.clickEffect} onCheckedChange={checked => void onSave({ clickEffect: checked }, checked ? msg`Click effect on.` : msg`Click effect off.`).catch(() => false)}
+            description={t`A press anywhere but the composer or the sidebar sends waves of 0s and 1s in the accent through the room behind it. They never cover what you pressed. Reduced motion turns them off.`} /> : null}
           {nightFalls ? <NightFallsSettings settings={settings} onSave={patch => onSave(patch).catch(() => false)} /> : null}
         </div>
       </section>

@@ -39,6 +39,22 @@ msgstr ""
 msgid "{count, plural, one {{list} is Voxtype’s again.} other {{list} are Voxtype’s again.}}"
 msgstr ""
 
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{count, plural, one {Sotto couldn't confirm that # delegated thread on {name} stopped.} other {Sotto couldn't confirm that # delegated threads on {name} stopped.}}"
+msgstr ""
+
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{count, plural, one {Sotto couldn't restore # delegated thread on {name}.} other {Sotto couldn't restore # delegated threads on {name}.}}"
+msgstr ""
+
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{count, plural, one {Sotto couldn't settle # delegated thread on {name}.} other {Sotto couldn't settle # delegated threads on {name}.}}"
+msgstr ""
+
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{count, plural, one {Sotto couldn't stop # delegated thread on {name}, because {name} isn't connected.} other {Sotto couldn't stop # delegated threads on {name}, because {name} isn't connected.}}"
+msgstr ""
+
 #: src/main/hosts/hostUpdate.ts
 msgid "{count, plural, one {Sotto did not restart while it was updating # host. Nothing was lost. Restart again once that update has finished.} other {Sotto did not restart while it was updating # hosts. Nothing was lost. Restart again once those updates have finished.}}"
 msgstr ""
@@ -228,6 +244,22 @@ msgstr ""
 
 #: src/main/hosts/hostUpdate.ts
 msgid "{to} installed on {name}, but its host did not start, so Sotto started {from} again."
+msgstr ""
+
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{total, plural, one {It may still be working there. Open it from Tools › Agents and stop it once its machine is back.} other {They may still be working there. Open them from Tools › Agents and stop them once their machine is back.}}"
+msgstr ""
+
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{total, plural, one {It may still be working there. Open it from Tools › Agents to see where it stands.} other {They may still be working there. Open them from Tools › Agents to see where they stand.}}"
+msgstr ""
+
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{total, plural, one {Open it from Tools › Agents to restore it yourself.} other {Open them from Tools › Agents to restore them yourself.}}"
+msgstr ""
+
+#: src/main/hosts/crossMachineCascade.ts
+msgid "{total, plural, one {Open it from Tools › Agents to settle it yourself.} other {Open them from Tools › Agents to settle them yourself.}}"
 msgstr ""
 
 #: src/main/tools/browser.ts
@@ -832,6 +864,10 @@ msgstr ""
 msgid "Open Agents in the main Sotto window."
 msgstr ""
 
+#: src/main/agents/checkQueueIpc.ts
+msgid "Open checks in the main Sotto window."
+msgstr ""
+
 #: src/main/agents/delegationIpc.ts
 msgid "Open delegations in the main Sotto window."
 msgstr ""
@@ -913,6 +949,14 @@ msgstr ""
 msgid "Phone access on the host could not be reached. Nothing was saved. Nothing was changed. Check that the host is running, then try again."
 msgstr ""
 
+#: src/main/tools/browser.ts
+msgid "Point at something is not available in this version of Sotto."
+msgstr ""
+
+#: src/main/tools/browser.ts
+msgid "Point at something needs the theme's accent colour from the window."
+msgstr ""
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "Pull requests are unavailable on this host."
 msgstr ""
@@ -939,6 +983,10 @@ msgstr ""
 
 #: src/main/files/ipc.ts
 msgid "Refresh the workspace and use a relative directory path."
+msgstr ""
+
+#: src/main/hosts/desktopHostRouter.ts
+msgid "Remote host"
 msgstr ""
 
 #: src/main/omarchy/setup.ts

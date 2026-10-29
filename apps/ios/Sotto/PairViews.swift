@@ -10,7 +10,7 @@ struct PairFlow: View {
         Group {
             if let found = model.found { CodeStep(found: found) } else { NameStep() }
         }
-        .background(Palette.canvas)
+        .pageGround()
     }
 }
 
@@ -100,6 +100,8 @@ struct CodeStep: View {
     @EnvironmentObject var model: AppModel
     let found: FoundHost
     @State private var code = ""
+    @State private var paired = 0
+    @State private var refused = 0
     @FocusState var focused: Bool
     var body: some View {
         VStack(spacing: 0) {
@@ -129,13 +131,15 @@ struct CodeStep: View {
             let cleaned = PairingCode.cleaned(typed)
             if cleaned != typed { code = cleaned }
         }
+        .sensoryFeedback(.success, trigger: paired)
+        .sensoryFeedback(.error, trigger: refused)
     }
     private var detail: String {
         String(localized: "In Sotto on \(found.name): Settings › Hosts & phones › Pair a phone. For a computer without a screen, it is in Sotto on your main computer: Settings › Hosts & phones, then Phones on its row, then Pair a phone. A code works once, for five minutes.", comment: "%@ is the computer’s name.")
     }
     private func pair() {
         guard code.count == PairingCode.length else { return }
-        Task { await model.pair(code: code); if model.found == nil { code = "" } }
+        Task { await model.pair(code: code); if model.found == nil { paired += 1; code = "" } else { refused += 1 } }
     }
 }
 

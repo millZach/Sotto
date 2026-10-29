@@ -18,12 +18,13 @@ concurrency:
 jobs:
   testflight:
     name: Build and upload to TestFlight
-    runs-on: macos-26
+    # The iOS 27.1 SDK, the one the app is designed and captured against. Builds linked against iOS 26 showed no
+    # tab rail in the Duo cover screen's strip; we infer iOS gave them a window beside it (ADR-0151, amended).
+    runs-on: xcode-27
     timeout-minutes: 45
     environment: testflight
     env:
-      # App Store Connect refuses builds made with an SDK older than iOS 26. Keep in step with ci.yml.
-      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
     steps:
       - name: Check out the repository
         uses: actions/checkout@v4
@@ -46,6 +47,14 @@ jobs:
           TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           KEY_PATH: ${{ runner.temp }}/AuthKey.p8
           BUILD_NUMBER: ${{ github.run_number }}
+          # Share to Sotto (ADR-0157) is off until Apple knows its IDs: the export fails with "No profiles for
+          # 'com.millzach.sotto.ios.share' were found" while they are missing. Only the Apple account owner can add them, at
+          # developer.apple.com > Certificates, Identifiers & Profiles > Identifiers:
+          #   1. Register the App Group group.com.millzach.sotto.ios.
+          #   2. Register the App ID com.millzach.sotto.ios.share with the App Groups capability.
+          #   3. Turn on App Groups for com.millzach.sotto.ios and com.millzach.sotto.ios.share, each with that group.
+          # Then set this to on. Off, the upload carries the app without the extension or its App Group.
+          SHARE_EXTENSION: 'off'
         run: sh apps/ios/Scripts/testflight.sh
       - name: Remove the key
         if: always()

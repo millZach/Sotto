@@ -405,10 +405,15 @@ button {
   background: color-mix(in srgb, var(--tt-text) 10%, transparent);
   color: var(--tt-text);
   cursor: pointer;
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .widget-action:hover {
   background: color-mix(in srgb, var(--tt-text) 18%, transparent);
+}
+
+.widget-action:active {
+  background: color-mix(in srgb, var(--tt-text) 26%, transparent);
 }
 
 .widget-action[data-tone='stop'] {
@@ -425,6 +430,7 @@ button {
   letter-spacing: 0.3px;
   line-height: 1;
   cursor: pointer;
+  transition: border-color 120ms ease, color 120ms ease;
 }
 
 .widget-esc:hover {

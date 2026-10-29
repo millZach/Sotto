@@ -41,7 +41,7 @@ import { addTurnContext, type ActiveTurn, type TurnRecorder } from './turns'
 import { FirstOutputWatches, lendSendStages, SendStageClock } from './sendStages'
 import { noteThreadsReplaced } from '../../shared/threadListPatches'
 import { ThreadChangesDrift, ThreadMap, verifyingThreadChanges, type ActivityChangesSubscription, type AgentHostChanges } from './threadChanges'
-import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isWatcherWakeUpTurn, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isThreadArchived, isThreadClosed, isThreadTurnRunning, isUnsentThread, isWatcherWakeUpTurn, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { maintainProviderRecovery, retireLegacyProvider, stripRetiredEndpoint } from './providerRetirement'
 import { clientVersionOf, compareClientVersions, isComparableVersion } from './clientVersions'
 import { compareMuseVersions } from './museClientInstall'
@@ -76,7 +76,7 @@ import { withoutLegacyManagement, type HostAnswerTarget, type HostAttachmentFile
 import { agentCommandSchema } from '../../shared/agents'
 import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from './watcherCommands'
 import type { DelegationCommand, DelegationControlHooks } from './delegation'
-import { threadClearHold, threadDelegators, type ThreadClearFacts } from './threadClearing'
+import { threadClearHold, threadDelegators, unsentThreadRemovable, type ThreadClearFacts, type UnsentThreadFacts } from './threadClearing'
 import { quietLongerThan, THREAD_CLEAR_MAX, threadClearKeptWords, threadQuietSince, type ThreadClearKept, type ThreadClearKeptReason, type ThreadClearPreview } from '../../shared/threadClear'
 import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
 import { isImageAttachment, parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
@@ -363,6 +363,8 @@ function freezeSaved(value: unknown): void {
 }
 /** How long a delegation's hidden news waits after a send that surely did not go before it is tried again (ADR-0081). */
 const DELEGATION_NEWS_RETRY_MS = 10_000
+/** How long a thread made in this run stays unsent before the unsent sweep may remove it (ADR-0155). */
+const UNSENT_THREAD_GRACE_MS = 3_600_000
 /** How long closing waits for a thread title still being written, so it is saved (#980). Quit never waits longer for one. */
 export const TITLE_WRITE_CLOSING_WAIT_MS = 2_000
 /**
@@ -740,6 +742,26 @@ export class AgentControl {
     guard(); this.watcherOrigins.set(parsed, { guard, userSetup: true })
     return this.admitCommandShell(parsed)
   }
+  /**
+   * Adds a folder on this machine as a project for a worker Sotto placed here (#1690): a copy of the start's repository it
+   * found or cloned. A project that already has the folder is reused. It carries a guard as Sotto's own commands do, so it
+   * is never taken for the user's command, leaves the window's selection where it is and announces nothing. Resolves with
+   * the project's ID; a refusal rejects with its words.
+   */
+  async addProjectForPlacement(title: string, path: string): Promise<string> {
+    const parsed = agentCommandSchema.parse({ type: 'create-project', title, path, useExisting: true })
+    const guard = () => { if (this.disposed) throw new Error('Sotto is stopping.') }
+    guard(); this.watcherOrigins.set(parsed, { guard })
+    const answer = await this.admitCommandShell(parsed)
+    if (answer.error) throw new Error(answer.error)
+    const key = (value: string): string => process.platform === 'win32' ? resolve(value).toLowerCase() : resolve(value)
+    const provider = this.state.configuration.provider
+    const project = this.state.host.projects.find(item => key(item.path) === key(path) && (!item.providerId || item.providerId === provider))
+    if (!project) throw new Error('The project did not appear in the list. Try again.')
+    return project.id
+  }
+  /** Where new projects go by default, as the user configured it; empty for none. Read without copying the state. */
+  projectsDirectory(): string { return this.state.configuration.projectsDirectory }
   hasWatcherQueue(operationIds: ReadonlySet<string>): boolean { return this.followupStore.peek().items.some(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)) }
   async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
     const failed = await this.followupStore.cancelWatcher(operationIds)
@@ -868,6 +890,8 @@ export class AgentControl {
   private answeredRequests: Saved['answeredRequests'] = []
   /** Ephemeral view interest; never persisted, selected or granted assignment authority. */
   private viewedThreadIds: readonly string[] = []
+  /** When each thread made in this run was made, until it is sent to or goes, for the unsent sweep's hour (ADR-0155). */
+  private readonly madeThisRun = new Map<string, number>()
   /** Threads that finished while no client showed them; what a client shows is what it observes (ADR-0046). */
   private readonly finishedUnread: FinishedUnread
   /** Failed threads a client has shown since they failed, or the user dismissed; their rows read Done (ADR-0092). */
@@ -1032,7 +1056,7 @@ export class AgentControl {
      */
     babysittingRetired?: boolean
     /** What clearing did, as stable event names with a count or a reason's code; never a title, path or branch. */
-    logClear?: (event: 'threads-cleared' | 'thread-clear-kept', detail: string) => void
+    logClear?: (event: 'threads-cleared' | 'thread-clear-kept' | 'unsent-threads-removed', detail: string) => void
     /** Times a held prototype question and the minute after a send-back (ADR-0108); injectable so tests own the clock. */
     prototypeQuestionTimer?: (run: () => void, ms: number) => () => void
     /** The next prompt (ADR-0132): told when a thread starts or finishes, and when the user sends it something. Absent while its Owl feature is off. */
@@ -1482,7 +1506,40 @@ export class AgentControl {
       if (ids.length) await this.clearThreads(ids, days, true)
     }).catch(() => { this.logClear('threads-cleared', 'failed') })
   }
-  private logClear(event: 'threads-cleared' | 'thread-clear-kept', detail: string): void {
+  /**
+   * Removes unsent threads no client holds (ADR-0155), through the deletion Clear settled threads uses (ADR-0140), so
+   * opening New thread anywhere and walking away leaves nothing behind. It rides the worktree sweep, at start and every
+   * hour, on every host, Owl or stable, and says nothing on screen. An unsent thread from before this run goes at its
+   * first sweep; one made in this run goes once it has stayed unsent for an hour.
+   */
+  removeUnsentThreads(): Promise<void> {
+    const host = this.dependencies.host
+    if (this.disposed || !host.deleteThreads) return Promise.resolve()
+    return this.clearSerially(async () => {
+      const projects = new Map(this.state.host.projects.map(project => [project.id, project]))
+      const unsent = new Set(this.state.host.threads.filter(thread => isUnsentThread(thread, projects.get(thread.projectId))).map(thread => thread.id))
+      // One sent to is no longer the sweep's; one still being made, not yet in the list, keeps its hour.
+      for (const [id, madeAt] of [...this.madeThisRun]) if (!unsent.has(id) && (this.threadById(id) || Date.now() - madeAt >= UNSENT_THREAD_GRACE_MS)) this.madeThisRun.delete(id)
+      const facts = this.unsentFacts()
+      const ids = [...unsent].filter(id => unsentThreadRemovable(this.threadById(id), facts))
+      if (!ids.length) return
+      // Asked again of each in its own lane, as it goes: a client that opened it or typed in it meanwhile keeps it.
+      const result = await host.deleteThreads!(ids, { automatic: true, hold: id => unsentThreadRemovable(this.threadById(id), this.unsentFacts()) ? null : 'working' })
+      if (!result.deleted.length) return
+      await this.forgetDeletedThreads(result.deleted)
+      this.logClear('unsent-threads-removed', String(result.deleted.length))
+      this.publish()
+    }).catch(() => { this.logClear('unsent-threads-removed', 'failed') })
+  }
+  private unsentFacts(): UnsentThreadFacts {
+    const now = Date.now()
+    const drafted = new Set((this.state.threadDrafts ?? []).filter(draft => draft.text.trim() !== '' || draft.attachments.length > 0 || (draft.files?.length ?? 0) > 0).map(draft => draft.threadId))
+    const delivered = new Set((this.state.deliveries ?? []).map(delivery => delivery.threadId))
+    return { ...this.clearFacts(),
+      held: id => this.viewedThreadIds.includes(id) || id === this.state.draftThreadId && this.hasDraft() || id === this.state.activeThreadId || drafted.has(id) || delivered.has(id),
+      old: id => now - (this.madeThisRun.get(id) ?? Number.NEGATIVE_INFINITY) >= UNSENT_THREAD_GRACE_MS }
+  }
+  private logClear(event: 'threads-cleared' | 'thread-clear-kept' | 'unsent-threads-removed', detail: string): void {
     try { this.dependencies.logClear?.(event, detail) } catch { /* Logging never stops a clear. */ }
   }
   /**
@@ -2156,10 +2213,14 @@ export class AgentControl {
     if (this.attachmentPreviews.contentCleanupBlocked()) return
     await this.attachments.sweep(() => this.ownedAttachments(), undefined, previewed)
   }
-  /** A staged image as the adapter receives it: the handle, and its bytes read from the store only when asked. */
+  /**
+   * A staged image as the adapter receives it: the handle, and its bytes read from the store only when asked. Point at
+   * something's feedback goes with it, since delivery writes it for the provider and marks the message's record
+   * (ADR-0154).
+   */
   private promptImage(handle: AgentAttachmentHandle): PromptImage {
-    const { id, name, mimeType, sizeBytes, digest } = handle
-    return { id, name, mimeType, sizeBytes, digest, read: async () => {
+    const { id, name, mimeType, sizeBytes, digest, browserFeedback } = handle
+    return { id, name, mimeType, sizeBytes, digest, ...(browserFeedback ? { browserFeedback } : {}), read: async () => {
       const bytes = await this.attachments.read(digest)
       if (!bytes) throw new Error(this.attachments.missing)
       return bytes
@@ -2834,7 +2895,7 @@ export class AgentControl {
         throw new Error(result.failure === 'install-step'
           ? `mise installed ${label}${record.published ? ` ${record.published}` : ''}, but its install step did not finish${result.detail ? ` (${result.detail})` : ''}. Sotto still starts ${record.installed}, and your threads kept working.`
           : result.failure === 'not-listed'
-            ? `mise does not list ${label} ${record.published ?? 'the published version'} yet, so Sotto did not install it. ${record.installed} is still installed, and your threads kept working. Try again later.`
+            ? `mise does not list ${label} ${record.published ?? 'the published version'} yet, so Sotto could not install it. ${record.installed} is still installed, and your threads kept working. Try again later.`
           : `${label} did not update${result.detail ? `. ${result.detail}` : '.'} Your installed version is unchanged, and your threads kept working.`)
       }
       // Each host finds the new client and reads its version. One that cannot says why, stays on the client it
@@ -3349,7 +3410,9 @@ export class AgentControl {
         }
         case 'git-pull-request-action': {
           if (!host.runPullRequestAction) throw new Error('Pull requests are unavailable.')
-          const { snapshot, notice } = await host.runPullRequestAction({ threadId: command.threadId, url: command.url, action: command.action, method: command.method })
+          // A receipt's head comes from the socket server only (#1691); the window's own presses carry none.
+          const { snapshot, notice } = await host.runPullRequestAction({ threadId: command.threadId, url: command.url, action: command.action, method: command.method,
+            ...(command.matchHeadCommit ? { matchHeadCommit: command.matchHeadCommit } : {}) })
           this.acceptSnapshot(snapshot)
           this.state.notice = notice
           this.state.error = null
@@ -4772,7 +4835,8 @@ export class AgentControl {
           if (!origin && selectionRevision === this.selectionRevision) {
             this.state.activeProjectId = known.id; this.state.activeThreadId = null
           }
-          this.observe(); this.say(`Opened ${known.title}.`)
+          // Sotto's own setup of a copy for a worker (#1690) announces nothing.
+          this.observe(); if (!origin || origin.userSetup) this.say(`Opened ${known.title}.`)
           return
         }
         if (!existing) await mkdir(path, { recursive: true })
@@ -4783,7 +4847,7 @@ export class AgentControl {
           this.state.activeProjectId = projectId; this.state.activeThreadId = null
         }
         this.observe()
-        this.say(`Created ${command.title} in ${path}.`)
+        if (!origin || origin.userSetup) this.say(`Created ${command.title} in ${path}.`)
         return
       }
       case 'settle-project':
@@ -4861,6 +4925,7 @@ export class AgentControl {
         // Only a check its machine's queue started takes the check worktree (#1312).
         if (command.check !== undefined && !origin) throw new Error('Only a check that Watcher or a delegation starts works in the check worktree. Nothing was made.')
         const threadId = command.threadId ?? randomUUID()
+        this.madeThisRun.set(threadId, Date.now())
         if (turn) { turn.threadId = threadId; turn.projectId = command.projectId }
         await this.dispatch({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
           ...(command.titleSource ? { titleSource: command.titleSource } : {}),
@@ -5353,6 +5418,18 @@ export class AgentControl {
         await this.dependencies.bindRequestDraftDecision?.({ kind: 'thread', ownerId: command.threadId, providerId: provider, requestId: command.requestId, questions: answerQuestions }, command.commandId, draftAnswers)
         this.canAct(undefined, draftKept); this.guardAuthority(command, turn); validate?.()
       }
+      if (prompt && isUsageProviderId(provider)) {
+        // A send the guard already refuses writes nothing to Usage; the guard runs again just before the provider hears it.
+        writeGuard?.()
+        // Handed to Usage without waiting: the send never waits for Usage's store, and the selection is written right after
+        // it, always ahead of the echo that accepts it (ADR-0078 and ADR-0083, October 27 amendments).
+        try { this.dependencies.usage?.submitPrompt({ providerId: provider, threadId: prompt.threadId,
+          messageId: prompt.messageId, modelId: this.thread(prompt.threadId).modelId, at: new Date().toISOString(),
+          // With restarting stopped threads on, Watcher's news counts as Watcher's (ADR-0144): its sends before Sotto's notes.
+          kind: this.dependencies.restartStoppedThreads === true ? origin?.operationId ? 'watcher' : wakeUp ? 'wake-up' : 'user'
+            : wakeUp ? 'wake-up' : origin?.operationId ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
+        catch { /* A usage failure cannot refuse or resend the user's message. */ }
+      }
       const providerStartedAt = Date.now()
       // The images become the adapter's to read here, at the provider boundary, and not before (ADR-0031).
       const hostCommand = (prompt?.attachments?.length
@@ -5365,14 +5442,6 @@ export class AgentControl {
           endLoan = lendSendStages(command.commandId, stages)
         }
         writeGuard?.()
-        if (prompt && isUsageProviderId(provider)) {
-          try { this.dependencies.usage?.submitPrompt({ providerId: provider, threadId: prompt.threadId,
-            messageId: prompt.messageId, modelId: this.thread(prompt.threadId).modelId, at: new Date().toISOString(),
-            // With restarting stopped threads on, Watcher's news counts as Watcher's (ADR-0144): its sends before Sotto's notes.
-            kind: this.dependencies.restartStoppedThreads === true ? origin?.operationId ? 'watcher' : wakeUp ? 'wake-up' : 'user'
-              : wakeUp ? 'wake-up' : origin?.operationId ? 'watcher' : 'user', inputKind: command.type === 'steer' ? 'steer' : 'send' }) }
-          catch { /* A usage failure cannot refuse or resend the user's message. */ }
-        }
         if (wakeUp) this.wakeUpsOffered.add(command.commandId)
         result = await (writeGuard && this.dependencies.host.executeFromWatcher
           ? this.dependencies.host.executeFromWatcher(hostCommand, writeGuard) : this.dependencies.host.execute(hostCommand)).catch(error => {
@@ -5877,6 +5946,7 @@ export class AgentControl {
     const queue = new PositionQueue(position)
     for (const id of paged.keys()) queue.push(id)
     const marked = new Map<string, AgentThread>()
+    const examineNext = new Set<string>()
     this.evictions = []
     for (let id = queue.pop(); id !== undefined; id = queue.pop()) {
       const reached = position(id)
@@ -5885,8 +5955,11 @@ export class AgentControl {
       named.add(id)
       const thread = paged.get(id) ?? this.questionPages.view(this.shownBeforePages({ ...this.state.host, threads: [map.get(id)!] }, new Set())).threads[0]
       if (thread) marked.set(id, this.prototypeReady.mark(thread, settled))
-      for (const evicted of this.evictions.splice(0)) if (position(evicted) > reached && map.has(evicted)) queue.push(evicted)
+      for (const evicted of this.evictions.splice(0)) if (position(evicted) > reached && map.has(evicted)) { queue.push(evicted); examineNext.add(evicted) }
     }
+    // A thread whose kept reply a mark let go was marked here, but (a) read its pages with that reply still kept; the next
+    // change names it again, so its pages are examined without it, as the whole path examines every thread (#1535).
+    for (const id of examineNext) this.reshow.add(id)
     // (c) Once: prototype questions over the threads marked, in display order, letting go of the records of threads that
     // went, and the prototype-ready mark's questions of threads that went. Run whatever the change names, so a change that
     // only removes threads lets go of what was kept for them too.

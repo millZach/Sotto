@@ -6,8 +6,10 @@
 .continue-now { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -12px 0 26px; }
 .continue-now__lead { color: var(--tt-text-2); font-size: 13.5px; }
 .continue-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; padding: 0 11px; border: 1px solid var(--tt-field-border); border-radius: 6px;
-  background: transparent; color: var(--tt-text); font: inherit; font-size: 13.5px; white-space: nowrap; cursor: pointer; }
+  background: transparent; color: var(--tt-text); font: inherit; font-size: 13.5px; white-space: nowrap; cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .continue-chip:hover:not([aria-disabled='true']), .continue-chip[aria-pressed='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); }
+.continue-chip:active:not([aria-disabled='true']):not([aria-pressed='true']) { background: var(--tt-hover-strong); }
 .continue-chip[aria-pressed='true'] { border-color: var(--tt-accent-border); }
 /* A provider that cannot take the thread now keeps its place, dashed, with why beside its name. */
 .continue-chip[aria-disabled='true'] { border-style: dashed; color: var(--tt-text-muted); cursor: not-allowed; }
@@ -22,14 +24,21 @@
 /* Over the composer, as Watcher's handover offer is: what sending does, where the new thread works, what it carries. */
 .continue-strip { margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated);
   color: var(--tt-text); font-size: 13.5px; line-height: 1.45; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .continue-strip {
+    animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1);
+  }
+}
 .continue-strip[data-tone='error'] { border-color: var(--tt-error-border); }
 .continue-strip__lead { display: flex; align-items: flex-start; gap: 8px; }
 .continue-strip__lead > svg { flex: none; margin-top: 2px; color: var(--tt-accent-text); }
 .continue-strip__lead > p { flex: 1 1 auto; min-width: 0; margin: 0; }
 .continue-strip__lead strong { font-weight: 600; }
 .continue-strip__dismiss { display: grid; flex: none; place-items: center; width: 26px; height: 26px; margin: -4px -5px -4px 0; padding: 0; border: 0; border-radius: var(--tt-radius-sm);
-  background: transparent; color: var(--tt-text-2); cursor: pointer; }
+  background: transparent; color: var(--tt-text-2); cursor: pointer;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .continue-strip__dismiss:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
+.continue-strip__dismiss:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .continue-strip__dismiss:disabled { opacity: .55; cursor: default; }
 .continue-strip__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 0 23px; }
 .continue-strip__chips .thread-chip { color: var(--tt-text); }

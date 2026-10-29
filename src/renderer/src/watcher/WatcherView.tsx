@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Marked } from '../components/marks'
-import { ArrowUp, ChevronDown, List } from 'lucide-react'
+import { ChevronDown, List } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { shownWords } from '../features/settings/laterWords'
 import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
@@ -14,6 +14,8 @@ import { claimRoomFocus } from '../components/AppShell'
 import { useOptionalApp } from '../state/AppContext'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAgents } from '../agents/AgentContext'
+import { KeyedGlyph } from '../agents/composerPlate'
+import { threadChordCap } from '../agents/threadShortcuts'
 import { WayOffThePage } from '../agents/SidebarFrame'
 import { UpdateControl, type UpdateControlProps } from '../features/updates/UpdateControl'
 import { EffortPicker } from '../agents/EffortPicker'
@@ -23,7 +25,7 @@ import { OwlRoomSky } from '../agents/OwlSky'
 import { useClock } from '../agents/paneGrid'
 import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
 import { useShared } from '../agents/stateSharing'
-import { describeThreads, type ThreadRow } from '../agents/threadFacts'
+import { threadDescriber, useWordsRevision, type ThreadRow } from '../agents/threadFacts'
 import { useContinueEnabled } from '../agents/continuations'
 import { effortChoices } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
@@ -153,8 +155,8 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const modelName = model?.name
   const accountProvider = providerName ?? model?.provider
   return <>
-    <div className="thread-transcript">
-      <div className="thread-workspace__transcript watcher-first">
+    <div className="thread-transcript" data-room-backdrop="">
+      <div className="thread-workspace__transcript watcher-first" data-room-backdrop="">
         <div className="watcher-first__intro">
           <WatcherOwl size={28} className="watcher-first__owl" />
           <h2><Trans>Start Watcher</Trans></h2>
@@ -167,7 +169,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
         </div>
       </div>
     </div>
-    {model !== undefined ? <div className="thread-workspace__compose">
+    {model !== undefined ? <div className="thread-workspace__compose" data-room-backdrop="">
       {error ? <p className="agent-error watcher-first__error tt-paragraph" role="alert">{error}</p> : null}
       <form className="thread-prompt" onSubmit={event => { event.preventDefault(); void start() }}>
         <EffortTrace />
@@ -199,8 +201,8 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
             {starting ? <span className="thread-prompt__status" role="status"><Trans>Starting Watcher…</Trans></span> : null}
           </div>
           <div className="thread-prompt__actions">
-            <Button iconOnly className="thread-prompt__send" type="submit" aria-label={t`Start Watcher and send`} title={canSend ? t`Start Watcher and send` : t`Write what Watcher should do first`} disabled={!canSend}>
-              <ArrowUp size={15} strokeWidth={2.25} aria-hidden="true" />
+            <Button className="thread-prompt__send" type="submit" aria-label={t`Start Watcher and send`} aria-keyshortcuts="Enter" title={canSend ? t`Start Watcher and send` : t`Write what Watcher should do first`} disabled={!canSend}>
+              <KeyedGlyph role="send" keyCap={threadChordCap('enter', app?.platform ?? 'win32')} />
             </Button>
           </div>
         </div>
@@ -391,7 +393,11 @@ export function WatcherView({ now: fixedNow, update = null }: {
   const current = room?.state?.current ?? null
   const watcherId = room?.currentThreadId ?? null
   const continued = useContinueEnabled()
-  const rows = useShared(useMemo(() => state === null ? [] : describeThreads(state, now, { continued }), [state, now, continued]))
+  // Describes only the threads an update changed and hands back the rest as they were, and every thread again when the
+  // interface language or its messages change.
+  const [describeRows] = useState(threadDescriber)
+  const words = useWordsRevision()
+  const rows = useShared(useMemo(() => state === null ? [] : describeRows(state, now, { continued }), [state, now, continued, words]))
   const groups = useOverview(state, rows, now, watcherId)
   const needs = useMemo<readonly OverviewEntry[]>(() => groups.find(group => group.group === 'Needs you')?.entries ?? [], [groups])
   const rowsById = useMemo(() => new Map(rows.map(row => [row.thread.id, row] as const)), [rows])
@@ -572,12 +578,12 @@ export function WatcherView({ now: fixedNow, update = null }: {
 
   const beside = besideRow !== undefined && state !== null
   const share = shownShare(width, view.share)
-  return <Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} {...marks}>
-    <section className="thread-workspace" aria-label={t`Watcher’s room`}>
-      <div className="thread-workspace__body" data-panes>
-        <div className="thread-panes">
-          <div ref={area} className="thread-panes__area" style={{ '--watcher-share': share } as CSSProperties}>
-            <Marked>{paneMarks => <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" {...paneMarks} data-thread-id={watcherId ?? undefined} data-focused={focusedPane === 'watcher' || !beside || undefined}
+  return <Marked>{marks => <div className={`management-view threads-view watcher-room${mac ? ' threads-view--mac' : ''}`} data-beside={beside || undefined} data-room-backdrop="" {...marks}>
+    <section className="thread-workspace" data-room-backdrop="" aria-label={t`Watcher’s room`}>
+      <div className="thread-workspace__body" data-room-backdrop="" data-panes>
+        <div className="thread-panes" data-room-backdrop="">
+          <div ref={area} className="thread-panes__area" data-room-backdrop="" style={{ '--watcher-share': share } as CSSProperties}>
+            <Marked>{paneMarks => <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" data-room-backdrop="" {...paneMarks} data-thread-id={watcherId ?? undefined} data-focused={focusedPane === 'watcher' || !beside || undefined}
               data-under-controls={!beside || undefined} role="region" aria-label="Watcher"
               onFocusCapture={() => setFocusedPane('watcher')} onPointerDownCapture={() => setFocusedPane('watcher')}>
               <WatcherNightScene shown={sceneShown} held={fixedNow !== undefined} place={app?.settings?.watcherScene} owls={owls} glowing={glowing} onOpen={openThread} onShowAll={showAll} />
