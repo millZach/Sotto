@@ -45,9 +45,10 @@ export const EFFORT_COLOR_LABELS: Record<EffortColor, string> = { ember: 'Ember'
  * The little pixel character that stands above a thread's composer while it watches, works or waits: Sotto's own, or
  * Claude bot. It is the same character in every pose, and a choice about how Sotto looks, never about what it claims.
  */
-export type Creature = 'sotto' | 'claude'
-export const CREATURES = ['sotto', 'claude'] as const satisfies readonly Creature[]
-export const CREATURE_LABELS: Record<Creature, string> = { sotto: 'Sotto', claude: 'Claude bot' }
+/** Lardo is an Owl feature (`lardo-creature`): a build that holds him neither offers nor shows him, and keeps a saved `lardo` whole. */
+export type Creature = 'sotto' | 'claude' | 'lardo'
+export const CREATURES = ['sotto', 'claude', 'lardo'] as const satisfies readonly Creature[]
+export const CREATURE_LABELS: Record<Creature, string> = { sotto: 'Sotto', claude: 'Claude bot', lardo: 'Lardo' }
 export type HistoryRetention = 25 | 100 | 500 | 'unlimited'
 
 /**

@@ -11,8 +11,9 @@ import { ClaudeBotBabysitting } from './ClaudeBotBabysitting'
 import { ClaudeBotHeld } from './ClaudeBotHeld'
 import { ClaudeBotMonitoring } from './ClaudeBotMonitoring'
 import { ClaudeBotWorking } from './ClaudeBotWorking'
-import { EMPTY_PATH, GLASS_FLIP, GLASS_PERIOD, grainPath, HOURGLASS_CENTRE, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, BOTTOM_ROWS, sandPath, TOP_ROWS } from './hourglass'
-import { usePixelLoop } from './pixelLoop'
+import { Lardo } from './Lardo'
+import { EMPTY_PATH, glassFrame, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, sandPath, TOP_ROWS } from './hourglass'
+import { miniFrame, usePixelLoop, walkFrame } from './pixelLoop'
 import { shownCount } from '../state/interfaceNumbers'
 import './threadMonitor.css'
 
@@ -29,17 +30,10 @@ export function MonitoringCreature(): ReactNode {
   const feet = useRef<SVGPathElement>(null)
   const glass = useRef<SVGGElement>(null)
   usePixelLoop(actor, ({ time, still, width }) => {
-    const reach = Math.max(0, width - 80), phase = time % 14
-    let x = reach, direction = 1, walking = false
-    if (!still) {
-      if (phase < 4) { x = reach * phase / 4; walking = true }
-      else if (phase < 9) x = reach
-      else if (phase < 13) { x = reach * (1 - (phase - 9) / 4); direction = -1; walking = true }
-      else { x = 0; direction = -1 }
-    }
+    const { x, left: facingLeft, walking } = walkFrame(time, still, width)
     const step = Math.floor(time * 7) % 4
     if (actor.current) actor.current.style.transform = `translateX(${Math.round(x / 2) * 2}px)`
-    facing.current?.setAttribute('transform', direction < 0 ? 'translate(40 0) scale(-1 1)' : '')
+    facing.current?.setAttribute('transform', facingLeft ? 'translate(40 0) scale(-1 1)' : '')
     body.current?.setAttribute('transform', walking && step % 2 === 1 ? 'translate(0 -1)' : '')
     const left = walking ? [9, 11, 13, 11][step]! : 11
     const right = walking ? [23, 21, 19, 21][step]! : 21
@@ -81,22 +75,13 @@ function HeldCreature(): ReactNode {
   const bottomSand = useRef<SVGPathElement>(null)
   const grain = useRef<SVGPathElement>(null)
   usePixelLoop(actor, ({ time, still }) => {
-    // Held motion keeps a half-run glass: the pose still reads as waiting without a frame of movement.
-    const phase = still ? GLASS_PERIOD / 2 : time % GLASS_PERIOD
-    const running = GLASS_PERIOD - GLASS_FLIP
-    const drain = Math.min(1, phase / running)
-    const spin = phase > running ? (phase - running) / GLASS_FLIP : 0
-    const gone = Math.min(3, Math.floor(drain * 3))
+    const sand = glassFrame(time, still)
     body.current?.setAttribute('transform', !still && Math.floor(time * 1.2) % 2 === 1 ? 'translate(0 -1)' : '')
     eyes.current?.setAttribute('d', !still && time % 5 > 4.86 ? SHUT_EYES : OPEN_EYES)
-    // The rotation only ever runs during the flip, and never carries over: the sand rows live in the
-    // rotated group, so a half turn that outlasted the flip would empty the chamber the reader sees
-    // filling, and the sand would climb. Because the vessel is symmetric, ending a flip at half a turn
-    // looks exactly like starting the next cycle upright, so the full chamber stays where the eye left it.
-    glass.current?.setAttribute('transform', `rotate(${spin * 180} ${HOURGLASS_CENTRE})`)
-    topSand.current?.setAttribute('d', sandPath(TOP_ROWS.slice(gone)))
-    bottomSand.current?.setAttribute('d', sandPath(BOTTOM_ROWS.slice(3 - gone)))
-    grain.current?.setAttribute('d', drain < 1 && !still ? grainPath(time) : EMPTY_PATH)
+    glass.current?.setAttribute('transform', sand.turn)
+    topSand.current?.setAttribute('d', sand.top)
+    bottomSand.current?.setAttribute('d', sand.bottom)
+    grain.current?.setAttribute('d', sand.grain)
   })
   return <div className="thread-monitor__actor" ref={actor} aria-hidden="true">
     <svg className="thread-monitor__creature" viewBox="0 0 40 32" width="80" height="64" focusable="false" shapeRendering="crispEdges">
@@ -152,7 +137,6 @@ function BabysittingCreature(): ReactNode {
 /** A small agent: the creature's silhouette at a third of the size, on a 12 × 10 grid. */
 const MINI = 'M3 2h2v2H3z M7 1h2v3H7z M2 4h8v5H2z M1 6h10v2H1z M3 9h2v1H3z M7 9h2v1H7z'
 const MINI_EYES = 'M4 5h1v1H4z M7 5h1v1H7z'
-const MINI_WIDTH = 24
 /** No more small agents than the track can show without crowding it; the readout carries the real count. */
 const MAX_WORKING_MINIS = 6
 
@@ -171,15 +155,8 @@ function WorkingCreature({ agents }: { readonly agents: number }): ReactNode {
   usePixelLoop(actor, ({ time, still, width }) => {
     const reach = Math.max(0, width - 80)
     if (actor.current) actor.current.style.transform = `translateX(${Math.round(reach / 2) * 2}px)`
-    // A mini leaves from under the raised arm and walks until it is past the track's clipped left edge.
-    const start = Math.max(0, width - 96), span = start + MINI_WIDTH
-    // Held still, they stand in a line a step apart: a stride clear of each other where the track allows,
-    // closing up on the narrowest track so the last never falls off the end.
-    const stride = Math.min(MINI_WIDTH + 12, Math.max(0, start - 12) / count)
     minis.current.forEach((mini, index) => {
-      if (!mini) return
-      const x = still ? Math.max(0, start - 12 - index * stride) : start - span * ((time * 0.09 + index * 0.17) % 1)
-      mini.style.transform = `translate(${Math.round(x / 2) * 2}px, ${!still && Math.floor(time * 6 + index) % 2 ? -1 : 0}px)`
+      if (mini) mini.style.transform = miniFrame(time, still, width, index, count).transform
     })
     arm.current?.setAttribute('transform', !still && Math.floor(time * 2) % 2 ? 'translate(0 -1)' : '')
     eyes.current?.setAttribute('d', !still && time % 5 > 4.86 ? SHUT_EYES : OPEN_EYES)
@@ -247,13 +224,37 @@ export function useHeldAction(thread: Pick<AgentThread, 'status' | 'activities' 
   return action !== undefined && heldLongEnough(action, now ?? Date.now()) ? action : undefined
 }
 
+/** The four poses the creature has, each owned by its own glossary entry; the ornament's `kind`. */
+type OrnamentKind = 'monitoring' | 'working' | 'held' | 'babysitting'
+
+/** Each drawn character's own component for each pose. Lardo wears all four through one component of his own. */
+const DRAWN: Record<Exclude<Creature, 'lardo'>, Record<OrnamentKind, (props: { readonly agents: number }) => ReactNode>> = {
+  sotto: { monitoring: MonitoringCreature, working: WorkingCreature, held: HeldCreature, babysitting: BabysittingCreature },
+  claude: { monitoring: ClaudeBotMonitoring, working: ClaudeBotWorking, held: ClaudeBotHeld, babysitting: ClaudeBotBabysitting },
+}
+
+/**
+ * `character` in `pose`: the one place a character is chosen for a pose, above a composer and in the Appearance preview.
+ * `agents` is read only by the working pose; `playful` false leaves Lardo unclickable.
+ */
+export function CreaturePose({ character, pose, agents = 1, playful = true }: {
+  readonly character: Creature
+  readonly pose: OrnamentKind
+  readonly agents?: number
+  readonly playful?: boolean
+}): ReactNode {
+  if (character === 'lardo') return <Lardo pose={pose} agents={agents} playful={playful} />
+  const Drawn = DRAWN[character][pose]
+  return <Drawn agents={agents} />
+}
+
 /**
  * The one shape every pose wears: a creature on its track, and a readout naming what it stands for.
  * `kind` marks which pose is up; the composer reserves its room from the ornament's presence alone.
  */
 function ThreadOrnament({ kind, character, creature, label, title, status, wide = false, quiet }: {
-  readonly kind: 'monitoring' | 'working' | 'held' | 'babysitting'
-  /** Which character the setting chose; `creature` is already drawn as it. The stylesheet reads it for the bot's colours. */
+  readonly kind: OrnamentKind
+  /** Which character the setting chose; `creature` is already drawn as it. The stylesheets read it for the bot's and Lardo's colours. */
   readonly character: Creature
   readonly creature: ReactNode
   readonly label: string
@@ -287,7 +288,7 @@ export function ThreadMonitor({ tasks }: { readonly tasks: readonly AgentMonitor
   if (!first) return null
   const taskCount = tasks.length
   return <ThreadOrnament kind="monitoring" character={character}
-    creature={character === 'claude' ? <ClaudeBotMonitoring key={first.id} /> : <MonitoringCreature key={first.id} />}
+    creature={<CreaturePose key={first.id} character={character} pose="monitoring" />}
     label={first.label} title={tasks.map(task => task.label).join('\n')}
     status={taskCount === 1 ? t({ message: 'Monitoring', comment: 'The readout beside the creature: the agent is monitoring a task it started.' }) : t`Monitoring ${{ taskCount: shownCount(taskCount) }} tasks`} />
 }
@@ -311,7 +312,7 @@ export function ThreadWorking({ work }: { readonly work: readonly AgentBackgroun
   const first = agents[0]
   if (!first) return null
   return <ThreadOrnament kind="working" character={character}
-    creature={character === 'claude' ? <ClaudeBotWorking agents={agents.length} /> : <WorkingCreature agents={agents.length} />}
+    creature={<CreaturePose character={character} pose="working" agents={agents.length} />}
     label={first.label} title={[...agents, ...commands].map(task => task.label).join('\n')} status={workingStatus(t({ message: 'Working', comment: 'The readout beside the creature: background work the turn started is running.' }), agents.length, commands.length)}
     wide={commands.length > 0} />
 }
@@ -327,7 +328,7 @@ export function ThreadWaitingCommand({ commands, now }: { readonly commands: rea
   const first = commands[0]
   if (!first) return null
   return <ThreadOrnament kind="held" character={character}
-    creature={character === 'claude' ? <ClaudeBotHeld key={first.id} /> : <HeldCreature key={first.id} />} label={first.label}
+    creature={<CreaturePose key={first.id} character={character} pose="held" />} label={first.label}
     title={commands.map(task => task.label).join('\n')} wide={commands.length > 1}
     status={<>{t({ message: 'Waiting', comment: 'The readout beside the creature: the thread waits on something it started.' })}{commands.length > 1 ? ` · ${commandCount(commands.length)}` : ''}
       {first.startedAt ? <WaitedFor startedAt={first.startedAt} now={now} /> : null}</>} />
@@ -342,7 +343,7 @@ export function ThreadHeld({ action, now }: { readonly action: HeldAction; reado
   const character = useCreature()
   const label = heldLabel(action)
   return <ThreadOrnament kind="held" character={character}
-    creature={character === 'claude' ? <ClaudeBotHeld key={action.id} /> : <HeldCreature key={action.id} />} label={label} title={label}
+    creature={<CreaturePose key={action.id} character={character} pose="held" />} label={label} title={label}
     status={<>{t({ message: 'Waiting', comment: 'The readout beside the creature: the thread waits on something it started.' })}<WaitedFor startedAt={action.startedAt} now={now} /></>} />
 }
 
@@ -360,7 +361,7 @@ export function ThreadBabysitting({ thread, now }: { readonly thread: Pick<Agent
   // It comes back after every turn, so it is named rather than announced. Where the time does not fit, it drops whole
   // (threadMonitor.css); the hover title and the Pull request surface still say it.
   return <ThreadOrnament kind="babysitting" character={character}
-    creature={character === 'claude' ? <ClaudeBotBabysitting /> : <BabysittingCreature />} label={readout.label} title={readout.title}
+    creature={<CreaturePose character={character} pose="babysitting" />} label={readout.label} title={readout.title}
     quiet={since ? t`Babysitting ${label} since ${since}` : t`Babysitting ${label}`}
     status={<>{t({ message: 'Babysitting', comment: 'The readout beside the creature: Sotto is babysitting a pull request.' })}{since ? <span className="thread-monitor__since">{` ${t`since ${since}`}`}</span> : null}</>} />
 }

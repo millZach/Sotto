@@ -1,0 +1,430 @@
+<!doctype html>
+<!-- THROWAWAY PROTOTYPE - Lardo, a pixel-art bodybuilder creature above the composer (Owl). Synthetic data only.
+     Not wired to any thread, outside every entrypoint. Sprite rows generated on a 40 x 32 grid, the creature grid of ADR-0116. -->
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Sotto — Lardo prototype</title>
+<style>
+@font-face{font-family:Figtree;font-weight:300 900;font-display:swap;src:url(../../src/shared/fonts/figtree-latin.woff2) format("woff2")}
+:root{color-scheme:dark;--tt-bg:oklch(.235 .018 280);--tt-card:oklch(.275 .019 280);--tt-raised:oklch(.305 .021 280);--tt-text:oklch(.985 .005 280);--tt-muted:oklch(.76 .014 265);--tt-border:oklch(.42 .03 270);--tt-accent:oklch(.79 .13 220);--tt-activity:oklch(.82 .12 85);--tt-ink:oklch(.2 .02 280);--tt-shadow:oklch(.1 0 0/.35);--tt-error:oklch(.68 .18 25);
+  /* Lardo's colours, all from theme roles: skin is the Claude provider fill (a tan badge colour in both modes),
+     ink the provider ink, his posing trunks the theme accent. */
+  --tt-provider-claude:#e3b58e;--tt-provider-ink:#2a1b16;
+  --l-skin:var(--tt-provider-claude);--l-ink:var(--tt-provider-ink);
+  --l-hi:color-mix(in srgb,var(--l-skin) 55%,white);--l-lo:color-mix(in srgb,var(--l-skin) 72%,var(--l-ink));
+  --l-trunks:var(--tt-accent);--l-trunks-lo:color-mix(in srgb,var(--tt-accent) 65%,var(--l-ink));
+  --l-teeth:color-mix(in srgb,var(--l-skin) 12%,white);--l-flush:var(--tt-error)}
+:root[data-theme=light]{color-scheme:light;--tt-bg:oklch(.978 .004 85);--tt-card:oklch(.945 .006 85);--tt-raised:oklch(.925 .006 85);--tt-text:oklch(.235 .014 75);--tt-muted:oklch(.46 .014 75);--tt-border:oklch(.78 .016 80);--tt-accent:oklch(.49 .13 235);--tt-activity:oklch(.58 .13 70);--tt-ink:oklch(.99 .003 85);--tt-shadow:oklch(.1 0 0/.14);--tt-error:oklch(.55 .19 25)}
+*{box-sizing:border-box}html,body{margin:0}
+body{font:14px/1.5 Figtree,system-ui,sans-serif;color:var(--tt-text);background:var(--tt-bg)}
+button,textarea,select{font:inherit;color:inherit}button,select{cursor:pointer}button{border:0;background:none}
+:focus-visible{outline:2px solid var(--tt-accent);outline-offset:3px}
+.intro{max-width:980px;margin:0 auto;padding:20px 20px 4px}
+.intro h1{font-size:20px;font-weight:600;margin:0 0 4px}.intro p{margin:0;color:var(--tt-muted)}
+.controls{max-width:980px;margin:6px auto 0;padding:0 20px;display:grid;gap:10px}
+.ctl{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+.ctl > span{color:var(--tt-muted);font-size:12px;min-width:118px}
+.ctl button,.ctl select{border:1px solid var(--tt-border);border-radius:999px;padding:5px 12px;font-size:13px;background:transparent}
+.ctl button[aria-pressed=true]{background:var(--tt-accent);color:var(--tt-ink);border-color:transparent}
+.ctl .go{background:var(--tt-text);color:var(--tt-bg);border-color:transparent}
+.ctl select{border-radius:8px;background:var(--tt-bg)}
+/* ---- a thread pane ---- */
+.window{max-width:980px;margin:16px auto;border:1px solid color-mix(in srgb,var(--tt-border) 50%,transparent);border-radius:12px;overflow:hidden;background:var(--tt-bg)}
+.head{height:40px;display:flex;align-items:center;gap:12px;padding:0 20px;border-bottom:1px solid color-mix(in srgb,var(--tt-border) 25%,transparent)}
+.head strong{font-weight:500}.head span{color:var(--tt-muted);font-size:12px}
+.pane{position:relative;display:flex;flex-direction:column;height:520px}
+.transcript{flex:1;min-height:0;overflow:auto;padding:24px max(20px,calc((100% - 720px)/2)) 12px}
+.turn{font-size:15px;line-height:1.6;margin-bottom:22px}.turn p{margin:0 0 12px}
+.user{margin-left:auto;max-width:85%;width:fit-content;background:var(--tt-raised);padding:10px 15px;border-radius:14px 14px 4px 14px}
+.who{color:var(--tt-muted);font-size:12px;margin-bottom:6px}
+.compose{flex:none;padding:12px max(20px,calc((100% - 720px)/2)) 14px}
+.compose[data-ornament]{padding-top:80px}
+/* The composer as Sotto draws it: the card colour, no border, no outline. */
+.composer{position:relative;background:var(--tt-card);border-radius:16px;padding:14px 16px 10px}
+textarea{display:block;width:100%;height:64px;resize:none;background:none;border:0;outline:none!important;font-size:15px;line-height:1.5;padding:0}
+textarea::placeholder{color:var(--tt-muted)}
+.foot{display:flex;align-items:center;gap:8px;margin-top:6px}
+.chip{border-radius:20px;padding:3px 9px;font-size:12px;color:var(--tt-muted);background:color-mix(in srgb,var(--tt-text) 6%,transparent)}
+.send{margin-left:auto;display:grid;place-items:center;background:var(--tt-accent);color:var(--tt-ink);border-radius:50%;width:30px;height:30px}
+/* ---- the creature room ---- */
+.walkway{position:absolute;left:14px;right:14px;bottom:100%;height:64px;margin-bottom:4px;pointer-events:none;display:grid;grid-template-columns:minmax(80px,1fr) minmax(0,min(190px,45%));align-items:end}
+.walkway[hidden]{display:none}
+.track{position:relative;height:64px;min-width:0}
+.actor{position:absolute;left:0;bottom:0;width:80px;height:64px;pointer-events:auto;cursor:pointer}
+.actor svg{display:block;width:80px;height:64px;overflow:visible}
+.mini{position:absolute;bottom:0;width:24px;height:20px}.mini svg{display:block;width:24px;height:20px}
+.prop{position:absolute;bottom:0}.prop svg{display:block}
+.readout{min-width:0;padding:8px 12px}
+.readout b{display:block;font-weight:400;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.readout small{display:block;color:var(--tt-muted);font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* the flex pop-up when nothing is on stage (option B): over the transcript's foot, the composer does not move */
+.popup{position:absolute;left:calc(max(20px,(100% - 720px)/2) + 14px);height:64px;width:80px;pointer-events:none}
+/* sprite colours */
+.Lk,.Le,.Ln{fill:var(--l-ink)}.Ls{fill:var(--l-skin)}.Lh{fill:var(--l-hi)}.Ld{fill:var(--l-lo)}
+.Lt{fill:var(--l-trunks)}.Lu{fill:var(--l-trunks-lo)}.Lw{fill:var(--l-teeth)}.Lr{fill:var(--l-flush)}
+.La{fill:var(--tt-activity)}.Lm{fill:var(--tt-muted)}.Lc{fill:var(--tt-card)}.Lx{fill:var(--tt-accent)}
+.muted{--l-skin:var(--tt-muted);--l-trunks:color-mix(in srgb,var(--tt-muted) 70%,var(--l-ink));--l-hi:color-mix(in srgb,var(--tt-muted) 70%,var(--tt-text))}
+/* ---- the easter egg ---- */
+.hole{position:absolute;top:-1px;background:var(--tt-bg);pointer-events:none}
+.hole .cell{position:absolute;background:var(--tt-card)}
+.chunk{position:fixed;z-index:20;background:var(--tt-card);pointer-events:none;will-change:transform;transform-origin:50% 50%}
+.chunk::after{content:"";position:absolute;inset:0;background:linear-gradient(160deg,color-mix(in srgb,var(--tt-text) 10%,transparent),transparent 60%)}
+.shard{position:fixed;z-index:21;background:var(--tt-card);pointer-events:none;will-change:transform,opacity}
+.cracks{position:fixed;inset:0;z-index:19;pointer-events:none;opacity:0}
+.cracks path{fill:none;stroke:var(--tt-text);stroke-width:2px;vector-effect:non-scaling-stroke;stroke-linecap:square;opacity:.6}
+.status{max-width:980px;margin:0 auto;padding:0 20px;color:var(--tt-muted);font-size:12px;font-variant-numeric:tabular-nums}
+.status b{color:var(--tt-text);font-weight:500}
+/* ---- gallery ---- */
+.gallery{max-width:980px;margin:22px auto 60px;padding:0 20px}
+.gallery h2{font-size:16px;font-weight:600;margin:0 0 4px}.gallery > p{margin:0 0 14px;color:var(--tt-muted)}
+.poses{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
+.pose{background:var(--tt-card);border-radius:12px;padding:10px;text-align:center}
+.pose svg{width:120px;height:96px;display:block;margin:0 auto}
+.pose b{display:block;font-weight:500;font-size:13px;margin-top:4px}.pose small{color:var(--tt-muted);font-size:12px}
+.sizes{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px;margin-top:10px}
+.size{background:var(--tt-card);border-radius:12px;padding:12px}
+.size .demo{position:relative;height:70px;background:var(--tt-bg);border-radius:8px;padding:14px}
+.size .card{position:relative;height:42px;background:var(--tt-card);border-radius:12px;margin-top:6px;padding:8px 10px;font-size:12px;color:var(--tt-muted);overflow:hidden}
+.size .bite{position:absolute;top:0;background:var(--tt-bg)}
+.size b{display:block;font-weight:500;margin-top:8px}.size small{color:var(--tt-muted)}
+.notes{max-width:980px;margin:0 auto 40px;padding:0 20px;color:var(--tt-muted)}
+.notes li{margin:4px 0}
+@media (max-width:640px){.pane{height:460px}.ctl > span{min-width:100%}}
+</style>
+</head>
+<body>
+<div class="intro">
+  <h1>Lardo</h1>
+  <p>A tiny bodybuilder who stands above the composer. Pick a state, finish a turn, and click him. Type in the composer first: the easter egg must never touch what you typed.</p>
+</div>
+
+<div class="window">
+  <div class="head"><strong>Fix the release notes</strong><span>Claude Code · sotto/fix-notes</span></div>
+  <div class="pane" id="pane">
+    <div class="transcript">
+      <div class="turn user">Watch the release build and tell me when it's done.</div>
+      <div class="turn"><div class="who">Claude Code</div><p>I started the Windows build and I'm watching it. It usually takes about eight minutes; I'll tell you when it finishes or if anything fails.</p></div>
+      <div class="turn user">Thanks. Also check the notes for typos.</div>
+      <div class="turn"><div class="who">Claude Code</div><p>Two fixed: "recieve" and "it's" where "its" was meant. The build is still running.</p></div>
+    </div>
+    <div class="popup" id="popup" hidden></div>
+    <div class="compose" id="compose" data-ornament>
+      <div class="composer" id="composer">
+        <div class="walkway" id="walkway">
+          <div class="track" id="track"></div>
+          <div class="readout" id="readout"><b id="rlabel"></b><small id="rstatus"></small></div>
+        </div>
+        <textarea id="prompt" aria-label="Message" placeholder="Ask for follow-up changes">Make the changelog say what each fix means for the user, not just</textarea>
+        <div class="foot"><span class="chip">Opus 5.5</span><span class="chip">High</span><span class="chip">notes.png</span><button class="send" aria-label="Send">↑</button></div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="status" id="status"></p>
+
+<div class="controls">
+  <div class="ctl" role="group" aria-label="What the thread is doing"><span>What the thread is doing</span>
+    <button data-state="monitoring" aria-pressed="true">Monitoring</button>
+    <button data-state="working">Working</button>
+    <button data-state="waiting">Waiting</button>
+    <button data-state="babysitting">Babysitting</button>
+    <button data-state="none">Nothing (no creature)</button>
+  </div>
+  <div class="ctl"><span>Try it</span>
+    <button class="go" id="finish">Finish a turn</button>
+    <button class="go" id="anger">Click Lardo</button>
+  </div>
+  <div class="ctl" role="group" aria-label="Flex when nothing is on stage"><span>Turn finished, nothing on stage</span>
+    <button data-flex="stage" aria-pressed="true">A · Flex only when he's already up</button>
+    <button data-flex="popup">B · Pop up over the transcript for the flex</button>
+  </div>
+  <div class="ctl" role="group" aria-label="Chunk size"><span>Chunk he tears out</span>
+    <button data-size="bite" aria-pressed="true">Bite · top edge only</button>
+    <button data-size="chunk">Chunk · first line</button>
+    <button data-size="slab">Slab · half the card</button>
+  </div>
+  <div class="ctl"><span>Look</span>
+    <button id="theme" aria-pressed="false">Light theme</button>
+    <button id="motion" aria-pressed="false">Reduce motion</button>
+  </div>
+  <div class="ctl" id="mapping"><span>Pose for each state</span></div>
+</div>
+
+<div class="gallery">
+  <h2>Every classic pose</h2>
+  <p>Drawn on the creature's 40 × 32 grid; shown here at 3× (above the composer he is 80 × 64). The tag says where the current mapping uses it.</p>
+  <div class="poses" id="poses"></div>
+  <h2 style="margin-top:26px">How big a chunk</h2>
+  <p>Where the hole goes in the card for each size. A bite stays inside the card's top padding, so it never covers your text.</p>
+  <div class="sizes">
+    <div class="size"><div class="demo"><div class="card">Make the changelog say what…<i class="bite" style="left:18px;width:56px;height:10px;clip-path:var(--jag)"></i></div></div><b>Bite</b><small>56 × 10 px, inside the top padding</small></div>
+    <div class="size"><div class="demo"><div class="card">Make the changelog say what…<i class="bite" style="left:18px;width:72px;height:24px;clip-path:var(--jag)"></i></div></div><b>Chunk</b><small>72 × 24 px, covers part of the first line for a second</small></div>
+    <div class="size"><div class="demo"><div class="card">Make the changelog say what…<i class="bite" style="left:18px;width:120px;height:40px;clip-path:var(--jag)"></i></div></div><b>Slab</b><small>120 × 40 px, covers half the card for a second</small></div>
+  </div>
+</div>
+<ul class="notes">
+  <li>Sotto's creature only shows while a thread is <b>Monitoring</b>, <b>Working</b> in the background, <b>Waiting</b> or <b>Babysitting</b>. There is no creature while a thread thinks, writes, is done or has an error, so those are the states that get a pose.</li>
+  <li>Reduce motion: he holds each pose still, the turn-finished flex is a still pose for a moment, and a click shows a still angry pose with no chunk.</li>
+  <li>Clicking him never takes focus from the composer, and nothing lies over it that catches the mouse.</li>
+  <li>His colours come from the theme: tan skin is the Claude provider colour, his trunks the theme accent. Babysitting mutes him, as it mutes every creature.</li>
+</ul>
+
+<svg class="cracks" id="cracks" viewBox="-50 -50 100 100" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
+  <path d="M0 0 L-9 -14 L-12 -26 L-22 -38 M-9 -14 L-20 -12 L-34 -18 M0 0 L12 -9 L26 -12 L40 -24 M12 -9 L18 4 L33 10 M0 0 L6 13 L4 27 L13 42 M6 13 L-6 22 L-15 36 M0 0 L-14 4 L-28 1 L-44 8 M-14 4 L-22 16"/>
+  <path d="M-6 -4 L4 -6 L7 5 L-3 8 Z"/>
+</svg>
+
+<script>
+const POSES = {"frontDoubleBiceps":["........................................","........................................","........................................","..................kkkkk.................","..........kk.....knnnnnk.....kk.........",".........khdk....knnnnnk....khdk........",".........khdk....khsssdk....khdk........","........khsdk....khesedk....khsdk.......","........khsdk....khsssdk....khsdk.......",".......khshsdk..khswwwsdk..khshsdk......",".......khssssdkkhsssssssdkkhssssdk......","......khsssssshhssssssssshhssssssdk.....","......kdddssssssshssdshssssssssdddk.....",".......kkkdddsssssssdsssssssdddkkk......","..........kkkdsssdddddddsssdkkk.........",".............kdsdsssssssdsdk............","..............khssssdssssdk.............","..............kdsssdddsssdk.............","...............kdsssdsssdk..............","................khsdddsdk...............","...............khtttttttdk..............","...............khtttttttdk..............","..............khssttuttssdk.............",".............kdssssdkhssssdk............","..............khsssdkdsssdk.............","..............khssdk.khssdk.............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............kdsdk...khsdk.............","..............kkhdk...khdkk.............",".............khhsdk...kdshdk............",".............kddddk....kdddk............"],"frontDoubleBicepsPump":["........................................","........................................","........................................","..................kkkkk.................","..........kk.....knnnnnk.....kk.........",".........khdk....knnnnnk....khdk........","........kkhdk....kdkdkdk....khdkk.......",".......khhssdk...khesedk...khsshdk......",".......khsssdk...khsdsdk...khsssdk......",".......khshsdk..khswkwsdk..khshsdk......",".......khssssdkkhssshsssdkkhssssdk......","......khsssssshhssssssssshhssssssdk.....","......kdddssssssshssdshssssssssdddk.....",".......kkkdddsssssssdsssssssdddkkk......","..........kkkdsssdddddddsssdkkk.........",".............kdsdsssssssdsdk............","..............khssssdssssdk.............","..............kdsssdddsssdk.............","...............kdsssdsssdk..............","................khsdddsdk...............","...............khtttttttdk..............","...............khtttttttdk..............","..............khssttuttssdk.............",".............kdssssdkhssssdk............","..............khsssdkdsssdk.............","..............khssdk.khssdk.............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............kdsdk...khsdk.............","..............kkhdk...khdkk.............",".............khhsdk...kdshdk............",".............kddddk....kdddk............"],"frontLatSpread":["........................................","........................................","........................................","..................kkkkk.................",".................knnnnnk................",".................knnnnnk................",".................khsssdk................",".................khesedk................",".................khsssdk................",".............k..khswwwsdk..k............","...........kkdkkhsssssssdkkdkk..........","..........khhshhssssssssshhshdk.........","..........khssssshssdshssssssdk.........",".........khsssssssssdsssssssssdk........","........khsssssssdddddddsssssssdk.......","........khssssssdsssssssdssssssdk.......",".......kdsssssssssssdsssssssssssdk......","........kddssssssssdddssssssssddk.......",".........kkddsssssssdsssssssddkk........","...........kkddssssdddssssddkk..........",".............kkdstttttttsdkk............","...............khtttttttdk..............","..............khssttuttssdk.............",".............kdssssdkdssssdk............","..............khssdk.khssdk.............","..............khssdk.khssdk.............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............kdsdk...khsdk.............","..............kkhdk...khdkk.............",".............khhsdk...kdshdk............",".............kdddk.....kdddk............"],"sideChest":["........................................","........................................","........................................","...................kkkkk................","..................knnnnnk...............","..................knnnnnk...............","..................knsssdk...............","..................knsesek...............",".................kkhssdksk..............","................khhsswwwk.kk............",".............kkkhsssssssdkhdk...........","............khhhssssssssshssdk..........","............khsssssssshhssssdkk.........","............khssssssssssssssshdk........","...........khsssssssssssssssshdk........","...........khsssssssssssssdssssdk.......","..........kdsssssssssdddddkhssdk........","...........kdssssssssssssshsssdk........","............kddddsssssssdddddddk........",".............kkkkhsssssdkkkkkkk.........","...............khtttttttdk..............","...............khtttttttsdk.............","...............khsstttttsdk.............","...............khsssddssssdk............","...............khssdkkhssdk.............","...............khssdkkdssdk.............","...............khssdk.khsdk.............","...............khsdk.khssdk.............","...............kdsdk.kdssdk.............","................khdk..khdk..............","................khdk..khdk..............","...............kdddk..kdddk............."],"sideChestLeft":["........................................","........................................","........................................",".................kkkkk..................","................knnnnnk.................","................knnnnnk.................","................kdsssnk.................","................kesesnk.................","...............kskdsshkk................",".............kk.kwwwsshhk...............","............kdhkdssssssshkkk............","...........kdsshssssssssshhhk...........","..........kkdsssshhsssssssshk...........",".........kdhssssssssssssssshk...........",".........kdhsssssssssssssssshk..........","........kdssssdssssssssssssshk..........",".........kdsshkdddddsssssssssdk.........",".........kdssshsssssssssssssdk..........",".........kdddddddsssssssddddk...........","..........kkkkkkkdssssshkkkk............","...............kdttttttthk..............","..............kdsttttttthk..............","..............kdstttttsshk..............",".............kdssssddssshk..............","..............kdsshkkdsshk..............","..............kdssdkkdsshk..............","..............kdshk.kdsshk..............","..............kdsshk.kdshk..............","..............kdssdk.kdsdk..............","...............kdhk..kdhk...............","...............kdhk..kdhk...............","..............kdddk..kdddk.............."],"backDoubleBiceps":["........................................","........................................","........................................","..................kkkkk.................","..........kk.....knnnnnk.....kk.........",".........khdk....knnnnnk....khdk........",".........khdk....knnnnnk....khdk........","........khsdk....khsssdk....khsdk.......","........khsdk....khsssdk....khsdk.......",".......khshsdk..khsssssdk..khshsdk......",".......khssssdkkhsssssssdkkhssssdk......","......khsssssshhssssssssshhssssssdk.....","......kdddssssssssssdssssssssssdddk.....",".......kkkdddsssssssdsssssssdddkkk......","..........kkkdssssssdssssssdkkk.........",".............kdsssssdsssssdk............","..............khddssdssdddk.............","..............kdssssdssssdk.............","...............kdsssdsssdk..............","................khssdssdk...............","...............ktttttttttk..............","...............khssstsssdk..............","..............khssssdssssdk.............",".............kdssssdkhssssdk............","..............khsssdkdsssdk.............","..............khssdk.khssdk.............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............kdsdk...khsdk.............","..............kkhdk...khdkk.............",".............khhsdk...kdshdk............",".............kddddk....kdddk............"],"backLatSpread":["........................................","........................................","........................................","..................kkkkk.................",".................knnnnnk................",".................knnnnnk................",".................knnnnnk................",".................khsssdk................",".................khsssdk................",".............k..khsssssdk..k............","...........kkdkkhsssssssdkkdkk..........","..........khhshhssssssssshhshdk.........","..........khssssssssdssssssssdk.........",".........khsssssssssdsssssssssdk........","........khssssssssssdssssssssssdk.......","........khssssssssssdssssssssssdk.......",".......kdsssssssddssdssddsssssssdk......","........kddsssssssssdsssssssssddk.......",".........kkddsssssssdsssssssddkk........","...........kkddsssssdsssssddkk..........",".............kkdtttttttttdkk............","...............khssstsssdk..............","..............khssssdssssdk.............",".............kdssssdkdssssdk............","..............khssdk.khssdk.............","..............khssdk.khssdk.............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............kdsdk...khsdk.............","..............kkhdk...khdkk.............",".............khhsdk...kdshdk............",".............kdddk.....kdddk............"],"sideTriceps":["........................................","........................................","........................................","...................kkkkk................","..................knnnnnk...............","..................knnnnnk...............","..................knsssdk...............","..................knsesek...............",".................kkhssdksk..............","................khhsswwwk.k.............",".............kkkhssssssdkkdkk...........","............khhhsssssssshhhhdk..........","............khsssssssshsssssdk..........","............khssssssssssssssdk..........","............khssssssssssdsssdk..........","...........khssdssssssssdsssdk..........","...........khsdkhsssssssdsssdk..........","...........khsdkdsssssssdsssdk..........","...........kdssdkhssssssddssdk..........","............kddshssssssdkkhsdk..........",".............kkdstttttttdkhdk...........","...............khtttttttshsdk...........","...............khsstttttssdk............","...............khsssddssssdk............","...............khssdkkhssdk.............","...............khssdkkdssdk.............","...............khssdk.khsdk.............","...............khsdk.khssdk.............","...............kdsdk.kdssdk.............","................khdk..khdk..............","................khdk..khdk..............","...............kdddk..kdddk............."],"sideTricepsLeft":["........................................","........................................","........................................",".................kkkkk..................","................knnnnnk.................","................knnnnnk.................","................kdsssnk.................","................kesesnk.................","...............kskdsshkk................","..............k.kwwwsshhk...............","............kkdkkdsssssshkkk............","...........kdhhhhsssssssshhhk...........","...........kdssssshsssssssshk...........","...........kdsssssssssssssshk...........","...........kdsssdsssssssssshk...........","...........kdsssdssssssssdsshk..........","...........kdsssdssssssshkdshk..........","...........kdsssdsssssssdkdshk..........","...........kdssddsssssshkdssdk..........","...........kdshkkdsssssshsddk...........","............kdhkdtttttttsdkk............","............kdshsttttttthk..............",".............kdsstttttsshk..............",".............kdssssddssshk..............","..............kdsshkkdsshk..............","..............kdssdkkdsshk..............","..............kdshk.kdsshk..............","..............kdsshk.kdshk..............","..............kdssdk.kdsdk..............","...............kdhk..kdhk...............","...............kdhk..kdhk...............","..............kdddk..kdddk.............."],"abdominalThigh":["........................................","........................................",".............kkkk.......kkkk............","............khhhdkkkkkkkhhhdk...........","...........khsssshnnnnnhssssdk..........","...........khssdddnnnnndddssdk..........","...........khsdkkkdkdkdkkkhsdk..........","...........khsdk.khesedk.khsdk..........","...........khsdk.khsdsdk.khsdk..........","...........khsdkkhswkwsdkkhsdk..........","...........khsdkhssshsssdkhsdk..........","...........khsshssssssssshssdk..........","...........khsssshssdshsssssdk..........","...........kdsssssssdsssssssdk..........","............kdsssdddddddsssdk...........",".............kdsdsssssssdsdk............","..............kdsssdddsssdk.............","...............khsssdsssdk..............","...............kdssdddssdk..............","................khssdssdk...............","...............khttdtdttdk..............","...............khtttttttdk..............","..............khssttuttssdk.............","..............khsssdkhsssdk.............","..............khsssdkdsssdk.............","..............khssdk.khssdk.............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............kdsdk...khsdk.............","..............kkhdk...khdkk.............",".............khhsdk...khshdk............",".............kddddk...kddddk............"],"mostMuscular":["........................................","........................................","........................................","..................kkkkk.................",".................knnnnnk................",".................knnnnnk................",".................kdkdkdk................","................kkhesedkk...............","...............khhssdsshdk..............",".............kkhssswkwsssdkk............","............khhssssshssssshdk...........","...........khsssssssssssssssdk..........","..........khssssshssdshssssssdk.........",".........khsssssssssdsssssssssdk........",".........khssssssdddddddssssssdk........",".........khsssdsdsssssssdsdsssdk........",".........khssdkhsssssssssdkhssdk........",".........kdssshssssssssssshsssdk........","..........kddddsssssssssssddddk.........","...........kkkkdsssssssssdkkkk..........","...............khtttttttdk..............","...............khtttttttdk..............","..............khssttuttssdk.............",".............kdssssdkdssssdk............","..............khssdk.khssdk.............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............khsdk...khsdk.............","..............kdsdk...khsdk.............","..............kkhdk...khdkk.............",".............khhsdk...kdshdk............",".............kdddk.....kdddk............"],"mostMuscularAngry":["........................................","........................................","........................................","..................kkkkk.................",".................knnnnnk................",".................knnnnnk................","..................khsdk.................","................kkhesedkk...............","...............khhrrrrrhdk..............",".............kkhssswwwsssdkk............","............khhssssssssssshdk...........","...........khsssssssssssssssdk..........","..........khssssshssdshssssssdk.........",".........khsssssssssdsssssssssdk........",".........khssssssdddddddssssssdk........",".........khsssdsdsssssssdsdsssdk........",".........khssdkhsssssssssdkhssdk........",".........kdssshssssssssssshsssdk........","..........kddddsssssssssssddddk.........","...........kkkkdsssssssssdkkkk..........","...............khtttttttdk..............","...............khtttttttdk..............","..............khssttuttssdk.............",".............kdssssdkdssssdk............","..............khssdk.khssdk.............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............khsdk...khsdk.............","..............kdsdk...khsdk.............","..............kkhdk...khdkk.............",".............khhsdk...kdshdk............",".............kdddk.....kdddk............"],"vacuum":["..................kk.kk.................",".................khdkhdk................","...............kkhsdkdsdkk..............","..............khhsdkkkhshdk.............","............kkhssdnnnnndssdkk...........","...........khhssdknnnnnkdsshdk..........","...........khssdkkhsssdkkdssdk..........","...........khsdk.khesedk.khsdk..........","...........khsdk.khsdsdk.khsdk..........","...........khsdkkhsdkhsdkkhsdk..........","...........khsdkhssshsssdkhsdk..........","...........khsshssssssssshssdk..........","...........khsssshssdshsssssdk..........","...........kdsssssssdsssssssdk..........","............kdsssdddddddsssdk...........",".............kdsdsssssssdsdk............","..............kdsssssssssdk.............","...............kdssdddssdk..............","................khsdddsdk...............","................khsssssdk...............","...............khtttttttdk..............","...............khtttttttdk..............","..............khssttuttssdk.............","..............khsssdkhsssdk.............","..............khsssdkdsssdk.............","..............khssdk.khssdk.............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............kdsdk...khsdk.............","..............kkhdk...khdkk.............",".............khhsdk...khshdk............",".............kddddk...kddddk............"],"vacuumHold":["..................kk.kk.................","................kkhdkhdkk...............","...............khhsdkdshdk..............","..............khssdkkkhssdk.............","............kkhssdnnnnndssdkk...........","...........khhssdknnnnnkdsshdk..........","...........khssdkkhsssdkkdssdk..........","...........khsdk.khesedk.khsdk..........","...........khsdk.khsdsdk.khsdk..........","...........khsdkkhsdkhsdkkhsdk..........","...........khsdkhssshsssdkhsdk..........","...........khsshssssssssshssdk..........","...........khsssshssdshsssssdk..........","...........kdsssssssdsssssssdk..........","............kdsssdddddddsssdk...........",".............kdsdsssssssdsdk............","..............kdsssssssssdk.............","...............kdssdddssdk..............","................khsdddsdk...............","................khsssssdk...............","...............khtttttttdk..............","...............khtttttttdk..............","..............khssttuttssdk.............","..............khsssdkhsssdk.............","..............khsssdkdsssdk.............","..............khssdk.khssdk.............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............kdsdk...khsdk.............","..............kkhdk...khdkk.............",".............khhsdk...khshdk............",".............kddddk...kddddk............"],"walk0":["........................................","........................................","........................................","..................kkkkk.................",".................knnnnnk................",".................knnnnnk................",".................khsssdk................",".................khesedk................",".................khsssdk................",".............k..khswwwsdk..k............","............kdkkhsssssssdkkdk...........","...........khshhssssssssshhsdk..........","..........khssssshssdshssssssdk.........","..........khssssssssdssssssssdk.........","..........khsssssdddddddssssssdk........",".........khsssssdsssssssdssssssdk.......","........khssdsssssssdsssssssdsdk........","........kdsdkdddsssdddsssdddkhdk........",".........khdkkkkdsssdsssdkkkkhdk........",".........khdk...khsdddsdk...khdk........",".........khdk..khtttttttdk..kddk........",".........kddk..khtttttttdk...kk.........","..........kk..khssttuttssdk.............",".............kdssssdkdssssdk............","..............khsssdkkhssdk.............","..............khssdk.kdssdk.............","..............khssdk..khsdk.............","..............khsdk...khsdk.............","..............kdsdk...khdkk.............","..............kkhdk...kdshdk............",".............khhsdk....kdddk............",".............kddddk.....kkk............."],"walk1":["........................................","........................................","........................................","..................kkkkk.................",".................knnnnnk................",".................knnnnnk................",".................khsssdk................",".................khesedk................",".................khsssdk................",".............k..khswwwsdk..k............","............kdkkhsssssssdkkdk...........","...........khshhssssssssshhsdk..........","..........khssssshssdshssssssdk.........","..........khssssssssdssssssssdk.........",".........khssssssdddddddssssssdk........",".........khsssssdsssssssdsssssdk........","........kdssdsssssssdsssssssdssdk.......",".........khdkdddsssdddsssdddkhdk........",".........khdkkkkdsssdsssdkkkkhdk........",".........khdk...khsdddsdk...khdk........",".........kddk..khtttttttdk..kddk........","..........kk...khtttttttdk...kk.........","..............khssttuttssdk.............",".............kdssssdkhssssdk............","..............khsssdkdsssdk.............","..............khssdk.khssdk.............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............kdsdk...khsdk.............","..............kkhdk...khdkk.............",".............khhsdk...kdshdk............",".............kddddk....kdddk............"],"walk2":["........................................","........................................","........................................","..................kkkkk.................",".................knnnnnk................",".................knnnnnk................",".................khsssdk................",".................khesedk................",".................khsssdk................",".............k..khswwwsdk..k............","............kdkkhsssssssdkkdk...........","...........khshhssssssssshhsdk..........","..........khssssshssdshssssssdk.........","..........khssssssssdssssssssdk.........",".........khssssssdddddddsssssdk.........","........kdssssssdsssssssdsssssdk........",".........khsdsssssssdsssssssdssdk.......",".........khdkdddsssdddsssdddkhsdk.......",".........khdkkkkdsssdsssdkkkkhdk........",".........khdk...khsdddsdk...khdk........",".........kddk..khtttttttdk..khdk........","..........kk...khtttttttdk..kddk........","..............khssttuttssdk..kk.........",".............kdssssdkhssssdk............","..............khssdkkdsssdk.............","..............khssdk.khssdk.............","..............khsdk..kdssdk.............","..............kdsdk...khsdk.............","..............kkhdk...khsdk.............",".............khhsdk...khdkk.............",".............kddddk...kdshdk............","..............kkkk.....kdddk............"],"walk3":["........................................","........................................","........................................","..................kkkkk.................",".................knnnnnk................",".................knnnnnk................",".................khsssdk................",".................khesedk................",".................khsssdk................",".............k..khswwwsdk..k............","............kdkkhsssssssdkkdk...........","...........khshhssssssssshhsdk..........","..........khssssshssdshssssssdk.........","..........khssssssssdssssssssdk.........",".........khssssssdddddddssssssdk........",".........khsssssdsssssssdsssssdk........","........kdssdsssssssdsssssssdssdk.......",".........khdkdddsssdddsssdddkhdk........",".........khdkkkkdsssdsssdkkkkhdk........",".........khdk...khsdddsdk...khdk........",".........kddk..khtttttttdk..kddk........","..........kk...khtttttttdk...kk.........","..............khssttuttssdk.............",".............kdssssdkhssssdk............","..............khsssdkdsssdk.............","..............khssdk.khssdk.............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............kdsdk...khsdk.............","..............kkhdk...khdkk.............",".............khhsdk...kdshdk............",".............kddddk....kdddk............"],"grab":["........................................","........................................","........................................","........................................","..................kkkkk.................",".................knnnnnk................",".................knnnnnk................","..................khsdk.................",".................khesedk................",".................krsssrk................",".............k..khswwwsdk..k............","............kdkkhsssssssdkkdk...........","...........khshhssssssssshhsdk..........","...........khsssshssdshsssssdk..........","..........khssssssssdssssssssdk.........","..........khsssssdddddddssssssdk........",".........khssddsdsssssssdsddsssdk.......",".........khsdkkhsssssssssdkkdssdk.......","........khsdk.kdsssssssssdk.kdssdk......","........kdsdk..kdsssssssdk...khsdk......",".........khsdk..khsssssdk....kdsdk......",".........kdsdk.khtttttttdk....khsdk.....","..........kddk.khtttttttdk....khsdk.....","...........kk.khssttuttssdk...kdsdk.....",".............khssssdkdssssdk...khdk.....",".............kdsssdk.khsssdk...kdsdk....","..............khssdk.kdssdk.....khdk....","..............khsdk...kdsdk.....kddk....",".............kdsdk.....khsdk.....kk.....","..............khdk.....khdk.............",".............khsdk.....khsdk............",".............kdddk.....kdddk............"],"lift":["..............kk.........kk.............",".............khdk.......khdk............","............khsdk.......khsdk...........","............khsdk.kkkkk.kdsdk...........","...........khsdk.knnnnnk.khsdk..........","..........khssdk.knnnnnk.kdssdk.........","..........khsdk...khsdk...khsdk.........","..........khsdk..khesedk..khsdk.........","..........khsdk..krsssrk..khsdk.........",".........kdssdk.khswwwsdk.khssdk........","..........kdssdkhsssssssdkhssdk.........","...........khsshssssssssshssdk..........","...........khsssshssdshsssssdk..........","...........kdsssssssdsssssssdk..........","............kdsssdddddddsssdk...........",".............kdsdsssssssdsdk............","..............khssssdssssdk.............","..............kdsssdddsssdk.............","...............kdsssdsssdk..............","................khsdddsdk...............","...............khtttttttdk..............","...............khtttttttdk..............","..............khssttuttssdk.............",".............kdssssdkdssssdk............","..............khssdk.khssdk.............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............khsdk...khsdk.............","..............kdsdk...khsdk.............","..............kkhdk...khdkk.............",".............khhsdk...kdshdk............",".............kdddk.....kdddk............"],"throw":["........................................","........................................","........................................","..................kkkkk.................",".................knnnnnk................",".................knnnnnk................","..................khsdk.................",".................khesedk................",".....kk..........krsssrk..........kk....","....khdk.....k..khswwwsdk..k.....khdk...","....kdsdkkkkkdkkhsssssssdkkdkkkkkhsdk...",".....kdshhhhhshhssssssssshhshhhhhsdk....","......kdssssssssshssdshssssssssssdk.....",".......kdssddsssssssdsssssssddssdk......","........kddkkdsssdddddddsssdkkddk.......",".........kk..kdsdsssssssdsdk..kk........","..............khssssdssssdk.............","..............kdsssdddsssdk.............","...............kdsssdsssdk..............","................khsdddsdk...............","...............khtttttttdk..............","..............kkhtttttttdkk.............",".............khhssttuttsshdk............",".............khssssdkdssssdk............",".............kdsssdk.khsssdk............","..............khssdk.kdssdk.............","..............khsdk...khsdk.............","..............khsdk...kdsdk.............","..............khdk.....khdk.............","..............khdk.....khdk.............",".............khsdk.....khsdk............",".............kdddk.....kdddk............"],"mini0":["....kkkk....","....knnk....","kk..kssk..kk","ksk.kssk.ksk","kssksssskssk",".kssssssssk.","..kssssssk..","...kttttk...","...kskksk...","...kk..kk..."],"mini1":["....kkkk....","....knnk....","kk..kssk..kk","ksk.kssk.ksk","kssksssskssk",".kssssssssk.","..kssssssk..","...kttttk...","..ksk..ksk..","..kk....kk.."]};
+const LETTERS = 'knsehdtuwr';
+const svgCache = new Map();
+function pathFor(rows, ch, flip){
+  let d='';const w=rows[0].length;
+  rows.forEach((row,y)=>{for(let x=0;x<row.length;){if(row[x]!==ch){x++;continue}let e=x;while(row[e]===ch)e++;const sx=flip?w-e:x;d+=`M${sx} ${y}h${e-x}v1h-${e-x}z`;x=e}});
+  return d;
+}
+function sprite(key, {flip=false, extra=''}={}){
+  const id=key+(flip?':f':'')+extra;
+  if(svgCache.has(id)) return svgCache.get(id);
+  const rows=POSES[key];const w=rows[0].length,h=rows.length;
+  let paths='';for(const ch of LETTERS){const d=pathFor(rows,ch,flip);if(d)paths+=`<path class="L${ch}" d="${d}"/>`}
+  const s=`<svg viewBox="0 0 ${w} ${h}" shape-rendering="crispEdges" aria-hidden="true">${paths}${extra}</svg>`;
+  svgCache.set(id,s);return s;
+}
+// small props, drawn in the same letters
+const PROPS = {
+  hourglass:['kkkkkkk','.kaaak.','..kak..','...k...','..kak..','.kaaak.','kkkkkkk'],
+  hourglass2:['kkkkkkk','.k...k.','..kak..','...a...','..kak..','.kaaak.','kkkkkkk'],
+  sign:['kkkkkkkkkk','kxxxxxxxxk','kxcxxxxcxk','kxcxxxxxck','kxcxxxxcxk','kxxxxxxxxk','kkkkkkkkkk','....kk....','....kk....','....kk....','....kk....'],
+  sparkle:['..a..','..a..','aaaaa','..a..','..a..'],
+  steam:['.mm.','mmmm','.mm.'],
+};
+function propSvg(key, scale=2){
+  const rows=PROPS[key];const w=rows[0].length,h=rows.length;let p='';
+  for(const ch of 'kacxm'){const d=pathFor(rows,ch,false);if(d)p+=`<path class="L${ch}" d="${d}"/>`}
+  return `<svg viewBox="0 0 ${w} ${h}" width="${w*scale}" height="${h*scale}" shape-rendering="crispEdges" aria-hidden="true">${p}</svg>`;
+}
+
+const CLASSIC = {
+  frontDoubleBiceps:'Front double biceps', frontLatSpread:'Front lat spread', sideChest:'Side chest',
+  backDoubleBiceps:'Back double biceps', backLatSpread:'Back lat spread', sideTriceps:'Side triceps',
+  abdominalThigh:'Abdominal and thigh', mostMuscular:'Most muscular', vacuum:'Vacuum',
+};
+const SLOTS = {
+  monitoring:{label:'Monitoring', note:'struts the track, poses at each end'},
+  working:{label:'Working', note:'holds it while little Lardos jog out'},
+  waiting:{label:'Waiting', note:'holds it beside the hourglass'},
+  babysitting:{label:'Babysitting', note:'muted and still, beside the sign'},
+  finished:{label:'Turn finished', note:'a quick flex'},
+  angry:{label:'Clicked (angry)', note:'after the throw'},
+};
+const map = {monitoring:'sideChest', working:'frontDoubleBiceps', waiting:'vacuum', babysitting:'abdominalThigh', finished:'backDoubleBiceps', angry:'mostMuscular'};
+// a second frame for poses that have one, so a held pose can pump
+const ALT = {frontDoubleBiceps:'frontDoubleBicepsPump', vacuum:'vacuumHold', mostMuscular:'mostMuscularAngry'};
+const sideKeys = {sideChest:['sideChest','sideChestLeft'], sideTriceps:['sideTriceps','sideTricepsLeft']};
+function poseKey(pose, facing=1){ return sideKeys[pose] ? sideKeys[pose][facing>0?0:1] : pose }
+
+const $=s=>document.querySelector(s);
+const track=$('#track'), walkway=$('#walkway'), compose=$('#compose'), composer=$('#composer'), prompt=$('#prompt');
+const motionQuery=matchMedia('(prefers-reduced-motion: reduce)');
+let state='monitoring', flexMode='stage', size='bite', reduced=false;
+const still=()=>reduced||motionQuery.matches;
+
+// ---- mapping controls
+const mapping=$('#mapping');
+for(const [slot,info] of Object.entries(SLOTS)){
+  const lab=document.createElement('label');lab.style.cssText='display:flex;gap:6px;align-items:center;font-size:13px';
+  const sel=document.createElement('select');sel.setAttribute('aria-label',`Pose for ${info.label}`);
+  for(const [k,v] of Object.entries(CLASSIC)){const o=document.createElement('option');o.value=k;o.textContent=v;if(map[slot]===k)o.selected=true;sel.append(o)}
+  sel.onchange=()=>{map[slot]=sel.value;render();gallery()};
+  lab.append(info.label+':',sel);mapping.append(lab);
+}
+
+// ---- the stage
+const actor=document.createElement('div');actor.className='actor';actor.title='Lardo';
+// a press on him must not move focus out of the composer
+actor.addEventListener('mousedown',e=>e.preventDefault());
+actor.addEventListener('click',()=>tantrum());
+let minis=[], prop=null, x=0, dir=1, pauseUntil=0, frame=0, busy=null, lastTick=0;
+function setActor(key, opt){ const h=sprite(key,opt); if(actor.innerHTML!==h) actor.innerHTML=h }
+function trackWidth(){ return track.clientWidth }
+function clearExtras(){ minis.forEach(m=>m.el.remove()); minis=[]; prop?.remove(); prop=null }
+
+const READOUT={
+  monitoring:['Windows release build','Monitoring'],
+  working:['Check the notes for typos','Working · 2 agents'],
+  waiting:['npm run package:win','Waiting 1m 12s'],
+  babysitting:['#1672 Browser agent line','Babysitting since 12:55 pm'],
+};
+function render(){
+  clearExtras();
+  const on=state!=='none';
+  walkway.hidden=!on; if(on) compose.setAttribute('data-ornament',''); else compose.removeAttribute('data-ornament');
+  if(!on){ actor.remove(); return }
+  track.append(actor);
+  actor.classList.toggle('muted',state==='babysitting');
+  $('#rlabel').textContent=READOUT[state][0]; $('#rstatus').textContent=READOUT[state][1];
+  const w=trackWidth();
+  if(state==='monitoring'){ x=Math.min(x,w-80) }
+  if(state==='working'){ x=Math.max(0,w-80); for(let i=0;i<2;i++){const el=document.createElement('div');el.className='mini';track.prepend(el);minis.push({el,x:w-80-30*i-20,i})} }
+  if(state==='waiting'){ x=Math.max(0,Math.min(w-80,40)); prop=document.createElement('div');prop.className='prop';prop.style.left=(x+76)+'px';prop.innerHTML=propSvg('hourglass');track.append(prop) }
+  if(state==='babysitting'){ x=0; prop=document.createElement('div');prop.className='prop';prop.style.left='78px';prop.innerHTML=propSvg('sign');track.append(prop) }
+  paint(performance.now(),true);
+}
+function paint(now, force){
+  if(busy) return;
+  const w=trackWidth();
+  const t=Math.floor(now/125);
+  if(!force && t===frame) return;
+  frame=t;
+  actor.style.transform=`translateX(${Math.round(x)}px)`;
+  if(state==='monitoring'){
+    if(still()){ setActor(poseKey(map.monitoring,1)); return }
+    if(now<pauseUntil){ setActor(poseKey(map.monitoring,dir)); return }
+    x+=2*dir;
+    if(x>=w-80){x=w-80;dir=-1;pauseUntil=now+1600}
+    if(x<=0){x=0;dir=1;pauseUntil=now+1600}
+    actor.style.transform=`translateX(${Math.round(x)}px)`;
+    setActor('walk'+(t%4));
+  } else if(state==='working'){
+    const alt=ALT[map.working];
+    setActor(!still()&&alt&&Math.floor(now/600)%2?alt:poseKey(map.working,-1));
+    for(const m of minis){
+      if(!still()){ m.x-=2; if(m.x<-24) m.x=w-100 }
+      m.el.style.transform=`translateX(${Math.round(m.x)}px)`;
+      m.el.innerHTML=sprite('mini'+(still()?0:t%2));
+    }
+  } else if(state==='waiting'){
+    const alt=ALT[map.waiting];
+    setActor(!still()&&alt&&Math.floor(now/500)%2?alt:poseKey(map.waiting,1));
+    if(prop) prop.innerHTML=propSvg(!still()&&Math.floor(now/900)%2?'hourglass2':'hourglass');
+  } else if(state==='babysitting'){
+    setActor(poseKey(map.babysitting,1)); // still: babysitting never moves
+  }
+}
+function loop(now){ paint(now,false); requestAnimationFrame(loop) }
+
+// ---- turn finished: a quick flex
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+async function finishTurn(){
+  if(busy) return;
+  let host=actor, popup=null;
+  if(state==='none'){
+    if(flexMode!=='popup') { note('Turn finished. Nothing was on stage, so option A shows no flex.'); return }
+    popup=$('#popup'); popup.hidden=false;
+    const c=compose.getBoundingClientRect(), p=$('#pane').getBoundingClientRect();
+    popup.style.top=(c.top-p.top+12-68)+'px'; popup.append(actor); actor.style.transform=''; actor.classList.remove('muted'); host=actor;
+  }
+  busy='flex';
+  const pose=map.finished, key=poseKey(pose,1);
+  const spark=still()?'':`<g class="La"><path d="M3 4h1v1h-1zM2 5h3v1h-3zM3 6h1v1h-1z"/><path d="M35 2h1v1h-1zM34 3h3v1h-3zM35 4h1v1h-1z"/><path d="M36 13h1v1h-1z"/></g>`;
+  const turning=(pose.startsWith('back')&&!still());
+  if(turning){ host.innerHTML=sprite('sideChest'); await wait(140) }
+  host.innerHTML=sprite(key,{extra:spark});
+  if(!still()){ await wait(450); host.innerHTML=sprite(ALT[pose]||key,{extra:spark}); await wait(450) } else await wait(1200);
+  if(turning){ host.innerHTML=sprite('sideChestLeft'); await wait(140) }
+  busy=null;
+  if(popup){ popup.hidden=true; actor.remove(); }
+  render();
+}
+
+// ---- the easter egg
+const JAG='polygon(0 0,100% 0,100% 30%,88% 62%,93% 100%,74% 70%,60% 100%,47% 64%,33% 96%,20% 66%,8% 92%,0 55%)';
+document.documentElement.style.setProperty('--jag',JAG);
+const SIZES={bite:[56,10],chunk:[72,24],slab:[120,40]};
+async function tantrum(){
+  if(busy||state==='none') return;
+  busy='angry';
+  const angryKey=map.angry==='mostMuscular'?'mostMuscularAngry':poseKey(map.angry,1);
+  const steam=`<g class="Lm"><path d="M13 0h2v1h-2zM12 1h4v1h-4zM26 0h2v1h-2zM25 1h4v1h-4z"/></g>`;
+  if(still()){
+    actor.innerHTML=sprite(angryKey,{extra:''});
+    await wait(1500); busy=null; render(); return;
+  }
+  const [hw,hh]=SIZES[size];
+  const cRect=composer.getBoundingClientRect(), aRect=actor.getBoundingClientRect();
+  // the hole: just right of his feet, in the card's top edge
+  const left=Math.min(cRect.width-hw-16, Math.max(16, aRect.left-cRect.left+70));
+  const hole=document.createElement('div');hole.className='hole';
+  hole.style.cssText=`left:${left}px;width:${hw}px;height:${hh}px;clip-path:${JAG}`;
+  // grab
+  actor.innerHTML=sprite('grab'); await wait(220);
+  composer.append(hole);
+  const chunk=document.createElement('div');chunk.className='chunk';
+  chunk.style.cssText=`left:${cRect.left+left}px;top:${cRect.top}px;width:${hw}px;height:${hh}px;clip-path:${JAG}`;
+  document.body.append(chunk);
+  const sx=cRect.left+left, sy=cRect.top;
+  const handsX=aRect.left+40-hw/2, handsY=aRect.top-hh+4;
+  // lift it overhead
+  actor.innerHTML=sprite('lift');
+  await chunk.animate([{transform:'translate(0,0)'},{transform:`translate(${handsX-sx}px,${handsY-sy}px) rotate(-8deg)`}],{duration:260,easing:'ease-out',fill:'forwards'}).finished;
+  await wait(140);
+  // hurl it at the screen
+  actor.innerHTML=sprite('throw');
+  const cx=innerWidth/2-hw/2, cy=innerHeight/2-hh/2;
+  const grow=Math.min(9, (innerWidth*.45)/hw);
+  await chunk.animate([{transform:`translate(${handsX-sx}px,${handsY-sy}px) rotate(-8deg) scale(1)`},{transform:`translate(${cx-sx}px,${cy-sy}px) rotate(14deg) scale(${grow})`}],{duration:380,easing:'cubic-bezier(.5,0,.9,.6)',fill:'forwards'}).finished;
+  // shatter
+  const r=chunk.getBoundingClientRect(); chunk.remove();
+  shatter(r);
+  const cracks=$('#cracks'); cracks.animate([{opacity:1},{opacity:1,offset:.5},{opacity:0}],{duration:900,easing:'ease-out'});
+  actor.innerHTML=sprite(angryKey,{extra:steam});
+  // reform the composer
+  await wait(250);
+  reform(hole, hw, hh);
+  await wait(1100);
+  busy=null; render();
+}
+function shatter(r){
+  const n=22;
+  for(let i=0;i<n;i++){
+    const s=document.createElement('div');s.className='shard';
+    const z=6+Math.random()*16; s.style.cssText=`left:${r.left+r.width/2-z/2}px;top:${r.top+r.height/2-z/2}px;width:${z}px;height:${z}px`;
+    document.body.append(s);
+    const a=Math.random()*Math.PI*2, d=120+Math.random()*260;
+    s.animate([{transform:'translate(0,0) rotate(0)',opacity:1},{transform:`translate(${Math.cos(a)*d}px,${Math.sin(a)*d+160}px) rotate(${(Math.random()-.5)*540}deg)`,opacity:0}],{duration:700+Math.random()*300,easing:'cubic-bezier(.2,.6,.4,1)'}).finished.then(()=>s.remove());
+  }
+}
+async function reform(hole,hw,hh){
+  // pixel by pixel the card grows back over the hole, 4 px cells
+  const cells=[];for(let y=0;y<hh;y+=4)for(let x=0;x<hw;x+=4){const c=document.createElement('i');c.className='cell';c.style.cssText=`left:${x}px;top:${y}px;width:4px;height:4px;opacity:0`;hole.append(c);cells.push(c)}
+  cells.sort(()=>Math.random()-.5);
+  const step=900/cells.length;
+  cells.forEach((c,i)=>setTimeout(()=>c.style.opacity=1,i*step));
+  await wait(950); hole.remove();
+}
+
+// ---- gallery
+function gallery(){
+  const used={};for(const [slot,pose] of Object.entries(map))(used[pose]??=[]).push(SLOTS[slot].label);
+  $('#poses').innerHTML=Object.entries(CLASSIC).map(([k,v])=>`<div class="pose">${sprite(poseKey(k,1))}<b>${v}</b><small>${used[k]?used[k].join(', '):'not used'}</small></div>`).join('')
+   +`<div class="pose">${sprite('walk0')}<b>Strut</b><small>Monitoring, between poses</small></div>`
+   +`<div class="pose">${sprite('grab')}<b>Rip</b><small>Clicked</small></div>`
+   +`<div class="pose">${sprite('lift')}<b>Lift</b><small>Clicked</small></div>`
+   +`<div class="pose">${sprite('throw')}<b>Throw</b><small>Clicked</small></div>`
+   +`<div class="pose">${sprite('mostMuscularAngry')}<b>Angry</b><small>after the throw; reduced motion shows only this</small></div>`;
+}
+
+// ---- status: what the egg must never touch
+function note(s){ $('#status').dataset.note=s; setTimeout(()=>{if($('#status').dataset.note===s)delete $('#status').dataset.note},2500) }
+setInterval(()=>{
+  const f=document.activeElement===prompt;
+  $('#status').innerHTML=($('#status').dataset.note?`<b>${$('#status').dataset.note}</b> · `:'')+`Composer: <b>${prompt.value.length}</b> characters · caret at <b>${prompt.selectionStart}</b> · focus <b>${f?'in the composer':'elsewhere'}</b> · motion <b>${still()?'reduced':'full'}</b>`;
+},150);
+
+// ---- controls
+function radio(attr,set){document.querySelectorAll(`[data-${attr}]`).forEach(b=>b.addEventListener('click',()=>{document.querySelectorAll(`[data-${attr}]`).forEach(o=>o.setAttribute('aria-pressed',o===b));set(b.dataset[attr])}))}
+radio('state',v=>{if(busy)return;state=v;render()});
+radio('flex',v=>flexMode=v);
+radio('size',v=>size=v);
+$('#finish').addEventListener('mousedown',e=>e.preventDefault());$('#finish').onclick=finishTurn;
+$('#anger').addEventListener('mousedown',e=>e.preventDefault());$('#anger').onclick=tantrum;
+$('#theme').onclick=e=>{const on=e.currentTarget.getAttribute('aria-pressed')!=='true';e.currentTarget.setAttribute('aria-pressed',on);document.documentElement.dataset.theme=on?'light':'dark'};
+$('#motion').onclick=e=>{reduced=e.currentTarget.getAttribute('aria-pressed')!=='true';e.currentTarget.setAttribute('aria-pressed',reduced);render()};
+addEventListener('resize',()=>render());
+gallery();render();requestAnimationFrame(loop);
+prompt.focus();prompt.setSelectionRange(prompt.value.length,prompt.value.length);
+</script>
+</body>
+</html>

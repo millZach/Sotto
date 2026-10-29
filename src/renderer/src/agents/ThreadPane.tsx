@@ -3,7 +3,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { useMark } from '../components/marks'
 import { Archive, ArchiveRestore, Columns2, CornerDownRight, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
 import { capabilitiesForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
-import { isThreadArchived, isThreadClosed, threadOrnamentAllowed } from '../../../shared/threadActivity'
+import { isThreadArchived, isThreadClosed, isThreadTurnRunning, threadOrnamentAllowed } from '../../../shared/threadActivity'
 import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
 import type { AgentConnection } from './AgentContext'
@@ -34,6 +34,8 @@ import { ThreadWebLinks } from '../tools/webLinks'
 import { RunCommands } from '../tools/runCommand'
 import { ThreadBabysitting, ThreadMonitor, ThreadHeld, ThreadWaitingCommand, ThreadWorking, useHeldAction } from './ThreadMonitor'
 import { ornamentPose } from './threadActivityView'
+import { LardoTurns } from './Lardo'
+import { useCreature } from '../state/creature'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 import { useWatchedThread } from '../watcher/watcherRoom'
 import { WatchedBadge } from '../watcher/WatcherOwl'
@@ -268,12 +270,15 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const babysitShown = !useRestartStopped()
   const pose = ornamentPose({ monitoring: liveMonitors.length > 0, agents: liveWork.length > liveCommands.length, held: held !== undefined,
     commands: liveCommands.length > 0, babysitting: babysitShown && ornamentAllowed && (thread.babysitting?.length ?? 0) > 0, running: thread.status === 'running' })
-  const ornament = pose === 'monitoring' ? <ThreadMonitor key={`monitor:${thread.id}`} tasks={liveMonitors} />
+  const staged = pose === 'monitoring' ? <ThreadMonitor key={`monitor:${thread.id}`} tasks={liveMonitors} />
     : pose === 'working' ? <ThreadWorking key={`working:${thread.id}`} work={liveWork} />
     : pose === 'held' && held !== undefined ? <ThreadHeld key={`held:${thread.id}`} action={held} now={now} />
     : pose === 'waiting' ? <ThreadWaitingCommand key={`command:${thread.id}`} commands={liveCommands} now={now} />
     : pose === 'babysitting' ? <ThreadBabysitting key={`babysitting:${thread.id}`} thread={thread} now={now} />
     : undefined
+  // Lardo flexes when a turn finishes while he is up; only he is wrapped to hear it, and only where the build offers him.
+  const lardo = useCreature() === 'lardo'
+  const ornament = staged !== undefined && lardo ? <LardoTurns running={isThreadTurnRunning(thread)}>{staged}</LardoTurns> : staged
   const composing = paneHasDraft
   const capabilities = capabilitiesForThread(state.host, thread)
   /** This thread's own lane. Work on another thread leaves every control here live. */

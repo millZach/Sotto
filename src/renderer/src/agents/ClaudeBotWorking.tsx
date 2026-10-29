@@ -1,6 +1,6 @@
 import React, { useRef, type ReactNode } from 'react'
 import { ClaudeBotSprite, paintBot, pixelPath, useBotParts } from './claudeBotSprite'
-import { usePixelLoop } from './pixelLoop'
+import { miniFrame, usePixelLoop } from './pixelLoop'
 
 /** A small agent: Claude bot at a third of the size on a 12 × 10 grid, its body in the same 4:3 box, eyes toward the left it walks to. */
 const MINI_ROWS: readonly string[] = [
@@ -18,7 +18,6 @@ const MINI_PATHS = Object.fromEntries(['a', 'b', 'h', 'l', 'k'].map(ch => [ch, p
 const MINI_LEG_X = [3, 6] as const
 const miniLegs = (lifted: number): string => MINI_LEG_X.map((x, index) => index === lifted ? '' : `M${x} 8h2v1h-2z`).join(' ').trim()
 const miniFeet = (lifted: number): string => MINI_LEG_X.map((x, index) => `M${x} ${index === lifted ? 8 : 9}h2v1h-2z`).join(' ')
-const MINI_WIDTH = 24
 /** No more small agents than the track can show without crowding it; the readout carries the real count. */
 const MAX_WORKING_MINIS = 6
 
@@ -37,16 +36,10 @@ export function ClaudeBotWorking({ agents }: { readonly agents: number }): React
   usePixelLoop(actor, ({ time, still, width }) => {
     const reach = Math.max(0, width - 80)
     if (actor.current) actor.current.style.transform = `translateX(${Math.round(reach / 2) * 2}px)`
-    // A mini leaves from under the raised arm and walks until it is past the track's clipped left edge.
-    const start = Math.max(0, width - 96), span = start + MINI_WIDTH
-    // Held still, they stand in a line a step apart: a stride clear of each other where the track allows,
-    // closing up on the narrowest track so the last never falls off the end.
-    const stride = Math.min(MINI_WIDTH + 12, Math.max(0, start - 12) / count)
     minis.current.forEach((mini, index) => {
       if (!mini) return
-      const x = still ? Math.max(0, start - 12 - index * stride) : start - span * ((time * 0.09 + index * 0.17) % 1)
-      const stepping = !still && Math.floor(time * 6 + index) % 2 === 1
-      mini.style.transform = `translate(${Math.round(x / 2) * 2}px, ${stepping ? -1 : 0}px)`
+      const { transform, stepping } = miniFrame(time, still, width, index, count)
+      mini.style.transform = transform
       // The legs trade places on the bob's beat; held still, both stand.
       const lifted = still ? -1 : stepping ? 0 : 1
       legs.current[index]?.setAttribute('d', miniLegs(lifted))

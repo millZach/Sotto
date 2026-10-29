@@ -1,6 +1,6 @@
 import React, { useRef, type ReactNode } from 'react'
 import { ClaudeBotSprite, paintBot, useBotParts } from './claudeBotSprite'
-import { BOTTOM_ROWS, EMPTY_PATH, GLASS_FLIP, GLASS_PERIOD, grainPath, HOURGLASS_CENTRE, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, sandPath, TOP_ROWS } from './hourglass'
+import { EMPTY_PATH, glassFrame, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, sandPath, TOP_ROWS } from './hourglass'
 import { usePixelLoop } from './pixelLoop'
 
 /** The right hand is raised this far (the arm then spans y 12-16), so it fits the glass's waist between the two chambers. */
@@ -24,30 +24,23 @@ export function ClaudeBotHeld(): ReactNode {
   const bottomSand = useRef<SVGPathElement>(null)
   const grain = useRef<SVGPathElement>(null)
   usePixelLoop(actor, ({ time, still }) => {
-    // Held motion keeps a half-run glass: the pose still reads as waiting without a frame of movement.
-    const phase = still ? GLASS_PERIOD / 2 : time % GLASS_PERIOD
-    const running = GLASS_PERIOD - GLASS_FLIP
-    const drain = Math.min(1, phase / running)
-    const spin = phase > running ? (phase - running) / GLASS_FLIP : 0
-    const gone = Math.min(3, Math.floor(drain * 3))
+    const sand = glassFrame(time, still)
     const bob = !still && Math.floor(time * 1.2) % 2 === 1
     paintBot(parts, still ? { handR: HAND } : {
       bob,
       eyes: time % 5 > 4.86 ? 'blink' : 'open',
       // A glance at the glass now and then, and while it turns.
-      look: time % 9 > 6.5 || spin > 0 ? 1 : 0,
+      look: time % 9 > 6.5 || sand.spinning ? 1 : 0,
       spark: Math.floor(time / 1.5) % 2 === 1,
       glow: time % 3 < 0.6,
       handR: HAND,
     })
     // The glass is drawn before the bot (so its turning group is the first nested group), so it follows the breath itself.
     holder.current?.setAttribute('transform', glassAt(bob))
-    // The rotation only ever runs during the flip, and never carries over: the sand rows live in the rotated group, so a
-    // half turn that outlasted the flip would empty the chamber the reader sees filling, and the sand would climb.
-    glass.current?.setAttribute('transform', `rotate(${spin * 180} ${HOURGLASS_CENTRE})`)
-    topSand.current?.setAttribute('d', sandPath(TOP_ROWS.slice(gone)))
-    bottomSand.current?.setAttribute('d', sandPath(BOTTOM_ROWS.slice(3 - gone)))
-    grain.current?.setAttribute('d', drain < 1 && !still ? grainPath(time) : EMPTY_PATH)
+    glass.current?.setAttribute('transform', sand.turn)
+    topSand.current?.setAttribute('d', sand.top)
+    bottomSand.current?.setAttribute('d', sand.bottom)
+    grain.current?.setAttribute('d', sand.grain)
   })
   return <div className="thread-monitor__actor" ref={actor} aria-hidden="true">
     <svg className="thread-monitor__creature" viewBox="0 0 40 32" width="80" height="64" focusable="false" shapeRendering="crispEdges">

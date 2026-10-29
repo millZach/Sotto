@@ -1,0 +1,41 @@
+/* Lardo (the creature setting; an Owl feature, ADR-0116). His tan is the provider colour for Claude, a badge colour that is
+   the same tan in both modes, and his ink is the provider ink; the highlight runs toward whichever of the room and the
+   text is light, so it is lighter than his skin in either mode. His posing trunks are the theme's accent, so he changes
+   with the theme the way the provider marks do. Unlike the other creatures he keeps his colours while babysitting
+   (Zach's call, October 28, 2026). */
+.thread-monitor[data-creature='lardo'], .creature-walk[data-creature='lardo'] {
+  --lardo-skin: var(--tt-provider-claude);
+  --lardo-ink: var(--tt-provider-ink);
+  --lardo-hi: light-dark(color-mix(in srgb, var(--lardo-skin) 55%, var(--tt-canvas)), color-mix(in srgb, var(--lardo-skin) 55%, var(--tt-text)));
+  --lardo-lo: color-mix(in srgb, var(--lardo-skin) 72%, var(--lardo-ink));
+  --lardo-teeth: light-dark(color-mix(in srgb, var(--lardo-skin) 15%, var(--tt-canvas)), color-mix(in srgb, var(--lardo-skin) 15%, var(--tt-text)));
+  --lardo-trunks: var(--tt-accent);
+  --lardo-trunks-lo: color-mix(in srgb, var(--tt-accent) 65%, var(--lardo-ink));
+}
+.lardo-k { fill: var(--lardo-ink); }
+.lardo-s { fill: var(--lardo-skin); }
+.lardo-h { fill: var(--lardo-hi); }
+.lardo-d { fill: var(--lardo-lo); }
+.lardo-t { fill: var(--lardo-trunks); }
+.lardo-u { fill: var(--lardo-trunks-lo); }
+.lardo-w { fill: var(--lardo-teeth); }
+.lardo-r { fill: var(--tt-error); }
+.lardo-spark { fill: var(--tt-activity); }
+.lardo-steam { fill: var(--tt-text-muted); }
+
+/* Above a composer he answers a click on his own pixels only, so the room around him still lets the transcript under it be
+   selected. The press never takes focus (Lardo.tsx). */
+.thread-monitor[data-creature='lardo'] .lardo__body path { pointer-events: visiblePainted; cursor: pointer; }
+
+/* What he throws: drawn over the window, catching nothing, for the two seconds of a tantrum. Nothing shows until its
+   beat, and reduced motion never mounts any of it. The bite is the room showing through the composer's top edge; the
+   piece and its shards are the composer's own card. */
+.lardo-throw { position: fixed; inset: 0; z-index: 1001; pointer-events: none; overflow: hidden; }
+.lardo-bite, .lardo-piece { position: fixed; width: 56px; height: 10px; visibility: hidden;
+  clip-path: polygon(0 0, 100% 0, 100% 30%, 88% 62%, 93% 100%, 74% 70%, 60% 100%, 47% 64%, 33% 96%, 20% 66%, 8% 92%, 0 55%); }
+.lardo-bite { background: var(--tt-canvas); }
+.lardo-bite__cell { position: absolute; width: 4px; height: 4px; opacity: 0; background: var(--tt-card); }
+.lardo-piece { background: linear-gradient(160deg, color-mix(in srgb, var(--tt-text) 10%, var(--tt-card)), var(--tt-card) 60%); transform-origin: 50% 50%; will-change: transform; }
+.lardo-shard { position: fixed; visibility: hidden; background: var(--tt-card); box-shadow: 0 0 0 1px color-mix(in srgb, var(--tt-text) 18%, transparent); will-change: transform, opacity; }
+.lardo-cracks { position: fixed; inset: 0; width: 100%; height: 100%; opacity: 0; }
+.lardo-cracks path { fill: none; stroke: var(--tt-text); stroke-width: 2px; stroke-linecap: square; vector-effect: non-scaling-stroke; opacity: .6; }

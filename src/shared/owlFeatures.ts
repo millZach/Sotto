@@ -32,6 +32,7 @@ export const OWL_FEATURES = [
   { id: 'desktop-notifications', name: 'Notifications when a thread has finished or needs you', owlSince: '2026-10-22', owner: 'docs/adr/0117-the-desktop-notifies-when-a-thread-has-finished-everything-or-needs-you.md', sentToStable: true },
   { id: 'recent-projects', name: 'Recent projects on a new thread', owlSince: '2026-10-23', owner: 'docs/adr/0121-a-new-thread-can-move-to-a-recent-project.md', sentToStable: false },
   { id: 'creature-toggle', name: 'Show the creature', owlSince: '2026-10-23', owner: 'docs/adr/0116-the-creature-above-the-composer-is-a-choice.md', sentToStable: false },
+  { id: 'lardo-creature', name: 'Lardo, the bodybuilder creature', owlSince: '2026-10-28', owner: 'docs/adr/0116-the-creature-above-the-composer-is-a-choice.md', sentToStable: false },
   { id: 'night-falls', name: 'Night falls between Dictate or Threads and Watcher', owlSince: '2026-10-23', owner: 'docs/adr/0119-night-falls-moves-the-window-between-threads-and-watchers-room.md', sentToStable: false },
   { id: 'reveal-linked-files', name: 'Show linked files in Finder or File Explorer', owlSince: '2026-10-23', owner: 'docs/adr/0120-a-file-link-in-a-reply-shows-the-file-in-its-folder.md', sentToStable: false },
   { id: 'cursor', name: 'Cursor provider', owlSince: '2026-10-23', owner: 'docs/adr/0128-cursor-is-a-thread-provider.md', sentToStable: false },

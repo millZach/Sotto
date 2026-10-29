@@ -8,18 +8,18 @@ import { CreatureChoice } from '../../../src/renderer/src/features/settings/them
 import type { LaterWords } from '../../../src/renderer/src/features/settings/laterWords'
 import { saying } from '../../fixtures/renderer/laterWords'
 import { DEFAULT_SETTINGS, type AppSettings, type SettingsPatch } from '../../../src/shared/settings'
-import { useCreatureShown } from '../../../src/renderer/src/state/creature'
+import { creatureShown, useCreature, useCreatureShown } from '../../../src/renderer/src/state/creature'
 
 // The real walk needs matchMedia and animation frames; the choice only cares which creature it shows.
 vi.mock('../../../src/renderer/src/agents/CreatureWalk', () => ({
   CreatureWalk: ({ creature }: { creature: string }) => <span data-testid="walk" data-creature={creature} />,
 }))
 
-// The switch is an Owl feature (ADR-0072); each test says whether this build has it.
-const gate = vi.hoisted(() => ({ owl: true }))
+// The switch and Lardo are Owl features (ADR-0072); each test says whether this build has them.
+const gate = vi.hoisted(() => ({ owl: true, lardo: false }))
 vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => ({
   ...await importOriginal<typeof import('../../../src/renderer/src/state/owlFeature')>(),
-  useOwlFeature: (id: string) => id === 'creature-toggle' && gate.owl,
+  useOwlFeature: (id: string) => (id === 'creature-toggle' && gate.owl) || (id === 'lardo-creature' && gate.lardo),
 }))
 const app = vi.hoisted(() => ({ settings: undefined as Partial<AppSettings> | undefined }))
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
@@ -30,6 +30,7 @@ vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
 afterEach(() => {
   cleanup()
   gate.owl = true
+  gate.lardo = false
   app.settings = undefined
 })
 
@@ -127,5 +128,47 @@ describe('creature switch', () => {
     gate.owl = true
     app.settings = { showCreature: true }
     expect(shown()).toBe('true')
+  })
+})
+
+describe('Lardo', () => {
+  it('is offered after Claude bot only where his Owl feature is on', () => {
+    render(<CreatureChoice value="sotto" shown onShow={() => undefined} onChoose={() => undefined} />)
+    expect(within(screen.getByRole('group', { name: 'Creature' })).getAllByRole('button').map(button => button.textContent)).toEqual(['Sotto', 'Claude bot'])
+    cleanup()
+    gate.lardo = true
+    render(<CreatureChoice value="lardo" shown onShow={() => undefined} onChoose={() => undefined} />)
+    expect(within(screen.getByRole('group', { name: 'Creature' })).getAllByRole('button').map(button => button.textContent)).toEqual(['Sotto', 'Claude bot', 'Lardo'])
+    expect(screen.getByRole('button', { name: 'Use Lardo as the creature, currently active' })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('saves Lardo on its own', async () => {
+    gate.lardo = true
+    const user = userEvent.setup()
+    const save = vi.fn<(patch: SettingsPatch, text?: LaterWords) => Promise<boolean>>(async () => true)
+    render(<AppearanceSettings settings={DEFAULT_SETTINGS} platform="win32" onSave={save} getSettings={() => DEFAULT_SETTINGS} />)
+    await user.click(screen.getByRole('button', { name: 'Use Lardo as the creature' }))
+    await waitFor(() => expect(save).toHaveBeenCalledWith({ creature: 'lardo' }, saying('Creature saved.')))
+  })
+
+  it('where he is held, a saved Lardo shows and is marked as Sotto\u2019s creature, and stays saved', () => {
+    const settings: AppSettings = { ...DEFAULT_SETTINGS, creature: 'lardo' }
+    const save = vi.fn(async () => true)
+    render(<AppearanceSettings settings={settings} platform="win32" onSave={save} getSettings={() => settings} />)
+    expect(screen.getByRole('button', { name: 'Use Sotto as the creature, currently active' })).toHaveAttribute('aria-pressed', 'true')
+    expect(document.querySelector('.studio-threads__creature [data-testid="walk"]')).toHaveAttribute('data-creature', 'sotto')
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('stands above the composer only where the build offers him', () => {
+    function Probe() { return <span data-testid="creature">{useCreature()}</span> }
+    const creature = () => { render(<Probe />); const text = screen.getByTestId('creature').textContent; cleanup(); return text }
+    app.settings = { creature: 'lardo' }
+    expect(creature()).toBe('sotto')
+    gate.lardo = true
+    expect(creature()).toBe('lardo')
+    expect(creatureShown('dragon', true)).toBe('sotto')
+    expect(creatureShown(undefined, true)).toBe('sotto')
+    expect(creatureShown('claude', false)).toBe('claude')
   })
 })
