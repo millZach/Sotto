@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { agentRequestSchema } from '../../../src/shared/agents'
 import { museItemActivity } from '../../../src/main/agents/museActivity'
-import { museApprovalChoice, museApprovalPending, museServerSuffix, museSessionServerName, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, type MuseApproval, type MuseUserInput } from '../../../src/main/agents/museRequests'
+import { museApprovalChoice, museApprovalPending, museServerSuffix, museSessionServerName, museChildAdmission, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, type MuseApproval, type MuseUserInput } from '../../../src/main/agents/museRequests'
 
 const approval: MuseApproval = {
   approvalId: 'a1', sessionId: 's1', turnId: 't1', toolName: 'bash', toolCallId: 'c1', itemId: 'i1',
@@ -246,5 +246,31 @@ describe('Muse prompts for Sotto’s own tools', () => {
   it('leaves a call with no one-time allow for the user', () => {
     const wider = tool('mcp__sotto_browser__browser_open', { availableChoices: approval.availableChoices.filter(choice => choice.scope !== 'once' || choice.decision !== 'approved') })
     expect(museToolAdmission(wider, own)).toBeUndefined()
+  })
+})
+
+describe('Muse prompts from a thread’s subagents', () => {
+  const origin = { childRunId: 'r1', childSessionId: 'child', subagentId: 'agent' }
+  const child = (extra: Partial<MuseApproval> = {}): MuseApproval => ({ ...approval, subagentOrigin: origin, ...extra })
+  const read = child({ toolName: 'read', subject: { kind: 'fileAccess', path: '/a', access: 'read' } })
+  it('answers any child prompt under Full access with the one-time allow and nothing wider', () => {
+    expect(museChildAdmission(child(), 'full-access')).toBe('once')
+    expect(museChildAdmission(child({ subject: { kind: 'network', host: 'example.com' } }), 'full-access')).toBe('once')
+  })
+  it('answers only a child reading a file under Automatic', () => {
+    expect(museChildAdmission(read, 'auto')).toBe('once')
+    expect(museChildAdmission(child(), 'auto')).toBeUndefined()
+    expect(museChildAdmission(child({ subject: { kind: 'fileAccess', path: '/a', access: 'write' } }), 'auto')).toBeUndefined()
+  })
+  it('leaves every child prompt for the user under Ask for approval', () => {
+    expect(museChildAdmission(child(), 'approval-required')).toBeUndefined()
+    expect(museChildAdmission(read, 'approval-required')).toBeUndefined()
+  })
+  it('never answers the thread’s own prompts', () => {
+    expect(museChildAdmission(approval, 'full-access')).toBeUndefined()
+  })
+  it('leaves a child prompt with no one-time allow for the user', () => {
+    const wider = child({ availableChoices: approval.availableChoices.filter(choice => choice.scope !== 'once' || choice.decision !== 'approved') })
+    expect(museChildAdmission(wider, 'full-access')).toBeUndefined()
   })
 })
