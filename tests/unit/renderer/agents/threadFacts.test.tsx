@@ -126,28 +126,16 @@ describe('the Needs you queue (ADR-0135)', () => {
     expect(ids).not.toContain('weekly-note')
   })
 
-  it('offers an inline answer only for asks that fit, and opening for the rest', () => {
+  it('pops every own request open in its card, however long or shaped, and dismisses an own failure', () => {
+    // The entry draws no ask (October 29, 2026), so nothing about the ask's size or shape sends it to its thread.
     const permission: AgentRequest = { id: 'p1', kind: 'permission', text: 'Run a command\nnpm test', options: [] }
     expect(actionFor(permission)).toBe('answer')
-    expect(actionFor(structured())).toBe('answer')
-    expect(actionFor(structured({ required: false }))).toBe('answer')
-    // Permissions that cannot be judged whole from the sidebar.
-    expect(actionFor({ ...permission, permissionChoices: [1, 2, 3, 4].map(n => ({ id: `c${n}`, label: `Choice ${n}`, kind: 'allow-once' as const })) })).toBe('open')
-    expect(actionFor({ ...permission, permissionChoices: [{ id: 'c1', label: 'Allow', kind: 'allow-once', description: 'Because…' }] })).toBe('open')
-    expect(actionFor({ ...permission, permissionChoices: [] })).toBe('open')
-    expect(actionFor({ ...permission, context: { plan: { steps: 'Do things' } } })).toBe('open')
-    expect(actionFor({ ...permission, context: { command: 'x'.repeat(161) } })).toBe('open')
-    expect(actionFor({ ...permission, context: { details: 'Long output' } })).toBe('open')
-    expect(actionFor({ ...permission, delivery: 'uncertain' })).toBe('open')
-    // Questions that need their form, their pages, or the composer.
-    expect(actionFor(structured({ multiSelect: true }))).toBe('open')
-    expect(actionFor(structured({ allowFreeText: true }))).toBe('open')
-    expect(actionFor(structured({ unavailableReason: 'Use the provider app' }))).toBe('open')
-    expect(actionFor(structured({}, { questions: [structured().questions![0]!, { ...structured().questions![0]!, id: 'q2' }] }))).toBe('open')
-    expect(actionFor(structured({}, { pages: [{ token: 'a'.repeat(32), kind: 'file', name: 'x.html', start: 'x.html' }] }))).toBe('open')
-    expect(actionFor(structured({}, { linkMissing: true }))).toBe('open')
-    expect(actionFor({ id: 'l1', kind: 'question', text: 'Which?', options: [{ id: 'a', label: 'A' }] })).toBe('open')
-    expect(actionFor({ id: 'l2', kind: 'question', text: 'Say more', options: [] })).toBe('open')
+    expect(actionFor({ ...permission, context: { command: 'x'.repeat(4000) } })).toBe('answer')
+    expect(actionFor({ ...permission, context: { plan: { steps: 'Do things' } } })).toBe('answer')
+    expect(actionFor({ ...permission, delivery: 'uncertain' })).toBe('answer')
+    expect(actionFor(structured({ multiSelect: true }))).toBe('answer')
+    expect(actionFor(structured({}, { pages: [{ token: 'a'.repeat(32), kind: 'file', name: 'x.html', start: 'x.html' }] }))).toBe('answer')
+    expect(actionFor({ id: 'l2', kind: 'question', text: 'Say more', options: [] })).toBe('answer')
   })
 
   it('says no wait without a stamp and orders unstamped entries by last activity', () => {
