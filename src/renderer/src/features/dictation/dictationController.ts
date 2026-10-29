@@ -466,7 +466,9 @@ export class DictationController {
     session.acceptProgress = true
     session.processingStage = 'transcribing'
     session.progress = 0
-    if (route !== undefined) session.route = route
+    // The route of the latest attempt: a plain Try again after Transcribe on this computer goes back to OpenRouter.
+    if (route === undefined) delete session.route
+    else session.route = route
     this.dispatch({ type: 'RETRIED', sessionId: session.id, startedAt: session.startedAt }, session)
     const waiting = session.parts.filter((part) => part.transcript === undefined && part.audio !== null)
     waiting.forEach((part, index) => {

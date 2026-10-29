@@ -43,9 +43,12 @@ export class OpenRouterSpeechModels {
     return this.reading
   }
 
-  /** Whether the model has a zero-retention host, from the last list read; unknown counts as no. */
-  hasZeroRetentionHost(id: string): boolean {
-    return this.last?.list.models.some((model) => model.id === id && model.zdr) ?? false
+  /**
+   * Whether the model has a host that keeps no audio, from the last list read: null while no list has been read, or for
+   * a model the list does not name, so the caller can keep to zero retention when it cannot tell.
+   */
+  zeroRetention(id: string): boolean | null {
+    return this.last?.list.models.find((model) => model.id === id)?.zdr ?? null
   }
 
   /** The first model in the ranking, or null before a list has been read. */

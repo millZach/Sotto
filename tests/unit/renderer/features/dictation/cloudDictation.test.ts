@@ -79,4 +79,25 @@ describe('dictation transcribed by an OpenRouter speech model', () => {
     for (const snapshot of retried) expect(snapshot).not.toHaveProperty('cloud')
     expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({ modelPreset: 'parakeet' }))
   })
+
+  it('goes back to OpenRouter, and says so, on a plain Try again after Transcribe on this computer failed', async () => {
+    const routes: string[] = []
+    let failures = 2
+    const harness = createHarness({
+      transcribedWith: () => 'openrouter',
+      transcribe: async (options) => {
+        routes.push(options.route ?? 'cloud')
+        if (failures-- > 0) throw new TranscriptionError(options.route === 'local' ? 'model-not-ready' : 'network')
+        return { text: 'hello', language: 'en' }
+      },
+    })
+    await harness.controller.start()
+    await harness.controller.stop()
+    await harness.controller.retry('local')
+    expect(harness.controller.getState()).toMatchObject({ status: 'error', code: 'TRANSCRIPTION_MODEL_NOT_READY', kept: true })
+    await harness.controller.retry()
+    expect(routes).toEqual(['cloud', 'local', 'cloud'])
+    expect(snapshots(harness).filter((snapshot) => snapshot.status === 'processing').at(-1)).toMatchObject({ cloud: true })
+    expect(harness.addHistory).toHaveBeenCalledWith(expect.objectContaining({ modelPreset: 'openrouter' }))
+  })
 })

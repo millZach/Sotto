@@ -4,7 +4,7 @@ import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 
 import { speechModelSummary } from './components/SpeechModelStatus'
-import { PARAKEET_V3, sottoSpeechModel, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
+import { PARAKEET_V3, sottoSpeechModel, speechModelHere, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
 import type { AppSettings } from '../../shared/settings'
 import { AppShell, layoutFor } from './components/AppShell'
 import { usePageShortcuts } from './components/pageShortcuts'
@@ -162,7 +162,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   // While OpenRouter transcribes (ADR-0160) the speech model here is unloaded on purpose: Dictate and the footer say
   // nothing about it, and Dictate reads the list only to know whether Transcribe on this computer can be offered.
   const cloudTranscription = useOwlFeature('cloud-dictation') && app.settings?.cloudTranscription === true
-  const localModelHere = app.speechModels?.some(model => model.installed && (app.speechModelChoice === null || model.id === app.speechModelChoice)) === true
+  const localModelHere = app.speechModels !== null && speechModelHere(app.speechModels, app.speechModelChoice)
   const offersSpeechModels = !app.settings?.onboardingComplete || app.navigation === 'onboarding' || (app.navigation === 'settings' && dictationOn)
     || (app.navigation === 'home' && cloudTranscription)
   useEffect(() => {

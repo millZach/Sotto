@@ -145,7 +145,7 @@ import { coreMlHelperAvailable, createCoreMlEngineLoader } from './asr/coreMlEng
 import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioModels'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
 import { listOpenRouterModels } from './llm/openRouterModels'
-import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
+import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, speechModelHere, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { newVersionListener, UpdateService, waitingVersion } from './updates/updateService'
 import { e2eUpdater } from './updates/e2eUpdater'
@@ -1573,33 +1573,43 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         const list = await speechModelsReader.list()
         return list.ok ? list.models[0]?.id ?? null : null
       },
-      hasZeroRetentionHost: async (id) => {
+      zeroRetention: async (id) => {
         await speechModelsReader.list()
-        return speechModelsReader.hasZeroRetentionHost(id)
+        return speechModelsReader.zeroRetention(id)
       },
     },
     onFailure: transcriptionDiagnostics,
     onRecovered: transcriptionDiagnostics,
     ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
   })
-  // Transcribe on this computer, for a kept recording OpenRouter turned away, loads the chosen model only if it is
-  // already here (a press must never start a 670 MB download) and lets it go again once no segment needs it.
-  let localBorrowed = 0
+  // Every segment the speech model here is transcribing is counted, so OpenRouter taking over lets the model go only once
+  // none is left, even mid-dictation. Transcribe on this computer, for a kept recording OpenRouter turned away, loads the
+  // chosen model only if it is already here (a press must never start a 670 MB download), once for all its segments,
+  // since a second load would cancel the first; the model goes again when they are done.
+  let localInFlight = 0
+  let localLoading: Promise<void> | null = null
+  const releaseLocalIfIdle = (): void => {
+    if (cloudChosen && dictationActive && localInFlight === 0) void speechModelManager?.unload()
+  }
+  const transcribeHere = async (request: TranscriptionRequest, load: boolean): Promise<TranscriptionResult> => {
+    localInFlight += 1
+    try {
+      if (load && speechModelManager !== null && speechModelManager.currentEngine() === null) {
+        localLoading ??= speechModelManager.start().finally(() => { localLoading = null })
+        await localLoading
+      }
+      return await localTranscription.transcribe(request)
+    } finally {
+      localInFlight -= 1
+      releaseLocalIfIdle()
+    }
+  }
   const transcription = {
     transcribe: async (request: TranscriptionRequest): Promise<TranscriptionResult> => {
-      if (!cloudChosen || cloudTranscription === null) return localTranscription.transcribe(request)
+      if (!cloudChosen || cloudTranscription === null) return transcribeHere(request, false)
       if (request.route !== 'local') return cloudTranscription.transcribe(request)
-      const chosen = workingCopySettings.speechModel
-      const here = (await speechModel.list()).some((option) => option.installed && (chosen === null || option.id === chosen))
-      if (!here) return { ok: false, reason: 'model-not-ready' }
-      localBorrowed += 1
-      try {
-        await speechModelManager?.start()
-        return await localTranscription.transcribe(request)
-      } finally {
-        localBorrowed -= 1
-        if (localBorrowed === 0 && cloudChosen) void speechModelManager?.unload()
-      }
+      if (!speechModelHere(await speechModel.list(), workingCopySettings.speechModel)) return { ok: false, reason: 'model-not-ready' }
+      return transcribeHere(request, true)
     },
     cancel: (requestId: string): void => {
       localTranscription.cancel(requestId)
@@ -1925,7 +1935,6 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     app.on('will-quit', () => { stopAlerts(); alerts.dispose(); desktopNotifier.dispose() })
   }
   if (dictationActive && !cloudChosen) void speechModelManager?.start()
-  if (dictationActive && cloudChosen) void speechModelsReader?.list()
   const trayController = new TrayController(trayAdapter, {
     ...(!app.isPackaged ? { showTurnRecords } : {}),
     toggleDictation,
@@ -2016,8 +2025,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     trayController.update(currentTrayState)
     unloadWhenDone = false
     if (on) {
-      if (cloudChosen) void speechModelsReader?.list()
-      else void speechModelManager?.start()
+      if (!cloudChosen) void speechModelManager?.start()
     } else {
       windows.hideWidget()
       if (widgetState.status === 'processing') unloadWhenDone = true
@@ -2025,19 +2033,14 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     }
   }
 
-  // OpenRouter takes over transcribing, or gives it back (ADR-0160). On, the speech model here is let go once no
-  // dictation is being transcribed with it; off, it loads again. With dictation off nothing loads either way.
+  // OpenRouter takes over transcribing, or gives it back (ADR-0160). On, the speech model here is let go once no segment
+  // is being transcribed with it; off, it loads again. With dictation off nothing loads either way. OpenRouter's list is
+  // read only when Settings opens it or a dictation needs it, never here.
   const applyCloudTranscription = (on: boolean): void => {
     cloudChosen = on
     if (!dictationActive) return
-    if (on) {
-      void speechModelsReader?.list()
-      if (widgetState.status === 'processing') unloadWhenDone = true
-      else if (localBorrowed === 0) void speechModelManager?.unload()
-    } else {
-      unloadWhenDone = false
-      void speechModelManager?.start()
-    }
+    if (on) releaseLocalIfIdle()
+    else void speechModelManager?.start()
   }
 
   const permissionAdapter = createPermissionAdapter()

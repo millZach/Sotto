@@ -97,6 +97,22 @@ describe('Transcribe with OpenRouter in Settings → Dictation (Owl cloud-dictat
     expect(all[5]).toHaveTextContent('Not tested yet')
   })
 
+  it('hides a row’s tooltip on Escape, and shows it again once focus or the pointer comes back', async () => {
+    const user = userEvent.setup()
+    renderSettings({ cloudTranscription: true, llmApiKey: STORED_CREDENTIAL_PLACEHOLDER })
+    const radios = await within(group()).findAllByRole('radio')
+    radios[0]!.focus()
+    await user.keyboard('{Escape}')
+    expect(radios[0]).toHaveAttribute('data-tip-quiet')
+    await user.keyboard('{ArrowDown}')
+    expect(radios[0]).not.toHaveAttribute('data-tip-quiet')
+    await user.hover(radios[2]!)
+    await user.keyboard('{Escape}')
+    expect(radios[2]).toHaveAttribute('data-tip-quiet')
+    await user.unhover(radios[2]!)
+    expect(radios[2]).not.toHaveAttribute('data-tip-quiet')
+  })
+
   it('says when the list cannot be read, changes nothing, and reads it again on Try again', async () => {
     const user = userEvent.setup()
     let fail = true

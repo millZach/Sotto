@@ -69,8 +69,11 @@ export interface CloudTranscriptionRecoveryDiagnostic {
 export interface CloudSpeechModelSource {
   /** The model to use when the user has not chosen one: the first in the ranking, or null when the list cannot be read. */
   best(): Promise<string | null>
-  /** Whether the model has a host that keeps no audio; unknown counts as no. */
-  hasZeroRetentionHost(id: string): Promise<boolean>
+  /**
+   * Whether the model has a host that keeps no audio, or null when the list cannot say. Unknown is sent to zero-retention
+   * hosts only, so audio never reaches a host that keeps it because a list could not be read.
+   */
+  zeroRetention(id: string): Promise<boolean | null>
 }
 
 export interface CloudTranscriptionServiceDependencies {
@@ -238,7 +241,7 @@ export class CloudTranscriptionService {
       trace.model = model
       const keyterms = parseDictionary(settings.llmDictionary, { maxEntries: 200, maxLength: 100 })
       const audio = { data: Buffer.from(request.wav).toString('base64'), format: 'wav' }
-      const zeroRetention = await this.dependencies.models.hasZeroRetentionHost(model).catch(() => false)
+      const zeroRetention = await this.dependencies.models.zeroRetention(model).catch(() => null) !== false
       if (controller.signal.aborted) return { ok: false, reason: 'cancelled' }
       const body = (withKeyterms: boolean): string => JSON.stringify({
         model,

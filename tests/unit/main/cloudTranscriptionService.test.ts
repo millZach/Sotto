@@ -27,7 +27,7 @@ function setup(patch: Partial<AppSettings> = {}, models: Partial<CloudSpeechMode
   const recoveries: CloudTranscriptionRecoveryDiagnostic[] = []
   const service = new CloudTranscriptionService({
     getSettings: async () => settings,
-    models: { best: async () => 'microsoft/mai-transcribe-2', hasZeroRetentionHost: async () => true, ...models },
+    models: { best: async () => 'microsoft/mai-transcribe-2', zeroRetention: async () => true, ...models },
     fetchFn,
     sleep,
     random: () => 0,
@@ -52,10 +52,16 @@ describe('CloudTranscriptionService', () => {
     })
   })
 
-  it('leaves out zero-retention routing for a model with no such host', async () => {
-    const { service, fetchFn } = setup({}, { hasZeroRetentionHost: async () => false })
-    await service.transcribe(request)
-    expect(body(fetchFn)).not.toHaveProperty('provider')
+  it('leaves out zero-retention routing only for a model known to have no such host', async () => {
+    const without = setup({}, { zeroRetention: async () => false })
+    await without.service.transcribe(request)
+    expect(body(without.fetchFn)).not.toHaveProperty('provider')
+    // When the list cannot say, the audio still goes only to a host that keeps none.
+    for (const unknown of [async () => null, async () => { throw new Error('offline') }]) {
+      const blind = setup({}, { zeroRetention: unknown })
+      await blind.service.transcribe(request)
+      expect(body(blind.fetchFn)).toMatchObject({ provider: { zdr: true } })
+    }
   })
 
   it('uses the first model in the ranking when none is chosen, and says OpenRouter cannot be reached when there is no ranking', async () => {
@@ -70,7 +76,7 @@ describe('CloudTranscriptionService', () => {
   it('says no key is saved, without a request, when the key is missing or cannot be read', async () => {
     const { service, fetchFn } = setup({ llmApiKey: '' })
     expect(await service.transcribe(request)).toEqual({ ok: false, reason: 'no-key' })
-    const locked = new CloudTranscriptionService({ getSettings: async () => { throw new Error('locked') }, models: { best: async () => null, hasZeroRetentionHost: async () => false }, fetchFn })
+    const locked = new CloudTranscriptionService({ getSettings: async () => { throw new Error('locked') }, models: { best: async () => null, zeroRetention: async () => false }, fetchFn })
     expect(await locked.transcribe(request)).toEqual({ ok: false, reason: 'no-key' })
     expect(fetchFn).not.toHaveBeenCalled()
   })

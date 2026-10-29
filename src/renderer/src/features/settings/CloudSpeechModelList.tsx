@@ -31,6 +31,22 @@ export function CloudSpeechModelList({ choice, onChoose, onList }: {
   const reading = useRef(0)
   const labelId = useId()
   const rows = useRef(new Map<string, HTMLDivElement>())
+  // A row's tooltip opens on hover or keyboard focus. Escape hides every one showing, each until the pointer or focus
+  // leaves its row.
+  const [pointed, setPointed] = useState<string | null>(null)
+  const [quiet, setQuiet] = useState<ReadonlySet<string>>(() => new Set())
+  const hush = (...ids: Array<string | null>): void => setQuiet((was) => new Set([...was, ...ids.filter((id): id is string => id !== null)]))
+  const unhush = (id: string): void => setQuiet((was) => { if (!was.has(id)) return was; const next = new Set(was); next.delete(id); return next })
+  useEffect(() => {
+    if (pointed === null || quiet.has(pointed)) return
+    const onKey = (event: globalThis.KeyboardEvent): void => {
+      if (event.key !== 'Escape' || event.defaultPrevented) return
+      event.preventDefault()
+      hush(pointed)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [pointed, quiet])
 
   const read = useCallback(() => {
     const version = ++reading.current
@@ -48,6 +64,14 @@ export function CloudSpeechModelList({ choice, onChoose, onList }: {
   const shown = all || chosenAt >= TOP ? models : models.slice(0, TOP)
 
   const move = (event: KeyboardEvent<HTMLDivElement>, index: number): void => {
+    if (event.key === 'Escape') {
+      const id = shown[index]!.id
+      if (quiet.has(id) && (pointed === null || quiet.has(pointed))) return
+      event.preventDefault()
+      event.stopPropagation()
+      hush(id, pointed)
+      return
+    }
     const step = event.key === 'ArrowDown' || event.key === 'ArrowRight' ? 1 : event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 0
     const to = event.key === 'Home' ? 0 : event.key === 'End' ? shown.length - 1 : step === 0 ? null : (index + step + shown.length) % shown.length
     if (to === null) {
@@ -79,7 +103,9 @@ export function CloudSpeechModelList({ choice, onChoose, onList }: {
         <div role="radiogroup" aria-labelledby={labelId} data-setting="cloud-speech-model" className="cloud-models__rows">
           {shown.map((model, index) => (
             <ModelRow key={model.id} model={model} rank={models.indexOf(model) + 1} checked={model.id === chosen}
-              focusable={model.id === chosen || (chosenAt < 0 && index === 0)}
+              focusable={model.id === chosen || (chosenAt < 0 && index === 0)} quiet={quiet.has(model.id)}
+              onPoint={(on) => { setPointed(on ? model.id : null); if (!on) unhush(model.id) }}
+              onLeave={() => unhush(model.id)}
               rowRef={(node) => { if (node === null) rows.current.delete(model.id); else rows.current.set(model.id, node) }}
               onChoose={() => onChoose(model.id)} onKeyDown={(event) => move(event, index)} />
           ))}
@@ -102,11 +128,16 @@ export function CloudSpeechModelList({ choice, onChoose, onList }: {
   </div>
 }
 
-function ModelRow({ model, rank, checked, focusable, rowRef, onChoose, onKeyDown }: {
+function ModelRow({ model, rank, checked, focusable, quiet, onPoint, onLeave, rowRef, onChoose, onKeyDown }: {
   readonly model: CloudSpeechModel
   readonly rank: number
   readonly checked: boolean
   readonly focusable: boolean
+  /** Escape hid this row's tooltip. */
+  readonly quiet: boolean
+  readonly onPoint: (on: boolean) => void
+  /** Focus left the row. */
+  readonly onLeave: () => void
   readonly rowRef: (node: HTMLDivElement | null) => void
   readonly onChoose: () => void
   readonly onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void
@@ -126,7 +157,8 @@ function ModelRow({ model, rank, checked, focusable, rowRef, onChoose, onKeyDown
     ? t`Words wrong from Artificial Analysis; Sotto has not timed it yet.`
     : model.scoredBy === null ? t`Not tested by Sotto or Artificial Analysis yet.` : null
   return <div ref={rowRef} role="radio" aria-checked={checked} aria-describedby={tipId} tabIndex={focusable ? 0 : -1}
-    className="cloud-models__row tt-focusable" data-checked={checked || undefined} onClick={onChoose} onKeyDown={onKeyDown}>
+    className="cloud-models__row tt-focusable" data-checked={checked || undefined} data-tip-quiet={quiet || undefined}
+    onClick={onChoose} onKeyDown={onKeyDown} onMouseEnter={() => onPoint(true)} onMouseLeave={() => onPoint(false)} onBlur={onLeave}>
     <span className="cloud-models__rank" aria-hidden="true">{model.wer === null ? '–' : rank}</span>
     <span className="cloud-models__radio" aria-hidden="true" />
     <span className="cloud-models__name">

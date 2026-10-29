@@ -36,8 +36,10 @@ describe('OpenRouterSpeechModels', () => {
     // A price is shown only where it is plainly per second of audio.
     expect(list.ok && list.models[2]).toMatchObject({ name: 'Qwen3-ASR 1.7B', zdr: true, wer: null, usdPerHour: 0.027, scoredBy: null })
     expect(reader.best()).toBe('microsoft/mai-transcribe-2')
-    expect(reader.hasZeroRetentionHost('openai/gpt-transcribe')).toBe(false)
-    expect(reader.hasZeroRetentionHost('qwen/qwen3-asr-1.7b')).toBe(true)
+    expect(reader.zeroRetention('openai/gpt-transcribe')).toBe(false)
+    expect(reader.zeroRetention('qwen/qwen3-asr-1.7b')).toBe(true)
+    // A model the list does not name cannot be told apart from one with a zero-retention host.
+    expect(reader.zeroRetention('someone/unlisted')).toBeNull()
   })
 
   it('reads again only when asked for a fresh list or after ten minutes, and keeps the last good list when a read fails', async () => {
@@ -57,6 +59,7 @@ describe('OpenRouterSpeechModels', () => {
     const reader = new OpenRouterSpeechModels({ fetchFn: vi.fn<typeof fetch>().mockRejectedValue(new TypeError('offline')) })
     expect(await reader.list()).toEqual({ ok: false, reason: 'network' })
     expect(reader.best()).toBeNull()
+    expect(reader.zeroRetention('microsoft/mai-transcribe-2')).toBeNull()
     const refused = new OpenRouterSpeechModels({ fetchFn: vi.fn<typeof fetch>().mockResolvedValue(new Response('', { status: 503 })) })
     expect(await refused.list()).toEqual({ ok: false, reason: 'http' })
   })
