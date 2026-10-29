@@ -430,10 +430,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.threadChanges.publish()
   }, () => adapterItemCount(this.messageLog, this.threads.values()))
   private readonly acknowledgements = new Map<string, (delivered?: boolean) => void>()
-  /** For each origin whose send is waiting: records the prompt from what was sent and acknowledges it, for when Claude Code takes it without an echo. */
+  /** For each origin whose send is waiting: records the prompt from what was sent and acknowledges it, for when Claude Code takes it before or without an echo. */
   private readonly recordUnechoed = new Map<string, () => void>()
-  /** Origins Claude Code has said it started running, whose echo has not come. */
-  private readonly startedOrigins = new Set<string>()
   /**
    * Steers Claude Code holds and has not read, by origin. It queues a prompt sent while a turn runs. One sent now cuts
    * the turn and starts the next; one sent while a tool call runs is read into the turn once the call returns, and is
@@ -1073,13 +1071,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
           await this.persist(); throw error
         }
         let timer: ReturnType<typeof setTimeout> | undefined
-        const forget = (): void => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); this.recordUnechoed.delete(origin.uuid); this.startedOrigins.delete(origin.uuid) }
+        const forget = (): void => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); this.recordUnechoed.delete(origin.uuid) }
         const acknowledged = new Promise<boolean>(resolve => {
           timer = setTimeout(() => { forget(); resolve(false) }, this.options.requestTimeoutMs ?? 15000)
           this.acknowledgements.set(origin.uuid, (delivered = true) => { forget(); resolve(delivered) })
         })
-        // Claude Code answers a slash command it cannot run here, such as /chrome, with a reply of its own. It never echoes
-        // the prompt, so the prompt is recorded from what was sent.
+        // Claude Code echoes the prompt only as the model's reply begins, and never echoes a slash command it cannot run
+        // here, such as /chrome, which it answers with a reply of its own. So once it takes the prompt without its echo,
+        // the prompt is recorded from what was sent.
         this.recordUnechoed.set(origin.uuid, () => {
           this.addMessage(id, { id: origin.messageId, role: 'user', text: nativeText, createdAt: origin.createdAt, commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
           if (!this.completedOrigins.has(origin.uuid)) { thread.status = 'running'; this.markTurn(id, 'running'); this.changed(id) }
@@ -1779,16 +1778,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
       return
     }
     if (frame.type === 'control_cancel_request' && typeof frame.request_id === 'string') { runtime.requests.delete(frame.request_id); thread.requests = [...runtime.requests.values()].map(value => value.request) }
-    // A prompt Claude Code took without an echo is taken when its local command replies, which puts it above the reply.
-    // A result naming it is the last word. Any other reply may belong to a turn the prompt is still held behind.
-    if (frame.type === 'command_lifecycle' && frame.state === 'started' && typeof frame.command_uuid === 'string' && this.recordUnechoed.has(frame.command_uuid)) this.startedOrigins.add(frame.command_uuid)
+    // A waiting prompt is taken once Claude Code says its turn started, which it says as it takes the prompt. Its echo
+    // comes only as the model's reply begins, and the first reply after a restart can begin past the deadline (#1511).
+    // Recorded now, the prompt sits above anything its turn says. One held behind Claude Code's own turn starts only once
+    // that turn ends. A result naming a prompt is the last word, for a client that never said the prompt started.
+    if (frame.type === 'command_lifecycle' && frame.state === 'started' && typeof frame.command_uuid === 'string') this.recordUnechoed.get(frame.command_uuid)?.()
     // Any word of a steer's place in Claude Code's own queue means it holds the steer.
     if (frame.type === 'command_lifecycle' && typeof frame.command_uuid === 'string' && this.steers.has(frame.command_uuid)) this.acknowledgements.get(frame.command_uuid)?.()
-    if (this.recordUnechoed.size && !frame.parent_tool_use_id) {
-      const localReply = frame.type === 'assistant' && typeof frame.local_command_source === 'string'
-      const resultFor = frame.type === 'result' && typeof frame.user_message_uuid === 'string' ? frame.user_message_uuid : undefined
-      if (localReply || resultFor) for (const origin of alias.origins) if (origin.uuid === resultFor || localReply && this.startedOrigins.has(origin.uuid)) this.recordUnechoed.get(origin.uuid)?.()
-    }
+    if (frame.type === 'result' && !frame.parent_tool_use_id && typeof frame.user_message_uuid === 'string') this.recordUnechoed.get(frame.user_message_uuid)?.()
     // A result ends its turn, and the turn's own outcome is decided before its activity settles, so a block the turn
     // left open settles the way the turn ended. A turn the user stopped is no failure of Claude Code's, nor finished.
     const ending = frame.type === 'result' && !frame.parent_tool_use_id ? this.resultEnding(id, frame) : undefined

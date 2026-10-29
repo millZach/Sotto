@@ -304,9 +304,13 @@ describe('Claude recovery and safety', () => {
     await f.adapter.pollSessionLogs()
     await writeFile(join(f.root, 'script.json'), JSON.stringify({ localCommand: chromeReply, evidence }))
     expect(await f.host.execute({ type: 'send', commandId: 'chrome', messageId: 'chrome', threadId: id, text: '/chrome' })).toEqual({ accepted: true })
-    const messages = (await thread()).messages
+    // The start confirms the send, and the reply may come in a later chunk, so the order is read once it has.
+    const messages = await vi.waitFor(async () => {
+      const current = (await thread()).messages
+      expect(current).toContainEqual(expect.objectContaining({ role: 'assistant', text: chromeReply }))
+      return current
+    })
     expect(messages).toContainEqual(expect.objectContaining({ id: 'chrome', role: 'user', text: '/chrome', commandId: 'chrome' }))
-    expect(messages).toContainEqual(expect.objectContaining({ role: 'assistant', text: chromeReply }))
     expect(messages.map(message => message.role)).toEqual(order)
     await expect.poll(async () => (await thread()).status).toBe('idle')
     await writeFile(join(f.root, 'script.json'), '{}')
