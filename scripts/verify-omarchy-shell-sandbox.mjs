@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { assertPlainTree, copyRegularTree, prepareSandboxHome, removePlainTree, prepareSandboxTmp, rewriteSandboxConfig, snapshotTree, validateSandboxConfig } from './omarchy-shell-sandbox.mjs'
+import { assertPlainTree, assertTreeUnchanged, copyRegularTree, prepareSandboxHome, removePlainTree, prepareSandboxTmp, rewriteSandboxConfig, snapshotTree, validateSandboxConfig } from './omarchy-shell-sandbox.mjs'
 
 const root = mkdtempSync(join(tmpdir(), 'sotto-shell-sandbox-fixture-'))
 const originalHome = process.env.HOME
@@ -83,7 +83,7 @@ try {
   writeFileSync(path, JSON.stringify(configured))
   assert.throws(() => validateSandboxConfig(sandbox, stock), /must disable/u)
   console.log('PASS: rewrite failure and missing exclusions stop configuration; no fallback to shell defaults')
-  assert.deepEqual(snapshotTree(target), before)
+  assertTreeUnchanged(target, before)
   console.log('PASS: linked fake live config stays byte-for-byte unchanged; linked sources, destinations and mutations refused')
 } finally {
   if (originalHome === undefined) delete process.env.HOME

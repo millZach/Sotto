@@ -8,7 +8,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, wri
 import { join, resolve } from 'node:path'
 import { setTimeout as wait } from 'node:timers/promises'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
-import { prepareSandboxBus, snapshotTree } from './omarchy-shell-sandbox.mjs'
+import { assertTreeUnchanged, prepareSandboxBus, snapshotTree } from './omarchy-shell-sandbox.mjs'
 
 const checkout = process.cwd()
 const captures = resolve(checkout, 'artifacts/linux-shell-plumbing')
@@ -22,7 +22,8 @@ const runtime = live.XDG_RUNTIME_DIR
 assert.ok(runtime && live.HYPRLAND_INSTANCE_SIGNATURE && live.WAYLAND_DISPLAY)
 const instanceRoot = join(runtime, 'hypr')
 const before = snapshotProofInstances(instanceRoot)
-const protectedPaths = ['.config/omarchy', '.config/hypr', '.local/state/omarchy', '.sotto'].map(path => join(live.HOME, path)).filter(existsSync)
+// Not ~/.sotto: the run's HOME is private, and hashing every thread's worktree there ran forge out of memory (#1802).
+const protectedPaths = ['.config/omarchy', '.config/hypr', '.local/state/omarchy'].map(path => join(live.HOME, path)).filter(existsSync)
 const stamps = protectedPaths.map(snapshotTree)
 const owned = createOwnedProofProcesses(console.log)
 // mkdtemp creates a private 0700 folder. Keep Unix socket paths short even in a deep checkout.
@@ -52,7 +53,7 @@ const lifecycle = installProofCleanup(() => terminateThenCleanup(() => owned.sto
   console.log('cleanup: owned PIDs stopped; prior Hyprland instances preserved')
 }, () => {
   protectedPaths.forEach((path, index) => {
-    assert.deepEqual(snapshotTree(path), stamps[index])
+    assertTreeUnchanged(path, stamps[index])
     console.log(`Live ${path} unchanged`)
   })
 }, () => {
