@@ -73,8 +73,6 @@ export function closedWatcherRequests(record: Readonly<WatcherRecord>): number {
  * `WATCHER_LIVE_CLOSED_REQUESTS`, unless something still names it or its work.
  *
  * Kept in the record whatever their age:
- * - a request a paired desktop made here (`remoteOrigin`): that desktop may still read any of its operations exactly, and
- *   a read this host cannot answer fences the operation as never recorded;
  * - a request a reservation names, or a local takeover's boundary (`localTakeovers[].lastRequestId`), whose order fences
  *   the requests before it;
  * - for each thread the user took over, the newest request that records it: a takeover with no local record, or on a
@@ -84,6 +82,9 @@ export function closedWatcherRequests(record: Readonly<WatcherRecord>): number {
  * - a request with an operation whose delivery is unsettled, that a reservation or an exact read's fence names, or that
  *   `retains` keeps (Watcher's own in-memory work on it: a dispatch in flight, a check holding its place, an outcome still
  *   being observed).
+ *
+ * A request a paired desktop made here (`remoteOrigin`) goes like any other: that desktop's exact reads of its work are
+ * answered from the archive, and a later operation or Stop it sends under the request brings it back to the record first.
  */
 export function archivableWatcherRequests(record: Readonly<WatcherRecord>, retains: (operation: Readonly<WatcherOperation>) => boolean = () => false): string[] {
   const keep = new Set<string>()
@@ -109,7 +110,7 @@ export function archivableWatcherRequests(record: Readonly<WatcherRecord>, retai
     const request = record.requests[index]!
     if (!closed(request)) continue
     if (newer < WATCHER_LIVE_CLOSED_REQUESTS) { newer++; continue }
-    if (request.remoteOrigin || keep.has(request.id) || request.userFollowups?.some(item => item.messageId === undefined)) continue
+    if (keep.has(request.id) || request.userFollowups?.some(item => item.messageId === undefined)) continue
     // A thread whose automation was stopped holds its own queue for the user's review until the user clears it; the
     // request that records the stop is the hold, so it stays.
     if (request.participants.some(participant => participant.state === 'participating'

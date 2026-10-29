@@ -65,6 +65,7 @@ describe('what leaves the live record', () => {
       next.localTakeovers = [{ target: { hostId: HOST, threadId: 'taken' }, at: at(2), lastRequestId: next.requests[2]!.id }]
       next.operations[3]!.deliveryState = 'uncertain'
       next.operations[4]!.creationUncertain = true
+      // A request a paired desktop made here goes like any other (#1759): its reads are answered from the archive.
       next.requests[5]!.remoteOrigin = { clientId: 'desktop', master: next.current!, creationOperationId: randomUUID(), ceiling: 'approval-required' }
       next.requests[6]!.userFollowups = [{ draftId: randomUUID() }]
       // Two requests took the same thread over: the newer of them holds the fence, the older may go.
@@ -77,8 +78,8 @@ describe('what leaves the live record', () => {
       next.requests[13]!.participants[0]!.automationStopped = true
     })
     const retained = new Set(archivableWatcherRequests(value, operation => operation.id === value.operations[10]!.id))
-    for (const index of [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 13]) expect.soft(retained.has(requestAt(value, index).id), `request ${index}`).toBe(false)
-    for (const index of [7, 11, 19]) expect.soft(retained.has(requestAt(value, index).id), `request ${index}`).toBe(true)
+    for (const index of [0, 1, 2, 3, 4, 6, 8, 9, 10, 12, 13]) expect.soft(retained.has(requestAt(value, index).id), `request ${index}`).toBe(false)
+    for (const index of [5, 7, 11, 19]) expect.soft(retained.has(requestAt(value, index).id), `request ${index}`).toBe(true)
   })
 
   it('leaves a record that is still valid, with every reference it holds still named', () => {
