@@ -249,8 +249,11 @@ type RoleReceipt = { readonly id: WorkerKind; readonly named: RoleField[]; reado
  * goes, and where its receipt says it went.
  */
 type PlacedStart = { readonly original: WatcherToolInput<'start_thread'>; readonly input: WatcherToolInput<'start_thread'>; readonly placement: WorkerPlacementReceipt
-  /** Called with the start's target once its reservation is recorded, which lets the next start be placed (#1694). */
-  readonly admitted?: (target: WatcherThreadTarget) => void }
+  /**
+   * Called with the start's target once its reservation is recorded, or once it is found a retry of one already
+   * recorded (`retry`), which lets the next start be placed (#1694).
+   */
+  readonly admitted?: (target: WatcherThreadTarget, retry: boolean) => void }
 /** `base` replaces this computer's new-thread default; `paired` narrows it. */
 type PermissionLimits = { readonly base?: AgentRuntimeMode; readonly paired?: AgentRuntimeMode }
 const ROLE_STARTS_KEPT = 500
@@ -367,7 +370,9 @@ const stoppedParticipation = (request: Readonly<WatcherRequest>, participant: Re
  * A start Watcher holds a reservation for, and whether it still counts as placed: its first prompt is still to go
  * (`queued` or `dispatching`), or a paired host did not answer it in time and may yet start it (`timedOut`).
  */
-interface ReservedStart { readonly target: WatcherThreadTarget; readonly operationId: string; readonly notYetSent: boolean }
+interface ReservedStart { readonly target: WatcherThreadTarget; readonly operationId: string; readonly notYetSent: boolean
+  /** Its first prompt definitely failed, so nothing was started for it (#1694). */
+  readonly failed: boolean }
 /**
  * The record's reserved starts. Operations are only ever appended, so where a reservation's operation sits holds for as
  * long as the reservation does: `positions` keeps it from one record to the next, and each record checks a known
@@ -395,9 +400,19 @@ function reservedStarts(record: Readonly<WatcherRecord>, positions: Map<string, 
     if (!operation) { positions.delete(operationId); continue }
     if (operation.deliveryState === 'accepted' || operation.deliveryState === 'failed') timedOut.delete(operationId)
     if (operation.action === 'start') starts.push({ target, operationId, notYetSent: operation.deliveryState === 'queued'
-      || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain' && timedOut.has(operationId) })
+      || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain' && timedOut.has(operationId), failed: operation.deliveryState === 'failed' })
   }
   return starts
+}
+
+/**
+ * Whether a start's call answered that nothing started: refused, or its first prompt failed (#1694). A call that threw
+ * is not proof, and an uncertain one may yet start; neither is taken as failed.
+ */
+function definitelyFailedStart(result: unknown): boolean {
+  if (typeof result !== 'object' || result === null) return false
+  const answer = result as { status?: unknown; receipt?: { deliveryState?: unknown } }
+  return answer.status === 'refused' || answer.receipt?.deliveryState === 'failed'
 }
 
 export class WatcherService implements WatcherControlHooks {
@@ -3712,11 +3727,15 @@ export class WatcherService implements WatcherControlHooks {
           if (!placed) release?.()
           if (ticket && (placed?.input.check !== true || placed.input.project.hostId !== this.hostId())) this.dropTicket(ticket)
           // A start refused at admission never ran, so the move it would have made is forgotten with it.
-          let target: WatcherThreadTarget | undefined
-          const admitted = (at: WatcherThreadTarget) => { target = at; this.notePlaced(at); release?.() }
-          try { return await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed ? { ...placed, admitted } : placed, ticket) }
-          finally {
-            if (target) this.noteStartEnded(target)
+          let target: WatcherThreadTarget | undefined, failed = false
+          // A retry's start was counted when it was first admitted, and is not counted again.
+          const admitted = (at: WatcherThreadTarget, retry: boolean) => { if (!retry) { target = at; this.notePlaced(at) } release?.() }
+          try {
+            const result = await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed ? { ...placed, admitted } : placed, ticket)
+            failed = definitelyFailedStart(result)
+            return result
+          } finally {
+            if (target) this.noteStartEnded(target, failed)
             if (placed?.input.fromMove) this.branchStartsPlaced.delete(placed.input.fromMove)
           }
         } finally {
@@ -3955,7 +3974,7 @@ export class WatcherService implements WatcherControlHooks {
       return { operation, retry: false }
     })
     // The reservation is recorded, so a start placed after this one counts it against this machine's headroom (#1694).
-    placed?.admitted?.(admitted.operation.target)
+    placed?.admitted?.(admitted.operation.target, admitted.retry)
     if (progress) progress.operationId = admitted.operation.id
     if (admitted.retry) {
       // A retry reads its receipt again; only the start's first run says how many threads are working (#1183).
@@ -5036,24 +5055,37 @@ ${operation.draftId}`)
    * A host that does not list host-facts, or whose read fails, reads unknown; one not connected now reads not connected.
    */
   /**
-   * Watcher's starts admitted on each machine, by Sotto thread ID, with when their start call ended (#1694). A start stops
-   * counting as on its way once its first prompt is accepted, before a reading of its machine can show what it uses, so
-   * it counts against that machine's headroom from admission until `MACHINE_START_SETTLES_MS` after that, by this
-   * computer's clock (`placedSince`). Only starts within that time are kept.
+   * Watcher's starts admitted on each machine, by Sotto thread ID, with when Sotto first saw each no longer on its way
+   * (#1694). A start stops counting as on its way once its first prompt is accepted, before a reading of its machine can
+   * show what it uses, so it counts against that machine's headroom from admission until `MACHINE_START_SETTLES_MS` after
+   * it was seen to leave, by this computer's clock (`placedSince`). A check waiting its turn is still on its way, so its
+   * minute begins only once it is sent. Seen late, it counts longer, never shorter. One whose first prompt definitely
+   * failed started nothing, and counts no more.
    */
-  private placedRecently: { readonly hostId: string; readonly threadId: string; ended?: number }[] = []
+  private placedRecently: { readonly hostId: string; readonly threadId: string; left?: number }[] = []
   private notePlaced(target: WatcherThreadTarget): void {
-    const now = Date.now()
-    this.placedRecently = [...this.placedRecently.filter(item => item.ended === undefined || now - item.ended <= MACHINE_START_SETTLES_MS), { hostId: target.hostId, threadId: target.threadId }]
+    const kept = this.settledPlacements(Date.now()).filter(item => item.hostId !== target.hostId || item.threadId !== target.threadId)
+    this.placedRecently = [...kept, { hostId: target.hostId, threadId: target.threadId }]
   }
-  private noteStartEnded(target: WatcherThreadTarget): void {
-    const item = this.placedRecently.find(entry => entry.hostId === target.hostId && entry.threadId === target.threadId)
-    if (item && item.ended === undefined) item.ended = Date.now()
+  /** Ends a start's call: one that failed for certain is forgotten; one already sent begins its minute. */
+  private noteStartEnded(target: WatcherThreadTarget, failed: boolean): void {
+    if (failed) { this.placedRecently = this.placedRecently.filter(item => item.hostId !== target.hostId || item.threadId !== target.threadId); return }
+    this.placedSince(target.hostId)
   }
+  /** The kept starts, less those whose minute is over. */
+  private settledPlacements(now: number) { return this.placedRecently.filter(item => item.left === undefined || now - item.left <= MACHINE_START_SETTLES_MS) }
   /** The starts admitted on `hostId` that may not show in its readings yet. */
   private placedSince(hostId: string): string[] {
-    const now = Date.now()
-    return this.placedRecently.flatMap(item => item.hostId === hostId && (item.ended === undefined || now - item.ended <= MACHINE_START_SETTLES_MS) ? [item.threadId] : [])
+    const now = Date.now(), reserved = this.reservedStarts().filter(start => start.target.hostId === hostId)
+    const onItsWay = new Set([...reserved.flatMap(start => start.notYetSent ? [start.target.threadId] : []), ...this.delegationStarts?.(hostId) ?? []])
+    const failed = new Set(reserved.flatMap(start => start.failed ? [start.target.threadId] : []))
+    this.placedRecently = this.settledPlacements(now).filter(item => item.hostId !== hostId || !failed.has(item.threadId))
+    return this.placedRecently.flatMap(item => {
+      if (item.hostId !== hostId) return []
+      if (onItsWay.has(item.threadId)) delete item.left
+      else item.left ??= now
+      return [item.threadId]
+    })
   }
   /**
    * A machine's headroom from its report (#1694): its work placed but not started, with `reserved`, the starts on their
