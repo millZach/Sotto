@@ -883,6 +883,37 @@ it('keeps Stop bounded within the current Watcher turn while retaining the stand
     .toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
 })
 
+it('builds a paired desktop\'s projection from the record without copying it, again only once the record changes (#1759)', async () => {
+  const master = await fixture(), worker = await fixture(true), target = await worker.create()
+  const clientId = randomUUID()
+  const remote: WatcherRemoteHosts = {
+    hosts: () => [{ hostId: target.hostId, connected: true, reads: true, control: true, standingWatch: true, permissionCeiling: 'approval-required' }],
+    snapshot: () => worker.control.watcherSnapshot(),
+    read: (_hostId, request) => worker.service.readRemote(request, clientId, () => undefined),
+    control: (_hostId, request) => worker.service.admitRemote(request, clientId, () => undefined),
+    subscribe: listener => worker.control.subscribe(() => listener(target.hostId)),
+  }
+  master.service.useRemoteHosts(remote)
+  expect(await master.service.watchThread({ target })).toMatchObject({ status: 'ok' })
+  const watch = master.service.state().standingWatches![0]!, identity = master.service.state().current!
+  expect(await master.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic projected send', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  // The host builds this with every shell it pushes the desktop, so it reads the record rather than copying it.
+  const copies = vi.spyOn(worker.control, 'watcherRecord')
+  const first = worker.service.remoteProjection(identity, clientId), again = worker.service.remoteProjection(identity, clientId)
+  expect(copies).not.toHaveBeenCalled()
+  expect(first.operations).toHaveLength(1)
+  expect(again.requests).toBe(first.requests)
+  expect(again.operations).toBe(first.operations)
+  expect(again.revision).toBe(first.revision)
+  // Once the record changes, the projection says what it says now.
+  copies.mockRestore()
+  await worker.finish(target.threadId)
+  expect(await master.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic second projected send', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  const changed = worker.service.remoteProjection(identity, clientId)
+  expect(changed.operations).toHaveLength(2)
+  expect(changed.revision).not.toBe(first.revision)
+})
+
 it('syncs watches to the owning host, persists takeover there and refuses withdrawn or old-host identities', async () => {
   const master = await fixture(), worker = await fixture(true), target = await worker.create()
   const clientId = randomUUID()
