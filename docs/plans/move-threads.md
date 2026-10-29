@@ -28,11 +28,19 @@ Zach, October 29, 2026, on the question card for part 2:
 - **A model the target lacks:** the thread moves to that provider's first ready model there, and the sheet and the card name the model it runs on and the one the machine doesn't have.
 - **Anything queued** (the user's or Sotto's own news) keeps the thread here, as part 1 built it.
 
+Zach, October 29, 2026, on the question card for part 3 (tag `prototype/move-threads-directions`):
+
+- **Move threads picks where threads go, and gathers them from every other machine.** This computer is among the machines. The sheet takes threads from every other connected machine, keeps Moves now, Asks you first and Stays where it is, and each row says where its thread is now.
+- **Asking Watcher in words** puts the same preview in Watcher's conversation as Sotto's own card, with Move and Not now. Nothing moves until the press; the move cards then follow as before.
+- **Nothing in the sheet starts ticked.** Zach ticks each thread to move, and Move stays off until one is. This changes part 2's sheet, which moved every thread that could. Read here, and said on #1178: threads already pointed at start ticked, the one a thread's More menu opened the sheet for and those Watcher named from his words.
+
 ## Build order
 
 1. **Core, This computer to a paired host.** The move record (`moves.json`, states fenced, branch sent, thread started, first turn ended, source settled, or given back, written before anything is sent, every step idempotent by the move's ID); the fence (the source refuses sends while it moves); eligibility with its plain words; the branch over the host socket (`DesktopBranchMoves`); the handover and facts block built here; an optional host-v1 feature that makes the new thread from the incoming ref and sends its first prompt, idempotent by move ID; confirmation, settling the source, and re-pointing Watcher's watch. Driven over IPC as a prepare/move pair modelled on Stop all. No UI yet.
 2. **The UI (B).** Move threads and its sheet, the cards in Watcher's conversation, the narrower card's press, and the More menu entry.
-3. **The other directions.** A host's thread to This computer, and between two hosts through the desktop; asking Watcher in words.
+3. **The other directions.** A host's thread to This computer, and between two hosts through the desktop; asking Watcher in words. Two pull requests:
+   - **3a, the core.** A move's source may be on a host: the record names the source's machine, the host fences, refuses in its own words, gives the handover, links and settles its own thread through new `thread-move` actions under a new host feature, and the branch goes by the desktop's existing host-to-host and host-to-desktop branch moves. This computer is a target: the desktop makes the moved thread itself with the same code the host runs (`HostThreadMoves`), answering for itself. No window change beyond what the cards need to name a source on another machine.
+   - **3b, the window and words.** The sheet gathers from every machine with a box per thread, none ticked but those pointed at; This computer among the machines; a new Watcher tool asks for a preview that Sotto puts in its conversation as a card with Move and Not now.
 4. **Lost contact.** Reconciling with the target after a restart or a dropped connection, and **Keep it here** (ADR-0105 decision 7).
 
 Then #1309, suggesting a move to a machine with room, on top of this flow.
