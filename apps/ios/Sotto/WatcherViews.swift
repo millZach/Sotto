@@ -1571,7 +1571,6 @@ private struct WatcherDock: View {
         // Locked from the press of a message with photos or files until Watcher answers, so nothing typed meanwhile joins it.
         let preparing = model.preparingSends.contains(box.id)
         let shape = RoundedRectangle(cornerRadius: ComposerMetrics.radius, style: .continuous)
-        let notice = model.photoNotices[box.id]
         let working = model.watcherPage(hostID)?.working == true
         let canSend = model.canSendToWatcher(hostID)
         // Send shows once the box holds something, as in a thread's reply box.
@@ -1588,20 +1587,8 @@ private struct WatcherDock: View {
         // the box's end.
         return HStack(alignment: .bottom, spacing: Space.s2) {
             AttachPhotosButton(box: box)
-            VStack(alignment: .leading, spacing: Space.s2) {
-                if !photos.isEmpty || !files.isEmpty || notice != nil {
-                    VStack(alignment: .leading, spacing: Space.s2) {
-                        if !photos.isEmpty { DraftPhotoStrip(box: box) }
-                        if !files.isEmpty { DraftFilePills(box: box) }
-                        if let notice {
-                            Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true)
-                                .paragraphDirection()
-                                .padding(.horizontal, ComposerMetrics.wordsInset - ComposerMetrics.attachmentsInset)
-                                .accessibilityAddTraits(.updatesFrequently)
-                        }
-                    }
-                    .padding([.horizontal, .top], ComposerMetrics.attachmentsInset)
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                DraftAttachments(box: box)
                 HStack(alignment: .bottom, spacing: Space.s1) {
                     TextField("Ask Watcher", text: draft, prompt: (working ? Text("Ask Watcher while it works") : Text("Ask Watcher")).foregroundStyle(Palette.placeholder), axis: .vertical)
                         .font(.sotto(.body))
@@ -1640,6 +1627,7 @@ private struct WatcherDock: View {
                 }
                 .padding(.leading, ComposerMetrics.wordsInset)
                 .padding(.trailing, ComposerMetrics.buttonInset)
+                .frame(minHeight: ComposerMetrics.height)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .composerSurface(in: shape)

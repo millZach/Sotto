@@ -216,6 +216,30 @@ struct DraftPhotoStrip: View {
     }
 }
 
+/// What waits in a reply box above its words, a thread's or Watcher's, as in Messages: the photos across the box, the
+/// files under them as pills, and why the last one chosen wasn't added. Nothing while the box holds none of them.
+struct DraftAttachments: View {
+    @EnvironmentObject var model: AppModel
+    let box: PhotoBox
+    var body: some View {
+        let photos = model.photos(box), files = model.files(box), notice = model.photoNotices[box.id]
+        if !photos.isEmpty || !files.isEmpty || notice != nil {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                if !photos.isEmpty { DraftPhotoStrip(box: box) }
+                if !files.isEmpty { DraftFilePills(box: box) }
+                if let notice {
+                    Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true)
+                        .paragraphDirection()
+                        .padding(.horizontal, ComposerMetrics.wordsInset - ComposerMetrics.attachmentsInset)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
+            }
+            .padding([.horizontal, .top], ComposerMetrics.attachmentsInset)
+            .padding(.bottom, Space.s2)
+        }
+    }
+}
+
 private struct DraftPhotoView: View {
     let photo: DraftPhoto
     let number: Int

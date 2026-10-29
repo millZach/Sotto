@@ -862,8 +862,8 @@ extension View {
 }
 
 /// The reply box's ground, and its **+**'s, as in Messages: solid, a shade off the room, with a soft shadow under it so it
-/// floats over the conversation, and no edge. Under Glass the system's Liquid Glass instead, which the **+** answers the
-/// touch with.
+/// floats over the conversation, and no edge. Under Glass on iOS 26 and later the system's Liquid Glass instead, which the
+/// **+** answers the touch with; before iOS 26 Glass gets the solid box too, since its frosted glass has an edge.
 struct ComposerSurface<S: InsettableShape>: ViewModifier {
     let shape: S
     var interactive = false
@@ -873,8 +873,6 @@ struct ComposerSurface<S: InsettableShape>: ViewModifier {
     @ViewBuilder func body(content: Content) -> some View {
         if glass != nil, #available(iOS 26, *) {
             content.glassEffect(.regular.tint(theme.color(.surface).opacity(scheme == .dark ? 0.58 : 0.68)).interactive(interactive), in: shape)
-        } else if glass != nil {
-            content.glass(in: shape)
         } else {
             content
                 // The room with a little of the ink over it, so the box is a shade off whatever the theme's room is.
@@ -888,7 +886,7 @@ struct ComposerSurface<S: InsettableShape>: ViewModifier {
 enum ComposerMetrics {
     static let height: CGFloat = 38
     static let radius: CGFloat = height / 2
-    /// The words' room above and below, which makes one line of body text the box's 38 points.
+    /// The words' room above and below; with one line of body text the box is at least `height`.
     static let wordsPadding: CGFloat = 9
     /// From the box's leading edge to the words.
     static let wordsInset: CGFloat = 14
@@ -897,8 +895,9 @@ enum ComposerMetrics {
     /// Send and Stop inside the box's end: their circle, and its gap to the box's edge.
     static let button: CGFloat = 30
     static let buttonInset: CGFloat = 4
-    /// Between Stop and Send, wide enough that neither takes a press meant for the other.
-    static let buttonGap: CGFloat = 8
+    /// Between Stop and Send: wide enough that each keeps all 44 points of its press area, so a press between them
+    /// neither stops a turn meant to be queued nor queues a reply meant to stop it.
+    static let buttonGap: CGFloat = 44 - button
 }
 
 extension View {

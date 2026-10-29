@@ -1970,26 +1970,14 @@ private struct ReplyDock: View, Equatable {
     }
 
     private var replyField: some View {
-        let photos = model.photos(ref), files = model.files(ref), notice = model.photoNotices[ref.id]
         let shape = RoundedRectangle(cornerRadius: ComposerMetrics.radius, style: .continuous)
         let placeholder = model.thread(ref)?.status == "running" ? String(localized: "Reply while it works") : String(localized: "Reply to this thread")
         // As in Messages: the + on its own beside a slim box, which grows without it. Photos wait inside the box across
         // its width, above the words, files under them as pills, and Send and Stop sit inside its end.
         return HStack(alignment: .bottom, spacing: Space.s2) {
             AttachPhotosButton(box: .thread(ref))
-            VStack(alignment: .leading, spacing: Space.s2) {
-                if !photos.isEmpty || !files.isEmpty || notice != nil {
-                    VStack(alignment: .leading, spacing: Space.s2) {
-                        if !photos.isEmpty { DraftPhotoStrip(box: .thread(ref)) }
-                        if !files.isEmpty { DraftFilePills(box: .thread(ref)) }
-                        if let notice {
-                            Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true).paragraphDirection()
-                                .padding(.horizontal, ComposerMetrics.wordsInset - ComposerMetrics.attachmentsInset)
-                                .accessibilityAddTraits(.updatesFrequently)
-                        }
-                    }
-                    .padding([.horizontal, .top], ComposerMetrics.attachmentsInset)
-                }
+            VStack(alignment: .leading, spacing: 0) {
+                DraftAttachments(box: .thread(ref))
                 HStack(alignment: .bottom, spacing: Space.s1) {
                     TextField("Reply", text: draft, prompt: Text(placeholder).foregroundStyle(Palette.placeholder), axis: .vertical)
                         .font(.sotto(.body))
@@ -2009,6 +1997,7 @@ private struct ReplyDock: View, Equatable {
                 }
                 .padding(.leading, ComposerMetrics.wordsInset)
                 .padding(.trailing, ComposerMetrics.buttonInset)
+                .frame(minHeight: ComposerMetrics.height)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .composerSurface(in: shape)
@@ -2027,7 +2016,7 @@ private struct ReplyDock: View, Equatable {
     /// queues for after the turn, beside Stop.
     @ViewBuilder private var trailingButtons: some View {
         HStack(alignment: .bottom, spacing: ComposerMetrics.buttonGap) {
-            if model.canInterrupt(ref) { stopButton.zIndex(1).transition(.scale(scale: 0.6).combined(with: .opacity)) }
+            if model.canInterrupt(ref) { stopButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
             if written || model.preparingSends.contains(ref.id) { sendButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
         }
     }
