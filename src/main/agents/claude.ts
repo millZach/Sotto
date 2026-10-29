@@ -269,6 +269,7 @@ const WATCHER_REQUEST_HOOK = 'sotto_watcher_request'
  * within a second or two; a hold no report follows costs one quiet stretch at most.
  */
 const REPORT_HOLD_MS = 30_000
+const REPORT_DUE = 'Claude is about to report on background work that just ended.'
 
 /** A read of a thread's transcript from its first byte into a seeded log (`ClaudeStreamJsonHost.replays`). */
 interface Replay {
@@ -1003,15 +1004,23 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const runtime = await this.start(id)
         if (!thread.manualCompactionSupported) throw new Error('This Claude client does not expose native manual compaction.')
         if (this.threads.get(id)?.status === 'running' || thread.requests.length) throw new Error('Claude started working before compaction.')
-        if (command.idle && Date.now() - (this.workEndedAt.get(id) ?? -Infinity) < REPORT_HOLD_MS) throw new Error('Claude is about to report on background work that just ended.')
+        if (command.idle && this.reportDue(id)) throw new Error(REPORT_DUE)
         // A machine compaction, such as Sotto's idle one (ADR-0127), asks its guard again once the CLI is up: starting it
         // can take long enough for the user to type, send or turn the setting off.
         watcherGuard?.()
         const inputId = randomUUID()
+        const before = { compaction: alias.compaction, compactStartedAt: alias.compactStartedAt, compactInputIds: alias.compactInputIds }
         alias.compaction = { commandId: command.commandId, status: 'running', ...(command.idle ? { idle: true } : {}) }
         alias.compactStartedAt = new Date().toISOString()
         alias.compactInputIds = [...(alias.compactInputIds ?? []), inputId]
         try { await this.persist() } catch (error) { delete alias.compaction; throw error }
+        // Frames read during that write may have ended background work, whose report a pending compaction no longer lets
+        // show as Claude's own turn, so a machine compaction asks once more; from here to the write nothing else runs.
+        if (command.idle && (this.reportDue(id) || this.threads.get(id)?.status === 'running')) {
+          Object.assign(alias, before)
+          await this.persist().catch(() => undefined)
+          throw new Error(REPORT_DUE)
+        }
         thread.compaction = alias.compaction; thread.status = 'running'; this.changed(id); this.compacting.set(id, runtime); this.emit()
         try { await runtime.protocol.write({ type: 'user', uuid: inputId, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content: '/compact' } }) }
         catch {
@@ -1851,7 +1860,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (origin) {
         this.completedOrigins.add(origin)
         const messageId = !selfTurn ? alias.origins.find(value => value.uuid === origin)?.messageId : undefined
-        thread.lastTurn = { id: origin, status, ...(messageId ? { messageId } : {}), ...(limitStop && status === 'failed' ? { limitStop } : {}) }
+        // A compaction is not a turn. A thread already resting on a finished turn keeps it, so news of the work that turn
+        // left running stays the turn's (ADR-0127); one with no turn read, as after a restart, rests on the compaction.
+        const compactedAfterTurn = alias.compactInputIds?.includes(origin) === true && thread.lastTurn?.status === 'completed'
+        if (!compactedAfterTurn) thread.lastTurn = { id: origin, status, ...(messageId ? { messageId } : {}), ...(limitStop && status === 'failed' ? { limitStop } : {}) }
         // A turn Claude Code gave itself answers no message of Sotto's. The newest message may be a steer whose own
         // turn has not begun, so it has no record to settle here.
         if (!selfTurn) this.markTurn(id, status, messageId, failure ?? undefined, steered)
@@ -1880,6 +1892,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (failure === undefined) return
     this.turnFailures.delete(id)
     if (this.state.error === failure) this.state.error = [...this.turnFailures.values()].at(-1)
+  }
+  /** Whether Claude Code still owes this thread a report on work of its own that just ended: see {@link REPORT_HOLD_MS}. */
+  private reportDue(id: string): boolean {
+    return Date.now() - (this.workEndedAt.get(id) ?? -Infinity) < REPORT_HOLD_MS
   }
   private clearMonitoring(id: string): void {
     this.monitoring.delete(id); this.workEndedAt.delete(id)
