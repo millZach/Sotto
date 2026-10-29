@@ -1498,7 +1498,8 @@ private struct WatcherRequestCard: View {
 
 // MARK: - Reply box
 
-/// Asking Watcher: the box in glass over the conversation's end. The keyboard's own microphone key dictates into it.
+/// Asking Watcher: the box floating over the conversation's end, as a thread's reply box does. The keyboard's own
+/// microphone key dictates into it.
 private struct WatcherDock: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
@@ -1509,7 +1510,6 @@ private struct WatcherDock: View {
     let willSend: () -> Void
     @FocusState private var focused: Bool
     @State private var sent = 0
-    @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -1570,9 +1570,12 @@ private struct WatcherDock: View {
         let photos = model.photos(box), files = model.files(box)
         // Locked from the press of a message with photos or files until Watcher answers, so nothing typed meanwhile joins it.
         let preparing = model.preparingSends.contains(box.id)
-        let shape = RoundedRectangle(cornerRadius: photos.isEmpty && files.isEmpty ? 26 : 22, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: ComposerMetrics.radius, style: .continuous)
         let working = model.watcherPage(hostID)?.working == true
         let canSend = model.canSendToWatcher(hostID)
+        // Send shows once the box holds something, as in a thread's reply box.
+        let written = !(model.drafts[model.watcherDraftKey(hostID)] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            || !photos.isEmpty || !files.isEmpty
         // While Watcher's turn runs on a computer that takes it, Send steers into that turn, or queues when its provider
         // takes no steer (#1229, pick B); otherwise it sends as before.
         let current = model.watcherPage(hostID)?.current
@@ -1580,60 +1583,56 @@ private struct WatcherDock: View {
         let queueing = steering && current?.steers == false
         let symbol = queueing ? "text.badge.plus" : steering ? "arrow.turn.up.right" : "arrow.up"
         let label = queueing ? String(localized: "Queue for after this turn") : steering ? String(localized: "Steer into Watcher’s turn") : String(localized: "Send to Watcher")
+        // The + on its own beside a slim box, as in a thread's reply box: photos and files above the words, Send inside
+        // the box's end.
         return HStack(alignment: .bottom, spacing: Space.s2) {
             AttachPhotosButton(box: box)
-            // Photos wait inside the box, above the words, and files under them as pills, as in a thread's reply box.
-            VStack(alignment: .leading, spacing: Space.s2) {
-                if !photos.isEmpty { DraftPhotoStrip(box: box).padding(.top, Space.s1) }
-                if !files.isEmpty { DraftFilePills(box: box).padding(.top, photos.isEmpty ? Space.s1 : 0) }
-                if let notice = model.photoNotices[box.id] {
-                    Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true)
-                        .paragraphDirection()
-                        .accessibilityAddTraits(.updatesFrequently)
+            VStack(alignment: .leading, spacing: 0) {
+                DraftAttachments(box: box)
+                HStack(alignment: .bottom, spacing: Space.s1) {
+                    TextField("Ask Watcher", text: draft, prompt: (working ? Text("Ask Watcher while it works") : Text("Ask Watcher")).foregroundStyle(Palette.placeholder), axis: .vertical)
+                        .font(.sotto(.body))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1...6)
+                        .focused($focused)
+                        // Words added from a reply put the caret after them, here (ADR-0129).
+                        .onChange(of: draftStore.focus) { _, focus in if focus?.key == model.watcherDraftKey(hostID) { focused = true } }
+                        .padding(.vertical, ComposerMetrics.wordsPadding)
+                        .accessibilityLabel("Ask Watcher")
+                        .accessibilityIdentifier("watcher-reply")
+                        .pasteAttaches(to: box)
+                        .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == box.id { model.focusRequest = nil; focused = true } }
+                        .disabled(preparing)
+                    if written || preparing {
+                        // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
+                        Button { sent += 1; willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
+                            Group {
+                                if preparing { ProgressView().controlSize(.small).tint(Palette.onAccent) }
+                                else { Image(systemName: symbol).font(.system(size: 14, weight: .bold)) }
+                            }
+                            .frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
+                            .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
+                            .background(canSend || preparing ? Palette.accent : Palette.fillSoft, in: Circle())
+                            .pressArea(drawn: ComposerMetrics.button)
+                        }
+                        .buttonStyle(PressStyle())
+                        .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)
+                        .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
+                        .disabled(!canSend)
+                        .accessibilityLabel(preparing ? String(localized: "watcher-send.sending", defaultValue: "Sending to Watcher", comment: "The send button's name while a message is on its way to Watcher") : label)
+                        .accessibilityIdentifier("watcher-send")
+                        .padding(.bottom, ComposerMetrics.buttonInset)
+                        .transition(.scale(scale: 0.6).combined(with: .opacity))
+                    }
                 }
-                TextField("Ask Watcher", text: draft, prompt: (working ? Text("Ask Watcher while it works") : Text("Ask Watcher")).foregroundStyle(Palette.placeholder), axis: .vertical)
-                    .font(.sotto(.body))
-                    .foregroundStyle(Palette.ink)
-                    .lineLimit(1...6)
-                    .focused($focused)
-                    // Words added from a reply put the caret after them, here (ADR-0129).
-                    .onChange(of: draftStore.focus) { _, focus in if focus?.key == model.watcherDraftKey(hostID) { focused = true } }
-                    .padding(.vertical, 11)
-                    .accessibilityLabel("Ask Watcher")
-                    .accessibilityIdentifier("watcher-reply")
-                    .pasteAttaches(to: box)
-                    .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == box.id { model.focusRequest = nil; focused = true } }
-                    .disabled(preparing)
+                .padding(.leading, ComposerMetrics.wordsInset)
+                .padding(.trailing, ComposerMetrics.buttonInset)
+                .frame(minHeight: ComposerMetrics.height)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
-            Button { sent += 1; willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
-                Group {
-                    if preparing { ProgressView().tint(Palette.onAccent) }
-                    else { Image(systemName: symbol).font(.system(size: 17, weight: .semibold)) }
-                }
-                .frame(width: 44, height: 44)
-                .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
-                .background(canSend || preparing ? Palette.accent : Palette.fillSoft, in: Circle())
-                .contentShape(Circle())
-            }
-            .buttonStyle(PressStyle())
-            .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)
-            .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
-            .disabled(!canSend)
-            .accessibilityLabel(preparing ? String(localized: "watcher-send.sending", defaultValue: "Sending to Watcher", comment: "The send button's name while a message is on its way to Watcher") : label)
-            .accessibilityIdentifier("watcher-send")
+            .composerSurface(in: shape)
         }
-        .padding(6)
-        .glass(in: shape)
-        .overlay(shape.strokeBorder(theme.color(.accent).opacity(focused ? 0.55 : 0), lineWidth: 1))
-        .background {
-            ZStack {
-                SoftShadow(shape: shape, color: Color.black.opacity(0.22), radius: 16, y: 8).opacity(focused ? 0 : 1)
-                GlowShadow(shape: shape, color: theme.color(.accent), alpha: 0.35, radius: 18).opacity(focused ? 1 : 0)
-            }
-        }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: focused)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written || preparing)
     }
 }
 
