@@ -463,7 +463,9 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     requestAnswerRecovery: () => ({ uncertainRequestIds: [], completed: [] }),
     supportsWatcherReads: false, supportsWatcherControl: false, supportsWatcherWorkSettled: true, supportsWatcherOutcomes: true,
   } as unknown as DesktopHostConnection['service']
-  router.add({ hostId: REMOTE_HOST_ID, name: 'forge', kind: 'remote', service: remoteService, detail: () => null, preview: () => ({ ok: false }) as never })
+  // It hears the threads the window shows as a socket connection does, by its own call answered with no shell (#1760).
+  router.add({ hostId: REMOTE_HOST_ID, name: 'forge', kind: 'remote', service: remoteService, detail: () => null, preview: () => ({ ok: false }) as never,
+    observe: async () => undefined })
 
   // The answer-draft store as main starts it, from a file holding the owner's retirements and Watcher owners.
   const localSessions = state.threads.filter(item => item.id.startsWith('idle-')).map(item => item.id)
