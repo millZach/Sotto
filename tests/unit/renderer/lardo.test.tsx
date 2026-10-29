@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { Lardo, LardoTurnRunning, type LardoPose } from '../../../src/renderer/src/agents/Lardo'
+import { Lardo, LardoTurnFinished, useLardoTurnFinished, type LardoPose } from '../../../src/renderer/src/agents/Lardo'
 import { lardoPaths } from '../../../src/renderer/src/agents/lardoSprite'
 
 let systemReduce = false
@@ -67,10 +67,18 @@ describe('Lardo', () => {
     expect(css).not.toMatch(/babysitting/u)
   })
 
+  /** The thread pane's part: the turn's state, and which pose (if any) stands, mounted afresh for each `mount`. */
+  function Stage({ running, pose, mount = pose ?? '' }: { readonly running: boolean; readonly pose: LardoPose | null; readonly mount?: string }) {
+    const finished = useLardoTurnFinished(running, pose !== null)
+    return <LardoTurnFinished.Provider value={finished}>
+      <div className="thread-monitor__track">{pose ? <Lardo key={mount} pose={pose} /> : null}</div>
+    </LardoTurnFinished.Provider>
+  }
+
   it('flexes when the turn finishes while he is up, and goes back to his pose', () => {
-    const { container, rerender } = render(<LardoTurnRunning.Provider value><div className="thread-monitor__track"><Lardo pose="working" /></div></LardoTurnRunning.Provider>)
+    const { container, rerender } = render(<Stage running pose="working" />)
     expect(actorOf(container)).not.toHaveAttribute('data-cue')
-    rerender(<LardoTurnRunning.Provider value={false}><div className="thread-monitor__track"><Lardo pose="working" /></div></LardoTurnRunning.Provider>)
+    rerender(<Stage running={false} pose="working" />)
     expect(actorOf(container)).toHaveAttribute('data-cue', 'flex')
     advance(400)
     expect(skin(container)).toBe(lardoPaths('backDoubleBiceps').s)
@@ -78,10 +86,46 @@ describe('Lardo', () => {
     expect(actorOf(container)).not.toHaveAttribute('data-cue')
   })
 
-  it('does not flex for a turn that ended before he came', () => {
-    const { container } = render(<LardoTurnRunning.Provider value={false}><div className="thread-monitor__track"><Lardo pose="monitoring" /></div></LardoTurnRunning.Provider>)
+  it('flexes when the turn\u2019s end swaps his pose for another, as a held action becomes a command left waiting', () => {
+    const { container, rerender } = render(<Stage running pose="held" mount="action" />)
+    rerender(<Stage running={false} pose="held" mount="command" />)
+    expect(actorOf(container)).toHaveAttribute('data-cue', 'flex')
+  })
+
+  it('does not flex for a turn that ended before he came, nor for one he was not up for', () => {
+    const { container, rerender } = render(<Stage running pose={null} />)
+    rerender(<Stage running={false} pose="monitoring" />)
     advance(100)
     expect(actorOf(container)).not.toHaveAttribute('data-cue')
+    // Up through a turn and flexed for it; a pose that comes a second later does not flex for it again.
+    rerender(<Stage running pose="monitoring" />)
+    rerender(<Stage running={false} pose="monitoring" />)
+    expect(actorOf(container)).toHaveAttribute('data-cue', 'flex')
+    advance(1500)
+    rerender(<Stage running={false} pose="babysitting" />)
+    advance(100)
+    expect(actorOf(container)).not.toHaveAttribute('data-cue')
+  })
+
+  it('keeps a press on him from the slim composer, which would focus it', () => {
+    const pressed = vi.fn()
+    const { container } = render(<div onMouseDown={pressed}><div className="thread-monitor__track"><Lardo pose="held" /></div></div>)
+    fireEvent.mouseDown(actorOf(container))
+    expect(pressed).not.toHaveBeenCalled()
+  })
+
+  it('keeps the bite in the composer\u2019s top edge as the composer grows during the throw', () => {
+    const { container } = onComposer(<Lardo pose="held" />)
+    const card = container.querySelector<HTMLElement>('.thread-prompt')!
+    let top = 600
+    card.getBoundingClientRect = () => ({ left: 100, right: 900, top, bottom: top + 120, width: 800, height: 120, x: 100, y: top, toJSON: () => ({}) })
+    fireEvent.click(actorOf(container))
+    advance(300)
+    const bite = document.body.querySelector<HTMLElement>('.lardo-bite')!
+    expect(bite.style.top).toBe('600px')
+    top = 560
+    advance(50)
+    expect(bite.style.top).toBe('560px')
   })
 
   it('throws a piece of the composer when clicked and never touches what is written, the caret or focus', () => {

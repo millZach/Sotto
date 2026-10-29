@@ -9,10 +9,32 @@ import './lardo.css'
 export type LardoPose = 'monitoring' | 'working' | 'held' | 'babysitting'
 
 /**
- * Whether the thread's turn is running, so Lardo can flex when it finishes. The thread pane provides it around the
- * ornament; anywhere else (the Appearance preview) no turn ever runs, so he never flexes there.
+ * When the thread's last turn finished with Lardo up throughout (`performance.now()`), so he can flex for it. The thread
+ * pane provides it around the ornament from `useLardoTurnFinished`; anywhere else (the Appearance preview) no turn ever
+ * finishes, so he never flexes there.
  */
-export const LardoTurnRunning = createContext(false)
+export const LardoTurnFinished = createContext<number | null>(null)
+/** A finish this recent is still his to flex for, even if the turn's end has just swapped him for another pose. */
+const FRESH_FINISH_MS = 250
+
+/**
+ * The thread pane's half of the flex: the moment a turn ends while he stood above the composer during it and still
+ * stands there after, whichever pose he wears. Judged here rather than in Lardo because the turn's end can change his
+ * pose (a held action becoming a command left waiting), which mounts him anew. He never appears just to flex.
+ */
+export function useLardoTurnFinished(running: boolean, up: boolean): number | null {
+  const [finished, setFinished] = useState<number | null>(null)
+  const turn = useRef({ running, upDuring: running && up })
+  useEffect(() => {
+    const was = turn.current
+    if (running) turn.current = { running, upDuring: (was.running && was.upDuring) || up }
+    else {
+      if (was.running && was.upDuring && up) setFinished(performance.now())
+      turn.current = { running: false, upDuring: false }
+    }
+  }, [running, up])
+  return finished
+}
 
 /** What Lardo is doing instead of his pose for a moment: a flex when a turn finishes, or a tantrum when clicked. */
 interface Cue {
@@ -113,13 +135,13 @@ export function Lardo({ pose, agents = 1, playful = true }: { readonly pose: Lar
     return () => { motion.disconnect(); preference?.removeEventListener('change', hold) }
   }, [cue, begin])
 
-  // A turn that finishes while he is up: the edge, never the state, so he does not flex for a turn that ended before he came.
-  const running = useContext(LardoTurnRunning)
-  const wasRunning = useRef(running)
+  // A turn that finished while he was up: each finish once, and only a fresh one, so a pose that comes later never flexes.
+  const finished = useContext(LardoTurnFinished)
+  const flexedFor = useRef<number | null>(null)
   useEffect(() => {
-    if (wasRunning.current && !running) play('flex')
-    wasRunning.current = running
-  }, [running, play])
+    if (finished !== null && finished !== flexedFor.current && performance.now() - finished < FRESH_FINISH_MS) play('flex')
+    flexedFor.current = finished
+  }, [finished, play])
 
   /** The monitoring schedule stands still while he flexes or rages, so he picks up where he stopped rather than jumping on. */
   const paused = useRef({ total: 0, since: null as number | null })
@@ -206,8 +228,8 @@ export function Lardo({ pose, agents = 1, playful = true }: { readonly pose: Lar
       </svg>
     </div>)}
     <div className="thread-monitor__actor lardo" ref={actor} aria-hidden="true" data-cue={cue?.kind}
-      // A press on him must not take focus from the composer he stands on.
-      onMouseDown={tantrum ? event => event.preventDefault() : undefined} onClick={tantrum}>
+      // A press on him must not move focus: not by default, and not through the slim composer's press, which focuses it.
+      onMouseDown={tantrum ? event => { event.preventDefault(); event.stopPropagation() } : undefined} onClick={tantrum}>
       <svg className="thread-monitor__creature" viewBox="0 0 40 32" width="80" height="64" focusable="false" shapeRendering="crispEdges">
         {pose === 'held' ? <g transform={GLASS_ON_FLOOR}>
           <g ref={glass}>
@@ -306,7 +328,16 @@ function LardoThrow({ actor }: { readonly actor: RefObject<HTMLDivElement | null
     at(REFORM_AT, () => bite.current?.querySelectorAll<HTMLElement>('.lardo-bite__cell').forEach((cell, index) =>
       animate(cell, [{ opacity: 0 }, { opacity: 1 }], { duration: 1, delay: cells[index]!.delay, fill: 'forwards' })))
     at(REFORM_AT + REFORM_FOR + 40, () => { bite.current!.style.visibility = 'hidden' })
+    // The bite stays in the composer's top edge however the composer moves or grows while he throws.
+    let follow = 0
+    const keepInEdge = (): void => {
+      const now = composer.getBoundingClientRect()
+      if (bite.current) Object.assign(bite.current.style, { left: `${left + now.left - card.left}px`, top: `${now.top}px` })
+      follow = requestAnimationFrame(keepInEdge)
+    }
+    follow = requestAnimationFrame(keepInEdge)
     return () => {
+      cancelAnimationFrame(follow)
       timers.forEach(clearTimeout)
       animations.forEach(animation => animation.cancel())
     }
