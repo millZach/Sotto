@@ -117,6 +117,22 @@ describe('Move threads and its sheet', () => {
     expect(moves.start).not.toHaveBeenCalled()
   })
 
+  it('leaves a sheet opened again alone when an earlier one’s moves finish starting', async () => {
+    const { moves } = bridges()
+    let finish: (() => void) | undefined
+    vi.mocked(moves.start).mockImplementationOnce(() => new Promise(resolve => { finish = () => resolve({ status: 'ok', moves: [] }) }))
+    render(<MoveThreadsSheetHost />)
+    act(() => { moveSheetStore.open({ kind: 'all' }) })
+    fireEvent.click(within(await screen.findByRole('dialog', { name: 'Move 2 threads to forge?' })).getByRole('button', { name: 'Move 2 threads' }))
+    // Put away while its moves start, then opened again for one thread.
+    fireEvent.click(await screen.findByRole('button', { name: 'Close' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    act(() => { moveSheetStore.open({ kind: 'one', threadId: 'tray', title: 'Tray icon at night' }) })
+    await screen.findByRole('dialog', { name: 'Move Tray icon at night to forge?' })
+    await act(async () => { finish!(); await Promise.resolve() })
+    expect(screen.getByRole('dialog', { name: 'Move Tray icon at night to forge?' })).toBeTruthy()
+  })
+
   it('says why nothing moved when main refuses, and has only Close', async () => {
     bridges({ preview: { status: 'refused', message: 'Forge needs a newer Sotto before threads can move there. Update it from the Threads page, then try again. Nothing was moved.' } })
     render(<MoveThreadsSheetHost />)

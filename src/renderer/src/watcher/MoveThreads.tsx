@@ -195,7 +195,8 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
     try {
       const result = await bridge.start({ confirmationId: preview.confirmationId, threadIds: [...ids], allowNarrower: [] })
       if (result.status === 'refused') { setPhase({ kind: 'refused', message: result.message }); return }
-      moveSheetStore.close()
+      // Only this sheet: one put away while its moves started may have been opened again since.
+      if (moveSheetStore.get() === request) moveSheetStore.close()
     } catch { setPhase({ kind: 'refused', message: t`Sotto lost the answer, so some threads may be moving. Each move’s card in Watcher’s conversation says where it stands.` }) }
   }
 
