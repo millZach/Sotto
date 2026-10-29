@@ -1,0 +1,460 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Drake's ask on October 28, 2026, "I want to redesign the desktop app's prompt box ... Use /redesign and give me
+  20 different mockups", with Claude Code's desktop composer as the one reference. Twenty structural directions for the
+  Threads composer, after the current one (0), each drawn at the composer's real 760px width in Sotto's dark (Ink) and
+  light (paper) halves, in two states: at rest with a next prompt waiting, and a turn running with text typed.
+
+  0 is rebuilt from the shipped rules (src/renderer/src/agents/threads.css, branchToolbar.css, nextPrompt.css; ADR-0113,
+  ADR-0132, ADR-0153), not captured from the app. Colour comes only from theme roles copied from palettes.ts and the
+  --tt-* formulas in tokens.css; the page chrome around the frames is literal.
+
+  Built from template.html by build.py (inlines Figtree). Open with #7 to jump to a direction; ?mode=dark|light|both and
+  ?state=rest|run pick the toggles (for screenshots).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composer redesign: twenty directions - prototype</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; src: url(data:font/woff2;base64,__FIGTREE__) format('woff2'); }
+
+/* Theme roles, copied from src/shared/themes/palettes.ts (the default Ink and paper). */
+.t-dark {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265); --theme-surface-raised: oklch(0.185 0.008 265); --theme-text: oklch(0.985 0.005 280);
+  --theme-muted-foreground: oklch(0.72 0.014 265); --theme-placeholder: oklch(0.675 0.012 270); --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265); --theme-accent: oklch(0.714403 0.104089 183.092); --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-update-foreground: oklch(0.83 0.08 183); --theme-accent-surface: oklch(0.32 0.05 185); --theme-error-foreground: oklch(0.702184 0.189226 22.228);
+  --theme-surface-overlay: oklch(0.215 0.008 265);
+  --tt-card: var(--theme-surface-raised); --tt-provider-claude: #e3b58e;
+}
+.t-light {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85); --theme-surface-raised: oklch(0.955 0.006 85); --theme-text: oklch(0.235 0.014 75);
+  --theme-muted-foreground: oklch(0.5 0.014 75); --theme-placeholder: oklch(0.525 0.015 78); --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80); --theme-accent: oklch(0.53 0.095 186); --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-update-foreground: oklch(0.43 0.08 186); --theme-accent-surface: oklch(0.92 0.03 186); --theme-error-foreground: oklch(0.509494 0.208583 28.513);
+  --theme-surface-overlay: oklch(0.945 0.007 85);
+  --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas)); --tt-provider-claude: #c4793f;
+}
+/* The --tt-* formulas, from src/renderer/src/styles/tokens.css. */
+.t-dark, .t-light {
+  --tt-canvas: var(--theme-canvas);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-field-border: var(--theme-input);
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-on-accent: var(--theme-accent-foreground);
+  --tt-activity: var(--tt-accent-text);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--theme-canvas);
+  --tt-segment-on: var(--theme-surface-overlay);
+  --ph: color-mix(in srgb, var(--tt-text-muted) 55%, transparent);
+  background: var(--tt-canvas); color: var(--tt-text);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 28px 32px 60px; background: #0b0b0c; color: #ecebe6; font: 13px/1.4 Figtree, system-ui, sans-serif; }
+h1 { margin: 0 0 8px; font-size: 20px; font-weight: 600; }
+.intro { max-width: 1180px; margin: 0 0 18px; color: #a7a6a0; font-size: 13.5px; }
+.intro p { margin: 0 0 8px; }
+.intro b { color: #ecebe6; font-weight: 600; }
+.intro ul { margin: 0 0 10px; padding-left: 18px; }
+.intro li { margin: 0 0 3px; }
+.bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 -32px 22px; padding: 10px 32px; background: #0b0b0ce6; backdrop-filter: blur(8px); font-size: 12.5px; color: #a7a6a0; }
+.bar .seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 7px; background: #1d1d1f; margin-right: 12px; }
+.bar button { color: #c9c8c2; padding: 4px 10px; border: 0; border-radius: 5px; background: transparent; font: inherit; cursor: pointer; }
+.bar button[aria-pressed='true'] { background: #3a3a3d; color: #fff; }
+.bar nav { display: inline-flex; flex-wrap: wrap; gap: 2px; }
+.bar nav a { color: #c9c8c2; text-decoration: none; padding: 3px 6px; border-radius: 5px; font-variant-numeric: tabular-nums; }
+.bar nav a:hover { background: #2a2a2d; color: #fff; }
+
+section.dir { margin: 0 0 26px; padding: 16px 20px 18px; border-radius: 14px; background: #131315; }
+section.dir h2 { margin: 0 0 4px; font-size: 16px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; }
+section.dir h2 b { display: inline-grid; place-items: center; min-width: 26px; height: 22px; padding: 0 5px; border-radius: 6px; background: #ecebe6; color: #121211; font-size: 12.5px; }
+section.dir[data-id='0'] h2 b { background: #3a3a3d; color: #ecebe6; }
+section.dir h2 i { font-style: normal; font-weight: 500; font-size: 12px; color: #8f8e88; }
+.why { margin: 0 0 3px; color: #d6d5cf; font-size: 13.5px; max-width: 1540px; }
+.fix { margin: 0 0 3px; color: #b9b8b2; font-size: 13px; max-width: 1540px; }
+.fix::before { content: 'Fixes: '; color: #8f8e88; }
+.amend { margin: 0 0 12px; color: #8f8e88; font-size: 12.5px; }
+.frames { display: flex; flex-wrap: wrap; gap: 14px; }
+.cell { width: 784px; max-width: 100%; padding: 30px 12px 16px; border-radius: 10px; overflow-x: auto; position: relative; }
+.cell::before { content: attr(data-col); position: absolute; top: 8px; left: 14px; font-size: 11px; color: var(--tt-text-muted); }
+body.m-dark .cell.t-light, body.m-light .cell.t-dark { display: none; }
+
+/* ================= shared parts, at the composer's real size ================= */
+.compose { width: 760px; position: relative; font-size: 13px; }
+svg.i { width: 15px; height: 15px; fill: none; stroke: currentcolor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+svg.i.s { width: 13px; height: 13px; }
+svg.i.xs { width: 11px; height: 11px; opacity: .7; }
+.mk { width: 14px; height: 14px; flex: none; color: var(--tt-provider-claude); }
+.card { position: relative; padding: 14px 16px 10px; border-radius: 16px; background: var(--tt-card); }
+.field { min-height: 36px; font-size: 15px; line-height: 1.5; color: var(--tt-text); }
+.ghost { color: var(--ph); }
+.tabkey { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 8px; padding: 0 5px; border: 1px solid var(--tt-hairline); border-radius: 5px; color: var(--tt-text-muted); font-size: 11px; font-weight: 600; line-height: 1; vertical-align: 1px; }
+.caret { display: inline-block; width: 1.5px; height: 18px; margin-left: 1px; vertical-align: -3px; background: var(--tt-text); }
+.foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
+.meta { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 2px 4px; min-width: 0; }
+.acts { display: flex; flex: none; align-items: center; gap: 6px; }
+/* A text button (ADR-0113): its value and a chevron, no edge, no fill at rest. */
+.tb { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 7px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.tb:hover { background: var(--tt-hover); color: var(--tt-text); }
+.tb.model { color: var(--tt-text-2); }
+.tb.ico { width: 28px; padding: 0; justify-content: center; }
+.eff { color: var(--tt-accent-text); }
+.bars { display: inline-flex; align-items: flex-end; gap: 1.5px; height: 12px; }
+.bars i { width: 2.5px; border-radius: 1px; background: currentcolor; opacity: .3; }
+.bars i:nth-child(1) { height: 4px; } .bars i:nth-child(2) { height: 6.5px; } .bars i:nth-child(3) { height: 9px; } .bars i:nth-child(4) { height: 12px; }
+.bars i.on { opacity: 1; }
+/* The keyed buttons (ADR-0153). */
+.k { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 4px 0 7px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; }
+.k.fill { background: var(--tt-pill); color: var(--tt-pill-ink); }
+.k.fill.off { background: color-mix(in oklab, var(--tt-pill) 16%, var(--tt-card)); color: var(--tt-text-muted); }
+.k.steer { color: var(--tt-accent-text); }
+.k.g { width: 28px; padding: 0; }
+.k.disc { width: 30px; height: 30px; padding: 0; border-radius: 50%; }
+.cap { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 4px; background: color-mix(in oklab, currentcolor 14%, transparent); font-size: 11.5px; letter-spacing: .02em; }
+.trace { position: absolute; inset: -3px; overflow: hidden; padding: 1.5px; border-radius: 8px; pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+.k.disc .trace { border-radius: 50%; }
+.trace > i { position: absolute; top: 50%; left: 50%; width: 220%; aspect-ratio: 1; translate: -50% -50%; background: conic-gradient(from 0deg, transparent 0 62%, var(--tt-activity) 88%, transparent 100%); animation: spin 1.6s linear infinite; }
+@keyframes spin { to { transform: rotate(1turn); } }
+@media (prefers-reduced-motion: reduce) { .trace > i { animation: none; } }
+/* The branch toolbar (ADR-0113 decision 4): one muted line under the card. */
+.branch { display: flex; flex-wrap: wrap; align-items: center; gap: 0 2px; margin: 6px 4px 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.branch .tb { height: 26px; font-size: 12.5px; gap: 5px; }
+.dot { color: var(--tt-text-faint); padding: 0 1px; }
+.queue { margin: 0 14px -12px; padding: 4px 10px 16px 12px; border-radius: 12px 12px 0 0; background: color-mix(in oklab, var(--tt-card) 70%, var(--tt-canvas)); color: var(--tt-text-muted); font-size: 12.5px; }
+.queue p { margin: 4px 0 2px; color: var(--tt-text-2); font-size: 13.5px; }
+
+/* ================= the directions ================= */
+/* 1 Claude Code */
+.v1 .card { border: 1px solid var(--tt-hairline); border-radius: 18px; padding: 14px 14px 10px 16px; }
+.v1 .foot { margin-top: 18px; }
+.v1 .k.disc.fill { background: var(--tt-accent); color: var(--tt-on-accent); }
+.v1 .k.disc.fill.off { background: color-mix(in oklab, var(--tt-accent) 35%, var(--tt-card)); color: var(--tt-on-accent); }
+.v1 .branch { margin: 8px 12px 0; }
+/* 2 Quiet card, one line outside */
+.v2 .card { display: flex; align-items: flex-end; gap: 12px; padding: 12px 10px 10px 16px; }
+.v2 .field { flex: 1; padding-bottom: 2px; }
+.v2 .under { display: flex; align-items: center; gap: 0 2px; margin: 6px 4px 0; color: var(--tt-text-muted); }
+.v2 .under .tb { height: 26px; font-size: 12.5px; }
+.v2 .under .sp { flex: 1; }
+/* 3 Split rails */
+.v3 .card { padding: 6px 10px 10px; }
+.v3 .rail { display: flex; align-items: center; gap: 2px; margin: 0 -2px 4px; padding-bottom: 6px; border-bottom: 1px solid var(--tt-hairline); }
+.v3 .field { padding: 4px 6px 0; }
+.v3 .foot { margin-top: 6px; }
+/* 4 Card and dock */
+.v4 .card { border-radius: 14px 14px 4px 4px; padding: 14px 16px 12px; }
+.v4 .dock { display: flex; align-items: center; gap: 4px; margin-top: 2px; padding: 4px 6px 4px 8px; border-radius: 4px 4px 14px 14px; background: color-mix(in oklab, var(--tt-card) 55%, var(--tt-canvas)); }
+.v4 .dock .sp { flex: 1; }
+.v4 .dock .vr { width: 1px; height: 16px; margin: 0 4px; background: var(--tt-hairline); }
+/* 5 Docked, no card */
+.v5 { width: 784px; margin: 0 -12px -16px; }
+.v5 .card { border-radius: 0; background: transparent; border-top: 1px solid var(--tt-hairline); padding: 14px 20px 10px; }
+.v5 .branch { margin: 0; padding: 0 16px 8px; }
+/* 6 Island that opens on focus */
+.v6 .card { border-radius: 22px; padding: 10px 8px 8px 18px; box-shadow: 0 10px 30px -14px color-mix(in srgb, var(--tt-text) 30%, transparent); transition: padding .2s cubic-bezier(.2,.8,.2,1); }
+.v6 .row { display: flex; align-items: center; gap: 8px; }
+.v6 .field { flex: 1; min-height: 28px; display: flex; align-items: center; }
+.v6 .foot, .v6 .branch { max-height: 40px; opacity: 1; overflow: hidden; transition: max-height .2s cubic-bezier(.2,.8,.2,1), opacity .16s ease-out, margin .2s; }
+.v6:not(:hover):not(:focus-within) .foot, .v6:not(:hover):not(:focus-within) .branch { max-height: 0; opacity: 0; margin-top: 0; }
+.v6 .k.disc.fill { width: 32px; height: 32px; }
+/* 7 Left gutter */
+.v7 .card { display: grid; grid-template-columns: auto 1fr auto; gap: 0 12px; padding: 8px 10px 8px 8px; }
+.v7 .gut { display: flex; flex-direction: column; gap: 2px; padding-right: 8px; border-right: 1px solid var(--tt-hairline); }
+.v7 .field { padding: 6px 0; min-height: 120px; }
+.v7 .acts { flex-direction: column; justify-content: flex-end; align-items: flex-end; }
+/* 8 Model as the heading */
+.v8 .head { display: flex; align-items: center; gap: 2px; margin: -6px -8px 4px; color: var(--tt-text-muted); }
+.v8 .head .tb { height: 26px; font-size: 12.5px; }
+.v8 .head .tb.model { font-weight: 600; color: var(--tt-text); }
+.v8 .head .sp { flex: 1; }
+/* 9 Effort as the bars */
+.v9 .meta .tb.model { padding-right: 9px; gap: 7px; }
+/* 10 Effort as the edge */
+.v10 .card { overflow: hidden; padding-bottom: 12px; }
+.v10 .tide { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; display: grid; grid-template-columns: repeat(4, 1fr); gap: 2px; }
+.v10 .tide i { background: color-mix(in oklab, var(--tt-accent) 20%, transparent); }
+.v10 .tide i.on { background: var(--tt-accent); }
+/* 11 Apple-native */
+.v11 .card { padding: 0; background: transparent; }
+.v11 .well { padding: 9px 12px; border: 1px solid var(--tt-field-border); border-radius: 10px; background: var(--tt-card); box-shadow: inset 0 1px 2px color-mix(in srgb, var(--tt-text) 7%, transparent); }
+.v11 .tool { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+.v11 .pop { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 6px 0 8px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--tt-card); color: var(--tt-text-2); font-size: 12.5px; }
+.v11 .pop .ud { display: inline-grid; line-height: 0; }
+.v11 .sp { flex: 1; }
+.v11 .k.disc { width: 26px; height: 26px; }
+.v11 .k.disc.fill { background: var(--tt-accent); color: var(--tt-on-accent); }
+.v11 .k.disc.fill.off { background: color-mix(in oklab, var(--tt-accent) 30%, var(--tt-card)); }
+/* 12 Terminal */
+.v12 .card { border-radius: 8px; padding: 12px 14px 8px; border: 1px solid var(--tt-hairline); background: var(--tt-canvas); }
+.v12 .field { display: flex; gap: 10px; font: 14px/1.55 ui-monospace, 'SF Mono', Menlo, monospace; }
+.v12 .field > b { color: var(--tt-accent-text); font-weight: 600; }
+.v12 .status { display: flex; flex-wrap: wrap; gap: 0 14px; margin: 6px 2px 0; color: var(--tt-text-muted); font: 12px/1.6 ui-monospace, 'SF Mono', Menlo, monospace; }
+.v12 .status .sp { flex: 1; }
+.v12 .status u { text-decoration: none; color: var(--tt-text-2); }
+.v12 .tabkey { font-family: Figtree, sans-serif; }
+/* 13 Keys first */
+.v13 .tb .cap { height: 17px; min-width: 17px; padding: 0 4px; font-size: 10.5px; color: var(--tt-text-muted); }
+/* 14 Next prompt as a row */
+.v14 .next { display: flex; align-items: center; gap: 8px; margin: 2px -6px 2px; padding: 5px 6px; border-radius: 8px; color: var(--tt-text-2); font-size: 13.5px; }
+.v14 .next:hover { background: var(--tt-hover); }
+.v14 .next small { color: var(--tt-text-muted); font-size: 12px; }
+.v14 .next .sp { flex: 1; }
+/* 15 Suggestions above */
+.v15 .sugg { display: flex; flex-wrap: wrap; gap: 4px; margin: 0 6px 8px; }
+.v15 .sugg .tb { height: 26px; font-size: 12.5px; border: 1px solid var(--tt-hairline); border-radius: 13px; color: var(--tt-text-2); }
+.v15 .sugg .tb.first { color: var(--tt-text); border-color: var(--tt-field-border); }
+.v15 .sugg .num { color: var(--tt-text-faint); font-weight: 600; font-size: 11.5px; }
+/* 16 Where it runs, inside */
+.v16 .meta .vr, .v17 .vr, .v20 .vr { width: 1px; height: 16px; margin: 0 4px; background: var(--tt-hairline); }
+/* 17 Breadcrumb on top */
+.v17 .crumb { display: flex; align-items: center; gap: 2px; margin: -8px -8px 2px; color: var(--tt-text-muted); font-size: 12px; }
+.v17 .crumb .tb { height: 24px; font-size: 12px; padding: 0 6px; }
+.v17 .crumb .sl { color: var(--tt-text-faint); }
+/* 18 One line */
+.v18 .card { display: flex; align-items: center; gap: 4px; padding: 6px 6px 6px 8px; border-radius: 12px; }
+.v18 .field { flex: 1; min-height: 0; font-size: 14.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-left: 4px; }
+.v18 .field .tabkey { margin-left: 6px; }
+.v18 .branch { margin-top: 4px; }
+/* 19 One sentence */
+.v19 .card { padding: 18px 20px 12px; }
+.v19 .field { font-size: 16px; min-height: 48px; }
+.v19 .sent { flex: 1; color: var(--tt-text-muted); font-size: 13px; line-height: 28px; }
+.v19 .sent u { text-decoration: underline dotted color-mix(in srgb, currentcolor 45%, transparent); text-underline-offset: 4px; color: var(--tt-text-2); cursor: pointer; padding: 2px 1px; border-radius: 4px; }
+.v19 .sent u:hover { background: var(--tt-hover); }
+/* 20 Action column */
+.v20 .card { display: grid; grid-template-columns: 1fr auto; gap: 0 12px; padding: 14px 10px 8px 16px; }
+.v20 .col { grid-row: 1 / 3; grid-column: 2; display: flex; flex-direction: column; gap: 6px; justify-content: flex-end; padding-left: 10px; border-left: 1px solid var(--tt-hairline); }
+.v20 .col .k { width: 100%; justify-content: space-between; min-width: 98px; }
+.v20 .col .k.fill { height: 40px; }
+.v20 .foot { grid-column: 1; }
+</style>
+</head>
+<body class="m-both">
+<h1>The prompt box: twenty directions</h1>
+<div class="intro">
+  <p><b>0 is the composer as it ships today</b>, rebuilt from <code>threads.css</code>, <code>branchToolbar.css</code> and <code>nextPrompt.css</code> (ADR-0113 text buttons, ADR-0132 next prompt, ADR-0153 keys). 1 to 20 change its structure, not its colours: every frame takes its colour from the same theme roles, at the composer's real 760px width. Use the bar to show Dark, Light or both, and to switch between <b>at rest, a next prompt waiting</b> and <b>a turn running, text typed</b>. Hover 6 to open it.</p>
+  <p><b>What the critique of 0 found:</b></p>
+  <ul>
+    <li>Six controls of nearly equal weight on one line (attach, model, fast, effort, permissions, Watch), then a second line of three more under the card. Nothing tells the eye which one matters; the model reads as the same grey as Watch.</li>
+    <li>Where the thread runs (computer, workspace, branch) sits outside the card it governs, so the card and its line read as two things, and the line costs a row of height.</li>
+    <li>Send with a word and a key cap is clear but wide; with a turn running the right side holds three buttons and nine characters of keys.</li>
+    <li>The next prompt hides in placeholder ink at 55%: at rest it is the most useful thing in the box and the faintest.</li>
+    <li>Strengths to keep: no boxes around options (ADR-0113), the one filled button is always what Enter does (ADR-0153), the trace on Stop says a turn runs without a word.</li>
+  </ul>
+  <p><b>Against the references</b> (Mobbin needs a paid plan, so: Claude Code desktop from Drake's screenshot; ChatGPT, Claude, Raycast, Locally AI and Microsoft Copilot from their App Store screenshots). Claude Code and ChatGPT win on quiet: one card, attach left, model and send right, nothing else visible. Raycast and Locally AI win on hierarchy by putting the model in a header above the input. Copilot's Mac panel wins on density with a one-line field. Sotto wins on honesty: none of them shows effort, permissions or the branch, and none teaches its keys. The directions below try to keep that honesty at their level of quiet.</p>
+</div>
+<div class="bar">
+  <span class="seg" id="mode"><button data-v="both" aria-pressed="true">Both</button><button data-v="dark">Dark</button><button data-v="light">Light</button></span>
+  <span class="seg" id="state"><button data-v="rest" aria-pressed="true">At rest, next prompt</button><button data-v="run">Turn running, text typed</button></span>
+  <nav id="nav"></nav>
+</div>
+<main id="main"></main>
+<script>
+const P = d => `<svg class="i" viewBox="0 0 24 24">${d}</svg>`
+const I = {
+  clip: P('<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>'),
+  plus: P('<path d="M5 12h14"/><path d="M12 5v14"/>'),
+  chev: '<svg class="i xs" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
+  updown: '<svg class="i xs" viewBox="0 0 24 24"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>',
+  zap: P('<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>'),
+  shield: P('<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>'),
+  eye: P('<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>'),
+  branch: '<svg class="i s" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>',
+  folder: '<svg class="i s" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>',
+  laptop: '<svg class="i s" viewBox="0 0 24 24"><path d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z"/><path d="M20.054 15.987H3.946"/></svg>',
+  up: P('<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>'),
+  sq: '<svg class="i" viewBox="0 0 12 12" style="width:10px;height:10px;fill:currentcolor;stroke:none"><rect x=".5" y=".5" width="11" height="11" rx="2.5"/></svg>',
+  steer: P('<path d="m15 10 5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/>'),
+  queue: P('<path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="M18 9v6"/><path d="M21 12h-6"/>'),
+  sparkle: '<svg class="i s" viewBox="0 0 24 24"><path d="M9.94 14.06 4 20"/><path d="m14 4 1.5 3.5L19 9l-3.5 1.5L14 14l-1.5-3.5L9 9l3.5-1.5z"/></svg>',
+}
+const MARK = '<svg class="mk" viewBox="0 0 24 24" fill="none" stroke="currentcolor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg>'
+const BARS = (n = 3) => `<span class="bars">${[1, 2, 3, 4].map(i => `<i class="${i <= n ? 'on' : ''}"></i>`).join('')}</span>`
+const GHOST = 'Run the composer e2e spec and fix what fails'
+const TYPED = 'Also update the release notes for the Windows path'
+const RUNPH = 'Claude is working. Write a follow-up to queue it.'
+const cap = c => `<kbd class="cap">${c}</kbd>`
+const tb = (inner, cls = '', title = '') => `<button type="button" class="tb ${cls}" title="${title}">${inner}</button>`
+
+/* Parts. o.chev false drops the chevrons. */
+const part = {
+  attach: (o = {}) => tb(o.plus ? I.plus : I.clip, 'ico', 'Attach files'),
+  model: (o = {}) => tb(`${MARK}Opus 5.5${o.bars ? BARS() : ''}${o.chev === false ? '' : I.chev}`, 'model', 'Model'),
+  fast: () => tb(I.zap, 'ico', 'Fast mode: off'),
+  effort: (o = {}) => tb(o.bars ? BARS() : `<span class="eff">High</span>${o.chev === false ? '' : I.chev}`, o.bars ? 'ico' : '', 'Reasoning: High'),
+  perms: (o = {}) => o.icon ? tb(I.shield, 'ico', 'Thread permissions: Full access') : tb(`Full access${o.chev === false ? '' : I.chev}`, '', 'Thread permissions'),
+  watch: (o = {}) => o.icon ? tb(I.eye, 'ico', 'Watch this thread') : tb(`${I.eye}Watch`, '', 'Watch this thread'),
+  where: (o = {}) => [tb(`${I.laptop}${o.short ? '' : 'This computer'}`, o.short ? 'ico' : '', 'Run on: This computer'),
+    tb(`${I.folder}Project folder`, '', 'Workspace'), tb(`${I.branch}sotto/c9c8e65b${I.chev}`, '', 'Branch')],
+}
+const branchLine = (o = {}) => `<div class="branch">${part.where(o).join('<span class="dot">·</span>')}</div>`
+const field = (s, o = {}) => s.run ? `<div class="field">${TYPED}<span class="caret"></span></div>`
+  : o.noGhost ? `<div class="field ghost">${o.ph ?? 'What should Claude do next?'}</div>`
+  : `<div class="field"><span class="ghost">${GHOST}</span><kbd class="tabkey">Tab</kbd></div>`
+const queued = s => s.run ? `<div class="queue">Queued 1 · sends when Claude Code finishes<p>Run the linter on the changed files too</p></div>` : ''
+
+/* The action group. shape: keys (0, ADR-0153) | glyph (square, no words) | disc (round) | gk (glyph and key) | col (stacked, 20). */
+const TRACE = '<span class="trace" aria-hidden="true"><i></i></span>'
+function acts(s, shape = 'keys') {
+  const g = shape === 'glyph' || shape === 'disc'
+  const sh = shape === 'disc' ? 'disc' : g ? 'g' : ''
+  const btn = (kind, cls, label, glyph, key) => `<button type="button" class="k ${cls} ${sh}" aria-label="${label}" title="${label} ${key}">${
+    g ? glyph : shape === 'gk' ? glyph + cap(key) : `${label.split(' ')[0]}${cap(key)}`}${kind === 'stop' ? TRACE : ''}</button>`
+  if (!s.run) return btn('send', 'fill off', 'Send prompt', I.up, '↵')
+  return btn('steer', 'steer', 'Steer now', I.steer, '⌘↵') + btn('stop', '', 'Stop agent', I.sq, '⇧⌘S') + btn('queue', 'fill', 'Queue prompt', I.queue, '↵')
+}
+const defaultMeta = (o = {}) => [part.model(o), part.fast(), part.effort(o), part.perms(o), part.watch(o)].join('')
+
+const DIRS = [
+  { id: 0, name: 'Today', tag: 'baseline',
+    why: 'One card: the prompt, then attach and five text buttons, then the keyed actions; where the thread runs is a muted line under the card.',
+    fix: '-', amend: 'As shipped.',
+    html: s => `${queued(s)}<div class="card">${field(s)}<div class="foot"><div class="meta">${part.attach()}${defaultMeta()}</div><div class="acts">${acts(s)}</div></div></div>${branchLine()}` },
+  { id: 1, name: 'Claude Code', tag: 'reference-like',
+    why: 'The reference, in Sotto\'s roles: attach alone at the left, the model with its effort bars and a round accent send at the right, the checkout line below.',
+    fix: 'six equal controls become two groups; effort reads as a glyph beside the model it belongs to; permissions and Watch move into the model menu.',
+    amend: 'ADR-0153 (no words or key caps; the filled button is the accent, not the pill pair).',
+    html: s => `${queued(s)}<div class="card">${field(s)}<div class="foot"><div class="meta">${part.attach()}</div><div class="meta" style="flex:none">${part.model({ bars: true, chev: false })}</div><div class="acts">${acts(s, 'disc')}</div></div></div>${branchLine()}` },
+  { id: 2, name: 'Quiet card, one line', tag: 'single card',
+    why: 'The card holds only the words and the one button that sends them; every option and the checkout share one muted line under it.',
+    fix: 'the card is the prompt and nothing else; one line under it replaces two.',
+    amend: 'ADR-0113 decision 4 (the branch toolbar joins the options line).',
+    html: s => `${queued(s)}<div class="card">${field(s)}<div class="acts">${acts(s)}</div></div>
+      <div class="under">${part.attach()}${part.model()}${part.effort()}${part.perms({ icon: true })}${part.watch({ icon: true })}<span class="sp"></span>${part.where({ short: true }).slice(1).join('')}</div>` },
+  { id: 3, name: 'Split rails', tag: 'split',
+    why: 'Who answers (model, effort, permissions, Watch) is a rail above the prompt; what you do with it (attach, send) is a rail below.',
+    fix: 'separates the thread\'s setup from the act of sending; the send row gets its room back.',
+    amend: 'ADR-0113 (layout of the options row).',
+    html: s => `${queued(s)}<div class="card"><div class="rail">${defaultMeta()}</div>${field(s)}<div class="foot"><div class="meta">${part.attach()}</div><div class="acts">${acts(s)}</div></div></div>${branchLine()}` },
+  { id: 4, name: 'Card and dock', tag: 'split',
+    why: 'The prompt card above, a thin docked bar of setup under it that also carries the checkout, the two joined by a 2px seam.',
+    fix: 'the checkout line becomes part of the composer instead of floating under it; the card is only for writing.',
+    amend: 'ADR-0113 decision 4.',
+    html: s => `${queued(s)}<div class="card">${field(s)}</div><div class="dock">${part.attach()}${part.model()}${part.effort()}${part.perms({ icon: true })}${part.watch({ icon: true })}<span class="vr"></span>${part.where({ short: true }).slice(2).join('')}<span class="sp"></span><div class="acts">${acts(s)}</div></div>` },
+  { id: 5, name: 'Docked, no card', tag: 'docked',
+    why: 'No card at all: a hairline across the pane, the prompt on the room itself, the footer and checkout flush below. Terminal-quiet.',
+    fix: 'removes the heaviest shape on the screen; the transcript and the prompt are one surface.',
+    amend: 'ADR-0110 (the composer is a filled card) and ADR-0125 (slim composer has nothing to slim).',
+    html: s => `${queued(s)}<div class="card">${field(s)}<div class="foot"><div class="meta">${part.attach()}${defaultMeta()}</div><div class="acts">${acts(s)}</div></div></div>${branchLine()}` },
+  { id: 6, name: 'Island that opens', tag: 'floating',
+    why: 'A floating rounded island with one line and a disc; pointing at it or focusing it opens the options and the checkout. Hover the frame.',
+    fix: 'at rest the box is the prompt and nothing else; what you change once per thread is out of sight until you reach for it.',
+    amend: 'ADR-0125 (slim becomes the resting state, not only while reading back).',
+    html: s => `${queued(s)}<div class="card"><div class="row">${field(s)}<div class="acts">${acts(s, 'disc')}</div></div><div class="foot"><div class="meta" style="margin-left:-10px">${part.attach()}${defaultMeta()}</div></div></div>${branchLine()}` },
+  { id: 7, name: 'Left gutter', tag: 'split',
+    why: 'The controls stand in a column at the card\'s left edge as icons (attach, model mark, effort bars, permissions, Watch); the prompt gets the whole width.',
+    fix: 'the footer row is gone: a long prompt starts higher and wraps wider.',
+    amend: 'ADR-0113 (permissions and Watch as icons at every width, words in their tooltips).',
+    html: s => `${queued(s)}<div class="card"><div class="gut">${part.attach()}${tb(MARK, 'ico', 'Model: Opus 5.5')}${part.effort({ bars: true })}${part.perms({ icon: true })}${part.watch({ icon: true })}</div>${field(s)}<div class="acts">${acts(s, 'gk')}</div></div>${branchLine()}` },
+  { id: 8, name: 'Model as the heading', tag: 'header',
+    why: 'Like Raycast and Locally AI: who you are talking to is the card\'s heading (model, effort, permissions), the checkout at its right; the footer is attach and send.',
+    fix: 'the model gets its weight back; the checkout moves inside the card at no cost in height.',
+    amend: 'ADR-0113 (the model reads in the text colour, semibold).',
+    html: s => `${queued(s)}<div class="card"><div class="head">${part.model()}${part.effort()}${part.perms()}<span class="sp"></span>${part.where({ short: true }).slice(2).join('')}</div>${field(s)}<div class="foot"><div class="meta">${part.attach()}${part.watch({ icon: true })}</div><div class="acts">${acts(s)}</div></div></div>` },
+  { id: 9, name: 'Glyphs, not words', tag: 'dense',
+    why: 'Today\'s layout with every option reduced to its sign: the model keeps its name, effort becomes four bars inside the model button, permissions a shield, Watch an eye.',
+    fix: 'the footer drops from about 430px of words to 200px; nothing moves.',
+    amend: 'ADR-0113 (effort leaves its own button; ADR-0113 decision 2 applies at every width).',
+    html: s => `${queued(s)}<div class="card">${field(s)}<div class="foot"><div class="meta">${part.attach()}${part.model({ bars: true })}${part.fast()}${part.perms({ icon: true })}${part.watch({ icon: true })}</div><div class="acts">${acts(s)}</div></div></div>${branchLine()}` },
+  { id: 10, name: 'Effort on the edge', tag: 'ambient',
+    why: 'Effort is a four-step meter along the card\'s foot in the accent; the effort word goes, the meter is the button (click a step).',
+    fix: 'the one option that changes every turn is visible at a glance without a word; one control fewer in the row.',
+    amend: 'ADR-0113 (effort colourway moves from the word to the edge).',
+    html: s => `${queued(s)}<div class="card">${field(s)}<div class="foot"><div class="meta">${part.attach()}${part.model()}${part.fast()}${part.perms()}${part.watch()}</div><div class="acts">${acts(s)}</div></div><div class="tide" title="Reasoning: High">${[1, 2, 3, 4].map(i => `<i class="${i <= 3 ? 'on' : ''}"></i>`).join('')}</div></div>${branchLine()}` },
+  { id: 11, name: 'Apple-native', tag: 'native',
+    why: 'An inset text well and a toolbar of macOS pop-up buttons under it, with a small round accent send: the composer as Mail or Messages would draw it.',
+    fix: 'every option looks like the menu it opens; familiar on the Mac at a glance.',
+    amend: 'ADR-0113 (options get edges again) and ADR-0153 (no words on send). Reads foreign on Windows, Sotto\'s first platform.',
+    html: s => `${queued(s)}<div class="card"><div class="well">${field(s)}</div><div class="tool">${part.attach()}<span class="pop">${MARK}Opus 5.5<span class="ud">${I.updown}</span></span><span class="pop">High<span class="ud">${I.updown}</span></span><span class="pop">${I.shield}Full access<span class="ud">${I.updown}</span></span>${part.watch({ icon: true })}<span class="sp"></span><span class="pop">${I.branch}sotto/c9c8e65b<span class="ud">${I.updown}</span></span><div class="acts">${acts(s, 'disc')}</div></div></div>` },
+  { id: 12, name: 'Terminal', tag: 'terminal',
+    why: 'A prompt marker, monospace input on the canvas, and a status line under it like Claude Code\'s CLI: model, effort, access, branch, keys.',
+    fix: 'reads as the tool it drives; everything is one line of text with no chrome.',
+    amend: 'ADR-0113 and ADR-0153 (no buttons drawn; every value is a text button in the status line). Figtree leaves the field.',
+    html: s => `${queued(s)}<div class="card"><div class="field"><b>›</b><span>${s.run ? `${TYPED}<span class="caret"></span>` : `<span class="ghost">${GHOST}</span><kbd class="tabkey">Tab</kbd>`}</span></div></div>
+      <div class="status"><u>opus 5.5</u><u>high</u><u>full access</u><u>watch off</u><u>⑂ sotto/c9c8e65b</u><span class="sp"></span>${s.run ? '<span style="color:var(--tt-accent-text)">● working</span><u>⌘↵ steer</u><u>⇧⌘S stop</u><u>↵ queue</u>' : '<u>⌘U attach</u><u>↵ send</u>'}</div>` },
+  { id: 13, name: 'Keys first', tag: 'keyboard',
+    why: 'Every control in the footer wears its key, the way Send already does: attach, model, effort and permissions each get a chord (proposed, to be checked against dictation\'s hotkey).',
+    fix: 'the keyboard path is taught by the box itself, not by Settings.',
+    amend: 'ADR-0153 (extends it to the options); new chords are a decision of their own.',
+    html: s => `${queued(s)}<div class="card">${field(s)}<div class="foot"><div class="meta">${tb(I.clip + cap('⌘U'), '', 'Attach files')}${tb(`${MARK}Opus 5.5${cap('⌘M')}`, 'model', 'Model')}${tb(`<span class="eff">High</span>${cap('⌘E')}`, '', 'Reasoning')}${tb(`Full access${cap('⌘P')}`, '', 'Permissions')}</div><div class="acts">${acts(s)}</div></div></div>${branchLine()}` },
+  { id: 14, name: 'Next prompt as a row', tag: 'next prompt',
+    why: 'The next prompt leaves the placeholder and becomes a row of its own inside the card, in readable ink, keyed Tab, with Up for more.',
+    fix: 'the most useful thing at rest is no longer the faintest; the empty prompt keeps its normal placeholder.',
+    amend: 'ADR-0132 decision 4 (the ghost becomes a row).',
+    html: s => `${queued(s)}<div class="card">${field(s, { noGhost: true })}${s.run ? '' : `<div class="next">${I.sparkle}<span>${GHOST}</span><span class="sp"></span><small>↑ 4 more</small><kbd class="tabkey">Tab</kbd></div>`}<div class="foot"><div class="meta">${part.attach()}${defaultMeta()}</div><div class="acts">${acts(s)}</div></div></div>${branchLine()}` },
+  { id: 15, name: 'Suggestions above', tag: 'next prompt',
+    why: 'The Next list is always open as a strip of chips above the card while a suggestion stands: Tab for the first, 1 to 4 for the rest.',
+    fix: 'the suggestions are seen without pressing Up; they never take room inside the card.',
+    amend: 'ADR-0132 decisions 4 and 5, and ADR-0113 (outlined chips outside the card).',
+    html: s => `${s.run ? '' : `<div class="sugg">${tb(`${GHOST}<kbd class="tabkey" style="margin-left:4px">Tab</kbd>`, 'first')}${['Open the pull request', 'Write the verification note', 'Explain the failure'].map((t, i) => tb(`<span class="num">${i + 1}</span>${t}`)).join('')}</div>`}${queued(s)}<div class="card">${field(s, { noGhost: true })}<div class="foot"><div class="meta">${part.attach()}${defaultMeta()}</div><div class="acts">${acts(s)}</div></div></div>${branchLine()}` },
+  { id: 16, name: 'Checkout inside', tag: 'single card',
+    why: 'Nothing below the card: the footer\'s left half says where it runs (workspace, branch), the right half who runs it (model, effort) and Send.',
+    fix: 'one card, one row, every fact in it; the row below the card is gone.',
+    amend: 'ADR-0113 decision 4; permissions and Watch go into the model menu.',
+    html: s => `${queued(s)}<div class="card">${field(s)}<div class="foot"><div class="meta">${part.attach()}<span class="vr"></span>${part.where({ short: true }).slice(1).join('')}</div><div class="meta" style="flex:none">${part.model()}${part.effort()}</div><div class="acts">${acts(s)}</div></div></div>` },
+  { id: 17, name: 'Breadcrumb on top', tag: 'header',
+    why: 'Where it runs is a small path at the top of the card (This computer › Project folder › branch); the footer stays as today.',
+    fix: 'the place comes before the prompt, as you read it; the line under the card is gone.',
+    amend: 'ADR-0113 decision 4.',
+    html: s => `${queued(s)}<div class="card"><div class="crumb">${part.where().map(x => x.replace('tb ', 'tb ')).join('<span class="sl">›</span>')}</div>${field(s)}<div class="foot"><div class="meta">${part.attach()}${defaultMeta()}</div><div class="acts">${acts(s)}</div></div></div>` },
+  { id: 18, name: 'One line', tag: 'dense',
+    why: 'Like Copilot\'s Mac panel: attach, the prompt, the model and a glyph send on one 40px line; it grows only as you write.',
+    fix: 'the smallest box that still shows the model; the transcript gets about 50px back.',
+    amend: 'ADR-0153 (glyph send) and ADR-0113 (effort, permissions and Watch go into the model menu).',
+    html: s => `${queued(s)}<div class="card">${part.attach({ plus: true })}${field(s)}${part.model({ bars: true })}<div class="acts">${acts(s, 'glyph')}</div></div>${branchLine()}` },
+  { id: 19, name: 'One sentence', tag: 'spacious',
+    why: 'The options read as a sentence under a roomier prompt: "Opus 5.5 thinking hard, with full access, on sotto/c9c8e65b." Each underlined word is its menu.',
+    fix: 'the setup is legible as meaning, not as a row of values; the glossary\'s words do the work.',
+    amend: 'ADR-0113 (text buttons become words in a sentence).',
+    html: s => `${queued(s)}<div class="card">${field(s)}<div class="foot"><span style="margin-left:-6px">${part.attach()}</span><div class="sent">${MARK.replace('class="mk"', 'class="mk" style="vertical-align:-2px;margin-right:5px"')}<u>Opus 5.5</u> thinking <u class="eff">hard</u>, with <u>full access</u>, on <u>sotto/c9c8e65b</u>${s.run ? '' : ', not watched'}.</div><div class="acts">${acts(s)}</div></div></div>` },
+  { id: 20, name: 'Action column', tag: 'split',
+    why: 'The actions stand in a column at the card\'s right edge, Send tall and filled at the foot; Steer and Stop stack above it while a turn runs.',
+    fix: 'the running state no longer crowds the footer; the filled button is the biggest target and never moves.',
+    amend: 'ADR-0153 (buttons stack instead of sitting in a row).',
+    html: s => `${queued(s)}<div class="card">${field(s)}<div class="col">${acts(s).replace(/class="k /g, 'class="k ')}</div><div class="foot"><div class="meta">${part.attach()}${defaultMeta()}<span class="vr"></span>${part.where({ short: true }).slice(2).join('')}</div></div></div>` },
+]
+
+const main = document.getElementById('main'), nav = document.getElementById('nav')
+let state = new URLSearchParams(location.search).get('state') === 'run' ? 'run' : 'rest'
+function render() {
+  main.innerHTML = ''
+  const s = { run: state === 'run' }
+  for (const d of DIRS) {
+    const sec = document.createElement('section')
+    sec.className = 'dir'; sec.id = String(d.id); sec.dataset.id = d.id
+    sec.innerHTML = `<h2><b>${d.id}</b>${d.name}<i>${d.tag}</i></h2><p class="why">${d.why}</p>${d.id ? `<p class="fix">${d.fix}</p>` : ''}<p class="amend">${d.id ? 'Amends ' : ''}${d.amend}</p>
+      <div class="frames">${[['t-dark', 'Dark'], ['t-light', 'Light']].map(([c, n]) => `<div class="cell ${c}" data-col="${n}"><div class="compose v${d.id}">${d.html(s)}</div></div>`).join('')}</div>`
+    main.appendChild(sec)
+  }
+}
+nav.innerHTML = DIRS.map(d => `<a href="#${d.id}">${d.id}</a>`).join('')
+function seg(id, cur, set) {
+  const el = document.getElementById(id)
+  const sync = v => el.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)))
+  el.addEventListener('click', e => { const v = e.target.dataset?.v; if (v) { set(v); sync(v) } })
+  sync(cur)
+}
+const mode0 = new URLSearchParams(location.search).get('mode') ?? 'both'
+const setMode = v => { document.body.className = 'm-' + v }
+setMode(mode0)
+seg('mode', mode0, setMode)
+seg('state', state, v => { state = v; render() })
+render()
+if (location.hash) document.getElementById(location.hash.slice(1))?.scrollIntoView()
+</script>
+</body>
+</html>
