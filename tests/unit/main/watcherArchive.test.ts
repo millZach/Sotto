@@ -203,6 +203,23 @@ describe('the archive on disk', () => {
     expect((await archive.read({ requests: [batch.requests[0]!.id] })).requests.map(item => item.id)).toContain(batch.requests[0]!.id)
   })
 
+  it('adds one batch to what it holds for each batch archived, however many it already holds', async () => {
+    /** The batches indexed in memory while one more is archived, after `held` one-request batches. */
+    const added = async (held: number): Promise<number> => {
+      const root = await directory(), value = record(WATCHER_LIVE_CLOSED_REQUESTS + held + 1)
+      const ids = archivableWatcherRequests(value)
+      const archive = new WatcherArchive(root, () => true)
+      for (const id of ids.slice(0, held)) await archive.append(watcherArchiveBatch(value, [id]))
+      const prototype = WatcherArchive.prototype as unknown as { add(slot: unknown): void }
+      const adding = vi.spyOn(prototype, 'add')
+      await archive.append(watcherArchiveBatch(value, [ids[held]!]))
+      const count = adding.mock.calls.length
+      adding.mockRestore()
+      return count
+    }
+    expect({ few: await added(5), many: await added(60) }).toEqual({ few: 1, many: 1 })
+  })
+
   it('gives each request, operation and prompt turn once when a crash left a batch archived twice', async () => {
     const root = await directory(), value = record(260)
     const batch = watcherArchiveBatch(value, archivableWatcherRequests(value))

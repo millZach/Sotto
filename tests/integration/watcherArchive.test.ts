@@ -6,7 +6,8 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { watcherRecordSchema, watcherToolSchemas } from '../../src/shared/watcher'
-import { WATCHER_ARCHIVE_FILE, WATCHER_LIVE_CLOSED_REQUESTS } from '../../src/main/agents/watcherArchive'
+import { watcherRoomWork } from '../../src/shared/watcherRoom'
+import { WATCHER_ARCHIVE_FILE, WATCHER_LIVE_CLOSED_REQUESTS, WatcherArchive } from '../../src/main/agents/watcherArchive'
 import { addWatcherHistory } from '../fixtures/ownerScale'
 import { WatcherLaunchProfiles } from '../../src/main/agents/watcherLaunchProfiles'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
@@ -66,9 +67,11 @@ it('answers reads, retries and new calls on archived work as it did before the w
   await f.control.command({ type: 'observe-threads', threadIds: [watcherId] })
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await expect.poll(() => f.control.watcherSnapshot().threads.find(item => item.id === watcherId)?.messages.length ?? 0).toBeGreaterThan(0)
-  const room = () => steady({ receipts: service.state().receipts.filter(item => item.requestId === requestId),
-    replies: (service.state().receiptReplies ?? []).filter(item => operations.includes(item.operationId)),
-    requests: service.state().requests.filter(item => item.id === requestId) })
+  // What the window shows of Watcher's work: the room's own, and what the conversation shown back recalled.
+  const work = () => watcherRoomWork(service.state())
+  const room = () => steady({ receipts: work().receipts.filter(item => item.requestId === requestId),
+    replies: work().receiptReplies.filter(item => operations.includes(item.operationId)),
+    requests: work().requests.filter(item => item.id === requestId) })
   const shown = room()
   expect(shown).toMatchObject({ receipts: { length: 2 }, replies: { length: 2 }, requests: { length: 1 } })
   const asked = async () => steady({
@@ -87,6 +90,23 @@ it('answers reads, retries and new calls on archived work as it did before the w
 
   expect(await f.control.archiveWatcherWork([requestId], () => [requestId])).toBe(1)
   expect(f.control.watcherRecordView().requests.some(item => item.id === requestId)).toBe(false)
+  {
+    // As Sotto starts: the archive's index is still being read when Watcher reads the later operation, whose turn has two
+    // archived prompts. The read waits for the index rather than count one.
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const prototype = WatcherArchive.prototype as unknown as { load(): Promise<void> }, load = prototype.load
+    const loading = vi.spyOn(prototype, 'load').mockImplementation(async function (this: WatcherArchive) { await gate; return load.call(this) })
+    const starting = new WatcherArchive(f.root, () => true)
+    loading.mockRestore()
+    const archived = f.control.archivedWatcherWork()
+    Object.assign(f.control, { watcherArchive: starting })
+    const reading = call('read_operation', { operationId: laterOperation })
+    await new Promise(resolve => setTimeout(resolve, 50))
+    release()
+    expect(await reading).toMatchObject({ status: 'ok', limits: { promptCount: 3 } })
+    Object.assign(f.control, { watcherArchive: archived })
+  }
   expect(f.control.watcherRecordView().operations.some(item => operations.includes(item.id))).toBe(false)
   expect(await asked()).toEqual(before)
   // Archived, the room no longer carries the work until the conversation is shown back to it; once Watcher's
@@ -95,8 +115,8 @@ it('answers reads, retries and new calls on archived work as it did before the w
   f.control.threadDetail(watcherId)
   await expect.poll(async () => { await f.control.watcherArchiveSettled(); return room() }).toEqual(shown)
   // Archiving more while that conversation stays shown back brings the newly archived card back too.
-  const laterCard = () => steady({ receipts: service.state().receipts.filter(item => item.id === laterOperation),
-    replies: (service.state().receiptReplies ?? []).filter(item => item.operationId === laterOperation) })
+  const laterCard = () => steady({ receipts: work().receipts.filter(item => item.id === laterOperation),
+    replies: work().receiptReplies.filter(item => item.operationId === laterOperation) })
   const laterShown = laterCard()
   expect(laterShown).toMatchObject({ receipts: { length: 1 }, replies: { length: 1 } })
   expect(await f.control.archiveWatcherWork([laterId], () => [laterId])).toBe(1)
@@ -182,6 +202,45 @@ it('releases from the record only what the archive still holds when Keep local h
   const live = new Set(f.control.watcherRecordView().requests.map(item => item.id))
   for (const id of ids.filter(item => !live.has(item))) expect.soft(archive.holds(id), id).toBe(true)
   expect((await archive.read({ requests: [ids[0]!] })).requests.map(item => item.id)).toContain(ids[0])
+})
+
+it('archives a request again as it now stands when it changed after an earlier archiving, before the record lets go of it', async () => {
+  const workspace = await workspaceFixture(undefined, { history: true })
+  cleanups.push(workspace.remove)
+  const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
+    credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => true, watcherEnabled: true } })
+  const service = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => true })
+  const tools = new WatcherToolServer(service)
+  workspace.host.useWatcherTools(tools)
+  cleanups.push(async () => { service.close(); await tools.close(); f.control.dispose(); await f.control.closed(); await workspace.stop() })
+  await f.control.start()
+  await f.control.commandShell({ type: 'connect', provider: 'codex' })
+  await service.recover()
+  const model = f.control.shell().host.models.find(item => item.providerId === 'codex')!
+  expect(await service.open({ provider: 'codex', modelId: model.id })).toMatchObject({ status: 'ok' })
+  const targets = ['synthetic-worker', 'synthetic-other'].map(threadId => ({ hostId: f.control.hostId()!, threadId }))
+  await f.control.updateWatcher(record => addWatcherHistory(record, targets, { requests: WATCHER_LIVE_CLOSED_REQUESTS + 60, operations: WATCHER_LIVE_CLOSED_REQUESTS + 60 }))
+  const id = f.control.watcherRecordView().requests[0]!.id
+  const archive = f.control.archivedWatcherWork()!
+  const append = archive.append.bind(archive)
+  let first = true
+  // While the first archiving writes it, the user takes the request's thread over; that archiving keeps it live.
+  vi.spyOn(archive, 'append').mockImplementation(async work => {
+    await append(work)
+    if (!first) return
+    first = false
+    await f.control.updateWatcher(record => {
+      const participant = record.requests.find(item => item.id === id)!.participants[0]!
+      participant.state = 'taken-over'; participant.takeover = { reason: 'user-send', at: new Date().toISOString() }
+    })
+  })
+  expect(await f.control.archiveWatcherWork([id], () => [])).toBe(0)
+  // Later it may go: it goes as it now stands, takeover and all.
+  expect(await f.control.archiveWatcherWork([id], () => [id])).toBe(1)
+  const archived = (await archive.read({ requests: [id] })).requests.find(item => item.id === id)!
+  expect(archived.participants[0]).toMatchObject({ state: 'taken-over', takeover: { reason: 'user-send' } })
+  expect(await archive.recall({ threadId: f.control.watcherRecordView().current!.target.threadId, ids: new Set([archived.rootUserMessageId]), from: archived.createdAt }))
+    .toMatchObject({ requests: [{ id, participants: [{ state: 'taken-over' }, {}] }] })
 })
 
 it('archives nothing and keeps the record whole where Watcher is off', async () => {

@@ -84,7 +84,7 @@ import { isResumeNoteText } from '../../shared/restartResume'
 import { isLimitRestartNoteText } from '../../shared/limitRestart'
 import type { LimitRestart } from './limitRestart'
 import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT, watcherRecordForDisk } from './watcherRecords'
-import { NOTHING_ARCHIVED, removeArchivedWork, WATCHER_ARCHIVE_BATCH, WatcherArchive, watcherArchiveBatch, type WatcherArchived } from './watcherArchive'
+import { NOTHING_ARCHIVED, removeArchivedWork, WATCHER_ARCHIVE_BATCH, WatcherArchive, watcherArchiveBatch, watcherWorkVersion, type WatcherArchived } from './watcherArchive'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
 const EMPTY_MESSAGES: AgentMessage[] = []
@@ -610,10 +610,19 @@ export class AgentControl {
     await archive.ready()
     // A batch at a time, so a read back reads no more than the batches its messages reach. Work the archive already holds,
     // as after a crash between its write and the record's save, is not written again.
-    const fresh = ids.filter(id => !archive.holds(id))
+    // A request is held only as it stands now (`watcherWorkVersion`): one that changed since it was archived goes again.
+    const version = (record: Readonly<WatcherRecord>): ((id: string) => string | undefined) => {
+      const requests = new Map(record.requests.map(request => [request.id, request] as const)), owned = new Map<string, WatcherRecord['operations']>()
+      for (const operation of record.operations) { const list = owned.get(operation.requestId); if (list) list.push(operation); else owned.set(operation.requestId, [operation]) }
+      return id => { const request = requests.get(id); return request && watcherWorkVersion(request, owned.get(id) ?? []) }
+    }
+    const now = version(this.watcher)
+    const fresh = ids.filter(id => !archive.holds(id, now(id)))
     for (let at = 0; at < fresh.length; at += WATCHER_ARCHIVE_BATCH) await archive.append(watcherArchiveBatch(this.watcher, fresh.slice(at, at + WATCHER_ARCHIVE_BATCH)))
-    // Only work the archive holds now leaves the record: Keep local history may have changed between the batches.
-    const allowed = new Set(stillArchivable()), leaving = new Set(ids.filter(id => allowed.has(id) && archive.holds(id)))
+    // Only work the archive holds, as the record holds it now, leaves the record: Keep local history may have changed
+    // between the batches, and a request may have changed while they were written.
+    const current = version(this.watcher), allowed = new Set(stillArchivable())
+    const leaving = new Set(ids.filter(id => allowed.has(id) && archive.holds(id, current(id))))
     if (leaving.size === 0 || this.disposed) return 0
     await this.updateWatcher(record => removeArchivedWork(record, leaving))
     return leaving.size

@@ -365,11 +365,7 @@ const stoppedParticipation = (request: Readonly<WatcherRequest>, participant: Re
 /** What a read back of Watcher's archive brings to the room (`recalledRoom`), and the lists it was joined into. */
 interface RecalledRoom {
   readonly recalled: WatcherArchived
-  readonly receipts: WatcherRoomState['receipts']
-  readonly replies: NonNullable<WatcherRoomState['receiptReplies']>
-  readonly placements: NonNullable<WatcherRoomState['receiptPlacements']>
-  readonly requests: WatcherRequest[]
-  joined: Partial<Record<'receipts' | 'requests' | 'replies' | 'placements', unknown>> | undefined
+  readonly room: NonNullable<WatcherRoomState['recalled']>
 }
 
 /**
@@ -1858,7 +1854,7 @@ export class WatcherService implements WatcherControlHooks {
     const room: WatcherRoomState = { current: record.current, currentOptions: current ? { modelId: current.modelId, reasoningEffort: current.reasoningEffort ?? null,
       runtimeMode: current.runtimeMode ?? 'approval-required', status: current.status, connected: this.connected(current) } : null,
       runtimeMode: record.lastRuntimeMode ?? current?.runtimeMode ?? 'approval-required', standingWatches: watches,
-      ownChanges: current ? watcherOwnChanges(current) : [], history: record.history, requests: recalled ? this.withRecalled('requests', recalled, record.requests, recalled.requests, item => item.id) : record.requests,
+      ownChanges: current ? watcherOwnChanges(current) : [], history: record.history, requests: record.requests,
       watchedThreads: [...targets].map(([targetKey, target]) => {
         const watch = watchOf.get(targetKey)
         const participation = participations.get(targetKey) ?? []
@@ -1887,17 +1883,19 @@ export class WatcherService implements WatcherControlHooks {
           waitsOn: thread?.requests.map(request => ({ id: request.id, kind: request.kind, openTarget: target })) ?? [],
           participation }
       }),
-      receipts: recalled ? this.withRecalled('receipts', recalled, this.roomReceipts(record.operations), recalled.receipts, item => item.id) : this.roomReceipts(record.operations),
+      receipts: this.roomReceipts(record.operations),
       news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(), sequence: ++this.roomSequence,
       // A replacement whose creation stopped part-way, with nothing finishing it now: the room offers to try again.
       creationStopped: view.creation !== null && this.opening === undefined,
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
-      receiptReplies: recalled ? [...recalled.replies, ...watcherReceiptReplies(record, current)] : watcherReceiptReplies(record, current), asks: watcherAskPlacements(current, record),
+      receiptReplies: watcherReceiptReplies(record, current), asks: watcherAskPlacements(current, record),
+      // What the conversation shown back recalled, apart and the same object until another read back (#1759).
+      ...recalled ? { recalled: recalled.room } : {},
       // Where this run's starts were placed (#1032), from memory as the receipts' `placement` is; none while the feature is off.
-      ...this.placements.size ? { receiptPlacements: [...recalled?.placements ?? [], ...record.operations.flatMap(operation => {
+      ...this.placements.size ? { receiptPlacements: record.operations.flatMap(operation => {
         const placement = this.placements.get(operation.id)
         return placement ? [{ operationId: operation.id, placement }] : []
-      })] } : {} }
+      }) } : {} }
     // Watcher's conversation against its compaction point, and what it keeps through compaction (#1189).
     const snapshot = this.options.control.watcherSnapshot()
     room.context = current ? { tokens: this.contextTokens(current), compactAt: this.compactAt(), canCompact: this.canCompact(snapshot, current),
@@ -2014,10 +2012,10 @@ export class WatcherService implements WatcherControlHooks {
    * it is first shown, never on each room build: archived work is closed, its turns over, and its outcomes final.
    */
   private recalledRoom(current: AgentThread | undefined): RecalledRoom | undefined {
-    const recalled = this.options.control.watcherRecalledWork()
-    if (recalled === NOTHING_ARCHIVED || recalled.operations.length === 0 && recalled.requests.length === 0) return undefined
-    const kept = this.roomRecalled
+    const recalled = this.options.control.watcherRecalledWork(), kept = this.roomRecalled
+    if (recalled === NOTHING_ARCHIVED) return undefined
     if (kept?.recalled === recalled) return kept
+    if (recalled.operations.length === 0 && recalled.requests.length === 0) return undefined
     const record = this.view()
     const receipts = recalled.operations.map(operation => { const outcome = this.outcomeOf(operation as WatcherOperation); return outcome ? { ...operation, outcome } : operation })
     const replies = watcherReceiptReplies({ ...record, operations: recalled.operations as WatcherOperation[], promptTurns: recalled.promptTurns as WatcherPromptTurn[] }, current)
@@ -2027,21 +2025,8 @@ export class WatcherService implements WatcherControlHooks {
       if (!item.phoneOrigin) return item
       const { phoneOrigin: _phoneOrigin, ...rest } = item; void _phoneOrigin; return rest
     })
-    this.roomRecalled = { recalled, receipts, replies, placements, requests, joined: undefined }
+    this.roomRecalled = { recalled, room: { receipts, receiptReplies: replies, requests, ...placements.length ? { receiptPlacements: placements } : {} } }
     return this.roomRecalled
-  }
-  /**
-   * `live` with what `recalled` adds ahead of it, leaving out what the record holds too, the same list while neither changed.
-   * Only a change of the record's list or of the read back makes it again.
-   */
-  private withRecalled<T>(slot: 'receipts' | 'requests' | 'replies' | 'placements', recalled: RecalledRoom, live: readonly T[], added: readonly T[], id: (item: T) => string): T[] {
-    const joined = (recalled.joined ??= {})
-    const kept = joined[slot] as { live: readonly T[]; list: T[] } | undefined
-    if (kept?.live === live) return kept.list
-    const own = new Set(live.map(id))
-    const list = [...added.filter(item => !own.has(id(item))), ...live]
-    joined[slot] = { live, list }
-    return list
   }
   /** Each operation with where it stands (`outcomeOf`), the same list while nothing it was made from changed. */
   private roomReceipts(operations: readonly WatcherOperation[]): WatcherRoomState['receipts'] {
@@ -3842,6 +3827,8 @@ export class WatcherService implements WatcherControlHooks {
         const call = watcherHostReadSchema.shape.call.unwrap().parse({ name, input: parsed.data })
         let operation: WatcherOperation | undefined
         if (call.name === 'read_operation') {
+          // Its prompts are counted with its turn's archived operations, which the archive's index names once read (#1759).
+          await this.options.control.archivedWatcherWork()?.ready()
           operation = this.view().operations.find(item => item.id === call.input.operationId)
           // An operation Watcher's archive holds is read from there, for this ID alone, and answers as it did (#1759).
           if (!operation) {

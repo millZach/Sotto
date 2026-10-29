@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { open, readdir, stat, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
@@ -40,12 +41,12 @@ const batchSchema = z.object({ version: z.literal(1), from: time, through: time,
 type Batch = z.infer<typeof batchSchema>
 /**
  * The compact index of one batch (#1759): where it is in the file, the times it spans, and the identities a lookup by ID
- * needs without reading it: its requests; each operation with its request, retry key and prompt turn, the thread it
+ * needs without reading it: its requests, each with the version archived (`watcherWorkVersion`); each operation with its request, retry key and prompt turn, the thread it
  * counts a prompt against (a start or send not refunded) or null, and the message it put in its thread or null; and the
  * threads Watcher started. About 40 bytes a request and 260 an operation.
  */
 const indexEntrySchema = z.object({ offset: z.number().int().nonnegative(), length: z.number().int().positive(), from: time, through: time,
-  requests: z.array(z.string()), operations: z.array(z.tuple([z.string(), z.string(), z.string(), z.string().nullable(), z.string().nullable(), z.string().nullable()])),
+  requests: z.array(z.tuple([z.string(), z.string()])), operations: z.array(z.tuple([z.string(), z.string(), z.string(), z.string().nullable(), z.string().nullable(), z.string().nullable()])),
   started: z.array(z.tuple([z.string(), z.string()])) }).strict()
 const indexSchema = z.object({ version: z.literal(1), batches: z.array(indexEntrySchema) }).strict()
 type ArchiveIndex = z.infer<typeof indexSchema>
@@ -168,7 +169,8 @@ function placedOn(batches: readonly WatcherArchived[], held: WatcherHeldMessages
   const since = Date.parse(held.from)
   const requests: WatcherRequest[] = [], promptTurns: WatcherPromptTurn[] = [], operations: WatcherOperation[] = []
   const turns = new Set<string>(), seen = new Set<string>()
-  for (const batch of batches) {
+  // Newest first, so a request archived again in a later batch is shown as that batch holds it.
+  for (const batch of [...batches].reverse()) {
     for (const request of batch.requests) {
       if (request.watcher.threadId !== held.threadId || seen.has(request.id)) continue
       if (held.ids.has(request.rootUserMessageId) || request.userFollowups?.some(item => item.messageId !== undefined && held.ids.has(item.messageId))
@@ -181,20 +183,36 @@ function placedOn(batches: readonly WatcherArchived[], held: WatcherHeldMessages
     }
   }
   const operationIds = new Set<string>()
-  for (const batch of batches) for (const operation of batch.operations) {
+  for (const batch of [...batches].reverse()) for (const operation of batch.operations) {
     if (operation.promptTurnId !== undefined && turns.has(operation.promptTurnId) && !operationIds.has(operation.id)) { operationIds.add(operation.id); operations.push(operation) }
   }
   return requests.length || operations.length || promptTurns.length ? { requests, operations, promptTurns } : NOTHING_ARCHIVED
 }
 
+/**
+ * Which version of a request and its work this is: a digest of the request and its operations as they stand. A request
+ * that changed after a batch archived it, as by a takeover recorded while that batch was written, has another version, so
+ * it is archived again before the record lets go of it.
+ */
+export function watcherWorkVersion(request: Readonly<WatcherRequest>, operations: readonly Readonly<WatcherOperation>[]): string {
+  return createHash('sha256').update(JSON.stringify([request, operations.filter(operation => operation.requestId === request.id)])).digest('hex')
+}
+/** Each request's operations, in order, read once for the whole batch. */
+function operationsByRequest(operations: readonly WatcherOperation[]): Map<string, WatcherOperation[]> {
+  const by = new Map<string, WatcherOperation[]>()
+  for (const operation of operations) { const list = by.get(operation.requestId); if (list) list.push(operation); else by.set(operation.requestId, [operation]) }
+  return by
+}
+
 /** The identities `indexEntrySchema` keeps for a batch. */
 function identities(batch: WatcherArchived): Pick<IndexEntry, 'requests' | 'operations' | 'started'> {
+  const owned = operationsByRequest(batch.operations as WatcherOperation[])
   const started = new Map<string, [string, string]>()
   for (const operation of batch.operations) if (operation.action === 'start') started.set(targetKey(operation.target), [operation.target.hostId, operation.target.threadId])
   for (const request of batch.requests) for (const participant of request.participants) {
     if (participant.startedBy === 'watcher') started.set(targetKey(participant.target), [participant.target.hostId, participant.target.threadId])
   }
-  return { requests: batch.requests.map(request => request.id),
+  return { requests: batch.requests.map(request => [request.id, watcherWorkVersion(request, owned.get(request.id) ?? [])] as [string, string]),
     operations: batch.operations.map(operation => [operation.id, operation.requestId, operation.retryKey, operation.promptTurnId ?? null,
       (operation.action === 'start' || operation.action === 'send') && !operation.promptRefunded ? targetKey(operation.target) : null,
       operation.messageId !== undefined ? `${targetKey(operation.target)}\n${operation.messageId}` : null] as [string, string, string, string | null, string | null, string | null]),
@@ -242,6 +260,8 @@ export class WatcherArchive {
   private retries = new Map<string, string>()
   private retryKeys = new Map<string, string[]>()
   private turnSlots = new Map<string, Slot[]>()
+  /** The newest version archived of each request (`watcherWorkVersion`). */
+  private versions = new Map<string, string>()
   /** Each archived operation's message in its thread, as `host\nthread\nmessage`. */
   private messages = new Set<string>()
   /** Each prompt turn's archived operations that count a prompt, with the thread each counts against. */
@@ -271,7 +291,7 @@ export class WatcherArchive {
   }
   private forget(): void {
     this.slots = []; this.requestSlot = new Map(); this.operationSlot = new Map(); this.retries = new Map(); this.retryKeys = new Map()
-    this.turnSlots = new Map(); this.startedTargets = new Set(); this.latest = undefined; this.turnPromptsOf = new Map(); this.messages = new Set(); this.changes++
+    this.turnSlots = new Map(); this.startedTargets = new Set(); this.latest = undefined; this.turnPromptsOf = new Map(); this.messages = new Set(); this.versions = new Map(); this.changes++
   }
   /** Which batches the archive holds, as a number that moves whenever they change. */
   get revision(): number { return this.changes }
@@ -280,7 +300,7 @@ export class WatcherArchive {
     this.changes++
     const { entry } = slot
     if (this.latest === undefined || entry.through > this.latest) this.latest = entry.through
-    for (const id of entry.requests) this.requestSlot.set(id, slot)
+    for (const [id, version] of entry.requests) { this.requestSlot.set(id, slot); this.versions.set(id, version) }
     for (const [id, requestId, retryKey, turnId, counts, message] of entry.operations) {
       if (message !== null) this.messages.add(message)
       if (turnId !== null && counts !== null) {
@@ -351,33 +371,42 @@ export class WatcherArchive {
     } finally { await file.close() }
     const entries = [...this.slots.flatMap(slot => slot.held ? [] : [slot.entry]), ...added]
     await this.index.write({ version: 1, batches: entries })
-    // Only now that the batches are on disk and indexed does anything held in memory for them go.
+    // Only now that the batches are on disk and indexed does anything held in memory for them go. Archiving adds its
+    // batch alone; writing what history-off held replaces those, which only turning history back on does.
     const written = new Set(batches)
-    const kept = this.slots.filter(slot => !slot.held || !written.has(slot.held))
-    this.forget(); for (const slot of kept) this.add(slot)
+    if (this.slots.some(slot => slot.held && written.has(slot.held))) {
+      const kept = this.slots.filter(slot => !slot.held || !written.has(slot.held))
+      this.forget(); for (const slot of kept) this.add(slot)
+    }
     for (const entry of added) this.add({ entry, thisRun: true })
   }
   /** The batches in `slots`, from the file or memory. A batch that cannot be read is left out; the others still come. */
   private async readSlots(slots: readonly Slot[], strict = false): Promise<Batch[]> {
-    const batches = slots.flatMap(slot => slot.held ? [slot.held] : [])
-    const wanted = slots.filter(slot => !slot.held)
-    if (!wanted.length) return batches
+    // In the order they were archived, so a request archived again comes after its older version.
+    const order = new Map(this.slots.map((slot, index) => [slot, index] as const))
+    const ordered = [...slots].sort((one, other) => (order.get(one) ?? 0) - (order.get(other) ?? 0))
+    const read = new Map<Slot, Batch>()
+    for (const slot of ordered) if (slot.held) read.set(slot, slot.held)
+    const wanted = ordered.filter(slot => !slot.held)
+    const inOrder = (): Batch[] => ordered.flatMap(slot => { const batch = read.get(slot); return batch ? [batch] : [] })
+    if (!wanted.length) return inOrder()
     const file = await retryWindowsFileOperation(() => this.openFile(join(this.directory, WATCHER_ARCHIVE_FILE), 'r')).catch(() => undefined)
-    if (!file) { if (strict) throw new WatcherArchiveUnreadable(); return batches }
+    if (!file) { if (strict) throw new WatcherArchiveUnreadable(); return inOrder() }
     try {
-      for (const { entry } of wanted) {
+      for (const slot of wanted) {
+        const { entry } = slot
         try {
           const bytes = Buffer.alloc(entry.length)
           const { bytesRead } = await file.read(bytes, 0, entry.length, entry.offset)
           if (bytesRead !== entry.length) throw new WatcherArchiveUnreadable()
-          batches.push(batchSchema.parse(JSON.parse(bytes.toString('utf8'))))
+          read.set(slot, batchSchema.parse(JSON.parse(bytes.toString('utf8'))))
         } catch (error) {
           // A damaged batch is left out of what a conversation shows; a lookup by ID refuses rather than call it absent.
           if (strict) throw error instanceof WatcherArchiveUnreadable ? error : new WatcherArchiveUnreadable()
         }
       }
     } finally { await file.close() }
-    return batches
+    return inOrder()
   }
   /** The archived work a conversation's held messages show, reading only the batches as new as its oldest held message. */
   recall(held: WatcherHeldMessages): Promise<WatcherArchived> {
@@ -427,7 +456,7 @@ export class WatcherArchive {
     })
   }
   /** Whether the archive holds this request, on disk or in memory: what may leave the live record. */
-  holds(id: string): boolean { return this.requestSlot.has(id) }
+  holds(id: string, version?: string): boolean { return this.requestSlot.has(id) && (version === undefined || this.versions.get(id) === version) }
   /** The archive, its index and anything the index's store left beside it. */
   private async removeSaved(): Promise<void> {
     const names = await readdir(this.directory).catch((error: unknown) => {

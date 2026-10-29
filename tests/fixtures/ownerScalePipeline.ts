@@ -565,10 +565,11 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     // The window shows one thread and watches the streams, as after the owner opened it.
     await control.command({ type: 'observe-threads', threadIds: [...streamIds, idOf(openSession), ...watcherThreadId ? [watcherThreadId] : []] })
     if (watcherThreadId) {
-      // The window is shown back to ten requests past the newest closed ones the record keeps (#1759): with a long
-      // Watcher thread, a page of its archived work is read back, cards and all; with the owner's, its first message.
+      // The window is shown back past the newest closed requests the record keeps, ten requests for each time the thread
+      // is longer than the owner's (#1759): a long Watcher thread reads back a hundred requests of its archived work, cards
+      // and all, so work that grew with what was read back would grow here; the owner's is shown back to its first message.
       await control.command({ type: 'load-earlier-messages', threadId: watcherThreadId,
-        throughMessageId: `watcher-prompt-${Math.max(0, counts.requests - WATCHER_LIVE_CLOSED_REQUESTS - 10)}` })
+        throughMessageId: `watcher-prompt-${Math.max(0, counts.requests - WATCHER_LIVE_CLOSED_REQUESTS - Math.round(10 * (scale.watcher ?? 1)))}` })
       await control.watcherArchiveSettled()
       recalledWatcherOperations = control.watcherRecalledWork().operations.length
     }
