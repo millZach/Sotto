@@ -245,7 +245,8 @@ function EffortSurface({ value, options, disabled, onChange, onUltrathink, hasUl
         onChange={event => { if (disabled) return; const next = Number(event.target.value); if (drag.current) setHeld(magnet(next)); else choose(Math.round(next)) }}
         onKeyDown={event => {
           if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); return }
-          const digit = /^[1-9]$/u.test(event.key) ? Number(event.key) - 1 : -1
+          // A digit with Ctrl or ⌘ is a page shortcut's (ADR-0158), not a step.
+          const digit = /^[1-9]$/u.test(event.key) && !event.ctrlKey && !event.metaKey ? Number(event.key) - 1 : -1
           const steps: Record<string, number> = { ArrowRight: 1, ArrowUp: 1, PageUp: 1, ArrowLeft: -1, ArrowDown: -1, PageDown: -1 }
           const next = event.key === 'Home' ? 0 : event.key === 'End' ? count - 1 : digit >= 0 && digit < count ? digit : steps[event.key] !== undefined ? selected + steps[event.key]! : null
           if (next === null) return

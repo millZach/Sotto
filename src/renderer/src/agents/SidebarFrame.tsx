@@ -8,6 +8,7 @@ import type { AgentState } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { releaseTrackName } from '../../../shared/releaseTrack'
 import { appRooms, roomFor, RoomTabFace, useRoomSwitch } from '../components/AppShell'
+import { pageShortcutFor, usePageShortcutLabels } from '../components/pageShortcuts'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { useOptionalApp, type AppNavigation } from '../state/AppContext'
@@ -91,7 +92,7 @@ export function RoomSwitch({ className, iconOnly = false }: { readonly className
       const tab = roomSwitch.tab(target, index)
       // Where the lit tile shows no name (the sidebar foot), every tile names itself on hover, the lit one too.
       return <button key={target.id} type="button" role="tab" className="tt-focusable" data-room={target.id} {...tab}
-        title={iconOnly ? target.label : tab.title}>
+        title={iconOnly ? tab.title ?? target.label : tab.title}>
         <RoomTabFace room={target} named={!iconOnly} /></button>
     })}
   </div>
@@ -103,12 +104,17 @@ export function PageLinks({ className, linkClassName }: { readonly className: st
   const memory = useMemoryEnabled()
   const usage = useOwlFeature('usage')
   const { t } = useLingui()
+  const keys = usePageShortcutLabels()
   const pages = PAGES.filter(page => (page.id !== 'memory' || memory) && (page.id !== 'usage' || usage)).map(page => ({ ...page, label: t(page.label) }))
   return <nav className={className} aria-label={t`Pages`}>
-    {pages.map(({ id, label, Icon }) => <a key={id} href={`#${id}`} className={`${linkClassName} tt-focusable`} title={label}
-      aria-current={app?.navigation === id ? 'page' : undefined} onClick={event => { event.preventDefault(); app?.actions.navigate(id) }}>
+    {pages.map(({ id, label, Icon }) => {
+      const page = pageShortcutFor(id)
+      const shortcut = page === undefined ? undefined : keys[page]
+      return <a key={id} href={`#${id}`} className={`${linkClassName} tt-focusable`} title={shortcut ? `${label} ${shortcut.suffix}` : label}
+      aria-keyshortcuts={shortcut?.keys} aria-current={app?.navigation === id ? 'page' : undefined} onClick={event => { event.preventDefault(); app?.actions.navigate(id) }}>
       <Icon size={16} aria-hidden="true" /><span className="tt-visually-hidden">{label}</span>
-    </a>)}
+    </a>
+    })}
   </nav>
 }
 

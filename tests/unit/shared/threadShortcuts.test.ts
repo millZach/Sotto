@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS, parseSettings } from '../../../src/shared/settings'
 import {
-  DEFAULT_THREAD_SHORTCUTS, THREAD_SHORTCUT_IDS, isThreadChord, parseThreadShortcutChoices, resolveThreadShortcut,
+  DEFAULT_THREAD_SHORTCUTS, PAGE_SHORTCUT_IDS, THREAD_SHORTCUT_IDS, isThreadChord, parseThreadShortcutChoices, resolveThreadShortcut,
 } from '../../../src/shared/threadShortcuts'
 
 describe('thread shortcut chords (ADR-0133)', () => {
@@ -11,6 +11,11 @@ describe('thread shortcut chords (ADR-0133)', () => {
     }
     // No two defaults mean the same spelling.
     expect(new Set(Object.values(DEFAULT_THREAD_SHORTCUTS)).size).toBe(THREAD_SHORTCUT_IDS.length)
+  })
+
+  it('numbers the pages 1 to 5 in the switch and links’ order, listed first on the page (ADR-0158)', () => {
+    expect(PAGE_SHORTCUT_IDS.map(id => DEFAULT_THREAD_SHORTCUTS[id])).toEqual(['mod+1', 'mod+2', 'mod+3', 'mod+4', 'mod+5'])
+    expect(THREAD_SHORTCUT_IDS.slice(0, 5)).toEqual([...PAGE_SHORTCUT_IDS])
   })
 
   it('needs a primary modifier and one allowed key, so plain typing never qualifies', () => {

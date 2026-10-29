@@ -7,6 +7,7 @@ import { speechModelSummary } from './components/SpeechModelStatus'
 import { PARAKEET_V3, sottoSpeechModel, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
 import type { AppSettings } from '../../shared/settings'
 import { AppShell, layoutFor } from './components/AppShell'
+import { usePageShortcuts } from './components/pageShortcuts'
 import { Card } from './components/Card'
 import { DictateRoom } from './features/dictate/DictateRoom'
 import { HelpView } from './features/help/HelpView'
@@ -253,6 +254,9 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     window.addEventListener('keydown', search)
     return () => window.removeEventListener('keydown', search)
   }, [app.actions, app.platform, app.settings?.onboardingComplete, dictationOn])
+
+  // Ctrl+1 to Ctrl+5 (⌘ on a Mac) by default: Dictate, Watcher, Threads, Usage and Settings (ADR-0158).
+  usePageShortcuts({ settings: app.settings, platform: app.platform, navigation: app.navigation, navigate: app.actions.navigate })
 
   // Turning dictation off while the Dictate room is open moves to Threads, so the switch lights a tab.
   useEffect(() => { if (!dictationOn && app.navigation === 'home') app.actions.navigate('threads') }, [app.actions, app.navigation, dictationOn])
