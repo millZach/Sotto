@@ -785,18 +785,26 @@ export class AgentControl {
   }
   /**
    * What the user left in a replaced Watcher's message box, a send the provider refused put back there included, goes to
-   * the new Watcher's box (#1735), unless the user has already begun one there. Says whether it moved.
+   * the new Watcher's box (#1735). When the user has already begun one there, it goes to the new Watcher's queue instead,
+   * paused, so nothing they wrote stays behind. Says where it went, or false when nothing moved.
    */
-  async moveWatcherDraft(from: string, to: string): Promise<boolean> {
+  async moveWatcherDraft(from: string, to: string): Promise<'box' | 'queue' | false> {
     const draft = this.state.threadDrafts?.find(item => item.threadId === from)
-    if (!draft || !draft.text.trim() && !draft.attachments.length || this.state.threadDrafts?.some(item => item.threadId === to)) return false
+    if (!draft || !draft.text.trim() && !draft.attachments.length) return false
     // A draft whose send has not failed may yet arrive: copied, it could go twice, so it stays with the last Watcher.
     if ((this.state.deliveries ?? []).some(item => item.threadId === from && item.draftId === draft.draftId && item.status !== 'failed')
       || this.outbox.some(item => item.threadId === from && item.draftId === draft.draftId)) return false
-    this.putThreadDraft({ ...structuredClone(draft), threadId: to, draftId: randomUUID(), requestId: null, updatedAt: new Date().toISOString() })
+    const begun = this.state.threadDrafts?.some(item => item.threadId === to && (item.text.trim() !== '' || item.attachments.length > 0)) === true
+    if (begun) {
+      const draftId = randomUUID()
+      await this.followupStore.enqueue({ threadId: to, draftId, text: draft.text, attachments: draft.attachments,
+        ...(draft.skills ? { skills: draft.skills } : {}), ...(draft.files ? { files: draft.files } : {}) })
+      await this.followupStore.pauseUserPrompts(to, 'This was in the last Watcher’s message box. Resume the queue to send it to this one, or remove it.', item => item.draftId === draftId)
+      this.syncFollowups()
+    } else this.putThreadDraft({ ...structuredClone(draft), threadId: to, draftId: randomUUID(), requestId: null, updatedAt: new Date().toISOString() })
     this.discardThreadDraft(from)
     await this.persist(); this.publish()
-    return true
+    return begun ? 'queue' : 'box'
   }
   /**
    * Whether the user's message to this thread sent straight to its provider, not through its queue, was never confirmed

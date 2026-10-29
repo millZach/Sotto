@@ -262,13 +262,18 @@ describe('New Watcher', () => {
     await (store as unknown as { change(update: (state: { items: { text: string; status: string }[] }) => void): Promise<void> }).change(state => {
       state.items.find(item => item.text === 'Late words')!.status = 'failed'
     })
-    // A message sent at once that failed is put back in the last Watcher's box.
+    // A message sent at once that failed is put back in the last Watcher's box, while the user is already writing in the
+    // new one's.
     expect((await f.control.commandShell({ type: 'save-thread-draft', threadId: f.first.threadId, draftId: randomUUID(), text: 'Late box words', composer: 'manual' })).error).toBeNull()
+    expect((await f.control.commandShell({ type: 'save-thread-draft', threadId: third.threadId, draftId: randomUUID(), text: 'Already typing', composer: 'manual' })).error).toBeNull()
     sending.mockReturnValue(false)
     await f.control.commandShell({ type: 'observe-threads', threadIds: [third.threadId] })
     await vi.waitFor(() => expect(store.peek().items.find(item => item.text === 'Late words')).toMatchObject({ threadId: third.threadId, status: 'paused' }))
-    await vi.waitFor(() => expect(f.service.state().carried).toMatchObject({ moved: 1, draftMoved: true }))
-    expect(f.control.get().threadDrafts?.find(draft => draft.threadId === third.threadId)?.text).toBe('Late box words')
+    // What the user is writing stays; the late words wait in the new Watcher's queue, paused, and the note counts both.
+    await vi.waitFor(() => expect(f.service.state().carried).toMatchObject({ moved: 2 }))
+    expect(f.control.get().threadDrafts?.find(draft => draft.threadId === third.threadId)?.text).toBe('Already typing')
+    expect(store.peek().items.find(item => item.text === 'Late box words')).toMatchObject({ threadId: third.threadId, status: 'paused' })
+    expect(f.control.get().threadDrafts?.some(draft => draft.threadId === f.first.threadId)).toBe(false)
   })
 
   it('refuses when Watcher’s model is not ready or its permission mode is not the one in force', async () => {

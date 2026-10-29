@@ -2678,13 +2678,14 @@ export class WatcherService implements WatcherControlHooks {
    */
   private async carryOver(previous: WatcherIdentity, to: WatcherThreadTarget, prepared?: Pick<WatcherCarried, 'questions' | 'unconfirmed'>): Promise<void> {
     this.preparedFor = null
-    const draftMoved = await this.options.control.moveWatcherDraft(previous.target.threadId, to.threadId).catch(() => false)
+    // The last Watcher is looked at once more after this, once nothing is being written to it: a message that settled
+    // while this ran, or settles later, moves then, to whichever Watcher is current, so one still settling from an
+    // earlier replacement is kept too.
+    this.lateQueue = [...this.lateQueue, previous.target]
+    const draft = await this.options.control.moveWatcherDraft(previous.target.threadId, to.threadId).catch(() => false as const)
     const movedDrafts = await this.options.control.moveWatcherQueue(previous.target.threadId, to.threadId).catch(() => [])
-    const moved = movedDrafts.length
+    const moved = movedDrafts.length + (draft === 'queue' ? 1 : 0), draftMoved = draft === 'box'
     await this.unlinkMoved(previous.target, movedDrafts)
-    // A message still being written to the last Watcher after the press's moment moves once it settles, if it did not go,
-    // to whichever Watcher is current then, so one still settling from an earlier replacement is kept too.
-    if (this.options.control.watcherFollowupSending(previous.target.threadId)) this.lateQueue = [...this.lateQueue, previous.target]
     // A reservation is a thread Watcher started that is still working (#1183), one per thread, so this reads no history.
     const away = new Map(this.view().reservations.filter(item => item.target.hostId !== this.hostId() && !this.adopts(item.target.hostId))
       .map(item => [key(item.target), item.target]))
@@ -2729,14 +2730,15 @@ export class WatcherService implements WatcherControlHooks {
     this.lateQueue = this.lateQueue.filter(from => !settled.includes(from))
     for (const from of settled) void (async () => {
       // A message sent at once that failed is back in the last Watcher's box; one that went unconfirmed is only told of.
-      const draftMoved = await this.options.control.moveWatcherDraft(from.threadId, current.threadId).catch(() => false)
+      const draft = await this.options.control.moveWatcherDraft(from.threadId, current.threadId).catch(() => false as const)
       const unconfirmed = this.options.control.unconfirmedDirectSend(from.threadId)
-      const moved = await this.options.control.moveWatcherQueue(from.threadId, current.threadId).catch(() => [])
-      await this.unlinkMoved(from, moved)
+      const queued = await this.options.control.moveWatcherQueue(from.threadId, current.threadId).catch(() => [])
+      await this.unlinkMoved(from, queued)
+      const moved = queued.length + (draft === 'queue' ? 1 : 0), draftMoved = draft === 'box'
       const carried = this.carried
-      if ((moved.length || draftMoved || unconfirmed) && carried && key(carried.to) === key(current)) {
-        this.setCarried({ ...carried, moved: carried.moved + moved.length, draftMoved: carried.draftMoved === true || draftMoved,
-          unconfirmed: carried.unconfirmed || unconfirmed || moved.some(item => item.unconfirmed) }); this.publish()
+      if ((moved || draftMoved || unconfirmed) && carried && key(carried.to) === key(current)) {
+        this.setCarried({ ...carried, moved: carried.moved + moved, draftMoved: carried.draftMoved === true || draftMoved,
+          unconfirmed: carried.unconfirmed || unconfirmed || queued.some(item => item.unconfirmed) }); this.publish()
       }
     })().catch(() => undefined)
   }

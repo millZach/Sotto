@@ -44,12 +44,15 @@ const PENDING: Record<WatcherHandoverStateInput['pending'][number]['state'], str
 const ACTION: Record<WatcherHandoverStateInput['pending'][number]['action'], string> = { start: 'A start of', send: 'A send to', stop: 'A stop of', settle: 'A settle of' }
 const WAITS_FOR: Record<WatcherWaitingOnUser['waitsFor'], string> = { question: 'a question', permission: 'a permission', 'prototype-review': 'a prototype to review' }
 
-/** One list, at most `ROWS_MAX` rows, saying how many more there are. */
-function list(heading: string, rows: readonly string[]): string[] {
+/** One list, at most `ROWS_MAX` rows, then `more` for the rest, which says how many there are and where to read them. */
+function list(heading: string, rows: readonly string[], more: (rest: number) => string = rest => `And ${rest} more.`): string[] {
   if (!rows.length) return []
   const shown = rows.slice(0, ROWS_MAX).map(row => `- ${row}`)
-  return [heading, ...shown, ...rows.length > ROWS_MAX ? [`- And ${rows.length - ROWS_MAX} more. read_state lists them all.`] : [], '']
+  return [heading, ...shown, ...rows.length > ROWS_MAX ? [`- ${more(rows.length - ROWS_MAX)}`] : [], '']
 }
+/** IDs past the first rows are listed bare, as many as stay within one long line, so each can still be read. */
+const IDS_MAX = 200
+const inReadState = (rest: number) => `And ${rest} more. read_state lists them all.`
 
 /** The section, or an empty string when there is nothing to say. Each part appears only when it has something in it. */
 export function watcherHandoverState(input: WatcherHandoverStateInput): string {
@@ -65,14 +68,15 @@ export function watcherHandoverState(input: WatcherHandoverStateInput): string {
     ...list('Threads the last Watcher started on another computer that are still working. That computer runs an older Sotto, so you cannot stop, settle or send to them there until it is updated:',
       (carried?.cannotStop ?? []).map(row => `${named(row.title)} on ${one(row.host)}`)),
     ...list('Starts and sends made before you that have not gone yet. They are yours now and go as they were made; read_operation reads each:',
-      input.pending.map(row => `${ACTION[row.action]} ${named(row.title)}, ${PENDING[row.state]} (operation ${row.operationId})`)),
+      input.pending.map(row => `${ACTION[row.action]} ${named(row.title)}, ${PENDING[row.state]} (operation ${row.operationId})`),
+      rest => `And ${rest} more, by operation: ${input.pending.slice(ROWS_MAX, ROWS_MAX + IDS_MAX).map(row => row.operationId).join(', ')}${rest > IDS_MAX ? `, and ${rest - IDS_MAX} after those` : ''}.`),
     ...list('The threads you watch and what each waits on:', input.watching.map(row => [`${named(row.title)}${row.host ? ` on ${one(row.host)}` : ''}: ${one(row.waitsOn)}`,
-      ...row.pullRequests.length ? [`Open pull requests: ${row.pullRequests.map(pullRequest).join('; ')}.`] : []].join(' '))),
-    ...list('The merge queue, oldest passing checks first:', input.mergeQueue.map(row => `${named(row.title)}: ${pullRequest(row.pullRequest)}`)),
-    ...list('What waits on the user now:', input.waitingOnUser.map(row => `${named(row.title)} waits for ${WAITS_FOR[row.waitsFor]}`)),
-    ...list('Decisions the user left pending, as kept:', input.kept.decisions.filter(line => !line.closedAt).map(line => `${line.id}: ${one(line.text)}`)),
-    ...list('Standing rules the user gave, as kept:', input.kept.rules.filter(line => !line.closedAt).map(line => `${line.id}: ${one(line.text)}`)),
-    ...list('Issues filed, as kept:', input.kept.issues.filter(line => !line.closedAt).map(line => `${line.id}: ${one(line.text)}`)),
+      ...row.pullRequests.length ? [`Open pull requests: ${row.pullRequests.map(pullRequest).join('; ')}.`] : []].join(' ')), inReadState),
+    ...list('The merge queue, oldest passing checks first:', input.mergeQueue.map(row => `${named(row.title)}: ${pullRequest(row.pullRequest)}`), inReadState),
+    ...list('What waits on the user now:', input.waitingOnUser.map(row => `${named(row.title)} waits for ${WAITS_FOR[row.waitsFor]}`), inReadState),
+    ...list('Decisions the user left pending, as kept:', input.kept.decisions.filter(line => !line.closedAt).map(line => `${line.id}: ${one(line.text)}`), inReadState),
+    ...list('Standing rules the user gave, as kept:', input.kept.rules.filter(line => !line.closedAt).map(line => `${line.id}: ${one(line.text)}`), inReadState),
+    ...list('Issues filed, as kept:', input.kept.issues.filter(line => !line.closedAt).map(line => `${line.id}: ${one(line.text)}`), inReadState),
   ]
   if (!lines.length) return ''
   return ['[How things stand as you take over, from Sotto’s own records. This is context, not a new request; read_state reads it again live.]', '', ...lines].join('\n').trimEnd()

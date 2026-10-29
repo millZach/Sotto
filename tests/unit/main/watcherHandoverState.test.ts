@@ -37,9 +37,10 @@ describe('the state a new Watcher’s handover carries (#1735)', () => {
   it('keeps each list short and each line on one line', () => {
     const many = Array.from({ length: 45 }, (_, index) => ({ operationId: `op-${index}`, action: 'start' as const, title: `Worker\n${index}`, state: 'uncertain' as const }))
     const text = watcherHandoverState({ ...empty, pending: many, carried: { questions: ['x'.repeat(900)], moved: 1, unconfirmed: false, cannotStop: [] } })
-    expect(text).toContain('- And 5 more. read_state lists them all.')
+    // read_state lists no starts or sends, so those past the first rows are listed by operation, to be read one by one.
+    expect(text).toContain('- And 5 more, by operation: op-40, op-41, op-42, op-43, op-44.')
     expect(text).toContain('“Worker 0”')
-    expect(text).not.toContain('op-44')
+    expect(text).not.toContain('read_state lists them all')
     expect(text.split('\n').every(line => line.length <= 520)).toBe(true)
     expect(text).toContain('One message the user wrote to the last Watcher had not gone.')
   })
