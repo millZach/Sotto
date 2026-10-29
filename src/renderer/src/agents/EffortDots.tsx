@@ -49,7 +49,8 @@ export function EffortDots({ levels, value, disabled, pending = false, described
   }
   const onKeyDown = (event: KeyboardEvent<HTMLSpanElement>): void => {
     const step = { ArrowRight: 1, ArrowUp: 1, ArrowLeft: -1, ArrowDown: -1 }[event.key]
-    if (step !== undefined) { event.preventDefault(); set((current < 0 ? 0 : current) + step); return }
+    // From the provider's default, either arrow lands on the first level the model offers.
+    if (step !== undefined) { event.preventDefault(); set(current < 0 ? 0 : current + step); return }
     if (event.key === 'Home') { event.preventDefault(); set(0) }
     if (event.key === 'End') { event.preventDefault(); set(levels.length - 1) }
   }
@@ -59,7 +60,7 @@ export function EffortDots({ levels, value, disabled, pending = false, described
   return <span className="effort-dots" data-provider={provider} data-pending={pending || undefined} data-stop={stop ? true : undefined}>
     <span className="effort-dots__hold">
     {levels.length > 0 ? <span className="effort-dots__track tt-focusable" role="slider" tabIndex={disabled ? -1 : 0} aria-label={label}
-      aria-valuemin={1} aria-valuemax={levels.length} aria-valuenow={current >= 0 ? current + 1 : undefined} aria-valuetext={shown}
+      aria-valuemin={current >= 0 ? 1 : 0} aria-valuemax={levels.length} aria-valuenow={current + 1} aria-valuetext={shown}
       aria-disabled={disabled || undefined} aria-describedby={pending ? describedBy : undefined} title={`${label}: ${shown}`} onKeyDown={onKeyDown}
       onClick={event => {
         const dot = (event.target as Element).closest<HTMLElement>('[data-level]')

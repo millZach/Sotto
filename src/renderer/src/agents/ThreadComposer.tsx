@@ -189,11 +189,11 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // An answer written here is kept for Watcher's line about its request, never its words, and only where Watcher is on.
   const watcherOn = useWatcherEnabled()
   const watchActions = useWatchActions()
-  const { draft, save, saveError, answerState, hasContent, effortScore } = useComposerControls(store, threadId)
+  const quietComposer = useOwlFeature('quiet-composer')
+  const { draft, save, saveError, answerState, hasContent, effortScore } = useComposerControls(store, threadId, quietComposer)
   const comments = useReviewComments(reviewComments, threadId)
   // Reply quotes are an Owl feature: stable shows no chip and sends none (ADR-0129).
   const quoting = useOwlFeature('reply-quote')
-  const quietComposer = useOwlFeature('quiet-composer')
   const heldQuotes = useReplyQuotes(replyQuotes, threadId)
   const quotes = quoting ? heldQuotes : NO_QUOTES
   const submissions = useSubmissions(store)
@@ -446,19 +446,19 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // The pill's disc turns into Steer while Steer's modifier is held, so it always shows what the key pressed will do.
   const [steerHeld, setSteerHeld] = useState(false)
   useEffect(() => {
-    if (!quiet || steerChord === null) return
+    if (!quiet) return
     const read = (event: globalThis.KeyboardEvent): void => setSteerHeld(platform === 'darwin' ? event.metaKey : event.ctrlKey)
     const release = (): void => setSteerHeld(false)
     window.addEventListener('keydown', read); window.addEventListener('keyup', read); window.addEventListener('blur', release)
     return () => { window.removeEventListener('keydown', read); window.removeEventListener('keyup', read); window.removeEventListener('blur', release); setSteerHeld(false) }
-  }, [quiet, steerChord, platform])
+  }, [quiet, platform])
   // While a turn runs, the effort dots hold Stop; where the options draw no dots (a provider that cannot change a started
   // thread), Stop keeps a button of its own in the pill.
   const stopOnDots = quiet && capabilities.configureThread === true
   const stopTitle = stopKeys ? `${stopName} ${threadChordLabel(stopKeys, platform).suffix}` : stopName
   const interrupt = (): void => { void command({ type: 'interrupt', threadId }) }
   // Queue's glyph follows what Enter does, as the disc's name does, so a provider that sends during a turn shows Send.
-  const discFace = working && content && canSteer && steerChord !== null && steerHeld ? 'steer' : queueing ? 'queue' : 'send'
+  const discFace = working && content && canSteer && steerHeld ? 'steer' : queueing ? 'queue' : 'send'
   // Kept with the thread it was opened on, so moving to another thread finds it closed and at its first row.
   const [nextListState, setNextListState] = useState<{ readonly threadId: string; readonly index: number } | null>(null)
   const nextList = next !== null && nextListState?.threadId === threadId ? nextListState : null
@@ -576,12 +576,13 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         </div>
         <div ref={actionsRow} className="thread-prompt__actions">
           {quiet ? <>
-            {working && !stopOnDots ? <Button variant="ghost" className="thread-prompt__stop thread-prompt__disc" aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
+            {/* Shown where the dots cannot hold Stop: a thread that draws none, or the slim composer, which hides them. */}
+            {working ? <Button variant="ghost" className="thread-prompt__stop thread-prompt__disc" data-beside-dots={stopOnDots || undefined} aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
               title={stopTitle} disabled={!canStop} onClick={interrupt}><Square size={10} fill="currentColor" aria-hidden="true" /></Button> : null}
             {/* One disc: Send, Queue while a turn runs, Steer while Steer's modifier is held. Its glyph says which. */}
             {discFace === 'steer'
-              ? <Button className="thread-prompt__send thread-prompt__disc" data-face="steer" aria-label={t`Steer now`} aria-keyshortcuts={threadChordLabel(steerChord!, platform).keys}
-                title={`${t`Send this now, without waiting for the turn to end`} ${threadChordLabel(steerChord!, platform).suffix}`} onClick={() => send(performance.now(), 'steer')}>
+              ? <Button className="thread-prompt__send thread-prompt__disc" data-face="steer" aria-label={t`Steer now`} aria-keyshortcuts={steerChord ? threadChordLabel(steerChord, platform).keys : undefined}
+                title={t`Send this now, without waiting for the turn to end` + (steerChord ? ` ${threadChordLabel(steerChord, platform).suffix}` : '')} onClick={() => send(performance.now(), 'steer')}>
                 <ArrowUpRight size={16} strokeWidth={2.4} aria-hidden="true" /></Button>
               : <Button className="thread-prompt__send thread-prompt__disc" data-face={discFace} aria-label={primaryLabel} aria-keyshortcuts="Enter" title={reason ?? primaryLabel} disabled={!canSend} type="submit">
                 {discFace === 'queue' ? <ArrowDownToLine size={16} strokeWidth={2.4} aria-hidden="true" /> : <ArrowUp size={16} strokeWidth={2.4} aria-hidden="true" />}</Button>}
@@ -633,14 +634,15 @@ interface ComposerControls {
 }
 
 /** Text edits repaint the editor; the surrounding controls observe only the facts they display. */
-function useComposerControls(store: ThreadDraftStore, threadId: string): ComposerControls {
+function useComposerControls(store: ThreadDraftStore, threadId: string, scoreEffort: boolean): ComposerControls {
   const read = useMemo(() => {
     let previous: ComposerControls | undefined
     return (): ComposerControls => {
       const { draft, save, saveError, answer: answerState } = store.snapshot(threadId)
       const hasContent = hasDraftContent(draft)
       const hasUltrathink = /\bultrathink\b/iu.test(draft.text)
-      const effortScore = draftEffortScore(draft.text)
+      // Read only where the quiet composer is on, so no other composer repaints as the score moves.
+      const effortScore = scoreEffort ? draftEffortScore(draft.text) : 0
       if (previous && previous.save === save && previous.saveError === saveError
         && previous.answerState === answerState
         && previous.hasContent === hasContent && previous.hasUltrathink === hasUltrathink && previous.effortScore === effortScore
@@ -648,7 +650,7 @@ function useComposerControls(store: ThreadDraftStore, threadId: string): Compose
         && previous.draft.files === draft.files && previous.draft.requestId === draft.requestId) return previous
       return previous = { draft, save, saveError, answerState, hasContent, hasUltrathink, effortScore }
     }
-  }, [store, threadId])
+  }, [store, threadId, scoreEffort])
   return useSyncExternalStore(store.subscribe, read)
 }
 

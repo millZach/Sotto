@@ -4,7 +4,7 @@
 
 Accepted October 29, 2026, by Drake Morey's choices. An Owl feature (`quiet-composer`, ADR-0072); Drake chose Owl. **Number provisional until merge** (docs/agents/domain.md).
 
-Amends, in a thread's composer and only while the feature is on: [ADR-0110](0110-containers-are-filled-cards-and-no-control-is-a-pill.md) (the composer is a pill), [ADR-0113](0113-the-composer-controls-are-text-buttons.md) decisions 1 to 3 (its options and actions), and [ADR-0153](0153-the-composers-buttons-are-its-keys.md) decisions 1, 2, 4 and 5 (its buttons, their key caps and the light round Stop). Answers, continuations, Watcher's composer and every composer with the feature off keep those decisions as they are.
+Amends, in a thread's composer and only while the feature is on: [ADR-0110](0110-containers-are-filled-cards-and-no-control-is-a-pill.md) (the composer is a pill, and its send is a round disc where decision 2 keeps round for status), [ADR-0125](0125-the-composer-slims-while-the-user-reads-back.md) (the slim line's Stop, decision 1), [ADR-0113](0113-the-composer-controls-are-text-buttons.md) decisions 1 to 3 (its options and actions), and [ADR-0153](0153-the-composers-buttons-are-its-keys.md) decisions 1, 2, 4 and 5 (its buttons, their key caps and the light round Stop). Answers, continuations, Watcher's composer and every composer with the feature off keep those decisions as they are.
 
 ## Context
 
@@ -25,13 +25,13 @@ His notes along the way set the brief: the composer was "still too crowded"; eff
 
 **2. Effort is dots.** One dot per level the model offers, lit up to the level set, in the provider's colour drawn toward the text so it reads on either theme. The dots are one slider: a press on a dot or an arrow key sets that level through the same save as the effort card, with the same refusals and notices. The effort card, with its Ultrathink button and its note about ultracode, is not reached from the pill.
 
-**3. The draft may suggest more effort; only a press changes it.** The window reads the draft's own words: a long draft, several lines, and words such as refactor, debug, why or investigate. When they suggest a level above the one set, those dots ring and a short note says so for a moment ("Suggests High. Press a ringed dot to use it."). Nothing leaves the computer for it, and nothing changes until the user presses a dot (ADR-0004). Nothing is suggested while a turn runs.
+**3. The draft may suggest more effort; only a press changes it.** The window reads the draft's own words: a long draft, a draft of more than one line, and words such as refactor, debug, why or investigate. When they suggest a level above the one set (or, on the provider's default, above the model's own default), those dots ring and a short note says so for a moment ("Suggests High. Press a ringed dot to use it."). Nothing leaves the computer for it, and nothing changes until the user presses a dot (ADR-0004). Nothing is suggested while a turn runs.
 
 **4. Permissions are their shield.** The permissions control shows only its shield at every width, the words kept for assistive technology and its tooltip, as ADR-0113 decision 2 already does in a narrow pane. Full access, the one mode that asks about nothing, fills the shield in the warning colour.
 
 **5. One disc.** It is Send. While a turn runs and something is typed it is Queue, with a glyph of an arrow into a tray. While Steer's modifier is held (Cmd on a Mac, Ctrl elsewhere) it is Steer, in the accent. Enter, Cmd+Enter (Ctrl+Enter) and Cmd+Shift+S (Ctrl+Shift+S) do what they did; the keys live in each control's name, tooltip and `aria-keyshortcuts` instead of key caps.
 
-**6. The dots stop the turn.** While a turn runs, the lit dots bounce, one after another, and that is the sign that it runs, in place of the light round Stop. The dots then hold Stop: pointing at them or reaching them with Tab shows a Stop button over them, named as Stop is named today. Where a provider cannot change a started thread and so draws no dots, Stop keeps a small button of its own in the pill.
+**6. The dots stop the turn.** While a turn runs, the lit dots bounce, one after another, and that is the sign that it runs, in place of the light round Stop. The dots then hold Stop: pointing at them or reaching them with Tab shows a Stop button over them, named as Stop is named today. Where a provider cannot change a started thread and so draws no dots, and in the slim composer, which hides them, Stop keeps a small button of its own in the pill.
 
 **7. Less in the line.** Fast mode keeps its bolt. Watch on send is not drawn; Watch stays in the pane header. The model's chevron and the key caps go. The branch toolbar and the queue stay where they are, under and over the pill.
 

@@ -26,6 +26,11 @@
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc[data-face='steer'],
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc[data-face='steer']:hover { background: var(--tt-accent); color: var(--tt-on-accent); }
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__stop.thread-prompt__disc { background: transparent; color: var(--tt-text-muted); }
+/* Where the dots hold Stop, the pill's own Stop waits for the slim composer, which hides the dots (ADR-0125). There the
+   disc a turn leaves with nothing to send steps aside, so the slim line keeps one disc. */
+.thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__stop[data-beside-dots] { display: none; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__stop[data-beside-dots] { display: inline-flex; }
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt[data-quiet][data-running] .thread-prompt__actions > .thread-prompt__disc[data-face='send']:disabled { display: none; }
 
 /* The effort dots, in the provider's colour drawn toward the text so they read on either theme. */
 .effort-dots { display: inline-flex; align-items: center; height: 30px; flex: none; --dots-ink: var(--tt-text-2); }

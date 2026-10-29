@@ -608,7 +608,9 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         onChange={next => press('fast', next ? FAST_ON : FAST_OFF, { fastMode: next }, unpressed.fast)} />}
       {quiet ? (levels.length > 0 || quiet.stop) && <EffortDots levels={levels} value={reasoning} provider={model?.providerId ?? thread.providerId} disabled={fixed || modelDisabled}
         pending={settings.pending.effort?.awaiting === 'unconfirmed'} describedBy={unconfirmedEffortId} stop={quiet.stop}
-        suggestion={thread.status === 'running' ? null : suggestedEffortIndex(quiet.effortScore, levels.length, levels.indexOf(reasoning))}
+        suggestion={thread.status === 'running' ? null : suggestedEffortIndex(quiet.effortScore, levels.length,
+          // On the provider's default, the model's own default is what a suggestion must stand above.
+          levels.includes(reasoning) ? levels.indexOf(reasoning) : levels.indexOf(model?.defaultReasoningEffort ?? ''))}
         onChange={reasoningEffort => press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)} />
       : efforts.length > 0 && <EffortPicker key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
         disabled={fixed || modelDisabled} pending={settings.pending.effort?.awaiting === 'unconfirmed'} describedBy={unconfirmedEffortId} onChange={reasoningEffort => {
