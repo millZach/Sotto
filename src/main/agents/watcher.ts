@@ -1954,11 +1954,10 @@ export class WatcherService implements WatcherControlHooks {
     const closed = closedWatcherRequests(record)
     if (closed < Math.max(WATCHER_LIVE_CLOSED_REQUESTS + WATCHER_ARCHIVE_BATCH, this.archiveFloor)) return
     const retains = (operation: Readonly<WatcherOperation>): boolean => this.retainsOperation(operation)
-    const remoteGoes = this.options.historyEnabled()
-    const ids = archivableWatcherRequests(record, retains, remoteGoes)
+    const ids = archivableWatcherRequests(record, retains)
     if (ids.length < WATCHER_ARCHIVE_BATCH) { this.archiveFloor = closed + WATCHER_ARCHIVE_BATCH - ids.length; return }
     this.archiveFloor = 0
-    this.archiving = this.options.control.archiveWatcherWork(ids, () => archivableWatcherRequests(this.view(), retains, this.options.historyEnabled()))
+    this.archiving = this.options.control.archiveWatcherWork(ids, () => archivableWatcherRequests(this.view(), retains))
       .catch(() => 0)
       .finally(() => { this.archiving = undefined; this.archiveWhenDue() })
   }
@@ -2619,8 +2618,6 @@ export class WatcherService implements WatcherControlHooks {
 
   async recover(): Promise<void> {
     try {
-      // A paired desktop's work an archive saved before history went off goes back to the record first (#1759).
-      await this.options.control.returnArchivedRemoteWork()
       const record = this.view()
       if (record.creation && !this.options.workerHost) await this.finishCreation(record.creation.identity, record.creation.modelId ? { provider: record.creation.identity.provider, modelId: record.creation.modelId, ...(record.creation.reasoningEffort ? { reasoningEffort: record.creation.reasoningEffort } : {}) } : undefined)
       const current = this.view().current
@@ -5098,7 +5095,7 @@ ${operation.draftId}`)
    * now has it (`archivedOwner`), and the prompt turns of one that moved with it, those the record still holds included,
    * as adoption moves them (#1735).
    */
-  returnArchived(record: WatcherRecord, work: WatcherArchived): void {
+  private returnArchived(record: WatcherRecord, work: WatcherArchived): void {
     const moved = new Map<string, WatcherThreadTarget>()
     const requests = work.requests.map(request => {
       const owner = request.remoteOrigin && this.archivedOwner(request, request.remoteOrigin.clientId)

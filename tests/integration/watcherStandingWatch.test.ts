@@ -953,9 +953,9 @@ it('archives a paired desktop\'s closed work on the owning host and answers its 
   expect(hosted().remoteAbsences ?? []).toEqual([])
   // From then on the replaced Watcher cannot read it, as it could not read a request of the record's that moved.
   expect(await read()).toMatchObject({ status: 'refused', code: 'UNKNOWN_OPERATION' })
-  // Handed back to the record, as when Keep local history goes off, it is the newer Watcher's too.
+  // Put back in the record, it is the newer Watcher's too.
   const archivedWork = await worker.control.archivedWatcherWork()!.read({ requests: [request.id] }), handedBack = emptyWatcherRecord()
-  ;(worker.control as unknown as { returnArchived(record: WatcherRecord, work: typeof archivedWork): void }).returnArchived(handedBack, archivedWork)
+  ;(worker.service as unknown as { returnArchived(record: WatcherRecord, work: typeof archivedWork): void }).returnArchived(handedBack, archivedWork)
   expect(handedBack.requests.find(item => item.id === request.id)?.watcher).toEqual(newer.target)
   // The replaced Watcher's retry is refused; the newer one's brings the request back as the newer Watcher's, its prompt
   // turn too, as adoption leaves the record's, and gives the first receipt.
