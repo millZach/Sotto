@@ -1858,7 +1858,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
       this.messageLog.dropEmpty(id); this.streaming.delete(id)
       const { origin, stopped, steered, status } = ending!
       const selfTurn = origin !== undefined && this.selfTurns.get(id) === origin
-      const answersCompaction = origin !== undefined && alias.compactInputIds?.includes(origin) === true
+      // Only the latest /compact can be answered: no compaction starts while one is pending, and a refused one is taken back.
+      const answersCompaction = origin !== undefined && alias.compactInputIds?.at(-1) === origin
       this.selfTurns.delete(id); this.queries.delete(id)
       this.interrupting.delete(id)
       const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, this.assistantErrors.get(id)) : null
