@@ -638,15 +638,14 @@ describe('Claude recovery and safety', () => {
       expect(args.filter(argument => argument === '--append-system-prompt')).toHaveLength(1)
     }
   })
-  it('keeps the prose a thread writes before a tool call as its reply, not a summary filed as thinking', async () => {
-    // Under thinking shown as updates the server may replace that prose with a summary, and a question card then shows
-    // with no reply above it.
+  it('asks for summarized thinking so narration before a question carries words', async () => {
+    // The server may return prose written between tool calls as a narration block; asked for no thinking text, it is empty.
     const created = randomUUID()
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: created, projectId: f.projectId, title: 'Prose', modelId: f.modelId })
-    const frames = (await f.driver.requests()).filter(record => record.method === 'launch' || record.method === 'resume').map(record => record.params?.frame as { args: string[]; thinkingDisplayUpdates: string | null })
+    const frames = (await f.driver.requests()).filter(record => record.method === 'launch' || record.method === 'resume').map(record => record.params?.frame as { args: string[] })
       .filter(frame => !frame.args.includes('--no-session-persistence'))
     expect(frames.length).toBeGreaterThan(0)
-    for (const frame of frames) expect(frame.thinkingDisplayUpdates).toBe('0')
+    for (const frame of frames) expect(frame.args.join(' ')).toContain('--thinking-display summarized')
   })
   it('says the approval surface was refused when a session offers no question tool', async () => {
     f.host.disconnect(); await f.adapter.closed()

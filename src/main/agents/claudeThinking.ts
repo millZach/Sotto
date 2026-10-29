@@ -6,6 +6,39 @@ export const CLAUDE_THINKING_ID_PREFIX = 'claude-thinking-'
 export const claudeThinkingId = (reply: string, index: number): string => `${CLAUDE_THINKING_ID_PREFIX}${reply}-${index}`
 /** Content blocks that hold the model's thinking. A redacted one carries no words Sotto can show, only that it thought. */
 export const THINKING_BLOCKS: ReadonlySet<string> = new Set(['thinking', 'redacted_thinking'])
+/** The last length-delimited `field` of a protobuf message, or nothing when the bytes do not read as one. */
+function protobufField(bytes: Uint8Array, field: number): Uint8Array | undefined {
+  let at = 0; let found: Uint8Array | undefined
+  const varint = (): number => {
+    let value = 0
+    for (let shift = 0; at < bytes.length && shift < 35; shift += 7) { const byte = bytes[at++]!; value += (byte & 0x7f) * 2 ** shift; if (byte < 0x80) return value }
+    throw new Error('varint')
+  }
+  try {
+    while (at < bytes.length) {
+      const tag = varint(); const wire = tag % 8
+      if (wire === 0) varint()
+      else if (wire === 1) at += 8
+      else if (wire === 5) at += 4
+      else if (wire === 2) { const length = varint(); if (at + length > bytes.length) return undefined; if (Math.floor(tag / 8) === field) found = bytes.subarray(at, at + length); at += length }
+      else return undefined
+    }
+  } catch { return undefined }
+  return found
+}
+/**
+ * Whether a thinking block is narration: the server's stand-in for prose the model wrote to the user between tool
+ * calls, which it returns in place of a text block. The kind is tagged inside the block's signature (field 2, then 1,
+ * then 8), where Claude Code itself reads it; the transcript keeps no other mark. Its words are the server's summary of
+ * that prose, or nothing when the request asked for no thinking text. An unreadable signature is ordinary thinking.
+ */
+export function claudeNarration(block: Record<string, unknown>): boolean {
+  if (block.type !== 'thinking' || typeof block.signature !== 'string' || !block.signature) return false
+  const envelope = protobufField(Buffer.from(block.signature, 'base64'), 2)
+  const kind = envelope && protobufField(envelope, 1)
+  const name = kind && protobufField(kind, 8)
+  return name !== undefined && Buffer.from(name).toString('utf8') === 'narration'
+}
 /** How many streams' replies, open blocks and streamed replies are remembered; the oldest gives way past this. */
 const MAX_REMEMBERED = 64
 
@@ -21,7 +54,7 @@ export function claudeThinkingRow(place: ThinkingPlace, id: string, status: Agen
 }
 
 /** `restarted` marks a block started again over its own row, at the same place in the same reply. */
-type OpenBlock = { readonly id: string; readonly stream: string; words: string; readonly place: ThinkingPlace; readonly restarted: boolean }
+type OpenBlock = { readonly id: string; readonly stream: string; words: string; signature: string; readonly place: ThinkingPlace; readonly restarted: boolean }
 
 /**
  * Claude's thinking blocks as they stream. A stream is the thread's own (`main`) or a subagent's, by its tool call.
@@ -59,7 +92,7 @@ export class ClaudeThinking {
     // gives the block that finished there. Any other block left open at this place gets nothing more.
     const prior = this.open.get(key); const restarted = prior?.id === id
     const rows = restarted ? [] : this.settle(open => open === key, 'interrupted', place.startedAt)
-    const block: OpenBlock = { id, stream, words: typeof opening === 'string' ? opening.slice(0, MAX_ACTIVITY_TEXT + 1) : '', place: restarted ? prior.place : place, restarted }
+    const block: OpenBlock = { id, stream, words: typeof opening === 'string' ? opening.slice(0, MAX_ACTIVITY_TEXT + 1) : '', signature: '', place: restarted ? prior.place : place, restarted }
     this.open.set(key, block); this.streamed.add(reply)
     for (const old of this.streamed) { if (this.streamed.size <= MAX_REMEMBERED) break; this.streamed.delete(old) }
     for (const old of this.open.keys()) { if (this.open.size <= MAX_REMEMBERED) break; rows.push(...this.settle(open => open === old, 'interrupted', place.startedAt)) }
@@ -74,9 +107,18 @@ export class ClaudeThinking {
     return [this.row(block, 'running')]
   }
 
-  /** A block stops. Only a thinking block has a row to settle. */
-  stopped(stream: string, index: number, at: string | undefined): AgentActivity[] {
-    const key = `${stream}:${index}`
+  /** More of an open block's signature, which says at its end whether the block was narration. */
+  signed(stream: string, index: number, signature: string): void {
+    const block = this.open.get(`${stream}:${index}`); if (block) block.signature += signature
+  }
+
+  /**
+   * A block stops. Only a thinking block has a row to settle. Narration is the reply's words rather than thinking, so
+   * its row goes: its id comes back in `narration` and the reply's message carries the words.
+   */
+  stopped(stream: string, index: number, at: string | undefined, narration?: Set<string>): AgentActivity[] {
+    const key = `${stream}:${index}`; const block = this.open.get(key)
+    if (block && narration && claudeNarration({ type: 'thinking', signature: block.signature })) { this.open.delete(key); narration.add(block.id); return [] }
     return this.settle(open => open === key, 'completed', at)
   }
 
