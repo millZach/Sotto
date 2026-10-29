@@ -21,7 +21,7 @@ export type DelegationRefused = { status: 'refused'; code: string; message: stri
 
 /** Delegation over a workspace of fake providers. Each cleanup it needs is pushed onto `cleanups`, to run in reverse. */
 /** `branchStarts` gives delegation the desktop's mover over this computer's own threads and projects (#1033); `checks`, This computer's check queue (#1312), new at each restart as it is in the app; `checkWorktrees`, its check worktree. */
-export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { history?: boolean; titles?: boolean; delegation?: Pick<DelegationServiceOptions, 'now' | 'schedule' | 'machines' | 'clockTime'>; branchStarts?: boolean; checks?: boolean; checkWorktrees?: PackageInstaller } = {}) {
+export async function delegationFixture(cleanups: (() => Promise<void>)[], options: { history?: boolean; titles?: boolean; delegation?: Pick<DelegationServiceOptions, 'now' | 'schedule' | 'machines' | 'clockTime' | 'checkReplies'>; branchStarts?: boolean; checks?: boolean; checkWorktrees?: PackageInstaller } = {}) {
   const history = options.history ?? true
   let workspace = await workspaceFixture(undefined, { history, watcherEnabled: false })
   cleanups.push(workspace.remove)

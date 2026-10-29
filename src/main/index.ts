@@ -2051,8 +2051,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         refresh: query => hostRouter.usageRefresh(query), clear: query => hostRouter.usageClear(query) }, () => windows.getTrustedRenderers(), usageEnabled)
       // The delegating thread's cards read delegation's own record (#1029); stable built no service, so nothing is registered.
       // A thread on another machine is read on that machine where Work across machines is on (#1310); stable reads none.
+      // A check's reply is read on a press only where checks are offered, with Watcher and Work across machines on (#1312).
       const cleanupDelegations = registerDelegationIpc(ipcMain, delegationService, () => windows.getTrustedRenderers(), () => agentControl.hostId(),
-        (channel, payload) => { windows.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined)
+        (channel, payload) => { windows.sendToMain(channel, payload) }, crossMachineEnabled ? hostRouter : undefined, watcherEnabled && crossMachineEnabled)
       // Every machine's check queue for its panel and Tools › Agents (#1312), only where Watcher and Work across machines are
       // both on, as the machines line is, so stable registers nothing. With the local host off, This computer keeps no queue
       // and each host's is still read.

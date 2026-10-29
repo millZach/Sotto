@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, providerIdSchema, type AgentState, type AgentThread } from './agents'
-import { WATCHER_OUTCOMES, watcherOutcomeSchema } from './watcher'
+import { WATCHER_OUTCOMES, WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema } from './watcher'
 import { workerKindSchema } from './workerRoles'
 import { workerSystemSchema } from './workerMachine'
 
@@ -142,7 +142,8 @@ export type DelegationNews = z.infer<typeof delegationNewsSchema>
  * The window's read of a thread's delegations (#1029, design A): what each row of delegated work in the delegating thread shows. Main
  * answers from `DelegationService`'s own record, reading no snapshot, and only when the window asks: a delegating
  * thread's pane opening, or a change main announced for that thread. Identities, outcome and timing only, never a brief
- * or a reply.
+ * or a reply, with one exception: an answered **check**'s reply excerpt, its first line and no more (#1312, Zach on
+ * October 23 and 28, 2026). The rest of a check's reply is read on a press (`DELEGATION_CHECK_REPLY_READ`).
  */
 export const DELEGATIONS_READ = 'sotto:delegations:read'
 /** Main names the delegating threads whose delegations changed, batched per pass; the window reads those it shows. */
@@ -163,6 +164,19 @@ export const delegationHostHoldSchema = z.enum(['not-told', 'no-answer-grant', '
 export const delegationAskedSchema = z.object({ machine: z.uuid().optional(), os: workerSystemSchema.optional() }).strict()
 /** Why a brief ended before it was delivered: the user's newer message or their turn there, a Stop, a failure, a restart. */
 export const delegationNotSentSchema = z.enum(['target-changed', 'paused', 'stopped', 'provider', 'restarted'])
+/** The most of a check's reply its row carries: the first line with words in it, cut here (#1312, Zach's pick C on October 28, 2026). */
+export const CHECK_REPLY_EXCERPT_MAX = 200
+/**
+ * An answered check's reply as its row of delegated work shows it (#1312, Zach's pick C on October 28, 2026): the **reply
+ * excerpt**, its first line with words in it, as the thread wrote it and cut at `CHECK_REPLY_EXCERPT_MAX`, and whether
+ * Sotto cut the reply itself at 32 KiB, as `read_delegation` gives it; or, `unavailable`, that Sotto no longer holds it,
+ * as with Keep local history off after a restart. Never more of the reply, and never a verdict Sotto read from it.
+ */
+export const checkReplyExcerptSchema = z.union([
+  z.object({ excerpt: z.string().min(1).max(CHECK_REPLY_EXCERPT_MAX), truncated: z.boolean() }).strict(),
+  z.object({ unavailable: z.literal(true) }).strict(),
+])
+export type CheckReplyExcerpt = z.infer<typeof checkReplyExcerptSchema>
 /** A delegation main accepted: a thread was started or sent a brief, and it has one of Watcher's outcomes. */
 export const delegatedViewSchema = z.object({
   id: z.uuid(),
@@ -197,6 +211,13 @@ export const delegatedViewSchema = z.object({
    * default from a desktop yet (`not-told`), or no desktop that told it may answer there (`no-answer-grant`).
    */
   held: delegationHostHoldSchema.optional(),
+  /**
+   * A **check** (#1312): a start that said it was there to run tests and took its place in this machine's check queue. Only
+   * where Work across machines is on, and only in this computer's own read; a host's read keeps its shape.
+   */
+  check: z.literal(true).optional(),
+  /** An answered check's reply excerpt, or that its reply is no longer held. Nothing for any other delegation. */
+  checkReply: checkReplyExcerptSchema.optional(),
 }).strict()
 export type DelegatedView = z.infer<typeof delegatedViewSchema>
 /**
@@ -267,10 +288,22 @@ export type DelegationBriefRequest = z.infer<typeof delegationBriefRequestSchema
 export const delegationBriefSchema = z.object({ threadId: id, text: z.string().max(DELEGATION_BRIEF_MAX) }).strict().nullable()
 export type DelegationBrief = z.infer<typeof delegationBriefSchema>
 export type DelegationsChanged = z.infer<typeof delegationsChangedSchema>
+/**
+ * An answered check's reply, as `read_delegation` gives it, cut at 32 KiB, read only when the user presses Read its reply
+ * on its row (#1312, Zach's pick C on October 28, 2026): from delegation's own record, for a check `threadId` delegated,
+ * and for nothing else. Null when it is not a check, not answered, or its reply is no longer held.
+ */
+export const DELEGATION_CHECK_REPLY_READ = 'sotto:delegations:check-reply'
+export const delegationCheckReplyRequestSchema = z.object({ threadId: id, delegation: z.uuid() }).strict()
+export type DelegationCheckReplyRequest = z.infer<typeof delegationCheckReplyRequestSchema>
+export const delegationCheckReplySchema = z.object({ delegation: z.uuid(), text: z.string().max(WATCHER_REPLY_BYTES_MAX), truncated: z.boolean() }).strict().nullable()
+export type DelegationCheckReply = z.infer<typeof delegationCheckReplySchema>
 /** What the main window's preload offers while delegation is on. */
 export interface DelegationsBridge {
   read(request: DelegationsRequest): Promise<DelegationsRead>
   brief(request: DelegationBriefRequest): Promise<DelegationBrief>
+  /** A check's reply, on a press: only where Watcher and Work across machines are on, as checks are (#1312). */
+  checkReply?(request: DelegationCheckReplyRequest): Promise<DelegationCheckReply>
   onChanged(listener: (change: DelegationsChanged) => void): () => void
 }
 
