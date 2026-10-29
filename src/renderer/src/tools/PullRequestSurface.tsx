@@ -131,7 +131,8 @@ export function PullRequestSurface({ thread, command, onStatus, babysit }: {
     if (!detail) return
     // The press is over only once GitHub has been read again: until then the checklist shows the pull request as it was
     // before the press, and a control enabled over it could merge twice or update a branch that was just updated.
-    await send({ type: 'git-pull-request-action', threadId: thread.id, url: detail.url, action, ...(withMethod ? { method: withMethod } : {}) }, action,
+    // The reading shown is the one a paired host binds the press to (#1691); this computer's own reads have no read ID.
+    await send({ type: 'git-pull-request-action', threadId: thread.id, url: detail.url, action, ...(withMethod ? { method: withMethod } : {}), ...(detail.readId ? { readId: detail.readId } : {}) }, action,
       t`Sotto could not confirm this. Refresh to see what GitHub has.`, load)
     // A press that settled its line takes its own button away; focus comes back to the pull request rather than the page.
     requestAnimationFrame(() => { if (!surface.current?.contains(document.activeElement)) top.current?.focus() })

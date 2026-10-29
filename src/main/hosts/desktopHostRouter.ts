@@ -1419,15 +1419,17 @@ export class DesktopHostRouter {
       }
       // A merge, close or auto-merge on a paired host goes with that host's confirmation receipt (#1691). Only the window's
       // press reaches this router, after the user's yes in its confirmation dialog, so this is the one place a receipt is
-      // asked for, and the command that follows spends it at once. A window never names a receipt, nor the head one holds.
+      // asked for, and the command that follows spends it at once. The window names the reading it showed, which the host
+      // binds the receipt's head to; it never names a receipt, nor the head one holds, and the reading goes no further.
       let sent: AgentCommand = command
       if (command.type === 'git-pull-request-action') {
-        const { confirmation: _named, matchHeadCommit: _head, ...press } = command
+        const { confirmation: _named, matchHeadCommit: _head, readId, ...press } = command
         void _named; void _head
         sent = press
         const { action } = press
         if (connection.kind === 'remote' && needsConfirmationReceipt(action) && connection.confirmPullRequestAction) {
-          const confirmation = await connection.confirmPullRequestAction({ threadId: press.threadId, url: press.url, action, ...(press.method ? { method: press.method } : {}) })
+          const confirmation = await connection.confirmPullRequestAction({ threadId: press.threadId, url: press.url, action, ...(press.method ? { method: press.method } : {}),
+            ...(readId ? { readId } : {}) })
           if (confirmation) sent = { ...press, confirmation }
         }
       }

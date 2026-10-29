@@ -189,8 +189,9 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `pull-request-confirmation`: the host gives a **confirmation receipt** for one merge, close or auto-merge
  * (`pull-request-confirmation`), and refuses a `git-pull-request-action` of those three from any paired client that does
  * not carry one in `confirmation` (#1691, ADR-0027, October 28 amendment). A receipt counts once, for two minutes, for the
- * client it was given to and the exact thread, pull request, action and method, and for the head commit the host last read
- * for that client, which `gh pr merge --match-head-commit` holds GitHub to. The desktop asks for one only after the user
+ * client it was given to and the exact thread, pull request, action and method, and for the head commit of the reading that
+ * client shows, which it names by the `readId` each `git-pull-request` answer carries, and which `gh pr merge
+ * --match-head-commit` holds GitHub to. The desktop asks for one only after the user
  * confirms in its window. Listed by every host that reads pull requests; the iPhone and Android clients send none of the
  * three presses.
  * `thread-prompts`: the host answers `thread-prompts` with every message the user sent before one, oldest first, from the

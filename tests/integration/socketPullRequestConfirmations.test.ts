@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { startSocketServer } from '../../src/host/socketServer'
-import { PULL_REQUEST_CONFIRMATION_LIFETIME_MS, PullRequestConfirmations } from '../../src/host/pullRequestConfirmations'
+import { PULL_REQUEST_CONFIRMATION_LIFETIME_MS, PULL_REQUEST_READ_LIFETIME_MS, PullRequestConfirmations } from '../../src/host/pullRequestConfirmations'
 import type { HostService } from '../../src/main/agents/hostService'
 import type { AgentCommand } from '../../src/shared/agents'
 import type { GitPullRequestDetail, GitPullRequestRequest } from '../../src/shared/gitPullRequests'
@@ -16,6 +16,8 @@ const fixture = useSocketHostFixture()
 const URL = 'https://github.com/millZach/Sotto/pull/42'
 const OTHER = 'https://github.com/millZach/Sotto/pull/43'
 const SHOWN = 'a'.repeat(40)
+/** The head a later push moved the pull request to. */
+const PUSHED = 'b'.repeat(40)
 
 /** A pull request read as GitHub answered it; `headId` is left out when GitHub named no head. */
 function detail(url: string, headId: string | undefined): GitPullRequestDetail {
@@ -30,8 +32,11 @@ function detail(url: string, headId: string | undefined): GitPullRequestDetail {
  */
 async function confirmingHost(options: { reads?: boolean } = {}) {
   const clock = { now: 1_800_000_000_000 }
-  /** The head the host's reads name, as GitHub would say it; undefined for a read that names none. */
-  const github: { head: string | undefined } = { head: SHOWN }
+  /**
+   * The head the host's reads name, as GitHub would say it; undefined for a read that names none. While `held`, each read
+   * waits in `pending` until the test answers it with a head, so reads can finish in any order without a timer.
+   */
+  const github: { head: string | undefined; held: boolean; pending: Array<(head: string | undefined) => void> } = { head: SHOWN, held: false, pending: [] }
   const ran: AgentCommand[] = []
   const service: HostService = {
     shell: () => fixture.host.service.shell(), state: () => fixture.host.service.state(),
@@ -42,7 +47,8 @@ async function confirmingHost(options: { reads?: boolean } = {}) {
       return { ...fixture.host.service.state(), error: null }
     },
     events: (afterSeq, threadId, limit) => fixture.host.service.events(afterSeq, threadId, limit), subscribe: listener => fixture.host.service.subscribe(listener),
-    ...(options.reads === false ? {} : { gitPullRequest: async (request: GitPullRequestRequest) => detail(request.reference ?? URL, github.head) }),
+    ...(options.reads === false ? {} : { gitPullRequest: async (request: GitPullRequestRequest) => detail(request.reference ?? URL,
+      github.held ? await new Promise<string | undefined>(resolve => github.pending.push(resolve)) : github.head) }),
   }
   const server = await startSocketServer({ service, pairing: fixture.host.pairing, pullRequestConfirmations: new PullRequestConfirmations({ now: () => clock.now }) })
   let calls = 0
@@ -51,10 +57,17 @@ async function confirmingHost(options: { reads?: boolean } = {}) {
     const peer = await rawPeer(server.descriptor.port, fixture.host.pairing.signSession(paired.clientId))
     const hello = await peer.call('hello', { op: 'hello', accepts: ['detail-delta'] }) as { result: { features: string[] } }
     const ask = (operation: Record<string, unknown>) => peer.call(`${name}-${++calls}`, operation)
+    /** The reading this device shows: the newest read it was answered, as a client that keeps every answer would. */
+    let shown: string | undefined
     return {
       peer, features: hello.result.features,
-      read: (url = URL) => ask({ op: 'git-pull-request', request: { threadId: 'thread', reference: url } }),
-      confirm: (press: Record<string, unknown>) => ask({ op: 'pull-request-confirmation', request: { threadId: 'thread', url: URL, ...press } }),
+      read: async (url = URL) => {
+        const answer = await ask({ op: 'git-pull-request', request: { threadId: 'thread', reference: url } })
+        shown = readIdOf(answer) ?? shown
+        return answer
+      },
+      /** Asks for a receipt against the reading this device shows, unless the press names another. */
+      confirm: (press: Record<string, unknown>) => ask({ op: 'pull-request-confirmation', request: { threadId: 'thread', url: URL, ...(shown ? { readId: shown } : {}), ...press } }),
       press: (press: Record<string, unknown>) => ask({ op: 'command', command: { type: 'git-pull-request-action', threadId: 'thread', url: URL, ...press } }),
       again: (id: string, press: Record<string, unknown>) => peer.call(id, { op: 'command', command: { type: 'git-pull-request-action', threadId: 'thread', url: URL, ...press } }),
     }
@@ -63,6 +76,8 @@ async function confirmingHost(options: { reads?: boolean } = {}) {
 }
 type Answer = { ok: boolean; result?: { confirmation: string; expiresAt: string }; error?: { code: string; message: string } }
 const receiptOf = (answer: Record<string, unknown>): string => (answer as Answer).result!.confirmation
+const readIdOf = (answer: Record<string, unknown>): string | undefined => (answer as { result?: { readId?: string } | null }).result?.readId
+const AGAIN = 'Nothing was merged. Open the pull request again so Sotto reads it, then press Merge again.'
 
 describe('a paired client’s merge, close and auto-merge (#1691)', () => {
   it('is refused without the host’s confirmation receipt, and nothing runs', async () => {
@@ -167,21 +182,62 @@ describe('a paired client’s merge, close and auto-merge (#1691)', () => {
     } finally { desktop.peer.frames.close(); await server.close() }
   })
 
-  it('gives no receipt for a pull request the host has not read for that device, and lets no client name the head', async () => {
+  it('gives a receipt only against a reading the host gave that device of that pull request, and lets no client name the head', async () => {
     const { server, ran, device } = await confirmingHost()
     const desktop = await device('Desktop'), phone = await device('Phone')
     try {
-      // Another device's read is not this one's.
-      await phone.read()
+      // A device that names no reading is shown nothing the host can bind to.
       expect(await desktop.confirm({ action: 'merge', method: 'squash' })).toMatchObject({ ok: false, error: { code: 'forbidden',
-        message: 'This host has not read this pull request for this device since it started. Nothing was merged. Open the pull request again so Sotto reads it, then press Merge again.' } })
+        message: `This device did not say which reading of the pull request it is showing. ${AGAIN}` } })
+      // Another device's reading is not this one's.
+      const phones = readIdOf(await phone.read())
+      expect(await desktop.confirm({ action: 'merge', method: 'squash', readId: phones })).toMatchObject({ ok: false, error: { code: 'forbidden',
+        message: `That reading of the pull request was made for another device. ${AGAIN}` } })
+      // Nor is a reading of another pull request.
       await desktop.read(OTHER)
-      expect(await desktop.confirm({ action: 'merge', method: 'squash' })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
+      expect(await desktop.confirm({ action: 'merge', method: 'squash' })).toMatchObject({ ok: false, error: { code: 'forbidden',
+        message: `That reading is of another pull request. ${AGAIN}` } })
       // A press that needs no receipt is unchanged, and the head is the host's to set from a receipt, never a client's.
       expect(await desktop.press({ action: 'ready' })).toMatchObject({ ok: true })
       expect(await desktop.press({ action: 'merge', method: 'squash', matchHeadCommit: SHOWN })).toMatchObject({ ok: false, error: { code: 'forbidden' } })
       expect(ran).toEqual([{ type: 'git-pull-request-action', threadId: 'thread', url: URL, action: 'ready' }])
     } finally { desktop.peer.frames.close(); phone.peer.frames.close(); await server.close() }
+  })
+
+  it('binds a receipt to the head of the reading the device shows, whichever read finished last', async () => {
+    const { server, ran, device, github } = await confirmingHost()
+    const desktop = await device('Desktop')
+    try {
+      github.held = true
+      // The window reads, then the user presses Refresh. The Refresh is answered first, on the head the window shows; the first
+      // read is answered after another push, and the window throws it away as stale.
+      const first = desktop.read()
+      await expect.poll(() => github.pending.length).toBe(1)
+      const refresh = desktop.read()
+      await expect.poll(() => github.pending.length).toBe(2)
+      github.pending[1]!(SHOWN)
+      const displayed = readIdOf(await refresh)
+      github.pending[0]!(PUSHED)
+      expect(readIdOf(await first)).not.toBe(displayed)
+      const confirmation = receiptOf(await desktop.confirm({ action: 'merge', method: 'squash', readId: displayed }))
+      expect(await desktop.press({ action: 'merge', method: 'squash', confirmation })).toMatchObject({ ok: true })
+      expect(ran).toEqual([{ type: 'git-pull-request-action', threadId: 'thread', url: URL, action: 'merge', method: 'squash', matchHeadCommit: SHOWN }])
+    } finally { desktop.peer.frames.close(); await server.close() }
+  })
+
+  it('gives no receipt against a reading it does not know or no longer keeps', async () => {
+    const { server, clock, ran, device } = await confirmingHost()
+    const desktop = await device('Desktop')
+    const forgotten = `This host no longer has the reading of the pull request this device is showing. It may be over 30 minutes old, or the host may have restarted. ${AGAIN}`
+    try {
+      expect(await desktop.confirm({ action: 'merge', method: 'squash', readId: '6f1d2c3b-4a5e-4f60-8b71-92a3b4c5d6e7' })).toMatchObject({ ok: false, error: { code: 'forbidden', message: forgotten } })
+      await desktop.read()
+      clock.now += PULL_REQUEST_READ_LIFETIME_MS - 1
+      expect(await desktop.confirm({ action: 'merge', method: 'squash' })).toMatchObject({ ok: true })
+      clock.now += 1
+      expect(await desktop.confirm({ action: 'merge', method: 'squash' })).toMatchObject({ ok: false, error: { code: 'forbidden', message: forgotten } })
+      expect(ran).toEqual([])
+    } finally { desktop.peer.frames.close(); await server.close() }
   })
 
   it('gives no merge or auto-merge receipt for a pull request read without its head commit, and still closes it', async () => {
@@ -193,9 +249,9 @@ describe('a paired client’s merge, close and auto-merge (#1691)', () => {
         github.head = head
         await desktop.read()
         expect(await desktop.confirm({ action: 'merge', method: 'squash' })).toMatchObject({ ok: false, error: { code: 'forbidden',
-          message: 'GitHub did not say which commit this pull request is on when this host last read it for this device. Nothing was merged. Open the pull request again so Sotto reads it, then press Merge again.' } })
+          message: `GitHub did not say which commit this pull request is on in the reading this device is showing. ${AGAIN}` } })
         expect(await desktop.confirm({ action: 'enable-auto-merge', method: 'merge' })).toMatchObject({ ok: false, error: { code: 'forbidden',
-          message: 'GitHub did not say which commit this pull request is on when this host last read it for this device. Auto-merge was not turned on. Open the pull request again so Sotto reads it, then press Merge when ready again.' } })
+          message: 'GitHub did not say which commit this pull request is on in the reading this device is showing. Auto-merge was not turned on. Open the pull request again so Sotto reads it, then press Merge when ready again.' } })
       }
       expect(ran).toEqual([])
       // Closing holds GitHub to no head, so it goes on as before.

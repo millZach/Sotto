@@ -14,7 +14,9 @@ const HOST_LOCAL = ['set-aside-send', 'credential', 'check-reasoning', 'update-c
 // A desktop window names the machine a command acts on and its router never sends the name on (ADR-0074, ADR-0077):
 // a settings save, Update all, and Settings > Providers' presses on this computer's own clients.
 const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure: ['hostId'], 'queue-client-updates': ['hostId'],
-  connect: ['hostId'], disconnect: ['hostId'], refresh: ['hostId'], 'check-client-updates': ['hostId'], 'update-client': ['hostId'] }
+  connect: ['hostId'], disconnect: ['hostId'], refresh: ['hostId'], 'check-client-updates': ['hostId'], 'update-client': ['hostId'],
+  // The reading the window showed, which the router names when it asks a paired host for a confirmation receipt (#1691).
+  'git-pull-request-action': ['readId'] }
 /**
  * Fields only the host's own socket server sets, on what it tells its host service: which observed threads its paired
  * desktops show (ADR-0092). A paired client never sends them; one that tries is refused.
@@ -37,6 +39,7 @@ describe('remote command allow-list', () => {
     const merge = { type: 'git-pull-request-action', threadId: 'thread', url: 'https://github.com/o/r/pull/1', action: 'merge', method: 'squash' } as const
     expect(refuse({ ...merge, confirmation: '11111111-1111-4111-8111-111111111111' })).toBeNull()
     expect(refuse({ ...merge, matchHeadCommit: 'a'.repeat(40) }, true)).toBe('forbidden')
+    expect(refuse({ ...merge, readId: '11111111-1111-4111-8111-111111111111' }, true)).toBe('forbidden')
     expect(agentCommandSchema.safeParse({ ...merge, matchHeadCommit: '--admin' }).success).toBe(false)
   })
   it('keeps unconfirmed-send recovery desktop-only', () => {

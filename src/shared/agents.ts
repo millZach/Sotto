@@ -1419,6 +1419,11 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
      */
     confirmation: z.uuid().optional(),
     /**
+     * From the desktop's window only: the read ID of the reading of the pull request the window showed when the user
+     * pressed, which its router names when it asks a paired host for a confirmation receipt, and never sends on (#1691).
+     */
+    readId: z.uuid().optional(),
+    /**
      * Set only by the host's own socket server, from a receipt: the head commit the pull request must still be on, which
      * `gh pr merge --match-head-commit` holds GitHub to. A paired client that sends it is refused.
      */

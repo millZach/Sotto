@@ -1339,9 +1339,10 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!service.gitPullRequest) throw new Refusal('invalid_request')
         let read: Awaited<ReturnType<NonNullable<HostService['gitPullRequest']>>>
         try { read = await service.gitPullRequest(request.request) } catch (error) { throw new Refusal('unavailable', undefined, pullRequestReadFailureOf(error)) }
-        // What this client was shown is what a confirmation receipt it asks for next stands for (#1691).
-        if (read && !isPullRequestLimited(read)) confirmations.read(peer.client.clientId, request.request.threadId, read.url, read.headId)
-        return read
+        // Each reading goes with an ID of its own, which a confirmation receipt this client asks for names, so the receipt
+        // stands for the reading the client shows, whatever other reads finished after it (#1691).
+        const readId = read && !isPullRequestLimited(read) ? confirmations.read(peer.client.clientId, request.request.threadId, read.url, read.headId) : undefined
+        return read && readId ? { ...read, readId } : read
       }
       // A receipt for the merge, close or auto-merge this client is about to send (#1691). Pairing is enough to ask: it is
       // evidence of a second step, not a grant, and answers no permission.

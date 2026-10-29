@@ -167,9 +167,15 @@ export const gitPullRequestDetailSchema = z.object({
   changedFiles: z.number().int().nonnegative().optional(),
   /**
    * The commit the pull request's head is on, as GitHub said. A host binds the confirmation receipt it gives a paired
-   * client to the head it last read for that client (#1691). Absent when GitHub did not say.
+   * client to the head of the reading that client names by `readId` (#1691). Absent when GitHub did not say.
    */
   headId: z.string().max(64).optional(),
+  /**
+   * The host's ID for this reading, from a host that lists `pull-request-confirmation` (#1691). A client that is about to
+   * merge, close or turn on auto-merge names the reading it shows by it, and the host binds the receipt to that reading's
+   * head. Absent from this computer's own reads.
+   */
+  readId: z.uuid().optional(),
 })
 export type GitPullRequestDetail = z.infer<typeof gitPullRequestDetailSchema>
 
@@ -201,10 +207,11 @@ export type GitPullRequestReadFailure = typeof GIT_PULL_REQUEST_READ_FAILURES[nu
 export const isPullRequestLimited = (read: GitPullRequestRead): read is GitPullRequestLimited => read !== null && 'limited' in read
 /**
  * What a paired client asks its host for before it sends a merge, a close or an auto-merge (`pull-request-confirmation`,
- * #1691): the press it is about to send, field for field as the command will carry it.
+ * #1691): the press it is about to send, field for field as the command will carry it, and the read ID of the reading of
+ * that pull request it shows. A request without one is refused in words.
  */
 export const pullRequestConfirmationRequestSchema = z.object({ threadId: id, url: gitPullRequestUrlSchema, action: z.enum(CONFIRMED_PULL_REQUEST_ACTIONS),
-  method: gitPullRequestMergeMethodSchema.optional() }).strict()
+  method: gitPullRequestMergeMethodSchema.optional(), readId: z.uuid().optional() }).strict()
 export type PullRequestConfirmationRequest = z.infer<typeof pullRequestConfirmationRequestSchema>
 /** The host's answer: the receipt's ID, which the command carries as `confirmation`, and when it stops counting. */
 export const pullRequestConfirmationSchema = z.object({ confirmation: z.uuid(), expiresAt: z.string().max(64) }).strict()
