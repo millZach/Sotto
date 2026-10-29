@@ -1538,14 +1538,22 @@ it('hands a replaced Watcher’s threads on a host that lists watcher-new-owner 
   expect(await original(late)).not.toMatchObject({ code: 'RETRY_KEY_CONFLICT' })
   // The last Watcher can no longer direct anything there: its own packet, sent again, is refused as replaced.
   expect(await original({ ...packet!, operation: { ...packet!.operation, id: randomUUID(), retryKey: randomUUID() } })).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
-  // Stop all reaches the thread the last Watcher started there, from the new one.
+  // Stop all reaches the thread the last Watcher started there, from the new one, but only once the host has answered
+  // that it took the request over: a hand-over read that is lost sends nothing.
   vi.mocked(f.socket.watcherControl).mockImplementation(original)
+  const controls = vi.mocked(f.socket.watcherControl).mock.calls.length
+  reads.mockImplementation(async request => request.adopt && !request.standingWatches && !request.call ? Promise.reject(new Error('synthetic-lost-hand-over')) : read(request))
+  expect(await f.watcher.invoke(current.target.threadId, 'stop_thread', { requestId: packet!.request.id, retryKey: randomUUID(), target: packet!.operation.target }))
+    .toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
+  expect(vi.mocked(f.socket.watcherControl).mock.calls.length).toBe(controls)
+  expect(f.control.watcherRecord().operations.filter(item => item.action === 'stop').map(item => [item.deliveryState, item.refusalCode])).toEqual([['failed', 'TARGET_CHANGED']])
+  reads.mockImplementation(read)
   const preview = f.watcher.prepareStopAll()
   if (preview.status !== 'ok') throw new Error('preview refused')
   expect(preview.targets).toContainEqual(packet!.operation.target)
   const stopped = await f.watcher.stopAll(preview.confirmationId)
   expect(stopped).toMatchObject({ status: 'ok', results: [{ target: packet!.operation.target, status: expect.stringMatching(/^(stopped|requested)$/u) }] })
-  expect(f.control.watcherRecord().operations.filter(item => item.action === 'stop').map(item => [item.deliveryState, item.refusalCode])).toEqual([['accepted', undefined]])
+  expect(f.control.watcherRecord().operations.filter(item => item.action === 'stop').map(item => [item.deliveryState, item.refusalCode])).toEqual([['failed', 'TARGET_CHANGED'], ['accepted', undefined]])
 })
 
 it('starts a new Watcher beside a thread on an older host, says it cannot stop it there, and reads its start under the last Watcher (#1325, #1735)', async () => {
