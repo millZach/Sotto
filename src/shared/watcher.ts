@@ -501,15 +501,19 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   remoteAbsences: z.array(z.object({ operationId: z.uuid(), master: watcherIdentitySchema, clientId: id, observedAt: time }).strict()).max(1_000).optional(),
   wakeEventIds: z.array(id).max(1_000).optional(),
 }).strict().superRefine((record, context) => {
-  const key = (target: WatcherThreadTarget) => JSON.stringify([target.hostId, target.threadId])
+  // Keys are joined rather than serialized: this runs on every change of the record, and a serialization per request
+  // and participation was most of what each save did with it (#1759). Each part but the last is length-prefixed, so no
+  // two different keys join to the same text.
+  const join = (...parts: string[]) => parts.map((part, index) => index === parts.length - 1 ? part : `${part.length}:${part}`).join('|')
+  const key = (target: WatcherThreadTarget) => join(target.hostId, target.threadId)
   const unique = (values: string[]) => new Set(values).size === values.length
   if (!unique(record.requests.map(request => request.id)) || !unique(record.operations.map(operation => operation.id))
     || !unique((record.promptTurns ?? []).map(turn => turn.id))
     || !unique((record.watches ?? []).map(watch => key(watch.target))) || !unique((record.watches ?? []).map(watch => watch.id))
     || !unique((record.localTakeovers ?? []).map(takeover => key(takeover.target)))
     || (record.localTakeovers ?? []).some(takeover => !unique((takeover.userDrafts ?? []).map(draft => draft.draftId)))
-    || !unique((record.remoteMasters ?? []).map(master => JSON.stringify([master.clientId, master.masterHostId])))
-    || !unique(record.requests.map(request => JSON.stringify([key(request.watcher), request.rootUserMessageId])))
+    || !unique((record.remoteMasters ?? []).map(master => join(master.clientId, master.masterHostId)))
+    || !unique(record.requests.map(request => join(key(request.watcher), request.rootUserMessageId)))
     || !unique(record.operations.map(operation => `${operation.requestId}:${operation.retryKey}`))
     || !unique(record.history.map(identity => key(identity.target))) || !unique(record.reservations.map(reservation => key(reservation.target)))
     || record.history.some(identity => record.current && key(identity.target) === key(record.current.target))) {

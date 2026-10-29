@@ -11,6 +11,7 @@ import { SottoMark } from '../components/SottoMark'
 import { ProviderMark } from '../agents/ProviderMark'
 import { clockLabel } from '../agents/threadFacts'
 import { WatcherAsks, type WatcherAskPlacement } from './WatcherAsks'
+import type { ByMessage, ByOperation } from './watcherConversationWork'
 import { t } from '@lingui/core/macro'
 
 /** A thread as a receipt card or a takeover line names it: what the window knows of it now. */
@@ -37,15 +38,15 @@ export interface ConversationThread {
  * the user, by the message they go under. Only Watcher's pane provides it.
  */
 export interface WatcherConversation {
-  readonly receipts: ReadonlyMap<string, readonly WatcherOperation[]>
-  readonly takeovers: ReadonlyMap<string, readonly WatcherTakeover[]>
+  readonly receipts: ByMessage<WatcherOperation>
+  readonly takeovers: ByMessage<WatcherTakeover>
   /**
    * The requests each message's wake-up said waited on the user, answered on their cards here (answering in Watcher's
    * conversation). What the cards answer with comes from `WatcherAskAnsweringContext`, which changes with every update.
    */
   readonly asks?: ReadonlyMap<string, readonly WatcherAskPlacement[]> | undefined
   /** Where each start was placed, by operation ID (#1032): only while Work across machines is on, and only this run's. */
-  readonly placements?: ReadonlyMap<string, WorkerPlacementReceipt> | undefined
+  readonly placements?: ByOperation<WorkerPlacementReceipt> | undefined
   readonly describe: (target: WatcherThreadTarget) => ConversationThread
   /** A press on a thread's name: beside Watcher, or with Shift in the Threads room, as everywhere in the room. */
   readonly press: (threadId: string) => Pick<React.ButtonHTMLAttributes<HTMLButtonElement>, 'onClick' | 'onKeyDown'>
@@ -56,10 +57,11 @@ export const WatcherConversationContext = createContext<WatcherConversation | nu
  * The replies that carry receipt cards, which the transcript keeps in view rather than fold with the turn's work. Null
  * outside Watcher's own pane.
  */
-export function useRepliesKeptInView(): ReadonlySet<string> | null {
+export function useRepliesKeptInView(): Pick<ReadonlySet<string>, 'has'> | null {
   const conversation = useContext(WatcherConversationContext)
   const receipts = conversation?.receipts, asks = conversation?.asks
-  return useMemo(() => receipts === undefined ? null : new Set([...receipts.keys(), ...asks?.keys() ?? []]), [receipts, asks])
+  // A look-up rather than a set of every reply: a conversation shown far back holds the read back's cards too (#1759).
+  return useMemo(() => receipts === undefined ? null : { has: (id: string) => receipts.has(id) || asks?.has(id) === true }, [receipts, asks])
 }
 
 /**

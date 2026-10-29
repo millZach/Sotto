@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { hostEntityKey } from '../../src/shared/clientIdentity'
 import type { RequestDraftOwner } from '../../src/shared/requestDrafts'
-import type { WatcherOperation, WatcherRecord, WatcherRequest, WatcherThreadTarget } from '../../src/shared/watcher'
+import type { WatcherOperation, WatcherPromptTurn, WatcherRecord, WatcherRequest, WatcherThreadTarget } from '../../src/shared/watcher'
 
 /**
  * The owner's history on October 20, 2026, as counts only: about 250 threads on this computer, one connected remote host
@@ -62,14 +62,17 @@ export function addWatcherHistory(record: WatcherRecord, targets: readonly Watch
       participants: taking.map((target, position) => ({ target, requestId: id, startedBy: 'watcher' as const, generation: 0,
         state: position === 0 ? 'participating' as const : 'relinquished' as const, lastUserMessageId: null, promptCount: 1 })) }
   })
+  // Each request began its own Watcher turn, at its message, so its receipts go under that message (#1759).
+  const turns: WatcherPromptTurn[] = requests.map(request => ({ id: randomUUID(), watcher, createdAt: AT, rootUserMessageId: request.rootUserMessageId }))
   const operations: WatcherOperation[] = Array.from({ length: counts.operations }, (_, index) => {
     const request = requests[index % requests.length]!
-    return { id: randomUUID(), requestId: request.id, retryKey: randomUUID(), digest: digest(index + 1), action: index % 3 === 0 ? 'start' : 'send',
+    return { id: randomUUID(), requestId: request.id, retryKey: randomUUID(), digest: digest(index + 1), promptTurnId: turns[index % requests.length]!.id, action: index % 3 === 0 ? 'start' : 'send',
       target: request.participants[0]!.target, generation: 0, deliveryState: 'accepted', createdAt: AT, updatedAt: AT,
       receiptId: `receipt-${index}`, cardId: `card-${index}`, outcome: 'answered', outcomeAt: AT }
   })
   record.requests.push(...requests)
   record.operations.push(...operations)
+  ;(record.promptTurns ??= []).push(...turns.filter((_, index) => index < counts.operations))
 }
 
 /**

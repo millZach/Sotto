@@ -9,6 +9,7 @@ import { DesktopHostRouter } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { emptyWatcherRecord } from '../../../src/shared/watcher'
 import type { WatcherRemoteHosts } from '../../../src/shared/watcherHost'
+import { NOTHING_ARCHIVED } from '../../../src/main/agents/watcherArchive'
 
 const localId = '11111111-1111-4111-8111-111111111111'
 const remoteId = '22222222-2222-4222-8222-222222222222'
@@ -85,7 +86,7 @@ describe('owned cached Watcher room inputs', () => {
     record.requests.push({ id: 'request', watcher: { hostId: localId, threadId: 'master' }, rootUserMessageId: 'user', state: 'active',
       createdAt: '2026-10-14T00:00:00.000Z', closedAt: null, participants: ['one', 'two', 'missing'].map(threadId => ({
         target: { hostId: remoteId, threadId }, requestId: 'request', startedBy: 'watcher', generation: 0, state: 'participating', promptCount: 1 })) })
-    const control = { watcherRecord: () => structuredClone(record), watcherRecordView: () => record, watcherSnapshot: () => emptyDesktopState(localId).host,
+    const control = { watcherRecord: () => structuredClone(record), watcherRecordView: () => record, watcherRecalledWork: () => NOTHING_ARCHIVED, watcherSnapshot: () => emptyDesktopState(localId).host,
       hostId: () => localId, hostThreadsOf: () => undefined, useWatcher: () => () => undefined, subscribe: () => () => undefined } as unknown as AgentControl
     const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false, streamingPublishCost: optimized })
     const legacy = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false })
@@ -127,7 +128,7 @@ describe('owned cached Watcher room inputs', () => {
         ...(threadId === 'two' ? { automationStopped: true } : {}) })) })
     record.watches = [{ id: '44444444-4444-4444-8444-444444444444', target: { hostId: remoteId, threadId: 'standing-only' },
       createdAt: at, generation: 0, pausedByUserMessageId: 'user' }]
-    const control = { watcherRecord: () => structuredClone(record), watcherRecordView: () => record, watcherSnapshot: () => emptyDesktopState(localId).host,
+    const control = { watcherRecord: () => structuredClone(record), watcherRecordView: () => record, watcherRecalledWork: () => NOTHING_ARCHIVED, watcherSnapshot: () => emptyDesktopState(localId).host,
       hostId: () => localId, hostThreadsOf: () => undefined, useWatcher: () => () => undefined, subscribe: () => () => undefined } as unknown as AgentControl
     const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false, streamingPublishCost: true })
     const legacy = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false })

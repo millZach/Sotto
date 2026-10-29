@@ -78,12 +78,13 @@ import type { WatcherCommand, WatcherCommandOrigin, WatcherControlHooks } from '
 import type { DelegationCommand, DelegationControlHooks } from './delegation'
 import { threadClearHold, threadDelegators, unsentThreadRemovable, type ThreadClearFacts, type UnsentThreadFacts } from './threadClearing'
 import { quietLongerThan, THREAD_CLEAR_MAX, threadClearKeptWords, threadQuietSince, type ThreadClearKept, type ThreadClearKeptReason, type ThreadClearPreview } from '../../shared/threadClear'
-import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherThreadTarget } from '../../shared/watcher'
+import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord, type WatcherRequest, type WatcherThreadTarget } from '../../shared/watcher'
 import { isImageAttachment, parsePublicProviderEntityId, threadProviderOf } from '../../shared/agents'
 import { isResumeNoteText } from '../../shared/restartResume'
 import { isLimitRestartNoteText } from '../../shared/limitRestart'
 import type { LimitRestart } from './limitRestart'
 import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT, watcherRecordForDisk } from './watcherRecords'
+import { NOTHING_ARCHIVED, removeArchivedWork, WATCHER_ARCHIVE_BATCH, WatcherArchive, watcherArchiveBatch, watcherWorkVersion, type WatcherArchived } from './watcherArchive'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
 const EMPTY_MESSAGES: AgentMessage[] = []
@@ -547,6 +548,19 @@ export class AgentControl {
    */
   private watcherUnpruned = false
   private readonly watcherMessageDisplay: WatcherMessageDisplay | undefined
+  /** Watcher's archive (#1759): the closed work the live record let go of. Only where Watcher runs. */
+  private readonly watcherArchive: WatcherArchive | undefined
+  /**
+   * The archived work each Watcher conversation shows back to the oldest message main holds for it, read when that
+   * conversation was shown that far back (#1759), by thread: the oldest held message it was read for, and the work.
+   */
+  private readonly watcherRecalls = new Map<string, { readonly from: string; readonly revision: number; readonly work: WatcherArchived }>()
+  /** The threads a recall is under way for. */
+  private readonly watcherRecalling = new Set<string>()
+  /** Every recalled conversation's work together, made again only when a recall changes. */
+  private watcherRecalled: WatcherArchived = NOTHING_ARCHIVED
+  /** The requests Watcher's conversations are shown through: the live record's, after the recalled ones when there are any. */
+  private watcherShown: { from: WatcherRecord['requests']; recalled: WatcherArchived; requests: readonly WatcherRequest[] } | undefined
   private watcherHooks: WatcherControlHooks | undefined
   /** Delegation between threads (ADR-0081), given only while the Owl feature is on. */
   private delegationHooks: DelegationControlHooks | undefined
@@ -568,6 +582,105 @@ export class AgentControl {
    * record per thread on every update; copying it each time cost main more than the rest of the pass.
    */
   watcherRecordView(): Readonly<WatcherRecord> { return this.watcher }
+  /**
+   * The archived work Watcher's conversations show back to the oldest message main holds for them (#1759): nothing until
+   * a conversation is shown that far back. Never copied, and the same object until a recall changes it.
+   */
+  watcherRecalledWork(): WatcherArchived { return this.watcherRecalled }
+  /** The requests Watcher's conversations are shown through: the recalled ones, oldest, then the live record's. */
+  private watcherRequestsShown(): readonly WatcherRequest[] {
+    const recalled = this.watcherRecalled
+    if (recalled.requests.length === 0) return this.watcher.requests
+    const shown = this.watcherShown
+    if (shown?.from === this.watcher.requests && shown.recalled === recalled) return shown.requests
+    const live = new Set(this.watcher.requests.map(request => request.id))
+    const requests = [...recalled.requests.filter(request => !live.has(request.id)), ...this.watcher.requests]
+    this.watcherShown = { from: this.watcher.requests, recalled, requests }
+    return requests
+  }
+  /**
+   * Archives the closed work `ids` names (#1759): writes it to Watcher's archive first, then lets the live record go of
+   * what `stillArchivable` still allows, so a record saved without some work never names work the archive does not hold.
+   * A request something came to name while the archive was written stays in the record, and in the archive too; a read
+   * back prefers the record's. Says how many requests left the record.
+   */
+  async archiveWatcherWork(ids: readonly string[], stillArchivable: () => readonly string[]): Promise<number> {
+    const archive = this.watcherArchive
+    if (!archive || this.dependencies.watcherEnabled !== true || ids.length === 0) return 0
+    await archive.ready()
+    // A batch at a time, so a read back reads no more than the batches its messages reach. Work the archive already holds,
+    // as after a crash between its write and the record's save, is not written again.
+    // A request is held only as it stands now (`watcherWorkVersion`): one that changed since it was archived goes again.
+    const version = (record: Readonly<WatcherRecord>): ((id: string) => string | undefined) => {
+      const requests = new Map(record.requests.map(request => [request.id, request] as const)), owned = new Map<string, WatcherRecord['operations']>()
+      for (const operation of record.operations) { const list = owned.get(operation.requestId); if (list) list.push(operation); else owned.set(operation.requestId, [operation]) }
+      return id => { const request = requests.get(id); return request && watcherWorkVersion(request, owned.get(id) ?? []) }
+    }
+    const now = version(this.watcher)
+    const fresh = ids.filter(id => !archive.holds(id, now(id)))
+    for (let at = 0; at < fresh.length; at += WATCHER_ARCHIVE_BATCH) await archive.append(watcherArchiveBatch(this.watcher, fresh.slice(at, at + WATCHER_ARCHIVE_BATCH)))
+    // Only work the archive holds, as the record holds it now, leaves the record: Keep local history may have changed
+    // between the batches, and a request may have changed while they were written.
+    const current = version(this.watcher), allowed = new Set(stillArchivable())
+    const leaving = new Set(ids.filter(id => allowed.has(id) && archive.holds(id, current(id))))
+    if (leaving.size === 0 || this.disposed) return 0
+    await this.updateWatcher(record => removeArchivedWork(record, leaving))
+    return leaving.size
+  }
+  /**
+   * Watcher's archive, for a lookup by ID the live record no longer answers (#1759): a retry or read of archived work,
+   * answered as it was before the work was archived. Never read on the update path.
+   */
+  archivedWatcherWork(): WatcherArchive | undefined { return this.watcherArchive }
+  /** Settles once whatever was asked of Watcher's archive has settled. */
+  watcherArchiveSettled(): Promise<void> { return this.watcherArchive?.settled() ?? Promise.resolve() }
+  /**
+   * Whether a Watcher conversation held this far back shows archived work it has not been read for, or holds less than it
+   * was read for: a recall then starts, and the conversation is shown again when it ends. A look at the oldest held message
+   * and the archive's newest time, so the read that asks costs the same however long the conversation is.
+   */
+  private watcherRecallDue(thread: AgentThread): void {
+    const archive = this.watcherArchive, oldest = thread.messages[0]
+    if (!archive || this.watcherRecalling.has(thread.id)) return
+    const recalled = this.watcherRecalls.get(thread.id)
+    if (!oldest) { if (recalled) void this.recallWatcherWork(thread, true); return }
+    // Read again when the conversation holds another oldest message, or the archive took another batch since.
+    if (recalled?.from === oldest.id && recalled.revision === archive.revision || !recalled && !archive.reaches(oldest.createdAt)) return
+    void this.recallWatcherWork(thread, true)
+  }
+  /**
+   * Reads back the archived work a Watcher conversation shows from the oldest message main holds for it, bounded by
+   * those messages (#1759), and keeps it while the conversation is held that far back. `reshow` shows Watcher's
+   * conversations again once it is read; a caller about to show them itself passes false.
+   */
+  private async recallWatcherWork(thread: AgentThread, reshow: boolean): Promise<void> {
+    const archive = this.watcherArchive, oldest = thread.messages[0]
+    if (!archive) return
+    const previous = this.watcherRecalls.get(thread.id)?.work ?? NOTHING_ARCHIVED, revision = archive.revision
+    let work: WatcherArchived = NOTHING_ARCHIVED
+    if (oldest && archive.reaches(oldest.createdAt)) {
+      this.watcherRecalling.add(thread.id)
+      try { work = await archive.recall({ threadId: thread.id, ids: new Set(thread.messages.map(message => message.id)), from: oldest.createdAt }) }
+      catch { work = NOTHING_ARCHIVED }
+      finally { this.watcherRecalling.delete(thread.id) }
+      if (this.disposed) return
+    }
+    if (oldest) this.watcherRecalls.set(thread.id, { from: oldest.id, revision, work })
+    else this.watcherRecalls.delete(thread.id)
+    if (previous === work) return
+    const all = [...this.watcherRecalls.values()].map(item => item.work).filter(item => item !== NOTHING_ARCHIVED)
+    this.watcherRecalled = all.length === 0 ? NOTHING_ARCHIVED : all.length === 1 ? all[0]! : {
+      requests: all.flatMap(item => item.requests), operations: all.flatMap(item => item.operations), promptTurns: all.flatMap(item => item.promptTurns) }
+    this.watcherMessageDisplay?.update(this.watcherRequestsShown())
+    if (reshow) this.reshowWatcherConversations()
+  }
+  /** Shows the host's threads again, so Watcher's conversations are shown through the requests they show now. */
+  private reshowWatcherConversations(): void {
+    if (this.disposed) return
+    const incoming = this.incoming
+    if (incoming?.rest) this.acceptSnapshot({ ...incoming.rest, threads: incoming.threads() } as AgentHostSnapshot, true)
+    else if (this.dependencies.host.workspaceSnapshot) this.acceptSnapshot(this.dependencies.host.workspaceSnapshot())
+  }
   /**
    * A copy of the record to change over several steps before handing it to `mutateWatcher`, for a caller that must read
    * its own earlier steps on the way, as Watcher's observe pass does after a takeover. One copy serves the whole change.
@@ -611,7 +724,7 @@ export class AgentControl {
     // The parse made every container afresh, so freezing it reaches nothing the caller still holds.
     freezeSaved(this.watcher)
     this.watcherUnpruned = false
-    this.watcherMessageDisplay?.update(this.watcher.requests)
+    this.watcherMessageDisplay?.update(this.watcherRequestsShown())
   }
   useWatcher(hooks: WatcherControlHooks): () => void {
     if (this.dependencies.watcherEnabled === true) this.watcherHooks = hooks
@@ -984,7 +1097,7 @@ export class AgentControl {
    */
   private readonly reshow = new Set<string>()
   /** The Watcher requests the shown records were made with: when they move, Watcher's conversations are shown again. */
-  private shownRequests: WatcherRecord['requests'] | undefined
+  private shownRequests: readonly WatcherRequest[] | undefined
   /** Set by a test before `start`: every publication is taken whole, as before #925, to hold the changes path to it. */
   private acceptsWhole = false
   private readonly verifyingChanges = verifyingThreadChanges()
@@ -1128,6 +1241,7 @@ export class AgentControl {
   }) {
     this.held = heldProvidersOption(dependencies)
     this.watcherMessageDisplay = dependencies.watcherEnabled === true ? new WatcherMessageDisplay() : undefined
+    this.watcherArchive = dependencies.watcherEnabled === true ? new WatcherArchive(dependencies.directory, () => dependencies.historyEnabled?.() !== false) : undefined
     this.followupStore = new FollowupStore(dependencies.directory, () => dependencies.historyEnabled?.() !== false, id => this.dependencies.watcherEnabled === true && [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history].some(item => item?.target.threadId === id), () => this.dependencies.watcherEnabled === true)
     this.finishedUnread = new FinishedUnread([], id => !this.threadAvailable(id), dependencies.nextPrompts)
     this.failuresSeen = new FailuresSeen([], id => !this.threadAvailable(id))
@@ -1195,7 +1309,7 @@ export class AgentControl {
     this.watcher = saved.watcher
     freezeSaved(this.watcher)
     this.watcherUnpruned = this.dependencies.watcherEnabled === true && (saved.watcher.promptTurns?.length ?? 0) > WATCHER_PROMPT_TURNS_KEPT
-    this.watcherMessageDisplay?.update(this.watcher.requests)
+    this.watcherMessageDisplay?.update(this.watcherRequestsShown())
     if (this.dependencies.watcherEnabled !== true) {
       const identities = [saved.watcher.current, saved.watcher.creation?.identity, ...saved.watcher.history]
       for (const identity of identities) if (identity) { this.dormantThreadIds.add(identity.target.threadId); this.dormantWatcherIds.add(identity.target.threadId) }
@@ -1372,7 +1486,8 @@ export class AgentControl {
     // One display path for Watcher's own threads, in its pane, Copy and the phone alike: the user's messages without a line
     // Sotto put after them or a handover it put before them, and Watcher's replies without the reason line their
     // own-change line already shows.
-    snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(watcherHandoversShown(snapshot, this.watcher.requests), watcherMessageRequests(this.watcher.requests)))
+    const requests = this.watcherRequestsShown()
+    snapshot = watcherRepliesAsShown(watcherMessagesAsTyped(watcherHandoversShown(snapshot, requests), watcherMessageRequests(requests)))
     // A thread that began from another shows its first message as the user's words, with its handover beside them (#1028).
     if (this.dependencies.threadStartsEnabled === true) {
       const incoming = this.incoming
@@ -2008,6 +2123,8 @@ export class AgentControl {
       // A detached read, of a copy its caller may change, neither takes the kept projection nor keeps its own.
       return !thread.hiddenWakeUpMessageIds?.length ? shown : detached ? withoutHiddenWakeUps(shown) : this.hiddenWakeUpsLeftOut(thread, shown)
     }
+    // A conversation held further back than Watcher's live record reaches shows its archived work once it is read (#1759).
+    this.watcherRecallDue(thread)
     // An unchanged history is shown as the same array, so a publish neither copies it again nor rebuilds what reads it. Only
     // a history a window holds is kept: an offscreen read keeps no text, as the display itself keeps none (ADR-0073).
     const retained = this.watcherMessageDisplay?.isRetained(this.state.host.hostId, thread.id) ?? true
@@ -2539,6 +2656,7 @@ export class AgentControl {
       () => this.dependencies.host.privacyChanged?.(),
       () => this.followupStore.privacyChanged(),
       () => this.watcherHooks?.privacyChanged?.(),
+      () => this.watcherArchive?.privacyChanged(),
       () => this.persist(),
     ]
     const results = await Promise.allSettled(cleanup.map(operation => Promise.resolve().then(operation)))
@@ -4948,7 +5066,12 @@ export class AgentControl {
         this.observe(); return
       case 'load-earlier-messages': {
         if (!this.dependencies.host.loadEarlierMessages) throw new Error('Earlier messages could not be read. Nothing was lost; refresh and open the thread again.')
-        this.acceptSnapshot(await this.dependencies.host.loadEarlierMessages(command.threadId, command.throughMessageId))
+        const earlier = await this.dependencies.host.loadEarlierMessages(command.threadId, command.throughMessageId)
+        // Watcher's conversation shown further back shows the archived work its earlier messages carry (#1759), read
+        // before they are shown, so its cards, takeover lines and the user's own words show with them.
+        const watcherThread = earlier.threads.find(thread => thread.id === command.threadId && (thread.kind === 'watcher' || thread.kind === 'watcher-history'))
+        if (watcherThread) await this.recallWatcherWork(watcherThread, false)
+        this.acceptSnapshot(earlier)
         return
       }
       case 'retry-thread-worktree':
@@ -5935,7 +6058,7 @@ export class AgentControl {
     if (this.disposed) return
     this.firstOutputs.observe(incoming.threads)
     const connecting = this.state.connection === 'connecting'
-    this.shownRequests = this.watcher.requests
+    this.shownRequests = this.watcherRequestsShown()
     this.reshow.clear()
     // Sotto's own requests join the provider's before anything below reads the threads (ADR-0035).
     const snapshot = this.shownSnapshot(incoming)
@@ -5976,7 +6099,7 @@ export class AgentControl {
     this.firstOutputs.observe(id => map.get(id))
     const connecting = this.state.connection === 'connecting'
     // Watcher's conversations are shown through Watcher's requests, and a question whose search found none looks again.
-    if (this.shownRequests !== this.watcher.requests) { for (const id of index.watcherKinds) this.reshow.add(id); this.shownRequests = this.watcher.requests }
+    if (this.shownRequests !== this.watcherRequestsShown()) { for (const id of index.watcherKinds) this.reshow.add(id); this.shownRequests = this.watcherRequestsShown() }
     for (const id of this.questionPages.retriesDue()) this.reshow.add(id)
     const named = new Set<string>()
     for (const record of changes.upserts) named.add(record.id)
