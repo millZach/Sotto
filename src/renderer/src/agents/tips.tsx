@@ -137,10 +137,27 @@ function skillTip(facts: TipFacts, setAside: TipsSetAside): TipChoice | null {
   const provider = facts.providerId ?? ''
   const skills = pickableSkills(facts.catalog ?? []).filter(skill => skill.description.trim() !== '' && !setAside.has(`skill:${provider}:${skill.name}`))
   const skill = [...skills].sort((a, b) => (SCOPE_ORDER[a.scope] ?? 9) - (SCOPE_ORDER[b.scope] ?? 9))[0]
-  if (!skill) return null
+  return skill ? skillChoice(provider, skill) : null
+}
+
+/** A tip naming one skill, in the provider's own words for it. */
+function skillChoice(provider: string, skill: CatalogSkill): TipChoice {
   const token = <code>{skillToken(skill)}</code>, about = shortDescription(skill.description)
   return { id: `skill:${provider}:${skill.name}`, skill,
     text: <Trans comment="A tip naming one of the thread's skills. {token} is how it is written in the prompt; {about} is the provider's own description of it.">{token} in the prompt: {about}</Trans> }
+}
+
+/**
+ * A skills tip a turn started with that today's candidates leave out for a reason other than its own: the general one
+ * once the list loads, and a named one while its skill is still listed but another now ranks first.
+ */
+function keptSkillTip(id: string, catalog: readonly CatalogSkill[] | undefined): TipChoice | null {
+  if (id.startsWith('skills:')) return skillsTip(id.slice('skills:'.length))
+  if (!id.startsWith('skill:')) return null
+  const rest = id.slice('skill:'.length), split = rest.indexOf(':')
+  const name = rest.slice(split + 1)
+  const skill = pickableSkills(catalog ?? []).find(item => item.name === name && item.description.trim() !== '')
+  return split > 0 && skill ? skillChoice(rest.slice(0, split), skill) : null
 }
 
 /** The general skills tip, for a provider whose skills list is not loaded yet. Claude reads `/` at the start of a line and Codex `$` anywhere; the list opens on either. */
@@ -187,6 +204,8 @@ export function tipCandidates(facts: TipFacts, setAside: TipsSetAside): TipChoic
  * after any number of others keeps its tip; the window's reload empties it.
  */
 const shownByTurn = new Map<string, string>()
+/** What a turn holds once its tip went: nothing more for the rest of the turn, even if the tip's target comes back. */
+const GONE = ''
 
 /** The rotation a working line moves along: one per audience and provider, so one list's turns never skip another's. */
 export function tipRotation(facts: Pick<TipFacts, 'audience' | 'providerId'>): string {
@@ -195,15 +214,18 @@ export function tipRotation(facts: Pick<TipFacts, 'audience' | 'providerId'>): s
 
 /**
  * The turn's tip: the one it started with, as today's candidates draw it, until the user sets it aside or what it points
- * at stops being true (a shortcut removed, a setting turned off), when the turn shows none. One tip stays through a change
- * that is not about it: the general skills tip a turn started with stays when the skills list loads part-way through and
- * puts a named skill in its place. A new turn takes the next place in its rotation.
+ * at stops being true (a shortcut removed, a setting turned off, a skill no longer listed), when the turn shows none for
+ * the rest of the turn. A skills tip stays through a change that is not about it (`keptSkillTip`). A new turn takes the
+ * next place in its rotation.
  */
-export function chooseTip(turnKey: string, rotation: string, candidates: readonly TipChoice[], setAside: TipsSetAside, store: TipsSetAsideStore = tipsSetAside): TipChoice | null {
+export function chooseTip(turnKey: string, rotation: string, candidates: readonly TipChoice[], setAside: TipsSetAside,
+  catalog: readonly CatalogSkill[] | undefined, store: TipsSetAsideStore = tipsSetAside): TipChoice | null {
   const shown = shownByTurn.get(turnKey)
   if (shown !== undefined) {
-    if (setAside.has(shown)) return null
-    return candidates.find(tip => tip.id === shown) ?? (shown.startsWith('skills:') ? skillsTip(shown.slice('skills:'.length)) : null)
+    if (shown === GONE) return null
+    const kept = setAside.has(shown) ? null : candidates.find(tip => tip.id === shown) ?? keptSkillTip(shown, catalog)
+    if (kept === null) shownByTurn.set(turnKey, GONE)
+    return kept
   }
   if (!candidates.length) return null
   const tip = candidates[store.nextRotation(rotation) % candidates.length]!
@@ -234,7 +256,7 @@ export const ThreadTip = memo(function ThreadTip({ turnKey, facts, onTry, drafts
   const { t, i18n } = useLingui()
   const setAside = useTipsSetAside(store)
   const candidates = useMemo(() => tipCandidates(facts, setAside), [facts, setAside])
-  const tip = chooseTip(turnKey, tipRotation(facts), candidates, setAside, store)
+  const tip = chooseTip(turnKey, tipRotation(facts), candidates, setAside, facts.catalog, store)
   const selected = useThreadComposer(drafts, threadId).draft.skills
   if (tip === null) return null
   // A prompt already carrying as many skills as the provider takes has no room for this one, as the skills list says; and

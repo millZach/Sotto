@@ -98,22 +98,39 @@ describe('one tip per turn', () => {
   it('keeps a turn’s tip across renders and moves the next turn on to the next tip', () => {
     const store = createTipsSetAsideStore(memory())
     const candidates = tipCandidates(facts(), new Set())
-    const first = chooseTip('t:1', 'thread:claude', candidates, new Set(), store)!
-    expect(chooseTip('t:1', 'thread:claude', candidates, new Set(), store)!.id).toBe(first.id)
-    expect(chooseTip('t:2', 'thread:claude', candidates, new Set(), store)!.id).toBe(candidates[1]!.id)
+    const first = chooseTip('t:1', 'thread:claude', candidates, new Set(), undefined, store)!
+    expect(chooseTip('t:1', 'thread:claude', candidates, new Set(), undefined, store)!.id).toBe(first.id)
+    expect(chooseTip('t:2', 'thread:claude', candidates, new Set(), undefined, store)!.id).toBe(candidates[1]!.id)
     expect(first.id).toBe(candidates[0]!.id)
     // Hidden mid-turn, the turn shows nothing more rather than a second tip.
-    expect(chooseTip('t:2', 'thread:claude', candidates, new Set([candidates[1]!.id]), store)).toBeNull()
+    expect(chooseTip('t:2', 'thread:claude', candidates, new Set([candidates[1]!.id]), undefined, store)).toBeNull()
+  })
+
+  it('does not bring a turn’s tip back once it went, even when its target comes back', () => {
+    const store = createTipsSetAsideStore(memory())
+    const on = tipCandidates(facts({ skills: false }), new Set())
+    const first = chooseTip('back:1', 'thread:claude', on, new Set(), undefined, store)!
+    expect(chooseTip('back:1', 'thread:claude', on.filter(tip => tip.id !== first.id), new Set(), undefined, store)).toBeNull()
+    expect(chooseTip('back:1', 'thread:claude', on, new Set(), undefined, store)).toBeNull()
+  })
+
+  it('keeps a named skill tip while its skill is still listed, when a refreshed list ranks another first', () => {
+    const store = createTipsSetAsideStore(memory())
+    const before = [skill('deploy', 'repo')]
+    expect(chooseTip('rank:1', 'thread:claude', tipCandidates(facts({ catalog: before }), new Set()), new Set(), before, store)!.id).toBe('skill:claude:deploy')
+    const after = [skill('audit', 'repo'), skill('deploy', 'user')]
+    expect(tipCandidates(facts({ catalog: after }), new Set())[0]!.id).toBe('skill:claude:audit')
+    expect(chooseTip('rank:1', 'thread:claude', tipCandidates(facts({ catalog: after }), new Set()), new Set(), after, store)).toMatchObject({ id: 'skill:claude:deploy', skill: { name: 'deploy' } })
   })
 
   it('keeps the turn’s tip when the skills list loads part-way through, until the user sets it aside', () => {
     const store = createTipsSetAsideStore(memory())
     const before = tipCandidates(facts(), new Set())
-    expect(chooseTip('load:1', 'thread:claude', before, new Set(), store)!.id).toBe('skills:claude')
+    expect(chooseTip('load:1', 'thread:claude', before, new Set(), undefined, store)!.id).toBe('skills:claude')
     const after = tipCandidates(facts({ catalog: [skill('deploy', 'repo')] }), new Set())
     expect(after.map(tip => tip.id)).not.toContain('skills:claude')
-    expect(chooseTip('load:1', 'thread:claude', after, new Set(), store)!.id).toBe('skills:claude')
-    expect(chooseTip('load:1', 'thread:claude', after, new Set(['skills:claude']), store)).toBeNull()
+    expect(chooseTip('load:1', 'thread:claude', after, new Set(), undefined, store)!.id).toBe('skills:claude')
+    expect(chooseTip('load:1', 'thread:claude', after, new Set(['skills:claude']), undefined, store)).toBeNull()
   })
 
   it('moves each audience and provider along its own rotation, so Watcher’s next turn never repeats for a thread’s', () => {
@@ -123,18 +140,18 @@ describe('one tip per turn', () => {
     const store = createTipsSetAsideStore(memory())
     const watcher = tipCandidates(facts({ audience: 'watcher' }), new Set())
     const thread = tipCandidates(facts(), new Set())
-    const first = chooseTip('w:1', 'watcher:sotto', watcher, new Set(), store)!
-    chooseTip('t:9', 'thread:claude', thread, new Set(), store)
-    chooseTip('t:10', 'thread:claude', thread, new Set(), store)
-    expect(chooseTip('w:2', 'watcher:sotto', watcher, new Set(), store)!.id).not.toBe(first.id)
+    const first = chooseTip('w:1', 'watcher:sotto', watcher, new Set(), undefined, store)!
+    chooseTip('t:9', 'thread:claude', thread, new Set(), undefined, store)
+    chooseTip('t:10', 'thread:claude', thread, new Set(), undefined, store)
+    expect(chooseTip('w:2', 'watcher:sotto', watcher, new Set(), undefined, store)!.id).not.toBe(first.id)
   })
 
   it('keeps a turn’s tip however many other turns come and go before it is read again', () => {
     const store = createTipsSetAsideStore(memory())
     const candidates = tipCandidates(facts(), new Set())
-    const first = chooseTip('long:1', 'thread:claude', candidates, new Set(), store)!
-    for (let turn = 0; turn < 2_000; turn++) chooseTip(`other:${turn}`, 'thread:claude', candidates, new Set(), store)
-    expect(chooseTip('long:1', 'thread:claude', candidates, new Set(), store)!.id).toBe(first.id)
+    const first = chooseTip('long:1', 'thread:claude', candidates, new Set(), undefined, store)!
+    for (let turn = 0; turn < 2_000; turn++) chooseTip(`other:${turn}`, 'thread:claude', candidates, new Set(), undefined, store)
+    expect(chooseTip('long:1', 'thread:claude', candidates, new Set(), undefined, store)!.id).toBe(first.id)
   })
 
   it('never lets a set-aside tip come back on its own, and writes one entry per press however many came before', () => {
@@ -153,12 +170,12 @@ describe('one tip per turn', () => {
   it('shows no tip for the rest of a turn once what it points at stops being true', () => {
     const store = createTipsSetAsideStore(memory())
     const candidates = tipCandidates(facts({ skills: false }), new Set())
-    const first = chooseTip('gone:1', 'thread:claude', candidates, new Set(), store)!
-    expect(chooseTip('gone:1', 'thread:claude', candidates.filter(tip => tip.id !== first.id), new Set(), store)).toBeNull()
+    const first = chooseTip('gone:1', 'thread:claude', candidates, new Set(), undefined, store)!
+    expect(chooseTip('gone:1', 'thread:claude', candidates.filter(tip => tip.id !== first.id), new Set(), undefined, store)).toBeNull()
     // A named skill whose list failed to load again goes, rather than offering Try it with no limit to check.
     const named = tipCandidates(facts({ catalog: [skill('deploy', 'repo')] }), new Set())
-    expect(chooseTip('gone:2', 'thread:claude', [named[0]!], new Set(), store)!.id).toBe('skill:claude:deploy')
-    expect(chooseTip('gone:2', 'thread:claude', tipCandidates(facts({ catalog: undefined }), new Set()), new Set(), store)).toBeNull()
+    expect(chooseTip('gone:2', 'thread:claude', [named[0]!], new Set(), [skill('deploy', 'repo')], store)!.id).toBe('skill:claude:deploy')
+    expect(chooseTip('gone:2', 'thread:claude', tipCandidates(facts({ catalog: undefined }), new Set()), new Set(), undefined, store)).toBeNull()
   })
 
   it('remembers hidden tips and the rotation in storage, and clears them on request', () => {
