@@ -209,6 +209,45 @@ it('Claude carries Sotto’s idle mark from the request to the compaction’s re
   await expect.poll(async () => (await f.host.snapshot()).threads[0]?.compaction).toEqual({ commandId: 'idle', status: 'completed', idle: true })
 })
 
+it('Claude compacts an idle thread while its background work runs, and the work outlives the compaction (ADR-0127)', async () => {
+  const f = await claudeFixture(); cleanup.push(f.cleanup)
+  await writeFile(join(f.root, 'skills.json'), JSON.stringify([{ name: 'compact', description: 'Native compaction' }]))
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Project', path: f.root })
+  await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'thread', projectId: 'project', modelId: 'fixture-model', title: 'Work' })
+  await f.adapter.refreshThread('thread')
+  await f.action('thread', { type: 'raw', frame: { type: 'system', subtype: 'task_started', task_id: 'agents', task_type: 'local_agent', description: 'Review the diff', is_backgrounded: true } })
+  await expect.poll(async () => (await f.host.snapshot()).threads[0]?.backgroundWork?.length).toBe(1)
+  expect(await f.host.execute({ type: 'compact-thread', commandId: 'idle', threadId: 'thread', idle: true })).toEqual({ accepted: true })
+  await expect.poll(async () => (await f.driver.requests()).filter(row => row.method === 'user').at(-1)?.params?.frame).toMatchObject({ message: { content: '/compact' } })
+  await f.action('thread', { type: 'raw', frame: { type: 'system', subtype: 'compact_boundary', compact_metadata: { pre_tokens: 262000, post_tokens: 41000 } } })
+  await expect.poll(async () => (await f.host.snapshot()).threads[0]?.compaction).toEqual({ commandId: 'idle', status: 'completed', idle: true })
+  expect((await f.host.snapshot()).threads[0]?.backgroundWork).toEqual([expect.objectContaining({ label: 'Review the diff', type: 'subagent' })])
+  await f.action('thread', { type: 'raw', frame: { type: 'system', subtype: 'task_notification', task_id: 'agents', status: 'completed' } })
+  await expect.poll(async () => (await f.host.snapshot()).threads[0]?.backgroundWork ?? []).toEqual([])
+})
+
+it('Claude holds an idle compaction while a report on just-ended background work is due, and not the user’s (ADR-0127)', async () => {
+  const f = await claudeFixture(); cleanup.push(f.cleanup)
+  await writeFile(join(f.root, 'skills.json'), JSON.stringify([{ name: 'compact', description: 'Native compaction' }]))
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Project', path: f.root })
+  await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'thread', projectId: 'project', modelId: 'fixture-model', title: 'Work' })
+  await f.adapter.refreshThread('thread')
+  await f.action('thread', { type: 'raw', frame: { type: 'system', subtype: 'task_started', task_id: 'build', task_type: 'local_bash', description: 'Build', is_backgrounded: true } })
+  await expect.poll(async () => (await f.host.snapshot()).threads[0]?.backgroundWork?.length).toBe(1)
+  // Claude Code ends a task, then queues its notification, and answers it with a turn of its own once the thread is free:
+  // a /compact written now would run after that report.
+  await f.action('thread', { type: 'raw', frame: { type: 'system', subtype: 'task_updated', task_id: 'build', patch: { status: 'completed', end_time: 1 } } })
+  await f.action('thread', { type: 'raw', frame: { type: 'system', subtype: 'task_notification', task_id: 'build', status: 'completed' } })
+  await expect.poll(async () => (await f.host.snapshot()).threads[0]?.backgroundWork ?? []).toEqual([])
+  await expect(f.host.execute({ type: 'compact-thread', commandId: 'idle', threadId: 'thread', idle: true })).rejects.toThrow(/background work/)
+  expect((await f.host.snapshot()).threads[0]?.compaction).toBeUndefined()
+  expect((await f.driver.requests()).filter(row => row.method === 'user')).toEqual([])
+  expect(await f.host.execute({ type: 'compact-thread', commandId: 'manual', threadId: 'thread' })).toEqual({ accepted: true })
+  await expect.poll(async () => (await f.driver.requests()).filter(row => row.method === 'user').at(-1)?.params?.frame).toMatchObject({ message: { content: '/compact' } })
+})
+
 it('Claude asks a machine compaction’s guard again once its CLI is up, and writes nothing when it refuses (ADR-0127)', async () => {
   const f = await claudeFixture(); cleanup.push(f.cleanup)
   await writeFile(join(f.root, 'skills.json'), JSON.stringify([{ name: 'compact', description: 'Native compaction' }]))

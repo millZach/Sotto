@@ -262,6 +262,13 @@ type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>;
  * channel with the request note as the prompt's additional context, so the note never joins the user's words.
  */
 const WATCHER_REQUEST_HOOK = 'sotto_watcher_request'
+/**
+ * How long after a thread's own background work or watch ends Sotto's idle compaction leaves it alone. Claude Code answers
+ * the end with a report of its own as soon as the thread is free, and a /compact written before that report starts would
+ * run after it, with the report's result read as the compaction's (ADR-0127, amended October 29, 2026). The report starts
+ * within a second or two; a hold no report follows costs one quiet stretch at most.
+ */
+const REPORT_HOLD_MS = 30_000
 
 /** A read of a thread's transcript from its first byte into a seeded log (`ClaudeStreamJsonHost.replays`). */
 interface Replay {
@@ -462,6 +469,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   /** Per thread: the subagent transcripts still being read for a model the stream never named. */
   private readonly subagentModels = new Map<string, ClaudeSubagentModels>()
   private readonly monitoring = new Map<string, ClaudeMonitoring>()
+  /** When each thread's own background work or watch last ended, until its CLI ends: see {@link REPORT_HOLD_MS}. */
+  private readonly workEndedAt = new Map<string, number>()
   private readonly restoredHistory = new Map<string, RestoredThreadHistory>()
   /** This adapter's append path: every change to what a thread said leaves through it as an event. */
   private readonly messageLog = new ThreadMessageLog(id => this.threadChanges.mark(id))
@@ -994,6 +1003,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const runtime = await this.start(id)
         if (!thread.manualCompactionSupported) throw new Error('This Claude client does not expose native manual compaction.')
         if (this.threads.get(id)?.status === 'running' || thread.requests.length) throw new Error('Claude started working before compaction.')
+        if (command.idle && Date.now() - (this.workEndedAt.get(id) ?? -Infinity) < REPORT_HOLD_MS) throw new Error('Claude is about to report on background work that just ended.')
         // A machine compaction, such as Sotto's idle one (ADR-0127), asks its guard again once the CLI is up: starting it
         // can take long enough for the user to type, send or turn the setting off.
         watcherGuard?.()
@@ -1714,7 +1724,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     let monitoring = this.monitoring.get(id)
     if (!monitoring) { monitoring = new ClaudeMonitoring(); this.monitoring.set(id, monitoring) }
-    monitoring.apply(frame); thread.monitoring = monitoring.current
+    if (monitoring.apply(frame)) this.workEndedAt.set(id, Date.now())
+    thread.monitoring = monitoring.current
     const working = monitoring.working
     if (working.length) thread.backgroundWork = working; else delete thread.backgroundWork
     if (frame.type === 'system' && frame.subtype === 'init') {
@@ -1871,7 +1882,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (this.state.error === failure) this.state.error = [...this.turnFailures.values()].at(-1)
   }
   private clearMonitoring(id: string): void {
-    this.monitoring.delete(id)
+    this.monitoring.delete(id); this.workEndedAt.delete(id)
     const thread = this.threads.get(id)
     if (thread) { delete thread.monitoring; delete thread.backgroundWork; this.changed(id) }
   }
