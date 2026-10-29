@@ -1,5 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
-import { Laptop, MessageSquare, Quote, Server, X } from 'lucide-react'
+import { ArrowDownToLine, ArrowUp, ArrowUpRight, Laptop, MessageSquare, Quote, Server, Square, X } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { NextPrompt } from '../../../shared/nextPrompt'
@@ -27,6 +27,7 @@ import { composeReviewMessage, reviewCommentStore, reviewLabel, useReviewComment
 import { composeQuotedMessage, replyQuoteLabel, replyQuoteStore, useReplyQuotes, type ReplyQuote, type ReplyQuoteStore } from './replyQuotes'
 import { useOwlFeature } from '../state/owlFeature'
 import { ScreenshotInput } from './ScreenshotInput'
+import { draftEffortScore } from './effortSuggestion'
 import { attachmentRefusal } from './attachmentWords'
 import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
 import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useScreenshotReadPort, useScreenshotReads, useSubmissions, useThreadComposer, type ComposerDraft, type ThreadComposerSnapshot, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
@@ -188,7 +189,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // An answer written here is kept for Watcher's line about its request, never its words, and only where Watcher is on.
   const watcherOn = useWatcherEnabled()
   const watchActions = useWatchActions()
-  const { draft, save, saveError, answerState, hasContent } = useComposerControls(store, threadId)
+  const quietComposer = useOwlFeature('quiet-composer')
+  const { draft, save, saveError, answerState, hasContent, effortScore } = useComposerControls(store, threadId, quietComposer)
   const comments = useReviewComments(reviewComments, threadId)
   // Reply quotes are an Owl feature: stable shows no chip and sends none (ADR-0129).
   const quoting = useOwlFeature('reply-quote')
@@ -438,6 +440,25 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     .every(accelerator => chordClaimed('mod+enter', accelerator, platform)) ? 'mod+enter' : null
   const enterCap = threadChordCap('enter', platform)
   const stopKeys = !watcher && stopChord ? stopChord : null
+  // The quiet composer (ADR-0161, Owl): one pill. Answers, continuations and Watcher's handover keep the full footer,
+  // since each has a primary action of its own that the pill's disc does not draw.
+  const quiet = quietComposer && !watcher && !answering && continuing === undefined && handover === null
+  // The pill's disc turns into Steer while Steer's modifier is held, so it always shows what the key pressed will do.
+  const [steerHeld, setSteerHeld] = useState(false)
+  useEffect(() => {
+    if (!quiet) return
+    const read = (event: globalThis.KeyboardEvent): void => setSteerHeld(platform === 'darwin' ? event.metaKey : event.ctrlKey)
+    const release = (): void => setSteerHeld(false)
+    window.addEventListener('keydown', read); window.addEventListener('keyup', read); window.addEventListener('blur', release)
+    return () => { window.removeEventListener('keydown', read); window.removeEventListener('keyup', read); window.removeEventListener('blur', release); setSteerHeld(false) }
+  }, [quiet, platform])
+  // While a turn runs, the effort dots hold Stop; where the options draw no dots (a provider that cannot change a started
+  // thread), Stop keeps a button of its own in the pill.
+  const stopOnDots = quiet && capabilities.configureThread === true
+  const stopTitle = stopKeys ? `${stopName} ${threadChordLabel(stopKeys, platform).suffix}` : stopName
+  const interrupt = (): void => { void command({ type: 'interrupt', threadId }) }
+  // Queue's glyph follows what Enter does, as the disc's name does, so a provider that sends during a turn shows Send.
+  const discFace = working && content && canSteer && steerHeld ? 'steer' : queueing ? 'queue' : 'send'
   // Kept with the thread it was opened on, so moving to another thread finds it closed and at its first row.
   const [nextListState, setNextListState] = useState<{ readonly threadId: string; readonly index: number } | null>(null)
   const nextList = next !== null && nextListState?.threadId === threadId ? nextListState : null
@@ -495,7 +516,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     {/* When Sotto restarts what a limit stopped (ADR-0144; Owl only), before the prompt; a begun continuation takes its place, and Watcher's own pane has the band. */}
     {continuing === undefined && !watcher ? <RestartStrip thread={row.thread} command={command} composerId={composerId} /> : null}
     {continuing !== undefined ? <ContinueStrip thread={row.thread} state={state} choice={continuing} composerId={composerId} /> : null}
-    <form className="thread-prompt" data-ornament={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
+    <form className="thread-prompt" data-quiet={quiet || undefined} data-ornament={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { leavePickers.current(); setNextList(null) } }}>
       <EffortTrace />
@@ -546,6 +567,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {continuing !== undefined ? <ContinueOptions thread={row.thread} state={state} choice={continuing} />
             : row.thread.nativeSessionStarted === false || capabilities.configureThread || continueOffer !== undefined
             ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher} continueOffer={continueOffer}
+              quiet={quiet ? { effortScore, stop: stopOnDots && working ? { label: stopName, keys: stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined, title: stopTitle, disabled: !canStop, onStop: interrupt } : undefined } : undefined}
               {...(editable && !answering && !permission ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? t`Answer this question` : t`Manual prompt`}</small></span>
               {watcher ? <WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
@@ -553,6 +575,18 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {status}
         </div>
         <div ref={actionsRow} className="thread-prompt__actions">
+          {quiet ? <>
+            {/* Shown where the dots cannot hold Stop: a thread that draws none, or the slim composer, which hides them. */}
+            {working ? <Button variant="ghost" className="thread-prompt__stop thread-prompt__disc" data-beside-dots={stopOnDots || undefined} aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
+              title={stopTitle} disabled={!canStop} onClick={interrupt}><Square size={10} fill="currentColor" aria-hidden="true" /></Button> : null}
+            {/* One disc: Send, Queue while a turn runs, Steer while Steer's modifier is held. Its glyph says which. */}
+            {discFace === 'steer'
+              ? <Button className="thread-prompt__send thread-prompt__disc" data-face="steer" aria-label={t`Steer now`} aria-keyshortcuts={steerChord ? threadChordLabel(steerChord, platform).keys : undefined}
+                title={t`Send this now, without waiting for the turn to end` + (steerChord ? ` ${threadChordLabel(steerChord, platform).suffix}` : '')} onClick={() => send(performance.now(), 'steer')}>
+                <ArrowUpRight size={16} strokeWidth={2.4} aria-hidden="true" /></Button>
+              : <Button className="thread-prompt__send thread-prompt__disc" data-face={discFace} aria-label={primaryLabel} aria-keyshortcuts="Enter" title={reason ?? primaryLabel} disabled={!canSend} type="submit">
+                {discFace === 'queue' ? <ArrowDownToLine size={16} strokeWidth={2.4} aria-hidden="true" /> : <ArrowUp size={16} strokeWidth={2.4} aria-hidden="true" />}</Button>}
+          </> : <>
           {running && capabilities.steer === true && content
             ? <Button variant="ghost" className="thread-prompt__steer" aria-label={t`Steer now`} aria-keyshortcuts={steerChord ? threadChordLabel(steerChord, platform).keys : undefined}
               disabled={!canSteer} title={canSteer ? t`Send this now, without waiting for the turn to end` + (steerChord ? ` ${threadChordLabel(steerChord, platform).suffix}` : '') : reason ?? (sendInFlight ? t`An earlier send is still on its way; Steer waits for it` : readingImages ? t`Wait for the attachment to be read` : answerState.sending ? t`Wait for the answer to be sent` : undefined)}
@@ -572,6 +606,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
               <KeyedLabel word={t`Continue`} keyCap={enterCap} /></Button>
             : !working || content ? <Button className="thread-prompt__send" aria-label={primaryLabel} aria-keyshortcuts="Enter" title={reason ?? primaryLabel} disabled={!canSend} type="submit">
               <KeyedGlyph role={queueing ? 'queue' : 'send'} keyCap={enterCap} /></Button> : null}
+          </>}
         </div>
       </div>
       <div ref={setSettingsNotices} className="thread-options-notices" />
@@ -594,24 +629,28 @@ interface ComposerControls {
   readonly answerState: ThreadComposerSnapshot['answer']
   readonly hasContent: boolean
   readonly hasUltrathink: boolean
+  /** How much thought the draft seems to ask for (`effortSuggestion.ts`), read only by the quiet composer. */
+  readonly effortScore: number
 }
 
 /** Text edits repaint the editor; the surrounding controls observe only the facts they display. */
-function useComposerControls(store: ThreadDraftStore, threadId: string): ComposerControls {
+function useComposerControls(store: ThreadDraftStore, threadId: string, scoreEffort: boolean): ComposerControls {
   const read = useMemo(() => {
     let previous: ComposerControls | undefined
     return (): ComposerControls => {
       const { draft, save, saveError, answer: answerState } = store.snapshot(threadId)
       const hasContent = hasDraftContent(draft)
       const hasUltrathink = /\bultrathink\b/iu.test(draft.text)
+      // Read only where the quiet composer is on, so no other composer repaints as the score moves.
+      const effortScore = scoreEffort ? draftEffortScore(draft.text) : 0
       if (previous && previous.save === save && previous.saveError === saveError
         && previous.answerState === answerState
-        && previous.hasContent === hasContent && previous.hasUltrathink === hasUltrathink
+        && previous.hasContent === hasContent && previous.hasUltrathink === hasUltrathink && previous.effortScore === effortScore
         && previous.draft.attachments === draft.attachments && previous.draft.skills === draft.skills
         && previous.draft.files === draft.files && previous.draft.requestId === draft.requestId) return previous
-      return previous = { draft, save, saveError, answerState, hasContent, hasUltrathink }
+      return previous = { draft, save, saveError, answerState, hasContent, hasUltrathink, effortScore }
     }
-  }, [store, threadId])
+  }, [store, threadId, scoreEffort])
   return useSyncExternalStore(store.subscribe, read)
 }
 
