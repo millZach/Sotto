@@ -72,3 +72,35 @@ it('carries what Watcher’s conversation shown back recalled from its archive: 
   expect(twice.takeovers).toHaveLength(1)
   expect(twice.receiptGroups.flatMap(group => group.rows)).toHaveLength(1)
 })
+
+it('carries the newest five hundred recalled receipts, though a read back gives its batches newest first (#1759)', () => {
+  const request = { id: REQUEST, watcher, rootUserMessageId: 'u1', state: 'closed' as const, createdAt: AT, closedAt: AT, participants: [] }
+  const actions = Array.from({ length: 600 }, (_, index) => ({ id: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`, requestId: REQUEST,
+    retryKey: '55555555-5555-4555-8555-555555555555', digest: 'a'.repeat(64), action: 'send' as const, target: { hostId: HOST, threadId: `worker-${index}` }, generation: 1,
+    deliveryState: 'accepted' as const, createdAt: new Date(Date.parse(AT) + index * 1_000).toISOString(), updatedAt: AT, receiptId: `receipt-${index}`, cardId: `card-${index}` }))
+  // Six batches of a hundred, each oldest first within itself, the newest batch first.
+  const receipts = [5, 4, 3, 2, 1, 0].flatMap(batch => actions.slice(batch * 100, batch * 100 + 100))
+  const room: WatcherRoomState = { current: { target: watcher, projectId: 'project', provider: 'codex', creationOperationId: '33333333-3333-4333-8333-333333333333', createdAt: AT },
+    currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true }, history: [], requests: [], watchedThreads: [], receipts: [],
+    recalled: { receipts, receiptReplies: [], requests: [request] }, recoveryNotice: null, observedAt: AT }
+  const service = new WatcherPhoneService({ hostId: () => HOST, threadDetail: () => null, watcherSendRecords: () => ({ deliveries: [], followups: [] }) } as unknown as AgentControl,
+    { state: () => room, phoneSnapshot: () => emptyDesktopState(HOST).host, startsInFlight: () => 0 } as unknown as WatcherService)
+  const shown = service.state(false).receiptGroups.flatMap(group => group.rows.map(row => row.operationId))
+  expect(shown).toHaveLength(500)
+  expect(new Set(shown)).toEqual(new Set(actions.slice(100).map(item => item.id)))
+})
+
+it('gives a new Watcher none of the last one’s recalled takeover lines, though the read back is the same (#1759)', () => {
+  const taken = { requestId: REQUEST, startedBy: 'watcher' as const, generation: 1, state: 'taken-over' as const, target: { hostId: HOST, threadId: 'auth' },
+    promptCount: 1, takeover: { reason: 'user-send' as const, at: AT } }
+  const recalled = { receipts: [], receiptReplies: [], requests: [{ id: REQUEST, watcher, rootUserMessageId: 'u1', state: 'closed' as const, createdAt: AT, closedAt: AT, participants: [taken] }] }
+  const identity = (threadId: string) => ({ target: { hostId: HOST, threadId }, projectId: 'project', provider: 'codex' as const, creationOperationId: '33333333-3333-4333-8333-333333333333', createdAt: AT })
+  let room: WatcherRoomState = { current: identity('watcher'), currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true }, history: [],
+    requests: [], watchedThreads: [], receipts: [], recalled, recoveryNotice: null, observedAt: AT }
+  const snapshot = { ...emptyDesktopState(HOST).host, threads: [{ id: 'auth', projectId: 'project', title: 'Auth refactor', modelId: 'codex:gpt', status: 'idle' as const, messages: [], requests: [] }] }
+  const service = new WatcherPhoneService({ hostId: () => HOST, threadDetail: () => null, watcherSendRecords: () => ({ deliveries: [], followups: [] }) } as unknown as AgentControl,
+    { state: () => room, phoneSnapshot: () => snapshot, startsInFlight: () => 0 } as unknown as WatcherService)
+  expect(service.state(false).takeovers).toHaveLength(1)
+  room = { ...room, current: identity('new-watcher') }
+  expect(service.state(false).takeovers ?? []).toHaveLength(0)
+})
