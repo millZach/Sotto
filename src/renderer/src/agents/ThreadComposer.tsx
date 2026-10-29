@@ -457,7 +457,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const stopOnDots = quiet && capabilities.configureThread === true
   const stopTitle = stopKeys ? `${stopName} ${threadChordLabel(stopKeys, platform).suffix}` : stopName
   const interrupt = (): void => { void command({ type: 'interrupt', threadId }) }
-  const discFace = !working || !content ? 'send' : canSteer && steerChord !== null && steerHeld ? 'steer' : 'queue'
+  // Queue's glyph follows what Enter does, as the disc's name does, so a provider that sends during a turn shows Send.
+  const discFace = working && content && canSteer && steerChord !== null && steerHeld ? 'steer' : queueing ? 'queue' : 'send'
   // Kept with the thread it was opened on, so moving to another thread finds it closed and at its first row.
   const [nextListState, setNextListState] = useState<{ readonly threadId: string; readonly index: number } | null>(null)
   const nextList = next !== null && nextListState?.threadId === threadId ? nextListState : null

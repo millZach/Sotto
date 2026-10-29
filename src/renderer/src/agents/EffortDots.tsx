@@ -60,7 +60,7 @@ export function EffortDots({ levels, value, disabled, pending = false, described
     <span className="effort-dots__hold">
     {levels.length > 0 ? <span className="effort-dots__track tt-focusable" role="slider" tabIndex={disabled ? -1 : 0} aria-label={label}
       aria-valuemin={1} aria-valuemax={levels.length} aria-valuenow={current >= 0 ? current + 1 : undefined} aria-valuetext={shown}
-      aria-disabled={disabled || undefined} aria-describedby={describedBy} title={`${label}: ${shown}`} onKeyDown={onKeyDown}
+      aria-disabled={disabled || undefined} aria-describedby={pending ? describedBy : undefined} title={`${label}: ${shown}`} onKeyDown={onKeyDown}
       onClick={event => {
         const dot = (event.target as Element).closest<HTMLElement>('[data-level]')
         if (dot) set(Number(dot.dataset.level))
