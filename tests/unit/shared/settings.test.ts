@@ -92,6 +92,7 @@ const customSettings = {
   llmOwnModel: { server: 'own-sparks', model: 'deepseek-v4.1-flash' },
   threadTitles: false,
   nextPromptSuggestions: false,
+  threadTips: false,
   threadWorkingCopyDefault: 'independent',
   projectThreadWorkingCopyDefaults: { workshop: 'shared' },
   worktreeCleanup: { afterDays: 30, merged: true, onSettle: false, unchanged: true },
@@ -179,6 +180,9 @@ describe('settings', () => {
     expect(parseSettings({}).nextPromptSuggestions).toBe(true)
     expect(parseSettings({ nextPromptSuggestions: false }).nextPromptSuggestions).toBe(false)
     expect(parseSettings({ nextPromptSuggestions: 'no' }).nextPromptSuggestions).toBe(true)
+    expect(parseSettings({}).threadTips).toBe(true)
+    expect(parseSettings({ threadTips: false }).threadTips).toBe(false)
+    expect(parseSettings({ threadTips: 'no' }).threadTips).toBe(true)
   })
   it('reads a saved Threads in flight limit as nothing, since Sotto no longer has one (#1183)', () => {
     const parsed = parseSettings({ ...DEFAULT_SETTINGS, watcherInFlightLimit: 6 })
@@ -475,6 +479,7 @@ describe('settings', () => {
       llmOwnModel: null,
       threadTitles: true,
       nextPromptSuggestions: true,
+      threadTips: true,
       threadWorkingCopyDefault: 'shared',
       projectThreadWorkingCopyDefaults: {},
       worktreeCleanup: { afterDays: null, merged: false, onSettle: false, unchanged: false },

@@ -155,6 +155,7 @@ const settingKeys = [
   'llmOwnModel',
   'threadTitles',
   'nextPromptSuggestions',
+  'threadTips',
   'threadWorkingCopyDefault',
   'projectThreadWorkingCopyDefaults',
   'worktreeCleanup',

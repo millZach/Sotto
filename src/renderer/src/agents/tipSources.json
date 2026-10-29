@@ -1,0 +1,26 @@
+{
+  "claude.claude-md": {
+    "provider": "claude",
+    "url": "https://code.claude.com/docs/en/memory",
+    "phrase": "Claude reads them at the start of every session",
+    "checked": "2026-10-28"
+  },
+  "claude.subagents": {
+    "provider": "claude",
+    "url": "https://code.claude.com/docs/en/sub-agents",
+    "phrase": "runs in its own context window",
+    "checked": "2026-10-28"
+  },
+  "codex.agents-md": {
+    "provider": "codex",
+    "url": "https://learn.chatgpt.com/docs/agent-configuration/agents-md",
+    "phrase": "Codex reads AGENTS.md files before doing any work",
+    "checked": "2026-10-28"
+  },
+  "codex.skills-folder": {
+    "provider": "codex",
+    "url": "https://learn.chatgpt.com/docs/build-skills",
+    "phrase": "scans .agents/skills in every directory",
+    "checked": "2026-10-28"
+  }
+}

@@ -52,3 +52,41 @@ it('sends a follow-up queued during a Claude compaction once Claude Code answers
     await expect.poll(() => control.get().followups?.length).toBe(0)
   } finally { control.dispose(); await control.privacyChanged(); await f.cleanup() }
 })
+
+// A failed compaction leaves the thread on the turn before it, so Watcher's news of that turn's work stays its own (ADR-0127).
+// What was queued behind the compaction waits for review all the same, and goes once the user resumes the queue.
+it('pauses a follow-up queued during a Claude compaction that failed, and sends it once the queue is resumed', async () => {
+  const f = await claudeFixture(); const threadId = randomUUID()
+  await writeFile(join(f.root, 'skills.json'), JSON.stringify([{ name: 'compact', description: 'Native compaction' }]))
+  const credentials = await testCredentials(f.root, { mode: 'unavailable' })
+  const control = createAgentControl({ schedule: immediatePublishScheduler, directory: f.root, host: f.host, credentials })
+  const prompts = async (): Promise<{ uuid: string; content: unknown }[]> => (await f.driver.requests())
+    .filter(row => row.method === 'user').map(row => row.params?.frame as { uuid: string; message: { content: unknown } }).map(frame => ({ uuid: frame.uuid, content: frame.message.content }))
+  const thread = () => control.get().host.threads.find(item => item.id === threadId)
+  try {
+    await f.host.connect()
+    await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, path: f.root, title: 'Fixture' })
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, title: 'Compact', modelId: f.modelId })
+    await f.host.execute({ type: 'send', commandId: randomUUID(), threadId, messageId: 'first-message', text: 'First' })
+    await f.driver.completeTurn(threadId, 'Finished first')
+    await control.start(); await control.command({ type: 'refresh' })
+    await expect.poll(() => thread()?.lastTurn?.status).toBe('completed')
+    const turn = thread()!.lastTurn
+
+    expect((await control.command({ type: 'compact-thread', threadId })).error).toBeNull()
+    await expect.poll(async () => (await prompts()).at(-1)?.content).toBe('/compact')
+    const compact = (await prompts()).at(-1)!.uuid
+    const queued = await control.command({ type: 'manual-send', threadId, draftId: randomUUID(), text: 'Second' })
+    expect(queued.followups).toEqual([expect.objectContaining({ text: 'Second', status: 'queued' })])
+
+    await f.action(threadId, { type: 'raw', frame: { type: 'result', subtype: 'error_during_execution', is_error: true, result: '', user_message_uuid: compact, user_message_uuids: [compact] } })
+    await expect.poll(() => thread()?.compaction?.status).toBe('failed')
+    expect(thread()?.lastTurn).toEqual(turn)
+    await expect.poll(() => control.get().followups).toEqual([expect.objectContaining({ text: 'Second', status: 'paused' })])
+    expect((await prompts()).map(prompt => prompt.content)).toEqual(['First', '/compact'])
+
+    await control.command({ type: 'resume-followups', threadId })
+    await expect.poll(async () => (await prompts()).map(prompt => prompt.content)).toEqual(['First', '/compact', 'Second'])
+  } finally { control.dispose(); await control.privacyChanged(); await f.cleanup() }
+})
+
