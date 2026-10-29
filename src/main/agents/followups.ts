@@ -146,7 +146,8 @@ export class FollowupStore {
     this.tail = task
     return task
   }
-  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'> & { watcherOperationId?: string; messageId?: string | undefined; phoneOrigin?: QueuedFollowup['phoneOrigin'] }): Promise<void> {
+  /** `pastLimit`: words moved from a replaced Watcher's box (#1735), which may not stay behind for want of room. */
+  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'> & { watcherOperationId?: string; messageId?: string | undefined; phoneOrigin?: QueuedFollowup['phoneOrigin'] }, pastLimit = false): Promise<void> {
     return this.change(state => {
       const receipt = state.receipts.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
       const item = state.items.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
@@ -155,7 +156,7 @@ export class FollowupStore {
         if ((receipt?.digest ?? (item ? followupDigest(item) : undefined)) !== digest) throw new Error('This revision already belongs to a submitted prompt. Use a new draft revision for different content.')
         return
       }
-      if (state.items.filter(item => item.threadId === input.threadId).length >= 100) throw new Error('This thread already has 100 follow-ups. Remove or send some first.')
+      if (!pastLimit && state.items.filter(item => item.threadId === input.threadId).length >= 100) throw new Error('This thread already has 100 follow-ups. Remove or send some first.')
       const now = new Date().toISOString()
       // The user's follow-ups go before a wake-up that waits, which goes when the queue would send the next one (decision 8).
       const wakeUp = state.items.findIndex(item => waitingWakeUp(item, input.threadId) && !leadsQueue(item, input.threadId))

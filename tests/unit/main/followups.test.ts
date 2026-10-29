@@ -921,4 +921,7 @@ it('moves every unsent message of a replaced Watcher, even into a queue already 
   for (let index = 0; index < 3; index++) await queue.enqueue({ threadId: 'watcher-old', draftId: randomUUID(), text: `Old ${index}`, attachments: [] })
   expect(await queue.moveUserPrompts('watcher-old', 'watcher-new', 'Moved.', 'Maybe arrived.')).toHaveLength(3)
   expect(queue.peek().items.filter(item => item.threadId === 'watcher-old')).toEqual([])
+  // Words from the last Watcher's box join a full queue too; the user's own hundred-and-first is still refused.
+  await expect(queue.enqueue({ threadId: 'watcher-new', draftId: randomUUID(), text: 'From the box', attachments: [] }, true)).resolves.toBeUndefined()
+  await expect(queue.enqueue({ threadId: 'watcher-new', draftId: randomUUID(), text: 'Typed', attachments: [] })).rejects.toThrow('100 follow-ups')
 })

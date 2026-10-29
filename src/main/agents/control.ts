@@ -803,7 +803,7 @@ export class AgentControl {
       const draftId = randomUUID()
       try {
         await this.followupStore.enqueue({ threadId: to, draftId, text: draft.text, attachments: draft.attachments,
-          ...(draft.skills ? { skills: draft.skills } : {}), ...(draft.files ? { files: draft.files } : {}) })
+          ...(draft.skills ? { skills: draft.skills } : {}), ...(draft.files ? { files: draft.files } : {}) }, true)
         await this.followupStore.pauseUserPrompts(to, 'This was in the last Watcher’s message box. Resume the queue to send it to this one, or remove it.', item => item.draftId === draftId)
       } catch (error) {
         // Not queued: the words go back where they were, unless the user has begun another draft there since.

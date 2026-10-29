@@ -4289,6 +4289,11 @@ ${operation.draftId}`)
       if (name === 'start_thread') { landed = await this.moveForStart(operation, input as WatcherToolInput<'start_thread'>); guard() }
       await this.options.control.updateWatcher(record => { record.operations.find(item => item.id === operation.id)!.deliveryState = 'dispatching' })
       guard()
+      // Asked again just before it goes: a replacement during the branch move above makes the request a replaced
+      // Watcher's, which the host must take over before it is sent under the current one.
+      if (this.adopts(operation.target.hostId) && this.record().current && key(request.watcher) !== key(this.record().current!.target)) {
+        await this.reconcileRemote(operation.target.hostId); guard()
+      }
       const capable = this.remote!.hosts().find(host => host.hostId === operation.target.hostId)?.standingWatch
       const { promptTurnId: _turn, promptRefunded: _refunded, standingWatchId: _watch, ...legacyOperation } = operation
       void _turn; void _refunded; void _watch
