@@ -1,0 +1,243 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Drake's pick on October 29, 2026 from docs/prototypes/composer-quiet-20.html (tag prototype/composer-quiet-20):
+  "10 refine it and bring back the model providors symbol". 10, Thinking dots, is one pill: the prompt, the model's name,
+  one to four dots for effort that bounce while it thinks, a shield for permissions and a round Send; attach is not drawn.
+
+  10 as drawn, four refined takes, each with the provider's own mark (the paths and colours of ProviderMark.tsx and
+  tokens.css) before the model's name, at the composer's real 760px width in the dark and light halves. Every frame is
+  live: click the model to change it (Claude, Codex and Grok models, so the mark changes), click a dot to set effort or
+  use the arrow keys on the dots, click the shield, type and press Enter. Play runs it for you.
+
+  Built from parts.html and the shared base of prototype/composer-quiet-20/template.html by build.py (inlines Figtree).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composer: thinking dots refined - prototype</title>
+<style>
+/*BASECSS*/
+.t-dark { --tt-provider-codex: #d7dbe1; --tt-provider-claude: #e3b58e; --tt-provider-grok: #c9baff; }
+.t-light { --tt-provider-codex: #c9ced6; --tt-provider-claude: #e2ad80; --tt-provider-grok: #bfaefc; }
+.cmp[data-provider='claude'] { --prov: var(--tt-provider-claude); }
+.cmp[data-provider='codex'] { --prov: var(--tt-provider-codex); }
+.cmp[data-provider='grok'] { --prov: var(--tt-provider-grok); }
+.cmp[data-provider='codex'] .t-light, .t-light .cmp[data-provider='codex'] { --prov: color-mix(in oklab, var(--tt-provider-codex) 40%, var(--tt-text)); }
+.t-light .cmp[data-provider='grok'] { --prov: color-mix(in oklab, var(--tt-provider-grok) 70%, var(--tt-text)); }
+.t-light .cmp[data-provider='claude'] { --prov: color-mix(in oklab, var(--tt-provider-claude) 80%, var(--tt-text)); }
+.fr { height: 150px; }
+.cmp { bottom: 18px; }
+
+/* The pill and its parts, shared by every take. */
+.pill { display: flex; align-items: center; gap: 2px; min-height: 46px; padding: 6px 8px 6px 18px; border-radius: 23px; background: var(--tt-card); }
+.pill .fld { margin-right: 6px; }
+.who { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 8px 0 7px; border: 0; border-radius: 15px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; flex: none; }
+.who:hover { background: var(--tt-hover); color: var(--tt-text); }
+.pm { display: grid; width: 15px; height: 15px; flex: none; color: var(--prov); }
+.pm svg { grid-area: 1 / 1; width: 15px; height: 15px; fill: currentcolor; }
+.pm.swap svg { animation: swapin calc(260ms * var(--k)) var(--spring); }
+@keyframes swapin { from { opacity: 0; transform: rotate(-60deg) scale(.5); } }
+.dots { display: inline-flex; align-items: center; gap: 0; height: 30px; padding: 0 2px; border-radius: 15px; outline: none; flex: none; }
+.dots:focus-visible { box-shadow: 0 0 0 2px var(--tt-accent); }
+.dots button { display: grid; place-items: center; width: 11px; height: 30px; padding: 0; border: 0; background: none; cursor: pointer; }
+.dots i { width: 4.5px; height: 4.5px; border-radius: 50%; background: var(--dot, var(--tt-accent)); opacity: .16; transition: opacity var(--t), transform calc(240ms * var(--k)) var(--spring), background-color var(--t); }
+.dots button:hover i { opacity: .5; transform: scale(1.3); }
+[data-effort='0'] .dots .d0 i, [data-effort='1'] .dots :is(.d0, .d1) i, [data-effort='2'] .dots :is(.d0, .d1, .d2) i, [data-effort='3'] .dots i { opacity: 1; }
+[data-run] .dots i { animation: bounce calc(900ms * var(--k)) ease-in-out infinite; }
+[data-run] .dots .d1 i { animation-delay: calc(120ms * var(--k)); } [data-run] .dots .d2 i { animation-delay: calc(240ms * var(--k)); } [data-run] .dots .d3 i { animation-delay: calc(360ms * var(--k)); }
+@keyframes bounce { 30% { transform: translateY(-4px); } 60% { transform: none; } }
+
+/* 10 as drawn: no mark. */
+.v10 .who .pm { display: none; }
+.v10 .who { padding-left: 8px; }
+
+/* 10.2: the dots take the provider's colour, so the mark and the dots are one family and the accent is left to Send. */
+.v102 { --dot: var(--prov); }
+.v102 .dots i { opacity: .22; }
+
+/* 10.3: only the lit dots are drawn, close after the name as a trailing ellipsis. */
+.v103 .who { padding-right: 2px; }
+.v103 .dots { gap: 0; padding: 0 6px 0 0; margin-left: -2px; }
+.v103 .dots button { width: 7px; }
+.v103 .dots i { width: 3.5px; height: 3.5px; opacity: 0; transform: scale(0); background: var(--tt-text-2); }
+.v103[data-effort='0'] .dots .d0 i, .v103[data-effort='1'] .dots :is(.d0, .d1) i, .v103[data-effort='2'] .dots :is(.d0, .d1, .d2) i, .v103[data-effort='3'] .dots i { opacity: 1; transform: none; }
+.v103 .dots:hover i { opacity: .35; transform: none; }
+.v103 .dots button:hover i { opacity: 1; }
+.v103 .dots { align-self: center; padding-top: 5px; }
+
+/* 10.4: while it thinks, the dots leave the model and wait in the prompt, where the answer will come from. */
+.v104 .wait { position: absolute; left: 0; top: 50%; display: inline-flex; gap: 6px; transform: translate(-6px, -50%); opacity: 0; pointer-events: none; transition: opacity var(--t), transform calc(260ms * var(--k)) var(--out); }
+.v104 .wait i { width: 5px; height: 5px; border-radius: 50%; background: var(--tt-accent); }
+.v104[data-run]:not([data-text]) .wait { opacity: 1; transform: translate(0, -50%); }
+.v104[data-run]:not([data-text]) .wait i { animation: bounce calc(900ms * var(--k)) ease-in-out infinite; }
+.v104 .wait i:nth-child(2) { animation-delay: calc(120ms * var(--k)) !important; } .v104 .wait i:nth-child(3) { animation-delay: calc(240ms * var(--k)) !important; } .v104 .wait i:nth-child(4) { animation-delay: calc(360ms * var(--k)) !important; }
+.v104 .wait i.x { display: none; }
+.v104[data-effort='1'] .wait i.x1, .v104[data-effort='2'] .wait :is(.x1, .x2), .v104[data-effort='3'] .wait i.x { display: block; }
+.v104[data-run]:not([data-text]) .fld textarea::placeholder { color: transparent; }
+.v104 .dots { transition: opacity var(--t), transform calc(240ms * var(--k)) var(--out); }
+.v104[data-run]:not([data-text]) .dots { opacity: 0; transform: translateX(-8px); }
+.v104[data-run] .dots i { animation: none; }
+.v104 .hint { position: absolute; left: 44px; top: 50%; transform: translateY(-50%); color: var(--ph); font-size: 15px; opacity: 0; pointer-events: none; transition: opacity var(--t); white-space: nowrap; }
+.v104[data-run]:not([data-text]) .hint { opacity: 1; }
+
+/* 10.1 and every take: the shield a touch smaller so the mark leads. */
+.pill .sh svg { width: 14px; height: 14px; }
+/*CALMCSS*/
+</style>
+</head>
+<body class="m-both">
+<h1>Thinking dots, refined</h1>
+<div class="intro">
+  <p><b>10 as drawn</b> is one pill: the prompt, the model's name, one to four dots for effort that bounce while it thinks, a shield, and Send. Attach is not drawn: paste or drop a file. Below it, four refined takes, each with <b>the provider's own mark</b> before the model's name, in the provider's colour.</p>
+  <p><b>What every take changes from 10:</b> the mark is back and changes with the model (click the name: Claude, Codex and Grok models). Each dot is its own target, so a click sets that level, and the dots answer the arrow keys when focused (a slider for assistive technology, named "Reasoning: High"). The shield is a touch smaller so the mark leads.</p>
+</div>
+<div class="bar">
+  <span class="seg" id="mode"><button data-v="both" aria-pressed="true">Both</button><button data-v="dark">Dark</button><button data-v="light">Light</button></span>
+  <button type="button" class="go" id="playall">Play all</button>
+  <label><input type="checkbox" id="calm"> Reduce motion</label><label><input type="checkbox" id="slow"> Slow ×4</label>
+  <nav id="nav"></nav>
+</div>
+<main id="main"></main>
+<script>
+//PI
+const MARKS = /*MARKS*/
+const PM = '<span class="pm" data-mark aria-hidden="true"></span>'
+const F = '<div class="fld" data-field></div>'
+const SH = '<button type="button" class="ib sh" data-act="perms" data-title="perms">' + I.shield + '</button>'
+const SD = `<button type="button" class="sd" data-act="primary" aria-label="Send prompt"><span class="g g-up">${I.up}</span><span class="g g-sq">${I.sq}</span><span class="g g-q">${I.queue}</span><span class="qb" data-bind="qcount"></span><span class="trace" aria-hidden="true"><i></i></span></button>`
+const DOTS = `<span class="dots" role="slider" tabindex="0" aria-valuemin="1" aria-valuemax="4" data-slider>${[0, 1, 2, 3].map(i => `<button type="button" class="d${i}" tabindex="-1" data-act="effort-set" data-v="${i}" aria-label="Reasoning ${['Low', 'Medium', 'High', 'Max'][i]}"><i></i></button>`).join('')}</span>`
+const WHO = `<button type="button" class="who" data-act="model" title="Model">${PM}<span data-bind="model"></span></button>`
+const PILL = (extra = '') => `<div class="pill">${F}${extra}${WHO}${DOTS}${SH}${SD}</div>`
+
+const D = [
+  { id: '10', name: '10 as drawn', idea: 'For reference, from the twenty: the model\'s name with four dots after it, no mark.', html: () => PILL() },
+  { id: '10.1', name: 'The mark comes back', idea: 'As 10, with the provider\'s mark before the model\'s name in the provider\'s colour, and the dots in the accent.',
+    chg: 'the mark; each dot a click target; arrow keys on the dots; a smaller shield.', html: () => PILL() },
+  { id: '10.2', name: 'One family', idea: 'The dots take the provider\'s colour too, so mark, name and dots read as one thing: who answers and how hard. The accent is left to Send and the queue count.',
+    chg: 'as 10.1, with the dots in the provider\'s colour; one colour fewer in the pill.', html: () => PILL() },
+  { id: '10.3', name: 'A trailing ellipsis', idea: 'Only the lit dots are drawn, small and close after the name, as if the name trails off: "Opus 5.5·" to "Opus 5.5····". Pointing at them shows the four places.',
+    chg: 'as 10.1, without the unlit dots; the quietest take.', html: () => PILL() },
+  { id: '10.4', name: 'The dots go to work', idea: 'When a turn starts, the dots leave the model and bounce at the start of the empty prompt, where the answer is coming from; when it ends they return. Typing a follow-up puts your words there instead.',
+    chg: 'as 10.1, with the thinking dots in the prompt while a turn runs.', html: () => `<div class="pill"><div class="fld" data-field></div>${WHO}${DOTS}${SH}${SD}</div>` },
+]
+const MODELS = [{ name: 'Opus 5.5', p: 'claude' }, { name: 'GPT-5.5', p: 'codex' }, { name: 'Grok 4', p: 'grok' }]
+const EFFORTS = ['Low', 'Medium', 'High', 'Max']
+const SUGG = ['Run the composer e2e spec and fix what fails', 'Open the pull request', 'Write the verification note']
+const TURN = 5200
+const k = () => document.body.classList.contains('slow') ? 4 : 1
+const sleep = ms => new Promise(r => setTimeout(r, ms * k()))
+const markSvg = p => `<svg viewBox="${MARKS[p][0]}"><path d="${MARKS[p][1]}"/></svg>`
+
+class Frame {
+  constructor(el, d) {
+    this.el = el; this.d = d
+    Object.assign(this, { text: '', focus: false, run: false, queue: 0, ghost: true, si: 0, mi: 0, ei: 2, full: true, prov: null })
+    el.innerHTML = `<div class="lastline">…and it passes ten runs in a row.</div><div class="cmp v${d.id.replace('.', '')}">${d.html()}</div>`
+    this.root = el.querySelector('.cmp')
+    const f = this.root.querySelector('[data-field]')
+    f.innerHTML = '<textarea rows="1" aria-label="Prompt"></textarea><span class="gh"><span data-bind="ghost"></span><kbd>Tab</kbd></span>' +
+      (d.id === '10.4' ? '<span class="wait" aria-hidden="true"><i></i><i class="x x1"></i><i class="x x2"></i><i class="x x3"></i></span><span class="hint">thinking · write to queue</span>' : '')
+    this.ta = f.querySelector('textarea')
+    this.ta.addEventListener('input', () => { this.text = this.ta.value; this.paint() })
+    this.ta.addEventListener('focus', () => { this.focus = true; this.paint() })
+    this.ta.addEventListener('blur', () => { this.focus = false; this.paint() })
+    this.ta.addEventListener('keydown', e => this.key(e))
+    el.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && el.contains(b)) { e.preventDefault(); this.act(b.dataset.act, b.dataset.v) } })
+    el.querySelectorAll('[data-slider]').forEach(s => s.addEventListener('keydown', e => {
+      const dir = e.key === 'ArrowRight' || e.key === 'ArrowUp' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowDown' ? -1 : 0
+      if (dir) { e.preventDefault(); this.ei = Math.max(0, Math.min(3, this.ei + dir)); this.paint() }
+    }))
+    this.root.addEventListener('mousedown', e => { if (!e.target.closest('[data-act], textarea, [data-slider]')) { e.preventDefault(); this.ta.focus() } })
+    this.paint()
+  }
+  key(e) {
+    const empty = !this.text.trim()
+    if (e.key === 'Tab' && !e.shiftKey && empty && this.ghost && !this.run) { e.preventDefault(); this.ta.value = this.text = SUGG[this.si]; return this.paint() }
+    if (e.key === 'Escape') { e.preventDefault(); return this.ta.blur() }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); return this.act('primary') }
+  }
+  act(a, v) {
+    const t = this.text.trim()
+    if (a === 'model') this.mi = (this.mi + 1) % MODELS.length
+    else if (a === 'effort-set') this.ei = Number(v)
+    else if (a === 'perms') this.full = !this.full
+    else if (a === 'primary') {
+      if (this.run) { if (t) { this.queue++; this.clear() } else this.end(true) }
+      else if (t) { this.root.setAttribute('data-sent', ''); setTimeout(() => this.root.removeAttribute('data-sent'), 380 * k()); this.clear(); this.begin() }
+    }
+    this.paint()
+  }
+  clear() { this.ta.value = this.text = '' }
+  begin() { this.run = true; this.ghost = false; clearTimeout(this.timer); this.timer = setTimeout(() => this.end(false), TURN * k()); this.paint() }
+  end(stopped) {
+    clearTimeout(this.timer); this.run = false
+    if (!stopped && this.queue) { this.queue--; this.begin(); return }
+    if (!stopped) { this.ghost = true; this.si = (this.si + 1) % SUGG.length }
+    this.paint()
+  }
+  paint() {
+    const r = this.root, has = Boolean(this.text.trim()), m = MODELS[this.mi]
+    const at = (n, v) => v ? r.setAttribute(n, '') : r.removeAttribute(n)
+    at('data-focus', this.focus); at('data-text', has); at('data-run', this.run); at('data-queue', this.queue > 0); at('data-ghost', this.ghost); at('data-full', this.full)
+    r.dataset.effort = this.ei; r.dataset.provider = m.p
+    if (this.prov !== m.p) {
+      r.querySelectorAll('[data-mark]').forEach(x => { x.innerHTML = markSvg(m.p); if (this.prov) { x.classList.remove('swap'); void x.offsetWidth; x.classList.add('swap') } })
+      this.prov = m.p
+    }
+    const b = { model: m.name, ghost: SUGG[this.si], qcount: String(this.queue) }
+    for (const [n, val] of Object.entries(b)) this.el.querySelectorAll(`[data-bind="${n}"]`).forEach(x => { if (x.textContent !== val) x.textContent = val })
+    this.ta.placeholder = this.run ? (this.d.id === '10.4' ? '' : 'Write a follow-up to queue it') : this.ghost ? '' : `Ask ${m.name}`
+    r.querySelectorAll('[data-slider]').forEach(x => { x.setAttribute('aria-valuenow', String(this.ei + 1)); x.setAttribute('aria-valuetext', EFFORTS[this.ei]); x.ariaLabel = x.title = `Reasoning: ${EFFORTS[this.ei]}` })
+    r.querySelectorAll('[data-title=perms]').forEach(x => { x.title = x.ariaLabel = `Thread permissions: ${this.full ? 'Full access' : 'Ask first'}` })
+    r.querySelectorAll('.sd').forEach(x => { x.ariaLabel = x.title = this.run ? (has ? 'Queue prompt ↵' : 'Stop agent ⇧⌘S') : 'Send prompt ↵' })
+  }
+  async type(s) { this.ta.focus(); for (const ch of s) { this.ta.value = this.text += ch; this.paint(); await sleep(26) } }
+  async play() {
+    if (this.playing) return; this.playing = true
+    try {
+      if (this.run) this.end(true)
+      this.ta.focus(); await sleep(400)
+      for (let i = 0; i < 3; i++) { this.act('model'); await sleep(650) }
+      for (const e of [0, 3, 1, 2]) { this.act('effort-set', e); await sleep(450) }
+      this.act('perms'); await sleep(500); this.act('perms'); await sleep(400)
+      await this.type('Fix the flaky composer spec on Windows'); await sleep(400)
+      this.act('primary'); await sleep(1800)
+      await this.type('Then update the release notes'); await sleep(400)
+      this.act('primary')
+      for (let i = 0; i < 60 && (this.run || this.queue); i++) await sleep(250)
+      await sleep(600); this.ta.blur()
+    } finally { this.playing = false }
+  }
+}
+
+const main = document.getElementById('main'), nav = document.getElementById('nav')
+const frames = []
+for (const d of D) {
+  const sec = document.createElement('section')
+  sec.className = 'dir'; sec.id = d.id; sec.dataset.id = d.id === '10' ? '0' : d.id
+  sec.innerHTML = `<header><h2><b>${d.id}</b>${d.name}</h2><button type="button" class="play">Play</button></header><p class="idea">${d.idea}</p>${d.chg ? `<p class="cut">${d.chg}</p>` : ''}
+    <div class="frames"><div class="fr t-dark"></div><div class="fr t-light"></div></div>`
+  main.appendChild(sec)
+  const fs = [...sec.querySelectorAll('.fr')].map(el => new Frame(el, d))
+  frames.push(...fs)
+  sec.querySelector('.play').addEventListener('click', () => fs.forEach(f => f.play()))
+}
+nav.innerHTML = D.map(d => `<a href="#${d.id}">${d.id}</a>`).join('')
+document.getElementById('playall').addEventListener('click', () => frames.forEach((f, i) => setTimeout(() => f.play(), (i >> 1) * 100)))
+document.getElementById('calm').addEventListener('change', e => document.body.classList.toggle('calm', e.target.checked))
+document.getElementById('slow').addEventListener('change', e => document.body.classList.toggle('slow', e.target.checked))
+const mode0 = new URLSearchParams(location.search).get('mode') ?? 'both'
+const setMode = v => { document.body.classList.remove('m-both', 'm-dark', 'm-light'); document.body.classList.add('m-' + v) }
+setMode(mode0)
+const seg = document.getElementById('mode')
+const sync = v => seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)))
+seg.addEventListener('click', e => { const v = e.target.dataset?.v; if (v) { setMode(v); sync(v) } })
+sync(mode0)
+if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView()
+window.__frames = frames
+</script>
+</body>
+</html>
