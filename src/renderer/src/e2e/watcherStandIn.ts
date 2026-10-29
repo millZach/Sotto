@@ -2,6 +2,8 @@ import { z } from 'zod'
 import { handoverCountsSchema } from '../../../shared/agents'
 import { watcherIdentitySchema, type WatcherRefusal, type WatcherThreadTarget } from '../../../shared/watcher'
 import { checkQueuesViewSchema, type CheckQueuesBridge } from '../../../shared/checkQueue'
+import type { HostsBridge, HostsState, HostStatus } from '../../../shared/hosts'
+import { threadMoveCardSchema, threadMovePrepareSchema, type ThreadMoveCard, type ThreadMovesBridge, type ThreadMovesView } from '../../../shared/threadMoves'
 import { stopAllRunning, watcherMachinesReadSchema, watcherRoomStateSchema, type WatcherBridge, type WatcherRoomState } from '../../../shared/watcherRoom'
 
 /** Where an end-to-end run leaves the projection the room should show, before it reloads the window. */
@@ -34,6 +36,12 @@ export const watcherStandInSeedSchema = z.object({
   /** Every machine's check queue (#1312), as main sends it; without it, the window reads main's own. */
   checks: checkQueuesViewSchema.optional(),
   /**
+   * Moving threads (#1178 part 2): the paired machines and whether each is connected, what Move threads' preview answers,
+   * the cards main holds, and the cards it holds once the sheet's move is pressed. Without it, the window reads main's own.
+   */
+  moves: z.object({ machines: z.array(z.object({ hostId: z.uuid(), name: z.string().min(1), connected: z.boolean() }).strict()).max(8),
+    preview: threadMovePrepareSchema.optional(), cards: z.array(threadMoveCardSchema).max(50), started: z.array(threadMoveCardSchema).max(50).optional() }).strict().optional(),
+  /**
    * Later projections, each published this long after the window first listens, so a run can watch the picture move:
    * a send delivered, a reply, a question for the user. Each replaces the parts of the projection it names.
    */
@@ -51,6 +59,38 @@ export function createE2ECheckQueuesBridge(): CheckQueuesBridge | undefined {
   if (raw === null) return undefined
   const checks = watcherStandInSeedSchema.parse(JSON.parse(raw)).checks
   return checks === undefined ? undefined : { read: async () => checks, onChanged: () => () => undefined }
+}
+
+/**
+ * Moving threads, stood in for by an end-to-end run that seeds them (#1178 part 2): the paired machines the window reads
+ * through the hosts bridge, and the moves bridge, whose start answers the seeded cards and whose press on a card that
+ * asks first moves it on or keeps it here. Without a seed, none.
+ */
+export function createE2EThreadMovesStandIn(): { readonly moves: ThreadMovesBridge; readonly hosts: HostsBridge } | undefined {
+  let raw: string | null
+  try { raw = localStorage.getItem(WATCHER_STAND_IN_KEY) } catch { return undefined }
+  if (raw === null) return undefined
+  const seeded = watcherStandInSeedSchema.parse(JSON.parse(raw)).moves
+  if (seeded === undefined) return undefined
+  let view: ThreadMovesView = { cards: seeded.cards }
+  const listeners = new Set<(next: ThreadMovesView) => void>()
+  const publish = (cards: readonly ThreadMoveCard[]): void => { view = { cards: [...cards] }; for (const listener of [...listeners]) listener(view) }
+  const hostsState = { localHostEnabled: true, localHostRunning: true, hosts: seeded.machines.map(machine => ({ id: machine.hostId, hostId: machine.hostId, name: machine.name,
+    target: machine.name, identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: machine.connected ? 'connected' : 'disconnected', enabled: true }) as HostStatus) } as HostsState
+  const moves: ThreadMovesBridge = {
+    prepare: async () => seeded.preview ?? { status: 'refused', message: 'This test run moves no threads.' },
+    start: async () => { publish([...view.cards, ...seeded.started ?? []]); return { status: 'ok', moves: [] } },
+    read: async () => view,
+    answer: async ({ cardId, answer }) => {
+      const at = new Date().toISOString()
+      publish(view.cards.map(card => card.id !== cardId ? card : answer === 'keep' ? { ...card, state: 'kept', updatedAt: at }
+        : { ...card, state: 'fenced', updatedAt: at, words: undefined, startsOn: undefined }).map(card => threadMoveCardSchema.parse(JSON.parse(JSON.stringify(card)))))
+      return { status: 'ok' }
+    },
+    onChanged: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },
+  }
+  const hosts = { get: async () => hostsState, onChanged: () => () => undefined } as unknown as HostsBridge
+  return { moves, hosts }
 }
 
 /**
