@@ -1,4 +1,3 @@
-#!/usr/bin/env node
 // Reads the provider documentation every doc tip rests on (ADR-0159) and reports the tips whose sentence is gone.
 //
 //   node scripts/check-tip-sources.mjs [--report <file>]
