@@ -31,8 +31,9 @@ import { effortChoices } from '../agents/ThreadOptions'
 import { ThreadPane } from '../agents/ThreadPane'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { BrowserPageRouteContext } from '../tools/webLinks'
-import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
-import { watcherRoomWork, watcherTakeovers, type WatcherRoomState } from '../../../shared/watcherRoom'
+import type { WatcherThreadTarget } from '../../../shared/watcher'
+import { watcherTakeovers, type WatcherRoomState } from '../../../shared/watcherRoom'
+import { joinedPlacements, joinedReceipts, joinedTakeovers, liveReceipts, recalledConversation } from './watcherConversationWork'
 import { rowStatus } from '../agents/threadFacts'
 import { threadAddressIndex, threadForTarget, useWatcherRoom, watchedRows, type WatcherRoom } from './watcherRoom'
 import { placeTakeovers, WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
@@ -261,30 +262,18 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   const gate = useMemo(() => watcherSendGate(room?.handover, room?.settle, offered, continueLabel), [room?.handover, room?.settle, offered, continueLabel])
   // Each action Watcher took is a receipt card under the reply of the turn that took it, where main's record places it,
   // and each thread the user took over is a quiet line in the conversation, after the turn it came in (ADR-0073).
-  // With what the conversation shown back recalled from Watcher's archive ahead of the record's own (#1759).
-  const liveReceipts = room?.state?.receipts, liveReplies = room?.state?.receiptReplies, liveRequests = room?.state?.requests
-  const livePlacements = room?.state?.receiptPlacements, recalled = room?.state?.recalled
-  const work = useMemo(() => liveReceipts === undefined || liveRequests === undefined ? undefined
-    : watcherRoomWork({ receipts: liveReceipts, receiptReplies: liveReplies, requests: liveRequests, receiptPlacements: livePlacements, recalled }),
-  [liveReceipts, liveReplies, liveRequests, livePlacements, recalled])
-  const receipts = work?.receipts
-  const replies = work?.receiptReplies
-  const byMessage = useMemo(() => {
-    const placed = new Map<string, WatcherOperation[]>()
-    if (receipts === undefined || replies === undefined || replies.length === 0) return placed
-    const operations = new Map(receipts.map(operation => [operation.id, operation] as const))
-    for (const { operationId, messageId } of replies) {
-      const operation = operations.get(operationId)
-      if (operation !== undefined) placed.set(messageId, [...placed.get(messageId) ?? [], operation])
-    }
-    for (const list of placed.values()) list.sort((a, b) => Date.parse(a.createdAt) - Date.parse(b.createdAt))
-    return placed
-  }, [receipts, replies])
-  const requests = work?.requests
-  const current = room?.state?.current ?? null
+  // With what the conversation shown back recalled from Watcher's archive ahead of the record's own (#1759): the read
+  // back is indexed once for its own object, and a change of the record's lists works over those lists alone.
+  const receipts = room?.state?.receipts, replies = room?.state?.receiptReplies, requests = room?.state?.requests
+  const current = room?.state?.current ?? null, recalledWork = room?.state?.recalled
+  const recalled = useMemo(() => recalledConversation(recalledWork, current?.target), [recalledWork, current?.target])
+  const own = useMemo(() => liveReceipts(receipts, replies), [receipts, replies])
+  const byMessage = useMemo(() => joinedReceipts(own.byMessage, own.operations, recalled), [own, recalled])
   const takeovers = useMemo(() => requests === undefined ? [] : watcherTakeovers({ current, requests }), [current, requests])
   const messages = row.thread.messages
-  const lines = useMemo(() => placeTakeovers(messages, takeovers), [messages, takeovers])
+  const ownLines = useMemo(() => placeTakeovers(messages, takeovers), [messages, takeovers])
+  const recalledLines = useMemo(() => recalled === undefined ? undefined : placeTakeovers(messages, recalled.takeovers), [messages, recalled])
+  const lines = useMemo(() => joinedTakeovers(ownLines, recalledLines), [ownLines, recalledLines])
   // Each request a wake-up said waited on the user has its thread's own card under the reply that told of it, where
   // main's record places it, and only under the newest wake-up that named it (Zach's pick on October 19, 2026).
   // The placements keep their identity until they change, so the conversation context does not change with every update;
@@ -293,9 +282,9 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   const asks = useMemo(() => placeAsks(placements), [placements])
   // Where each start went (#1032), only while Work across machines is on, and kept in memory as main keeps it.
   const crossMachine = useOwlFeature('cross-machine-work')
-  const receiptPlacements = work?.receiptPlacements
-  const placementsById = useMemo(() => !crossMachine || receiptPlacements === undefined ? undefined
-    : new Map(receiptPlacements.map(item => [item.operationId, item.placement] as const)), [crossMachine, receiptPlacements])
+  const receiptPlacements = room?.state?.receiptPlacements
+  const placementsById = useMemo(() => !crossMachine ? undefined
+    : joinedPlacements(new Map((receiptPlacements ?? []).map(item => [item.operationId, item.placement] as const)), recalled), [crossMachine, receiptPlacements, recalled])
   const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById }),
     [byMessage, lines, describe, press, asks, placementsById])
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the

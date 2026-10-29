@@ -220,6 +220,22 @@ describe('the archive on disk', () => {
     expect({ few: await added(5), many: await added(60) }).toEqual({ few: 1, many: 1 })
   })
 
+  it('reads only the batch a lookup by ID needs, however many it holds', async () => {
+    /** The archive's batches visited while one request is read by ID, after `held` one-request batches. */
+    const visited = async (held: number): Promise<number> => {
+      const root = await directory(), value = record(WATCHER_LIVE_CLOSED_REQUESTS + held)
+      const ids = archivableWatcherRequests(value)
+      const archive = new WatcherArchive(root, () => true)
+      for (const id of ids) await archive.append(watcherArchiveBatch(value, [id]))
+      const inner = archive as unknown as { slots: unknown[] }
+      let visits = 0
+      inner.slots = new Proxy(inner.slots, { get(target, property, receiver) { if (typeof property === 'string' && /^\d+$/u.test(property)) visits++; return Reflect.get(target, property, receiver) } })
+      expect((await archive.read({ requests: [ids.at(-1)!] })).requests.map(item => item.id)).toEqual([ids.at(-1)])
+      return visits
+    }
+    expect({ few: await visited(5), many: await visited(60) }).toEqual({ few: 0, many: 0 })
+  })
+
   it('gives each request, operation and prompt turn once when a crash left a batch archived twice', async () => {
     const root = await directory(), value = record(260)
     const batch = watcherArchiveBatch(value, archivableWatcherRequests(value))

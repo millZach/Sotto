@@ -260,6 +260,9 @@ export class WatcherArchive {
   private retries = new Map<string, string>()
   private retryKeys = new Map<string, string[]>()
   private turnSlots = new Map<string, Slot[]>()
+  /** Each batch's place in the order it was archived, given as it is added, so a read orders only the batches it reads. */
+  private ordinals = new Map<Slot, number>()
+  private nextOrdinal = 0
   /** The newest version archived of each request (`watcherWorkVersion`). */
   private versions = new Map<string, string>()
   /** Each archived operation's message in its thread, as `host\nthread\nmessage`. */
@@ -291,12 +294,13 @@ export class WatcherArchive {
   }
   private forget(): void {
     this.slots = []; this.requestSlot = new Map(); this.operationSlot = new Map(); this.retries = new Map(); this.retryKeys = new Map()
-    this.turnSlots = new Map(); this.startedTargets = new Set(); this.latest = undefined; this.turnPromptsOf = new Map(); this.messages = new Set(); this.versions = new Map(); this.changes++
+    this.turnSlots = new Map(); this.startedTargets = new Set(); this.latest = undefined; this.turnPromptsOf = new Map(); this.messages = new Set(); this.versions = new Map(); this.ordinals = new Map(); this.changes++
   }
   /** Which batches the archive holds, as a number that moves whenever they change. */
   get revision(): number { return this.changes }
   private add(slot: Slot): void {
     this.slots.push(slot)
+    this.ordinals.set(slot, this.nextOrdinal++)
     this.changes++
     const { entry } = slot
     if (this.latest === undefined || entry.through > this.latest) this.latest = entry.through
@@ -383,8 +387,7 @@ export class WatcherArchive {
   /** The batches in `slots`, from the file or memory. A batch that cannot be read is left out; the others still come. */
   private async readSlots(slots: readonly Slot[], strict = false): Promise<Batch[]> {
     // In the order they were archived, so a request archived again comes after its older version.
-    const order = new Map(this.slots.map((slot, index) => [slot, index] as const))
-    const ordered = [...slots].sort((one, other) => (order.get(one) ?? 0) - (order.get(other) ?? 0))
+    const ordered = [...slots].sort((one, other) => (this.ordinals.get(one) ?? 0) - (this.ordinals.get(other) ?? 0))
     const read = new Map<Slot, Batch>()
     for (const slot of ordered) if (slot.held) read.set(slot, slot.held)
     const wanted = ordered.filter(slot => !slot.held)

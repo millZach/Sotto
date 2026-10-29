@@ -49,3 +49,26 @@ it('carries the newest five hundred takeover lines, as it carries receipts, and 
   // The page's other parts find their few threads; the lines do not search once each.
   expect(find.mock.calls.length).toBeLessThan(10)
 })
+
+it('carries what Watcher’s conversation shown back recalled from its archive: its receipt cards and takeover lines (#1759)', () => {
+  const taken = { requestId: REQUEST, startedBy: 'watcher' as const, generation: 1, state: 'taken-over' as const, target: { hostId: HOST, threadId: 'auth' },
+    promptCount: 1, takeover: { reason: 'user-send' as const, at: AT } }
+  const archivedRequest = { id: REQUEST, watcher, rootUserMessageId: 'u1', state: 'closed' as const, createdAt: AT, closedAt: AT, participants: [taken] }
+  const receipt = { id: '44444444-4444-4444-8444-444444444444', requestId: REQUEST, retryKey: '55555555-5555-4555-8555-555555555555', digest: 'a'.repeat(64),
+    action: 'send' as const, target: { hostId: HOST, threadId: 'auth' }, generation: 1, deliveryState: 'accepted' as const, createdAt: AT, updatedAt: AT, receiptId: 'receipt', cardId: 'card' }
+  const room: WatcherRoomState = { current: { target: watcher, projectId: 'project', provider: 'codex', creationOperationId: '33333333-3333-4333-8333-333333333333', createdAt: AT },
+    currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true }, history: [], requests: [], watchedThreads: [], receipts: [],
+    recalled: { receipts: [receipt], receiptReplies: [], requests: [archivedRequest] }, recoveryNotice: null, observedAt: AT }
+  const snapshot = { ...emptyDesktopState(HOST).host, threads: [{ id: 'auth', projectId: 'project', title: 'Auth refactor', modelId: 'codex:gpt', status: 'idle' as const, messages: [], requests: [] }] }
+  const service = new WatcherPhoneService({ hostId: () => HOST, threadDetail: () => null, watcherSendRecords: () => ({ deliveries: [], followups: [] }) } as unknown as AgentControl,
+    { state: () => room, phoneSnapshot: () => snapshot, startsInFlight: () => 0 } as unknown as WatcherService)
+  const state = service.state(false)
+  expect(state.takeovers).toEqual([{ target: { hostId: HOST, threadId: 'auth' }, title: 'Auth refactor', at: AT }])
+  expect(state.receiptGroups).toMatchObject([{ requestId: REQUEST, rows: [{ operationId: receipt.id, title: 'Auth refactor' }] }])
+  // The same card and line the room carries too go once, the room's.
+  const both: WatcherRoomState = { ...room, receipts: [receipt], requests: [{ ...archivedRequest, state: 'active', closedAt: null }] }
+  const twice = new WatcherPhoneService({ hostId: () => HOST, threadDetail: () => null, watcherSendRecords: () => ({ deliveries: [], followups: [] }) } as unknown as AgentControl,
+    { state: () => both, phoneSnapshot: () => snapshot, startsInFlight: () => 0 } as unknown as WatcherService).state(false)
+  expect(twice.takeovers).toHaveLength(1)
+  expect(twice.receiptGroups.flatMap(group => group.rows)).toHaveLength(1)
+})
