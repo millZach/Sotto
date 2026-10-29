@@ -2,12 +2,12 @@
 // #1178 part 1: the move record's states, the fence, and the prepare and confirm pair, over stand-ins for the coordinator,
 // the branch mover and the machine a thread moves to. tests/integration/threadMoves.test.ts moves one over a real host.
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildHandover } from '../../../src/main/agents/handover'
-import { firstTurnEnded, ThreadMoveService, type MoveControl, type MoveRecord, type MoveTargets } from '../../../src/main/agents/threadMoves'
+import { firstTurnEnded, holdUnfinishedMoves, ThreadMoveService, type MoveControl, type MoveRecord, type MoveTargets } from '../../../src/main/agents/threadMoves'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentModel, type AgentState, type AgentThread, type ThreadContinuedIn } from '../../../src/shared/agents'
 import { branchMoveRefusal, branchMoveWords, type BranchMoveReceipt } from '../../../src/shared/branchMoves'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
@@ -58,7 +58,11 @@ function world() {
   }
   // The machine: it makes one thread per move, and answers the same one when asked again.
   const remote = { connected: true, mayAnswer: true, supports: true, threads: [] as AgentThread[], made: new Map<string, string>(), requests: [] as HostThreadMoveRequest[],
-    fail: undefined as Error | undefined, answer: undefined as unknown, listeners: new Set<(hostId?: string) => void>() }
+    fail: undefined as Error | undefined, answer: undefined as unknown, listeners: new Set<(hostId?: string) => void>(), updates: new Set<() => void>(),
+    /** Each push makes a new snapshot, as the router does; between pushes the same one is read. */
+    version: 0, snapshot: undefined as { version: number; snapshot: AgentHostSnapshot } | undefined,
+    /** How many times anything read one of the machine's threads out of its snapshot. */
+    visits: 0, snapshots: 0 }
   const host = {
     get supportsThreadMove() { return remote.supports },
     threadMove: vi.fn(async (request: HostThreadMoveRequest) => {
@@ -71,28 +75,45 @@ function world() {
         remote.threads.push({ id: threadId, title: request.title, projectId: request.projectId, modelId: request.modelId, providerId: 'codex', status: 'running', requests: [], messages: [],
           lastUserMessageId: randomUUID(), ...request.runtimeMode ? { runtimeMode: request.runtimeMode } : {} })
       }
+      remote.version++
       return { type: 'started', moveId: request.moveId, threadId, ...request.runtimeMode ? { runtimeMode: request.runtimeMode } : {}, sent: true }
     }),
   }
-  const changed = (): void => { for (const listener of remote.listeners) listener(FORGE) }
+  /** The machine pushed an update: a new snapshot, and every update listener hears it. */
+  const changed = (): void => { remote.version++; for (const listener of remote.updates) listener() }
+  /** The machine connected or changed what it offers. */
+  const connected = (): void => { for (const listener of remote.listeners) listener(FORGE) }
+  const counted = (threads: AgentThread[]): AgentThread[] => new Proxy(threads, { get(target, property, receiver) {
+    if (typeof property === 'string' && /^\d+$/u.test(property)) remote.visits++
+    return Reflect.get(target, property, receiver) as unknown } })
   const targets: MoveTargets = {
     name: hostId => hostId === FORGE ? 'forge' : undefined,
-    snapshot: hostId => hostId === FORGE && remote.connected ? { ...EMPTY_AGENT_HOST, hostId: FORGE, models: [model], threads: remote.threads } as AgentHostSnapshot : undefined,
+    snapshot: hostId => {
+      if (hostId !== FORGE || !remote.connected) return undefined
+      remote.snapshots++
+      if (remote.snapshot?.version !== remote.version) remote.snapshot = { version: remote.version, snapshot: { ...EMPTY_AGENT_HOST, hostId: FORGE, models: [model], threads: counted([...remote.threads]) } }
+      return remote.snapshot.snapshot
+    },
     mayAnswer: () => remote.mayAnswer, host: hostId => hostId === FORGE && remote.connected ? host : undefined,
     place: async () => ({ projectId: 'forge-project' }),
     subscribe: listener => { remote.listeners.add(listener); return () => { remote.listeners.delete(listener) } },
+    subscribeUpdates: listener => { remote.updates.add(listener); return () => { remote.updates.delete(listener) } },
   }
-  const watch = { watched: new Set<string>(), moved: [] as string[],
+  const watch = { watched: new Set<string>(), moved: [] as string[], refuses: false, tries: 0,
     hasStandingWatch: (target: { hostId: string; threadId: string }) => watch.watched.has(target.threadId),
-    moveWatch: async (from: { hostId: string; threadId: string }, to: { hostId: string; threadId: string }) => { watch.moved.push(`${from.threadId}->${to.hostId}:${to.threadId}`); return true } }
+    moveWatch: async (from: { hostId: string; threadId: string }, to: { hostId: string; threadId: string }) => {
+      watch.tries++
+      if (watch.refuses) return false
+      watch.moved.push(`${from.threadId}->${to.hostId}:${to.threadId}`); return true
+    } }
   const service = (retryMs = 20) => new ThreadMoveService(directory, { control, workspace, branches, watch, retryMs })
   /** The machine's thread for a move ends its first turn, and the machine says so. */
-  const endTurn = (moveId: string, status: 'completed' | 'failed' = 'completed') => {
+  const endTurn = (moveId: string, status: 'completed' | 'failed' = 'completed', patch: Partial<AgentThread> = {}) => {
     const thread = remote.threads.find(item => item.id === remote.made.get(moveId))!
-    thread.status = 'idle'; thread.lastTurn = { id: 'turn', status }
+    Object.assign(thread, { status: 'idle', lastTurn: { id: 'turn', status } }, patch)
     changed()
   }
-  return { threads, fences, settled, links, forgotten, control, branches, remote, host, targets, watch, service, endTurn, changed }
+  return { threads, fences, settled, links, forgotten, control, branches, remote, host, targets, watch, service, endTurn, changed, connected }
 }
 type World = ReturnType<typeof world>
 const key = (threadId: string): string => hostEntityKey(HERE, threadId)
@@ -262,7 +283,7 @@ describe('every step is idempotent by the move’s ID', () => {
     expect(w.fences.get('a')).toBe(THREAD_MOVE_WORDS.fence('forge'))
     second.useTargets(w.targets)
     await vi.waitFor(() => expect(second.stalled().map(record => record.id)).toEqual([moveId]))
-    w.remote.connected = true
+    w.remote.connected = true; w.connected()
     w.endTurn(moveId)
     await vi.waitFor(() => expect(stateOf(second, moveId)).toBe('source-settled'))
     expect(w.branches.calls).toEqual([moveId]); expect(w.remote.threads).toHaveLength(1); expect(w.settled).toEqual(['a'])
@@ -282,13 +303,175 @@ describe('every step is idempotent by the move’s ID', () => {
 })
 
 describe('the first turn there', () => {
-  it('ends once the prompt reached the thread and nothing runs or waits on the user', () => {
-    const base = { status: 'idle' as const, requests: [], messages: [] }
+  it('ends once the prompt reached the thread and nothing runs, waits on the user or works in the background', () => {
+    const base: AgentThread = { id: 'there', projectId: 'project', title: 'There', modelId: model.id, status: 'idle', requests: [], messages: [] }
     expect(firstTurnEnded(base)).toBeUndefined()
     expect(firstTurnEnded({ ...base, lastUserMessageId: 'u', status: 'running' })).toBeUndefined()
     expect(firstTurnEnded({ ...base, lastUserMessageId: 'u', lastTurn: { id: 't', status: 'completed' }, requests: [{ id: 'r', kind: 'permission', text: 'May I?', options: [] }] })).toBeUndefined()
     expect(firstTurnEnded({ ...base, lastUserMessageId: 'u', lastTurn: { id: 't', status: 'failed' } })).toBe('failed')
+    expect(firstTurnEnded({ ...base, lastUserMessageId: 'u', lastTurn: { id: 't', status: 'failed' }, backgroundWork: [{ id: 'b', kind: 'agent', title: 'Tests', status: 'working' }] as never })).toBeUndefined()
+    expect(firstTurnEnded({ ...base, lastUserMessageId: 'u', lastTurn: { id: 't', status: 'completed' }, monitoring: [{ id: 'm', title: 'Watch the build' }] as never })).toBeUndefined()
     expect(firstTurnEnded({ ...base, summary: { messageCount: 2, activityCount: 0, lastUser: { id: 'u', text: 'x', createdAt: '2026-10-29T10:00:00.000Z' },
       lastAssistant: { id: 'a', text: 'y', createdAt: '2026-10-29T10:01:00.000Z' } } })).toBe('completed')
+  })
+})
+
+describe('a record written before it counts (Sol’s review)', () => {
+  it('steps nothing until a new move’s first write succeeds, and one that fails answers stays with nothing sent', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    // A folder where the record goes makes its write fail.
+    await mkdir(join(directory, 'moves.json'))
+    const prepared = moves.prepare({ threadIds: [key('a')], hostId: FORGE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
+    const moving = moves.move({ confirmationId: prepared.confirmationId, threadIds: [key('a')], allowNarrower: [] })
+    // Fenced while it is written, and nothing a machine says meanwhile steps it.
+    expect(w.fences.has('a')).toBe(true)
+    w.changed(); w.connected()
+    expect(await moving).toEqual({ status: 'ok', moves: [{ threadId: key('a'), outcome: 'stays', words: THREAD_MOVE_WORDS.unsaved }] })
+    expect(w.fences.has('a')).toBe(false); expect(w.branches.forStart).not.toHaveBeenCalled(); expect(w.remote.requests).toEqual([])
+    expect(moves.list()).toEqual([]); expect(moves.keepsWorktree('a')).toBe(false)
+    moves.close()
+  })
+})
+
+describe('a record that does not read (Sol’s review)', () => {
+  it('starts no move, keeps every source it still names fenced and kept, and leaves the file as it is', async () => {
+    const w = world(), path = join(directory, 'moves.json')
+    const broken = JSON.stringify({ version: 1, moves: [{ id: 'not-a-uuid', sourceThreadId: 'a', machine: 'forge', state: 'branch-sent' }, { sourceThreadId: 'b', state: 'given-back' }], kept: ['old'] })
+    await writeFile(path, broken)
+    const moves = w.service()
+    await moves.load(); moves.useTargets(w.targets)
+    expect(w.fences.get('a')).toBe(THREAD_MOVE_WORDS.unreadableFence('forge')); expect(w.fences.has('b')).toBe(false)
+    expect(moves.keepsWorktree('a')).toBe(true); expect(moves.keepsWorktree('old')).toBe(true)
+    expect(moves.prepare({ threadIds: [key('b')], hostId: FORGE })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.unreadableRecord })
+    expect(await moves.move({ confirmationId: randomUUID(), threadIds: [key('b')], allowNarrower: [] })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.unreadableRecord })
+    expect(await readFile(path, 'utf8')).toBe(broken)
+    moves.close()
+  })
+  it('refuses moves on a file that is not JSON at all, and fences nothing it cannot name', async () => {
+    const w = world()
+    await writeFile(join(directory, 'moves.json'), '{"version": 1, "moves": [')
+    const moves = w.service()
+    await moves.load()
+    expect(w.fences.size).toBe(0)
+    expect(moves.prepare({ threadIds: [key('a')], hostId: FORGE })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.unreadableRecord })
+    moves.close()
+  })
+})
+
+describe('a run that does not move threads (Sol’s review, ADR-0072)', () => {
+  it('reads the record, keeps the sources of unfinished moves fenced and their worktrees kept, and writes nothing', async () => {
+    const at = new Date().toISOString(), start = { provider: 'codex' as const, modelId: model.id, title: 'Thread' }
+    const file = JSON.stringify({ version: 1, kept: ['settled'], moves: [
+      { id: randomUUID(), sourceThreadId: 'moving', targetHostId: FORGE, machine: 'forge', state: 'thread-started', start, watched: false, createdAt: at, updatedAt: at },
+      { id: randomUUID(), sourceThreadId: 'settled', targetHostId: FORGE, machine: 'forge', state: 'source-settled', start, watched: false, createdAt: at, updatedAt: at },
+      { id: randomUUID(), sourceThreadId: 'back', targetHostId: FORGE, machine: 'forge', state: 'given-back', start, watched: false, createdAt: at, updatedAt: at }] })
+    await writeFile(join(directory, 'moves.json'), file)
+    const fences = new Map<string, string>()
+    const held = await holdUnfinishedMoves(directory, { fenceForMove: (threadId, words) => { fences.set(threadId, words) } })
+    expect([...fences]).toEqual([['moving', THREAD_MOVE_WORDS.paused('forge')]])
+    expect(['moving', 'settled', 'back'].map(threadId => held.keepsWorktree(threadId))).toEqual([true, true, false])
+    expect(await readFile(join(directory, 'moves.json'), 'utf8')).toBe(file)
+    // No record is no move.
+    await rm(join(directory, 'moves.json'))
+    expect((await holdUnfinishedMoves(directory, { fenceForMove: () => { throw new Error('Nothing to fence.') } })).keepsWorktree('moving')).toBe(false)
+  })
+})
+
+describe('the watch goes before the source settles (Sol’s review)', () => {
+  it('tries the watch again, and after repeated failures leaves the source fenced, unsettled and still watched, as a stalled move', async () => {
+    const w = world(), moves = w.service(5); moves.useTargets(w.targets)
+    w.watch.watched.add('a'); w.watch.refuses = true
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    w.endTurn(moveId)
+    await vi.waitFor(() => expect(moves.stalled().map(record => record.id)).toEqual([moveId]))
+    expect(w.watch.tries).toBe(5)
+    expect(moves.list()[0]).toMatchObject({ state: 'first-turn-ended', watchMoved: false })
+    expect(w.settled).toEqual([]); expect(w.fences.has('a')).toBe(true); expect(w.watch.watched.has('a')).toBe(true)
+    // Nothing tries it again on its own; a restart does, and settles it once the watch goes.
+    w.changed(); w.connected()
+    expect(w.watch.tries).toBe(5)
+    moves.close()
+    w.watch.refuses = false
+    const again = w.service(5)
+    await again.load(); again.useTargets(w.targets)
+    await vi.waitFor(() => expect(stateOf(again, moveId)).toBe('source-settled'))
+    expect(w.settled).toEqual(['a']); expect(again.list()[0]).toMatchObject({ watchMoved: true })
+    again.close()
+  })
+})
+
+describe('worktrees kept apart from history (Sol’s review)', () => {
+  it('keeps a moved source’s worktree when its record is trimmed, and lets go only once the thread is deleted', async () => {
+    const at = new Date().toISOString(), start = { provider: 'codex' as const, modelId: model.id, title: 'Thread' }
+    const old = Array.from({ length: 505 }, (_, index) => ({ id: randomUUID(), sourceThreadId: `old-${index}`, targetHostId: FORGE, machine: 'forge', state: 'source-settled',
+      start, watched: false, createdAt: at, updatedAt: at }))
+    await writeFile(join(directory, 'moves.json'), JSON.stringify({ version: 1, moves: old, kept: old.map(record => record.sourceThreadId) }))
+    const w = world(), moves = w.service(); await moves.load(); moves.useTargets(w.targets)
+    w.branches.receipt = branchMoveRefusal('uncommitted', branchMoveWords.uncommitted)
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('given-back'))
+    const file = JSON.parse(await readFile(join(directory, 'moves.json'), 'utf8')) as { moves: MoveRecord[]; kept: string[] }
+    expect(file.moves.length).toBeLessThanOrEqual(501)
+    expect(file.moves.some(record => record.sourceThreadId === 'old-0')).toBe(false)
+    expect(moves.keepsWorktree('old-0')).toBe(true); expect(file.kept).toContain('old-0')
+    // A move given back keeps nothing of its source.
+    expect(moves.keepsWorktree('a')).toBe(false)
+    moves.forgetThreads(new Set(['old-0']))
+    expect(moves.keepsWorktree('old-0')).toBe(false)
+    await vi.waitFor(async () => expect((JSON.parse(await readFile(join(directory, 'moves.json'), 'utf8')) as { kept: string[] }).kept).not.toContain('old-0'))
+    moves.close()
+  })
+})
+
+describe('the first turn is over only once the thread is quiet there (Sol’s spec review)', () => {
+  it('keeps the source fenced while a failed first turn leaves background work or a delegated thread working there', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    const threadId = w.remote.made.get(moveId)!
+    w.remote.threads.push({ id: 'child-there', projectId: 'forge-project', title: 'Child', modelId: model.id, status: 'running', requests: [], messages: [], delegatedBy: threadId })
+    w.endTurn(moveId, 'failed', { backgroundWork: [{ id: 'tests' }] as never })
+    await new Promise(done => setTimeout(done, 50))
+    expect(stateOf(moves, moveId)).toBe('thread-started'); expect(w.fences.has('a')).toBe(true)
+    // Its own background work ends; the thread it delegated to still works.
+    w.endTurn(moveId, 'failed', { backgroundWork: [] })
+    await new Promise(done => setTimeout(done, 50))
+    expect(stateOf(moves, moveId)).toBe('thread-started')
+    w.remote.threads.find(thread => thread.id === 'child-there')!.status = 'idle'
+    w.changed()
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('stayed'))
+    expect(w.fences.has('a')).toBe(false); expect(w.settled).toEqual([])
+    moves.close()
+  })
+})
+
+describe('work per update (AGENTS.md: it must not grow faster than the threads)', () => {
+  /** `count` moves waiting on their first turn there; then one update that changed the snapshot, and one that changed nothing. */
+  async function visitsFor(count: number) {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    for (let index = 0; index < count; index++) w.threads.push(source(`m${index}`))
+    const threadIds = Array.from({ length: count }, (_, index) => `m${index}`)
+    await confirmed(w, moves, threadIds)
+    // Every move saved as waiting on its first turn there, and none of them mid-step.
+    const inner = moves as unknown as { waitingTurn: ReadonlySet<string>; advancing: ReadonlySet<string> }
+    await vi.waitFor(() => { expect(inner.waitingTurn.size).toBe(count); expect(inner.advancing.size).toBe(0) })
+    const read = vi.spyOn(w.control, 'watcherSnapshot')
+    w.remote.visits = 0; w.remote.snapshots = 0
+    w.changed()
+    const changed = { visits: w.remote.visits, snapshots: w.remote.snapshots }
+    w.remote.visits = 0
+    for (const listener of w.remote.updates) listener()
+    const unchanged = w.remote.visits
+    const sourceReads = read.mock.calls.length
+    moves.close()
+    return { changed, unchanged, sourceReads, threads: w.remote.threads.length }
+  }
+  it('reads each thread there once for an update that changed it, nothing for one that did not, and no thread here', async () => {
+    const twenty = await visitsFor(20), forty = await visitsFor(40)
+    // One index for the new snapshot: as many visits as threads there, not moves times threads (420 and 1,640 before).
+    expect(twenty.changed.visits).toBe(twenty.threads); expect(forty.changed.visits).toBe(forty.threads)
+    expect(twenty.unchanged).toBe(0); expect(forty.unchanged).toBe(0)
+    expect(twenty.sourceReads).toBe(0); expect(forty.sourceReads).toBe(0)
   })
 })

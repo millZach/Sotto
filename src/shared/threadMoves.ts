@@ -108,6 +108,12 @@ export const THREAD_MOVE_WORDS = {
   unread: 'Sotto could not read that request. Nothing was moved.',
   /** A move given back before any thread was made for it: why, in the step's own words, and that the source is open again. */
   givenBack: (why: string): string => `${why} This thread stays on This computer and takes sends again.`,
+  /** This computer's record of moves could not be read: no move starts, and the moves it named stay fenced. */
+  unreadableRecord: 'Sotto could not read its record of thread moves, so no thread can move now. Nothing was moved. Restart Sotto to try again.',
+  /** A thread a record Sotto cannot read names as moving. */
+  unreadableFence: (machine: string | undefined): string => `This thread was moving${machine ? ` to ${machine}` : ''}, and Sotto cannot read its record of the move, so it takes no sends here. Nothing was lost. Restart Sotto to try again.`,
+  /** A thread moving when Sotto last ran with Work across machines on, which this run does not have. */
+  paused: (machine: string): string => `This thread is moving to ${machine}, and this Sotto doesn’t move threads, so it takes no sends here. Nothing was lost. Open Sotto Owl to finish the move.`,
   /** A move whose new thread did not finish its first turn: the source stays, and the new thread is left there. */
   stayed: (machine: string, failed: boolean): string =>
     `The new thread on ${machine} ${failed ? 'failed' : 'was stopped'} in its first turn, so this thread stays on This computer and takes sends again. The new thread is still on ${machine}.`,
@@ -163,26 +169,36 @@ export function threadMoveRefusal(thread: Pick<AgentThread, 'kind' | 'remoteHost
 export interface MovePermission {
   readonly runtimeMode?: AgentRuntimeMode
   readonly providerMode?: string
-  readonly narrowed?: { readonly from: AgentRuntimeMode; readonly to: AgentRuntimeMode; readonly by: 'default' | 'provider' | 'machine' }
+  /** `to` in Sotto's four; `toName` the provider's own name for it, for a thread that starts on a provider's profile. */
+  readonly narrowed?: { readonly from: AgentRuntimeMode; readonly to: AgentRuntimeMode; readonly by: 'default' | 'provider' | 'machine'; readonly toName?: string }
 }
+/** A provider profile as Sotto's four, as continuing reads one: what it allows, or asking when it says nothing. */
+const PROFILE_ALLOWS: Readonly<Record<'nothing' | 'edits' | 'everything', AgentRuntimeMode>> = { nothing: 'approval-required', edits: 'auto-accept-edits', everything: 'full-access' }
 export function movePermission(source: Pick<AgentThread, 'runtimeMode' | 'providerMode'>, sourceModel: AgentModel | undefined, target: AgentModel | undefined,
   newThreadDefault: AgentRuntimeMode | undefined, mayAnswer: boolean): MovePermission {
-  const continued = continuePermission(source, sourceModel, target, newThreadDefault)
-  if (continued.providerMode !== undefined) return { providerMode: continued.providerMode }
-  const held = hostNewThreadPermission(target, continued.runtimeMode, mayAnswer)
-  if (held.providerMode !== undefined) return { providerMode: held.providerMode }
-  if (held.runtimeMode === undefined) return {}
   const index = (mode: AgentRuntimeMode): number => RUNTIME_MODE_ORDER.indexOf(mode)
   const own = sourcePermission(source, sourceModel)
+  // A provider's own profile, as Devin's are, is compared by what it allows, so a narrower one asks first too.
+  const profile = (providerMode: string): MovePermission => {
+    const mode = target?.providerModes?.find(item => item.id === providerMode)
+    const to = mode?.allows ? PROFILE_ALLOWS[mode.allows] : 'approval-required'
+    return { providerMode, ...own.known && index(to) < index(own.mode) ? { narrowed: { from: own.mode, to, by: 'provider' as const, ...mode ? { toName: mode.name } : {} } } : {} }
+  }
+  const continued = continuePermission(source, sourceModel, target, newThreadDefault)
+  if (continued.providerMode !== undefined) return profile(continued.providerMode)
+  const held = hostNewThreadPermission(target, continued.runtimeMode, mayAnswer)
+  if (held.providerMode !== undefined) return profile(held.providerMode)
+  if (held.runtimeMode === undefined) return {}
   const narrower = own.known && index(held.runtimeMode) < index(own.mode)
   const by = held.heldBack ? 'machine' as const : continued.narrowed?.by
   return { runtimeMode: held.runtimeMode, ...narrower && by ? { narrowed: { from: own.mode, to: held.runtimeMode, by } } : {} }
 }
 /** Why a move asks first, in words: what it would start on there, and what holds it back. */
 export function movePermissionWords(narrowed: NonNullable<MovePermission['narrowed']>, machine: string): string {
-  const to = RUNTIME_MODE_WORDS[narrowed.to], from = RUNTIME_MODE_WORDS[narrowed.from]
+  const to = narrowed.toName ?? RUNTIME_MODE_WORDS[narrowed.to], from = RUNTIME_MODE_WORDS[narrowed.from]
   const why = narrowed.by === 'default' ? 'your new-thread default allows no more'
-    : narrowed.by === 'machine' ? `${machine} doesn’t let This computer answer there` : 'the model there offers nothing as wide'
+    : narrowed.by === 'machine' ? `${machine} doesn’t let This computer answer there`
+      : narrowed.toName ? `a new thread on that provider starts on ${narrowed.toName}` : 'the model there offers nothing as wide'
   return `It would start on ${to} on ${machine}, not this thread’s ${from}, since ${why}.`
 }
 
@@ -240,11 +256,18 @@ export const hostThreadMoveRequestSchema = z.discriminatedUnion('action', [
       counts: handoverCountsSchema }).strict() }).strict(),
 ])
 export type HostThreadMoveRequest = z.infer<typeof hostThreadMoveRequestSchema>
-export const THREAD_MOVE_REFUSALS = ['unknown-project', 'model-unavailable', 'move-differs', 'failed'] as const
+/**
+ * Why a host refuses a start. Each is definite, the host holds no thread and no record for the move, except `move-differs`,
+ * where it holds another start under that ID, and `unreadable`, where it cannot read its own record and so cannot say: the
+ * desktop keeps those moves fenced and asks again later.
+ */
+export const THREAD_MOVE_REFUSALS = ['unknown-project', 'model-unavailable', 'move-differs', 'failed', 'full', 'unreadable'] as const
+/** The refusals that do not prove the host made no thread for the move. */
+export const THREAD_MOVE_UNDECIDED: ReadonlySet<string> = new Set(['move-differs', 'unreadable'])
 export const threadMoveRefusalSchema = z.object({ type: z.literal('refused'), reason: z.enum(THREAD_MOVE_REFUSALS), message: words }).strict()
 /**
  * The host's answer to `start`: the thread it made for the move, by its own Sotto thread ID, the permission it started on,
- * and whether its first prompt went; or a refusal, which is definite: the host made no thread for the move.
+ * and whether its first prompt went; or a refusal, definite but for those `THREAD_MOVE_UNDECIDED` names.
  */
 export const threadMoveStartAnswerSchema = z.union([
   z.object({ type: z.literal('started'), moveId: branchMoveIdSchema, threadId: id, runtimeMode: agentRuntimeModeSchema.optional(),
@@ -259,6 +282,10 @@ export const HOST_THREAD_MOVE_WORDS = {
   moveDiffers: 'Another start already used this move. Nothing was made.',
   failed: 'This machine could not make the thread for this move. Nothing was made.',
   notSent: 'This machine made the thread for this move, but its first prompt did not go. It is sent again when the move is retried.',
+  /** The desktop's answers grant here was taken away while the start waited (ADR-0004: policy is read at dispatch). */
+  grantGone: 'This machine no longer lets that computer answer here, so it starts nothing that acts without asking. Nothing was sent.',
+  full: 'This machine holds the records of 10,000 moves already, so it takes no more. Nothing was made. Move the thread to another machine.',
+  unreadable: 'This machine could not read its record of moves, so it starts none until it can. Nothing was made. Restart Sotto on this machine, then try again.',
 } as const
 /** The part of a connected host's socket a move uses (`SocketHostService`). */
 export interface ThreadMoveHost {

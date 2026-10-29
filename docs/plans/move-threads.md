@@ -47,4 +47,17 @@ Decisions made while building, for Zach to confirm:
 - Anything in a thread's queue, Sotto's own news included, holds it here, so nothing queued goes to a source after it moved.
 - The automatic cleanup sweep skips a moved source's worktree. Clear settled threads after does not yet: it runs after 30 days at the earliest.
 
+After Sol's standards and spec reviews (October 29), these rules changed:
+
+- A new move is in no index and steps nowhere until its first write has succeeded; one whose write fails answers "stays", with its fence lifted and nothing sent.
+- A record that does not read is never taken for an empty one. On This computer no move starts, the file is left as it is, and every source it still names as moving stays fenced ("…Sotto cannot read its record of the move, so it takes no sends here. Nothing was lost. Restart Sotto to try again."). On a host, every `thread-move` is refused as `unreadable`, which the desktop does not take as proof that no thread was made, so it keeps the move fenced and asks again.
+- A run that does not move threads, stable or Owl with Work across machines or Watcher off, still reads `moves.json`, fences the source of every move not finished ("…this Sotto doesn't move threads… Open Sotto Owl to finish the move.") and keeps its worktree. It writes nothing and shows nothing.
+- The host reads the desktop's answers grant again as the thread is made and as its first prompt goes (ADR-0004), so a grant taken away while the start waits refuses it (`failed`, nothing made) or leaves the prompt unsent.
+- The watch goes before the source settles. One that will not go is tried five times; then the move waits, fenced and unsettled with its watch where it was, among `stalled()` for part 4.
+- The host never drops a move's record; past 10,000 it refuses new moves (`full`).
+- The worktrees a move keeps are a set of their own in `moves.json`, never trimmed with the history, and let go of when the thread is deleted.
+- An update reads only the moves waiting on a first turn, each in a snapshot it has not read, by one index per snapshot, so the work grows with the threads there and not with moves times threads.
+- The first turn counts as over only once the new thread is quiet there: no turn running, no card, no background work or monitor, and no thread it delegated to still working. This holds for a source that settles and one that stays.
+- A provider's own profile is compared too: Devin's Bypass permissions moving to a thread that starts on Ask first asks first.
+
 Left for later parts: the GitHub sign-in half of asking first (a host does not yet say whether it has one), starting babysitting on the target, an exact read of a move and Keep it here (part 4, `ThreadMoveService.stalled()` names what waits), the other directions (part 3), the window (part 2), and the moved thread's first message shown as Sotto's on the desktop, which the continued thread's display does only for This computer's threads.

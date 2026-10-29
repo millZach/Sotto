@@ -60,6 +60,15 @@ describe('what a moved thread starts on (ADR-0089 decision 5a, ADR-0074)', () =>
     expect(movePermission(thread({ runtimeMode: 'full-access' }), model(), model({ runtimeModes: ['approval-required', 'auto-accept-edits'] }), 'full-access', true))
       .toEqual({ runtimeMode: 'auto-accept-edits', narrowed: { from: 'full-access', to: 'auto-accept-edits', by: 'provider' } })
   })
+  it('asks first when a provider’s own profile there allows less than the thread’s, as Devin’s Bypass permissions to Ask first (Sol’s review)', () => {
+    const devin = model({ id: 'devin:model', providerId: 'devin', runtimeModes: undefined, providerModes: [{ id: 'ask', name: 'Ask first', allows: 'nothing' },
+      { id: 'bypass', name: 'Bypass permissions', allows: 'everything' }] })
+    const permission = movePermission(thread({ providerId: 'devin', modelId: devin.id, providerMode: 'bypass' }), devin, devin, 'full-access', true)
+    expect(permission).toEqual({ providerMode: 'ask', narrowed: { from: 'full-access', to: 'approval-required', by: 'provider', toName: 'Ask first' } })
+    expect(movePermissionWords(permission.narrowed!, 'forge')).toBe('It would start on Ask first on forge, not this thread’s Full access, since a new thread on that provider starts on Ask first.')
+    // A thread already on Ask first has nothing to ask.
+    expect(movePermission(thread({ providerId: 'devin', modelId: devin.id, providerMode: 'ask' }), devin, devin, 'full-access', true)).toEqual({ providerMode: 'ask' })
+  })
   it('moves a thread that asks now on Ask for approval wherever it goes, with nothing to ask', () => {
     expect(movePermission(thread({ runtimeMode: 'approval-required' }), model(), model(), undefined, false)).toEqual({ runtimeMode: 'approval-required' })
   })

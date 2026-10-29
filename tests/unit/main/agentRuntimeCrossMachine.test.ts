@@ -1,10 +1,12 @@
 // @vitest-environment node
-import { mkdtemp, rm } from 'node:fs/promises'
+import { randomUUID } from 'node:crypto'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { hostname, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, expect, it } from 'vitest'
 import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 import { owlFeaturesForTrack } from '../../../src/shared/owlFeatures'
+import { THREAD_MOVE_WORDS } from '../../../src/shared/threadMoves'
 import { createAgentRuntime } from '../../../src/main/agents/runtime'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { testCredentials } from '../../fixtures/testCredentials'
@@ -18,8 +20,9 @@ afterEach(async () => {
   }
 })
 
-async function runtime(crossMachineEnabled: boolean | undefined, runsAs?: 'headless-host') {
+async function runtime(crossMachineEnabled: boolean | undefined, runsAs?: 'headless-host', seed?: (root: string) => Promise<void>) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-runtime-machines-')); roots.push(root)
+  await seed?.(root)
   const credentials = await testCredentials(root, { encryption: { isEncryptionAvailable: () => false, encryptString: () => { throw new Error('No test key') }, decryptString: () => '' } })
   return createAgentRuntime({ directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
     historyEnabled: () => true, openExternal: async () => undefined, host: new E2EAgentHost(), reasoner: e2eAgentReasoner, watcherEnabled: true, delegationEnabled: true,
@@ -92,4 +95,16 @@ it('offers the choice on the desktop when the Owl answer is on, and a headless h
     expect(watcherChecks(headless)?.machine).toBe(hostname().trim().slice(0, 64) || 'this machine')
     expect(headless.hostService.supportsWatcherCheckQueue).toBe(true)
   } finally { await headless.close() }
+})
+
+it('keeps the source of a move not finished fenced on a run that does not move threads, as stable, and shows nothing of it (#1178)', async () => {
+  const at = new Date().toISOString()
+  const moves = { version: 1, moves: [{ id: randomUUID(), sourceThreadId: 'moving-thread', targetHostId: randomUUID(), machine: 'forge', state: 'thread-started',
+    start: { provider: 'codex', modelId: 'codex:model', title: 'Moving' }, watched: false, createdAt: at, updatedAt: at }] }
+  const host = await runtime(false, undefined, root => writeFile(join(root, 'moves.json'), JSON.stringify(moves)))
+  try {
+    expect(host.threadMoves).toBeUndefined()
+    const sent = await host.agentControl.commandShell({ type: 'manual-send', threadId: 'moving-thread', draftId: randomUUID(), text: 'Carry on here.' })
+    expect(sent.error).toBe(THREAD_MOVE_WORDS.paused('forge'))
+  } finally { await host.close() }
 })
