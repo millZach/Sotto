@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { pullRequestKey, type ConfirmedPullRequestAction, type GitPullRequestMergeMethod, type PullRequestConfirmation, type PullRequestConfirmationRequest } from '../shared/gitPullRequests'
+import { gitCommitIdSchema, pullRequestKey, type ConfirmedPullRequestAction, type GitPullRequestMergeMethod, type PullRequestConfirmation, type PullRequestConfirmationRequest } from '../shared/gitPullRequests'
 
 /**
  * How long a confirmation receipt counts once the host gives it. The desktop asks for one after the user's yes in its
@@ -30,6 +30,8 @@ const PRESS: Record<ConfirmedPullRequestAction, { readonly doing: string; readon
 function refusal(action: ConfirmedPullRequestAction, happened: string, next = `Press ${PRESS[action].control} again.`): { ok: false; message: string } {
   return { ok: false, message: `${happened} ${PRESS[action].nothing} ${next}` }
 }
+/** What to do when the host's reading of the pull request is missing or names no head: have it read again. */
+const readAgain = (action: ConfirmedPullRequestAction): string => `Open the pull request again so Sotto reads it, then press ${PRESS[action].control} again.`
 
 /**
  * The host's confirmation receipts for merges, closes and auto-merges a paired client sends (#1691, ADR-0027, October 28
@@ -48,24 +50,32 @@ export class PullRequestConfirmations {
 
   constructor(options: { readonly now?: () => number } = {}) { this.now = options.now ?? Date.now }
 
-  /** The host answered this client a read of one of a thread's pull requests, on this head (null when GitHub named none). */
-  read(clientId: string, threadId: string, url: string, head: string | null): void {
+  /**
+   * The host answered this client a read of one of a thread's pull requests, naming this head. A head that is not a commit
+   * ID, or none, is kept as null: the pull request was read, but nothing can hold a merge to it.
+   */
+  read(clientId: string, threadId: string, url: string, head: string | undefined): void {
     const key = pullRequestKey(url)
     if (!key) return
     const at = JSON.stringify([clientId, threadId, key])
-    this.heads.delete(at); this.heads.set(at, head)
+    const named = gitCommitIdSchema.safeParse(head)
+    this.heads.delete(at); this.heads.set(at, named.success ? named.data : null)
     for (const oldest of this.heads.keys()) { if (this.heads.size <= READS_MAX) break; this.heads.delete(oldest) }
   }
 
   /**
    * A receipt for one press, or why there is none. The host gives one only for a pull request it has read for this client,
-   * so the receipt stands for the pull request as that client was last shown it.
+   * so the receipt stands for the pull request as that client was last shown it, and for a merge or an auto-merge only when
+   * that read named the head commit, which the press is then held to (ADR-0027, October 28 amendment). A close holds GitHub
+   * to no head, so it needs none.
    */
   issue(clientId: string, press: Press): { ok: true; receipt: PullRequestConfirmation } | { ok: false; message: string } {
     const key = pullRequestKey(press.url)
     const head = key ? this.heads.get(JSON.stringify([clientId, press.threadId, key])) : undefined
-    if (!key || head === undefined) return refusal(press.action, 'This host has not read this pull request for this device since it started.',
-      `Refresh the pull request, then press ${PRESS[press.action].control} again.`)
+    if (!key || head === undefined) return refusal(press.action, 'This host has not read this pull request for this device since it started.', readAgain(press.action))
+    if (press.action !== 'close' && head === null) {
+      return refusal(press.action, 'GitHub did not say which commit this pull request is on when this host last read it for this device.', readAgain(press.action))
+    }
     this.prune()
     const confirmation = randomUUID(), expires = this.now() + PULL_REQUEST_CONFIRMATION_LIFETIME_MS
     this.receipts.set(confirmation, { clientId, threadId: press.threadId, key, action: press.action, method: press.method, head, expires, used: false })
@@ -76,10 +86,11 @@ export class PullRequestConfirmations {
   }
 
   /**
-   * Whether the press this client sent may run on this receipt, and the head it was given on. Its own client's use spends
-   * it whether or not it matches, so it never counts twice; another client's use is refused and spends nothing.
+   * Whether the press this client sent may run on this receipt, and, for a merge or an auto-merge, the head commit it must
+   * be held to, which is always there when the answer is yes. Its own client's use spends it whether or not it matches, so
+   * it never counts twice; another client's use is refused and spends nothing.
    */
-  redeem(clientId: string, confirmation: string | undefined, press: Press): { ok: true; head: string | null } | { ok: false; message: string } {
+  redeem(clientId: string, confirmation: string | undefined, press: Press): { ok: true; matchHeadCommit?: string } | { ok: false; message: string } {
     const { action } = press
     if (confirmation === undefined) return refusal(action, `${PRESS[action].doing} from another device needs this host's confirmation, and none came with it.`,
       `Update Sotto on this device, then press ${PRESS[action].control} again.`)
@@ -93,7 +104,10 @@ export class PullRequestConfirmations {
     if (receipt.threadId !== press.threadId || receipt.key !== pullRequestKey(press.url) || receipt.action !== action || receipt.method !== press.method) {
       return refusal(action, 'That confirmation was for a different press.')
     }
-    return { ok: true, head: receipt.head }
+    if (action === 'close') return { ok: true }
+    // `issue` gives a merge or an auto-merge no receipt without a head; this holds the press to one whatever changes there.
+    if (!receipt.head) return refusal(action, 'That confirmation does not say which commit this pull request is on.', readAgain(action))
+    return { ok: true, matchHeadCommit: receipt.head }
   }
 
   /** Receipts are kept a lifetime past expiry, so a late one is told it expired rather than that it is unknown. */

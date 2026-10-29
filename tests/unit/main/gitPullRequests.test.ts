@@ -258,7 +258,7 @@ describe('acting on a pull request, one press at a time', () => {
         if (args[0] === 'pr') { acted = true; return '' }
         return reads(() => answerJson({ pull: acted ? after : {} }))(args) ?? new Error('unexpected')
       })
-      const view = await service.act('C:/repo', URL_74, action, method)
+      const view = await service.act('C:/repo', { url: URL_74, action, method })
       expect(calls.filter(call => call[0] !== 'api')).toEqual([expected])
       expect(view?.number).toBe(74)
     })
@@ -267,7 +267,7 @@ describe('acting on a pull request, one press at a time', () => {
         if (args[0] === 'pr') return new Error('GraphQL: Pull request is not mergeable (mergePullRequest)')
         return reads(() => answerJson({ pull: { isDraft: action === 'ready', state: action === 'reopen' ? 'CLOSED' : 'OPEN', autoMergeRequest: action === 'disable-auto-merge' ? { mergeMethod: 'SQUASH' } : null }, behindBy: 3 }))(args) ?? new Error('unexpected')
       })
-      const refusal = await service.act('C:/repo', URL_74, action, method).then(() => new Error('it acted'), (error: unknown) => error as Error)
+      const refusal = await service.act('C:/repo', { url: URL_74, action, method }).then(() => new Error('it acted'), (error: unknown) => error as Error)
       expect(refusal).toBeInstanceOf(GitPullRequestRefusal)
       expect(refusal.message).toMatch(/^Could not /u)
       expect(refusal.message).toContain('Pull request is not mergeable')
@@ -282,13 +282,13 @@ describe('acting on a pull request, one press at a time', () => {
       if (args[0] === 'pr') { merged = true; return '' }
       return reads(() => answerJson({ pull: merged ? { state: 'MERGED', mergedAt: '2026-09-23T00:00:00Z' } : {} }))(args) ?? new Error('unexpected')
     }, { now: () => now })
-    await service.act('C:/repo', URL_74, 'merge', 'squash')
+    await service.act('C:/repo', { url: URL_74, action: 'merge', method: 'squash' })
     await expect(service.view('C:/repo', URL_74)).resolves.toMatchObject({ state: 'merged' })
     expect(calls.map(call => call[0])).toEqual(['pr', 'api'])
     // A Refresh after that asks GitHub, as does a read that comes too long after the press.
     await service.view('C:/repo', URL_74)
     expect(calls.map(call => call[0])).toEqual(['pr', 'api', 'api'])
-    await service.act('C:/repo', URL_74, 'close')
+    await service.act('C:/repo', { url: URL_74, action: 'close' })
     now += 60_000
     await service.view('C:/repo', URL_74)
     expect(calls.map(call => call[0])).toEqual(['pr', 'api', 'api', 'pr', 'api', 'api'])
@@ -296,7 +296,7 @@ describe('acting on a pull request, one press at a time', () => {
   it('reads GitHub once after a press the rate limit refused to settle: the surface\'s read that follows shows that refusal', async () => {
     let now = 1_000_000
     const { service, calls } = scripted(args => args[0] === 'pr' ? '' : new Error('gh: You have exceeded a secondary rate limit. (HTTP 403)'), { now: () => now })
-    await expect(service.act('C:/repo', URL_74, 'merge', 'squash')).resolves.toBeNull()
+    await expect(service.act('C:/repo', { url: URL_74, action: 'merge', method: 'squash' })).resolves.toBeNull()
     const refusal = await service.view('C:/repo', URL_74).then(() => new Error('it read'), (error: unknown) => error as Error)
     expect(refusal).toBeInstanceOf(GitPullRequestLimited)
     expect((refusal as GitPullRequestLimited).retryAt).toBe(now + 30_000)
@@ -312,13 +312,13 @@ describe('acting on a pull request, one press at a time', () => {
       if (args[1] === 'merge') { merged = true; return new Error('gh did not finish in time.') }
       return reads(() => answerJson({ pull: merged ? { state: 'MERGED', mergedAt: '2026-09-23T00:00:00Z' } : {} }))(args) ?? new Error('unexpected')
     })
-    await expect(service.act('C:/repo', URL_74, 'merge', 'merge')).resolves.toMatchObject({ state: 'merged' })
+    await expect(service.act('C:/repo', { url: URL_74, action: 'merge', method: 'merge' })).resolves.toMatchObject({ state: 'merged' })
     expect(calls.filter(call => call[1] === 'merge')).toHaveLength(1)
   })
   it('gives T3\'s hint when GitHub gives no reason, and the rebase hint for Update with rebase', async () => {
     const { service } = scripted(args => args[1] === 'update-branch' ? new Error('') : reads(() => answerJson())(args) ?? new Error('unexpected'))
-    await expect(service.act('C:/repo', URL_74, 'update-branch', 'rebase')).rejects.toThrow('Could not update this branch. GitHub refused it. A rebase stops at the first commit that does not apply cleanly')
-    await expect(service.act('C:/repo', URL_74, 'update-branch')).rejects.toThrow('Could not update this branch. GitHub refused it. Check that you have write access to the branch')
+    await expect(service.act('C:/repo', { url: URL_74, action: 'update-branch', method: 'rebase' })).rejects.toThrow('Could not update this branch. GitHub refused it. A rebase stops at the first commit that does not apply cleanly')
+    await expect(service.act('C:/repo', { url: URL_74, action: 'update-branch' })).rejects.toThrow('Could not update this branch. GitHub refused it. Check that you have write access to the branch')
   })
   it('holds a paired client\'s merge and auto-merge to the head its receipt was given on, and says so when the head moved (#1691)', async () => {
     const confirmed = 'a'.repeat(40), moved = 'b'.repeat(40)
@@ -328,30 +328,30 @@ describe('acting on a pull request, one press at a time', () => {
         : new Error('GraphQL: Head branch was modified. Review and try the merge again. (mergePullRequest)')
       return reads(() => answerJson({ pull: { headRefOid: head } }))(args) ?? new Error('unexpected')
     })
-    await service.act('C:/repo', URL_74, 'merge', 'squash', confirmed)
-    await service.act('C:/repo', URL_74, 'enable-auto-merge', 'merge', confirmed)
+    await service.act('C:/repo', { url: URL_74, action: 'merge', method: 'squash', matchHeadCommit: confirmed })
+    await service.act('C:/repo', { url: URL_74, action: 'enable-auto-merge', method: 'merge', matchHeadCommit: confirmed })
     // Closing takes no head; the window's own presses on this computer carry none, and run as they always have.
-    await service.act('C:/repo', URL_74, 'close', undefined, confirmed)
-    await service.act('C:/repo', URL_74, 'merge', 'squash')
+    await service.act('C:/repo', { url: URL_74, action: 'close', matchHeadCommit: confirmed })
+    await service.act('C:/repo', { url: URL_74, action: 'merge', method: 'squash' })
     expect(calls.filter(call => call[0] === 'pr')).toEqual([
       ['pr', 'merge', URL_74, '--squash', `--match-head-commit=${confirmed}`],
       ['pr', 'merge', URL_74, '--auto', '--merge', `--match-head-commit=${confirmed}`],
       ['pr', 'close', URL_74], ['pr', 'merge', URL_74, '--squash'],
     ])
     head = moved
-    await expect(service.act('C:/repo', URL_74, 'merge', 'squash', confirmed)).rejects.toThrow('Could not merge this pull request. It has new commits since you confirmed, so nothing was merged. Refresh it, look at the new commits, then press Merge again.')
-    await expect(service.act('C:/repo', URL_74, 'enable-auto-merge', 'squash', confirmed)).rejects.toThrow('auto-merge was not turned on')
+    await expect(service.act('C:/repo', { url: URL_74, action: 'merge', method: 'squash', matchHeadCommit: confirmed })).rejects.toThrow('Could not merge this pull request. It has new commits since you confirmed, so nothing was merged. Refresh it, look at the new commits, then press Merge again.')
+    await expect(service.act('C:/repo', { url: URL_74, action: 'enable-auto-merge', method: 'squash', matchHeadCommit: confirmed })).rejects.toThrow('auto-merge was not turned on')
     // Anything but a commit ID is never handed to gh.
     const before = calls.length
-    await expect(service.act('C:/repo', URL_74, 'merge', 'squash', '--admin')).rejects.toThrow('Nothing was changed.')
+    await expect(service.act('C:/repo', { url: URL_74, action: 'merge', method: 'squash', matchHeadCommit: '--admin' })).rejects.toThrow('Nothing was changed.')
     expect(calls).toHaveLength(before)
   })
   it('refuses before asking GitHub: a merge with no method, a squash update, a pull request outside GitHub', async () => {
     const { service, calls } = scripted(() => '')
-    await expect(service.act('C:/repo', URL_74, 'merge')).rejects.toThrow('Choose a merge method first.')
-    await expect(service.act('C:/repo', URL_74, 'enable-auto-merge')).rejects.toThrow('Choose a merge method first.')
-    await expect(service.act('C:/repo', URL_74, 'update-branch', 'squash')).rejects.toThrow('Update the branch with a merge commit or a rebase.')
-    await expect(service.act('C:/repo', 'https://git.example.com/o/r/pull/1', 'close')).rejects.toThrow('Sotto acts on pull requests from GitHub only.')
+    await expect(service.act('C:/repo', { url: URL_74, action: 'merge' })).rejects.toThrow('Choose a merge method first.')
+    await expect(service.act('C:/repo', { url: URL_74, action: 'enable-auto-merge' })).rejects.toThrow('Choose a merge method first.')
+    await expect(service.act('C:/repo', { url: URL_74, action: 'update-branch', method: 'squash' })).rejects.toThrow('Update the branch with a merge commit or a rebase.')
+    await expect(service.act('C:/repo', { url: 'https://git.example.com/o/r/pull/1', action: 'close' })).rejects.toThrow('Sotto acts on pull requests from GitHub only.')
     expect(calls).toEqual([])
   })
 })

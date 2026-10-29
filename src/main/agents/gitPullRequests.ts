@@ -2,7 +2,7 @@ import { z } from 'zod'
 import {
   parsePullRequestReference, pullRequestAddress, pullRequestKey,
   GIT_PULL_REQUEST_FILES_MAX, gitCommitIdSchema,
-  type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestFile, type GitPullRequestMergeMethod, type GitPullRequestReadFailure, type GitPullRequestReview,
+  type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestPress, type GitPullRequestDetail, type GitPullRequestFile, type GitPullRequestMergeMethod, type GitPullRequestReadFailure, type GitPullRequestReview,
 } from '../../shared/gitPullRequests'
 import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, isSignInRefusal, isUnreachableAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readGitHubRemotes, refusalReading, repositoryKey, retryWords, type GitHubRepository } from './github'
 import { GitUnavailableError, runGitStatusCommand, type RunGitCommand } from './gitStatus'
@@ -371,7 +371,8 @@ export class GitPullRequests {
    * otherwise. Nothing is pressed twice. `matchHeadCommit`, from a paired client's confirmation receipt (#1691), holds a
    * merge or an auto-merge to the head that client was shown: GitHub refuses it once the head has moved.
    */
-  async act(cwd: string, url: string, action: GitPullRequestAction, method?: GitPullRequestMergeMethod, matchHeadCommit?: string): Promise<GitPullRequestView | null> {
+  async act(cwd: string, press: GitPullRequestPress): Promise<GitPullRequestView | null> {
+    const { url, action, method, matchHeadCommit } = press
     if (!pullRequestAddress(url)) throw new GitPullRequestRefusal('Sotto acts on pull requests from GitHub only.')
     if ((action === 'merge' || action === 'enable-auto-merge') && !method) throw new GitPullRequestRefusal('Choose a merge method first.')
     if (action === 'update-branch' && method === 'squash') throw new GitPullRequestRefusal('Update the branch with a merge commit or a rebase.')

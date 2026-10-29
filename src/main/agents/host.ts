@@ -11,7 +11,7 @@ import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopyS
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import type { GitPullRequestAction, GitPullRequestLink, GitPullRequestRead, GitPullRequestMergeMethod, GitPullRequestRequest } from '../../shared/gitPullRequests'
+import type { GitPullRequestLink, GitPullRequestPress, GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
 import type { ThreadEvent } from '../../shared/threadEvents'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
 import type { SubagentRole } from '../../shared/workerRoles'
@@ -420,7 +420,7 @@ export interface AgentHost {
    * A press on the Pull request surface; answers with what happened, in T3's words. `matchHeadCommit` is the head a paired
    * client's confirmation receipt was given on, which a merge or an auto-merge holds GitHub to (#1691).
    */
-  runPullRequestAction?(command: { threadId: string; url: string; action: GitPullRequestAction; method?: GitPullRequestMergeMethod | undefined; matchHeadCommit?: string | undefined }): Promise<{ snapshot: AgentHostSnapshot; notice: string }>
+  runPullRequestAction?(command: GitPullRequestPress & { readonly threadId: string }): Promise<{ snapshot: AgentHostSnapshot; notice: string }>
   linkThreadPullRequest?(threadId: string, reference: string): Promise<{ snapshot: AgentHostSnapshot; link: GitPullRequestLink }>
   unlinkThreadPullRequest?(threadId: string, url: string): Promise<AgentHostSnapshot>
   /** T3's Checkout pull request, Local or Worktree. */

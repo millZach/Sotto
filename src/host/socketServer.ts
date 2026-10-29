@@ -13,7 +13,7 @@ import { ModelCatalogRevisions } from '../main/agents/agentStateBroadcast'
 import { RefusedImage } from '../main/agents/attachmentStore'
 import { FileUploadRefusal, FileUploads } from './fileUploads'
 import { pullRequestReadFailureOf } from '../main/agents/gitPullRequests'
-import { gitCommitIdSchema, isPullRequestLimited, needsConfirmationReceipt, type GitPullRequestReadFailure } from '../shared/gitPullRequests'
+import { isPullRequestLimited, needsConfirmationReceipt, type GitPullRequestReadFailure } from '../shared/gitPullRequests'
 import { PullRequestConfirmations } from './pullRequestConfirmations'
 import { shellForProtocolV1, clientUpdateForOlderClient, clientUpdateWithoutNotListed, deltaWithActivitySummaries, deltaWithoutVisuals, detailWithActivitySummaries, detailWithoutVisuals, HOST_BUSY, HOST_DESKTOP_FEATURES, HOST_EVENT_PAGE_SIZE, HOST_FEATURES, HOST_MAX_FRAME_BYTES, HOST_SESSION_REJECTED, hostRequestEnvelopeSchema, hostRequestSchema, providersUnknownTo, type HostAnswerTarget, type HostAbout, type HostDescriptor, type HostErrorCode, type HostPhoneAccessSummary, type HostPush, type HostReceipt, type HostRequest, type HostResponse, type HostClientShell, type HostWireShell } from '../shared/hostProtocol'
 import { hostCatalogKey, isImageAttachment, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentThreadSummary } from '../shared/agents'
@@ -977,7 +977,7 @@ export async function startSocketServer(options: SocketServerOptions) {
       if (needsConfirmationReceipt(action)) {
         const redeemed = confirmations.redeem(peer.client.clientId, confirmation, { threadId: press.threadId, url: press.url, action, method: press.method })
         if (!redeemed.ok) throw new Refusal('forbidden', redeemed.message)
-        if (redeemed.head && action !== 'close') dispatched = { ...press, matchHeadCommit: redeemed.head }
+        if (redeemed.matchHeadCommit) dispatched = { ...press, matchHeadCommit: redeemed.matchHeadCommit }
       }
     }
     const receipt: HostReceipt = { status: 'pending' }
@@ -1340,10 +1340,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         let read: Awaited<ReturnType<NonNullable<HostService['gitPullRequest']>>>
         try { read = await service.gitPullRequest(request.request) } catch (error) { throw new Refusal('unavailable', undefined, pullRequestReadFailureOf(error)) }
         // What this client was shown is what a confirmation receipt it asks for next stands for (#1691).
-        if (read && !isPullRequestLimited(read)) {
-          const head = gitCommitIdSchema.safeParse(read.headId)
-          confirmations.read(peer.client.clientId, request.request.threadId, read.url, head.success ? head.data : null)
-        }
+        if (read && !isPullRequestLimited(read)) confirmations.read(peer.client.clientId, request.request.threadId, read.url, read.headId)
         return read
       }
       // A receipt for the merge, close or auto-merge this client is about to send (#1691). Pairing is enough to ask: it is

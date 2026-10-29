@@ -22,6 +22,17 @@ export const needsConfirmationReceipt = (action: GitPullRequestAction): action i
   (CONFIRMED_PULL_REQUEST_ACTIONS as readonly string[]).includes(action)
 /** A Git commit's full object ID, SHA-1 or SHA-256, in GitHub's lowercase hex: never anything `gh` could read as an option. */
 export const gitCommitIdSchema = z.string().regex(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u)
+/**
+ * One press on a pull request as the host runs it: what to do, its merge method, and, only from a paired client's
+ * confirmation receipt, the head commit a merge or an auto-merge is held to (#1691). Carried whole from the coordinator
+ * to `gh`, so the binding never comes apart on the way.
+ */
+export interface GitPullRequestPress {
+  readonly url: string
+  readonly action: GitPullRequestAction
+  readonly method?: GitPullRequestMergeMethod | undefined
+  readonly matchHeadCommit?: string | undefined
+}
 
 /** A GitHub pull request URL, the only kind Sotto links or acts on (ADR-0027: GitHub only). */
 export const GITHUB_PULL_REQUEST_URL = /^https:\/\/github\.com\/([^/\s?#]+)\/([^/\s?#]+)\/pull\/(\d+)(?:[/?#][^\s]*)?$/iu

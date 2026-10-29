@@ -66,7 +66,7 @@ describe('a merge, close or auto-merge on a paired host, from the window (#1691)
   })
 
   it('says the host’s refusal of a receipt in its words, and sends no press', async () => {
-    const words = 'This host has not read this pull request for this device since it started. Nothing was merged. Refresh the pull request, then press Merge again.'
+    const words = 'This host has not read this pull request for this device since it started. Nothing was merged. Open the pull request again so Sotto reads it, then press Merge again.'
     const { router, press, sent } = remote(['pull-request-confirmation'], () => { throw new HostConnectionError(words, 'forbidden') })
     expect((await router.command(press({ action: 'merge', method: 'squash' }), desktopWindowClient())).error).toBe(words)
     expect(sent().map(operation => operation.op)).toEqual(['pull-request-confirmation'])
