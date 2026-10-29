@@ -1,0 +1,115 @@
+{
+  "platform": "win32-x64",
+  "model": "parakeet-ultra-int8",
+  "steps": [
+    {
+      "step": "started",
+      "main": {
+        "workingSetMB": 299.9,
+        "peakWorkingSetMB": 301.8,
+        "privateMB": 278.4,
+        "rssMB": 300,
+        "heapUsedMB": 62.4,
+        "proc": null,
+        "onnxruntimeLoaded": false
+      },
+      "helper": null
+    },
+    {
+      "step": "model loaded",
+      "main": {
+        "workingSetMB": 397.1,
+        "peakWorkingSetMB": 617,
+        "privateMB": 369.4,
+        "rssMB": 397.1,
+        "heapUsedMB": 52.7,
+        "proc": null,
+        "onnxruntimeLoaded": false
+      },
+      "helper": {
+        "pid": 7268,
+        "workingSetMB": 792.2,
+        "privateMB": 744.9,
+        "proc": null
+      },
+      "transcription": {
+        "ok": true,
+        "words": 38,
+        "ms": 3132
+      }
+    },
+    {
+      "step": "loaded, after one transcription",
+      "main": {
+        "workingSetMB": 361.8,
+        "peakWorkingSetMB": 617,
+        "privateMB": 360.7,
+        "rssMB": 361.8,
+        "heapUsedMB": 51.7,
+        "proc": null,
+        "onnxruntimeLoaded": false
+      },
+      "helper": {
+        "pid": 7268,
+        "workingSetMB": 966.1,
+        "privateMB": 1017.2,
+        "proc": null
+      }
+    },
+    {
+      "step": "dictation off, 5 s later",
+      "main": {
+        "workingSetMB": 235.2,
+        "peakWorkingSetMB": 617,
+        "privateMB": 246.3,
+        "rssMB": 235.2,
+        "heapUsedMB": 51.1,
+        "proc": null,
+        "onnxruntimeLoaded": false
+      },
+      "helper": null
+    },
+    {
+      "step": "dictation back on, model loaded",
+      "main": {
+        "workingSetMB": 231.3,
+        "peakWorkingSetMB": 617,
+        "privateMB": 241.6,
+        "rssMB": 231.3,
+        "heapUsedMB": 51.8,
+        "proc": null,
+        "onnxruntimeLoaded": false
+      },
+      "helper": {
+        "pid": 5896,
+        "workingSetMB": 791.7,
+        "privateMB": 742.4,
+        "proc": null
+      },
+      "transcription": {
+        "ok": true,
+        "words": 38,
+        "ms": 3123
+      }
+    },
+    {
+      "step": "reloaded, after one transcription",
+      "main": {
+        "workingSetMB": 235.2,
+        "peakWorkingSetMB": 617,
+        "privateMB": 245.8,
+        "rssMB": 235.2,
+        "heapUsedMB": 51.7,
+        "proc": null,
+        "onnxruntimeLoaded": false
+      },
+      "helper": {
+        "pid": 5896,
+        "workingSetMB": 964.1,
+        "privateMB": 1013.1,
+        "proc": null
+      }
+    }
+  ],
+  "helperEndedAfterOff": true
+}

@@ -7,7 +7,7 @@ import { Writable } from 'node:stream'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { SpeechModelStore } from '../../../src/main/asr/speechModelStore'
-import type { SpeechEngine } from '../../../src/main/asr/speechEngine'
+import type { SpeechEngine, SpeechEngineLoader } from '../../../src/main/asr/speechEngine'
 import { PARAKEET_ULTRA, PARAKEET_V2, PARAKEET_V3, speechModelBytes, speechModelFileUrl, type SottoSpeechModel, type SpeechModelStatus } from '../../../src/shared/speechModel'
 
 /** When set, every download sink fails its first write with this error code, as a full or over-quota disk does. */
@@ -95,7 +95,7 @@ describe('SpeechModelStore', () => {
     await rm(directory, { recursive: true, force: true })
   })
 
-  function createStore(fetchFn: typeof fetch, loadEngine = vi.fn(async () => engine)) {
+  function createStore(fetchFn: typeof fetch, loadEngine: SpeechEngineLoader = vi.fn(async () => engine)) {
     const statuses: SpeechModelStatus[] = []
     const store = new SpeechModelStore({ directory, model: MODEL, fileUrl, fetchFn, loadEngine, onStatus: (status) => statuses.push(status) })
     return { store, statuses, loadEngine }
@@ -107,7 +107,7 @@ describe('SpeechModelStore', () => {
     await store.ensure()
     expect(store.get()).toEqual({ state: 'ready' })
     expect(store.currentEngine()).toBe(engine)
-    expect(loadEngine).toHaveBeenCalledWith(join(directory, 'test-model'))
+    expect(loadEngine).toHaveBeenCalledWith(join(directory, 'test-model'), expect.any(AbortSignal))
     expect(statuses[0]).toEqual({ state: 'downloading', receivedBytes: 0, totalBytes: TOTAL })
     expect(statuses.at(-2)).toEqual({ state: 'loading' })
     for (const [name, data] of Object.entries(FILES)) expect(await readFile(join(directory, 'test-model', name))).toEqual(data)
@@ -229,6 +229,59 @@ describe('SpeechModelStore', () => {
     expect(store.currentEngine()).toBeNull()
     expect(dispose).toHaveBeenCalledTimes(1)
     expect(await store.isDownloaded()).toBe(true)
+  })
+
+  it('reports an engine that stopped by itself without dropping the files\' check, and ignores one stopped after unload', async () => {
+    let stopped: (() => void) | undefined
+    const { store, statuses } = createStore(fakeGitHub().fetchFn, vi.fn(async () => ({ ...engine, onStopped: (listener: () => void) => { stopped = listener } })))
+    await store.ensure()
+    stopped!()
+    expect(store.get()).toEqual({ state: 'failed', reason: 'engine', receivedBytes: 0, totalBytes: TOTAL })
+    expect(statuses.at(-1)).toEqual(store.get())
+    expect(store.currentEngine()).toBeNull()
+    expect(await store.isDownloaded()).toBe(true)
+
+    await store.ensure()
+    expect(store.get()).toEqual({ state: 'ready' })
+    store.unload()
+    stopped!()
+    expect(store.get()).toEqual({ state: 'missing' })
+  })
+
+  it('cancels a load still under way when unloaded, and keeps the files\' check', async () => {
+    let signal: AbortSignal | undefined
+    const loadEngine = vi.fn((_directory: string, cancel?: AbortSignal) => {
+      signal = cancel
+      return new Promise<SpeechEngine>((_resolve, reject) => { cancel?.addEventListener('abort', () => reject(new Error('cancelled'))) })
+    })
+    const { store, statuses } = createStore(fakeGitHub().fetchFn, loadEngine)
+    const attempt = store.ensure()
+    await vi.waitFor(() => expect(signal).toBeDefined())
+    store.unload()
+    expect(signal!.aborted).toBe(true)
+    await attempt
+    expect(store.get()).toEqual({ state: 'missing' })
+    expect(statuses.some((status) => status.state === 'failed')).toBe(false)
+    expect(await store.isDownloaded()).toBe(true)
+  })
+
+  it('starts no engine when unloaded while the files are being checked', async () => {
+    const { store, loadEngine } = createStore(fakeGitHub().fetchFn)
+    await store.ensure()
+    store.unload()
+    const attempt = store.ensure()
+    store.unload()
+    await attempt
+    expect(loadEngine).toHaveBeenCalledTimes(1)
+    expect(store.get()).toEqual({ state: 'missing' })
+  })
+
+  it('ends the engine\'s helper when Sotto quits', async () => {
+    const dispose = vi.fn()
+    const { store } = createStore(fakeGitHub().fetchFn, vi.fn(async () => ({ ...engine, dispose })))
+    await store.ensure()
+    store.dispose()
+    expect(dispose).toHaveBeenCalledTimes(1)
   })
 
   it('never brings back a model unloaded while it was loading, and loads again when asked', async () => {

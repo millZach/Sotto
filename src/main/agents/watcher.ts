@@ -25,7 +25,7 @@ import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   MACHINE_FACTS_OLDER, MACHINE_FACTS_UNREAD, MACHINE_NOT_CONNECTED, type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
   type WatcherWaitingOnUser } from '../../shared/watcher'
-import { machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
+import { MACHINE_START_SETTLES_MS, machineHeadroom, machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
@@ -269,7 +269,12 @@ type RoleReceipt = { readonly id: WorkerKind; readonly named: RoleField[]; reado
  * A start placed before admission (#1032): the call as Watcher made it, which its retries are matched by, the start as it
  * goes, and where its receipt says it went.
  */
-type PlacedStart = { readonly original: WatcherToolInput<'start_thread'>; readonly input: WatcherToolInput<'start_thread'>; readonly placement: WorkerPlacementReceipt }
+type PlacedStart = { readonly original: WatcherToolInput<'start_thread'>; readonly input: WatcherToolInput<'start_thread'>; readonly placement: WorkerPlacementReceipt
+  /**
+   * Called with the start's target once its reservation is recorded, or once it is found a retry of one already
+   * recorded (`retry`), which lets the next start be placed (#1694).
+   */
+  readonly admitted?: (target: WatcherThreadTarget, retry: boolean, operationId: string) => void }
 /** `base` replaces this computer's new-thread default; `paired` narrows it. */
 type PermissionLimits = { readonly base?: AgentRuntimeMode; readonly paired?: AgentRuntimeMode }
 const ROLE_STARTS_KEPT = 500
@@ -392,7 +397,9 @@ interface RecalledRoom {
  * A start Watcher holds a reservation for, and whether it still counts as placed: its first prompt is still to go
  * (`queued` or `dispatching`), or a paired host did not answer it in time and may yet start it (`timedOut`).
  */
-interface ReservedStart { readonly target: WatcherThreadTarget; readonly operationId: string; readonly notYetSent: boolean }
+interface ReservedStart { readonly target: WatcherThreadTarget; readonly operationId: string; readonly notYetSent: boolean
+  /** Its first prompt definitely failed, so nothing was started for it (#1694). */
+  readonly failed: boolean }
 /**
  * The record's reserved starts. Operations are only ever appended, so where a reservation's operation sits holds for as
  * long as the reservation does: `positions` keeps it from one record to the next, and each record checks a known
@@ -420,9 +427,19 @@ function reservedStarts(record: Readonly<WatcherRecord>, positions: Map<string, 
     if (!operation) { positions.delete(operationId); continue }
     if (operation.deliveryState === 'accepted' || operation.deliveryState === 'failed') timedOut.delete(operationId)
     if (operation.action === 'start') starts.push({ target, operationId, notYetSent: operation.deliveryState === 'queued'
-      || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain' && timedOut.has(operationId) })
+      || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain' && timedOut.has(operationId), failed: operation.deliveryState === 'failed' })
   }
   return starts
+}
+
+/**
+ * Whether a start's call answered that nothing started: its receipt says its first prompt failed (#1694). A refusal
+ * without that, such as a host's timeout with an uncertain receipt, a call that threw, or an uncertain one may yet have
+ * started, so none is taken as failed.
+ */
+function definitelyFailedStart(result: unknown): boolean {
+  if (typeof result !== 'object' || result === null) return false
+  return (result as { receipt?: { deliveryState?: unknown } }).receipt?.deliveryState === 'failed'
 }
 
 export class WatcherService implements WatcherControlHooks {
@@ -1393,14 +1410,16 @@ export class WatcherService implements WatcherControlHooks {
         : others().find(host => host.hostId === hostId)?.origins && this.remote?.projectOrigins ? this.remote.projectOrigins(hostId) : undefined,
       setUp: async (hostId, request) => hostId === local ? this.options.setUpProject?.(request)
         : others().find(host => host.hostId === hostId)?.setUp && this.remote?.setUpProject ? this.remote.setUpProject(hostId, request) : undefined,
-      // How busy a machine is now, as list_machines says it (#1311); a machine that does not say reads null and is never chosen.
-      load: async hostId => {
+      // A machine's headroom now, as list_machines says it (#1694), counting every start on its way there at any moment of
+      // the read, as list_machines does (`placedNotStartedWith`). A machine that does not say reads null and is never chosen.
+      headroom: async hostId => {
         try {
+          const before = this.startsNotYetSentOn(hostId)
           const report = hostId === local ? await this.options.machineFacts?.()
             : others().find(host => host.hostId === hostId)?.facts && this.remote?.machineFacts ? await this.remote.machineFacts(hostId) : undefined
           if (!report) return null
           const states = machineLoadStates(report.load ?? null, report.facts.totalMemoryBytes, Date.now())
-          return { cpu: states.cpu, memory: states.memory, cpuBusyPercent: report.load?.cpuBusyPercent ?? null }
+          return { headroom: this.headroomOf(report, hostId, [...before, ...this.startsNotYetSentOn(hostId)]), busy: states.cpu === 'busy', short: states.memory === 'short' }
         } catch { return null }
       },
     }
@@ -3906,13 +3925,29 @@ export class WatcherService implements WatcherControlHooks {
         // check asked later, Watcher's or a delegated one, never overtakes it (#1312). It gives the place back when it is
         // placed on another machine, refused, or a retry; only an admitted check here keeps it.
         const ticket = asked.testRun === true && this.options.checks && this.options.workerMachine ? this.joinChecks(randomUUID(), asked.title).ticket : undefined
+        // Where Settings leave the machine to Watcher, its starts are placed one at a time, each held until its reservation
+        // is recorded, so starts made together each see the ones before them in every machine's headroom (#1694).
+        const release = this.options.workerMachine?.() === 'watcher' ? await this.placingTurn() : undefined
         try {
           const placed = await this.placeStart(asked)
+          if (!placed) release?.()
           if (ticket && (placed?.input.check !== true || placed.input.project.hostId !== this.hostId())) this.dropTicket(ticket)
           // A start refused at admission never ran, so the move it would have made is forgotten with it.
-          try { return await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed, ticket) }
-          finally { if (placed?.input.fromMove) this.branchStartsPlaced.delete(placed.input.fromMove) }
-        } finally { if (ticket) this.dropTicket(ticket) }
+          let target: WatcherThreadTarget | undefined, failed = false
+          // A retry's start was counted when it was first admitted, and is not counted again.
+          const admitted = (at: WatcherThreadTarget, retry: boolean, operationId: string) => { if (!retry) { target = at; this.notePlaced(at, operationId) } release?.() }
+          try {
+            const result = await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed ? { ...placed, admitted } : placed, ticket)
+            failed = definitelyFailedStart(result)
+            return result
+          } finally {
+            if (target) this.noteStartEnded(target, failed)
+            if (placed?.input.fromMove) this.branchStartsPlaced.delete(placed.input.fromMove)
+          }
+        } finally {
+          release?.()
+          if (ticket) this.dropTicket(ticket)
+        }
       }
       if (name === 'stop_thread') {
         const stopped = await this.stopWaitingCheck(threadId, parsed.data as WatcherToolInput<'stop_thread'>)
@@ -4160,6 +4195,8 @@ export class WatcherService implements WatcherControlHooks {
       if (steerFallback) this.rememberSteerFallback(operation.id, steerFallback)
       return { operation, retry: false }
     })
+    // The reservation is recorded, so a start placed after this one counts it against this machine's headroom (#1694).
+    placed?.admitted?.(admitted.operation.target, admitted.retry, admitted.operation.id)
     if (progress) progress.operationId = admitted.operation.id
     if (admitted.retry) {
       // A retry reads its receipt again; only the start's first run says how many threads are working (#1183).
@@ -5359,22 +5396,86 @@ ${operation.draftId}`)
    * This computer and every host the desktop holds a connection to, each with its host facts when it reports them (#1031).
    * A host that does not list host-facts, or whose read fails, reads unknown; one not connected now reads not connected.
    */
+  /**
+   * Watcher's starts admitted on each machine, by Sotto thread ID, with when Sotto first saw each no longer on its way
+   * (#1694). A start stops counting as on its way once its first prompt is accepted, before a reading of its machine can
+   * show what it uses, so it counts against that machine's headroom from admission until `MACHINE_START_SETTLES_MS` after
+   * it was seen to leave, by this computer's clock (`placedSince`). A check waiting its turn is still on its way, so its
+   * minute begins only once it is sent. Seen late, it counts longer, never shorter. One whose first prompt definitely
+   * failed started nothing, and counts no more, whichever way its reservation was let go of: each keeps where its
+   * operation sits in the record, which only ever appends, so one read says how it ended.
+   */
+  private placedRecently: { readonly hostId: string; readonly threadId: string; readonly operationId: string; readonly position: number; left?: number }[] = []
+  private notePlaced(target: WatcherThreadTarget, operationId: string): void {
+    const kept = this.settledPlacements(Date.now()).filter(item => !sameTarget(item, target))
+    // Just admitted, so its operation is among the newest.
+    const operations = this.view().operations
+    let position = operations.length - 1
+    while (position >= 0 && operations[position]!.id !== operationId) position--
+    this.placedRecently = [...kept, { hostId: target.hostId, threadId: target.threadId, operationId, position }]
+  }
+  /** Ends a start's call: one that failed for certain is forgotten; one already sent begins its minute. */
+  private noteStartEnded(target: WatcherThreadTarget, failed: boolean): void {
+    if (failed) { this.placedRecently = this.placedRecently.filter(item => !sameTarget(item, target)); return }
+    this.placedSince(target.hostId)
+  }
+  /** The kept starts, less those whose minute is over. */
+  private settledPlacements(now: number) { return this.placedRecently.filter(item => item.left === undefined || now - item.left <= MACHINE_START_SETTLES_MS) }
+  /** The starts admitted on `hostId` that may not show in its readings yet. */
+  private placedSince(hostId: string): string[] {
+    const now = Date.now(), reserved = this.reservedStarts().filter(start => start.target.hostId === hostId)
+    const onItsWay = new Set([...reserved.flatMap(start => start.notYetSent ? [start.target.threadId] : []), ...this.delegationStarts?.(hostId) ?? []])
+    const failed = new Set(reserved.flatMap(start => start.failed ? [start.target.threadId] : []))
+    const operations = this.view().operations, held = new Set(reserved.map(start => start.operationId))
+    // One whose reservation is gone is read where its operation sits; one not found there is kept, never guessed failed.
+    const gone = (item: { readonly operationId: string; readonly position: number }) => !held.has(item.operationId)
+      && operations[item.position]?.id === item.operationId && operations[item.position]!.deliveryState === 'failed'
+    this.placedRecently = this.settledPlacements(now).filter(item => item.hostId !== hostId || !failed.has(item.threadId) && !gone(item))
+    return this.placedRecently.flatMap(item => {
+      if (item.hostId !== hostId) return []
+      if (onItsWay.has(item.threadId)) delete item.left
+      else item.left ??= now
+      return [item.threadId]
+    })
+  }
+  /**
+   * A machine's headroom from its report (#1694): its work placed but not started, with `reserved`, the starts on their
+   * way there that it may not count, and this Watcher's starts that its readings may not show yet. Placing a start and
+   * list_machines both read it here, so the figure Watcher reads is the one Sotto places by.
+   */
+  private headroomOf(report: HostMachineReport, hostId: string, reserved: readonly string[] | undefined): number | null {
+    const recent = this.placedSince(hostId)
+    const placed = reserved === undefined && !recent.length ? report.placedNotStarted ?? null : placedNotStartedWith(report, [...reserved ?? [], ...recent])
+    return machineHeadroom(report.facts, report.load ?? null, placed, Date.now())
+  }
+  /** The tail of Watcher's starts waiting to be placed one at a time (#1694). */
+  private placing: Promise<void> = Promise.resolve()
+  /** Waits for every start placed before this one to be admitted or refused, and answers the call that lets the next go. */
+  private async placingTurn(): Promise<() => void> {
+    let done!: () => void
+    const finished = new Promise<void>(resolve => { done = resolve })
+    const before = this.placing
+    this.placing = before.then(() => finished)
+    await before
+    let released = false
+    return () => { if (!released) { released = true; done() } }
+  }
   /** The last machines read (#1032), kept for an iPhone's page between reads. */
   private machinesListed: MachinesListed | null = null
   private async listMachines() {
     // Live load and work placed but not started (#1311) are shown only with Work across machines on, and read unknown
     // wherever the facts do, or where a host does not send them.
     const live = this.options.crossMachine === true
-    const noLoad = live ? { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const } : {}
+    const noLoad = live ? { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const, headroom: null } : {}
     // A paired machine's count gains the starts this desktop has admitted there that it has not counted. Those starts are
     // read before the host is asked and again once it has answered, so every start on its way at any moment of the read
     // is in them: one the answer missed is added, never lost (`placedNotStartedWith`). This computer's own report already
     // holds this Watcher's starts here (`startsNotYetSent`).
-    const loadOf = (report: HostMachineReport, reserved: readonly string[] | undefined) => {
+    const loadOf = (report: HostMachineReport, reserved: readonly string[] | undefined, hostId: string) => {
       if (!live) return {}
       const load = report.load ?? null, states = machineLoadStates(load, report.facts.totalMemoryBytes, Date.now())
       const placedNotStarted = reserved === undefined ? report.placedNotStarted ?? null : placedNotStartedWith(report, reserved)
-      return { load, placedNotStarted, memoryState: states.memory, cpuState: states.cpu }
+      return { load, placedNotStarted, memoryState: states.memory, cpuState: states.cpu, headroom: this.headroomOf(report, hostId, reserved) }
     }
     const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null, ...noLoad })
     const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string, remote?: string) => {
@@ -5384,7 +5485,7 @@ ${operation.draftId}`)
         if (!report) return unknown(older)
         // A start admitted while the host was sampling may have reached it after it counted, or not at all yet.
         const reserved = before === undefined ? undefined : [...before, ...this.startsNotYetSentOn(remote!)]
-        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report, reserved) }
+        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report, reserved, remote ?? this.hostId()) }
       } catch { return unknown(MACHINE_FACTS_UNREAD) }
     }
     const local = { hostId: this.hostId(), name: 'This computer', thisComputer: true, connected: true,

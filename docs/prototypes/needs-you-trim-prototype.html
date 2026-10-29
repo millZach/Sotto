@@ -1,0 +1,250 @@
+<!doctype html>
+<!-- PROTOTYPE — throwaway. Question: what does a Needs you entry keep once the question and approval text leave it,
+     and what does its button do? Same queue in every variant: five threads wait (an approval with a 30-line command,
+     a question, a long-titled approval, a delegated wait, a failed turn), three stand and two are counted.
+     Today = the card as it ships on Owl (ADR-0135). A = trimmed, the button opens the thread in its pane.
+     B = trimmed, the button pops the thread's request card open over the sidebar, in place.
+     The rail (ADR-0146) already shows no text; it is drawn here so its press can match the card's. -->
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Needs you, trimmed — prototype</title>
+<style>
+:root{
+  --bg:#141414;--sidebar:#1b1b1b;--card:#242424;--inset:#2f2f2f;--text:#ededed;--text2:#c8c8c8;--muted:#a0a0a0;
+  --warn:#f2bd4b;--attn:#f0b429;--accent:#7aa2ff;--hair:#333;--btn:#2d2d2d;--btnb:#474747;--pane:#181818;--focus:#7aa2ff;
+  --primary:#e9e9e9;--primary-text:#151515;--pop:#262626;--shadow:0 10px 30px rgba(0,0,0,.55);
+}
+body.light{
+  --bg:#f3f3f1;--sidebar:#ebebe8;--card:#ffffff;--inset:#e6e6e2;--text:#1b1b1b;--text2:#3c3c3c;--muted:#5f5f5f;
+  --warn:#8a5a00;--attn:#b07800;--accent:#2f5bd3;--hair:#d6d6d2;--btn:#f6f6f4;--btnb:#c9c9c4;--pane:#fafaf8;--focus:#2f5bd3;
+  --primary:#1b1b1b;--primary-text:#fff;--pop:#ffffff;--shadow:0 10px 30px rgba(0,0,0,.18);
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 Figtree,"Segoe UI",system-ui,-apple-system,sans-serif}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+header{padding:14px 16px 6px;max-width:1200px}
+h1{font-size:17px;margin:0 0 4px}
+.sub{color:var(--muted);font-size:13px;margin:0 0 10px;max-width:80ch}
+.controls{display:flex;flex-wrap:wrap;gap:6px 14px;align-items:center;font-size:13px;color:var(--muted);margin-bottom:6px}
+.seg{display:inline-flex;border:1px solid var(--btnb);border-radius:7px;overflow:hidden}
+.seg button{font:inherit;font-size:13px;padding:5px 11px;border:0;background:var(--btn);color:var(--text);cursor:pointer;min-height:32px}
+.seg button+button{border-left:1px solid var(--btnb)}
+.seg button[aria-pressed=true]{background:var(--text);color:var(--bg);font-weight:600}
+.what{max-width:80ch;margin:4px 0 0;font-size:13px;color:var(--text2)}
+.what b{color:var(--text)}
+main{display:flex;flex-wrap:wrap;gap:16px;padding:10px 16px 90px;align-items:flex-start}
+/* the window: rail or sidebar, then a pane */
+.win{display:flex;border:1px solid var(--hair);border-radius:10px;overflow:hidden;background:var(--pane);position:relative;height:640px;flex:1 1 640px;max-width:900px;min-width:0}
+.sidebar{flex:none;min-width:0;background:var(--sidebar);border-right:1px solid var(--hair);display:flex;flex-direction:column;position:relative;min-height:0}
+.search{margin:10px 8px 8px;display:flex;align-items:center;gap:6px;border:1px solid var(--btnb);border-radius:7px;padding:6px 8px;color:var(--muted);font-size:13px}
+.pane{flex:1;min-width:0;padding:14px 18px;color:var(--muted);font-size:13px;overflow:auto}
+.pane h3{color:var(--text);font-size:15px;margin:0 0 6px}
+.pane .opened{border:1px solid var(--hair);border-radius:8px;padding:10px 12px;margin-top:10px;background:var(--card);color:var(--text2)}
+/* the Needs you card, as threadSidebar.css draws it */
+.needs-you{margin:0 8px 8px;padding:8px 10px 4px;border-radius:8px;background:var(--card)}
+.ny-head{display:flex;align-items:center;gap:6px}
+.ny-head h2{margin:0;font-size:13px;font-weight:600}
+.count{padding:0 5px;border-radius:4px;background:var(--inset);color:var(--text2);font-size:11.5px;font-weight:600}
+.oldest{margin-left:auto;color:var(--muted);font-size:11.5px;white-space:nowrap}
+ul{margin:2px 0 0;padding:0;list-style:none}
+li.entry{padding:7px 0 5px;border-top:2px solid var(--inset)}
+.top{display:flex;align-items:center;gap:7px;min-width:0}
+.ring{flex:none;width:10px;height:10px;border-radius:50%;border:2px solid var(--attn)}
+.ring.failed{border-style:dashed}
+.title{flex:1 1 auto;min-width:0;padding:0;border:0;background:none;color:inherit;font:inherit;font-size:13px;font-weight:600;text-align:left;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;cursor:pointer}
+.wait{flex:none;color:var(--muted);font-size:11.5px;font-variant-numeric:tabular-nums}
+.meta{display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center;margin:2px 0 0 17px;color:var(--muted);font-size:11.5px}
+.status{color:var(--warn);font-weight:600}
+.tag{padding:0 5px;border-radius:4px;background:var(--inset);color:var(--text2);font-weight:600}
+.ask{margin:3px 0 0 17px;color:var(--text2);font-size:12px;line-height:1.4;overflow-wrap:anywhere;white-space:pre-wrap}
+.ask code{font:11.5px/1.4 ui-monospace,Consolas,monospace}
+.actions{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0 2px 17px}
+/* trimmed: the label and the button share a line when they fit, the button drops under when they do not */
+.need{display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;margin:3px 0 1px 17px;font-size:11.5px;color:var(--muted)}
+.need .status{margin-right:auto}
+.need .tag{font-size:11.5px}
+button.b{font:inherit;font-size:12.5px;min-height:28px;padding:3px 10px;border-radius:6px;border:1px solid var(--btnb);background:var(--btn);color:var(--text);cursor:pointer;white-space:nowrap}
+button.b.primary{background:var(--primary);color:var(--primary-text);border-color:var(--primary)}
+button.b.ghost{border-color:transparent;background:transparent;color:var(--text2)}
+button.b[aria-expanded=true]{border-color:var(--focus)}
+button:focus-visible,.title:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
+.foot{display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:6px 0 4px;border-top:2px solid var(--inset)}
+.foot .over{margin-right:auto;color:var(--muted);font-size:11.5px}
+.folders{padding:4px 8px;color:var(--muted);font-size:12px;overflow:auto;flex:1}
+.folders .row{display:flex;gap:7px;align-items:center;padding:5px 6px;color:var(--text2);font-size:13px;border-radius:6px}
+.folders .lbl{padding:8px 6px 4px}
+/* the popped card (variant B) */
+.pop{position:absolute;z-index:5;left:8px;width:min(360px,calc(100vw - 32px));background:var(--pop);border:1px solid var(--btnb);border-radius:10px;box-shadow:var(--shadow);padding:10px 12px 10px;display:flex;flex-direction:column;max-height:430px;overflow:auto}
+.pop-head{display:flex;align-items:baseline;gap:8px}
+.pop-head h4{margin:0;font-size:13px;flex:1;min-width:0;overflow-wrap:anywhere}
+.pop .kind{color:var(--warn);font-size:11.5px;font-weight:600;margin:2px 0 6px}
+.pop .body{overflow:auto;min-height:0;flex:1;border-radius:6px;background:var(--inset);padding:8px 10px;font-size:12.5px;line-height:1.45;color:var(--text2);white-space:pre-wrap}
+.pop .body code{font:11.5px/1.45 ui-monospace,Consolas,monospace;color:var(--text)}
+.pop .opts{display:flex;flex-direction:column;gap:6px;margin-top:8px}
+.pop .opts label{display:flex;gap:8px;align-items:flex-start;font-size:13px;cursor:pointer}
+.pop .row-acts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px;align-items:center}
+.pop .row-acts .grow{margin-right:auto}
+.pop .sent{color:var(--muted);font-size:12.5px;margin-top:8px}
+.pop .x{border:0;background:none;color:var(--muted);font-size:16px;cursor:pointer;line-height:1;padding:2px 4px;border-radius:4px}
+.scrim{position:absolute;inset:0;z-index:4}
+/* the collapsed rail (ADR-0146) */
+.rail{width:56px;align-items:center;padding-top:8px;gap:6px}
+.tile{position:relative;width:38px;height:38px;border-radius:9px;border:1.5px solid var(--btnb);background:var(--card);color:var(--text);font:600 13px/1 inherit;cursor:pointer;display:grid;place-items:center}
+.tile[data-waiting]{border-color:var(--attn)}
+.tile[data-resting]{width:32px;height:32px;color:var(--muted);font-size:12px}
+.tile .tr{position:absolute;right:-3px;bottom:-3px;width:10px;height:10px;border-radius:50%;border:2px solid var(--attn);background:var(--sidebar)}
+.tile[data-resting] .tr{border-color:var(--muted)}
+.rule{width:28px;border-top:1px solid var(--hair);margin:2px 0}
+.rail .pop{left:62px;top:8px}
+.notes{flex:1 1 300px;max-width:520px;font-size:13px;color:var(--text2)}
+.notes h3{font-size:14px;color:var(--text);margin:0 0 6px}
+.notes ul{padding-left:18px;list-style:disc}
+.notes li{margin:0 0 5px}
+.state{font:12px/1.4 ui-monospace,Consolas,monospace;background:var(--card);border:1px solid var(--hair);border-radius:8px;padding:8px 10px;white-space:pre-wrap;color:var(--text2)}
+.switcher{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:20;display:flex;align-items:center;gap:6px;background:#000;color:#fff;border-radius:999px;padding:6px 8px;box-shadow:0 6px 24px rgba(0,0,0,.5);font-size:13px;max-width:calc(100vw - 16px)}
+.switcher button{font:inherit;border:0;background:#2a2a2a;color:#fff;border-radius:999px;min-width:36px;min-height:36px;cursor:pointer;font-size:16px}
+.switcher span{padding:0 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+@media (max-width:700px){ main{padding-bottom:120px} .sidebar:not(.rail) .pop{width:calc(100% - 16px);max-height:360px} .rail .pop{width:calc(100vw - 110px)} .win{height:600px;flex-basis:100%} .pane{display:none} .sidebar{flex:1!important;width:auto!important} .rail{flex:none!important;width:56px!important} .win.has-rail .pane{display:block} }
+</style></head>
+<body>
+<header>
+  <h1>Needs you, trimmed (prototype)</h1>
+  <p class="sub">Each entry keeps its title, its wait, what it needs and one button. The question and approval text and the project and machine line go. Flip variants with the bar at the bottom or ← →. Press the buttons: they work.</p>
+  <div class="controls">
+    <span class="seg" role="group" aria-label="Surface"><button data-surface="sidebar" aria-pressed="true">Sidebar</button><button data-surface="rail" aria-pressed="false">Collapsed rail</button></span>
+    <span class="seg" role="group" aria-label="Width"><button data-width="260" aria-pressed="true">260px</button><button data-width="320" aria-pressed="false">320px</button></span>
+    <span class="seg" role="group" aria-label="Theme"><button data-theme="dark" aria-pressed="true">Dark</button><button data-theme="light" aria-pressed="false">Light</button></span>
+  </div>
+  <p class="what" id="what"></p>
+</header>
+<main>
+  <div class="win" id="win"></div>
+  <section class="notes"><h3>What changed in this variant</h3><div id="notes"></div><h3 style="margin-top:12px">Last press</h3><div class="state" id="state">Nothing pressed yet.</div></section>
+</main>
+<div class="switcher" role="group" aria-label="Prototype variants"><button id="prev" aria-label="Previous variant">←</button><span id="label"></span><button id="next" aria-label="Next variant">→</button></div>
+<script>
+const CMD = `cd /home/zach/Projects/Sotto && npm run build && \\
+  npx playwright test tests/e2e/threadSidebar.spec.ts \\
+    --project=desktop --workers=2 --reporter=line \\
+    --grep "Needs you" --retries=0 --timeout=120000 \\
+    --output=artifacts/needs-you-trim/run-1 \\
+    --update-snapshots=missing
+git -C /home/zach/Projects/Sotto status --short
+git -C /home/zach/Projects/Sotto diff --stat origin/main...HEAD
+node scripts/design-capture.mjs --only threads-sidebar \\
+  --sizes 1600x1000,1280x800,820x560 \\
+  --themes dark,light --motion reduce,full
+rm -rf artifacts/needs-you-trim/tmp
+mkdir -p artifacts/needs-you-trim/sidebar
+cp test-results/**/*.png artifacts/needs-you-trim/sidebar/
+ls -la artifacts/needs-you-trim/sidebar
+npm run typecheck
+npm run lint -- --max-warnings=0
+npm test -- --maxWorkers=2 tests/unit/renderer/needsYouQueue.test.tsx
+npm test -- --maxWorkers=2 tests/unit/renderer/threadSidebarRail.test.tsx
+npm run notices:verify
+echo done`;
+const QUEUE = [
+  {id:'t1',mark:'Re',title:'Release 0.48.2 checks',wait:'34m',kind:'approval',label:'Needs your approval',project:'Sotto',host:'forge',
+    body:`<code>${CMD.replace(/&/g,'&amp;').replace(/</g,'&lt;')}</code>\nin <code>/home/zach/Projects/Sotto</code>`,
+    choices:[['Allow once','primary'],['Always allow in this folder',''],['Deny','']]},
+  {id:'t2',mark:'Wi',title:'Widget hotkey on Omarchy',wait:'12m',kind:'answer',label:'Needs your answer',project:'Sotto',host:'forge',
+    body:'Hyprland already binds Super+Space to the launcher on Omarchy. Which chord should the floating widget take by default on Linux?\n\nI checked the global dictation hotkey and the Omarchy keybindings file; the three below are free on a stock install.',
+    options:['Super+Alt+Space','Ctrl+Super+D','Leave it unbound until the user picks one']},
+  {id:'t3',mark:'Ma',title:'Make the settings search find keyboard shortcuts by the chord as well as by the name',wait:'5m',kind:'approval',label:'Needs your approval',project:'Sotto',host:'',settled:true,
+    body:'Edit <code>src/renderer/src/features/settings/settingsPages.ts</code>\n\n+ Add a chord index so a search for "ctrl k" finds Open command menu.',
+    choices:[['Allow once','primary'],['Deny','']]},
+  {id:'t4',mark:'Bu',title:'Build the Android pairing screen',wait:'3m',kind:'delegated',label:'Needs your answer',waitingIn:'Review: pairing screen',project:'Sotto',host:''},
+  {id:'t5',mark:'Ho',title:'Host restart test',wait:'1h 02m',kind:'failed',label:'Needs attention',project:'Sotto',host:'forge',
+    body:'The provider stopped the turn: usage limit reached. Try again after 4:00 PM.'},
+];
+const OTHER = [['Pr','Prototype: trimmed Needs you',false],['Th','Thread tips',true],['Wa','Watcher archive perf',true]];
+const VARIANTS = [
+  {key:'Today',name:'As it ships',what:'<b>Today.</b> The card as Owl draws it now: the meta line, the whole ask, and inline choices when the ask is short. "Open to answer" opens the thread in its pane.',
+   notes:['This is the screenshot Zach sent: up to 30 lines of command in the sidebar.','Short asks get their choices inline (Allow once, Deny, an option).']},
+  {key:'A',name:'Trimmed · opens the thread',what:'<b>A.</b> Title, wait, what it needs, one button. The button opens the thread in its pane, where the request card is, as "Open to answer" does today.',
+   notes:['No ask text, no "Sotto · forge" line. <b>Settled</b> and <b>Waiting in …</b> stay: they say what is needed and where.','No inline choices any more: an answer you cannot read is not one Sotto should offer.','A failed turn keeps <b>Dismiss</b> and <b>Open</b>; its reason line goes.','Rail: a tile press opens the thread, as today. Nothing to drop there; the tray became tiles on Oct 27.']},
+  {key:'B',name:'Trimmed · pops the card in place',what:'<b>B.</b> Same trimmed entry. The button pops the thread\'s request card open over the sidebar, beside the entry, without leaving the thread you are on. Answer there, or "Open thread". Escape or a click outside closes it.',
+   notes:['The ask text lives in the popped card only, scrolled when long.','The popped card answers through the same store as the pane\'s card: one send, one hold, one draft.','A failed turn keeps <b>Dismiss</b>; <b>Show why</b> pops the reason.','Rail: a waiting tile pops the same card beside the rail; other tiles open their thread.']},
+];
+let v = Math.max(0, VARIANTS.findIndex(x => x.key === new URLSearchParams(location.search).get('variant')));
+let surface = 'sidebar', width = 260, popped = null, lastFocus = null;
+const $ = s => document.querySelector(s);
+const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;');
+function log(s){ $('#state').textContent = s }
+function openThread(t){ popped = null; log(`Opened "${t.title}" in the pane.\nThe sidebar stays as it was.`); render(); $('#pane-title').textContent = t.title;
+  $('#pane-body').innerHTML = `<div class="opened"><b>${esc(t.label)}</b><br>The thread's own request card is here, under its last reply.</div>` }
+function entryToday(t){
+  const ring = `<span class="ring${t.kind==='failed'?' failed':''}" aria-hidden="true"></span>`;
+  const meta = `<p class="meta"><span class="status">${t.label}</span>${t.waitingIn?`<span>Waiting in ${esc(t.waitingIn)}</span>`:''}<span>${t.project}</span>${t.host?`<span>${t.host}</span>`:''}${t.settled?'<span class="tag">Settled</span>':''}</p>`;
+  let rest = '';
+  if (t.kind==='failed') rest = `<p class="ask">${esc(t.body)}</p><div class="actions"><button class="b" data-act="dismiss" data-id="${t.id}">Dismiss</button><button class="b" data-act="open" data-id="${t.id}">Open</button></div>`;
+  else if (t.kind==='delegated') rest = `<div class="actions"><button class="b" data-act="open" data-id="${t.id}">Open to answer</button></div>`;
+  else rest = `<p class="ask">${t.body}</p>` + (t.id==='t3' ? `<div class="actions"><button class="b primary" data-act="answer" data-id="${t.id}">Allow once</button><button class="b" data-act="answer" data-id="${t.id}">Deny</button></div>` : `<div class="actions"><button class="b" data-act="open" data-id="${t.id}">Open to answer</button></div>`);
+  return `<li class="entry"><div class="top">${ring}<button class="title" data-act="open" data-id="${t.id}" title="${esc(t.title)}" aria-label="Open ${esc(t.title)}">${esc(t.title)}</button><span class="wait">${t.wait}</span></div>${meta}${rest}</li>`;
+}
+function entryTrim(t, mode){
+  const ring = `<span class="ring${t.kind==='failed'?' failed':''}" aria-hidden="true"></span>`;
+  const extra = `${t.waitingIn?`<span>in ${esc(t.waitingIn)}</span>`:''}${t.settled?'<span class="tag">Settled</span>':''}`;
+  let btns;
+  if (t.kind==='failed') btns = `<button class="b" data-act="dismiss" data-id="${t.id}" aria-label="Dismiss Needs attention on ${esc(t.title)}">Dismiss</button>` +
+    (mode==='B' ? `<button class="b" data-act="pop" data-id="${t.id}" aria-haspopup="dialog" aria-expanded="${popped===t.id}" aria-label="Show why ${esc(t.title)} failed">Show why</button>` : `<button class="b" data-act="open" data-id="${t.id}" aria-label="Open ${esc(t.title)}">Open</button>`);
+  else if (mode==='B' && t.kind!=='delegated') btns = `<button class="b" data-act="pop" data-id="${t.id}" aria-haspopup="dialog" aria-expanded="${popped===t.id}" aria-label="Open ${esc(t.title)}'s ${t.kind==='approval'?'approval':'question'} here">Open to answer</button>`;
+  else btns = `<button class="b" data-act="open" data-id="${t.id}" aria-label="Open ${esc(t.title)} to answer">Open to answer</button>`;
+  return `<li class="entry" data-entry="${t.id}"><div class="top">${ring}<button class="title" data-act="open" data-id="${t.id}" title="${esc(t.title)}" aria-label="Open ${esc(t.title)}">${esc(t.title)}</button><span class="wait">${t.wait}</span></div><div class="need"><span class="status">${t.label}</span>${extra}${btns}</div></li>`;
+}
+function popCard(t){
+  if (t.kind==='failed') return `<div class="pop-head"><h4 id="pop-title">${esc(t.title)}</h4><button class="x" data-act="close" aria-label="Close">✕</button></div><p class="kind">Needs attention · ${t.wait}</p><div class="body">${esc(t.body)}</div><div class="row-acts"><button class="b ghost grow" data-act="open" data-id="${t.id}">Open thread</button><button class="b" data-act="dismiss" data-id="${t.id}">Dismiss</button></div>`;
+  const head = `<div class="pop-head"><h4 id="pop-title">${esc(t.title)}</h4><button class="x" data-act="close" aria-label="Close">✕</button></div><p class="kind">${t.label} · ${t.wait}${t.settled?' · Settled':''}</p>`;
+  if (t.kind==='approval') return head + `<div class="body">${t.body}</div><div class="row-acts"><button class="b ghost grow" data-act="open" data-id="${t.id}">Open thread</button>${t.choices.map(([c,k]) => `<button class="b ${k}" data-act="answer" data-id="${t.id}" data-choice="${esc(c)}">${esc(c)}</button>`).join('')}</div>`;
+  return head + `<div class="body">${esc(t.body)}</div><div class="opts" role="radiogroup" aria-label="Answers">${t.options.map((o,i) => `<label><input type="radio" name="q-${t.id}" value="${i}"${i===0?' checked':''}> ${esc(o)}</label>`).join('')}</div><div class="row-acts"><button class="b ghost grow" data-act="open" data-id="${t.id}">Open thread</button><button class="b ghost" data-act="answer" data-id="${t.id}" data-choice="Skip question">Skip question</button><button class="b primary" data-act="answer" data-id="${t.id}" data-choice="Send answer">Send answer</button></div>`;
+}
+function render(){
+  const V = VARIANTS[v];
+  history.replaceState(null,'',`?variant=${V.key}`);
+  $('#label').textContent = `${V.key} — ${V.name}`;
+  $('#what').innerHTML = V.what;
+  $('#notes').innerHTML = `<ul>${V.notes.map(n=>`<li>${n}</li>`).join('')}</ul>`;
+  const win = $('#win'); win.classList.toggle('has-rail', surface==='rail');
+  const shown = QUEUE.slice(0,3), over = QUEUE.length - 3;
+  const t = QUEUE.find(x => x.id === popped);
+  const pane = `<div class="pane"><h3 id="pane-title">Thread tips</h3><div id="pane-body">The thread you were on. Variant B never changes it until you press "Open thread".</div></div>`;
+  if (surface==='sidebar') {
+    const entries = shown.map(x => V.key==='Today' ? entryToday(x) : entryTrim(x, V.key)).join('');
+    const card = `<section class="needs-you" aria-labelledby="ny-h"><div class="ny-head"><h2 id="ny-h">Needs you</h2><span class="count">${QUEUE.length}</span><span class="oldest">oldest 34m</span></div><ul>${entries}</ul><div class="foot"><span class="over">+ ${over} more waiting (1 answer, 1 failed)</span><button class="b ghost" data-act="all" aria-label="Show all waiting threads">Show all</button></div></section>`;
+    const folders = `<div class="folders"><div class="lbl">Projects</div><div class="row">▸ Sotto <span style="margin-left:auto">14</span></div><div class="row">▸ Fleet <span style="margin-left:auto">3</span></div><div class="row">▸ Controls <span style="margin-left:auto">5</span></div></div>`;
+    win.innerHTML = `<aside class="sidebar" id="sb" style="width:${width}px"><div class="search">⌕ Search threads</div>${card}${folders}${t?`<div class="scrim" data-act="close"></div><div class="pop" id="pop" role="dialog" aria-labelledby="pop-title" tabindex="-1">${popCard(t)}</div>`:''}</aside>${pane}`;
+    if (t) { const li = win.querySelector(`[data-entry="${t.id}"]`), p = $('#pop'); const top = li.offsetTop + li.offsetHeight + 2; const max = win.clientHeight - p.offsetHeight - 8; p.style.top = Math.max(8, Math.min(top, max)) + 'px'; }
+  } else {
+    const tiles = QUEUE.map(x => `<button class="tile" data-waiting data-act="${V.key==='B'?'pop':'open'}" data-id="${x.id}" aria-label="${esc(x.title)}" title="${esc(x.title)} · ${x.label}"${V.key==='B'?` aria-haspopup="dialog" aria-expanded="${popped===x.id}"`:''}>${x.mark}<span class="tr"></span></button>`).join('');
+    const rest = OTHER.map(([m,title,r]) => `<button class="tile"${r?' data-resting':''} data-act="open-other" aria-label="${title}" title="${title}">${m}<span class="tr"></span></button>`).join('');
+    win.innerHTML = `<aside class="sidebar rail" id="sb">${tiles}<span class="rule"></span>${rest}${t?`<div class="scrim" data-act="close"></div><div class="pop" id="pop" role="dialog" aria-labelledby="pop-title" tabindex="-1">${popCard(t)}</div>`:''}</aside>${pane}`;
+    if (t) { const tile = win.querySelector(`.tile[data-id="${t.id}"]`), p = $('#pop'); p.style.top = Math.max(8, Math.min(tile.offsetTop, win.clientHeight - p.offsetHeight - 8)) + 'px'; }
+  }
+  if (t) $('#pop').querySelector('button.primary, input, .b')?.focus();
+}
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-act]'); if (!el) return;
+  const t = QUEUE.find(x => x.id === el.dataset.id), act = el.dataset.act;
+  if (act==='open') return t && openThread(t);
+  if (act==='open-other') return log('Opened that thread in the pane.');
+  if (act==='pop') { lastFocus = el.dataset.id; popped = popped===t.id ? null : t.id; log(popped ? `Popped "${t.title}"'s card over the sidebar.\nThe pane still shows the thread you were on.` : 'Closed.'); return render(); }
+  if (act==='close') { popped = null; log('Closed; focus back on the button that opened it.'); render(); return refocus(); }
+  if (act==='answer') { const how = el.dataset.choice || el.textContent; popped = null; log(`Answered "${t.title}": ${how}.\nSent through the same answer store as its pane's card.\nThe entry leaves; the next waiting thread takes its place.`); return render(); }
+  if (act==='dismiss') { popped = null; log(`Dismissed Needs attention on "${t.title}".`); return render(); }
+  if (act==='all') return log('Show all unfolds the card in place (unchanged).');
+});
+function refocus(){ const b = document.querySelector(`[data-act="pop"][data-id="${lastFocus}"]`); b?.focus() }
+document.addEventListener('keydown', e => {
+  if (e.key==='Escape' && popped) { popped = null; log('Escape closed the card; focus back on its button.'); render(); return refocus(); }
+  if (e.target.closest('input,textarea,[contenteditable]')) return;
+  if (e.key==='ArrowRight') { v=(v+1)%VARIANTS.length; popped=null; render() }
+  if (e.key==='ArrowLeft') { v=(v+VARIANTS.length-1)%VARIANTS.length; popped=null; render() }
+});
+$('#next').onclick = () => { v=(v+1)%VARIANTS.length; popped=null; render() };
+$('#prev').onclick = () => { v=(v+VARIANTS.length-1)%VARIANTS.length; popped=null; render() };
+document.querySelectorAll('[data-surface]').forEach(b => b.onclick = () => { surface=b.dataset.surface; popped=null; document.querySelectorAll('[data-surface]').forEach(x=>x.setAttribute('aria-pressed', x===b)); render() });
+document.querySelectorAll('[data-width]').forEach(b => b.onclick = () => { width=+b.dataset.width; document.querySelectorAll('[data-width]').forEach(x=>x.setAttribute('aria-pressed', x===b)); render() });
+document.querySelectorAll('[data-theme]').forEach(b => b.onclick = () => { document.body.classList.toggle('light', b.dataset.theme==='light'); document.querySelectorAll('[data-theme]').forEach(x=>x.setAttribute('aria-pressed', x===b)) });
+render();
+</script>
+</body></html>

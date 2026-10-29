@@ -134,11 +134,6 @@ msgstr ""
 msgid "{checked, plural, one {# check} other {# checks}}"
 msgstr ""
 
-#. {choice} is the provider's words for an answer, such as Allow once; {title} is a thread's title.
-#: src/renderer/src/agents/NeedsYouQueue.tsx
-msgid "{choice} in {title}"
-msgstr ""
-
 #. {clientName} is a provider's client, such as Claude Code.
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "{clientName} lists no model you can use now. Check your {clientName} sign-in and plan, then refresh this provider."
@@ -1710,8 +1705,6 @@ msgstr ""
 
 #. Answers an agent’s permission request.
 #. Answers an agent’s permission request.
-#. Answers an agent’s permission request.
-#: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 #: src/renderer/src/agents/requests/answeredChoices.ts
 msgid "Allow"
@@ -1720,10 +1713,6 @@ msgstr ""
 #. A permission mode: the agent edits files without asking.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Allow edits"
-msgstr ""
-
-#: src/renderer/src/agents/NeedsYouQueue.tsx
-msgid "Allow in {title}"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
@@ -1764,16 +1753,10 @@ msgstr ""
 msgid "Another provider’s model starts a new Watcher. This conversation stays in Watcher history, and you can send its handover with your first message."
 msgstr ""
 
-#. {option} is the agent's words for an answer; {title} is a thread's title.
-#: src/renderer/src/agents/NeedsYouQueue.tsx
-msgid "Answer {option} in {title}"
-msgstr ""
-
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Answer draft saved."
 msgstr ""
 
-#: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Answer sent."
 msgstr ""
@@ -2204,7 +2187,6 @@ msgstr ""
 msgid "Check {name} again"
 msgstr ""
 
-#: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/OwnModelServers.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -2265,7 +2247,6 @@ msgstr ""
 msgid "Checking..."
 msgstr ""
 
-#: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/OwnModelServers.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -2408,6 +2389,7 @@ msgstr ""
 #. Closes the dialog.
 #: src/renderer/src/agents/DeleteThread.tsx
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
+#: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/NewThreadDialog.tsx
 msgid "Close"
 msgstr ""
@@ -3440,16 +3422,10 @@ msgstr ""
 #. Answers an agent’s permission request.
 #. Answers an agent’s permission request.
 #. Answers an agent’s permission request.
-#. Answers an agent’s permission request.
-#: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 #: src/renderer/src/agents/requests/answeredChoices.ts
 #: src/renderer/src/agents/requests/CloudIphoneRequest.tsx
 msgid "Deny"
-msgstr ""
-
-#: src/renderer/src/agents/NeedsYouQueue.tsx
-msgid "Deny in {title}"
 msgstr ""
 
 #: src/renderer/src/agents/MainCheckoutLine.tsx
@@ -4351,8 +4327,6 @@ msgid "Images must total 20 MB or less. Nothing was attached. Remove an image or
 msgstr ""
 
 #. Followed by the folder a command runs in.
-#. Followed by the folder a command runs in.
-#: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "in <0>{cwd}</0>"
 msgstr ""
@@ -5717,12 +5691,22 @@ msgstr ""
 msgid "Open the thread to finish it, or discard it."
 msgstr ""
 
+#. Opens the thread a popped Needs you card belongs to.
 #: src/renderer/src/agents/EmptyWorkspace.tsx
+#: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "Open thread"
 msgstr ""
 
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "Open to answer"
+msgstr ""
+
+#: src/renderer/src/agents/NeedsYouQueue.tsx
+msgid "Open to answer the approval in {title}"
+msgstr ""
+
+#: src/renderer/src/agents/NeedsYouQueue.tsx
+msgid "Open to answer the question in {title}"
 msgstr ""
 
 #: src/renderer/src/agents/SidebarFrame.tsx
@@ -6958,7 +6942,6 @@ msgstr ""
 msgid "Sending starts a <0>new {target} thread</0> with a handover of this one."
 msgstr ""
 
-#: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Sending…"
 msgstr ""
@@ -7003,6 +6986,7 @@ msgstr ""
 msgid "Settle thread"
 msgstr ""
 
+#. A thread row's state: the thread or its project was put away.
 #. A thread row's state: the thread or its project was put away.
 #. A thread row's state: the thread or its project was put away.
 #. A thread row's state: the thread or its project was put away.
@@ -7150,6 +7134,15 @@ msgstr ""
 msgid "Show where it asked, at {time}"
 msgstr ""
 
+#. Shows why a thread's last turn failed.
+#: src/renderer/src/agents/NeedsYouQueue.tsx
+msgid "Show why"
+msgstr ""
+
+#: src/renderer/src/agents/NeedsYouQueue.tsx
+msgid "Show why {title} needs attention"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Showing all panes"
 msgstr ""
@@ -7269,14 +7262,6 @@ msgstr ""
 msgid "Skills aren’t loaded yet."
 msgstr ""
 
-#: src/renderer/src/agents/NeedsYouQueue.tsx
-msgid "Skip question"
-msgstr ""
-
-#: src/renderer/src/agents/NeedsYouQueue.tsx
-msgid "Skip question in {title}"
-msgstr ""
-
 #: src/renderer/src/agents/ThreadActivity.tsx
 msgid "Some details were not kept."
 msgstr ""
@@ -7362,7 +7347,6 @@ msgstr ""
 msgid "Sotto could not confirm this answer."
 msgstr ""
 
-#: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Sotto could not confirm this answer. It may have arrived, so it won’t be sent again until you check."
 msgstr ""
@@ -7506,7 +7490,6 @@ msgstr ""
 msgid "Sotto did not start this host, so it cannot restart it. Update it on {name} with these commands."
 msgstr ""
 
-#: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Sotto has no choice it can send for this request. Answer it in the provider’s app."
 msgstr ""
@@ -9572,7 +9555,6 @@ msgstr ""
 msgid "Your answer"
 msgstr ""
 
-#: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Your answer was sent, but its arrival could not be confirmed. Sotto won’t send it again."
 msgstr ""

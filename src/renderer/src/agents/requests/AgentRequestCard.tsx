@@ -45,7 +45,7 @@ export interface AgentRequestCardProps {
 /**
  * One pending question or approval, answered through the one store every surface sends by (ADR-0135). It shows
  * exactly the choices the provider offered, sends one answer for this request's own ID, and holds instead of
- * resending when delivery is unknown — the sidebar's Needs you entries answer by the same store and no other path.
+ * resending when delivery is unknown — the sidebar's Needs you card pops this same card open, on the same store.
  */
 export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blocked, onSubmit, onCheck, onWriteAnswer, placement, messageLinks = [], store = requestAnswerStore }: AgentRequestCardProps): ReactNode {
   const { t } = useLingui()
