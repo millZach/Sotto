@@ -261,21 +261,20 @@ export function NeedsYouCard({ id, entry, state, command, anchor, trigger, place
     return () => { cancelAnimationFrame(frame); card.hidePopover?.() }
   }, [placement])
   useEffect(() => {
-    const outside = (event: PointerEvent): void => {
+    // A press, or the focus, landing anywhere but the card and the press that opened it closes the card, so a card
+    // never stands open behind a focus that has moved on, where its Escape would not reach.
+    const outside = (event: Event): void => {
       const target = event.target as Node
       if (!surface.current?.contains(target) && !triggerRef.current()?.contains(target)) closeRef.current(false)
     }
     document.addEventListener('pointerdown', outside, true)
-    return () => document.removeEventListener('pointerdown', outside, true)
+    document.addEventListener('focusin', outside, true)
+    return () => { document.removeEventListener('pointerdown', outside, true); document.removeEventListener('focusin', outside, true) }
   }, [])
   const kind = [row.stateLabel, entry.wait, settled ? t({ message: 'Settled', comment: 'A thread row\'s state: the thread or its project was put away.' }) : ''].filter(Boolean).join(' · ')
   return <div ref={surface} id={id} className="needs-you-card" role="dialog" aria-labelledby={titleId} tabIndex={-1}
     popover={typeof HTMLElement.prototype.showPopover === 'function' ? 'manual' : undefined}
-    onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(true) } }}
-    onBlur={event => {
-      const next = event.relatedTarget as Node | null
-      if (next !== null && !event.currentTarget.contains(next) && !trigger()?.contains(next)) onClose(false)
-    }}>
+    onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(true) } }}>
     <div className="needs-you-card__head">
       <h3 id={titleId} className="needs-you-card__title">{title}</h3>
       <button type="button" className="needs-you-card__close tt-focusable" aria-label={t`Close`} title={t`Close`} onClick={() => onClose(true)}><X size={14} aria-hidden="true" /></button>

@@ -133,6 +133,12 @@ describe('the Needs you queue (ADR-0135)', () => {
     press.focus()
     await act(async () => { fireEvent.keyDown(press, { key: 'Escape' }) })
     expect(screen.queryByRole('dialog')).toBeNull()
+    // The focus moving on past the press closes the card, so none stands open out of Escape's reach.
+    await act(async () => { fireEvent.click(press) })
+    press.focus()
+    expect(screen.getByRole('dialog', { name: 'Visual gate flake' })).toBeInTheDocument()
+    await act(async () => { queue().querySelector<HTMLElement>('[data-entry-id="visual-gate"] .needs-you__title')!.focus() })
+    expect(screen.queryByRole('dialog')).toBeNull()
     await act(async () => { fireEvent.click(press) })
     await act(async () => { fireEvent.pointerDown(document.body) })
     expect(screen.queryByRole('dialog')).toBeNull()
