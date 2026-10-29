@@ -572,6 +572,7 @@ export class WatcherService implements WatcherControlHooks {
   private readonly unsettles = new Map<string, string>()
   private settleTimer: ReturnType<typeof setTimeout> | undefined
   private settlingFinished = false
+  private endingSettled = false
   private readonly unsubscribe: () => void
   constructor(private readonly options: { directory: string; control: AgentControl; host: WorkspaceHost;
     historyEnabled: () => boolean; workerHost?: boolean; streamingPublishCost?: boolean; revoke?: (id: string) => void
@@ -892,13 +893,34 @@ export class WatcherService implements WatcherControlHooks {
    */
   settingsChanged(): void { this.lookForFinished(); this.compactWhenDue(); this.publish() }
   /**
-   * Settle finished threads: at most once a second while updates come, a look for a watched thread whose work is done.
-   * Each look reads the setting, so turning it off stops the next one and turning it on settles what already qualifies.
+   * At most once a second while updates come and Watcher watches anything: a look that ends the watch on every settled
+   * thread, then, under Settle finished threads, one for a watched thread whose work is done. Each look reads the setting,
+   * so turning it off stops the next one and turning it on settles what already qualifies.
    */
   private lookForFinished(): void {
-    if (this.closed || this.options.workerHost || this.settleTimer !== undefined || this.options.settleFinished?.() !== true) return
-    this.settleTimer = setTimeout(() => { this.settleTimer = undefined; void this.settleFinished() }, this.options.settleFinishedAfterMs ?? 1_000)
+    if (this.closed || this.options.workerHost || this.settleTimer !== undefined || !this.view().watches?.length) return
+    this.settleTimer = setTimeout(() => { this.settleTimer = undefined; void this.endSettledWatches().then(() => this.settleFinished()) }, this.options.settleFinishedAfterMs ?? 1_000)
     this.settleTimer.unref?.()
+  }
+  /**
+   * A settled thread is not watched (ADR-0073, October 28, 2026): whoever settled it, Watcher, Settle finished threads, the
+   * user or its project, Watcher stops watching it, as its own unwatch_thread does, so no news of it follows. Only a settle
+   * after the watch began ends it, so a thread the user watches while it is settled keeps its watch until it is
+   * restored and settled again. Restoring a thread does not watch it again.
+   */
+  private async endSettledWatches(): Promise<void> {
+    if (this.endingSettled || this.closed) return
+    this.endingSettled = true
+    try {
+      const settled = (this.view().watches ?? []).filter(watch => {
+        const thread = this.owningThread(watch.target.hostId, watch.target.threadId)
+        if (!thread) return false
+        const project = thread.workspaceSettledAt ? undefined : this.owningSnapshot(watch.target.hostId)?.projects.find(item => item.id === thread.projectId)
+        const at = Date.parse(thread.workspaceSettledAt ?? project?.workspaceSettledAt ?? '')
+        return at > Date.parse(watch.createdAt)
+      })
+      for (const watch of settled) if (!this.closed) await this.unwatchThread({ target: watch.target }, undefined, 'watcher')
+    } finally { this.endingSettled = false }
   }
   private async settleFinished(): Promise<void> {
     if (this.settlingFinished || this.closed || this.options.settleFinished?.() !== true || !this.view().watches?.length || !this.watcherAtRest()) return
