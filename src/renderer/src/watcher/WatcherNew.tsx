@@ -118,6 +118,7 @@ export function NewWatcherNote({ model, carries, carried }: { readonly model: st
   const { t } = useLingui()
   const lines: { readonly key: string; readonly fact: string; readonly rest: string }[] = []
   if (carried?.questionClosed) lines.push({ key: 'question', fact: t`Its question to you was closed.`, rest: t`The handover carries it.` })
+  if (carried?.questionOpen) lines.push({ key: 'question-open', fact: t`Its question to you may still be open in the last conversation.`, rest: t`Answer it here instead; the handover carries it.` })
   if (carried && carried.moved > 0) lines.push({ key: 'moved', fact: plural(carried.moved, { one: 'One message you wrote had not sent.', other: '# messages you wrote had not sent.' }),
     rest: plural(carried.moved, { one: 'It is in the queue below, paused.', other: 'They are in the queue below, paused.' }) })
   if (carried?.draftMoved) lines.push({ key: 'draft', fact: t`What you were writing moved here.`, rest: t`It is in the box below, not sent.` })

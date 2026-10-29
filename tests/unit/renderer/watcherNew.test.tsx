@@ -256,6 +256,15 @@ describe('the new Watcher’s empty conversation', () => {
     expect(within(pane).getByText('Its question to you was closed.').tagName).toBe('STRONG')
   })
 
+  it('says a question may still be open when the last Watcher’s turn could not be stopped (#1735)', async () => {
+    renderRoom(roomState('watcher-b', { history: [identity('watcher-a')],
+      carried: { questionClosed: false, questionOpen: true, moved: 0, unconfirmed: false, cannotStop: [] } }), stateWith(watcherThread('watcher-b')), vi.fn())
+    const pane = await watcherPane()
+    await within(pane).findByRole('heading', { level: 3, name: /^New Watcher on /u })
+    expect(within(pane.querySelector('.watcher-new-note__carried') as HTMLElement).getAllByRole('listitem').map(item => item.textContent))
+      .toEqual(['Its question to you may still be open in the last conversation. Answer it here instead; the handover carries it.'])
+  })
+
   it('adds no lines when the press carried nothing over', async () => {
     renderRoom(roomState('watcher-b', { history: [identity('watcher-a')] }), stateWith(watcherThread('watcher-b')), vi.fn())
     const pane = await watcherPane()

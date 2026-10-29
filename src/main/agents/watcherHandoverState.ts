@@ -15,6 +15,8 @@ export interface WatcherCarried {
   readonly moved: number
   /** Whether the user's last message to the last Watcher, sent at once, was never confirmed. */
   readonly unconfirmed: boolean
+  /** Whether the last Watcher's turn could not be stopped, so its card may still be open in that conversation. */
+  readonly cardOpen?: boolean
   /** Whether what the user left in the last Watcher's message box now waits in the new one's. */
   readonly draftMoved?: boolean
   /** Threads the last Watcher started on another computer, still working, that the new one cannot direct there yet. */
@@ -56,7 +58,9 @@ const inReadState = (rest: number) => `And ${rest} more. read_state lists them a
 export function watcherHandoverState(input: WatcherHandoverStateInput): string {
   const carried = input.carried
   const lines = [
-    ...list('The last Watcher was waiting on the user for this when it was replaced. Its turn was stopped and the card closed unanswered, so ask again if it still matters:',
+    ...list(carried?.cardOpen
+      ? 'The last Watcher was waiting on the user for this when it was replaced. Its turn could not be stopped, so its card may still be open in that conversation, where an answer reaches only the retired Watcher. Ask again if it still matters:'
+      : 'The last Watcher was waiting on the user for this when it was replaced. Its turn was stopped and the card closed unanswered, so ask again if it still matters:',
       (carried?.questions ?? []).map(one)),
     ...carried && carried.moved > 0 ? [carried.moved === 1
       ? 'One message the user wrote to the last Watcher had not gone. It waits, paused, in your queue for the user to send or remove.'

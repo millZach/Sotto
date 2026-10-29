@@ -5368,7 +5368,9 @@ export class AgentControl {
     const origin = machineOrigin ?? (operation ? { operationId: operation.id, guard: () => this.watcherHooks!.guardOperation(operation.id) }
       : delegationGuard ? { guard: delegationGuard } : undefined)
     origin?.guard()
-    const writeGuard = origin?.guard ?? queueGuard
+    // A stop the user asked for in Watcher's room, New Watcher's (#1735), is the user's own: it reaches the provider as one,
+    // which declines the cards still waiting there, granting nothing. Watcher's own stops leave them for the user.
+    const writeGuard = origin?.userSetup && command.type === 'interrupt' ? undefined : origin?.guard ?? queueGuard
     const provider = command.type === 'create-project' ? command.provider ?? this.state.configuration.provider
       : command.type === 'create-thread' || (command.type === 'configure-thread' && command.modelId && this.thread(command.threadId).nativeSessionStarted === false)
         ? resolveModel(this.state.host.models, command.modelId)?.providerId : command.type === 'answer'

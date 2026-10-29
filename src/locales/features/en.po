@@ -976,6 +976,10 @@ msgstr "an unreported number of"
 msgid "an unreported share"
 msgstr "an unreported share"
 
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Answer it here instead; the handover carries it."
+msgstr "Answer it here instead; the handover carries it."
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Answer your threads from your iPhone"
 msgstr "Answer your threads from your iPhone"
@@ -2335,6 +2339,10 @@ msgstr "Its provider cannot compact, so each message rereads all of it."
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Its provider has not reported its context yet."
 msgstr "Its provider has not reported its context yet."
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Its question to you may still be open in the last conversation."
+msgstr "Its question to you may still be open in the last conversation."
 
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "Its question to you was closed."

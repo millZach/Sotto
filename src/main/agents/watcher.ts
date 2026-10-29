@@ -507,7 +507,7 @@ export class WatcherService implements WatcherControlHooks {
   /** A message that was still being written to a replaced Watcher when its replacement finished (#1735). */
   private lateQueue: readonly WatcherThreadTarget[] = []
   /** What a replacement found before its new Watcher was made, until it is, for a creation finished on a second try (#1735). */
-  private preparedFor: { readonly replaces: WatcherThreadTarget; readonly prepared: Pick<WatcherCarried, 'questions' | 'unconfirmed'> } | null = null
+  private preparedFor: { readonly replaces: WatcherThreadTarget; readonly prepared: Pick<WatcherCarried, 'questions' | 'unconfirmed' | 'cardOpen'> } | null = null
   private handoverOffer: { readonly source: WatcherIdentity; readonly to: WatcherThreadTarget; readonly counts: HandoverCounts
     acceptedDraftId?: string; sendingCommandId?: string } | null = null
   /** Drafts chosen to carry a handover that another send to the new Watcher overtook. */
@@ -2588,7 +2588,7 @@ export class WatcherService implements WatcherControlHooks {
    * Watcher's is stopped, which closes the card; its requests stay active, since the new Watcher takes them over, and
    * their questions go in the handover. Says what the handover and the new Watcher's note will need.
    */
-  private async prepareReplacement(thread: AgentThread): Promise<Pick<WatcherCarried, 'questions' | 'unconfirmed'>> {
+  private async prepareReplacement(thread: AgentThread): Promise<Pick<WatcherCarried, 'questions' | 'unconfirmed' | 'cardOpen'>> {
     // A message of the user's being written to the last Watcher now gets the same moment, so it either arrives, and the
     // handover carries it, or comes back to its queue, which moves.
     for (const until = Date.now() + TOOL_CALL_GRACE_MS; (this.invocations > 0 || this.active.size > 0 || this.options.control.watcherFollowupSending(thread.id)) && Date.now() < until;) {
@@ -2599,11 +2599,14 @@ export class WatcherService implements WatcherControlHooks {
     const questions = thread.requests.map(watcherCardWords)
     // Nothing the user queued for the last Watcher goes to it once its turn ends: it moves to the new one (`carryOver`).
     await this.options.control.holdWatcherQueue(thread.id)
+    // The new Watcher starts whether or not the stop takes: when it does not, the card may stay open in the last
+    // conversation, and the note and handover say so rather than that it closed.
+    let cardOpen = false
     if (thread.requests.length > 0) {
       const result = await this.options.control.commandFromWatcher({ type: 'interrupt', threadId: thread.id }, { guard: () => undefined, userSetup: true }).catch(() => undefined)
-      if (!result || result.error) refuse('PROVIDER_UNAVAILABLE', 'Sotto could not stop Watcher’s turn to close its card, so nothing was changed. Answer the card or stop the turn, then try again.', true)
+      cardOpen = !result || Boolean(result.error)
     }
-    return { questions, unconfirmed: this.options.control.unconfirmedDirectSend(thread.id) }
+    return { questions, unconfirmed: this.options.control.unconfirmedDirectSend(thread.id), ...cardOpen ? { cardOpen } : {} }
   }
   /**
    * What New Watcher would answer now, for the room's chip: main's own busy conditions, and whether the conversation has
@@ -2640,12 +2643,13 @@ export class WatcherService implements WatcherControlHooks {
    * revoked, and its handover is offered; workers, receipts and standing watches stay as they are, since they belong to
    * the record and not to a conversation (ADR-0073). The first Watcher replaces nothing.
    */
-  private async replace(previous: WatcherIdentity | null, input: WatcherOpenRequest, prepared?: Pick<WatcherCarried, 'questions' | 'unconfirmed'>): Promise<WatcherRoomResult> {
+  private async replace(previous: WatcherIdentity | null, input: WatcherOpenRequest, prepared?: Pick<WatcherCarried, 'questions' | 'unconfirmed' | 'cardOpen'>): Promise<WatcherRoomResult> {
     // Kept until the new Watcher is made, so a creation finished on a second try still hands the closed card over. A try
     // that failed before saving anything already closed the card, so what it found joins what this one finds.
     const earlier = previous && this.preparedFor && key(this.preparedFor.replaces) === key(previous.target) ? this.preparedFor.prepared : undefined
     if (previous && (prepared || earlier)) {
-      prepared = { questions: [...new Set([...earlier?.questions ?? [], ...prepared?.questions ?? []])], unconfirmed: Boolean(earlier?.unconfirmed || prepared?.unconfirmed) }
+      prepared = { questions: [...new Set([...earlier?.questions ?? [], ...prepared?.questions ?? []])], unconfirmed: Boolean(earlier?.unconfirmed || prepared?.unconfirmed),
+        ...earlier?.cardOpen || prepared?.cardOpen ? { cardOpen: true } : {} }
       this.preparedFor = { replaces: previous.target, prepared }
     } else this.preparedFor = null
     const folder = join(this.options.directory, 'watcher', 'workspace')
@@ -2676,7 +2680,7 @@ export class WatcherService implements WatcherControlHooks {
    * not gone, moved to its queue, paused; and, for its note and handover, the last one's closed card, whether the user's
    * last message to it went unconfirmed, and the threads it started on a computer whose Sotto cannot hand them over.
    */
-  private async carryOver(previous: WatcherIdentity, to: WatcherThreadTarget, prepared?: Pick<WatcherCarried, 'questions' | 'unconfirmed'>): Promise<void> {
+  private async carryOver(previous: WatcherIdentity, to: WatcherThreadTarget, prepared?: Pick<WatcherCarried, 'questions' | 'unconfirmed' | 'cardOpen'>): Promise<void> {
     this.preparedFor = null
     const draft = await this.options.control.moveWatcherDraft(previous.target.threadId, to.threadId).catch(() => false as const)
     const movedDrafts = await this.options.control.moveWatcherQueue(previous.target.threadId, to.threadId).catch(() => [])
@@ -2692,14 +2696,15 @@ export class WatcherService implements WatcherControlHooks {
     const questions = prepared?.questions ?? [], unconfirmed = (prepared?.unconfirmed ?? false) || movedDrafts.some(item => item.unconfirmed)
     const cannotStop = [...away.values()].map(target => ({ title: this.owningThread(target.hostId, target.threadId)?.title ?? 'Untitled thread',
       host: (this.machineName(target.hostId) ?? 'another computer').slice(0, 200) }))
-    this.setCarried({ to, questions, moved, unconfirmed, draftMoved, cannotStop })
+    this.setCarried({ to, questions, moved, unconfirmed, draftMoved, cannotStop, ...prepared?.cardOpen ? { cardOpen: true } : {} })
   }
   /** What carried over, and the note's form of it, made once each time it changes rather than on every publish. */
   private setCarried(carried: WatcherCarried & { readonly to: WatcherThreadTarget }): void {
     const byHost = new Map<string, string[]>()
     for (const row of carried.cannotStop) { const titles = byHost.get(row.host); if (titles) titles.push(row.title); else byHost.set(row.host, [row.title]) }
     const said = carried.questions.length > 0 || carried.moved > 0 || carried.unconfirmed || carried.draftMoved === true || carried.cannotStop.length > 0
-    this.carried = { ...carried, room: said ? Object.freeze({ questionClosed: carried.questions.length > 0, moved: Math.min(carried.moved, 100), unconfirmed: carried.unconfirmed,
+    this.carried = { ...carried, room: said ? Object.freeze({ questionClosed: carried.questions.length > 0 && carried.cardOpen !== true,
+      ...carried.questions.length > 0 && carried.cardOpen === true ? { questionOpen: true } : {}, moved: Math.min(carried.moved, 100), unconfirmed: carried.unconfirmed,
       draftMoved: carried.draftMoved === true, cannotStop: [...byHost].slice(0, 100).map(([host, titles]) => ({ host, count: Math.min(titles.length, 1_000),
         titles: titles.slice(0, 20).map(title => title.slice(0, 200) || 'Untitled thread') })) }) : undefined }
   }

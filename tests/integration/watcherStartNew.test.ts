@@ -219,6 +219,27 @@ describe('New Watcher', () => {
     expect(handover.text).toContain('One message the user wrote to the last Watcher had not gone. It waits, paused, in your queue')
   })
 
+  it('starts anyway when the turn waiting on Watcher’s card cannot be stopped, and says the card may still be open (#1735)', async () => {
+    const f = await fixture()
+    await f.exchange('Watch the release.', 'Watching it.')
+    await f.send('Which branch should the release use?')
+    const native = f.native(f.first.threadId)
+    native.status = 'running'
+    native.requests = [{ id: 'watcher-card', kind: 'question', text: 'Release from main?', options: [] }]
+    await f.refresh()
+    const fromWatcher = f.control.commandFromWatcher.bind(f.control)
+    vi.spyOn(f.control, 'commandFromWatcher').mockImplementation(async (command, origin) => {
+      if (command.type === 'interrupt') throw new Error('synthetic-stalled-provider')
+      return fromWatcher(command, origin)
+    })
+    expect(await f.service.startNew()).toMatchObject({ status: 'ok', state: { history: [{ target: f.first }] } })
+    expect(f.service.state().carried).toMatchObject({ questionClosed: false, questionOpen: true })
+    const handover = f.service.readHandover()
+    if (handover.status !== 'ok') throw new Error('handover unreadable')
+    expect(handover.text).toContain('Its turn could not be stopped, so its card may still be open in that conversation')
+    expect(handover.text).toContain('- Release from main?')
+  })
+
   it('keeps the closed card’s question for the handover when the first try fails before saving anything (#1735)', async () => {
     const f = await fixture()
     await f.exchange('Watch the release.', 'Watching it.')

@@ -976,6 +976,10 @@ msgstr ""
 msgid "an unreported share"
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Answer it here instead; the handover carries it."
+msgstr ""
+
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Answer your threads from your iPhone"
 msgstr ""
@@ -2334,6 +2338,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Its provider has not reported its context yet."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Its question to you may still be open in the last conversation."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherNew.tsx

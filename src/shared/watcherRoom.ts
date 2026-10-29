@@ -82,7 +82,7 @@ export const watcherRoomStateSchema = z.object({
    * user's last message to the last one went unconfirmed, whether what the user left in its message box moved to the new
    * one's, and the threads it cannot direct on a computer whose Sotto is older, by computer, named. Absent when there is nothing to say; made once per replacement, never per publish.
    */
-  carried: z.object({ questionClosed: z.boolean(), moved: z.number().int().min(0).max(100), unconfirmed: z.boolean(), draftMoved: z.boolean().optional(),
+  carried: z.object({ questionClosed: z.boolean(), questionOpen: z.literal(true).optional(), moved: z.number().int().min(0).max(100), unconfirmed: z.boolean(), draftMoved: z.boolean().optional(),
     cannotStop: z.array(z.object({ host: z.string().min(1).max(200), count: z.number().int().min(1).max(1_000),
       titles: z.array(z.string().min(1).max(200)).max(20).optional() }).strict()).max(100) }).strict().optional(),
   /**
