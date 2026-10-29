@@ -108,6 +108,7 @@ function requestApproval(session, action) {
     warnings: [], judge: { lane: 'policy', verdict: 'prompt', adopted: true }, requirements: [{ approvalId, sourceIndex: 0, promptSeq: 1, status: 'current' }],
     availableChoices: action.choices ?? [{ choiceId: 'yes', decision: 'approved', label: 'Allow once', scope: 'once' }, { choiceId: 'no', decision: 'denied', label: 'Deny', scope: 'once' }],
     currentRequirementId: { approvalId, sourceIndex: 0 }, askedAt: stamp(), fixtureCommand: action.text,
+    ...(action.subagent ? { subagentOrigin: { childRunId: `run-${approvalId}`, childSessionId: `child-${approvalId}`, subagentId: 'researcher' } } : {}),
     fixtureStages: action.stages ?? 1, fixtureUpdateTiming: action.updateTiming ?? 'before' }
   session.pendingApprovals = [...(session.pendingApprovals ?? []), approval]; save()
   if (!read('script.json', {}).suppressApproval) notify('approval/requested', approval)

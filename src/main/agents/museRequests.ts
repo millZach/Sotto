@@ -18,11 +18,14 @@ const subjectSchema = z.looseObject({
   kind: z.string().min(1), command: z.string().optional(), path: z.string().optional(), access: z.string().optional(),
   host: z.string().optional(), port: z.number().optional(), toolName: z.string().optional(), target: z.string().optional(),
 })
+/** Present only on a subagent's approval, which Muse shows on the parent session; the parent's own approvals omit it. */
+const subagentOriginSchema = z.looseObject({ childRunId: z.string().min(1), childSessionId: z.string().min(1), subagentId: z.string().min(1) })
 export const museApprovalSchema = z.looseObject({
   approvalId: z.string().min(1), sessionId: z.string().min(1), turnId: z.string().min(1),
   toolName: z.string().min(1), toolCallId: z.string().min(1), itemId: z.string().min(1),
   rawArgs: z.string().default(''), subject: subjectSchema,
   availableChoices: z.array(choiceSchema).min(1), currentRequirementId: requirementSchema,
+  subagentOrigin: subagentOriginSchema.optional(),
 })
 export type MuseApproval = z.infer<typeof museApprovalSchema>
 export const museApprovalUpdatedSchema = z.looseObject({
@@ -141,6 +144,20 @@ export function museSessionServerName(server: string, suffix: string): string {
 export function museToolAdmission(approval: MuseApproval, own: ReadonlySet<string>): string | undefined {
   const subject = approval.subject
   if (subject.kind !== 'tool' || subject.toolName === undefined || !own.has(subject.toolName)) return undefined
+  return approval.availableChoices.find(choice => choice.decision === 'approved' && choice.scope === 'once')?.choiceId
+}
+
+/**
+ * Muse's prompt from one of a thread's subagents or workflow agents, answered with Muse's one-time allow when the thread's
+ * own permission mode would not have asked (ADR-0079, October 28). Muse starts each child on its default policy whatever
+ * the parent's approval mode, and MSP offers no way to pass the mode on, so a Full access thread would otherwise ask the
+ * user about every child's command. Full access admits any child prompt; Automatic admits only a child reading a file;
+ * Ask for approval admits none. The parent's own prompts are never answered here. The answer is the choice to send, or
+ * undefined.
+ */
+export function museChildAdmission(approval: MuseApproval, mode: 'approval-required' | 'auto' | 'full-access'): string | undefined {
+  if (!approval.subagentOrigin || mode === 'approval-required') return undefined
+  if (mode === 'auto' && !(approval.subject.kind === 'fileAccess' && approval.subject.access === 'read')) return undefined
   return approval.availableChoices.find(choice => choice.decision === 'approved' && choice.scope === 'once')?.choiceId
 }
 

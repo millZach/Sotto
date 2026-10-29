@@ -16,7 +16,7 @@ import { museVersionForExecutable } from './museClientInstall'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WatcherLaunchProfile } from './host'
 import { preserveLegacyAliases } from './legacyAliases'
 import { museItemActivity, museItemDeltaSchema, museItemEventSchema, museItemSchema, musePlanActivity, museTerminal, museTurnCompletedSchema, museTurnEventSchema, type MuseItem } from './museActivity'
-import { museApprovalChoice, museApprovalDecidedSchema, museApprovalPending, museApprovalRefreshed, museApprovalSchema, museApprovalUpdatedSchema, museServerSuffix, museSessionServerName, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, museUserInputSchema, type MuseApproval, type MusePending } from './museRequests'
+import { museApprovalChoice, museApprovalDecidedSchema, museApprovalPending, museApprovalRefreshed, museApprovalSchema, museApprovalUpdatedSchema, museServerSuffix, museSessionServerName, museChildAdmission, museToolAdmission, museToolName, museUserInputAnswers, museUserInputPending, museUserInputSchema, type MuseApproval, type MusePending } from './museRequests'
 import { MUSE_CLI_VERSION, MUSE_MSP_VERSION, MuseRejected, MuseRpc, MuseTooOld, MuseUncertain, MuseUnreadable, MuseUnsupported, findMuseExecutable, museCommandId, museEnvironment, type MuseFrame } from './museRpc'
 import { needsPerson, QUESTION_SKIPPED, unreadableRequest } from './nativeRequests'
 import { tokenCount } from './nativeUsage'
@@ -450,21 +450,27 @@ export class MuseMspHost implements AgentHost {
     if (!entry.sessionMcp && this.aliases[id]?.kind !== 'personal') thread.sottoToolsWithheld = true
     else delete thread.sottoToolsWithheld
   }
-  /** An approval as it reaches the thread: one for this session's own Sotto tools is answered here, every other is shown. */
+  /**
+   * An approval as it reaches the thread: one for this session's own Sotto tools, or one from a subagent the thread's
+   * mode already allows, is answered here; every other is shown.
+   */
   private present(pending: MusePending, entry: ThreadProcess): void {
-    if (pending.kind === 'approval' && this.admitOwnTool(pending, entry)) return
+    if (pending.kind === 'approval' && this.admit(pending, entry)) return
     this.showRequest(pending, entry)
   }
   /**
-   * Answer Muse's prompt before a call to one of this session's own Sotto tools with its one-time allow (ADR-0079), as
-   * Grok's adapter answers Grok's (ADR-0020, ADR-0035). It admits the agent to Sotto's own endpoint and nothing more; the
-   * tools still ask the user wherever they always do. A request already shown is the user's to answer, and one Sotto
-   * could not answer is shown after all. The decision is not awaited here: its reply comes on the frame queue.
+   * Answer Muse's prompt with its one-time allow (ADR-0079) when it is before a call to one of this session's own Sotto
+   * tools, as Grok's adapter answers Grok's (ADR-0020, ADR-0035), or from a subagent under a mode that would not have
+   * asked. The first admits the agent to Sotto's own endpoint and nothing more; the tools still ask the user wherever they
+   * always do. The second only applies the mode the user chose and Muse confirmed: a mode change Muse has not confirmed,
+   * and Watcher, admit no subagent. A request already shown is the user's to answer, and one Sotto could not answer is
+   * shown after all. The decision is not awaited here: its reply comes on the frame queue.
    */
-  private admitOwnTool(pending: Extract<MusePending, { kind: 'approval' }>, entry: ThreadProcess): boolean {
+  private admit(pending: Extract<MusePending, { kind: 'approval' }>, entry: ThreadProcess): boolean {
     const alias = this.aliases[pending.threadId]
-    if (!alias?.museSessionId || alias.kind === 'personal' || !entry.tools?.size || this.pending.has(pending.request.id)) return false
-    const choiceId = museToolAdmission(pending.approval, entry.tools)
+    if (!alias?.museSessionId || this.pending.has(pending.request.id)) return false
+    const choiceId = (alias.kind !== 'personal' && entry.tools?.size ? museToolAdmission(pending.approval, entry.tools) : undefined)
+      ?? (entry.watcher || alias.pendingRuntimeMode ? undefined : museChildAdmission(pending.approval, alias.runtimeMode ?? 'approval-required'))
     if (!choiceId) return false
     const admitting = entry.admitting ??= new Set(), admitted = entry.admitted ??= new Map()
     if (admitting.has(pending.request.id)) return true
