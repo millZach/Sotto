@@ -10,6 +10,7 @@ import { emptyWatcherRecord, watcherToolSchemas, type WatcherRecord, type Watche
 import type { WatcherHostControl, WatcherHostProjection, WatcherRemoteHosts } from '../../src/shared/watcherHost'
 import type { AgentControl } from '../../src/main/agents/control'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
+import { addWatcherHistory } from '../fixtures/ownerScale'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { WATCHER_WAKE_UP_PROMPT } from '../../src/main/agents/watcherNews'
 import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/watcherRequestNote'
@@ -964,6 +965,60 @@ it('archives a paired desktop\'s closed work on the owning host and answers its 
   expect(hosted().requests.find(item => item.id === request.id)).toMatchObject({ watcher: newer.target, remoteOrigin: { creationOperationId: newer.creationOperationId } })
   expect(operation.promptTurnId).toBeDefined()
   expect(hosted().promptTurns?.find(item => item.id === operation.promptTurnId)?.watcher).toEqual(newer.target)
+})
+
+it('builds a paired desktop\'s projection from the record without copying it, again only once the record changes (#1759)', async () => {
+  const master = await fixture(), worker = await fixture(true), target = await worker.create()
+  const clientId = randomUUID()
+  const remote: WatcherRemoteHosts = {
+    hosts: () => [{ hostId: target.hostId, connected: true, reads: true, control: true, standingWatch: true, permissionCeiling: 'approval-required' }],
+    snapshot: () => worker.control.watcherSnapshot(),
+    read: (_hostId, request) => worker.service.readRemote(request, clientId, () => undefined),
+    control: (_hostId, request) => worker.service.admitRemote(request, clientId, () => undefined),
+    subscribe: listener => worker.control.subscribe(() => listener(target.hostId)),
+  }
+  master.service.useRemoteHosts(remote)
+  expect(await master.service.watchThread({ target })).toMatchObject({ status: 'ok' })
+  const watch = master.service.state().standingWatches![0]!, identity = master.service.state().current!
+  expect(await master.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic projected send', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  // The host builds this with every shell it pushes the desktop, so it reads the record rather than copying it.
+  const copies = vi.spyOn(worker.control, 'watcherRecord')
+  const first = worker.service.remoteProjection(identity, clientId), again = worker.service.remoteProjection(identity, clientId)
+  expect(copies).not.toHaveBeenCalled()
+  expect(first.operations).toHaveLength(1)
+  expect(again.requests).toBe(first.requests)
+  expect(again.operations).toBe(first.operations)
+  expect(again.revision).toBe(first.revision)
+  // Once the record changes, the projection says what it says now.
+  copies.mockRestore()
+  await worker.finish(target.threadId)
+  expect(await master.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic second projected send', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  const changed = worker.service.remoteProjection(identity, clientId)
+  expect(changed.operations).toHaveLength(2)
+  expect(changed.revision).not.toBe(first.revision)
+  // A push while the record stands still reads none of it, with the owner's history on the host or ten times that (#1759).
+  const view = worker.control.watcherRecordView.bind(worker.control), counted = new WeakMap<object, object>()
+  let reads = 0
+  vi.spyOn(worker.control, 'watcherRecordView').mockImplementation(() => {
+    const record = view()
+    let read = counted.get(record)
+    if (!read) counted.set(record, read = new Proxy(record, { get: (from, name, receiver) => { if (name !== 'current') reads++; return Reflect.get(from, name, receiver) } }))
+    return read as typeof record
+  })
+  const pushed = async (history: { requests: number; operations: number }) => {
+    const threads = [randomUUID(), randomUUID()].map(threadId => ({ hostId: target.hostId, threadId }))
+    await worker.control.updateWatcher(record => addWatcherHistory(record, threads, history, { hostId: randomUUID(), threadId: randomUUID() }))
+    worker.service.remoteProjection(identity, clientId)
+    reads = 0
+    const copying = vi.spyOn(worker.control, 'watcherRecord')
+    const projection = worker.service.remoteProjection(identity, clientId)
+    expect(projection.operations).toHaveLength(2)
+    const work = { reads, copies: copying.mock.calls.length }
+    copying.mockRestore()
+    return work
+  }
+  expect(await pushed({ requests: 160, operations: 150 })).toEqual({ reads: 0, copies: 0 })
+  expect(await pushed({ requests: 1_600, operations: 1_500 })).toEqual({ reads: 0, copies: 0 })
 })
 
 it('syncs watches to the owning host, persists takeover there and refuses withdrawn or old-host identities', async () => {

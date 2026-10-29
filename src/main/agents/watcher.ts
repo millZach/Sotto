@@ -210,6 +210,15 @@ const madeByOlderWatcher = (request: Readonly<WatcherRequest>, master: WatcherId
 const desktopKey = (clientId: string, masterHostId: string): string => JSON.stringify([clientId, masterHostId])
 /** A paired desktop's Watcher as `adopted` names it. */
 const adoptionKey = (clientId: string, master: WatcherIdentity): string => JSON.stringify([clientId, master.target.hostId, master.creationOperationId])
+/** The record's part of a paired desktop's projection, and the record it was worked out from (`remoteProjection`). */
+interface ProjectedWork {
+  readonly record: Readonly<WatcherRecord>
+  readonly requests: WatcherHostProjection['requests']
+  readonly operations: WatcherHostProjection['operations']
+  readonly standingWatches: NonNullable<WatcherHostProjection['standingWatches']>
+  readonly targets: readonly WatcherThreadTarget[]
+  readonly revision: string
+}
 function withoutOutcome(operation: WatcherOperation): WatcherOperation {
   const copy = { ...operation }
   for (const field of OUTCOME_FIELDS) delete copy[field]
@@ -518,6 +527,11 @@ export class WatcherService implements WatcherControlHooks {
   private readonly archivedStops = new Map<string, Readonly<WatcherRequest>>()
   /** The newest Watcher of each paired desktop that took its older ones' requests over this run (#1735), by `desktopKey`. */
   private readonly adoptedBy = new Map<string, WatcherIdentity>()
+  /**
+   * What each paired desktop's Watcher is shown of the record (`remoteProjection`), worked out once per record (#1759): a
+   * host builds the projection with every shell it pushes that desktop, many times a second while a thread streams.
+   */
+  private readonly projectedWork = new Map<string, ProjectedWork>()
   /** Whether each paired desktop may answer on this host, as its latest admission's socket says (ADR-0004). */
   private readonly remoteAnswers = new Map<string, () => boolean>()
   private readonly pendingPromptTurns = new Map<string, { watcher: WatcherThreadTarget; messageId: string; headBefore: string | null }>()
@@ -4912,7 +4926,24 @@ ${operation.draftId}`)
       : !operation.confirmedStop && fences.some(fence => !fence.remoteOrigin && fence.target && key(fence.target) === key(operation.target))) refuse('REQUEST_NOT_ACTIVE', 'This watch was removed. Nothing was sent.')
   }
   remoteProjection(master: WatcherIdentity, clientId: string): WatcherHostProjection {
-    const record = this.recordCopy(), owned = record.requests.filter(item => key(item.watcher) === key(master.target)
+    const work = this.projectedFor(master, clientId)
+    const evidence = work.targets.flatMap(target => this.wakes.evidence.read(target, true)).slice(-1_000)
+    const targets = new Set(work.targets.map(key))
+    const progress = this.options.control.watcherSnapshot().threads.filter(thread => targets.has(key(this.target(thread.id))))
+      .map(thread => ({ target: this.target(thread.id), fingerprint: watcherProgressFingerprint(thread) })).slice(-1_000)
+    return { hostId: this.hostId(), master, requests: work.requests, operations: work.operations, evidence, progress, standingWatches: work.standingWatches,
+      revision: digest([work.revision, evidence, progress]), observedAt: now() }
+  }
+  /**
+   * The record's part of a paired desktop's projection: that Watcher's newest requests here, their operations and its
+   * standing watches. Read from the record without copying it, as the record is never edited, and only again once the
+   * record has changed, so a shell pushed while nothing in the record moved costs nothing that grows with its history.
+   */
+  private projectedFor(master: WatcherIdentity, clientId: string): ProjectedWork {
+    const record = this.view(), slot = JSON.stringify([clientId, master.target.hostId, master.target.threadId, master.creationOperationId])
+    const held = this.projectedWork.get(slot)
+    if (held?.record === record) return held
+    const owned = record.requests.filter(item => key(item.watcher) === key(master.target)
       && item.remoteOrigin?.clientId === clientId && item.remoteOrigin.creationOperationId === master.creationOperationId)
     const ids = new Set(owned.map(item => item.id)), all = record.operations.filter(item => ids.has(item.requestId))
     const pending = all.filter(item => ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))
@@ -4921,16 +4952,15 @@ ${operation.draftId}`)
     const required = new Set(operations.map(item => item.requestId)), requests = owned.filter(item => required.has(item.id)).slice(-1_000)
     const standingWatches = (record.watches ?? []).filter(watch => watch.remoteOrigin?.clientId === clientId && watch.remoteOrigin.masterHostId === master.target.hostId
       && watch.remoteOrigin.masterCreationOperationId === master.creationOperationId)
-    const targetRows = new Map([...requests.flatMap(request => request.participants.map(item => [key(item.target), item.target] as const)),
+    const targets = new Map([...requests.flatMap(request => request.participants.map(item => [key(item.target), item.target] as const)),
       ...standingWatches.map(watch => [key(watch.target), watch.target] as const)])
-    const evidence = [...targetRows.values()].flatMap(target => this.wakes.evidence.read(target, true)).slice(-1_000)
-    const targets = new Set(targetRows.keys())
-    const progress = this.options.control.watcherSnapshot().threads.filter(thread => targets.has(key(this.target(thread.id))))
-      .map(thread => ({ target: this.target(thread.id), fingerprint: watcherProgressFingerprint(thread) })).slice(-1_000)
     // Outcomes travel only in exact operation reads, which a desktop asks for; an older desktop could not read them here.
     const projected = operations.map(withoutOutcome)
-    return { hostId: this.hostId(), master, requests, operations: projected, evidence, progress, standingWatches,
-      revision: digest([requests, projected, evidence, progress, standingWatches]), observedAt: now() }
+    const work: ProjectedWork = { record, requests, operations: projected, standingWatches, targets: [...targets.values()], revision: digest([requests, projected, standingWatches]) }
+    this.projectedWork.delete(slot)
+    this.projectedWork.set(slot, work)
+    while (this.projectedWork.size > 64) this.projectedWork.delete(this.projectedWork.keys().next().value!)
+    return work
   }
   private async syncRemoteWatches(master: WatcherIdentity, watches: WatcherStandingWatch[], clientId: string, guard?: () => void): Promise<void> {
     const operations = new Set<string>()
