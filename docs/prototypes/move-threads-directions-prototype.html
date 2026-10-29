@@ -1,0 +1,375 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not wired to anything. Two questions for Zach, part 3 of #1178 (the other directions
+  of a move, and asking Watcher in words):
+    1. How the Move threads sheet shows threads that live on another machine (A, B, C).
+    2. What asking Watcher in words does (A, B, C).
+    3. How the sheet lets you choose which threads move (A, B, C), after Zach picked A and A and asked to choose.
+  Picked (Zach, 2026-10-29, on the question card):
+    1. A: Move threads picks where threads go, This computer among the machines, and the sheet gathers threads from every
+       other connected machine, keeping Moves now, Asks you first and Stays where it is, each row saying where it is now.
+    2. A: asking Watcher in words puts the same preview in Watcher's conversation as Sotto's card, with Move and Not now;
+       nothing moves until the press.
+    3. B: nothing starts ticked; Zach ticks each thread to move, and Move stays off until one is ticked.
+  Palette and words follow watcher.css and MoveThreads.tsx on main at 1b65d3e16 (October 29, 2026).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sotto - moving threads from any machine, two questions</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265); --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-hover: oklch(0.2 0.01 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092); --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-success: oklch(0.79 0.13 165); --tt-warning: oklch(0.83 0.14 80);
+  --tt-message: oklch(0.2 0.01 265);
+  --tt-scrim: rgb(0 0 0 / 52%);
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-provider-claude: oklch(0.74 0.12 45);
+  --needs: color-mix(in oklab, var(--tt-warning) 80%, var(--tt-text));
+  --ready: color-mix(in oklab, var(--tt-success) 80%, var(--tt-text));
+  --font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85); --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-hover: oklch(0.93 0.008 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-hairline: oklch(0.86 0.012 80); --tt-field-border: oklch(0.8 0.016 80);
+  --tt-accent: oklch(0.5 0.09 183); --tt-accent-text: oklch(0.42 0.08 183);
+  --tt-success: oklch(0.5 0.12 160); --tt-warning: oklch(0.55 0.13 70);
+  --tt-message: oklch(0.94 0.006 85);
+  --tt-scrim: rgb(30 28 24 / 28%);
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+  --tt-provider-claude: oklch(0.55 0.14 45);
+}
+* { box-sizing: border-box; }
+html { background: var(--tt-canvas); color: var(--tt-text); font: 15px/1.5 var(--font); -webkit-text-size-adjust: 100%; }
+body { margin: 0; padding: 0 0 calc(40px + env(safe-area-inset-bottom)); }
+button { font: inherit; color: inherit; }
+:where(button, a, [tabindex]):focus-visible { outline: 3px solid var(--tt-accent); outline-offset: 2px; }
+p { text-wrap: pretty; }
+.page { max-width: 680px; margin: 0 auto; padding: 0 16px; }
+.top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); font-size: 13px; }
+.top b { font-weight: 600; } .top span { flex: 1; color: var(--tt-text-muted); }
+.top button, .tabs button { min-height: 36px; padding: 0 12px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: transparent; color: var(--tt-text-2); cursor: pointer; }
+h1 { margin: 22px 0 6px; font-size: 22px; letter-spacing: -.2px; }
+.intro { margin: 0 0 6px; color: var(--tt-text-2); }
+.q { margin: 34px 0 0; padding-top: 22px; border-top: 1px solid var(--tt-hairline); }
+.q h2 { margin: 0 0 4px; font-size: 18px; }
+.q > p { margin: 0 0 12px; color: var(--tt-text-2); }
+.tabs { display: flex; gap: 8px; margin: 0 0 12px; }
+.tabs button { flex: 1 1 0; min-height: 44px; font-weight: 600; }
+.tabs button[aria-pressed='true'] { border-color: var(--tt-accent); background: var(--tt-surface-elevated); color: var(--tt-accent-text); }
+.variant { display: none; } .variant.on { display: block; }
+.variant > h3 { margin: 0 0 2px; font-size: 16px; }
+.variant > .say { margin: 0 0 12px; color: var(--tt-text-2); }
+.variant > .say b { color: var(--tt-text); }
+.cost { margin: 12px 0 0; padding: 10px 12px; border-left: 3px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13.5px; }
+.cost b { color: var(--tt-text); }
+.label { margin: 16px 0 6px; color: var(--tt-text-muted); font-size: 12.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
+
+/* the window bits */
+.win { position: relative; padding: 16px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-canvas); overflow: hidden; }
+.win--dim::before { content: ''; position: absolute; inset: 0; background: var(--tt-scrim); }
+.sheet { position: relative; padding: 18px 18px 14px; border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); }
+.sheet h4 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+.lead { margin: 0 0 6px; color: var(--tt-text-2); font-size: 13px; }
+.sec { display: flex; align-items: center; gap: 6px; margin: 14px 0 4px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; }
+.sec span { color: var(--tt-text-muted); font-weight: 400; }
+.sec[data-tone='needs'] { color: var(--needs); }
+.sec--machine { margin-top: 16px; padding-bottom: 4px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text); font-size: 13.5px; }
+ul.rows { margin: 0; padding: 0; list-style: none; }
+.row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 9px; align-items: center; padding: 6px 0; font-size: 13.5px; }
+.row > svg, .row > .mk { justify-self: center; }
+.name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.row--box { grid-template-columns: 18px 18px minmax(0, 1fr) auto; }
+.row--box .meta, .row--box .line { grid-column: 3 / -1; }
+.row--box input { width: 16px; height: 16px; margin: 0; accent-color: var(--tt-accent); }
+.nobox { justify-self: center; width: 13px; height: 13px; border: 1.5px dashed var(--tt-text-muted); border-radius: 3px; }
+.btn[aria-disabled='true'] { border-style: dashed; border-color: var(--tt-field-border); background: transparent; color: var(--tt-text-muted); }
+.meta, .line { grid-column: 2 / -1; margin: 1px 0 0; font-size: 12.5px; line-height: 1.45; }
+.meta { display: flex; flex-wrap: wrap; color: var(--tt-text-muted); }
+.meta > :not(:first-child)::before { content: '·'; margin: 0 6px; }
+.line { color: var(--tt-text-2); } .line[data-tone='needs'] { color: var(--needs); }
+.where { display: inline-flex; align-items: center; gap: 4px; color: var(--tt-text-2); white-space: nowrap; }
+.where svg { color: var(--tt-accent-text); }
+.tag { justify-self: end; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 11.5px; white-space: nowrap; }
+.tag[data-tone='moves'] { border-color: color-mix(in srgb, var(--tt-success) 45%, var(--tt-hairline)); color: var(--ready); }
+.tag[data-tone='needs'] { border-color: color-mix(in srgb, var(--needs) 45%, var(--tt-hairline)); color: var(--needs); }
+.note { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 12.5px; }
+.acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 14px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: transparent; color: var(--tt-text); font-size: 13.5px; font-weight: 500; }
+.btn--primary { border-color: var(--tt-text); background: var(--tt-text); color: var(--tt-canvas); }
+.btn--small { min-height: 30px; padding: 0 11px; font-size: 12.5px; }
+.mk { display: inline-grid; place-items: center; width: 15px; height: 15px; }
+.mk[data-p='claude'] { color: var(--tt-provider-claude); } .mk[data-p='codex'] { color: var(--tt-text-2); }
+.pick { display: grid; gap: 2px; margin: 4px 0 0; padding: 0; list-style: none; }
+.pick li { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; column-gap: 9px; min-height: 40px; padding: 4px 10px; border-radius: 8px; font-size: 14px; }
+.pick li[aria-current='true'] { background: color-mix(in oklab, var(--tt-accent) 14%, var(--tt-surface-elevated)); outline: 1px solid color-mix(in srgb, var(--tt-accent) 40%, var(--tt-hairline)); }
+.pick li[aria-disabled='true'] { color: var(--tt-text-muted); }
+.pick small { color: var(--tt-text-muted); font-size: 12.5px; }
+.pick svg { color: var(--tt-text-2); }
+.picks2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 460px) { .picks2 { grid-template-columns: 1fr; } }
+
+/* Watcher's conversation */
+.convo { display: grid; gap: 14px; }
+.msg header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg header b { color: var(--tt-text-2); font-weight: 500; }
+.msg[data-role='user'] { margin-left: 14%; padding: 12px 15px; border-radius: 14px 14px 4px 14px; background: var(--tt-message); }
+.msg p { margin: 0; font-size: 14.5px; line-height: 1.55; }
+.msg[data-role='watcher'] p { color: var(--tt-text-2); }
+.sline { display: flex; align-items: flex-start; gap: 7px; margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.sline svg { flex: none; margin-top: 3px; }
+.card { display: grid; gap: 3px; padding: 11px 14px 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface); }
+.card[data-tone='needs'] { border-color: color-mix(in srgb, var(--needs) 45%, var(--tt-hairline)); }
+.card__top { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; }
+.card__top .lead2 { flex: none; color: var(--tt-text-2); }
+.card[data-tone='needs'] .card__top .lead2, .card[data-tone='needs'] .card__top svg { color: var(--needs); }
+.card__top u { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
+.card .meta, .card .line { padding-left: 23px; }
+.card .acts { justify-content: flex-start; padding-left: 23px; margin-top: 6px; }
+.ring { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; margin: 0 2px; }
+.ring[data-tone='working'] { background: conic-gradient(var(--tt-accent-text) 0 32%, color-mix(in srgb, var(--tt-accent-text) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, #000 42%); }
+.ring[data-tone='ready'] { background: var(--tt-success); }
+.ring[data-tone='needs'] { border: 2px solid var(--needs); }
+.plan { padding: 13px 15px 12px; border: 1px solid color-mix(in srgb, var(--tt-accent) 40%, var(--tt-hairline)); border-radius: 12px; background: var(--tt-surface); }
+.plan h4 { margin: 0 0 4px; font-size: 15px; }
+.composer { margin-top: 4px; padding: 10px 14px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-muted); font-size: 13.5px; }
+.overlay { position: relative; z-index: 2; margin: -96px 4px 0; }
+.room { position: relative; }
+.room[data-under] .convo { opacity: .45; }
+</style>
+</head>
+<body>
+<div class="top"><b>Sotto · moving threads from any machine</b><span>Prototype, part 3 of #1178</span><button id="theme" type="button" aria-pressed="false">Light</button></div>
+<main class="page">
+  <h1>Moving threads from any machine</h1>
+  <p class="intro">Part 3 lets a thread on a paired machine move too: from forge to This computer, or from lab to forge
+    through this desktop. Two calls are yours. Each has three answers, with A recommended. Tap A, B or C to see each.</p>
+  <p class="intro">The sample: you pick <b>forge</b> as the target. This computer has 4 threads and <b>lab</b> (another
+    Linux box) has 2. forge only lets this computer answer Allow edits, so a Full access thread asks first.</p>
+
+  <section class="q" id="q1">
+    <h2>1. How the sheet shows threads on other machines</h2>
+    <p>Move threads lists only This computer's threads today. With every direction open, how does it gather them?</p>
+    <div class="tabs" role="group" aria-label="Question 1 answers">
+      <button type="button" data-q="1" data-v="a" aria-pressed="true">A</button>
+      <button type="button" data-q="1" data-v="b" aria-pressed="false">B</button>
+      <button type="button" data-q="1" data-v="c" aria-pressed="false">C</button>
+    </div>
+    <div class="variant" data-q="1" data-v="a"></div>
+    <div class="variant" data-q="1" data-v="b"></div>
+    <div class="variant" data-q="1" data-v="c"></div>
+  </section>
+
+  <section class="q" id="q2">
+    <h2>2. What asking Watcher in words does</h2>
+    <p>You tell Watcher: “Move the two tray threads to forge, I'm closing the laptop.” Today Sotto moves only after you
+      confirm once in the sheet, and Watcher is told what moved.</p>
+    <div class="tabs" role="group" aria-label="Question 2 answers">
+      <button type="button" data-q="2" data-v="a" aria-pressed="true">A</button>
+      <button type="button" data-q="2" data-v="b" aria-pressed="false">B</button>
+      <button type="button" data-q="2" data-v="c" aria-pressed="false">C</button>
+    </div>
+    <div class="variant" data-q="2" data-v="a"></div>
+    <div class="variant" data-q="2" data-v="b"></div>
+    <div class="variant" data-q="2" data-v="c"></div>
+  </section>
+  <section class="q" id="q3">
+    <h2>3. Choosing which threads move</h2>
+    <p>You picked A, and asked to choose which threads move. Today’s sheet has nothing to tick: it moves every thread that
+      can move, and you choose one thread through its More menu. How should the sheet let you choose?</p>
+    <div class="tabs" role="group" aria-label="Question 3 answers">
+      <button type="button" data-q="3" data-v="a" aria-pressed="true">A</button>
+      <button type="button" data-q="3" data-v="b" aria-pressed="false">B</button>
+      <button type="button" data-q="3" data-v="c" aria-pressed="false">C</button>
+    </div>
+    <div class="variant" data-q="3" data-v="a"></div>
+    <div class="variant" data-q="3" data-v="b"></div>
+    <div class="variant" data-q="3" data-v="c"></div>
+  </section>
+</main>
+<script>
+'use strict'
+const P = {
+  server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/>',
+  laptop: '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
+  move: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  arrow: '<path d="M5 12h14"/><path d="m12 5 7 7-7 7"/>',
+}
+const icon = (n, s = 14) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`
+const MARK = {
+  claude: `<span class="mk" data-p="claude"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4l-9.2 9.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg></span>`,
+  codex: `<span class="mk" data-p="codex"><svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M8 1.6 13.6 4.8v6.4L8 14.4 2.4 11.2V4.8z"/><path d="M5.8 6.4 7.6 8 5.8 9.6M8.6 10h1.8" stroke-linecap="round"/></svg></span>`,
+}
+const PROV = { claude: 'Claude Code', codex: 'Codex' }
+const here = m => m === 'This computer' ? `<span class="where">${icon('laptop', 12)}This computer</span>` : `<span class="where">${icon('server', 12)}${m}</span>`
+
+const T = [
+  { t: 'Tray icon at night', p: 'claude', model: 'Opus 5.5', proj: 'Sotto', on: 'This computer', out: 'moves' },
+  { t: 'Owl release notes', p: 'codex', model: 'GPT-5.5', proj: 'Sotto', on: 'This computer', out: 'moves' },
+  { t: 'Linux tray menu spacing', p: 'codex', model: 'GPT-5.5', proj: 'Sotto', on: 'This computer', out: 'asks',
+    why: 'It runs with Full access here; on forge it would start on Allow edits.' },
+  { t: 'Footer links', p: 'codex', proj: 'sotto-site', on: 'This computer', out: 'stays', why: 'Its 3 changed files aren’t committed.' },
+  { t: 'Shader cache warmup', p: 'claude', model: 'Opus 5.5', proj: 'Sotto', on: 'lab', out: 'moves' },
+  { t: 'Nightly perf run', p: 'claude', proj: 'Sotto', on: 'lab', out: 'stays', why: 'A turn is running. Move it once that turn ends.' },
+]
+const asksLine = r => `${r.why} It waits on its card in Watcher’s conversation for your press before it moves.`
+const row = (r, { where = true, tag = false } = {}) => {
+  const meta = r.out === 'stays' ? (where ? `<p class="meta">${here(r.on)}</p>` : '')
+    : `<p class="meta">${where ? here(r.on) : ''}<span>${PROV[r.p]}</span><span>${r.model} on forge</span><span>${r.proj}</span></p>`
+  const line = r.out === 'asks' ? `<p class="line" data-tone="needs">${asksLine(r)}</p>` : r.why ? `<p class="line">${r.why}</p>` : ''
+  const t = tag ? `<span class="tag" data-tone="${r.out === 'moves' ? 'moves' : r.out === 'asks' ? 'needs' : ''}">${r.out === 'moves' ? 'Moves now' : r.out === 'asks' ? 'Asks you first' : 'Stays'}</span>` : '<span></span>'
+  return `<li class="row">${MARK[r.p]}<span class="name">${r.t}</span>${t}${meta}${line}</li>`
+}
+const watcherRow = `<li class="row">${icon('laptop')}<span class="name">Watcher</span><span></span><p class="line">Watcher stays on This computer. It watches your threads from here, wherever they run.</p></li>`
+const sections = (list, opts, stayTitle) => {
+  const g = o => list.filter(r => r.out === o)
+  const s = g('stays')
+  return (g('moves').length ? `<div class="sec">Moves now <span>${g('moves').length}</span></div><ul class="rows">${g('moves').map(r => row(r, opts)).join('')}</ul>` : '')
+    + (g('asks').length ? `<div class="sec" data-tone="needs">Asks you first <span>${g('asks').length}</span></div><ul class="rows">${g('asks').map(r => row(r, opts)).join('')}</ul>` : '')
+    + `<div class="sec">${stayTitle} <span>${s.length + 1}</span></div><ul class="rows">${s.map(r => row(r, opts)).join('')}${watcherRow}</ul>`
+}
+const machines = (current, skip) => `<ul class="pick">${[['This computer', 'laptop', ''], ['forge', 'server', ''], ['lab', 'server', ''], ['studio', 'server', 'Not connected']]
+  .filter(([m]) => m !== skip).map(([m, i, why]) => `<li ${m === current ? 'aria-current="true"' : ''} ${why ? 'aria-disabled="true"' : ''}>${icon(i)}<span>${m}</span><small>${why || (m === current ? icon('check') : '')}</small></li>`).join('')}</ul>`
+const foot = n => `<p class="note">Each thread is settled where it is once its new thread’s first turn ends, and its worktree is kept there.</p>
+  <div class="acts"><span class="btn">Cancel</span><span class="btn btn--primary">Move ${n} threads</span></div>`
+const LEAD = 'Each continues on forge as a new thread, in the same project, on the same provider, with a handover of the thread where it is. Its first turn starts at once. Watcher’s conversation reports each move.'
+
+const Q1 = {
+  a: `<h3>A · Pick where they go; the sheet gathers from every other machine (Recommended)</h3>
+    <p class="say">Move threads asks <b>to</b> which machine, now with This computer in the list. The sheet you picked keeps its
+      three groups, takes threads from every other connected machine, and each row says where the thread is now.
+      Picking This computer brings threads home from forge and lab.</p>
+    <div class="label">1 · Move threads to…</div>
+    <div class="win"><div class="sheet"><h4>Move threads to…</h4>${machines('forge')}</div></div>
+    <div class="label">2 · The sheet</div>
+    <div class="win"><div class="sheet"><h4>Move 4 threads to forge?</h4><p class="lead">${LEAD}</p>${sections(T, { where: true }, 'Stays where it is')}${foot(4)}</div></div>
+    <p class="cost"><b>Trade-off:</b> one press moves from several machines at once, which is the most to read in one sheet. Fits “I’m closing the laptop” and “forge has room” alike.</p>`,
+  b: `<h3>B · Pick where they come from, then where they go</h3>
+    <p class="say">Move threads asks two things: <b>from</b> which machine, then <b>to</b> which. The sheet lists only that
+      one machine’s threads, as it does today for This computer. Moving lab’s threads too is a second pass.</p>
+    <div class="label">1 · From, then to</div>
+    <div class="win"><div class="sheet"><h4>Move threads</h4><div class="picks2"><div><div class="sec">From</div>${machines('This computer', 'studio')}</div><div><div class="sec">To</div>${machines('forge', 'This computer')}</div></div>
+      <div class="acts"><span class="btn">Cancel</span><span class="btn btn--primary">Next</span></div></div></div>
+    <div class="label">2 · The sheet</div>
+    <div class="win"><div class="sheet"><h4>Move 3 threads from This computer to forge?</h4><p class="lead">${LEAD}</p>${sections(T.filter(r => r.on === 'This computer'), { where: false }, 'Stays on This computer')}${foot(3)}</div></div>
+    <p class="cost"><b>Trade-off:</b> each sheet is short and only ever about one machine, but every move takes a second pick, and emptying two machines takes two passes.</p>`,
+  c: `<h3>C · Pick where they go; the sheet is grouped by the machine they’re on</h3>
+    <p class="say">The same one pick as A, but the sheet is grouped <b>by machine</b> (From This computer, From lab), and each
+      row carries what happens to it as a tag. What moves now, what asks first and what stays are no longer their own groups.</p>
+    <div class="label">The sheet</div>
+    <div class="win"><div class="sheet"><h4>Move 4 threads to forge?</h4><p class="lead">${LEAD}</p>
+      <div class="sec sec--machine">${icon('laptop')} From This computer <span>5</span></div><ul class="rows">${T.filter(r => r.on === 'This computer').map(r => row(r, { where: false, tag: true })).join('')}${watcherRow}</ul>
+      <div class="sec sec--machine">${icon('server')} From lab <span>2</span></div><ul class="rows">${T.filter(r => r.on === 'lab').map(r => row(r, { where: false, tag: true })).join('')}</ul>
+      ${foot(4)}</div></div>
+    <p class="cost"><b>Trade-off:</b> easy to see what leaves each machine, harder to see at a glance which thread waits for your press.</p>`,
+}
+
+const you = `<div class="msg" data-role="user"><header><b>You</b><span>4:12 PM</span></header><p>Move the two tray threads to forge, I’m closing the laptop.</p></div>`
+const watcherSays = s => `<div class="msg" data-role="watcher"><header><b>Watcher</b><span>4:12 PM</span></header><p>${s}</p></div>`
+const sline = s => `<p class="sline">${icon('move', 13)}<span>${s}</span></p>`
+const card = (tone, glyph, lead, title, meta, line, acts) => `<div class="card" ${tone ? `data-tone="${tone}"` : ''}><div class="card__top">${glyph}<span class="lead2">${lead}</span><u>${title}</u></div>
+  ${meta ? `<p class="meta">${meta}</p>` : ''}${line ? `<p class="line" ${tone ? `data-tone="${tone}"` : ''}>${line}</p>` : ''}${acts ? `<div class="acts">${acts}</div>` : ''}</div>`
+const movingCards = card('', `<span class="ring" data-tone="working"></span>`, 'Moving to forge ·', 'Tray icon at night', '<span>Thread started</span><span>Opus 5.5 on forge</span>', '', '')
+  + card('needs', icon('alert'), 'Asks you first ·', 'Linux tray menu spacing', '<span>GPT-5.5 on forge</span>', 'It runs with Full access here; on forge it would start on Allow edits.', '<span class="btn btn--small btn--primary">Move it on Allow edits</span><span class="btn btn--small">Keep it here</span>')
+const plan = `<div class="plan"><h4>Move 2 threads to forge?</h4>
+  <ul class="rows">${row(T[0], { where: true, tag: true })}${row(T[2], { where: true, tag: true })}</ul>
+  <div class="acts" style="justify-content:flex-start"><span class="btn btn--primary btn--small">Move 2 threads</span><span class="btn btn--small">Not now</span></div></div>`
+
+const Q2 = {
+  a: `<h3>A · Watcher proposes; you press once in its conversation (Recommended)</h3>
+    <p class="say">Watcher picks the threads from your words and Sotto puts the same preview the sheet shows in Watcher’s
+      conversation, with <b>Move 2 threads</b> and <b>Not now</b>. Nothing moves until you press. Then the move cards follow, as today.</p>
+    <div class="label">Watcher’s conversation</div>
+    <div class="win"><div class="convo">${you}${watcherSays('Both tray threads can go to forge. Linux tray menu spacing would start on Allow edits there, so it asks you first.')}${plan}<div class="composer">Ask Watcher…</div></div></div>
+    <div class="label">After the press</div>
+    <div class="win"><div class="convo">${sline('You asked to move 2 threads to forge. Sotto reports each move here.')}${movingCards}</div></div>
+    <p class="cost"><b>Trade-off:</b> one more press than C, and the confirmation is still yours, so Watcher reading you wrong costs nothing.</p>`,
+  b: `<h3>B · Watcher opens the Move threads sheet for you</h3>
+    <p class="say">Watcher answers, and the <b>Move threads sheet</b> opens over its room with the threads it picked,
+      exactly as if you had pressed Move threads. You confirm there.</p>
+    <div class="label">Watcher’s room, the sheet over it</div>
+    <div class="win win--dim"><div class="room" data-under><div class="convo">${you}${watcherSays('I opened Move threads with both tray threads.')}</div>
+      <div class="overlay"><div class="sheet"><h4>Move 2 threads to forge?</h4><p class="lead">Watcher picked these from what you said.</p>${sections([T[0], T[2]], { where: true }, 'Stays where it is').replace(/<div class="sec">Stays[\s\S]*$/, '')}<div class="acts"><span class="btn">Cancel</span><span class="btn btn--primary">Move 2 threads</span></div></div></div></div></div>
+    <p class="cost"><b>Trade-off:</b> one sheet for every way in, but a sheet that opens by itself when Watcher’s turn ends can land while you are typing elsewhere.</p>`,
+  c: `<h3>C · Your words are the go-ahead</h3>
+    <p class="say">What you told Watcher counts as the confirmation: Sotto moves the threads Watcher names at once, and the
+      cards report each one. A thread that would start narrower still waits on its card for your press.</p>
+    <div class="label">Watcher’s conversation</div>
+    <div class="win"><div class="convo">${you}${watcherSays('Moving both tray threads to forge.')}${sline('Watcher moved 2 threads to forge on your word. Sotto reports each move here.')}${movingCards}</div></div>
+    <p class="cost"><b>Trade-off:</b> fastest, but Watcher picks which threads go, and a misread moves the wrong one. It changes your “confirm once” pick, so it needs an ADR first.</p>`,
+}
+
+
+const boxRow = (r, on) => {
+  const base = row(r, { where: true })
+  const box = r.out === 'stays' ? '<span class="nobox" aria-hidden="true"></span>' : `<input type="checkbox" ${on ? 'checked' : ''} aria-label="Move ${r.t}">`
+  return base.replace('<li class="row">', `<li class="row row--box">${box}`).replace('<span></span>', '<span></span>')
+}
+const boxSheet = (on, v) => {
+  const g = o => T.filter(r => r.out === o)
+  return `<div class="win"><div class="sheet" data-boxes="${v}"><h4 data-title>Move threads to forge?</h4><p class="lead">${LEAD}</p>
+    <div class="sec">Moves now <span>${g('moves').length}</span></div><ul class="rows">${g('moves').map(r => boxRow(r, on)).join('')}</ul>
+    <div class="sec" data-tone="needs">Asks you first <span>${g('asks').length}</span></div><ul class="rows">${g('asks').map(r => boxRow(r, on)).join('')}</ul>
+    <div class="sec">Stays where it is <span>${g('stays').length + 1}</span></div><ul class="rows">${g('stays').map(r => boxRow(r, on)).join('')}${watcherRow.replace('<li class="row">', '<li class="row row--box"><span class="nobox" aria-hidden="true"></span>')}</ul>
+    <p class="note">Each thread is settled where it is once its new thread’s first turn ends, and its worktree is kept there.</p>
+    <div class="acts"><span class="btn">Cancel</span><span class="btn btn--primary" data-go></span></div></div></div>`
+}
+const Q3 = {
+  a: `<h3>A · Every thread that can move starts ticked; untick to leave one (Recommended)</h3>
+    <p class="say">The sheet opens with each thread that can move <b>ticked</b>. Untick any you want to leave where it is; the
+      count on the button follows. A thread that asks first is ticked too and still waits on its card. Threads that stay
+      have no box, and still say why. Try the boxes.</p>
+    ${boxSheet(true, 'a')}
+    <p class="cost"><b>Trade-off:</b> moving everything is still one press; choosing a few means unticking the rest. Watcher’s preview card (question 2, A) gets the same boxes.</p>`,
+  b: `<h3>B · Nothing starts ticked; tick the ones to move</h3>
+    <p class="say">The sheet opens with <b>no</b> box ticked, and Move stays off until you tick one. Try the boxes.</p>
+    ${boxSheet(false, 'b')}
+    <p class="cost"><b>Trade-off:</b> nothing moves you didn’t point at, but “move everything, I’m closing the laptop” is a tick per thread.</p>`,
+  c: `<h3>C · No boxes; choose with the More menu or in words</h3>
+    <p class="say">The sheet stays as it is today and moves every thread that can move. To move fewer, use
+      <b>Continue on another machine…</b> on each one, or tell Watcher which ones (question 2).</p>
+    <div class="win"><div class="sheet"><h4>Move 4 threads to forge?</h4><p class="lead">${LEAD}</p>${sections(T, { where: true }, 'Stays where it is')}${foot(4)}</div></div>
+    <p class="cost"><b>Trade-off:</b> the simplest sheet, but no way to pick three of five in it.</p>`,
+}
+for (const [q, set] of [['1', Q1], ['2', Q2], ['3', Q3]]) for (const [v, html] of Object.entries(set)) document.querySelector(`.variant[data-q="${q}"][data-v="${v}"]`).innerHTML = html
+const params = new URLSearchParams(location.search)
+const show = (q, v) => {
+  document.querySelectorAll(`.tabs button[data-q="${q}"]`).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)))
+  document.querySelectorAll(`.variant[data-q="${q}"]`).forEach(d => d.classList.toggle('on', d.dataset.v === v))
+}
+document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => show(b.dataset.q, b.dataset.v)))
+show('1', params.get('q1') ?? 'a'); show('2', params.get('q2') ?? 'a')
+
+const count = sheet => {
+  const n = sheet.querySelectorAll('input:checked').length, go = sheet.querySelector('[data-go]'), title = sheet.querySelector('[data-title]')
+  go.textContent = n ? `Move ${n} thread${n > 1 ? 's' : ''}` : 'Move threads'
+  go.setAttribute('aria-disabled', String(!n))
+  title.textContent = n ? `Move ${n} thread${n > 1 ? 's' : ''} to forge?` : 'Choose threads to move to forge'
+}
+document.querySelectorAll('[data-boxes]').forEach(sheet => { count(sheet); sheet.addEventListener('change', () => count(sheet)) })
+show('3', params.get('q3') ?? 'a')
+const theme = document.getElementById('theme')
+const setTheme = light => { document.documentElement.dataset.theme = light ? 'light' : 'dark'; theme.setAttribute('aria-pressed', String(light)); theme.textContent = light ? 'Dark' : 'Light' }
+theme.addEventListener('click', () => setTheme(document.documentElement.dataset.theme !== 'light'))
+setTheme(params.get('theme') === 'light')
+</script>
+</body>
+</html>
