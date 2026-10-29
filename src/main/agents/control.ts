@@ -292,6 +292,11 @@ const savedSchema = z.object({
   prototypesMarked: z.array(z.object({ threadId: z.string(), messageId: z.string(), createdAt: z.string() })).default([]),
   /** The failed threads a client has shown since they failed, or Dismiss all named, oldest first (ADR-0092). */
   failuresSeen: z.array(z.object({ threadId: z.string(), failure: z.string(), turn: z.string().optional(), since: z.number().optional() })).default([]),
+  /**
+   * The threads moving to another machine (#1178), with the sentence a send to one is refused with: the fence kept in the
+   * coordinator's own record, so it holds whatever the move's record says, even one that no longer reads.
+   */
+  moveFences: z.array(z.object({ threadId: z.string().min(1).max(512), words: z.string().min(1).max(600) }).strict()).max(10_000).optional(),
   composing: z.boolean(), outbox: z.array(z.object({
     id: z.string(), type: z.enum(['send', 'steer', 'create-project', 'create-thread', 'configure-thread', 'answer', 'interrupt', 'compact-thread']),
     provider: providerIdSchema.optional(),
@@ -775,9 +780,21 @@ export class AgentControl {
    * pump for them while it holds. Read once per command and per pump, never copied.
    */
   private readonly moveFences = new Map<string, string>()
-  fenceForMove(threadId: string, words: string): void { this.moveFences.set(threadId, words) }
+  /** The record has been read at start, so a fence set or lifted from now on is saved; one set before joins what it kept. */
+  private moveFencesRead = false
+  /** Fences the thread at once, and resolves once the fence is in the coordinator's own record; rejects when that write fails. */
+  async fenceForMove(threadId: string, words: string): Promise<void> {
+    this.moveFences.set(threadId, words)
+    if (this.moveFencesRead && !this.disposed) await this.persist()
+  }
   /** The move was given back or finished: the thread takes sends again, and its queue goes on. */
-  liftMoveFence(threadId: string): void { if (this.moveFences.delete(threadId)) this.pumpFollowups() }
+  async liftMoveFence(threadId: string): Promise<void> {
+    if (!this.moveFences.delete(threadId)) return
+    this.pumpFollowups()
+    if (this.moveFencesRead && !this.disposed) await this.persist()
+  }
+  /** The threads fenced for a move, as the coordinator's own record keeps them. */
+  fencedForMove(): readonly string[] { return [...this.moveFences.keys()] }
   /** The commands a moving thread refuses: everything that would start or steer a turn there. */
   private moveFenceRefusal(command: AgentCommand, threadId: string | null | undefined): string | undefined {
     if (!threadId || !this.moveFences.size) return undefined
@@ -1355,8 +1372,11 @@ export class AgentControl {
     this.persistedDrafts = this.draftSignatures(images.threadDrafts)
     this.persistedObsoleteDrafts = saved.obsoleteDrafts
     await this.attachmentPreviews.load(this.stageInline)
-    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, failuresSeen, prototypesCleared, prototypesSince, prototypesMarked, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
+    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, failuresSeen, prototypesCleared, prototypesSince, prototypesMarked, moveFences, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
     void _watcher; void _dormantLegacyDraft; void _dormantMuseConfiguration; void _dormantProviderConfigurations
+    // Fences set before the record was read (the move's own record is read first) stand beside those it kept.
+    for (const fence of moveFences ?? []) if (!this.moveFences.has(fence.threadId)) this.moveFences.set(fence.threadId, fence.words)
+    this.moveFencesRead = true
     this.finishedUnread.restore(finishedUnread)
     this.prototypeReady.restore(prototypesCleared, prototypesSince, prototypesMarked)
     this.failuresSeen.restore(failuresSeen)
@@ -2522,6 +2542,7 @@ export class AgentControl {
       prototypesSince: this.prototypeReady.since(),
       prototypesMarked: this.prototypeReady.marked(),
       failuresSeen: this.failuresSeen.saved(),
+      ...(this.moveFences.size ? { moveFences: [...this.moveFences].map(([threadId, words]) => ({ threadId, words })) } : {}),
       deliveredPromptDigests: this.deliveredPromptDigests,
       answeredRequests: this.answeredRequests,
       threadDrafts: (this.state.threadDrafts ?? []).map(item => this.dormantThreadDrafts.get(item.threadId) ?? item), deliveries: this.savedDeliveries() }

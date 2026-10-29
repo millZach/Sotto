@@ -2314,9 +2314,10 @@ export class WatcherService implements WatcherControlHooks {
    * source's watch, which settling the source then ends.
    */
   async moveWatch(from: WatcherThreadTarget, to: WatcherThreadTarget): Promise<boolean> {
-    if (!this.hasStandingWatch(from)) return false
-    try { await this.assignWatch({ target: to }, undefined, 'watcher') } catch { return false }
-    await this.unwatchThread({ target: from }, undefined, 'watcher')
+    // Done already, or nothing to carry: a replay after the watch moved, or a watch the user ended meanwhile.
+    if (!this.hasStandingWatch(from)) return true
+    // The new thread's watch and the source's end in one record write (ADR-0105 decision 7), so no stop between leaves both or neither.
+    try { await this.assignWatch({ target: to }, undefined, 'watcher', from) } catch { return false }
     return true
   }
   /** The user's own Watch, from the room, a thread's page or the iPhone. It hands back a thread the user stopped watching. */
@@ -2324,7 +2325,8 @@ export class WatcherService implements WatcherControlHooks {
     try { await this.assignWatch(input, guard, 'user'); return this.get() }
     catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('HOST_DISCONNECTED', 'The watch could not be saved. Reconnect and try again.', true) }
   }
-  private async assignWatch(input: WatcherWatchThreadRequest, guard: (() => void) | undefined, by: 'user' | 'watcher'): Promise<WatcherStandingWatch> {
+  /** `replacing`, a watch on This computer that this one takes the place of, ends in the same record write (#1178). */
+  private async assignWatch(input: WatcherWatchThreadRequest, guard: (() => void) | undefined, by: 'user' | 'watcher', replacing?: WatcherThreadTarget): Promise<WatcherStandingWatch> {
     const parsed = watcherWatchThreadRequestSchema.safeParse(input)
     if (!parsed.success) refuse('INVALID_INPUT', 'Choose a thread to watch.')
     if (this.closed || this.options.workerHost) refuse('NOT_CURRENT_WATCHER', 'Assign watched threads on Watcher’s desktop.')
@@ -2351,12 +2353,14 @@ export class WatcherService implements WatcherControlHooks {
         created.generation = accepted.generation; created.pausedByUserMessageId = accepted.pausedByUserMessageId ?? null; created.lastUserMessageId = accepted.lastUserMessageId
       } catch (error) { this.pendingWatchAssignments.delete(key(target)); this.scheduleRemote(target.hostId); throw error }
     }
+    const replaced = new Set<string>()
     try {
       await this.transaction(async () => {
         guard?.()
         await this.options.control.updateWatcher(record => {
           guard?.()
           if (assignmentMaster && JSON.stringify(record.current) !== JSON.stringify(assignmentMaster)) refuse('NOT_CURRENT_WATCHER', 'Watcher changed before this watch was saved. Assign it again.')
+          if (replacing && key(replacing) !== key(target)) this.withdrawWatch(record, replacing, replaced)
           if (target.hostId !== this.hostId() && this.pendingWatchAssignments.get(key(target))?.id !== created.id) refuse('TARGET_CHANGED', 'This watch was stopped while its host was confirming it.')
           const live = record.watches?.find(watch => key(watch.target) === key(target))
           if (live && live.id !== created.id) refuse('TARGET_CHANGED', 'This watch changed while it was being saved. Refresh the thread.')
@@ -2376,6 +2380,7 @@ export class WatcherService implements WatcherControlHooks {
       if (this.pendingWatchAssignments.get(key(target))?.id === created.id) this.pendingWatchAssignments.delete(key(target))
       if (target.hostId !== this.hostId()) this.scheduleRemote(target.hostId)
     }
+    if (replaced.size) await this.options.control.cancelWatcherQueue(replaced)
     this.publish(); return created
   }
   private newWatch(target: WatcherThreadTarget, thread?: AgentThread): WatcherStandingWatch {

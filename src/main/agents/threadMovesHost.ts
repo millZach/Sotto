@@ -153,8 +153,10 @@ export class HostThreadMoves {
       }
     }
     // Linked before its first prompt goes, so that prompt is told apart as Sotto's from its first echo (ADR-0089 decision 3).
+    // The link is Sotto's record and must survive: one that cannot be saved sends nothing, and the step fails for the
+    // desktop to ask again.
     await this.options.workspace.setContinuedFrom(record.threadId, { threadId: request.from.threadId, provider: request.from.provider, host: request.from.hostId,
-      at: record.createdAt, handover: request.handover }).catch(() => undefined)
+      at: record.createdAt, handover: request.handover })
     if (!record.sent) {
       const { threadId, draftId } = record
       // The prompt goes under the permission the thread was made with, which the grant must still allow as it dispatches.

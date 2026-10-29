@@ -23,7 +23,7 @@ afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
  */
 function host() {
   const threads: AgentThread[] = [], sent: string[] = []
-  const state = { mayAnswer: true, gate: Promise.resolve() as Promise<void> }
+  const state = { mayAnswer: true, gate: Promise.resolve() as Promise<void>, linkFails: 0 }
   const control = {
     watcherSnapshot: () => ({ ...EMPTY_AGENT_HOST, models: [model], projects: [{ id: 'project', title: 'Sotto', path: '/forge/sotto' }], threads }),
     commandFromMove: async (command: Extract<AgentCommand, { type: 'create-thread' | 'manual-send' }>, guard: () => void): Promise<AgentState> => {
@@ -39,7 +39,8 @@ function host() {
       return { error: null, deliveries: [{ threadId: command.threadId, draftId: command.draftId, status: 'accepted' }] } as unknown as AgentState
     },
   }
-  const moves = new HostThreadMoves(directory, { control, workspace: { setContinuedFrom: async () => undefined }, mayAnswer: () => state.mayAnswer })
+  const workspace = { setContinuedFrom: async () => { if (state.linkFails > 0) { state.linkFails--; throw new Error('The record could not be saved.') } } }
+  const moves = new HostThreadMoves(directory, { control, workspace, mayAnswer: () => state.mayAnswer })
   return { threads, sent, state, moves }
 }
 const request = (moveId = randomUUID(), runtimeMode: HostThreadMoveRequest['runtimeMode'] = 'full-access'): HostThreadMoveRequest => ({ action: 'start', moveId, projectId: 'project',
@@ -77,6 +78,17 @@ describe('the host’s record of moves', () => {
     expect(h.threads).toEqual([])
     const file = JSON.parse(await readFile(join(directory, 'thread-moves.json'), 'utf8')) as { moves: { moveId: string }[] }
     expect(file.moves.map(move => move.moveId)).toEqual(kept.map(move => move.moveId))
+  })
+})
+
+describe('the new thread’s link back (ADR-0089: links are Sotto’s record)', () => {
+  it('sends no first prompt until the link is saved, and fails the step for the desktop to ask again', async () => {
+    const h = host(), ask = request()
+    h.state.linkFails = 1
+    await expect(h.moves.handle(ask, desktop)).rejects.toThrow('The record could not be saved.')
+    expect(h.threads).toHaveLength(1); expect(h.sent).toEqual([])
+    expect(await h.moves.handle(ask, desktop)).toMatchObject({ type: 'started', threadId: h.threads[0]!.id, sent: true })
+    expect(h.threads).toHaveLength(1); expect(h.sent).toHaveLength(1)
   })
 })
 

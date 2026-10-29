@@ -10,7 +10,7 @@ Zach, October 21, 2026 (issue #1178):
 
 - Uncommitted work refuses the move. Test runs snapshot it; moves do not.
 - Not moved: a thread with a turn running, a question or permission card, background work or an unresolved send; a delegating thread with children working; any delegated thread; Watcher. Each says why in plain words.
-- The original is settled once the new thread is confirmed and its first turn has ended. Its worktree is kept, and no automatic cleanup runs on it while #1297 is open.
+- The original is settled once the new thread is confirmed and its first turn has ended. Its worktree is kept, and no automatic cleanup runs on it while #1297 is open. (#1297 closed on October 22, 2026.)
 - A move that would start narrower than the thread runs now (its permission, or no GitHub sign-in for its babysitting) says so and waits for a press.
 - If Watcher watched the original, it watches the new one; if not, not.
 
@@ -45,7 +45,7 @@ Decisions made while building, for Zach to confirm:
 - A move that would start narrower and is not pressed for is answered "asks" and nothing is recorded for it; the card's press in part 2 asks for a fresh preview of that one thread.
 - Only a first turn that completed settles the source. One that failed or was stopped leaves the source here, unsettled and taking sends, linked to the new thread left there (state `stayed`), since #1178 says a thread that fails to transfer stays where it is.
 - Anything in a thread's queue, Sotto's own news included, holds it here, so nothing queued goes to a source after it moved.
-- The automatic cleanup sweep skips a moved source's worktree. Clear settled threads after does not yet: it runs after 30 days at the earliest.
+- The automatic cleanup sweep skips a moved source's worktree. Clear settled threads after may clear a moved source, which is allowed since #1297 closed on October 22, 2026; it runs after 30 days at the earliest.
 
 After Sol's standards and spec reviews (October 29), these rules changed:
 
@@ -59,5 +59,13 @@ After Sol's standards and spec reviews (October 29), these rules changed:
 - An update reads only the moves waiting on a first turn, each in a snapshot it has not read, by one index per snapshot, so the work grows with the threads there and not with moves times threads.
 - The first turn counts as over only once the new thread is quiet there: no turn running, no card, no background work or monitor, and no thread it delegated to still working. This holds for a source that settles and one that stays.
 - A provider's own profile is compared too: Devin's Bypass permissions moving to a thread that starts on Ask first asks first.
+
+After Sol's second pass (October 29):
+
+- A confirmed source is reserved before anything awaits, so a second confirmation of the same thread reads it as moving and is refused; nothing makes two moves of one thread.
+- The fence lives in the coordinator's own record (`moveFences` in `agents.json`), saved before the move's record, so a source stays fenced across a restart whatever `moves.json` says, even one that does not parse. Only a `moves.json` that reads whole and shows no move under way lifts a fence the coordinator kept; `moves.json` only steps moves.
+- The first turn is not over while a thread the new one delegated to on another machine, This computer or a third, is still open in delegation's record.
+- Watcher's watch moves in one record write, the new thread's added and the source's ended, and asking again once it has moved answers done.
+- A link back that cannot be saved fails its step, which is tried again: on the host no first prompt goes until `continuedFrom` is saved, and on This computer no move finishes until `continuedIn` is.
 
 Left for later parts: the GitHub sign-in half of asking first (a host does not yet say whether it has one), starting babysitting on the target, an exact read of a move and Keep it here (part 4, `ThreadMoveService.stalled()` names what waits), the other directions (part 3), the window (part 2), and the moved thread's first message shown as Sotto's on the desktop, which the continued thread's display does only for This computer's threads.

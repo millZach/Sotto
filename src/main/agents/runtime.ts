@@ -523,7 +523,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
     removeUnsentThreads: () => agentControl.removeUnsentThreads(),
-    // A move's source keeps its worktree, whatever the rules say, while #1297 is open.
+    // A move's source keeps its worktree, whatever the rules say (Zach, October 21, 2026).
     ...moveKeeps ? { keeps: (threadId: string) => moveKeeps.keepsWorktree(threadId) } : {},
     ...clearsOnItsOwn(options) ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays,
       clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => agentControl.clearSettledThreads(days, keep) } } : {},
@@ -681,6 +681,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     await restartResume?.start()
     await limitRestart?.start()
     await agentControl.start(switchedOff ? { beforeConnect: async () => { await switchedOff.stop({ startedBy: 'agent' }, 'switch').catch(() => 0) } } : {})
+    // With the coordinator's own record read, a fence it kept for a move the move's record shows over is lifted (#1178).
+    moveKeeps?.settleFences()
   } catch (error) {
     await restartResume?.freeze()
     await limitRestart?.close()

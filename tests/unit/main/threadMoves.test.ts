@@ -35,7 +35,7 @@ function world() {
   const control: MoveControl = {
     hostId: () => HERE, watcherSnapshot: () => ({ ...EMPTY_AGENT_HOST, hostId: HERE, models: [model], threads }),
     configuration: () => ({ newThreadRuntimeMode: 'full-access' }), moveHoldReason: () => null,
-    fenceForMove: (threadId, words) => { fences.set(threadId, words) }, liftMoveFence: threadId => { fences.delete(threadId) },
+    fenceForMove: (threadId, words) => { fences.set(threadId, words) }, liftMoveFence: threadId => { fences.delete(threadId) }, fencedForMove: () => [...fences.keys()],
     commandFromMove: async command => {
       settled.push(command.threadId)
       const thread = threads.find(item => item.id === command.threadId)
@@ -43,10 +43,14 @@ function world() {
       return { error: null } as AgentState
     },
   }
-  const workspace = {
+  const workspace = { linkFails: 0,
     threadHandover: (threadId: string) => { const thread = threads.find(item => item.id === threadId)!; return buildHandover(thread.messages, { source: { threadId, title: thread.title, provider: 'codex' }, historyKept: true }) },
-    addContinuedIn: async (threadId: string, link: ThreadContinuedIn) => { links.push({ threadId, link }) },
+    addContinuedIn: async (threadId: string, link: ThreadContinuedIn) => {
+      if (workspace.linkFails > 0) { workspace.linkFails--; throw new Error('The record could not be saved.') }
+      links.push({ threadId, link })
+    },
   }
+  const delegations = { open: new Set<string>(), hasOpen: (threadId: string) => delegations.open.has(threadId) }
   const branches = {
     receipt: undefined as BranchMoveReceipt | undefined,
     calls: [] as string[],
@@ -106,14 +110,14 @@ function world() {
       if (watch.refuses) return false
       watch.moved.push(`${from.threadId}->${to.hostId}:${to.threadId}`); return true
     } }
-  const service = (retryMs = 20) => new ThreadMoveService(directory, { control, workspace, branches, watch, retryMs })
+  const service = (retryMs = 20) => new ThreadMoveService(directory, { control, workspace, branches, watch, delegations, retryMs })
   /** The machine's thread for a move ends its first turn, and the machine says so. */
   const endTurn = (moveId: string, status: 'completed' | 'failed' = 'completed', patch: Partial<AgentThread> = {}) => {
     const thread = remote.threads.find(item => item.id === remote.made.get(moveId))!
     Object.assign(thread, { status: 'idle', lastTurn: { id: 'turn', status } }, patch)
     changed()
   }
-  return { threads, fences, settled, links, forgotten, control, branches, remote, host, targets, watch, service, endTurn, changed, connected }
+  return { threads, fences, settled, links, forgotten, control, workspace, delegations, branches, remote, host, targets, watch, service, endTurn, changed, connected }
 }
 type World = ReturnType<typeof world>
 const key = (threadId: string): string => hostEntityKey(HERE, threadId)
@@ -367,13 +371,14 @@ describe('a run that does not move threads (Sol’s review, ADR-0072)', () => {
       { id: randomUUID(), sourceThreadId: 'back', targetHostId: FORGE, machine: 'forge', state: 'given-back', start, watched: false, createdAt: at, updatedAt: at }] })
     await writeFile(join(directory, 'moves.json'), file)
     const fences = new Map<string, string>()
-    const held = await holdUnfinishedMoves(directory, { fenceForMove: (threadId, words) => { fences.set(threadId, words) } })
+    const held = await holdUnfinishedMoves(directory, { fenceForMove: (threadId, words) => { fences.set(threadId, words) }, liftMoveFence: threadId => { fences.delete(threadId) },
+      fencedForMove: () => [...fences.keys()] })
     expect([...fences]).toEqual([['moving', THREAD_MOVE_WORDS.paused('forge')]])
     expect(['moving', 'settled', 'back'].map(threadId => held.keepsWorktree(threadId))).toEqual([true, true, false])
     expect(await readFile(join(directory, 'moves.json'), 'utf8')).toBe(file)
     // No record is no move.
     await rm(join(directory, 'moves.json'))
-    expect((await holdUnfinishedMoves(directory, { fenceForMove: () => { throw new Error('Nothing to fence.') } })).keepsWorktree('moving')).toBe(false)
+    expect((await holdUnfinishedMoves(directory, { fenceForMove: () => { throw new Error('Nothing to fence.') }, liftMoveFence: () => undefined })).keepsWorktree('moving')).toBe(false)
   })
 })
 
@@ -473,5 +478,57 @@ describe('work per update (AGENTS.md: it must not grow faster than the threads)'
     expect(twenty.changed.visits).toBe(twenty.threads); expect(forty.changed.visits).toBe(forty.threads)
     expect(twenty.unchanged).toBe(0); expect(forty.unchanged).toBe(0)
     expect(twenty.sourceReads).toBe(0); expect(forty.sourceReads).toBe(0)
+  })
+})
+
+describe('Sol’s second pass', () => {
+  it('starts one move when the same thread is confirmed twice before the first is written', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    const first = moves.prepare({ threadIds: [key('a')], hostId: FORGE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
+    const second = moves.prepare({ threadIds: [key('a')], hostId: FORGE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
+    const [one, two] = await Promise.all([first, second].map(prepared => moves.move({ confirmationId: prepared.confirmationId, threadIds: [key('a')], allowNarrower: [] })))
+    expect([one, two]).toEqual([{ status: 'ok', moves: [{ threadId: key('a'), outcome: 'moving', moveId: expect.any(String) }] }, { status: 'refused', message: THREAD_MOVE_WORDS.expired }])
+    await vi.waitFor(() => expect(moves.list()[0]?.state).toBe('thread-started'))
+    expect(moves.list()).toHaveLength(1); expect(w.branches.forStart).toHaveBeenCalledTimes(1); expect(w.remote.threads).toHaveLength(1)
+    moves.close()
+  })
+  it('keeps the move from ending while a thread the new one delegated to on another machine still works', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    // Its child runs on This computer, or a third machine, through the desktop: delegation's record holds it open.
+    w.delegations.open.add(hostEntityKey(FORGE, w.remote.made.get(moveId)!))
+    w.endTurn(moveId)
+    await new Promise(done => setTimeout(done, 50))
+    expect(stateOf(moves, moveId)).toBe('thread-started'); expect(w.settled).toEqual([])
+    // It answers elsewhere, with nothing new on forge itself: the next update reads it again.
+    w.delegations.open.clear()
+    for (const listener of w.remote.updates) listener()
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('source-settled'))
+    moves.close()
+  })
+  it('does not finish a move whose link back could not be saved, and saves it on the next try', async () => {
+    const w = world(), moves = w.service(5); moves.useTargets(w.targets)
+    w.workspace.linkFails = 2
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    w.endTurn(moveId)
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('source-settled'))
+    expect(w.links).toHaveLength(1); expect(w.workspace.linkFails).toBe(0)
+    moves.close()
+  })
+  it('lifts a fence the coordinator kept only when a record that reads shows no move under way, and keeps it otherwise', async () => {
+    const w = world()
+    w.fences.set('stale', THREAD_MOVE_WORDS.fence('forge'))
+    // A record that does not parse at all: every fence the coordinator kept stays.
+    await writeFile(join(directory, 'moves.json'), '{"version": 1, "moves": [')
+    const unread = w.service(); await unread.load(); unread.settleFences()
+    expect(w.fences.has('stale')).toBe(true)
+    unread.close()
+    // One that reads and names no move under way for it: the fence was a lift not saved, and goes.
+    await writeFile(join(directory, 'moves.json'), JSON.stringify({ version: 1, moves: [] }))
+    const read = w.service(); await read.load(); read.settleFences()
+    expect(w.fences.has('stale')).toBe(false)
+    read.close()
   })
 })

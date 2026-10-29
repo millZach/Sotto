@@ -65,7 +65,7 @@ export interface WorktreeCleanupDependencies {
   readonly openPullRequestBranches?: (repositoryRoot: string) => Promise<ReadonlySet<string>>
   /**
    * Whether a thread's worktree is kept whatever the rules say: the source of a thread moved to another machine (#1178),
-   * whose folder no automatic cleanup removes while #1297 is open. Asked of each thread a sweep looks at.
+   * whose folder no automatic cleanup removes (Zach, October 21, 2026). Asked of each thread a sweep looks at.
    */
   readonly keeps?: (threadId: string) => boolean
   readonly now?: () => number
