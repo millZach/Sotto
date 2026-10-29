@@ -128,6 +128,31 @@ describe('Lardo', () => {
     expect(skin(container)).toBe(lardoPaths('frontDoubleBiceps').s)
   })
 
+  it('drops what he threw when reduced motion turns on mid-throw, and holds the angry pose', async () => {
+    const { container } = onComposer(<Lardo pose="monitoring" />)
+    fireEvent.click(actorOf(container))
+    advance(400)
+    expect(document.body.querySelector('.lardo-throw')).not.toBeNull()
+    await act(async () => {
+      document.documentElement.dataset.reducedMotion = 'on'
+      await Promise.resolve()
+    })
+    expect(document.body.querySelector('.lardo-throw')).toBeNull()
+    expect(skin(container)).toBe(lardoPaths('mostMuscularAngry').s)
+    advance(1600)
+    expect(actorOf(container)).not.toHaveAttribute('data-cue')
+  })
+
+  it('lines up small Lardos added while he is held still', () => {
+    document.documentElement.dataset.reducedMotion = 'on'
+    const { container, rerender } = render(<div className="thread-monitor__track"><Lardo pose="working" agents={1} /></div>)
+    rerender(<div className="thread-monitor__track"><Lardo pose="working" agents={3} /></div>)
+    const places = [...container.querySelectorAll<HTMLElement>('.thread-monitor__mini')].map(mini => mini.style.transform)
+    expect(places).toHaveLength(3)
+    expect(new Set(places).size).toBe(3)
+    for (const place of places) expect(place).toMatch(/^translate\(/u)
+  })
+
   it('stands unclickable in the Appearance preview', () => {
     const { container } = onComposer(<Lardo pose="monitoring" playful={false} />)
     expect(fireEvent.mouseDown(actorOf(container))).toBe(true)

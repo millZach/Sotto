@@ -92,14 +92,26 @@ export function Lardo({ pose, agents = 1, playful = true }: { readonly pose: Lar
   const [cue, setCue] = useState<Cue | null>(null)
   const cueRef = useRef<{ cue: Cue; began: number } | null>(null)
   const ends = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
-  const play = useCallback((kind: Cue['kind']) => {
-    if (cueRef.current) return
-    const next = { kind, still: motionHeld() }
+  const begin = useCallback((next: Cue) => {
+    clearTimeout(ends.current)
     cueRef.current = { cue: next, began: performance.now() }
     setCue(next)
-    ends.current = setTimeout(() => { cueRef.current = null; setCue(null) }, CUE_LENGTH[kind][next.still ? 'still' : 'moving'])
+    ends.current = setTimeout(() => { cueRef.current = null; setCue(null) }, CUE_LENGTH[next.kind][next.still ? 'still' : 'moving'])
   }, [])
+  const play = useCallback((kind: Cue['kind']) => {
+    if (!cueRef.current) begin({ kind, still: motionHeld() })
+  }, [begin])
   useEffect(() => () => clearTimeout(ends.current), [])
+  // Reduced motion turned on mid-cue, the system's or Sotto's own: whatever was thrown goes, and he holds the cue's pose.
+  useEffect(() => {
+    if (!cue || cue.still) return
+    const preference = window.matchMedia?.('(prefers-reduced-motion: reduce)')
+    const hold = (): void => { if (motionHeld() && cueRef.current) begin({ kind: cue.kind, still: true }) }
+    const motion = new MutationObserver(hold)
+    motion.observe(document.documentElement, { attributes: true, attributeFilter: ['data-reduced-motion'] })
+    preference?.addEventListener('change', hold)
+    return () => { motion.disconnect(); preference?.removeEventListener('change', hold) }
+  }, [cue, begin])
 
   // A turn that finishes while he is up: the edge, never the state, so he does not flex for a turn that ended before he came.
   const running = useContext(LardoTurnRunning)
@@ -181,7 +193,8 @@ export function Lardo({ pose, agents = 1, playful = true }: { readonly pose: Lar
 
   const tantrum = playful ? () => play('angry') : undefined
   return <>
-    {looping ? <LardoLoop actor={actor} paint={paint} repaintOn={cue} /> : null}
+    {/* A held pose has no next frame, so a cue or a change in the number of small Lardos paints one at once. */}
+    {looping ? <LardoLoop actor={actor} paint={paint} repaintOn={`${cue?.kind}:${cue?.still}:${count}`} /> : null}
     {Array.from({ length: count }, (_, index) => <div key={index} className="thread-monitor__mini" aria-hidden="true"
       ref={node => { minis.current[index] = node }}>
       <svg viewBox="0 0 12 10" width="24" height="20" focusable="false" shapeRendering="crispEdges">

@@ -248,12 +248,36 @@ export function useHeldAction(thread: Pick<AgentThread, 'status' | 'activities' 
   return action !== undefined && heldLongEnough(action, now ?? Date.now()) ? action : undefined
 }
 
+/** The four poses the creature has, each owned by its own glossary entry; the ornament's `kind`. */
+type OrnamentKind = 'monitoring' | 'working' | 'held' | 'babysitting'
+
+/** Each drawn character's own component for each pose. Lardo wears all four through one component of his own. */
+const DRAWN: Record<Exclude<Creature, 'lardo'>, Record<OrnamentKind, (props: { readonly agents: number }) => ReactNode>> = {
+  sotto: { monitoring: MonitoringCreature, working: WorkingCreature, held: HeldCreature, babysitting: BabysittingCreature },
+  claude: { monitoring: ClaudeBotMonitoring, working: ClaudeBotWorking, held: ClaudeBotHeld, babysitting: ClaudeBotBabysitting },
+}
+
+/**
+ * `character` in `pose`: the one place a character is chosen for a pose, above a composer and in the Appearance preview.
+ * `agents` is read only by the working pose; `playful` false leaves Lardo unclickable.
+ */
+export function CreaturePose({ character, pose, agents = 1, playful = true }: {
+  readonly character: Creature
+  readonly pose: OrnamentKind
+  readonly agents?: number
+  readonly playful?: boolean
+}): ReactNode {
+  if (character === 'lardo') return <Lardo pose={pose} agents={agents} playful={playful} />
+  const Drawn = DRAWN[character][pose]
+  return <Drawn agents={agents} />
+}
+
 /**
  * The one shape every pose wears: a creature on its track, and a readout naming what it stands for.
  * `kind` marks which pose is up; the composer reserves its room from the ornament's presence alone.
  */
 function ThreadOrnament({ kind, character, creature, label, title, status, wide = false, quiet }: {
-  readonly kind: 'monitoring' | 'working' | 'held' | 'babysitting'
+  readonly kind: OrnamentKind
   /** Which character the setting chose; `creature` is already drawn as it. The stylesheets read it for the bot's and Lardo's colours. */
   readonly character: Creature
   readonly creature: ReactNode
@@ -288,7 +312,7 @@ export function ThreadMonitor({ tasks }: { readonly tasks: readonly AgentMonitor
   if (!first) return null
   const taskCount = tasks.length
   return <ThreadOrnament kind="monitoring" character={character}
-    creature={character === 'lardo' ? <Lardo key={first.id} pose="monitoring" /> : character === 'claude' ? <ClaudeBotMonitoring key={first.id} /> : <MonitoringCreature key={first.id} />}
+    creature={<CreaturePose key={first.id} character={character} pose="monitoring" />}
     label={first.label} title={tasks.map(task => task.label).join('\n')}
     status={taskCount === 1 ? t({ message: 'Monitoring', comment: 'The readout beside the creature: the agent is monitoring a task it started.' }) : t`Monitoring ${{ taskCount: shownCount(taskCount) }} tasks`} />
 }
@@ -312,7 +336,7 @@ export function ThreadWorking({ work }: { readonly work: readonly AgentBackgroun
   const first = agents[0]
   if (!first) return null
   return <ThreadOrnament kind="working" character={character}
-    creature={character === 'lardo' ? <Lardo pose="working" agents={agents.length} /> : character === 'claude' ? <ClaudeBotWorking agents={agents.length} /> : <WorkingCreature agents={agents.length} />}
+    creature={<CreaturePose character={character} pose="working" agents={agents.length} />}
     label={first.label} title={[...agents, ...commands].map(task => task.label).join('\n')} status={workingStatus(t({ message: 'Working', comment: 'The readout beside the creature: background work the turn started is running.' }), agents.length, commands.length)}
     wide={commands.length > 0} />
 }
@@ -328,7 +352,7 @@ export function ThreadWaitingCommand({ commands, now }: { readonly commands: rea
   const first = commands[0]
   if (!first) return null
   return <ThreadOrnament kind="held" character={character}
-    creature={character === 'lardo' ? <Lardo key={first.id} pose="held" /> : character === 'claude' ? <ClaudeBotHeld key={first.id} /> : <HeldCreature key={first.id} />} label={first.label}
+    creature={<CreaturePose key={first.id} character={character} pose="held" />} label={first.label}
     title={commands.map(task => task.label).join('\n')} wide={commands.length > 1}
     status={<>{t({ message: 'Waiting', comment: 'The readout beside the creature: the thread waits on something it started.' })}{commands.length > 1 ? ` · ${commandCount(commands.length)}` : ''}
       {first.startedAt ? <WaitedFor startedAt={first.startedAt} now={now} /> : null}</>} />
@@ -343,7 +367,7 @@ export function ThreadHeld({ action, now }: { readonly action: HeldAction; reado
   const character = useCreature()
   const label = heldLabel(action)
   return <ThreadOrnament kind="held" character={character}
-    creature={character === 'lardo' ? <Lardo key={action.id} pose="held" /> : character === 'claude' ? <ClaudeBotHeld key={action.id} /> : <HeldCreature key={action.id} />} label={label} title={label}
+    creature={<CreaturePose key={action.id} character={character} pose="held" />} label={label} title={label}
     status={<>{t({ message: 'Waiting', comment: 'The readout beside the creature: the thread waits on something it started.' })}<WaitedFor startedAt={action.startedAt} now={now} /></>} />
 }
 
@@ -361,7 +385,7 @@ export function ThreadBabysitting({ thread, now }: { readonly thread: Pick<Agent
   // It comes back after every turn, so it is named rather than announced. Where the time does not fit, it drops whole
   // (threadMonitor.css); the hover title and the Pull request surface still say it.
   return <ThreadOrnament kind="babysitting" character={character}
-    creature={character === 'lardo' ? <Lardo pose="babysitting" /> : character === 'claude' ? <ClaudeBotBabysitting /> : <BabysittingCreature />} label={readout.label} title={readout.title}
+    creature={<CreaturePose character={character} pose="babysitting" />} label={readout.label} title={readout.title}
     quiet={since ? t`Babysitting ${label} since ${since}` : t`Babysitting ${label}`}
     status={<>{t({ message: 'Babysitting', comment: 'The readout beside the creature: Sotto is babysitting a pull request.' })}{since ? <span className="thread-monitor__since">{` ${t`since ${since}`}`}</span> : null}</>} />
 }

@@ -1,8 +1,6 @@
 import React, { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { Creature } from '../../../shared/settings'
-import { ClaudeBotMonitoring } from './ClaudeBotMonitoring'
-import { Lardo } from './Lardo'
-import { MonitoringCreature } from './ThreadMonitor'
+import { CreaturePose } from './ThreadMonitor'
 import './threadMonitor.css'
 
 /**
@@ -25,6 +23,6 @@ export function CreatureWalk({ creature }: { readonly creature: Creature }): Rea
     return () => observer.disconnect()
   }, [])
   return <div ref={ref} className="creature-walk" data-creature={creature} aria-hidden="true">
-    {visible && <div className="thread-monitor__track">{creature === 'lardo' ? <Lardo pose="monitoring" playful={false} /> : creature === 'claude' ? <ClaudeBotMonitoring /> : <MonitoringCreature />}</div>}
+    {visible && <div className="thread-monitor__track"><CreaturePose character={creature} pose="monitoring" playful={false} /></div>}
   </div>
 }

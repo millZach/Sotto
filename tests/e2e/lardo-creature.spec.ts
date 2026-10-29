@@ -68,13 +68,13 @@ const composerState = (page: Page) => editor(page).evaluate(element => {
     caretInside: selection?.anchorNode ? element.contains(selection.anchorNode) : false }
 })
 
-test('Lardo wears every pose above the composer, whole at the minimum window, in both themes', async () => {
-  test.setTimeout(150_000)
+test('Lardo wears every pose above the composer, whole at every window size down to the minimum, in both themes', async () => {
+  test.setTimeout(180_000)
   const launched = await launch()
   const { page } = launched
   try {
     await start(launched)
-    for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+    for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
       await resizeContentWindow(launched, width, height, [700, 500])
       for (const appearance of ['dark', 'light'] as const) {
         await chooseAppearance(page, appearance)
@@ -114,7 +114,7 @@ test('clicked, Lardo throws a bite of the composer at the screen and leaves what
     await expect(indicator(page)).toHaveAttribute('data-creature', 'lardo')
     await editor(page).click()
     await page.keyboard.type('Make the changelog say what each fix means')
-    await page.keyboard.press('ArrowLeft')
+    await expect.poll(async () => (await composerState(page)).caret).toBe(42)
     const before = await composerState(page)
     expect(before.focused).toBe(true)
     // His chest, a painted pixel of the vacuum: the room round him still lets clicks through.
@@ -133,7 +133,8 @@ test('clicked, Lardo throws a bite of the composer at the screen and leaves what
     await expect(page.locator('.lardo-throw')).toHaveCount(0, { timeout: 5_000 })
     await expect(actor(page)).not.toHaveAttribute('data-cue')
     const after = await composerState(page)
-    expect(after).toEqual({ ...before, text: `${before.text!.slice(0, -1)} to${before.text!.slice(-1)}`, caret: before.caret + 3 })
+    // What was typed mid-throw landed at the caret, and nothing else moved.
+    expect(after).toEqual({ ...before, text: `${before.text!.slice(0, before.caret)} to${before.text!.slice(before.caret)}`, caret: before.caret + 3 })
     // The composer keeps no border or outline once it has grown back.
     const edge = await pane(page).locator('.thread-prompt').evaluate(element => {
       const style = getComputedStyle(element)
@@ -156,6 +157,8 @@ test('under reduced motion a click only makes him angry, and a finished turn fle
     await expect(indicator(page)).toHaveAttribute('data-creature', 'lardo')
     // A turn starts and finishes while he is up.
     await event(page, { type: 'stream', threadId: 'workshop', messageId: 'flex-said', text: 'Checking.', status: 'running', activities: [] })
+    // The pane has drawn the turn running, so its end is an edge he can see.
+    await expect(pane(page).locator('.thread-prompt')).toHaveAttribute('data-running', 'true')
     await event(page, { type: 'ready', threadId: 'workshop', text: 'Checked.', status: 'idle', activities: [] })
     await expect(actor(page)).toHaveAttribute('data-cue', 'flex')
     await page.waitForTimeout(500)
