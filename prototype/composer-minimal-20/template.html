@@ -1,0 +1,858 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Drake on October 29, 2026, after the island (6 of docs/prototypes/composer-redesign-20.html, refined in
+  docs/prototypes/composer-island-refine.html): "I don't like 6 anymore. Restart and give me 20 more more thoughtful and
+  minimalistic and dynamic mockups."
+
+  What 6 taught: hiding controls until focus defers them, it does not remove them. Here each of twenty composers removes or
+  merges something, and its motion says something (a send leaving, a turn starting, a prompt joining the queue). Every frame
+  is live: type in it, or press Play to watch a scripted turn (type, send, a turn runs, a follow-up queues, it sends when
+  the turn ends). One engine drives all of them by data attributes on the composer's root (data-focus, data-text, data-run,
+  data-queue, data-ghost, data-cmd, data-sent); each mockup is one HTML template and a CSS block that reacts to those.
+
+  Colour comes only from theme roles copied from src/shared/themes/palettes.ts and the --tt-* formulas in tokens.css; the
+  page chrome around the frames is literal. Durations sit in the app's 120 to 240 ms range on its curves.
+  Built from template.html by build.py (inlines Figtree). ?mode=dark|light|both; #7 jumps to a mockup.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composer: twenty minimal, live directions - prototype</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; src: url(data:font/woff2;base64,__FIGTREE__) format('woff2'); }
+
+.t-dark {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265); --theme-surface-raised: oklch(0.185 0.008 265); --theme-text: oklch(0.985 0.005 280);
+  --theme-muted-foreground: oklch(0.72 0.014 265); --theme-placeholder: oklch(0.675 0.012 270); --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265); --theme-accent: oklch(0.714403 0.104089 183.092); --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-update-foreground: oklch(0.83 0.08 183); --theme-accent-surface: oklch(0.32 0.05 185); --theme-warning: oklch(0.82 0.12 75);
+  --tt-card: var(--theme-surface-raised); --tt-provider-claude: #e3b58e; --shadow: oklch(0 0 0 / .55);
+}
+.t-light {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85); --theme-surface-raised: oklch(0.955 0.006 85); --theme-text: oklch(0.235 0.014 75);
+  --theme-muted-foreground: oklch(0.5 0.014 75); --theme-placeholder: oklch(0.525 0.015 78); --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80); --theme-accent: oklch(0.53 0.095 186); --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-update-foreground: oklch(0.43 0.08 186); --theme-accent-surface: oklch(0.92 0.03 186); --theme-warning: oklch(0.5 0.12 65);
+  --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas)); --tt-provider-claude: #c4793f; --shadow: oklch(0.3 0.02 75 / .2);
+}
+.t-dark, .t-light {
+  --tt-canvas: var(--theme-canvas);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-field-border: var(--theme-input);
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-on-accent: var(--theme-accent-foreground);
+  --tt-activity: var(--tt-accent-text);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--theme-canvas);
+  --tt-warning: var(--theme-warning);
+  --ph: color-mix(in srgb, var(--tt-text-muted) 55%, transparent);
+  --out: cubic-bezier(.2, .8, .2, 1); --spring: cubic-bezier(.2, .9, .3, 1.3);
+  background: var(--tt-canvas); color: var(--tt-text);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 28px 32px 60px; background: #0b0b0c; color: #ecebe6; font: 13px/1.4 Figtree, system-ui, sans-serif; --k: 1; }
+body.slow { --k: 4; }
+h1 { margin: 0 0 8px; font-size: 20px; font-weight: 600; }
+.intro { max-width: 1180px; margin: 0 0 16px; color: #a7a6a0; font-size: 13.5px; }
+.intro p { margin: 0 0 8px; }
+.intro b { color: #ecebe6; font-weight: 600; }
+.intro ul { margin: 0 0 10px; padding-left: 18px; }
+.intro li { margin: 0 0 3px; }
+kbd.k0 { font: 600 11.5px Figtree, sans-serif; padding: 1px 5px; border-radius: 4px; background: #2a2a2d; color: #ecebe6; }
+.bar { position: sticky; top: 0; z-index: 9; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 -32px 20px; padding: 10px 32px; background: #0b0b0ce6; backdrop-filter: blur(8px); font-size: 12.5px; color: #a7a6a0; }
+.bar .seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 7px; background: #1d1d1f; margin-right: 10px; }
+.bar button { color: #c9c8c2; padding: 4px 10px; border: 0; border-radius: 5px; background: transparent; font: inherit; cursor: pointer; }
+.bar button[aria-pressed='true'], .bar button.go { background: #3a3a3d; color: #fff; }
+.bar label { display: inline-flex; gap: 6px; align-items: center; margin-right: 8px; }
+.bar nav { display: inline-flex; flex-wrap: wrap; gap: 1px; }
+.bar nav a { color: #c9c8c2; text-decoration: none; padding: 3px 6px; border-radius: 5px; font-variant-numeric: tabular-nums; }
+.bar nav a:hover { background: #2a2a2d; color: #fff; }
+
+section.dir { margin: 0 0 22px; padding: 14px 20px 18px; border-radius: 14px; background: #131315; }
+section.dir header { display: flex; align-items: baseline; gap: 10px; margin: 0 0 4px; }
+section.dir h2 { margin: 0; font-size: 16px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; }
+section.dir h2 b { display: inline-grid; place-items: center; min-width: 26px; height: 22px; padding: 0 5px; border-radius: 6px; background: #ecebe6; color: #121211; font-size: 12.5px; }
+section.dir[data-id='0'] h2 b { background: #3a3a3d; color: #ecebe6; }
+section.dir header button { margin-left: auto; color: #ecebe6; padding: 4px 12px; border: 0; border-radius: 6px; background: #2a2a2d; font: inherit; font-size: 12.5px; cursor: pointer; }
+section.dir header button:hover { background: #3a3a3d; }
+.idea { margin: 0 0 2px; color: #e2e1db; font-size: 13.5px; max-width: 1560px; }
+.rm, .mv, .am { margin: 0 0 2px; color: #b9b8b2; font-size: 13px; max-width: 1560px; }
+.rm::before { content: 'Removes: '; color: #8f8e88; }
+.mv::before { content: 'Moves: '; color: #8f8e88; }
+.am { color: #8f8e88; font-size: 12.5px; margin-bottom: 10px; }
+.frames { display: grid; grid-template-columns: 784px 784px; gap: 14px; }
+body.m-dark .frames, body.m-light .frames { grid-template-columns: 784px; }
+body.m-dark .fr.t-light, body.m-light .fr.t-dark { display: none; }
+
+/* ================= a frame: the bottom of a thread pane ================= */
+.fr { position: relative; height: 312px; border-radius: 10px; overflow: hidden; font-size: 13px; }
+.hd { display: flex; align-items: center; gap: 8px; height: 36px; padding: 0 14px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12.5px; }
+.hd .ttl { color: var(--tt-text); font-weight: 600; font-size: 13px; }
+.hd .sp { flex: 1; }
+.hd .b { height: 24px; font-size: 12.5px; }
+.tx { padding: 12px 22px 0; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.tx p { margin: 0 0 8px; max-width: 600px; }
+.tx .you { margin-left: auto; width: max-content; max-width: 420px; padding: 6px 11px; border-radius: 11px; background: var(--tt-card); color: var(--tt-text); animation: drop calc(240ms * var(--k)) var(--out); }
+@keyframes drop { from { opacity: 0; transform: translateY(14px); } }
+.cmp { position: absolute; left: 12px; right: 12px; bottom: 12px; }
+
+/* ================= shared parts ================= */
+svg.i { width: 15px; height: 15px; fill: none; stroke: currentcolor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+svg.i.s { width: 13px; height: 13px; }
+svg.i.xs { width: 11px; height: 11px; opacity: .7; }
+.mk { width: 14px; height: 14px; flex: none; color: var(--tt-provider-claude); }
+.b { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 7px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; flex: none; }
+.b:hover { background: var(--tt-hover); color: var(--tt-text); }
+.b.ico { width: 28px; padding: 0; justify-content: center; }
+.b.model { color: var(--tt-text-2); }
+.eff { color: var(--tt-accent-text); }
+.dot { color: var(--tt-text-faint); }
+.cap { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 4px; background: color-mix(in oklab, currentcolor 14%, transparent); font: inherit; font-size: 11.5px; font-weight: 600; letter-spacing: .02em; }
+.k { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 4px 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; flex: none;
+  transition: background-color calc(160ms * var(--k)) var(--out), color calc(160ms * var(--k)) var(--out), transform calc(220ms * var(--k)) var(--spring); }
+.k:active { transform: scale(.94); transition-duration: calc(80ms * var(--k)); }
+.k.fill { background: var(--tt-pill); color: var(--tt-pill-ink); }
+.k.steer { color: var(--tt-accent-text); }
+.tabkey { display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 8px; padding: 0 5px; border: 1px solid var(--tt-hairline); border-radius: 5px; color: var(--tt-text-muted); font: 600 11px Figtree, sans-serif; line-height: 1; vertical-align: 1px; }
+.trace { position: absolute; inset: -3px; overflow: hidden; padding: 1.5px; border-radius: 8px; pointer-events: none; opacity: 0; transition: opacity calc(240ms * var(--k)) ease-out;
+  -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+.trace > i { position: absolute; top: 50%; left: 50%; width: 220%; aspect-ratio: 1; translate: -50% -50%; background: conic-gradient(from 0deg, transparent 0 62%, var(--tt-activity) 88%, transparent 100%); animation: spin 1.6s linear infinite; }
+[data-run] .trace { opacity: 1; }
+@keyframes spin { to { transform: rotate(1turn); } }
+.fld { position: relative; flex: 1; min-width: 0; }
+.fld textarea { display: block; width: 100%; margin: 0; padding: 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--tt-text); caret-color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; field-sizing: content; min-height: 22.5px; max-height: 112px; overflow-y: auto; }
+.fld textarea::placeholder { color: var(--ph); }
+.fld .gh { position: absolute; top: 0; left: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; pointer-events: none; color: var(--ph); font-size: 15px; line-height: 1.5; opacity: 0; transition: opacity calc(160ms * var(--k)) ease-out; }
+[data-ghost]:not([data-text]):not([data-run]) .fld .gh { opacity: 1; }
+/* The shipped keyed actions (ADR-0153), state by attribute: Send, or while a turn runs Stop, and Steer and Queue once text is typed. */
+.ak { display: inline-flex; align-items: center; gap: 6px; }
+.ak .steer, .ak .stop { display: none; }
+[data-run][data-text] .ak .steer, [data-run] .ak .stop { display: inline-flex; }
+[data-run]:not([data-text]) .ak .pri { display: none; }
+[data-run]:not([data-text]) .ak .stop { background: var(--tt-pill); color: var(--tt-pill-ink); }
+.ak .pri:not(:is([data-text] *)) { background: color-mix(in oklab, var(--tt-pill) 16%, var(--tt-card)); color: var(--tt-text-muted); }
+.ak .w-queue, [data-run] .ak .w-send { display: none; }
+[data-run] .ak .w-queue { display: inline; }
+.qt { margin: 0 14px -12px; padding: 4px 12px 16px; border-radius: 12px 12px 0 0; background: color-mix(in oklab, var(--tt-card) 70%, var(--tt-canvas)); color: var(--tt-text-muted); font-size: 12.5px; display: none; }
+[data-queue] .qt { display: block; animation: drop calc(200ms * var(--k)) var(--out); }
+.qt p { margin: 2px 0 0; color: var(--tt-text-2); font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card { position: relative; z-index: 1; padding: 12px 14px 8px 16px; border-radius: 16px; background: var(--tt-card); }
+.row { display: flex; align-items: center; gap: 6px; }
+.foot { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+.foot .sp, .sp { flex: 1; }
+.hide { display: none !important; }
+
+/* ================= 0 today ================= */
+.v0 .foot { margin-left: -8px; }
+.v0 .br { display: flex; align-items: center; gap: 2px; margin: 6px 4px 0; color: var(--tt-text-muted); }
+.v0 .br .b { height: 26px; font-size: 12.5px; }
+
+/* ================= 1 hairline ================= */
+.v1 { padding: 0 8px; }
+.v1 .fld { padding: 4px 0 8px; }
+.v1 .rule { position: relative; height: 1px; background: var(--tt-hairline); overflow: hidden; transition: background-color calc(200ms * var(--k)) var(--out); }
+.v1[data-focus] .rule { background: color-mix(in oklab, var(--tt-text) 45%, transparent); }
+.v1 .rule::after { content: ''; position: absolute; top: 0; bottom: 0; width: 30%; left: -30%; background: linear-gradient(90deg, transparent, var(--tt-activity), transparent); opacity: 0; }
+.v1[data-run] .rule::after { opacity: 1; animation: sweep calc(1400ms * var(--k)) linear infinite; }
+@keyframes sweep { to { left: 100%; } }
+.v1 .under { display: flex; align-items: center; height: 30px; margin: 0 -7px; }
+.v1 .w { color: var(--tt-text-muted); }
+.v1 .go { opacity: 0; transform: translateX(6px); transition: opacity calc(160ms * var(--k)) var(--out), transform calc(200ms * var(--k)) var(--out); }
+.v1[data-text] .go, .v1[data-run] .go { opacity: 1; transform: none; }
+.v1 .go .b { color: var(--tt-text); font-weight: 600; }
+.v1 .when-run, .v1[data-run] .when-idle { display: none; }
+.v1[data-run] .when-run { display: inline-flex; }
+.v1[data-run]:not([data-text]) .q { display: none; }
+
+/* ================= 2 prompt and thread apart ================= */
+.v2 .foot { margin-left: -8px; }
+.fr .hd .thr { display: none; }
+.fr:has(.v2) .hd .thr { display: inline-flex; }
+.fr:has(.v2) .hd .plain { display: none; }
+
+/* ================= 3 one control ================= */
+.v3 .card { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; align-items: end; padding: 12px 8px 8px 16px; border-radius: 20px; }
+.v3 .tok { grid-column: 1; margin: 6px 0 0 -8px; }
+.v3 .one { grid-row: 1 / 3; grid-column: 2; position: relative; display: grid; place-items: center; width: 36px; height: 36px; border: 0; border-radius: 50%; padding: 0; cursor: pointer;
+  background: color-mix(in oklab, var(--tt-pill) 12%, var(--tt-card)); color: var(--tt-text-muted);
+  transition: background-color calc(180ms * var(--k)) var(--out), color calc(180ms * var(--k)) var(--out), transform calc(220ms * var(--k)) var(--spring); }
+.v3:is([data-text], [data-run]) .one { background: var(--tt-pill); color: var(--tt-pill-ink); }
+.v3 .one:active { transform: scale(.9); }
+.v3 .one > * { grid-area: 1 / 1; transition: opacity calc(160ms * var(--k)) var(--out), transform calc(220ms * var(--k)) var(--out); }
+.v3 .g-dot { width: 6px; height: 6px; border-radius: 50%; background: currentcolor; }
+.v3 .g-up, .v3 .g-sq, .v3 .g-q, .v3 .g-st { opacity: 0; transform: scale(.6); }
+.v3[data-text]:not([data-run]) .g-dot, .v3[data-run] .g-dot { opacity: 0; transform: scale(.3); }
+.v3[data-text]:not([data-run]) .g-up { opacity: 1; transform: none; }
+.v3[data-sent] .g-up { opacity: 0; transform: translateY(-16px); }
+.v3[data-run]:not([data-text]) .g-sq { opacity: 1; transform: none; }
+.v3[data-run][data-text]:not([data-cmd]) .g-q { opacity: 1; transform: none; }
+.v3[data-run][data-text][data-cmd] .g-st { opacity: 1; transform: none; }
+.v3[data-run][data-text][data-cmd] .one { background: var(--tt-accent); color: var(--tt-on-accent); }
+.v3 .one .trace { inset: -3px; border-radius: 50%; }
+.v3[data-run][data-text] .one .trace { opacity: 0; }
+.v3 .mini { position: absolute; right: 52px; bottom: 11px; z-index: 2; opacity: 0; pointer-events: none; transform: translateX(6px); transition: opacity calc(160ms * var(--k)) var(--out), transform calc(200ms * var(--k)) var(--out); }
+.v3[data-run][data-text] .mini { opacity: 1; pointer-events: auto; transform: none; }
+
+/* ================= 4 the placeholder is the setup ================= */
+.v4 .card { padding: 14px 10px 10px 16px; }
+.v4 .fld { min-height: 48px; }
+.v4 .fld textarea { padding-top: 0; }
+.v4 .fld .gh { display: none; }
+.v4 .setup { position: absolute; left: 0; top: 0; z-index: 2; display: flex; align-items: baseline; gap: 5px; font-size: 15px; line-height: 1.5; color: var(--ph); transform-origin: 0 0; pointer-events: none; white-space: nowrap;
+  transition: transform calc(220ms * var(--k)) var(--out), color calc(200ms * var(--k)) var(--out); }
+.v4 .setup u { pointer-events: auto; text-decoration: underline dotted color-mix(in srgb, currentcolor 50%, transparent); text-underline-offset: 4px; color: var(--tt-text-2); cursor: pointer; border-radius: 4px; }
+.v4 .setup u:hover { background: var(--tt-hover); }
+.v4 .card:has(.setup) .fld textarea { text-indent: 0; }
+.v4:not([data-text]):not([data-run]) .fld textarea::placeholder { color: transparent; }
+.v4:is([data-text], [data-run]) .setup { transform: translateY(-15px) scale(.78); color: var(--tt-text-faint); }
+.v4:is([data-text], [data-run]) .fld { margin-top: 16px; }
+.v4:is([data-text], [data-run]) .card { padding-top: 18px; }
+.v4 .card { transition: padding-top calc(220ms * var(--k)) var(--out); }
+.v4 .fld { transition: margin-top calc(220ms * var(--k)) var(--out); }
+.v4 .nx { display: flex; align-items: center; gap: 6px; height: 28px; margin: 2px 0 0 -2px; color: var(--tt-text-2); font-size: 13px; opacity: 0; max-height: 0; overflow: hidden; transition: opacity calc(160ms * var(--k)) ease-out, max-height calc(200ms * var(--k)) var(--out); }
+.v4[data-ghost]:not([data-text]):not([data-run]) .nx { opacity: 1; max-height: 28px; }
+.v4 .nx .tabkey { margin: 0; }
+.v4 .k.fill:not(:is([data-text] *)) { background: color-mix(in oklab, var(--tt-pill) 16%, var(--tt-card)); color: var(--tt-text-muted); }
+
+/* ================= 5 the dial ================= */
+.v5 .card { padding: 12px 8px 8px 16px; border-radius: 20px; }
+.v5 .foot { margin: 4px 0 0 -8px; }
+.v5 .lbl { color: var(--tt-text-muted); font-size: 12.5px; transition: opacity calc(160ms * var(--k)); }
+.v5 .dial { position: relative; width: 40px; height: 40px; border: 0; padding: 0; background: none; cursor: pointer; display: grid; place-items: center; margin-left: 2px; }
+.v5 .dial svg.ring { position: absolute; inset: 0; width: 40px; height: 40px; transform: rotate(-90deg); }
+.v5 .dial .seg { fill: none; stroke: color-mix(in oklab, var(--tt-text) 14%, transparent); stroke-width: 3; transition: stroke calc(200ms * var(--k)) var(--out); }
+.v5[data-effort='0'] .s0, .v5[data-effort='1'] :is(.s0, .s1), .v5[data-effort='2'] :is(.s0, .s1, .s2), .v5[data-effort='3'] .seg { stroke: var(--tt-accent); }
+.v5[data-run] .dial svg.ring { animation: spin calc(1600ms * var(--k)) linear infinite; }
+.v5 .core { position: relative; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 50%; background: color-mix(in oklab, var(--tt-pill) 14%, var(--tt-card)); color: var(--tt-text-muted); transition: background-color calc(180ms * var(--k)) var(--out), color calc(180ms * var(--k)) var(--out); }
+.v5:is([data-text], [data-run]) .core { background: var(--tt-pill); color: var(--tt-pill-ink); }
+.v5 .core > * { grid-area: 1 / 1; transition: opacity calc(140ms * var(--k)), transform calc(200ms * var(--k)) var(--out); }
+.v5 .core .c-sq, .v5[data-run]:not([data-text]) .core .c-up, .v5[data-run][data-text] .core .c-up, .v5 .core .c-q { opacity: 0; transform: scale(.6); }
+.v5[data-run]:not([data-text]) .core .c-sq, .v5[data-run][data-text] .core .c-q { opacity: 1; transform: none; }
+.v5[data-sent] .core .c-up { opacity: 0; transform: translateY(-14px); }
+.v5 .tick { position: absolute; top: -2px; left: 50%; width: 1px; height: 0; }
+.v5 .hint { color: var(--tt-text-faint); font-size: 12px; margin-right: 4px; }
+
+/* ================= 6 words only ================= */
+.v6 .card { padding: 14px 16px 10px; }
+.v6 .foot { gap: 14px; margin-top: 8px; height: 28px; position: relative; }
+.v6 .wd { border: 0; padding: 0; background: none; font: inherit; font-size: 13px; color: var(--tt-text-muted); cursor: pointer; text-decoration: underline transparent; text-underline-offset: 4px; transition: color calc(120ms * var(--k)), text-decoration-color calc(120ms * var(--k)); }
+.v6 .wd:hover { color: var(--tt-text); text-decoration-color: currentcolor; }
+.v6 .wd.eff { color: var(--tt-accent-text); }
+.v6 .set { display: flex; gap: 14px; align-items: center; position: absolute; transition: opacity calc(160ms * var(--k)) var(--out), transform calc(200ms * var(--k)) var(--out); }
+.v6 .set.l { left: 0; }
+.v6 .set.r { right: 0; }
+.v6 .wd.go { font-weight: 600; color: var(--tt-text-faint); }
+.v6[data-text] .wd.go { color: var(--tt-text); }
+.v6 .wd kbd { font: inherit; color: var(--tt-text-faint); margin-left: 4px; font-weight: 500; }
+.v6 .running { opacity: 0; transform: translateY(5px); pointer-events: none; }
+.v6[data-run] .running { opacity: 1; transform: none; pointer-events: auto; }
+.v6[data-run] .resting { opacity: 0; transform: translateY(-5px); pointer-events: none; }
+.v6:not([data-text]) .running .q, .v6:not([data-text]) .running .s { display: none; }
+.v6 .running .s { color: var(--tt-accent-text); }
+.v6 .running .now { color: var(--tt-activity); }
+
+/* ================= 7 exceptions only ================= */
+.v7 .foot { margin-left: -8px; }
+.v7 .ex { display: inline-flex; align-items: center; gap: 5px; height: 24px; max-width: 0; padding: 0; overflow: hidden; opacity: 0; border: 0; border-radius: 12px; background: color-mix(in oklab, var(--tt-warning) 14%, transparent); color: var(--tt-warning); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer;
+  transition: max-width calc(220ms * var(--k)) var(--out), opacity calc(160ms * var(--k)), padding calc(220ms * var(--k)) var(--out); }
+.v7 .ex.on { max-width: 180px; opacity: 1; padding: 0 9px 0 7px; margin-left: 2px; }
+.v7 .ex.n { background: color-mix(in oklab, var(--tt-accent) 14%, transparent); color: var(--tt-accent-text); }
+.v7 .ak .pri { margin-left: 4px; }
+
+/* ================= 8 hold command ================= */
+.v8 .card { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; align-items: end; padding: 12px 8px 8px 16px; border-radius: 20px; }
+.v8 .opts { grid-column: 1 / -1; display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows calc(200ms * var(--k)) var(--out), opacity calc(140ms * var(--k)) ease-out; }
+.v8 .opts > div { min-height: 0; overflow: hidden; }
+.v8[data-cmd] .opts { grid-template-rows: 1fr; opacity: 1; }
+.v8 .opts .foot { margin: 8px 0 0 -8px; }
+.v8 .opts .cap { height: 17px; min-width: 17px; padding: 0 4px; font-size: 10.5px; }
+.v8 .hint { grid-column: 1; justify-self: start; margin: 4px 0 0 -6px; height: 22px; font-size: 12px; color: var(--tt-text-faint); }
+.v8[data-cmd] .hint { display: none; }
+.v8 .send { width: 32px; height: 32px; padding: 0; border-radius: 50%; }
+.v8 .send > * { transition: opacity calc(140ms * var(--k)); }
+.v8 .send .s-st, .v8[data-cmd][data-run][data-text] .send .s-up { display: none; }
+.v8[data-cmd][data-run][data-text] .send .s-st { display: block; }
+.v8[data-cmd][data-run][data-text] .send { background: var(--tt-accent); color: var(--tt-on-accent); }
+.v8:not([data-text]):not([data-run]) .send { background: color-mix(in oklab, var(--tt-pill) 14%, var(--tt-card)); color: var(--tt-text-muted); }
+.v8 .send .s-sq { display: none; }
+.v8[data-run]:not([data-text]) .send .s-sq { display: block; }
+.v8[data-run]:not([data-text]) .send .s-up { display: none; }
+.v8 .send .trace { border-radius: 50%; }
+.v8[data-run][data-text] .send .trace { opacity: 0; }
+
+/* ================= 9 the next prompts, in turn ================= */
+.v9 .card { padding: 12px 10px 8px 16px; }
+.v9 .fld .gh { display: none; }
+.v9 .car { position: absolute; left: 16px; right: 120px; top: 12px; height: 46px; overflow: hidden; pointer-events: none; opacity: 0; transition: opacity calc(160ms * var(--k)); }
+.v9[data-ghost]:not([data-text]):not([data-run]) .car { opacity: 1; }
+.v9[data-ghost]:not([data-text]):not([data-run]) .fld textarea::placeholder { color: transparent; }
+.v9 .car .sg { color: var(--tt-text-2); font-size: 15px; line-height: 1.5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v9 .car .sg.in-d { animation: inD calc(220ms * var(--k)) var(--out); }
+.v9 .car .sg.in-u { animation: inU calc(220ms * var(--k)) var(--out); }
+@keyframes inD { from { opacity: 0; transform: translateY(14px); } }
+@keyframes inU { from { opacity: 0; transform: translateY(-14px); } }
+.v9 .car .hint { color: var(--tt-text-faint); font-size: 12px; margin-top: 1px; }
+.v9 .fld { min-height: 46px; }
+.v9 .pager { display: inline-flex; flex-direction: column; align-items: center; gap: 0; margin-right: 4px; color: var(--tt-text-faint); font-size: 11px; font-variant-numeric: tabular-nums; opacity: 0; transition: opacity calc(160ms * var(--k)); }
+.v9[data-ghost]:not([data-text]):not([data-run]) .pager { opacity: 1; }
+.v9 .pager .b { height: 16px; width: 22px; padding: 0; justify-content: center; }
+.v9 .foot { margin-left: -8px; }
+
+/* ================= 10 two pills ================= */
+.v10 .row { align-items: flex-end; gap: 8px; }
+.v10 .pl { display: flex; align-items: flex-end; gap: 6px; min-height: 40px; padding: 8px 6px 8px 16px; border-radius: 20px; background: var(--tt-card); }
+.v10 .pl.main { flex: 1; }
+.v10 .pl.main .fld { padding-bottom: 1px; }
+.v10 .rnd { width: 40px; height: 40px; border-radius: 50%; padding: 0; justify-content: center; background: var(--tt-card); }
+.v10 .up { width: 28px; height: 28px; padding: 0; border-radius: 50%; opacity: 0; transform: scale(.6); transition: opacity calc(160ms * var(--k)), transform calc(220ms * var(--k)) var(--spring); }
+.v10[data-text] .up { opacity: 1; transform: none; }
+.v10[data-sent] .up { opacity: 0; transform: translateY(-14px); }
+.v10[data-run] .up .w-up { display: none; }
+.v10 .up .w-q { display: none; }
+.v10[data-run] .up .w-q { display: block; }
+.v10 .who { position: relative; display: grid; height: 40px; padding: 0; border: 0; border-radius: 20px; background: var(--tt-card); color: var(--tt-text-2); font: inherit; font-size: 13px; cursor: pointer; overflow: visible; transition: background-color calc(200ms * var(--k)) var(--out); }
+.v10 .who > span:not(.trace) { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 7px; padding: 0 14px; white-space: nowrap; transition: opacity calc(160ms * var(--k)), transform calc(220ms * var(--k)) var(--out); }
+.v10 .who .w-stop { opacity: 0; transform: translateY(8px); color: var(--tt-text); }
+.v10[data-run] .who .w-model { opacity: 0; transform: translateY(-8px); }
+.v10[data-run] .who .w-stop { opacity: 1; transform: none; }
+.v10 .who .trace { inset: -1.5px; border-radius: 20px; }
+.v10 .who .el { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
+
+/* ================= 11 it narrates ================= */
+.v11 .foot { margin-left: -8px; }
+.v11 .narr { position: absolute; left: 16px; right: 16px; top: 12px; display: flex; align-items: center; gap: 8px; pointer-events: none; font-size: 15px; line-height: 1.5; opacity: 0; transition: opacity calc(200ms * var(--k)); }
+.v11[data-run]:not([data-text]) .narr { opacity: 1; }
+.v11[data-run] .fld textarea::placeholder { color: transparent; }
+.v11 .narr .act { background: linear-gradient(90deg, var(--tt-text-muted) 0 35%, var(--tt-activity) 50%, var(--tt-text-muted) 65% 100%) 0 0 / 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer calc(1800ms * var(--k)) linear infinite; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+.v11 .narr .act.roll { animation: shimmer calc(1800ms * var(--k)) linear infinite, inD calc(240ms * var(--k)) var(--out); }
+.v11 .narr .el { margin-left: auto; color: var(--tt-text-faint); font-size: 12.5px; font-variant-numeric: tabular-nums; }
+.v11 .narr .hint { color: var(--tt-text-faint); font-size: 12.5px; }
+
+/* ================= 12 the foot says what matters now ================= */
+.v12 .foot { position: relative; height: 30px; margin-left: -8px; }
+.v12 .lay { position: absolute; left: 0; right: 150px; top: 0; height: 30px; display: flex; align-items: center; gap: 2px; opacity: 0; transform: translateY(5px); pointer-events: none; transition: opacity calc(160ms * var(--k)) var(--out), transform calc(200ms * var(--k)) var(--out); }
+.v12 .lay.r-rest { opacity: 1; transform: none; pointer-events: auto; }
+.v12[data-text]:not([data-run]) .lay.r-rest, .v12[data-run] .lay.r-rest { opacity: 0; transform: translateY(-5px); pointer-events: none; }
+.v12[data-text]:not([data-run]) .lay.r-type, .v12[data-run] .lay.r-run { opacity: 1; transform: none; pointer-events: auto; }
+.v12 .lay .t { color: var(--tt-text-faint); font-size: 12.5px; padding: 0 8px; }
+.v12 .lay .t kbd { font: inherit; color: var(--tt-text-muted); }
+.v12 .lay .now { display: inline-flex; align-items: center; gap: 8px; padding-left: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.v12 .pulse { width: 6px; height: 6px; border-radius: 50%; background: var(--tt-activity); animation: pulse calc(1200ms * var(--k)) ease-in-out infinite; }
+@keyframes pulse { 50% { opacity: .35; transform: scale(.8); } }
+.v12 .foot .ak { position: absolute; right: 0; top: 1px; }
+
+/* ================= 13 settings are words in the prompt ================= */
+.v13 .card { display: flex; align-items: flex-start; gap: 8px; padding: 10px 8px 10px 12px; border-radius: 14px; }
+.v13 .toks { display: inline-flex; gap: 4px; padding-top: 1px; }
+.v13 .tk { display: inline-grid; height: 22px; padding: 0 7px; border: 0; border-radius: 6px; background: color-mix(in oklab, var(--tt-text) 7%, transparent); color: var(--tt-text-2); font: 500 12.5px/22px Figtree, sans-serif; cursor: pointer; overflow: hidden; }
+.v13 .tk:hover { background: var(--tt-hover); }
+.v13 .tk.eff { color: var(--tt-accent-text); }
+.v13 .tk > span { grid-area: 1 / 1; }
+.v13 .tk.flip > span { animation: inD calc(200ms * var(--k)) var(--out); }
+.v13 .end { position: relative; display: grid; place-items: center; align-self: flex-end; }
+.v13 .end > * { grid-area: 1 / 1; transition: opacity calc(160ms * var(--k)), transform calc(200ms * var(--k)) var(--out); }
+.v13 .end .run { opacity: 0; transform: scale(.8); pointer-events: none; }
+.v13[data-run]:not([data-text]) .end .run { opacity: 1; transform: none; pointer-events: auto; }
+.v13[data-run]:not([data-text]) .end .ret { opacity: 0; transform: scale(.8); pointer-events: none; }
+.v13 .ret { opacity: .55; }
+.v13[data-text] .ret { opacity: 1; }
+.v13 .run .el { font-variant-numeric: tabular-nums; font-weight: 500; }
+
+/* ================= 14 the tab ================= */
+.v14 { padding-top: 28px; }
+.v14 .tab { position: absolute; top: -28px; left: 18px; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 6px 2px 4px; border-radius: 10px 10px 0 0; background: var(--tt-card); overflow: hidden; }
+.v14 .tab .b { height: 24px; font-size: 12.5px; }
+.v14 .tab .wk { display: inline-flex; align-items: center; gap: 7px; max-width: 0; opacity: 0; overflow: hidden; white-space: nowrap; color: var(--tt-text-muted); font-size: 12.5px; transition: max-width calc(240ms * var(--k)) var(--out), opacity calc(160ms * var(--k)); }
+.v14[data-run] .tab .wk { max-width: 260px; opacity: 1; }
+.v14 .tab::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--tt-activity), transparent) -100% 0 / 50% 100% no-repeat; opacity: 0; }
+.v14[data-run] .tab::before { opacity: 1; animation: tabsweep calc(1400ms * var(--k)) linear infinite; }
+@keyframes tabsweep { to { background-position: 200% 0; } }
+.v14 .card { border-top-left-radius: 6px; }
+.v14 .tq { display: none; }
+.v14[data-queue] .tq { display: inline; color: var(--tt-text-2); }
+.v14 .row { align-items: flex-end; }
+
+/* ================= 15 the deck ================= */
+.v15 .deck { position: relative; height: 0; }
+.v15 .deck .dc { position: absolute; left: 0; right: 0; bottom: -10px; height: 44px; padding: 6px 16px; border-radius: 14px; background: color-mix(in oklab, var(--tt-card) 78%, var(--tt-canvas)); box-shadow: 0 0 0 1px color-mix(in oklab, var(--tt-hairline) 60%, transparent); color: var(--tt-text-2); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  transition: transform calc(240ms * var(--k)) var(--out), opacity calc(200ms * var(--k)); }
+.v15 .deck .dc small { color: var(--tt-text-faint); margin-right: 8px; }
+.v15 .deck .dc:nth-last-child(1) { transform: translateY(-22px) scale(.97); }
+.v15 .deck .dc:nth-last-child(2) { transform: translateY(-36px) scale(.94); opacity: .7; }
+.v15 .deck .dc:nth-last-child(n+3) { transform: translateY(-46px) scale(.91); opacity: .4; }
+.v15 .deck .dc.new { animation: todeck calc(320ms * var(--k)) var(--out); }
+@keyframes todeck { from { transform: translateY(20px) scale(1); opacity: 1; } }
+.v15 .deck:hover .dc:nth-last-child(1) { transform: translateY(-34px); }
+.v15 .deck:hover .dc:nth-last-child(2) { transform: translateY(-68px); opacity: 1; }
+.v15 .card { box-shadow: 0 -8px 20px -14px var(--shadow); }
+.v15 .foot { margin-left: -8px; }
+
+/* ================= 16 marginalia ================= */
+.v16 { display: grid; grid-template-columns: 112px 1fr; gap: 0 16px; padding: 10px 6px 4px 8px; border-top: 1px solid var(--tt-hairline); margin: 0 -12px -12px; padding-left: 20px; padding-right: 18px; padding-bottom: 14px; background: var(--tt-canvas); }
+.v16 .mg { position: relative; display: flex; flex-direction: column; gap: 0; padding: 2px 10px 0 0; border-right: 1px solid var(--tt-hairline); }
+.v16 .mg .b { height: 22px; padding: 0 4px; margin-left: -4px; font-size: 12px; justify-content: flex-start; }
+.v16 .mg::after { content: ''; position: absolute; right: -1px; width: 1px; top: 0; height: 40%; background: linear-gradient(transparent, var(--tt-activity), transparent); opacity: 0; }
+.v16[data-run] .mg::after { opacity: 1; animation: down calc(1400ms * var(--k)) linear infinite; }
+@keyframes down { from { top: -40%; } to { top: 100%; } }
+.v16 .fld textarea, .v16 .fld .gh { font-size: 17px; line-height: 1.5; }
+.v16 .fld textarea { min-height: 52px; }
+.v16 .end { display: flex; align-items: center; justify-content: flex-end; gap: 14px; margin-top: 4px; }
+.v16 .wd { border: 0; padding: 0; background: none; font: inherit; font-size: 13px; font-weight: 600; color: var(--tt-text-faint); cursor: pointer; text-decoration: underline; text-underline-offset: 4px; text-decoration-color: transparent; transition: color calc(160ms * var(--k)), text-decoration-color calc(160ms * var(--k)); }
+.v16[data-text] .wd.go, .v16 .wd:hover { color: var(--tt-text); text-decoration-color: currentcolor; }
+.v16 .wd.stp, .v16 .wd.str { display: none; }
+.v16[data-run] .wd.stp { display: inline; color: var(--tt-text-muted); }
+.v16[data-run][data-text] .wd.str { display: inline; color: var(--tt-accent-text); }
+.v16 .wd .w-q, .v16[data-run] .wd .w-s { display: none; }
+.v16[data-run] .wd .w-q { display: inline; }
+.v16[data-run]:not([data-text]) .wd.go { display: none; }
+.v16 .wd kbd { font: inherit; font-weight: 500; margin-left: 4px; opacity: .7; }
+.v16 .mg .stt { color: var(--tt-activity); font-size: 12px; height: 0; opacity: 0; overflow: hidden; transition: opacity calc(160ms * var(--k)), height calc(200ms * var(--k)) var(--out); }
+.v16[data-run] .mg .stt { height: 18px; opacity: 1; }
+
+/* ================= 17 terminal ================= */
+.v17 { font-family: ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+.v17 .card { display: flex; gap: 10px; padding: 11px 14px; border-radius: 8px; background: var(--tt-canvas); border: 1px solid var(--tt-hairline); transition: border-color calc(200ms * var(--k)); }
+.v17[data-focus] .card { border-color: color-mix(in oklab, var(--tt-text) 35%, transparent); }
+.v17 .pr { color: var(--tt-accent-text); font-weight: 700; line-height: 1.55; font-size: 14px; }
+.v17 .fld textarea, .v17 .fld .gh { font: 14px/1.55 ui-monospace, 'SF Mono', Menlo, Consolas, monospace; }
+.v17 .fld .tabkey { font-family: Figtree, sans-serif; }
+.v17 .st { display: flex; gap: 14px; height: 24px; align-items: center; padding: 0 2px; color: var(--tt-text-muted); font-size: 12px; }
+.v17 .st button { border: 0; padding: 0; background: none; font: inherit; color: var(--tt-text-2); cursor: pointer; }
+.v17 .st button:hover { color: var(--tt-text); text-decoration: underline; }
+.v17 .st .sp { flex: 1; }
+.v17 .st .run, .v17[data-run] .st .idle { display: none; }
+.v17[data-run] .st .run { display: inline-flex; gap: 8px; color: var(--tt-activity); }
+.v17 .st .keys { color: var(--tt-text-faint); }
+.v17 .st .q { display: none; color: var(--tt-text-2); }
+.v17[data-queue] .st .q { display: inline; }
+
+/* ================= 18 the plate ================= */
+.v18 .card { display: grid; grid-template-columns: 1fr 64px; padding: 0; overflow: hidden; border-radius: 16px; min-height: 92px; }
+.v18 .lt { padding: 12px 12px 8px 16px; display: flex; flex-direction: column; }
+.v18 .lt .foot { margin: auto 0 0 -8px; }
+.v18 .plate { position: relative; display: flex; flex-direction: column; align-items: center; justify-content: space-between; padding: 10px 0 8px; border: 0; border-left: 1px solid var(--tt-hairline); background: color-mix(in oklab, var(--tt-pill) 6%, var(--tt-card)); color: var(--tt-text-muted); font: inherit; cursor: pointer; overflow: hidden;
+  transition: background-color calc(200ms * var(--k)) var(--out), color calc(200ms * var(--k)) var(--out); }
+.v18[data-text] .plate { background: var(--tt-pill); color: var(--tt-pill-ink); }
+.v18 .plate .gl { position: relative; display: grid; place-items: center; width: 24px; height: 24px; }
+.v18 .plate .gl > * { grid-area: 1 / 1; transition: opacity calc(160ms * var(--k)), transform calc(200ms * var(--k)) var(--out); }
+.v18 .plate .p-sq, .v18 .plate .p-q { opacity: 0; transform: scale(.6); }
+.v18[data-run]:not([data-text]) .plate .p-up, .v18[data-run][data-text] .plate .p-up { opacity: 0; transform: scale(.6); }
+.v18[data-run]:not([data-text]) .plate .p-sq, .v18[data-run][data-text] .plate .p-q { opacity: 1; transform: none; }
+.v18[data-sent] .plate .p-up { opacity: 0; transform: translateY(-16px); }
+.v18 .plate .lab { font-size: 11px; font-weight: 600; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.v18 .plate::before { content: ''; position: absolute; inset: auto 0 0; height: 100%; background: linear-gradient(transparent 0 40%, color-mix(in oklab, var(--tt-activity) 28%, transparent) 50%, transparent 60%) 0 0 / 100% 250%; opacity: 0; }
+.v18[data-run] .plate::before { opacity: 1; animation: rise calc(1600ms * var(--k)) linear infinite; }
+@keyframes rise { from { background-position: 0 0; } to { background-position: 0 100%; } }
+.v18 .plate .lab .r, .v18[data-run] .plate .lab .i { display: none; }
+.v18[data-run] .plate .lab .r { display: inline; }
+.v18 .stopmini { position: absolute; right: 70px; bottom: 8px; display: none; }
+.v18[data-run][data-text] .stopmini { display: inline-flex; }
+
+/* ================= 19 the capsule ================= */
+.v19 { padding-top: 16px; }
+.v19 .card { padding-top: 14px; }
+.v19 .cap2 { position: absolute; top: 0; right: 22px; z-index: 3; display: grid; height: 30px; border: 0; padding: 0; border-radius: 15px; background: var(--tt-pill); color: var(--tt-pill-ink); font: inherit; font-size: 12.5px; cursor: pointer; overflow: hidden;
+  box-shadow: 0 6px 16px -8px var(--shadow); transition: width calc(320ms * var(--k)) var(--spring); }
+.v19 .cap2 > span { grid-area: 1 / 1; display: inline-flex; align-items: center; gap: 7px; padding: 0 12px; white-space: nowrap; transition: opacity calc(160ms * var(--k)), transform calc(220ms * var(--k)) var(--out); }
+.v19 .cap2 .c-run { opacity: 0; transform: scale(.92); }
+.v19[data-run] .cap2 .c-idle { opacity: 0; transform: scale(.92); }
+.v19[data-run] .cap2 .c-run { opacity: 1; transform: none; }
+.v19 .cap2 .mk { color: var(--tt-provider-claude); }
+.v19 .cap2 .pd { width: 7px; height: 7px; border-radius: 50%; background: var(--tt-accent); animation: pulse calc(1200ms * var(--k)) ease-in-out infinite; }
+.v19 .cap2 .sq { display: inline-grid; place-items: center; width: 20px; height: 20px; border-radius: 50%; background: color-mix(in oklab, var(--tt-pill-ink) 18%, transparent); }
+.v19 .cap2 .qn { display: none; padding: 0 6px; border-radius: 9px; background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 600; font-size: 11px; line-height: 18px; }
+.v19[data-queue] .cap2 .qn { display: inline-block; }
+.v19 .cap2 .el { opacity: .7; font-variant-numeric: tabular-nums; }
+.v19 .row { align-items: flex-end; }
+.v19 .send { width: 30px; height: 30px; padding: 0; border-radius: 50%; }
+.v19:not([data-text]) .send { background: color-mix(in oklab, var(--tt-pill) 14%, var(--tt-card)); color: var(--tt-text-muted); }
+.v19 .send .w-q, .v19[data-run] .send .w-up { display: none; }
+.v19[data-run] .send .w-q { display: block; }
+.v19[data-sent] .send .w-up { transform: translateY(-12px); opacity: 0; transition: transform calc(200ms * var(--k)) var(--out), opacity calc(160ms * var(--k)); }
+
+/* ================= 20 next or now ================= */
+.v20 .foot { margin-left: -8px; }
+.v20 .sw { position: relative; display: none; grid-template-columns: 1fr 1fr; height: 30px; padding: 2px; border-radius: 8px; background: color-mix(in oklab, var(--tt-text) 8%, transparent); }
+.v20[data-run][data-text] .sw { display: grid; }
+.v20[data-run][data-text] .solo { display: none; }
+.v20 .sw .th { position: absolute; top: 2px; bottom: 2px; left: 2px; width: calc(50% - 2px); border-radius: 6px; background: var(--tt-pill); transition: transform calc(220ms * var(--k)) var(--spring), background-color calc(160ms * var(--k)); }
+.v20[data-cmd] .sw .th { transform: translateX(100%); background: var(--tt-accent); }
+.v20 .sw button { position: relative; z-index: 1; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 6px 0 10px; border: 0; background: none; font: inherit; font-size: 13px; font-weight: 600; color: var(--tt-text-muted); cursor: pointer; white-space: nowrap; transition: color calc(160ms * var(--k)); }
+.v20:not([data-cmd]) .sw .nx, .v20[data-cmd] .sw .nw { color: var(--tt-pill-ink); }
+.v20[data-cmd] .sw .nw { color: var(--tt-on-accent); }
+.v20 .solo:not(:is([data-text] *)):not(:is([data-run] *)) { background: color-mix(in oklab, var(--tt-pill) 16%, var(--tt-card)); color: var(--tt-text-muted); }
+.v20 .stp { display: none; }
+.v20[data-run] .stp { display: inline-flex; }
+.v20[data-run]:not([data-text]) .solo { display: none; }
+.v20[data-run]:not([data-text]) .stp { background: var(--tt-pill); color: var(--tt-pill-ink); }
+
+body.calm .fr *, body.calm .fr *::before, body.calm .fr *::after { transition-duration: 0s !important; animation-duration: 0s !important; animation-iteration-count: 1 !important; }
+@media (prefers-reduced-motion: reduce) { .fr *, .fr *::before, .fr *::after { transition-duration: 0s !important; animation: none !important; } }
+</style>
+</head>
+<body class="m-both">
+<h1>The prompt box: twenty minimal, live directions</h1>
+<div class="intro">
+  <p>The island showed that hiding the options until you click only postpones them: closed it was a line, open it was today's composer. So each of these twenty <b>removes or merges</b> something instead, and its motion says something: a sent prompt leaving, a turn starting, a follow-up joining the queue. Only 8 hides anything, and it says so.</p>
+  <p><b>Every frame is live.</b> Click and type, or press <b>Play</b> to watch a scripted turn: a prompt is typed and sent, the turn runs, a follow-up is typed and queued, and it sends when the turn ends. <kbd class="k0">Enter</kbd> sends or queues, <kbd class="k0">⌘Enter</kbd> steers, <kbd class="k0">Tab</kbd> takes the next prompt, <kbd class="k0">↑</kbd><kbd class="k0">↓</kbd> in an empty prompt turn through the suggestions, <kbd class="k0">Esc</kbd> leaves. Clicking the model or the effort cycles it. Hold <kbd class="k0">⌘</kbd> for 3, 8 and 20.</p>
+  <p><b>Common to all twenty:</b> the branch line under the card is gone. The pane header already names the folder, so the branch joins it there. Every frame shows that header.</p>
+</div>
+<div class="bar">
+  <span class="seg" id="mode"><button data-v="both" aria-pressed="true">Both</button><button data-v="dark">Dark</button><button data-v="light">Light</button></span>
+  <button type="button" class="go" id="playall">Play all</button>
+  <label><input type="checkbox" id="calm"> Reduce motion</label><label><input type="checkbox" id="slow"> Slow ×4</label>
+  <nav id="nav"></nav>
+</div>
+<main id="main"></main>
+<script>
+const P = d => `<svg class="i" viewBox="0 0 24 24">${d}</svg>`
+const I = {
+  clip: P('<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>'),
+  plus: P('<path d="M5 12h14"/><path d="M12 5v14"/>'),
+  chev: '<svg class="i xs" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
+  zap: P('<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>'),
+  shield: P('<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>'),
+  eye: P('<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>'),
+  branch: '<svg class="i s" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>',
+  folder: '<svg class="i s" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>',
+  laptop: '<svg class="i s" viewBox="0 0 24 24"><path d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z"/><path d="M20.054 15.987H3.946"/></svg>',
+  up: P('<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>'),
+  sq: '<svg viewBox="0 0 12 12" style="width:10px;height:10px;fill:currentcolor;flex:none"><rect x=".5" y=".5" width="11" height="11" rx="2.5"/></svg>',
+  steer: P('<path d="m15 10 5 5-5 5"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/>'),
+  queue: P('<path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="M18 9v6"/><path d="M21 12h-6"/>'),
+  sparkle: '<svg class="i s" viewBox="0 0 24 24"><path d="m12 3 1.9 5.8L20 10.7l-6.1 1.9L12 18.5l-1.9-5.9L4 10.7l6.1-1.9z"/></svg>',
+}
+const MK = '<svg class="mk" viewBox="0 0 24 24" fill="none" stroke="currentcolor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg>'
+const TR = '<span class="trace" aria-hidden="true"><i></i></span>'
+const F = '<div class="fld" data-field></div>'
+const cap = c => `<kbd class="cap">${c}</kbd>`
+const B = (act, inner, cls = '', label = '') => `<button type="button" class="b ${cls}" data-act="${act}" aria-label="${label}" title="${label}">${inner}</button>`
+const MODEL = B('model', `${MK}<span data-bind="model"></span>${I.chev}`, 'model', 'Model')
+const EFFORT = B('effort', `<span class="eff" data-bind="effort"></span>${I.chev}`, '', 'Reasoning')
+const AK = `<span class="ak"><button type="button" class="k steer" data-act="steer" aria-label="Steer now">Steer${cap('⌘↵')}</button>
+  <button type="button" class="k stop" data-act="stop" aria-label="Stop agent">Stop${cap('⇧⌘S')}${TR}</button>
+  <button type="button" class="k fill pri" data-act="primary" aria-label="Send prompt"><span class="w-send">Send</span><span class="w-queue">Queue</span>${cap('↵')}</button></span>`
+const QT = '<div class="qt">Queued <span data-bind="qcount"></span> · sends when Claude Code finishes<p data-bind="qtext"></p></div>'
+const SETUP = (o = {}) => `${MODEL}${o.fast === false ? '' : B('fast', I.zap, 'ico', 'Fast mode')}${EFFORT}${o.perms === false ? '' : B('perms', `<span data-bind="perms"></span>${I.chev}`, '', 'Thread permissions')}${o.watch === false ? '' : B('watch', `${I.eye}Watch`, '', 'Watch this thread')}`
+
+const D = [
+  { id: 0, name: 'Today', idea: 'The composer as it ships, live: attach and five text buttons, the keyed actions, and the branch line under the card.',
+    am: 'Baseline.', html: () => `${QT}<div class="card">${F}<div class="foot">${B('attach', I.clip, 'ico', 'Attach files')}${SETUP()}<span class="sp"></span>${AK}</div></div>
+      <div class="br">${B('', `${I.laptop}This computer`)}<span class="dot">·</span>${B('', `${I.folder}Project folder`)}<span class="dot">·</span>${B('', `${I.branch}sotto/c9c8e65b${I.chev}`)}</div>` },
+  { id: 1, name: 'Hairline', idea: 'No card. You write on the room itself, over one rule. Who answers sits under the rule as two words; Send arrives as a word once there is something to send.',
+    rm: 'the card, every icon, the chevrons, attach (paste or drop a file), permissions and Watch (in the model menu).',
+    mv: 'the rule brightens when you focus it; Send slides in with your first letter; while a turn runs a light travels along the rule, and Stop and Queue take Send\'s place.',
+    am: 'Amends ADR-0110 (no card), ADR-0113 and ADR-0153 (keys shown as words, no filled button).',
+    html: () => `${QT}${F}<div class="rule"></div><div class="under">${B('model', `${MK}<span class="w" data-bind="model"></span>`, 'model', 'Model')}${B('effort', `<span class="eff" data-bind="effort"></span>`, '', 'Reasoning')}<span class="sp"></span>
+      <span class="go"><span class="when-idle">${B('primary', 'Send <span class="dot">↵</span>', '', 'Send prompt')}</span><span class="when-run">${B('steer', 'Steer <span class="dot">⌘↵</span>', 'q', 'Steer now')}${B('stop', 'Stop <span class="dot">⇧⌘S</span>', '', 'Stop agent')}${B('primary', 'Queue <span class="dot">↵</span>', 'q', 'Queue prompt')}</span></span></div>` },
+  { id: 2, name: 'Prompt here, thread up there', idea: 'Permissions, Watch and the branch belong to the thread, not to one prompt, so they move up into the pane header beside the folder. The composer keeps only what a prompt needs: what you write, attach, model, effort and Send.',
+    rm: 'three of six options from the composer, and the branch line.',
+    mv: 'little, on purpose: Send fills as you type; the header settings answer a click in place.',
+    am: 'Amends ADR-0113 (options row) and ADR-0027 (the branch toolbar moves to the header).',
+    html: () => `${QT}<div class="card">${F}<div class="foot">${B('attach', I.clip, 'ico', 'Attach files')}${MODEL}${EFFORT}<span class="sp"></span>${AK}</div></div>` },
+  { id: 3, name: 'One control', idea: 'Every action is one round button that changes with the moment: a dot when there is nothing to send, an arrow once there is, Stop while a turn runs, Queue when you type during it, and Steer while ⌘ is held.',
+    rm: 'Send, Queue, Steer and Stop as four buttons; fast mode, permissions and Watch (in the model menu); key caps.',
+    mv: 'the arrow leaves upward as the prompt sends; the light circles the button while the turn runs; a small Stop steps out beside it when you start typing a follow-up.',
+    am: 'Amends ADR-0153 (one glyph button, keys in its name and tooltip).',
+    html: () => `${QT}<div class="card">${F}<span class="tok">${B('model', `${MK}<span data-bind="model"></span><span class="dot">·</span><span class="eff" data-bind="effort"></span>`, 'model', 'Model and reasoning')}</span>
+      <button type="button" class="one" data-act="primary" aria-label="Send prompt"><span class="g-dot"></span><span class="g-up">${I.up}</span><span class="g-sq">${I.sq}</span><span class="g-q">${I.queue}</span><span class="g-st">${I.steer}</span>${TR}</button></div>
+      <button type="button" class="k mini" data-act="stop" aria-label="Stop agent">${I.sq}</button>` },
+  { id: 4, name: 'The empty prompt names who answers', idea: 'The empty prompt reads "Ask Opus 5.5, thinking hard": who answers and how hard is the placeholder, and each underlined word is its own menu. Once you write, the sentence shrinks into a caption above your words.',
+    rm: 'the model and effort buttons, the options row, the ghost in the field (the next prompt is a quiet row under it).',
+    mv: 'your first letter lifts the setup sentence into a caption above the text; sending brings it back down.',
+    am: 'Amends ADR-0113 (options as words in the placeholder) and ADR-0132 (the ghost moves to a row).',
+    html: () => `${QT}<div class="card"><div class="row" style="align-items:flex-end"><div style="position:relative;flex:1;min-width:0">
+      <div class="setup">Ask <u data-act="model">${MK.replace('class="mk"', 'class="mk" style="vertical-align:-2px;margin-right:3px"')}<span data-bind="model"></span></u>, thinking <u data-act="effort" class="eff" data-bind="effortWord"></u></div>${F}</div>
+      <button type="button" class="k fill" data-act="primary" aria-label="Send prompt">${cap('↵')}</button></div>
+      <div class="nx">${I.sparkle}<span data-bind="ghost"></span><kbd class="tabkey">Tab</kbd></div></div>` },
+  { id: 5, name: 'The dial', idea: 'Effort becomes the ring around Send, four segments in the accent. Click the ring to change it. The model is one word beside it. One object holds how hard it thinks, sending and stopping.',
+    rm: 'the effort button and its word, fast mode, permissions and Watch (model menu), key caps.',
+    mv: 'the ring fills or drains as effort changes; the arrow leaves upward on send; the same ring turns while the turn runs, so where you look never moves.',
+    am: 'Amends ADR-0113 (effort leaves the row), ADR-0153 (no words on the button; the light runs on the ring, not on Stop).',
+    html: () => `${QT}<div class="card">${F}<div class="foot">${B('attach', I.clip, 'ico', 'Attach files')}<span class="sp"></span>${B('model', `${MK}<span class="lbl" data-bind="model"></span>`, 'model', 'Model')}<span class="hint" data-bind="effort"></span>
+      <span class="dial"><svg class="ring" viewBox="0 0 40 40">${[0, 1, 2, 3].map(i => `<path class="seg s${i}" data-act="effort" d="${arc(i)}"/>`).join('')}</svg>
+      <button type="button" class="core" data-act="primary" aria-label="Send prompt" style="border:0;padding:0;cursor:pointer"><span class="c-up">${I.up}</span><span class="c-sq">${I.sq}</span><span class="c-q">${I.queue}</span></button></span></div></div>` },
+  { id: 6, name: 'Words only', idea: 'No icons and no boxes: the options and the actions are plain words, and Send is bold once there is something to send. At rest you read the setup; once a turn runs, the same line reads what you can do about it.',
+    rm: 'every icon, chevron, key cap and filled button.',
+    mv: 'the line crossfades between the setup words and the turn\'s words (160 ms, 5 px).',
+    am: 'Amends ADR-0153 (no filled button: weight, not fill, marks Enter\'s action) and ADR-0113.',
+    html: () => `${QT}<div class="card">${F}<div class="foot"><span class="set l resting"><button class="wd" data-act="attach">attach</button><button class="wd" data-act="model" data-bind="modelLow"></button><button class="wd eff" data-act="effort" data-bind="effortLow"></button><button class="wd" data-act="perms" data-bind="permsLow"></button></span>
+      <span class="set l running"><span class="wd now">working <span data-bind="elapsed"></span></span></span>
+      <span class="set r resting"><button class="wd go" data-act="primary">send<kbd>↵</kbd></button></span>
+      <span class="set r running"><button class="wd s" data-act="steer">steer<kbd>⌘↵</kbd></button><button class="wd" data-act="stop">stop<kbd>⇧⌘S</kbd></button><button class="wd go q" data-act="primary">queue<kbd>↵</kbd></button></span></div></div>` },
+  { id: 7, name: 'Defaults stay silent', idea: 'Only what differs from your defaults shows, as a soft chip: Full access in the warning colour because it is not the default; effort only once you change it from High. A composer at its defaults is the prompt, the model and Send.',
+    rm: 'every option you have not changed; fast mode and Watch (model menu).',
+    mv: 'a chip grows in when a setting leaves its default and shrinks away when it comes back. Click Full access to go back to the default, or the model to change effort.',
+    am: 'Amends ADR-0113 (options show by exception; Settings names the defaults).',
+    html: () => `${QT}<div class="card">${F}<div class="foot">${B('attach', I.clip, 'ico', 'Attach files')}${B('model', `${MK}<span data-bind="model"></span>${I.chev}`, 'model', 'Model (click: effort)')}
+      <button type="button" class="ex" data-act="perms" data-ex="perms">${I.shield}<span data-bind="perms"></span></button><button type="button" class="ex n" data-act="effort" data-ex="effort">Effort <span data-bind="effort"></span></button><span class="sp"></span>${AK}</div></div>` },
+  { id: 8, name: 'Hold ⌘', idea: 'At rest, the prompt and one round button. Hold ⌘ and the options rise with their keys, and the button shows what ⌘↵ will do. It is the keyboard path drawn on demand; the faint "⌘ options" opens it for a pointer.',
+    rm: 'the options row at rest (the one direction that hides, and only behind a key you already hold for every shortcut).',
+    mv: 'the options rise while ⌘ is down and fall when it is let go; while a turn runs and you have typed, ⌘ turns the button into Steer in the accent.',
+    am: 'Amends ADR-0153 and ADR-0113; ⌘U, ⌘M, ⌘E and ⌘P are new chords to check against dictation\'s hotkey.',
+    html: () => `${QT}<div class="card">${F}<button type="button" class="k fill send" data-act="primary" aria-label="Send prompt"><span class="s-up">${I.up}</span><span class="s-sq">${I.sq}</span><span class="s-st">${I.steer}</span>${TR}</button>
+      <button type="button" class="b hint" data-act="cmd">⌘ options</button>
+      <div class="opts"><div><div class="foot">${B('attach', I.clip + cap('⌘U'), '', 'Attach files')}${B('model', `${MK}<span data-bind="model"></span>${cap('⌘M')}`, 'model', 'Model')}${B('effort', `<span class="eff" data-bind="effort"></span>${cap('⌘E')}`, '', 'Reasoning')}${B('perms', `<span data-bind="perms"></span>${cap('⌘P')}`, '', 'Permissions')}<span class="sp"></span><span style="color:var(--tt-text-faint);font-size:12px;padding-right:8px">↵ send · ⌘↵ steer · ⇧⌘S stop</span></div></div></div></div>` },
+  { id: 9, name: 'The next prompts, in turn', idea: 'When a turn ends, the empty prompt holds the suggested next prompts one at a time in readable ink: ↑ and ↓ turn through them, Tab takes one. The Next list becomes the prompt itself.',
+    rm: 'the Next list over the transcript, and the 55% ghost ink.',
+    mv: 'each suggestion slides in from the direction you turned; they leave the moment you type and come back, new, when the next turn ends.',
+    am: 'Amends ADR-0132 decisions 4 and 5.',
+    html: () => `${QT}<div class="card"><div class="car"><div class="sg" data-bind="sugg"></div><div class="hint">Tab to take it · ↑↓ for others</div></div>${F}
+      <div class="foot">${B('attach', I.clip, 'ico', 'Attach files')}${MODEL}${EFFORT}<span class="sp"></span><span class="pager">${B('prev', '<svg class="i xs" viewBox="0 0 24 24" style="opacity:1"><path d="m18 15-6-6-6 6"/></svg>', '', 'Previous suggestion')}<span data-bind="suggpos"></span>${B('next', I.chev.replace('opacity: .7', ''), '', 'Next suggestion')}</span>${AK}</div></div>` },
+  { id: 10, name: 'Two pills', idea: 'Three shapes on one line, as in Messages: attach, the prompt, and who answers. While a turn runs, the model pill turns into Stop with the time, so the thing that answers is the thing that stops.',
+    rm: 'the card and its footer, effort, permissions and Watch (model menu), key caps.',
+    mv: 'the model pill rolls over into Stop with the light around it; the arrow springs up in the prompt with your first letter and leaves upward when it sends.',
+    am: 'Amends ADR-0110 (pills), ADR-0113 and ADR-0153.',
+    html: () => `${QT}<div class="row">${B('attach', I.plus, 'rnd', 'Attach files')}<div class="pl main">${F}<button type="button" class="k fill up" data-act="primary" aria-label="Send prompt"><span class="w-up">${I.up}</span><span class="w-q">${I.queue}</span></button></div>
+      <button type="button" class="who" data-act="whopill"><span class="w-model">${MK}<span data-bind="model"></span><span class="dot">·</span><span class="eff" data-bind="effort"></span></span><span class="w-stop">${I.sq}Stop<span class="el" data-bind="elapsed"></span></span>${TR}</button></div>` },
+  { id: 11, name: 'It narrates', idea: 'While a turn runs, the empty prompt says what the agent is doing now ("Editing ThreadComposer.tsx") with a light passing over the words, and the time at the right. Writing over it queues a follow-up.',
+    rm: 'the creature\'s readout and the waiting placeholder; status lives where your eyes already are.',
+    mv: 'each new step rolls in from below; the light passes over the words; your first letter replaces the narration with your own.',
+    am: 'Amends ADR-0153 decision 4 (status in the prompt, not only round Stop) and the creature readout (ADR-0116).',
+    html: () => `${QT}<div class="card"><div class="narr"><span class="act" data-bind="activity"></span><span class="hint">· write to queue</span><span class="el" data-bind="elapsed"></span></div>${F}<div class="foot">${B('attach', I.clip, 'ico', 'Attach files')}${MODEL}${EFFORT}<span class="sp"></span>${AK}</div></div>` },
+  { id: 12, name: 'The foot says what matters now', idea: 'The footer holds one thing at a time: the setup while the prompt is empty, the keys while you write, and the turn (its time and a pulse) while one runs.',
+    rm: 'the setup while it cannot matter (mid-sentence or mid-turn), the branch line.',
+    mv: 'the three layers crossfade with a 5 px rise; the button at the right never moves.',
+    am: 'Amends ADR-0113.',
+    html: () => `${QT}<div class="card">${F}<div class="foot"><span class="lay r-rest">${B('attach', I.clip, 'ico', 'Attach files')}${SETUP({ fast: false })}</span>
+      <span class="lay r-type"><span class="t"><kbd>↵</kbd> send · <kbd>⇧↵</kbd> new line · <kbd>@</kbd> file · <kbd>/</kbd> command</span></span>
+      <span class="lay r-run"><span class="now"><span class="pulse"></span><span data-bind="activity"></span><span class="dot">·</span><span data-bind="elapsed"></span></span></span>${AK}</div></div>` },
+  { id: 13, name: 'Settings are words in the prompt', idea: 'Model and effort sit at the start of the prompt as two small tokens, the way @ files and $ skills already do. Click one to change it, or type / to reach any setting. Nothing else is drawn.',
+    rm: 'the footer, the options row, Send as a word (a ↵ key at the end of the line).',
+    mv: 'a token rolls to its next value; while a turn runs the ↵ key becomes Stop with the time.',
+    am: 'Amends ADR-0113 and ADR-0153 (one key cap as the button).',
+    html: () => `${QT}<div class="card"><span class="toks"><button type="button" class="tk" data-act="model"><span data-bind="modelTok"></span></button><button type="button" class="tk eff" data-act="effort"><span data-bind="effortTok"></span></button></span>${F}
+      <span class="end"><button type="button" class="k fill ret" data-act="primary" aria-label="Send prompt">${cap('↵')}</button><button type="button" class="k run" data-act="stop" aria-label="Stop agent">${I.sq}<span class="el" data-bind="elapsed"></span>${TR}</button></span></div>` },
+  { id: 14, name: 'The tab', idea: 'Who answers sits in a tab on the card\'s top edge, like a folder tab. While a turn runs the tab grows to say "working", how long, and how many prompts wait, and a light runs along its top.',
+    rm: 'the options row and the queue tray; the card is the prompt and Send.',
+    mv: 'the tab widens and narrows with the turn; the light runs along its top edge.',
+    am: 'Amends ADR-0113.',
+    html: () => `<div class="card"><div class="tab">${B('model', `${MK}<span data-bind="model"></span>`, 'model', 'Model')}${B('effort', `<span class="eff" data-bind="effort"></span>`, '', 'Reasoning')}<span class="wk"><span class="dot">·</span>working <span data-bind="elapsed"></span><span class="tq"><span class="dot">·</span><span data-bind="qcount"></span> queued</span></span></div><div class="row">${F}${AK}</div></div>` },
+  { id: 15, name: 'The deck', idea: 'A queued prompt does not become a list: it lifts off the composer into a small deck of cards behind it, newest in front. Point at the deck to fan it out; the front card drops into the thread when the turn ends.',
+    rm: 'the queue tray and its header.',
+    mv: 'Queue lifts your text into the deck; the deck fans out when pointed at; the front card leaves into the thread when it sends.',
+    am: 'Amends ADR-0113 decision 5 (the queue).',
+    html: () => `<div class="deck" data-list="deck"></div><div class="card">${F}<div class="foot">${B('attach', I.clip, 'ico', 'Attach files')}${MODEL}${EFFORT}<span class="sp"></span>${AK}</div></div>` },
+  { id: 16, name: 'Marginalia', idea: 'Paper, not a box: a larger prompt across the bottom of the pane, and the setup written small in the left margin. Send is an underlined word.',
+    rm: 'the card, every icon, key caps and the filled button.',
+    mv: 'the margin rule carries a light down it while the turn runs, and "working" appears in the margin.',
+    am: 'Amends ADR-0110 and ADR-0153.',
+    html: () => `<div class="mg">${B('model', `<span data-bind="model"></span>`, 'model', 'Model')}${B('effort', `thinking <span class="eff" data-bind="effortWord"></span>`, '', 'Reasoning')}${B('perms', `<span data-bind="perms"></span>`, '', 'Permissions')}<span class="stt">working <span data-bind="elapsed"></span></span></div>
+      <div>${F}<div class="end"><span style="color:var(--tt-text-faint);font-size:12.5px;margin-right:auto" data-bind="qline"></span><button class="wd str" data-act="steer">Steer<kbd>⌘↵</kbd></button><button class="wd stp" data-act="stop">Stop<kbd>⇧⌘S</kbd></button><button class="wd go" data-act="primary"><span class="w-s">Send</span><span class="w-q">Queue</span><kbd>↵</kbd></button></div></div>` },
+  { id: 17, name: 'Terminal', idea: 'A prompt marker and a status line, as in Claude Code\'s own CLI: everything is text you can click, and a spinner and the current step show a running turn.',
+    rm: 'every button shape, the card fill, icons.',
+    mv: 'a braille spinner and the step while running; the border brightens on focus.',
+    am: 'Amends ADR-0113, ADR-0153; the field leaves Figtree.',
+    html: () => `<div class="card"><span class="pr">›</span>${F}</div><div class="st"><button data-act="model" data-bind="modelLow"></button><button data-act="effort" data-bind="effortLow"></button><button data-act="perms" data-bind="permsLow"></button>
+      <span class="run"><span data-bind="spin"></span><span data-bind="activityLow"></span><span data-bind="elapsed"></span></span><span class="q"><span data-bind="qcount"></span> queued</span><span class="sp"></span>
+      <span class="keys idle">↵ send · tab next</span><span class="keys run" style="color:var(--tt-text-faint)">↵ queue · ⌘↵ steer · ⇧⌘S stop</span></div>` },
+  { id: 18, name: 'The plate', idea: 'The card\'s right edge is a plate that is the button: it fills when there is something to send, shows Stop while a turn runs with a light rising through it, and Queue when you write during one.',
+    rm: 'the button as a separate shape, key caps.',
+    mv: 'the plate fills with your first letter; the arrow leaves upward on send; a light rises through the plate for the whole turn.',
+    am: 'Amends ADR-0153.',
+    html: () => `${QT}<div class="card"><div class="lt">${F}<div class="foot">${B('attach', I.clip, 'ico', 'Attach files')}${MODEL}${EFFORT}</div></div>
+      <button type="button" class="plate" data-act="primary" aria-label="Send prompt"><span class="gl"><span class="p-up">${I.up}</span><span class="p-sq">${I.sq}</span><span class="p-q">${I.queue}</span></span><span class="lab"><span class="i">↵</span><span class="r" data-bind="elapsed"></span></span></button>
+      <button type="button" class="k stopmini" data-act="stop" aria-label="Stop agent">${I.sq}</button></div>` },
+  { id: 19, name: 'The capsule', idea: 'A small dark capsule on the card\'s top edge says who answers. When a turn starts it grows to say what is happening, for how long, with Stop inside it; queued prompts show as a count.',
+    rm: 'the options row, the separate Stop, the queue tray.',
+    mv: 'the capsule springs wider when a turn starts and back when it ends; its contents crossfade.',
+    am: 'Amends ADR-0153 decision 4 and ADR-0113 decision 5.',
+    html: () => `<button type="button" class="cap2" data-act="capsule"><span class="c-idle">${MK}<span data-bind="model"></span><span style="opacity:.6" data-bind="effort"></span></span><span class="c-run"><span class="pd"></span><span data-bind="activity"></span><span class="el" data-bind="elapsed"></span><span class="qn">+<span data-bind="qcount"></span></span><span class="sq">${I.sq}</span></span></button>
+      <div class="card"><div class="row">${F}<button type="button" class="k fill send" data-act="primary" aria-label="Send prompt"><span class="w-up">${I.up}</span><span class="w-q">${I.queue}</span></button></div></div>` },
+  { id: 20, name: 'Next or now', idea: 'Writing during a turn asks one question: should this go next, or now? So Queue and Steer become one switch, Next ↵ and Now ⌘↵, and holding ⌘ moves it to Now.',
+    rm: 'two of the four action buttons; Steer\'s separate word.',
+    mv: 'the switch\'s thumb slides to Now while ⌘ is held and back when it is let go.',
+    am: 'Amends ADR-0153 (Steer and Queue as one switch).',
+    html: () => `${QT}<div class="card">${F}<div class="foot">${B('attach', I.clip, 'ico', 'Attach files')}${MODEL}${EFFORT}<span class="sp"></span>
+      <button type="button" class="k stp" data-act="stop" aria-label="Stop agent">Stop${cap('⇧⌘S')}${TR}</button>
+      <span class="sw"><span class="th"></span><button type="button" class="nx" data-act="queue">Next${cap('↵')}</button><button type="button" class="nw" data-act="steer">Now${cap('⌘↵')}</button></span>
+      <button type="button" class="k fill solo" data-act="primary" aria-label="Send prompt">Send${cap('↵')}</button></div></div>` },
+]
+function arc(i) {
+  const r = 17, c = 20, gap = 7, a0 = i * 90 + gap / 2, a1 = (i + 1) * 90 - gap / 2
+  const p = a => [c + r * Math.cos(a * Math.PI / 180), c + r * Math.sin(a * Math.PI / 180)]
+  const [x0, y0] = p(a0), [x1, y1] = p(a1)
+  return `M${x0.toFixed(2)} ${y0.toFixed(2)}A${r} ${r} 0 0 1 ${x1.toFixed(2)} ${y1.toFixed(2)}`
+}
+
+const MODELS = ['Opus 5.5', 'Sonnet 5.5', 'Haiku 5.5']
+const EFFORTS = ['Low', 'Medium', 'High', 'Max'], EWORDS = ['lightly', 'a little', 'hard', 'as hard as it can']
+const SUGG = ['Run the composer e2e spec and fix what fails', 'Open the pull request', 'Write the verification note', 'Explain why the spec was flaky']
+const ACTS = ['Reading composer.css', 'Editing ThreadComposer.tsx', 'Running the typecheck', 'Checking the e2e spec']
+const SPIN = '⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+const TURN = 5200
+const k = () => document.body.classList.contains('slow') ? 4 : 1
+const sleep = ms => new Promise(r => setTimeout(r, ms * k()))
+const esc = s => s.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+
+class Frame {
+  constructor(el, d) {
+    this.el = el; this.d = d
+    Object.assign(this, { text: '', focus: false, run: false, queue: [], ghost: true, si: 0, mi: 0, ei: 2, perms: 'Full access', start: 0, ai: 0, cmd: false })
+    el.innerHTML = `<div class="hd"><span class="ttl">Composer test flake</span><span class="dot">/</span>${I.folder}<span>sotto</span><span class="dot">·</span>${I.branch}<span>sotto/c9c8e65b</span><span class="sp"></span>
+      <span class="thr">${B('perms', `${I.shield}<span data-bind="perms"></span>${I.chev}`, '', 'Thread permissions')}${B('watch', `${I.eye}Watch`, '', 'Watch this thread')}</span></div>
+      <div class="tx"><p class="you">The composer test is flaky on Windows</p><p>Found it: the spec waits on a fixed 300 ms sleep before the send key is ready. I replaced it with a wait on the button's enabled state, and it passes ten runs in a row.</p><div data-list="log"></div></div>
+      <div class="cmp v${d.id}">${d.html()}</div>`
+    this.root = el.querySelector('.cmp')
+    const f = this.root.querySelector('[data-field]')
+    f.innerHTML = '<textarea rows="1" aria-label="Prompt"></textarea><span class="gh"><span data-bind="ghost"></span><kbd class="tabkey">Tab</kbd></span>'
+    this.ta = f.querySelector('textarea')
+    this.ta.addEventListener('input', () => { this.text = this.ta.value; this.paint() })
+    this.ta.addEventListener('focus', () => { this.focus = true; this.paint() })
+    this.ta.addEventListener('blur', () => { this.focus = false; this.paint() })
+    this.ta.addEventListener('keydown', e => this.key(e))
+    el.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && el.contains(b)) { e.preventDefault(); this.act(b.dataset.act) } })
+    this.root.addEventListener('mousedown', e => { if (!e.target.closest('[data-act], textarea')) { e.preventDefault(); this.ta.focus() } })
+    this.paint()
+  }
+  key(e) {
+    const empty = !this.text.trim()
+    if (e.key === 'Tab' && !e.shiftKey && empty && this.ghost && !this.run) { e.preventDefault(); return this.take() }
+    if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && empty && this.ghost && !this.run) { e.preventDefault(); return this.act(e.key === 'ArrowDown' ? 'next' : 'prev') }
+    if (e.key === 'Escape') { e.preventDefault(); return this.ta.blur() }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); return this.act((e.metaKey || e.ctrlKey) && this.run ? 'steer' : 'primary') }
+    if ((e.key === 's' || e.key === 'S') && e.shiftKey && (e.metaKey || e.ctrlKey)) { e.preventDefault(); this.act('stop') }
+  }
+  take() { this.ta.value = this.text = SUGG[this.si]; this.paint(); this.ta.focus() }
+  act(a) {
+    const t = this.text.trim()
+    switch (a) {
+      case 'model': this.mi = (this.mi + 1) % MODELS.length; if (this.d.id === 7) { this.ei = (this.ei + 1) % 4 } this.flip('model'); break
+      case 'effort': this.ei = (this.ei + 1) % 4; this.flip('effort'); break
+      case 'perms': this.perms = this.perms === 'Full access' ? 'Ask first' : 'Full access'; break
+      case 'cmd': this.setCmd(!this.cmd); break
+      case 'prev': case 'next': this.si = (this.si + (a === 'next' ? 1 : SUGG.length - 1)) % SUGG.length; this.slide(a); break
+      case 'stop': if (this.run) this.end(true); break
+      case 'whopill': case 'capsule': if (this.run) this.end(true); else this.act('model'); return
+      case 'steer': if (this.run && t) { this.say(t, 'steered'); this.clear() } else this.act('primary'); return
+      case 'queue': if (this.run && t) { this.enqueue(t) } return
+      case 'primary':
+        if (this.run) { if (t) this.enqueue(t); else this.end(true) }
+        else if (t) { this.sentFlash(); this.say(t); this.clear(); this.begin() }
+        return
+    }
+    this.paint()
+  }
+  flip(what) { const tk = this.root.querySelector(what === 'model' ? '.tk:not(.eff)' : '.tk.eff'); if (tk) { tk.classList.remove('flip'); void tk.offsetWidth; tk.classList.add('flip') } }
+  slide(dir) { const s = this.root.querySelector('.car .sg'); if (s) { s.classList.remove('in-d', 'in-u'); void s.offsetWidth; s.classList.add(dir === 'next' ? 'in-d' : 'in-u') } }
+  sentFlash() { this.root.setAttribute('data-sent', ''); setTimeout(() => this.root.removeAttribute('data-sent'), 380 * k()) }
+  enqueue(t) {
+    this.queue.push(t); this.clear()
+    const deck = this.root.querySelector('[data-list=deck]')
+    if (deck) { deck.insertAdjacentHTML('beforeend', `<div class="dc new"><small>Next</small>${esc(t)}</div>`) }
+    this.paint()
+  }
+  clear() { this.ta.value = this.text = ''; this.paint() }
+  say(t, how) {
+    const log = this.el.querySelector('[data-list=log]')
+    log.insertAdjacentHTML('beforeend', `<p class="you">${esc(t)}${how ? ` <span style="color:var(--tt-accent-text)">· ${how}</span>` : ''}</p>`)
+    while (log.children.length > 1) log.firstElementChild.remove()
+    const first = this.el.querySelector('.tx > .you'); if (first) first.remove()
+  }
+  begin() {
+    this.run = true; this.ghost = false; this.start = performance.now(); this.ai = 0
+    clearTimeout(this.timer); clearInterval(this.tick)
+    this.timer = setTimeout(() => this.end(false), TURN * k())
+    this.tick = setInterval(() => this.live(), 90)
+    this.paint()
+  }
+  end(stopped) {
+    clearTimeout(this.timer); clearInterval(this.tick); this.run = false
+    if (!stopped && this.queue.length) {
+      const t = this.queue.shift(); const deck = this.root.querySelector('[data-list=deck]'); deck?.firstElementChild?.remove()
+      this.say(t); this.begin(); return
+    }
+    if (!stopped) { this.ghost = true; this.si = (this.si + 1) % SUGG.length }
+    this.paint()
+  }
+  live() {
+    const s = Math.floor((performance.now() - this.start) / 1000 / k())
+    const ai = Math.min(ACTS.length - 1, Math.floor((performance.now() - this.start) / (1300 * k())))
+    this.bind('elapsed', `0:${String(s).padStart(2, '0')}`)
+    this.bind('spin', SPIN[Math.floor(performance.now() / 80) % SPIN.length])
+    if (ai !== this.ai) { this.ai = ai; this.paint(); const a = this.root.querySelector('.narr .act'); if (a) { a.classList.remove('roll'); void a.offsetWidth; a.classList.add('roll') } }
+  }
+  bind(name, v) { this.el.querySelectorAll(`[data-bind="${name}"]`).forEach(n => { if (n.textContent !== v) n.textContent = v }) }
+  setCmd(v) { this.cmd = v; this.paint() }
+  paint() {
+    const r = this.root, has = Boolean(this.text.trim())
+    const at = (n, v) => v ? r.setAttribute(n, '') : r.removeAttribute(n)
+    at('data-focus', this.focus); at('data-text', has); at('data-run', this.run); at('data-queue', this.queue.length > 0); at('data-ghost', this.ghost); at('data-cmd', this.cmd)
+    r.dataset.effort = this.ei
+    const m = MODELS[this.mi], e = EFFORTS[this.ei]
+    const B2 = { model: m, effort: e, effortWord: EWORDS[this.ei], perms: this.perms, modelLow: m.toLowerCase(), effortLow: e.toLowerCase(), permsLow: this.perms.toLowerCase(),
+      modelTok: '/' + m.split(' ')[0].toLowerCase(), effortTok: '/' + e.toLowerCase(), ghost: SUGG[this.si], sugg: SUGG[this.si], suggpos: `${this.si + 1}/${SUGG.length}`,
+      activity: ACTS[this.ai] + '…', activityLow: ACTS[this.ai].toLowerCase() + '…', qcount: String(this.queue.length), qtext: this.queue[0] ?? '',
+      qline: this.queue.length ? `${this.queue.length} queued · sends when this turn ends` : '' }
+    for (const [n, v] of Object.entries(B2)) this.bind(n, v)
+    if (!this.run) { this.bind('elapsed', '') }
+    this.ta.placeholder = this.run ? 'Claude is working. Write a follow-up to queue it.' : this.ghost ? '' : 'What should Claude do next?'
+    r.querySelectorAll('[data-ex=perms]').forEach(x => x.classList.toggle('on', this.perms !== 'Ask first'))
+    r.querySelectorAll('[data-ex=effort]').forEach(x => x.classList.toggle('on', this.ei !== 2))
+    r.querySelectorAll('.pri, .one, .plate, .solo, .send, .up').forEach(x => x.setAttribute('aria-label', this.run ? (has ? 'Queue prompt' : 'Stop agent') : 'Send prompt'))
+  }
+  async type(s) { this.ta.focus(); for (const ch of s) { this.ta.value = this.text += ch; this.paint(); await sleep(26) } }
+  async play() {
+    if (this.playing) return; this.playing = true
+    try {
+      if (this.run) this.end(true)
+      this.ta.focus(); await sleep(500)
+      if (this.d.id === 9) { this.act('next'); await sleep(700); this.act('next'); await sleep(700); this.act('prev'); await sleep(500) }
+      if (this.d.id === 8) { this.setCmd(true); await sleep(1100); this.setCmd(false); await sleep(300) }
+      if (this.d.id === 5) { this.act('effort'); await sleep(450); this.act('effort'); await sleep(450); this.act('effort'); await sleep(450); this.act('effort'); await sleep(400) }
+      if (this.d.id === 7) { this.act('perms'); await sleep(700); this.act('perms'); await sleep(500) }
+      await this.type('Fix the flaky composer spec on Windows'); await sleep(450)
+      this.act('primary'); await sleep(1500)
+      await this.type('Then update the release notes'); await sleep(500)
+      if (this.d.id === 20 || this.d.id === 3 || this.d.id === 8) { this.setCmd(true); await sleep(900); this.setCmd(false); await sleep(400) }
+      this.act('primary')
+      for (let i = 0; i < 60 && (this.run || this.queue.length); i++) await sleep(250)
+      await sleep(700); this.ta.blur()
+    } finally { this.playing = false }
+  }
+}
+
+const main = document.getElementById('main'), nav = document.getElementById('nav')
+const frames = []
+for (const d of D) {
+  const sec = document.createElement('section')
+  sec.className = 'dir'; sec.id = String(d.id); sec.dataset.id = d.id
+  sec.innerHTML = `<header><h2><b>${d.id}</b>${d.name}</h2><button type="button" class="play">Play</button></header><p class="idea">${d.idea}</p>${d.rm ? `<p class="rm">${d.rm}</p>` : ''}${d.mv ? `<p class="mv">${d.mv}</p>` : ''}<p class="am">${d.am}</p>
+    <div class="frames"><div class="fr t-dark"></div><div class="fr t-light"></div></div>`
+  main.appendChild(sec)
+  const fs = [...sec.querySelectorAll('.fr')].map(el => new Frame(el, d))
+  frames.push(...fs)
+  sec.querySelector('.play').addEventListener('click', () => fs.forEach(f => f.play()))
+}
+nav.innerHTML = D.map(d => `<a href="#${d.id}">${d.id}</a>`).join('')
+document.getElementById('playall').addEventListener('click', () => frames.forEach((f, i) => setTimeout(() => f.play(), (i >> 1) * 120)))
+document.getElementById('calm').addEventListener('change', e => document.body.classList.toggle('calm', e.target.checked))
+document.getElementById('slow').addEventListener('change', e => document.body.classList.toggle('slow', e.target.checked))
+addEventListener('keydown', e => { if (e.key === 'Meta' || e.key === 'Control') frames.forEach(f => f.setCmd(true)) })
+addEventListener('keyup', e => { if (e.key === 'Meta' || e.key === 'Control') frames.forEach(f => f.setCmd(false)) })
+addEventListener('blur', () => frames.forEach(f => f.cmd && f.setCmd(false)))
+const mode0 = new URLSearchParams(location.search).get('mode') ?? 'both'
+const setMode = v => { document.body.classList.remove('m-both', 'm-dark', 'm-light'); document.body.classList.add('m-' + v) }
+setMode(mode0)
+const seg = document.getElementById('mode')
+const sync = v => seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)))
+seg.addEventListener('click', e => { const v = e.target.dataset?.v; if (v) { setMode(v); sync(v) } })
+sync(mode0)
+if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView()
+window.__frames = frames
+</script>
+</body>
+</html>
