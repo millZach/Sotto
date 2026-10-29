@@ -188,6 +188,9 @@ it('releases from the record only what the archive still holds when Keep local h
   const model = f.control.shell().host.models.find(item => item.providerId === 'codex')!
   expect(await service.open({ provider: 'codex', modelId: model.id })).toMatchObject({ status: 'ok' })
   const targets = ['synthetic-worker', 'synthetic-other'].map(threadId => ({ hostId: f.control.hostId()!, threadId }))
+  // Watcher's own archiving is held off, so this test's is the only one (#1780): the history below is due for it, and its
+  // batches would reach the spy and race the test's own.
+  vi.spyOn(service as unknown as { archiveWhenDue(): void }, 'archiveWhenDue').mockImplementation(() => undefined)
   await f.control.updateWatcher(record => addWatcherHistory(record, targets, { requests: WATCHER_LIVE_CLOSED_REQUESTS + 100, operations: WATCHER_LIVE_CLOSED_REQUESTS + 100 }))
   const ids = f.control.watcherRecordView().requests.slice(0, 100).map(item => item.id)
   const archive = f.control.archivedWatcherWork()!

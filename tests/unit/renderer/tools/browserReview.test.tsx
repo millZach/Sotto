@@ -115,7 +115,7 @@ describe('the browser player', () => {
     expect(asked).toContain('visual-gate')
     expect(asked).not.toContain(remoteId)
   })
-  it('keeps listing the other threads when one browser subscription throws', () => {
+  it('keeps listing the other threads when one browser subscription throws', async () => {
     const store = new BrowserStore()
     const tasks = vi.fn((request: { threadId: string }) => {
       if (request.threadId === 'foreign') throw new Error('This action belongs to another host. Select that host before trying again.')
@@ -125,8 +125,9 @@ describe('the browser player', () => {
     expect(() => store.watchTasks(bridge, ['foreign', 'local'])).not.toThrow()
     expect(tasks.mock.calls.map(call => call[0].threadId)).toEqual(['foreign', 'local'])
     tasks.mockClear()
+    // Reads go one thread at a time, so the refused thread is asked again once the read ahead of it has answered.
     store.watchTasks(bridge, ['foreign', 'local'])
-    expect(tasks.mock.calls.map(call => call[0].threadId)).toEqual(['foreign'])
+    await waitFor(() => expect(tasks.mock.calls.map(call => call[0].threadId)).toEqual(['foreign']))
   })
   it('shows its own live page rather than "steps aside", even though its own root carries data-covers-native-view', async () => {
     // Regression: the player marks its own <aside> so a page docked elsewhere steps aside for it (browserOverlay.ts).
