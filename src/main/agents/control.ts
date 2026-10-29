@@ -3476,7 +3476,7 @@ export class AgentControl {
       providerMode = resolved.providerMode
     }
     return { ...(reasoningEffort !== undefined ? { reasoningEffort } : {}), ...(runtimeMode !== undefined ? { runtimeMode } : {}), ...(providerMode !== undefined ? { providerMode } : {}),
-      ...(command.speed !== undefined ? { speed: command.speed } : {}), ...(command.fastMode !== undefined ? { fastMode: command.fastMode } : {}) }
+      ...(command.speed !== undefined ? { speed: command.speed } : command.fastMode !== undefined ? { fastMode: command.fastMode } : {}) }
   }
   private obsoleteDraft(threadId: string, draftId: string): void {
     if (this.state.deliveredDrafts?.some(item => item.threadId === threadId && item.draftId === draftId)) return
@@ -5280,7 +5280,7 @@ export class AgentControl {
           await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId,
             ...(command.modelId !== undefined ? { modelId: command.modelId } : {}),
             ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}),
-            ...(command.fastMode !== undefined ? { fastMode: command.fastMode } : {}),
+            ...(command.speed === undefined && command.fastMode !== undefined ? { fastMode: command.fastMode } : {}),
             ...(command.speed !== undefined ? { speed: command.speed } : {}) }, turn, validate, undefined, client, undefined, origin)
         }
         if (command.runtimeMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, runtimeMode: command.runtimeMode }, turn, validate, undefined, client, undefined, origin)
@@ -6399,7 +6399,7 @@ export class AgentControl {
         ? snapshot.projects.some(p => p.id === (this.dependencies.host.resolveProjectId?.(item.entityId ?? '') ?? item.entityId)) : item.type === 'create-thread'
           ? item.entityId !== undefined && shownThread(item.entityId) !== undefined : item.type === 'compact-thread'
             ? thread?.compaction?.commandId === item.id && ['completed', 'failed'].includes(thread.compaction.status) : item.type === 'configure-thread'
-            ? thread !== undefined && item.options !== undefined && Object.entries(item.options).every(([key, value]) => key === 'fastMode' ? (thread.fastMode === true) === value
+            ? thread !== undefined && item.options !== undefined && Object.entries(item.options).every(([key, value]) => key === 'fastMode' ? (thread.speed !== undefined ? thread.speed : thread.fastMode ? 'fast' : null) === (value ? 'fast' : null)
               : key === 'speed' ? (thread.speed !== undefined ? thread.speed : thread.fastMode ? 'fast' : null) === value
               : thread[key as keyof AgentThread] === (key === 'modelId' && typeof value === 'string' ? this.dependencies.host.resolveModelId?.(value) ?? value : value)) : item.type === 'answer'
             ? thread !== undefined && isThreadProviderConnected(snapshot, thread) && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'

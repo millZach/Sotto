@@ -22,7 +22,7 @@ Claude native agent definitions have no per-agent speed field in the [Agent SDK 
 The app was not launched. Full CI gates and integration suites run on GitHub.
 
 - `npm run typecheck` and `npm run lint`: clean on Node 24.22.1.
-- Individually run unit files: 123 assertions passed across `workspaceFastMode`, `remoteCommands`, `threadOptionsFastMode`, shared `workerRoles` and `subagentRoleTable`, main `subagentRoles` and `workerRoleTools`, renderer `threadFastMode`, `workerRolesSettings`, `workerRolesOrchestrating`, `unusedNewThread` and `pendingSettings`, and `interfaceCatalogs`.
+- Individually run unit files: 134 assertions passed across `workspaceFastMode`, `remoteCommands`, `threadOptionsFastMode`, shared `workerRoles` and `subagentRoleTable`, main `subagentRoles` and `workerRoleTools`, `agentSettingsLightPath`, renderer `threadFastMode`, `workerRolesSettings`, `workerRolesOrchestrating`, `unusedNewThread` and `pendingSettings`, and `interfaceCatalogs`.
 - `npm run i18n:extract`: generated catalogs committed. The Codex, Claude and role integration cases were extended for GitHub CI; they were not run locally.
 - A delegated renderer check expanded to 27 unit files: 526 passed and one skills retry assertion failed (`threadQueueSkills.test.tsx:597`, missing **Try again**). Its individual rerun passed all 38 assertions. No skills behavior was changed.
 
@@ -30,3 +30,5 @@ Headless captures render the real React composer and `WorkerRolesSettings`, with
 
 - [Dark composer](../../artifacts/agent-speed/composer-dark.png), [light composer at minimum size](../../artifacts/agent-speed/composer-light.png).
 - [Dark worker roles](../../artifacts/agent-speed/roles-dark.png), [light worker roles at minimum size](../../artifacts/agent-speed/roles-light.png).
+
+The coordinator also compares an older client's Fast-off command against the effective speed, so an Ultrafast thread cannot confirm Standard prematurely. When a command carries both fields, the named speed alone is dispatched.
