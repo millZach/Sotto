@@ -1750,16 +1750,51 @@ it('places starts made together one at a time under Watcher\'s choice, so each c
   const gate = deferred(), control = f.socket.watcherControl!.bind(f.socket)
   let held = 0
   vi.spyOn(f.socket, 'watcherControl').mockImplementation(async (...args) => { held += 1; await gate.promise; return control(...args) })
+  const placement = f.watcher.placement.bind(f.watcher), placements: string[] = []
+  vi.spyOn(f.watcher, 'placement').mockImplementation(async (...args) => {
+    const placed = await placement(...args)
+    if (!('status' in placed)) placements.push(placed.hostId)
+    return placed
+  })
   const starts = [1, 2, 3].map(index => f.watcher.invoke(f.id, 'start_thread', { ...f.onThisComputer(), title: `Synthetic batch worker ${index}` }))
   await vi.waitFor(() => expect(held).toBe(2))
   gate.resolve()
   const placed = (await Promise.all(starts)).map(result => watcherToolSchemas.start_thread.output.parse(result))
   const there = placed.filter(result => result.status === 'ok' && 'placement' in result && result.placement?.hostId === f.pairing.hostId)
   expect(there).toHaveLength(2)
-  for (const result of there) expect(result).toMatchObject({ placement: { note: expect.stringMatching(/^This computer is busy, so Sotto started this one on Synthetic remote, which has room for about [12] more workers?\.$/u) } })
-  // The third found both machines with none, and stayed where its project is.
-  expect(placed.filter(result => !there.includes(result))).toEqual([expect.not.objectContaining({ placement: expect.objectContaining({ hostId: f.pairing.hostId }) })])
+  for (const result of there) expect(result).toMatchObject({ placement: { note: 'This computer is busy, so Sotto started this one on Synthetic remote, which has more room for workers.' } })
+  // The third found both machines with none, and was placed where its project is. This computer's fixture has no model of
+  // the paired machine's, which every start here names, so admission then refuses it there for the model alone.
+  expect(placements.toSorted()).toEqual([f.control.hostId(), f.pairing.hostId, f.pairing.hostId].toSorted())
+  expect(placed.filter(result => !there.includes(result))).toEqual([expect.objectContaining({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'Choose a ready worker model. Sotto will not switch accounts.' })])
   expect(held).toBe(2)
+})
+
+it('counts a start against its machine\'s headroom until a reading taken after it could show it (#1694)', async () => {
+  const f = await acrossMachines('watcher')
+  const GIB = 1024 ** 3
+  let observedAt = new Date().toISOString()
+  const load = (cpuBusyPercent: number, availableMemoryBytes: number) => ({ observedAt, windowMs: 2_000, cpuBusyPercent, loadAverage: null,
+    availableMemoryBytes, windowStartAvailableMemoryBytes: availableMemoryBytes, memoryPressurePercent: null })
+  vi.spyOn(HostFactsSource.prototype, 'load').mockImplementation(async () => load(99, 16 * GIB))
+  const report = f.socket.hostFacts.bind(f.socket)
+  vi.spyOn(f.socket, 'hostFacts').mockImplementation(async () => {
+    const real = await report()
+    return { ...real, facts: { ...real.facts, logicalCpuCount: 64, totalMemoryBytes: 64 * GIB }, load: load(1, 2 * GIB + 2 * 1.5 * GIB + GIB / 2) }
+  })
+  const headroom = async () => { const listed = await f.call('list_machines', {}); if (listed.status !== 'ok') throw new Error('list-refused'); return listed.machines[1]!.headroom }
+  expect(await headroom()).toBe(2)
+  // The start reaches the paired machine and its first prompt is accepted there, so it is no longer on its way; the
+  // reading, from before it began, cannot show it, so it still counts.
+  const started = await f.call('start_thread', { ...f.onThisComputer(), title: 'Synthetic counted worker' })
+  expect(started).toMatchObject({ status: 'ok', target: { hostId: f.pairing.hostId } })
+  const onItsWay = () => (f.watcher as unknown as { startsNotYetSentOn(hostId: string): string[] }).startsNotYetSentOn(f.pairing.hostId)
+  await expect.poll(onItsWay).toEqual([])
+  expect(await headroom()).toBe(1)
+  // A reading whose window began after it was placed shows what it uses, so it is not counted again.
+  await new Promise(resolve => setTimeout(resolve, 5))
+  observedAt = new Date(Date.now() + 2_001).toISOString()
+  expect(await headroom()).toBe(2)
 })
 
 it('starts on This computer and says why when the paired machine new workers start on is not connected (#1032)', async () => {

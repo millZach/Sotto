@@ -120,8 +120,15 @@ export async function placeWorker(ask: PlacementAsk, setting: WorkerMachineSetti
     if (!matching.length) refuse('HOST_DISCONNECTED', `No ${words.one} is connected. Connect ${words.a}, or run this on This computer. Nothing was started.`, true)
     const order = [defaultId, project.hostId, local.hostId].flatMap(id => matching.find(machine => machine.hostId === id) ?? [])
     const ranked = [...order, ...matching.filter(machine => !order.includes(machine))]
-    // Watcher's own choice takes the one with the most headroom (#1694); a machine Settings chose keeps its place.
-    target = (defaultId === undefined ? (await mostHeadroom(ranked, sources))?.machine : undefined) ?? ranked[0]!
+    // Watcher's own choice takes the one with the most headroom (#1694); a machine Settings chose keeps its place. Moved
+    // off the machine the project was named on, it comes back there when it cannot start where it was moved.
+    const readings = defaultId === undefined ? await readHeadroom(ranked, sources) : undefined
+    const best = readings && mostHeadroom(ranked, readings)
+    target = best?.machine ?? ranked[0]!
+    if (best && from && target !== ranked[0] && ranked[0] === from) {
+      moved = { machine: target, home: from, why: movedWords(from, readings[0] ?? null, target) }
+      note = moved.why
+    }
   } else if (defaultId === undefined && ask.pinnedBy === undefined && from?.connected && (moved = await moreHeadroomElsewhere(from, machines, sources))) {
     // Watcher's own choice, with another machine that has more headroom than where the project was named (#1694).
     target = moved.machine
@@ -158,20 +165,20 @@ export async function placeWorker(ask: PlacementAsk, setting: WorkerMachineSetti
     if (!moved || !(error instanceof PlacementRefusal)) throw error
     // Sotto moved it, so it never refuses what would have run where its project was named: it comes back, and says so.
     return { hostId: moved.home.hostId, projectId: project.projectId,
-      receipt: receipt(moved.home, `Sotto tried ${named(moved.machine)}, which has more headroom than ${named(moved.home)}, but could not start this one there, so it started on ${named(moved.home)}.`) }
+      receipt: receipt(moved.home, `Sotto tried ${named(moved.machine)}, which has more room for workers than ${named(moved.home)}, but could not start this one there, so it started on ${named(moved.home)}.`) }
   }
   return { hostId: target.hostId, projectId: found.projectId, receipt: { ...receipt(target, note, found.note), ...found.setUp ? { setUp: found.setUp } : {} },
     ...found.fromOrigin ? { fromOrigin: found.fromOrigin } : {} }
 }
 
-/** "1 more worker", "5 more workers". */
-const workers = (count: number): string => `${count} more worker${count === 1 ? '' : 's'}`
-
-/** Of `machines`, the one with the most known headroom, the earliest on a tie; undefined when none is known. */
-async function mostHeadroom(machines: readonly PlacementMachine[], sources: PlacementSources): Promise<{ machine: PlacementMachine; headroom: number } | undefined> {
+/** Each machine's headroom now, in the same order; null where it cannot be read. */
+async function readHeadroom(machines: readonly PlacementMachine[], sources: PlacementSources): Promise<(MachineHeadroom | null)[]> {
   const read = sources.headroom
-  if (!read) return undefined
-  const readings = await Promise.all(machines.map(machine => read(machine.hostId).catch(() => null)))
+  return read ? Promise.all(machines.map(machine => read(machine.hostId).catch(() => null))) : machines.map(() => null)
+}
+
+/** Of `machines`, the one with the most known headroom in `readings`, the earliest on a tie; undefined when none is known. */
+function mostHeadroom(machines: readonly PlacementMachine[], readings: readonly (MachineHeadroom | null)[]): { machine: PlacementMachine; headroom: number } | undefined {
   let best: { machine: PlacementMachine; headroom: number } | undefined
   machines.forEach((machine, index) => {
     const headroom = readings[index]?.headroom
@@ -181,22 +188,26 @@ async function mostHeadroom(machines: readonly PlacementMachine[], sources: Plac
 }
 
 /**
+ * Why Sotto started a worker on `target` rather than `home`, where its project was named, in words without the figure,
+ * which only Watcher reads (Zach, October 29, 2026).
+ */
+function movedWords(home: PlacementMachine, here: MachineHeadroom | null, target: PlacementMachine): string {
+  const state = here?.busy && here.short ? 'is busy and short on memory' : here?.short ? 'is short on memory' : here?.busy ? 'is busy' : undefined
+  return state ? `${capital(named(home))} ${state}, so Sotto started this one on ${named(target)}, which has more room for workers.`
+    : `${capital(named(target))} has more room for workers than ${named(home)}, so Sotto started this one there.`
+}
+
+/**
  * The connected machine with more headroom than `home`, where the project was named, and the most of any (#1694), with the
  * sentence that says why. Undefined when none has more, or `home`'s headroom is unknown.
  */
 async function moreHeadroomElsewhere(home: PlacementMachine, machines: readonly PlacementMachine[], sources: PlacementSources)
   : Promise<{ machine: PlacementMachine; home: PlacementMachine; why: string } | undefined> {
-  const read = sources.headroom
-  if (!read) return undefined
-  const [here, best] = await Promise.all([read(home.hostId).catch(() => null),
-    mostHeadroom(machines.filter(machine => machine.connected && machine.hostId !== home.hostId), sources)])
+  const others = machines.filter(machine => machine.connected && machine.hostId !== home.hostId)
+  const [here, ...readings] = await readHeadroom([home, ...others], sources)
+  const best = mostHeadroom(others, readings)
   if (here?.headroom === null || here?.headroom === undefined || !best || best.headroom <= here.headroom) return undefined
-  const there = `${named(best.machine)}, which has room for about ${workers(best.headroom)}`
-  const state = here.busy && here.short ? 'is busy and short on memory' : here.short ? 'is short on memory' : here.busy ? 'is busy' : undefined
-  const why = state ? `${capital(named(home))} ${state}, so Sotto started this one on ${there}.`
-    : here.headroom === 0 ? `${capital(named(home))} has room for no more workers, so Sotto started this one on ${there}.`
-      : `${capital(named(home))} has room for about ${workers(here.headroom)} and ${named(best.machine)} for about ${best.headroom}, so Sotto started this one on ${named(best.machine)}.`
-  return { machine: best.machine, home, why }
+  return { machine: best.machine, home, why: movedWords(home, here, best.machine) }
 }
 
 interface FoundProject { readonly projectId: string; readonly setUp?: NonNullable<WorkerPlacementReceipt['setUp']>; readonly note?: string; readonly fromOrigin?: string }

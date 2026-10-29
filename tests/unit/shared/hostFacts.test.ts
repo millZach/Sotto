@@ -140,10 +140,13 @@ describe('machineHeadroom (#1694)', () => {
   })
   it('reads memory on the lower of the window\'s two readings', () => {
     expect(machineHeadroom(forge, { ...load, cpuBusyPercent: 1, windowStartAvailableMemoryBytes: 5 * GIB }, 0, at)).toBe(2)
-    expect(machineHeadroom(forge, { ...load, cpuBusyPercent: 1, windowStartAvailableMemoryBytes: null }, 0, at)).toBe(4)
+    // A missing reading is unknown, not the other one again.
+    expect(machineHeadroom(forge, { ...load, cpuBusyPercent: 1, windowStartAvailableMemoryBytes: null }, 0, at)).toBeNull()
   })
-  it('has none on a busy machine or one short on memory', () => {
+  it('has none on a busy machine or one short on memory, whatever else is unknown', () => {
     expect(machineHeadroom(forge, { ...load, cpuBusyPercent: 90 }, 0, at)).toBe(0)
+    // A busy Mac, whose memory reads unknown, still has none.
+    expect(machineHeadroom(forge, { ...load, cpuBusyPercent: 99, availableMemoryBytes: null, windowStartAvailableMemoryBytes: null }, null, at)).toBe(0)
     expect(machineHeadroom(forge, { ...load, availableMemoryBytes: GIB, windowStartAvailableMemoryBytes: GIB }, 0, at)).toBe(0)
   })
   it('is unknown, never guessed, wherever a number it needs is', () => {

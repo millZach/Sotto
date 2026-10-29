@@ -24,7 +24,7 @@ import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   MACHINE_FACTS_OLDER, MACHINE_FACTS_UNREAD, MACHINE_NOT_CONNECTED, type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
   type WatcherWaitingOnUser } from '../../shared/watcher'
-import { machineHeadroom, machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
+import { HOST_LOAD_WINDOW_MAX_MS, machineHeadroom, machineLoadStates, placedNotStartedWith, type HostLoad, type HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
@@ -249,8 +249,8 @@ type RoleReceipt = { readonly id: WorkerKind; readonly named: RoleField[]; reado
  * goes, and where its receipt says it went.
  */
 type PlacedStart = { readonly original: WatcherToolInput<'start_thread'>; readonly input: WatcherToolInput<'start_thread'>; readonly placement: WorkerPlacementReceipt
-  /** Called once the start's reservation is recorded, or it is refused, which lets the next start be placed (#1694). */
-  readonly admitted?: () => void }
+  /** Called with the start's target once its reservation is recorded, which lets the next start be placed (#1694). */
+  readonly admitted?: (target: WatcherThreadTarget) => void }
 /** `base` replaces this computer's new-thread default; `paired` narrows it. */
 type PermissionLimits = { readonly base?: AgentRuntimeMode; readonly paired?: AgentRuntimeMode }
 const ROLE_STARTS_KEPT = 500
@@ -1346,7 +1346,7 @@ export class WatcherService implements WatcherControlHooks {
           const report = hostId === local ? await this.options.machineFacts?.()
             : others().find(host => host.hostId === hostId)?.facts && this.remote?.machineFacts ? await this.remote.machineFacts(hostId) : undefined
           if (!report) return null
-          const placed = placedNotStartedWith(report, [...before, ...this.startsNotYetSentOn(hostId)])
+          const placed = placedNotStartedWith(report, [...before, ...this.startsNotYetSentOn(hostId), ...this.placedSince(hostId, report.load)])
           const load = report.load ?? null, states = machineLoadStates(load, report.facts.totalMemoryBytes, Date.now())
           return { headroom: machineHeadroom(report.facts, load, placed, Date.now()), busy: states.cpu === 'busy', short: states.memory === 'short' }
         } catch { return null }
@@ -3713,7 +3713,8 @@ export class WatcherService implements WatcherControlHooks {
           if (!placed) release?.()
           if (ticket && (placed?.input.check !== true || placed.input.project.hostId !== this.hostId())) this.dropTicket(ticket)
           // A start refused at admission never ran, so the move it would have made is forgotten with it.
-          try { return await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed && release ? { ...placed, admitted: release } : placed, ticket) }
+          const admitted = (target: WatcherThreadTarget) => { this.notePlaced(target); release?.() }
+          try { return await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed ? { ...placed, admitted } : placed, ticket) }
           finally { if (placed?.input.fromMove) this.branchStartsPlaced.delete(placed.input.fromMove) }
         } finally {
           release?.()
@@ -3951,7 +3952,7 @@ export class WatcherService implements WatcherControlHooks {
       return { operation, retry: false }
     })
     // The reservation is recorded, so a start placed after this one counts it against this machine's headroom (#1694).
-    placed?.admitted?.()
+    placed?.admitted?.(admitted.operation.target)
     if (progress) progress.operationId = admitted.operation.id
     if (admitted.retry) {
       // A retry reads its receipt again; only the start's first run says how many threads are working (#1183).
@@ -5031,6 +5032,21 @@ ${operation.draftId}`)
    * This computer and every host the desktop holds a connection to, each with its host facts when it reports them (#1031).
    * A host that does not list host-facts, or whose read fails, reads unknown; one not connected now reads not connected.
    */
+  /**
+   * Watcher's starts placed on each machine in the last two minutes, by Sotto thread ID (#1694). A start stops counting
+   * as on its way once its first prompt is accepted, but a machine's load is read from a window that may have ended
+   * before it began, so it counts against that machine's headroom until a reading whose window began after it was placed.
+   */
+  private placedRecently: { readonly hostId: string; readonly threadId: string; readonly at: number }[] = []
+  private notePlaced(target: WatcherThreadTarget): void {
+    const now = Date.now()
+    this.placedRecently = [...this.placedRecently.filter(item => now - item.at <= 2 * HOST_LOAD_WINDOW_MAX_MS), { ...target, at: now }]
+  }
+  /** The starts placed on `hostId` that a reading of `load` cannot show yet: placed after its window began. */
+  private placedSince(hostId: string, load: HostLoad | null | undefined): string[] {
+    const began = load ? Date.parse(load.observedAt) - load.windowMs : Number.NaN
+    return this.placedRecently.flatMap(item => item.hostId === hostId && !(item.at < began) ? [item.threadId] : [])
+  }
   /** The tail of Watcher's starts waiting to be placed one at a time (#1694). */
   private placing: Promise<void> = Promise.resolve()
   /** Waits for every start placed before this one to be admitted or refused, and answers the call that lets the next go. */
@@ -5054,11 +5070,13 @@ ${operation.draftId}`)
     // read before the host is asked and again once it has answered, so every start on its way at any moment of the read
     // is in them: one the answer missed is added, never lost (`placedNotStartedWith`). This computer's own report already
     // holds this Watcher's starts here (`startsNotYetSent`).
-    const loadOf = (report: HostMachineReport, reserved: readonly string[] | undefined) => {
+    const loadOf = (report: HostMachineReport, reserved: readonly string[] | undefined, hostId: string) => {
       if (!live) return {}
       const load = report.load ?? null, states = machineLoadStates(load, report.facts.totalMemoryBytes, Date.now())
       const placedNotStarted = reserved === undefined ? report.placedNotStarted ?? null : placedNotStartedWith(report, reserved)
-      return { load, placedNotStarted, memoryState: states.memory, cpuState: states.cpu, headroom: machineHeadroom(report.facts, load, placedNotStarted, Date.now()) }
+      // Headroom also counts this Watcher's starts the reading is too early to show, as placing does (`placedSince`).
+      const recent = this.placedSince(hostId, load), placedForHeadroom = recent.length ? placedNotStartedWith(report, [...reserved ?? [], ...recent]) : placedNotStarted
+      return { load, placedNotStarted, memoryState: states.memory, cpuState: states.cpu, headroom: machineHeadroom(report.facts, load, placedForHeadroom, Date.now()) }
     }
     const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null, ...noLoad })
     const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string, remote?: string) => {
@@ -5068,7 +5086,7 @@ ${operation.draftId}`)
         if (!report) return unknown(older)
         // A start admitted while the host was sampling may have reached it after it counted, or not at all yet.
         const reserved = before === undefined ? undefined : [...before, ...this.startsNotYetSentOn(remote!)]
-        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report, reserved) }
+        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report, reserved, remote ?? this.hostId()) }
       } catch { return unknown(MACHINE_FACTS_UNREAD) }
     }
     const local = { hostId: this.hostId(), name: 'This computer', thisComputer: true, connected: true,

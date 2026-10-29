@@ -135,7 +135,7 @@ describe('a start that names a machine', () => {
     const cloned: ProjectSetupResult = { ok: true, projectId: 'mac-sotto', title: 'Sotto', path: '/Users/zach/Projects/Sotto', how: 'cloned', current: true }
     expect((await placeWorker({}, 'watcher', onLaptop, sources([laptop({ headroom: { headroom: 0, busy: true, short: false } }),
       mac({ setUp: cloned, headroom: { headroom: 4, busy: false, short: false } })]))).receipt.note)
-      .toBe('This computer is busy, so Sotto started this one on Studio, which has room for about 4 more workers. Studio had no copy of Sotto, so Sotto cloned millZach/Sotto into /Users/zach/Projects/Sotto there.')
+      .toBe('This computer is busy, so Sotto started this one on Studio, which has more room for workers. Studio had no copy of Sotto, so Sotto cloned millZach/Sotto into /Users/zach/Projects/Sotto there.')
   })
   it('refuses in plain words when a machine with no copy cannot set one up', async () => {
     expect(await refusal(placeWorker({ machine: MAC }, 'this-computer', onLaptop, sources([laptop(), mac()])))).toEqual({ code: 'HOST_FEATURE_UNAVAILABLE', retryable: false,
@@ -183,21 +183,20 @@ describe('Watcher\'s own choice by headroom (#1694)', () => {
     const box = { machine: { hostId: MAC, name: 'box', thisComputer: false, connected: true }, system: 'linux' as const, projects: [{ id: 'box-sotto', title: 'Sotto' }],
       origins: [{ projectId: 'box-sotto', repository: sotto }], headroom: room(2) }
     expect(await placeWorker({}, 'watcher', onLaptop, sources([laptop({ headroom: busy }), forge({ headroom: room(5) }), box]))).toEqual({ hostId: FORGE, projectId: 'forge-sotto',
-      receipt: { hostId: FORGE, name: 'forge', awayFromDefault: false, note: 'This computer is busy, so Sotto started this one on forge, which has room for about 5 more workers.' } })
+      receipt: { hostId: FORGE, name: 'forge', awayFromDefault: false, note: 'This computer is busy, so Sotto started this one on forge, which has more room for workers.' } })
     expect((await placeWorker({}, 'watcher', onLaptop, sources([laptop({ headroom: room(0, { short: true }) }), forge({ headroom: room(1) })]))).receipt.note)
-      .toBe('This computer is short on memory, so Sotto started this one on forge, which has room for about 1 more worker.')
+      .toBe('This computer is short on memory, so Sotto started this one on forge, which has more room for workers.')
     expect((await placeWorker({}, 'watcher', onLaptop, sources([laptop({ headroom: room(0, { busy: true, short: true }) }), forge({ headroom: room(3) })]))).receipt.note)
-      .toBe('This computer is busy and short on memory, so Sotto started this one on forge, which has room for about 3 more workers.')
-    // Nothing wrong here, but less headroom than another: most headroom wins (Zach, October 29, 2026).
-    expect((await placeWorker({}, 'watcher', onLaptop, sources([laptop({ headroom: room(0) }), forge({ headroom: room(3) })]))).receipt.note)
-      .toBe('This computer has room for no more workers, so Sotto started this one on forge, which has room for about 3 more workers.')
+      .toBe('This computer is busy and short on memory, so Sotto started this one on forge, which has more room for workers.')
+    // Nothing wrong here, but less headroom than another: most headroom wins (Zach, October 29, 2026). The figure itself is
+    // Watcher's alone, so the words the card shows never carry it.
     expect((await placeWorker({}, 'watcher', onLaptop, sources([laptop({ headroom: room(1) }), forge({ headroom: room(6) })]))).receipt.note)
-      .toBe('This computer has room for about 1 more worker and forge for about 6, so Sotto started this one on forge.')
+      .toBe('Forge has more room for workers than This computer, so Sotto started this one there.')
   })
   it('moves a project named on another machine to one with more headroom too', async () => {
     const onForge = { hostId: FORGE, projectId: 'forge-sotto' }
     expect(await placeWorker({}, 'watcher', onForge, sources([laptop({ headroom: room(4) }), forge({ headroom: busy })]))).toEqual({ hostId: LAPTOP, projectId: 'laptop-sotto',
-      receipt: { hostId: LAPTOP, name: 'This computer', awayFromDefault: false, note: 'Forge is busy, so Sotto started this one on This computer, which has room for about 4 more workers.' } })
+      receipt: { hostId: LAPTOP, name: 'This computer', awayFromDefault: false, note: 'Forge is busy, so Sotto started this one on This computer, which has more room for workers.' } })
   })
   it('stays where its project is on a tie, or when a headroom it needs is unknown', async () => {
     const stays = async (machines: Machine[]) => (await placeWorker({}, 'watcher', onLaptop, sources(machines))).receipt
@@ -212,7 +211,7 @@ describe('Watcher\'s own choice by headroom (#1694)', () => {
   it('comes back where its project is, and says so, when the machine Sotto chose cannot take it', async () => {
     const read = sources([laptop({ headroom: busy }), forge({ headroom: room(5), projects: [{ id: 'forge-other', title: 'Other' }], setUp: { ok: false, message: 'Git could not clone it.' } })])
     expect(await placeWorker({}, 'watcher', onLaptop, read)).toEqual({ hostId: LAPTOP, projectId: 'laptop-sotto', receipt: { hostId: LAPTOP, name: 'This computer', awayFromDefault: false,
-      note: 'Sotto tried forge, which has more headroom than This computer, but could not start this one there, so it started on This computer.' } })
+      note: 'Sotto tried forge, which has more room for workers than This computer, but could not start this one there, so it started on This computer.' } })
     expect(read.setUps).toHaveLength(1)
   })
   it('takes the machine of a named system with the most headroom, in the usual order on a tie or where none is known', async () => {
@@ -223,6 +222,13 @@ describe('Watcher\'s own choice by headroom (#1694)', () => {
     expect(await on([laptop(), forge({ headroom: room(4) }), box(room(4))])).toBe(FORGE)
     expect(await on([laptop(), forge({ headroom: null }), box(null)])).toBe(FORGE)
     expect(await on([laptop(), forge({ headroom: null }), box(room(0))])).toBe(MAC)
+    // Moved off the machine the project was named on, it says why, and comes back there when the other cannot take it.
+    const linuxHere = laptop({ system: 'linux', headroom: busy })
+    expect((await placeWorker({ os: 'linux' }, 'watcher', onLaptop, sources([linuxHere, forge({ headroom: room(2) })]))).receipt)
+      .toMatchObject({ hostId: FORGE, note: 'This computer is busy, so Sotto started this one on forge, which has more room for workers.' })
+    const noCopy = forge({ headroom: room(2), projects: [{ id: 'forge-other', title: 'Other' }], setUp: { ok: false, message: 'Git could not clone it.' } })
+    expect(await placeWorker({ os: 'linux' }, 'watcher', onLaptop, sources([linuxHere, noCopy]))).toMatchObject({ hostId: LAPTOP, projectId: 'laptop-sotto',
+      receipt: { note: 'Sotto tried forge, which has more room for workers than This computer, but could not start this one there, so it started on This computer.' } })
     // A machine Settings chose, or This computer, keeps the order; headroom is Watcher's choice only.
     expect(await on([laptop(), forge({ headroom: room(1) }), box(room(4))], 'this-computer')).toBe(FORGE)
   })

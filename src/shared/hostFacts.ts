@@ -128,18 +128,20 @@ export const MACHINE_WORKER_NEEDS = {
  * A machine's headroom (#1694): about how many more workers it can take now, so machines compare directly. The CPU it has
  * to spare below the busy line, in workers, and the memory it has above the short line on the lower of the window's two
  * readings, in workers, whichever is fewer, less its work placed but not started, which has not shown in the readings yet.
- * What already runs there is in the readings. A busy machine, or one short on memory, has none. Null, never guessed,
- * wherever a number it needs is unknown: the CPU count, the CPU or memory reading, or the placed work.
- * So a Mac, whose available memory reads unknown, has no headroom figure.
+ * What already runs there is in the readings. A busy machine, or one short on memory, has none, whatever else is unknown.
+ * Otherwise null, never guessed, wherever a number it needs is unknown: the CPU count, the CPU reading, either memory
+ * reading, or the placed work. So a Mac, whose available memory reads unknown, has none when busy and no figure otherwise.
  */
 export function machineHeadroom(facts: Pick<HostFacts, 'logicalCpuCount' | 'totalMemoryBytes'>, load: HostLoad | null, placedNotStarted: number | null, now: number,
   thresholds = MACHINE_LOAD_THRESHOLDS, needs = MACHINE_WORKER_NEEDS): number | null {
   const states = machineLoadStates(load, facts.totalMemoryBytes, now, thresholds)
-  if (states.cpu === 'unknown' || states.memory === 'unknown' || placedNotStarted === null) return null
+  // What is known to be used up says none on its own: a busy Mac, whose memory reads unknown, has none.
   if (states.cpu === 'busy' || states.memory === 'short') return 0
+  if (states.cpu === 'unknown' || states.memory === 'unknown' || placedNotStarted === null) return null
   const cpus = facts.logicalCpuCount, total = facts.totalMemoryBytes, busy = load!.cpuBusyPercent!, end = load!.availableMemoryBytes!
-  if (cpus === null) return null
-  const available = Math.min(end, load!.windowStartAvailableMemoryBytes ?? end)
+  const start = load!.windowStartAvailableMemoryBytes
+  if (cpus === null || start === null) return null
+  const available = Math.min(end, start)
   // Without a total the short line is never above `shortMemoryBytes`, so counting from there never overstates.
   const floor = total === null ? thresholds.shortMemoryBytes : Math.min(thresholds.shortMemoryBytes, total * thresholds.shortMemoryShare)
   const byCpu = Math.floor(cpus * (thresholds.busyCpuPercent - busy) / 100 / needs.cpus)
