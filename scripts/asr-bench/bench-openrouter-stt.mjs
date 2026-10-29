@@ -15,6 +15,12 @@
 //   node scripts/asr-bench/bench-openrouter-stt.mjs                      # every model, 3 runs
 //   node scripts/asr-bench/bench-openrouter-stt.mjs --only elevenlabs/scribe-v2 --runs 1
 //   node scripts/asr-bench/bench-openrouter-stt.mjs --multi <dir> --budget 2
+//   node scripts/asr-bench/bench-openrouter-stt.mjs --only mistralai/voxtral-mini-transcribe --no-zdr
+//   node scripts/asr-bench/bench-openrouter-stt.mjs --only microsoft/mai-transcribe-2 --azure-hints
+//
+// --no-zdr sends without zero-retention routing, for a model OpenRouter lists with a zero-retention host that its
+// transcription route then refuses. --azure-hints sends the fixtures' names as Azure's phrase list, the only spelling
+// hints a transcription model on OpenRouter took on October 29, 2026 (every model refused `keyterms`).
 //
 // Reads the key from OPENROUTER_API_KEY or scripts/llm-bench/.openrouter-key (gitignored). Writes
 // openrouter-stt-<stamp>.json and .md to results. Never writes the key, request bodies or audio.
@@ -40,7 +46,7 @@ const p95 = (xs) => xs.length ? [...xs].sort((a, b) => a - b)[Math.ceil(xs.lengt
 const round = (value, places) => value === null || !Number.isFinite(value) ? null : Number(value.toFixed(places))
 
 function parseArgs(argv) {
-  const args = { runs: 3, budget: 3, only: null, multi: null, multiPerLanguage: 4 }
+  const args = { runs: 3, budget: 3, only: null, multi: null, multiPerLanguage: 4, zdr: true, azureHints: false }
   for (let i = 0; i < argv.length; i++) {
     const flag = argv[i]
     const next = () => argv[++i]
@@ -49,6 +55,8 @@ function parseArgs(argv) {
     else if (flag === '--only') args.only = next().split(',')
     else if (flag === '--multi') args.multi = next()
     else if (flag === '--multi-per-language') args.multiPerLanguage = Number(next())
+    else if (flag === '--no-zdr') args.zdr = false
+    else if (flag === '--azure-hints') args.azureHints = true
     else throw new Error(`Unknown flag ${flag}`)
   }
   return args
@@ -73,10 +81,11 @@ async function main() {
   const models = listed
     .filter((model) => model.architecture?.output_modalities?.includes('transcription'))
     .filter((model) => !args.only || args.only.includes(model.id))
-    .map((model) => ({ id: model.id, name: model.name, zdr: zdrModels.has(model.id) }))
+    .map((model) => ({ id: model.id, name: model.name, zdr: args.zdr && zdrModels.has(model.id) }))
 
   const truth = readJson(join(FIXTURES, 'ground-truth.json'))
   const names = readJson(join(FIXTURES, 'proper-nouns.json'))
+  const phrases = [...new Set(Object.values(names).flat())]
   const english = CLIPS.map((clip) => ({ clip, wav: readFileSync(join(FIXTURES, `speech-${clip}.wav`)), reference: truth[clip], names: names[clip] ?? [] }))
   const multi = args.multi ? pickPerLanguage(readJson(join(args.multi, 'manifest.json')), args.multiPerLanguage)
     .map((entry) => ({ ...entry, wav: readFileSync(join(args.multi, entry.file)) })) : []
@@ -87,7 +96,10 @@ async function main() {
     const body = JSON.stringify({
       model: model.id,
       input_audio: { data: wav.toString('base64'), format: 'wav' },
-      ...(model.zdr ? { provider: { zdr: true } } : {}),
+      ...(model.zdr || args.azureHints ? { provider: {
+        ...(model.zdr ? { zdr: true } : {}),
+        ...(args.azureHints ? { options: { azure: { phraseList: { phrases } } } } : {}),
+      } } : {}),
       ...extra,
     })
     const started = performance.now()
@@ -156,7 +168,7 @@ async function main() {
   const stamp = new Date().toISOString().replace(/[:.]/gu, '-')
   const out = join(HERE, 'results')
   mkdirSync(out, { recursive: true })
-  const meta = { at: new Date().toISOString(), runs: args.runs, clips: CLIPS, otherClips: multi.length, spentUsd: round(spent, 4) }
+  const meta = { at: new Date().toISOString(), runs: args.runs, clips: CLIPS, otherClips: multi.length, zdr: args.zdr, azureHints: args.azureHints, spentUsd: round(spent, 4) }
   writeFileSync(join(out, `openrouter-stt-${stamp}.json`), JSON.stringify({ meta, rows, results }, null, 2))
   writeFileSync(join(out, `openrouter-stt-${stamp}.md`), table(meta, rows))
   console.log(`Wrote results/openrouter-stt-${stamp}.{json,md}; spent $${spent.toFixed(3)}`)

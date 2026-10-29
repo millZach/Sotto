@@ -1,5 +1,5 @@
 import type { CloudSpeechModelList } from '../../shared/contracts'
-import { rankCloudSpeechModels, type ListedSpeechModel } from '../../shared/cloudSpeechModels'
+import { defaultCloudSpeechModel, rankCloudSpeechModels, type ListedSpeechModel } from '../../shared/cloudSpeechModels'
 
 const SPEECH_MODELS_URL = 'https://openrouter.ai/api/v1/models?output_modalities=transcription'
 const ZDR_ENDPOINTS_URL = 'https://openrouter.ai/api/v1/endpoints/zdr'
@@ -51,9 +51,9 @@ export class OpenRouterSpeechModels {
     return this.last?.list.models.find((model) => model.id === id)?.zdr ?? null
   }
 
-  /** The first model in the ranking, or null before a list has been read. */
+  /** The model dictation uses until the user picks one, or null before a list has been read. */
   best(): string | null {
-    return this.last?.list.models[0]?.id ?? null
+    return this.last === null ? null : defaultCloudSpeechModel(this.last.list.models)
   }
 
   private async read(): Promise<CloudSpeechModelList> {

@@ -8,6 +8,7 @@ const speechList = {
     { id: 'qwen/qwen3-asr-1.7b', name: 'Qwen: Qwen3-ASR 1.7B', architecture: { output_modalities: ['transcription'] }, pricing: { prompt: '0.0000075' } },
     { id: 'openai/gpt-transcribe', name: 'OpenAI: GPT Transcribe', architecture: { output_modalities: ['transcription'] }, pricing: { prompt: '0.000075' } },
     { id: 'microsoft/mai-transcribe-2', name: 'Microsoft: MAI-Transcribe-2', architecture: { output_modalities: ['transcription'] }, pricing: { prompt: '0.1' } },
+    { id: 'someone/new-speech-model', name: 'Someone: New Speech Model', architecture: { output_modalities: ['transcription'] }, pricing: { prompt: '0.000005' } },
     { id: 'google/gemini-embedding-2', name: 'Google: Gemini Embedding 2', architecture: { output_modalities: ['embeddings'] }, pricing: { prompt: '0.0000002' } },
     { id: 'not a slug!', name: 'Broken', architecture: { output_modalities: ['transcription'] } },
   ],
@@ -28,13 +29,14 @@ describe('OpenRouterSpeechModels', () => {
       'https://openrouter.ai/api/v1/endpoints/zdr',
     ])
     for (const [, options] of fetchFn.mock.calls) expect(new Headers(options?.headers).has('Authorization')).toBe(false)
-    expect(list.ok && list.models.map((model) => model.id)).toEqual(['microsoft/mai-transcribe-2', 'openai/gpt-transcribe', 'qwen/qwen3-asr-1.7b'])
-    expect(list.ok && list.models[0]).toEqual({
+    // Ranked by Sotto's blend; a model it has not tested comes last, priced only where OpenRouter's price is plainly per second.
+    expect(list.ok && list.models.map((model) => model.id)).toEqual(['qwen/qwen3-asr-1.7b', 'microsoft/mai-transcribe-2', 'openai/gpt-transcribe', 'someone/new-speech-model'])
+    expect(list.ok && list.models[1]).toEqual({
       id: 'microsoft/mai-transcribe-2', name: 'MAI-Transcribe-2', maker: 'Microsoft', zdr: true,
-      wer: 0.02, medianMs: null, usdPerHour: null, scoredBy: 'artificial-analysis',
+      wer: 0.0437, medianMs: 1083, usdPerHour: 0.1, scoredBy: 'sotto',
     })
-    // A price is shown only where it is plainly per second of audio.
-    expect(list.ok && list.models[2]).toMatchObject({ name: 'Qwen3-ASR 1.7B', zdr: true, wer: null, usdPerHour: 0.027, scoredBy: null })
+    expect(list.ok && list.models[3]).toMatchObject({ name: 'New Speech Model', zdr: false, wer: null, medianMs: null, usdPerHour: 0.018, scoredBy: null })
+    // With nothing picked, dictation uses MAI-Transcribe-2 while OpenRouter lists it, whatever ranks first.
     expect(reader.best()).toBe('microsoft/mai-transcribe-2')
     expect(reader.zeroRetention('openai/gpt-transcribe')).toBe(false)
     expect(reader.zeroRetention('qwen/qwen3-asr-1.7b')).toBe(true)
@@ -62,5 +64,23 @@ describe('OpenRouterSpeechModels', () => {
     expect(reader.zeroRetention('microsoft/mai-transcribe-2')).toBeNull()
     const refused = new OpenRouterSpeechModels({ fetchFn: vi.fn<typeof fetch>().mockResolvedValue(new Response('', { status: 503 })) })
     expect(await refused.list()).toEqual({ ok: false, reason: 'http' })
+  })
+})
+
+describe('the ranking Sotto ships', () => {
+  it('ranks by words wrong plus one point a second, and marks a zero-retention route OpenRouter refused', async () => {
+    const { CLOUD_SPEECH_SCORES, cloudSpeechRank, rankCloudSpeechModels, cloudSpeechHints } = await import('../../../src/shared/cloudSpeechModels')
+    expect(cloudSpeechRank({ wer: 0.03, medianMs: 1_500 })).toBeCloseTo(0.045)
+    const ranked = rankCloudSpeechModels(Object.keys(CLOUD_SPEECH_SCORES).map((id) => ({ id, name: id, promptPrice: null, zdr: true })))
+    const ranks = ranked.map((model) => cloudSpeechRank(CLOUD_SPEECH_SCORES[model.id]!))
+    expect(ranks).toEqual([...ranks].sort((a, b) => a - b))
+    expect(ranked.find((model) => model.id === 'mistralai/voxtral-mini-transcribe')?.zdr).toBe(false)
+    expect(cloudSpeechHints('microsoft/mai-transcribe-2')).toBe('azure-phrase-list')
+    expect(cloudSpeechHints('qwen/qwen3-asr-1.7b')).toBeNull()
+    expect(cloudSpeechHints('someone/new-speech-model')).toBe('keyterms')
+    const { defaultCloudSpeechModel } = await import('../../../src/shared/cloudSpeechModels')
+    expect(defaultCloudSpeechModel(ranked)).toBe('microsoft/mai-transcribe-2')
+    expect(defaultCloudSpeechModel(ranked.filter((model) => model.id !== 'microsoft/mai-transcribe-2'))).toBe(ranked[0]!.id)
+    expect(defaultCloudSpeechModel([])).toBeNull()
   })
 })

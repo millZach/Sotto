@@ -6,7 +6,7 @@ import type {
   TranscriptionResult,
 } from '../../shared/contracts'
 import { TRANSCRIPTION_SAMPLE_RATE } from '../../shared/audio'
-import { refusesKeyterms } from '../../shared/cloudSpeechModels'
+import { cloudSpeechHints } from '../../shared/cloudSpeechModels'
 import { parseDictionary } from '../../shared/dictionary'
 import { pcm16WavDurationMs } from '../../shared/wav'
 import type { AppSettings } from '../../shared/settings'
@@ -67,7 +67,7 @@ export interface CloudTranscriptionRecoveryDiagnostic {
 
 /** Which model to send to and what Sotto knows about it, from the speech model list (ADR-0160). */
 export interface CloudSpeechModelSource {
-  /** The model to use when the user has not chosen one: the first in the ranking, or null when the list cannot be read. */
+  /** The model to use when the user has not chosen one (`defaultCloudSpeechModel`), or null when the list cannot be read. */
   best(): Promise<string | null>
   /**
    * Whether the model has a host that keeps no audio, or null when the list cannot say. Unknown is sent to zero-retention
@@ -161,8 +161,9 @@ const defaultSleep = async (milliseconds: number, signal: AbortSignal): Promise<
 /**
  * Transcribes dictation segments with the OpenRouter speech model the user picked (ADR-0160), with the key AI cleanup
  * uses. Each segment is its own request, sent as soon as it is cut, so a long dictation's parts travel together. A
- * model with a host that keeps no audio is only sent to that host. The dictionary goes as spelling hints; a model that
- * refuses them is asked again without them, and not offered them again until Sotto restarts. Main holds the key;
+ * model with a host that keeps no audio is only sent to that host. The dictionary goes as the spelling hints the model
+ * takes: MAI-Transcribe-2's Azure phrase list, nothing to a model Sotto measured as taking none, and `keyterms` to one
+ * it has not measured, which is asked again without them if it refuses and not offered them again until Sotto restarts. Main holds the key;
  * nothing the provider answers reaches a log or the renderer beyond the text.
  */
 export class CloudTranscriptionService {
@@ -243,13 +244,18 @@ export class CloudTranscriptionService {
       const audio = { data: Buffer.from(request.wav).toString('base64'), format: 'wav' }
       const zeroRetention = await this.dependencies.models.zeroRetention(model).catch(() => null) !== false
       if (controller.signal.aborted) return { ok: false, reason: 'cancelled' }
+      // MAI-Transcribe-2 takes the dictionary as Azure's phrase list; a model Sotto has not measured is offered
+      // `keyterms`, and asked again without them if it refuses.
+      const hints = keyterms.length === 0 ? null : cloudSpeechHints(model)
+      const phraseList = hints === 'azure-phrase-list' ? { options: { azure: { phraseList: { phrases: keyterms } } } } : {}
+      const provider = zeroRetention || hints === 'azure-phrase-list' ? { provider: { ...(zeroRetention ? { zdr: true } : {}), ...phraseList } } : {}
       const body = (withKeyterms: boolean): string => JSON.stringify({
         model,
         input_audio: audio,
-        ...(zeroRetention ? { provider: { zdr: true } } : {}),
+        ...provider,
         ...(withKeyterms ? { keyterms } : {}),
       })
-      let hinted = keyterms.length > 0 && !refusesKeyterms(model) && !this.noKeyterms.has(model)
+      let hinted = hints === 'keyterms' && !this.noKeyterms.has(model)
 
       // Running out of time while waiting out a rate limit is still the rate limit, not a lost connection.
       const timedOut = (): TranscriptionResult => ({ ok: false, reason: trace.rateLimited > 0 ? 'rate-limited' : 'timeout' })

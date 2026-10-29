@@ -3471,10 +3471,6 @@ msgid "Not started"
 msgstr "Not started"
 
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
-msgid "Not tested by Sotto or Artificial Analysis yet."
-msgstr "Not tested by Sotto or Artificial Analysis yet."
-
-#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Not tested yet"
 msgstr "Not tested yet"
 
@@ -4926,6 +4922,10 @@ msgstr "Sotto does this"
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Sotto hands the code to {name} on {hostName} and keeps nothing."
 msgstr "Sotto hands the code to {name} on {hostName} and keeps nothing."
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Sotto has not tested it yet."
+msgstr "Sotto has not tested it yet."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Sotto heard you. The microphone is closed."
@@ -6727,10 +6727,6 @@ msgstr "Whitespace formatting"
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Why Tailscale asks"
 msgstr "Why Tailscale asks"
-
-#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
-msgid "Words wrong from Artificial Analysis; Sotto has not timed it yet."
-msgstr "Words wrong from Artificial Analysis; Sotto has not timed it yet."
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx

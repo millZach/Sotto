@@ -138,6 +138,7 @@ import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { LocalTranscriptionService } from './asr/localTranscriptionService'
 import { CloudTranscriptionService } from './asr/cloudTranscriptionService'
 import { OpenRouterSpeechModels } from './llm/openRouterSpeechModels'
+import { defaultCloudSpeechModel } from '../shared/cloudSpeechModels'
 import { createParakeetEngineLoader } from './asr/parakeetEngine'
 import { SpeechModelStore } from './asr/speechModelStore'
 import { SpeechModelManager } from './asr/speechModelManager'
@@ -1575,7 +1576,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     models: {
       best: async () => {
         const list = await speechModelsReader.list()
-        return list.ok ? list.models[0]?.id ?? null : null
+        return list.ok ? defaultCloudSpeechModel(list.models) : null
       },
       zeroRetention: async (id) => {
         await speechModelsReader.list()

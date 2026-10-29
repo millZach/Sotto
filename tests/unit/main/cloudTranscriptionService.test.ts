@@ -81,8 +81,8 @@ describe('CloudTranscriptionService', () => {
     expect(fetchFn).not.toHaveBeenCalled()
   })
 
-  it('sends the dictionary as spelling hints, bounded to 200 terms of 100 characters', async () => {
-    const { service, fetchFn } = setup({ llmDictionary: ['Sotto', 'Zache', 'x'.repeat(120), ...Array.from({ length: 250 }, (_, index) => `word-${index}`)].join('\n') })
+  it('sends a model Sotto has not measured the dictionary as keyterms, bounded to 200 terms of 100 characters', async () => {
+    const { service, fetchFn } = setup({ cloudSpeechModel: 'someone/new-speech-model', llmDictionary: ['Sotto', 'Zache', 'x'.repeat(120), ...Array.from({ length: 250 }, (_, index) => `word-${index}`)].join('\n') })
     await service.transcribe(request)
     const keyterms = body(fetchFn).keyterms as string[]
     expect(keyterms.slice(0, 2)).toEqual(['Sotto', 'Zache'])
@@ -90,8 +90,22 @@ describe('CloudTranscriptionService', () => {
     expect(keyterms.every((term) => term.length <= 100)).toBe(true)
   })
 
-  it('asks again without hints when a model refuses them, and stops offering that model hints', async () => {
+  it('sends MAI-Transcribe-2 the dictionary as its Azure phrase list, beside zero-retention routing', async () => {
+    const { service, fetchFn } = setup({ cloudSpeechModel: 'microsoft/mai-transcribe-2', llmDictionary: 'Sotto\nZache' })
+    await service.transcribe(request)
+    expect(body(fetchFn)).toMatchObject({ provider: { zdr: true, options: { azure: { phraseList: { phrases: ['Sotto', 'Zache'] } } } } })
+    expect(body(fetchFn)).not.toHaveProperty('keyterms')
+  })
+
+  it('sends no hints to a model Sotto measured as taking none', async () => {
     const { service, fetchFn } = setup({ llmDictionary: 'Sotto' })
+    await service.transcribe(request)
+    expect(body(fetchFn)).not.toHaveProperty('keyterms')
+    expect(body(fetchFn)).toEqual(expect.objectContaining({ provider: { zdr: true } }))
+  })
+
+  it('asks again without hints when a model refuses them, and stops offering that model hints', async () => {
+    const { service, fetchFn } = setup({ cloudSpeechModel: 'someone/new-speech-model', llmDictionary: 'Sotto' })
     fetchFn.mockResolvedValueOnce(new Response('{"error":{"message":"keyterms not supported"}}', { status: 400 }))
     expect(await service.transcribe(request)).toEqual({ ok: true, text: 'Hello Sotto.' })
     expect(body(fetchFn, 0)).toHaveProperty('keyterms')

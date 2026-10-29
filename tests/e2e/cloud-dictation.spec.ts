@@ -60,7 +60,9 @@ test('an Owl build turns on Transcribe with OpenRouter and picks a model from th
     await expect(group.getByText('Uses the OpenRouter key saved for AI cleanup. Change it in Settings → Cleanup.')).toBeVisible()
     const rows = group.getByRole('radio')
     await expect(rows).toHaveCount(5)
-    await expect(rows.first()).toHaveAttribute('aria-checked', 'true')
+    // With nothing picked, MAI-Transcribe-2 is the one dictation uses, though Qwen3-ASR ranks first (ADR-0160).
+    await expect(rows.first()).toContainText('Qwen3-ASR 1.7B')
+    await expect(group.getByRole('radio', { name: /MAI-Transcribe-2/u })).toHaveAttribute('aria-checked', 'true')
 
     for (const [width, height, theme] of [[1280, 800, 'dark'], [1280, 800, 'light'], [820, 560, 'dark']] as const) {
       await page.evaluate(async (appearance) => { await window.sotto!.updateSettings({ appearance }) }, theme)

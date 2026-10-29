@@ -3,6 +3,7 @@ import { useLingui } from '@lingui/react/macro'
 
 import type { CloudSpeechModel, CloudSpeechModelList as ModelList } from '../../../../shared/contracts'
 import { Button } from '../../components/Button'
+import { defaultCloudSpeechModel } from '../../../../shared/cloudSpeechModels'
 import './cloudSpeechModels.css'
 
 /** The rows shown before Show all: enough to choose from without a long page. */
@@ -20,7 +21,7 @@ const fill = (value: number, worst: number): string => `${Math.round(Math.max(0.
  * group opens. Picking a row saves it; the arrow keys move between rows the way any set of radio buttons does.
  */
 export function CloudSpeechModelList({ choice, onChoose, onList }: {
-  /** The saved choice, or null for the first in the ranking. */
+  /** The saved choice, or null for the default (MAI-Transcribe-2 while OpenRouter lists it). */
   readonly choice: string | null
   readonly onChoose: (id: string) => void
   readonly onList: () => Promise<ModelList>
@@ -58,7 +59,7 @@ export function CloudSpeechModelList({ choice, onChoose, onList }: {
   useEffect(() => { read() }, [read])
 
   const models = list?.ok === true ? list.models : []
-  const chosen = choice ?? models[0]?.id ?? null
+  const chosen = choice ?? defaultCloudSpeechModel(models)
   const chosenAt = models.findIndex((model) => model.id === chosen)
   // The saved model stays in view even when it is ranked below the top five.
   const shown = all || chosenAt >= TOP ? models : models.slice(0, TOP)
@@ -153,9 +154,7 @@ function ModelRow({ model, rank, checked, focusable, quiet, onPoint, onLeave, ro
     ? t`Sent only to a host that keeps no audio.`
     : t`Not a zero-retention model: its host may keep your audio under its own terms.`
   const timed = model.medianMs === null ? null : t`Its text came back in ${(model.medianMs / 1_000).toFixed(1)} s on Sotto’s test clips.`
-  const source = model.scoredBy === 'artificial-analysis'
-    ? t`Words wrong from Artificial Analysis; Sotto has not timed it yet.`
-    : model.scoredBy === null ? t`Not tested by Sotto or Artificial Analysis yet.` : null
+  const source = model.scoredBy === null ? t`Sotto has not tested it yet.` : null
   return <div ref={rowRef} role="radio" aria-checked={checked} aria-describedby={tipId} tabIndex={focusable ? 0 : -1}
     className="cloud-models__row tt-focusable" data-checked={checked || undefined} data-tip-quiet={quiet || undefined}
     onClick={onChoose} onKeyDown={onKeyDown} onMouseEnter={() => onPoint(true)} onMouseLeave={() => onPoint(false)} onBlur={onLeave}>

@@ -3471,10 +3471,6 @@ msgid "Not started"
 msgstr ""
 
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
-msgid "Not tested by Sotto or Artificial Analysis yet."
-msgstr ""
-
-#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "Not tested yet"
 msgstr ""
 
@@ -4925,6 +4921,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Sotto hands the code to {name} on {hostName} and keeps nothing."
+msgstr ""
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Sotto has not tested it yet."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -6726,10 +6726,6 @@ msgstr ""
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Why Tailscale asks"
-msgstr ""
-
-#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
-msgid "Words wrong from Artificial Analysis; Sotto has not timed it yet."
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts

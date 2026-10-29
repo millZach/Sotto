@@ -272,8 +272,7 @@ export const openRouterModelListSchema = z.discriminatedUnion('ok', [
 
 /**
  * OpenRouter's speech models, best first, for the list in Settings → Dictation (ADR-0160). `wer` and `medianMs` are
- * Sotto's own measurements where it has them (`scoredBy: 'sotto'`), Artificial Analysis's published error rate where it
- * has only that, and null for a model nobody has measured. `zdr` says whether the model has a host that keeps no audio.
+ * Sotto's own measurements (`scoredBy: 'sotto'`), and null for a model Sotto has not tested yet. `zdr` says whether the model has a host that keeps no audio.
  */
 export const cloudSpeechModelSchema = z.object({
   id: z.string().min(1).max(128),
@@ -283,7 +282,7 @@ export const cloudSpeechModelSchema = z.object({
   wer: z.number().min(0).max(10).nullable(),
   medianMs: z.number().int().min(0).max(120_000).nullable(),
   usdPerHour: z.number().min(0).max(1_000).nullable(),
-  scoredBy: z.enum(['sotto', 'artificial-analysis']).nullable(),
+  scoredBy: z.enum(['sotto']).nullable(),
 }).strict()
 
 export const cloudSpeechModelListSchema = z.discriminatedUnion('ok', [
