@@ -195,11 +195,55 @@ describe('the archive on disk', () => {
     expect((await recovered.read({ requests: desktop })).requests.map(item => item.id).sort()).toEqual([...desktop].sort())
     expect(recovered.hasRequest(own[0]!)).toBe(false)
     expect((await readFile(join(mixed, WATCHER_ARCHIVE_FILE), 'utf8')).split('\n').filter(Boolean)).toHaveLength(1)
+    // The unreadable index's copy, which named this computer's own work, goes too.
+    expect((await readdir(mixed)).filter(name => name.includes('.corrupt-'))).toEqual([])
     // Without a desktop's work, a start with history off removes the file at once, as before.
     const plain = await directory()
     await new WatcherArchive(plain, () => true).append(watcherArchiveBatch(record(260), archivableWatcherRequests(record(260))))
     await new WatcherArchive(plain, () => false).settled()
     expect(await readdir(plain)).toEqual([])
+  })
+
+  it('keeps answering for a desktop\'s work while history going off rewrites the file, and leaves a file it cannot wholly read', async () => {
+    const value = record(260, next => { for (const index of [0, 1]) next.requests[index]!.remoteOrigin = { clientId: 'desktop', master: next.current!, creationOperationId: randomUUID(), ceiling: 'approval-required' } })
+    const ids = archivableWatcherRequests(value), desktop = [requestAt(value, 0).id, requestAt(value, 1).id], own = ids.filter(id => !desktop.includes(id))
+    // Held part-way through writing the new file, the archive still knows the desktop's requests.
+    const root = await directory()
+    let history = true, release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let writing!: () => void
+    const started = new Promise<void>(resolve => { writing = resolve })
+    const archive = new WatcherArchive(root, () => history, async (path, flags) => {
+      const file = await open(path, flags)
+      if (flags === 'w') { writing(); await gate }
+      return { read: (buffer, offset, length, position) => file.read(buffer, offset, length, position), sync: () => file.sync(), close: () => file.close(),
+        write: (buffer, offset, length) => file.write(buffer, offset, length) }
+    })
+    await archive.append(watcherArchiveBatch(value, own))
+    await archive.append(watcherArchiveBatch(value, desktop))
+    history = false
+    const going = archive.privacyChanged()
+    await started
+    expect(desktop.every(id => archive.hasRequest(id))).toBe(true)
+    release(); await going
+    expect(desktop.every(id => archive.hasRequest(id))).toBe(true)
+    // A line that cannot be read may hold a desktop's identities, so the file is left as it is rather than lose them.
+    const broken = await directory()
+    await new WatcherArchive(broken, () => true).append(watcherArchiveBatch(value, own))
+    await new WatcherArchive(broken, () => true).append(watcherArchiveBatch(value, desktop))
+    const text = await readFile(join(broken, WATCHER_ARCHIVE_FILE), 'utf8'), first = text.indexOf('\n')
+    await writeFile(join(broken, WATCHER_ARCHIVE_FILE), `${'x'.repeat(first)}${text.slice(first)}`)
+    const kept = new WatcherArchive(broken, () => false)
+    expect((await kept.read({ requests: desktop })).requests.map(item => item.id).sort()).toEqual([...desktop].sort())
+    expect((await readFile(join(broken, WATCHER_ARCHIVE_FILE), 'utf8')).length).toBe(text.length)
+    // A batch of this computer's own work the index never took, as after a failed index write, is not kept by history off.
+    const stale = await directory()
+    await new WatcherArchive(stale, () => true).append(watcherArchiveBatch(value, desktop))
+    const line = `${JSON.stringify({ version: 1, from: at(0), through: at(300), ...watcherArchiveBatch(value, own) })}\n`
+    await writeFile(join(stale, WATCHER_ARCHIVE_FILE), `${await readFile(join(stale, WATCHER_ARCHIVE_FILE), 'utf8')}${line}`)
+    await new WatcherArchive(stale, () => false).settled()
+    const left = (await readFile(join(stale, WATCHER_ARCHIVE_FILE), 'utf8')).split('\n').filter(Boolean).flatMap(item => (JSON.parse(item) as { requests: { id: string }[] }).requests.map(request => request.id))
+    expect(left.sort()).toEqual([...desktop].sort())
   })
 
   /** `open` whose append fails, as a locked disk does. */

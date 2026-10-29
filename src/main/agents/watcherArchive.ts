@@ -255,9 +255,16 @@ const desktopOnly = (entry: Pick<IndexEntry, 'requests' | 'remote'>): boolean =>
 const desktopBatch = (batch: WatcherArchived): boolean => batch.requests.length > 0 && batch.requests.every(request => request.remoteOrigin)
 /** `work` as one batch, with the times it spans. */
 const asBatch = (work: WatcherArchived): Batch => ({ version: 1, ...span(work), requests: [...work.requests], operations: [...work.operations], promptTurns: [...work.promptTurns] })
+/** `requests` with their operations and the prompt turns those name, from `by` (operations by request) and `turns` (by ID). */
+function withTheirWork(requests: readonly WatcherRequest[], by: ReadonlyMap<string, readonly WatcherOperation[]>, turns: ReadonlyMap<string, WatcherPromptTurn>): Batch {
+  const operations = requests.flatMap(request => by.get(request.id) ?? [])
+  const named = new Set(operations.flatMap(operation => operation.promptTurnId ? [operation.promptTurnId] : []))
+  return asBatch({ requests, operations, promptTurns: [...named].flatMap(id => { const turn = turns.get(id); return turn ? [turn] : [] }) })
+}
 /**
  * The part of `batches` that paired desktops made here, each request as the newest batch holding it has it, written again
- * as batches of their own: their requests, those requests' operations and the prompt turns those name.
+ * as batches of their own: their requests, those requests' operations and the prompt turns those name. One pass over
+ * each, however much the archive holds.
  */
 function desktopBatches(batches: readonly WatcherArchived[]): Batch[] {
   const requests = new Map<string, WatcherRequest>(), operations = new Map<string, WatcherOperation>(), turns = new Map<string, WatcherPromptTurn>()
@@ -266,13 +273,9 @@ function desktopBatches(batches: readonly WatcherArchived[]): Batch[] {
     for (const operation of batch.operations) operations.set(operation.id, operation)
     for (const turn of batch.promptTurns) turns.set(turn.id, turn)
   }
-  const ids = [...requests.keys()], written: Batch[] = []
-  for (let at = 0; at < ids.length; at += WATCHER_ARCHIVE_BATCH) {
-    const group = new Set(ids.slice(at, at + WATCHER_ARCHIVE_BATCH))
-    const owned = [...operations.values()].filter(operation => group.has(operation.requestId))
-    const named = new Set(owned.flatMap(operation => operation.promptTurnId ? [operation.promptTurnId] : []))
-    written.push(asBatch({ requests: [...group].map(id => requests.get(id)!), operations: owned, promptTurns: [...turns.values()].filter(turn => named.has(turn.id)) }))
-  }
+  const by = operationsByRequest([...operations.values()].filter(operation => requests.has(operation.requestId)))
+  const ordered = [...requests.values()], written: Batch[] = []
+  for (let at = 0; at < ordered.length; at += WATCHER_ARCHIVE_BATCH) written.push(withTheirWork(ordered.slice(at, at + WATCHER_ARCHIVE_BATCH), by, turns))
   return written
 }
 /** What of a batch this computer's own Watcher made: everything but a paired desktop's requests and their work. */
@@ -280,9 +283,7 @@ function ownPart(batch: Batch): Batch | undefined {
   const requests = batch.requests.filter(request => !request.remoteOrigin)
   if (!requests.length) return undefined
   if (requests.length === batch.requests.length) return batch
-  const ids = new Set(requests.map(request => request.id)), operations = batch.operations.filter(operation => ids.has(operation.requestId))
-  const named = new Set(operations.flatMap(operation => operation.promptTurnId ? [operation.promptTurnId] : []))
-  return asBatch({ requests, operations, promptTurns: batch.promptTurns.filter(turn => named.has(turn.id)) })
+  return withTheirWork(requests, operationsByRequest(batch.operations), new Map(batch.promptTurns.map(turn => [turn.id, turn] as const)))
 }
 
 /** A batch of archived work whose work the archive could not read: a lookup by ID refuses rather than call it absent. */
@@ -356,7 +357,7 @@ export class WatcherArchive {
   private async load(): Promise<void> {
     this.forget()
     if (this.historyEnabled()) for (const entry of (await this.index.read()).batches) this.add({ entry })
-    else await this.keepDesktopWork((await this.index.read()).batches)
+    else for (const entry of await this.keptDesktopWork((await this.index.read()).batches)) this.add({ entry })
     this.loaded = true
   }
   private forget(): void {
@@ -515,9 +516,11 @@ export class WatcherArchive {
       if (!this.historyEnabled()) {
         // What this run archived of its own work stays, in memory, as this run's conversation does; what earlier runs saved of it goes.
         const mine = (await this.readSlots(this.slots.filter(slot => !slot.held && slot.thisRun && !desktopOnly(slot.entry)), true)).flatMap(batch => ownPart(batch) ?? [])
-        const held = this.slots.filter(slot => slot.held), saved = this.slots.flatMap(slot => slot.held ? [] : [slot.entry])
+        const held = this.slots.filter(slot => slot.held)
+        // The lookups keep answering from what is held now until the saved archive is what it will be.
+        const saved = await this.keptDesktopWork(this.slots.flatMap(slot => slot.held ? [] : [slot.entry]))
         this.forget()
-        await this.keepDesktopWork(saved)
+        for (const entry of saved) this.add({ entry })
         for (const slot of held) this.add(slot)
         for (const batch of mine) this.add({ entry: { offset: 0, length: 1, from: batch.from, through: batch.through, ...identities(batch) }, held: batch })
         this.loaded = true
@@ -530,29 +533,45 @@ export class WatcherArchive {
   }
   /**
    * With Keep local history off the saved archive keeps only what paired desktops made here (#1759): identities a
-   * desktop's retry needs after a restart, and nothing of this computer's own work. One that already holds only that, by
-   * its index, is kept as it is. Otherwise its file is read line by line, the index aside, so an index that cannot be read
-   * loses nothing of it, and written again with only that.
+   * desktop's retry needs after a restart, and nothing of this computer's own work. Gives the index entries it then holds.
+   * One whose index names only that, and whose file holds nothing the index does not, is kept as it is. Otherwise its file
+   * is read line by line, the index aside, so an index that cannot be read loses nothing of it, and written again with only
+   * that. A file with a line that cannot be read is left as it is: the identities in that line may be a desktop's, and an
+   * archive that keeps them unreadable refuses a retry of them rather than run it again.
    */
-  private async keepDesktopWork(entries: readonly IndexEntry[]): Promise<void> {
-    if (entries.length && entries.every(desktopOnly)) { for (const entry of entries) this.add({ entry }); return }
-    const batches = desktopBatches(await this.savedBatches())
-    if (!batches.length) { await this.removeSaved(); return }
-    await this.replaceSaved(batches)
+  private async keptDesktopWork(entries: readonly IndexEntry[]): Promise<IndexEntry[]> {
+    const size = await stat(join(this.directory, WATCHER_ARCHIVE_FILE)).then(file => file.size, (error: unknown) => {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0
+      throw error
+    })
+    const indexed = entries.reduce((end, entry) => Math.max(end, entry.offset + entry.length + 1), 0)
+    if (entries.length && entries.every(desktopOnly) && size <= indexed) return [...entries]
+    const saved = await this.savedBatches()
+    if (saved.unreadable) return [...entries]
+    const batches = desktopBatches(saved.batches)
+    if (!batches.length) { await this.removeSaved(); return [] }
+    return await this.replaceSaved(batches)
   }
-  /** Every batch the archive's file holds that can be read, in order, found by its lines rather than its index. */
-  private async savedBatches(): Promise<Batch[]> {
+  /** Every batch the archive's file holds, in order, found by its lines rather than its index, and whether any line could not be read. */
+  private async savedBatches(): Promise<{ batches: Batch[]; unreadable: boolean }> {
     const text = await readFile(join(this.directory, WATCHER_ARCHIVE_FILE), 'utf8').catch((error: unknown) => {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') return ''
       throw error
     })
-    return text.split('\n').flatMap(line => {
+    let unreadable = false
+    const batches = text.split('\n').flatMap(line => {
       if (!line.trim()) return []
-      try { const batch = batchSchema.safeParse(JSON.parse(line)); return batch.success ? [batch.data] : [] } catch { return [] }
+      try { const batch = batchSchema.safeParse(JSON.parse(line)); if (batch.success) return [batch.data] } catch { /* counted below */ }
+      unreadable = true
+      return []
     })
+    return { batches, unreadable }
   }
-  /** Writes `batches` as the whole archive: a new file beside the old, moved over it once every byte is down, then its index. */
-  private async replaceSaved(batches: readonly Batch[]): Promise<void> {
+  /**
+   * Writes `batches` as the whole archive: a new file beside the old, moved over it once every byte is down, then its index,
+   * whose copies an unreadable earlier index left go too. Gives the new index's entries.
+   */
+  private async replaceSaved(batches: readonly Batch[]): Promise<IndexEntry[]> {
     const path = join(this.directory, WATCHER_ARCHIVE_FILE), next = `${path}.next`, entries: IndexEntry[] = []
     const file = await retryWindowsFileOperation(() => this.openFile(next, 'w'))
     try {
@@ -567,7 +586,10 @@ export class WatcherArchive {
     } finally { await file.close() }
     await retryWindowsFileOperation(() => rename(next, path))
     await this.index.write({ version: 1, batches: entries })
-    for (const entry of entries) this.add({ entry })
+    const names = await readdir(this.directory)
+    await Promise.all(names.filter(name => name.startsWith(`${WATCHER_ARCHIVE_INDEX}.corrupt-`))
+      .map(name => retryWindowsFileOperation(() => unlink(join(this.directory, name))).catch(() => undefined)))
+    return entries
   }
   /** Whether the archive holds this request, on disk or in memory: what may leave the live record. */
   holds(id: string, version?: string): boolean { return this.requestSlot.has(id) && (version === undefined || this.versions.get(id) === version) }
