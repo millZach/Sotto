@@ -31,7 +31,7 @@ import { heldOnHost } from '../shared/hostProviders'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import { createHostSelfUpdate } from './selfUpdate'
 import { HostBranchMoves } from './branchMoves'
-import { HostThreadMoves, HostThreadMoveSources } from '../main/agents/threadMovesHost'
+import { heldMoveWorktrees, HostThreadMoves, HostThreadMoveSources } from '../main/agents/threadMovesHost'
 import { HostDelegationRelay } from '../main/agents/delegationRelayHost'
 import { HostRemoteCallers } from '../main/agents/delegationRemoteHost'
 import { BranchBundles } from '../main/agents/branchBundles'
@@ -171,9 +171,11 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     await delegationRemote?.load()
     // This host's threads a move holds or moved away keep their worktrees (#1178 part 3). The record is made once the
     // runtime is, so until then, and until it reads, cleanup keeps every worktree; null where this host holds none.
+    // With Work across machines off it still keeps them, reading that record without stepping any move.
     let heldMoves: HostThreadMoveSources | null | undefined
+    const keptWhileOff = crossMachineEnabled ? undefined : await heldMoveWorktrees(directory)
     const runtime = await createAgentRuntime({
-      ...crossMachineEnabled ? { keepsWorktree: (threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId) } : {},
+      keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
       observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, clearThreadsEnabled,
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
       // This host's own threads delegate on this machine (#1310) where its Owl answer turns on Work across machines, held to

@@ -776,6 +776,21 @@ describe('a host’s thread moves too (#1178 part 3)', () => {
     expect(w.news.at(-1)).toMatchObject({ moveId, source: { hostId: LAB, threadId: 'lab-1' }, outcome: 'stayed' })
     moves.close()
   })
+  it('says a move waits on the machine it goes to before its host holds the thread, and on that host once it must hold it', async () => {
+    // A move taken up again after a restart, not yet held, whose target is away: it waits for the target first.
+    const w = world(), at = new Date().toISOString(), moveId = randomUUID()
+    const record: MoveRecord = { id: moveId, sourceThreadId: 'lab-1', sourceHostId: LAB, from: 'lab', targetHostId: FORGE, machine: 'forge', state: 'fenced',
+      start: { provider: 'codex', modelId: model.id, title: 'Thread lab-1' }, watched: false, createdAt: at, updatedAt: at }
+    await writeFile(join(directory, 'moves.json'), JSON.stringify({ version: 1, moves: [record] }))
+    w.remote.connected = false
+    const moves = w.service(); await moves.load(); moves.useTargets(w.targets)
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true, waitingOn: 'forge' }))
+    expect(w.lab.asked).toEqual([])
+    // Back, the target lets the move ask lab to hold the thread.
+    w.remote.connected = true; w.connected()
+    await vi.waitFor(() => expect(w.lab.asked[0]).toMatchObject({ action: 'hold', moveId }))
+    moves.close()
+  })
   it('says why a host’s thread stays: its host away or too old, or the thread already where it would go', () => {
     const w = world(), moves = w.service(); moves.useTargets(w.targets)
     w.remote.threads.push(source('forge-1'))

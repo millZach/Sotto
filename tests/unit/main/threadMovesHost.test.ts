@@ -8,7 +8,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildHandover } from '../../../src/main/agents/handover'
 import type { ClientIdentity } from '../../../src/main/agents/hostService'
-import { HOST_THREAD_MOVES_MAX, HostThreadMoves, HostThreadMoveSources } from '../../../src/main/agents/threadMovesHost'
+import { heldMoveWorktrees, HOST_THREAD_MOVES_MAX, HostThreadMoves, HostThreadMoveSources } from '../../../src/main/agents/threadMovesHost'
 import { EMPTY_AGENT_HOST, type AgentCommand, type AgentModel, type AgentState, type AgentThread, type ThreadContinuedIn } from '../../../src/shared/agents'
 import { HOST_THREAD_MOVE_WORDS, THREAD_MOVE_UNDECIDED, THREAD_MOVE_WORDS, type HostThreadMoveStart } from '../../../src/shared/threadMoves'
 
@@ -134,11 +134,14 @@ function sources() {
     { id: 'busy', projectId: 'project', title: 'Busy', modelId: model.id, providerId: 'codex', status: 'running', requests: [], messages: [{ id: 'b1', role: 'user', text: 'Go.', createdAt: '2026-10-29T10:00:00.000Z' }] },
   ]
   const fences = new Map<string, string>(), settled: string[] = [], links: { threadId: string; link: ThreadContinuedIn }[] = []
-  const state = { held: null as string | null }
+  const state = { held: null as string | null, fenceFails: false }
   const control = {
     watcherSnapshot: () => ({ ...EMPTY_AGENT_HOST, models: [model], threads }),
     moveHoldReason: (threadId: string) => state.held === threadId ? { kind: 'queued' } as never : null,
-    fenceForMove: (threadId: string, words: string) => { fences.set(threadId, words) },
+    fenceForMove: (threadId: string, words: string) => {
+      fences.set(threadId, words)
+      return state.fenceFails ? Promise.reject(new Error('The coordinator could not save its record.')) : undefined
+    },
     liftMoveFence: (threadId: string) => { fences.delete(threadId) },
     moveFenceOf: (threadId: string) => fences.get(threadId),
     fencedForMove: () => [...fences.keys()],
@@ -233,6 +236,23 @@ describe('this host’s own thread as a move’s source (#1178 part 3)', () => {
     expect([...s.fences.keys()]).toEqual(['wav'])
     expect(s.fences.get('wav')).toBe(THREAD_MOVE_WORDS.fence('forge'))
     expect(s.held.keepsWorktree('wav')).toBe(true)
+  })
+  it('lets go of a hold whose fence could not be saved, holding nothing and fencing nothing', async () => {
+    const s = sources(), moveId = randomUUID()
+    await s.held.start()
+    s.state.fenceFails = true
+    await expect(s.moves.handle({ action: 'hold', moveId, threadId: 'wav', machine: 'forge' }, desktop)).rejects.toThrow('could not save')
+    expect(s.fences.size).toBe(0); expect(s.held.keepsWorktree('wav')).toBe(false)
+    expect(JSON.parse(await readFile(join(directory, 'thread-moves-held.json'), 'utf8')).held).toEqual([])
+  })
+  it('keeps the worktrees its record names while it does not move threads, and every one while that record does not read', async () => {
+    expect((await heldMoveWorktrees(directory))('wav')).toBe(false)
+    const at = new Date().toISOString()
+    await writeFile(join(directory, 'thread-moves-held.json'), JSON.stringify({ version: 1, held: [{ moveId: randomUUID(), clientId: 'laptop', threadId: 'wav', machine: 'forge', state: 'held', createdAt: at, updatedAt: at }], kept: ['tray'] }))
+    const kept = await heldMoveWorktrees(directory)
+    expect([kept('wav'), kept('tray'), kept('other')]).toEqual([true, true, false])
+    await writeFile(join(directory, 'thread-moves-held.json'), '{"version": 1, "held": [{"moveId": 3}]}')
+    expect((await heldMoveWorktrees(directory))('other')).toBe(true)
   })
   it('refuses every step, fencing and lifting nothing, while its record does not read', async () => {
     await writeFile(join(directory, 'thread-moves-held.json'), '{"version": 1, "held": [{"moveId": 3}]}')

@@ -479,8 +479,10 @@ export class ThreadMoveService {
    */
   private waitingOn(record: MoveRecord): string {
     if (!record.sourceHostId) return record.machine
-    const onSource = record.ending !== undefined || !this.targets?.snapshot(record.sourceHostId) || record.state === 'fenced' && !record.held || record.state === 'first-turn-ended'
-    return onSource ? this.fromName(record) : record.machine
+    if (record.ending !== undefined || !this.targets?.snapshot(record.sourceHostId)) return this.fromName(record)
+    // Every step but ending waits for the machine it goes to first.
+    if (!this.snapshotOf(record.targetHostId)) return record.machine
+    return record.state === 'fenced' && !record.held || record.state === 'first-turn-ended' ? this.fromName(record) : record.machine
   }
   private waitingNow(): string { return this.stalled().map(record => record.id).sort().join(',') }
   private waitingChanged(): void { if (this.listeners.size && this.waitingNow() !== this.waitingKey) this.changed() }

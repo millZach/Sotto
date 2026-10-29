@@ -267,6 +267,19 @@ export async function settleMovedSource(control: Pick<HostThreadMoveSourceContro
 }
 
 /**
+ * The worktrees cleanup keeps for this host's moves while it does not move threads, its Owl answer having turned Work across
+ * machines off: the record of held moves is read, never written, and every thread it keeps stays kept, every one while it
+ * does not read. Its fences stay in the coordinator's own record, which nothing lifts meanwhile.
+ */
+export async function heldMoveWorktrees(directory: string): Promise<(threadId: string) => boolean> {
+  const read = await readStrictJson(join(directory, 'thread-moves-held.json'), input => heldFileSchema.parse(input))
+  if (read.status === 'missing') return () => false
+  if (read.status === 'unreadable') return () => true
+  const kept = new Set([...read.value.kept ?? [], ...read.value.held.filter(record => record.state === 'held').map(record => record.threadId)])
+  return threadId => kept.has(threadId)
+}
+
+/**
  * This machine's own threads as a move's source (#1178 part 3, `thread-move-source`, Owl `cross-machine-work`): a desktop
  * moves one of them to This computer, or to another machine through the desktop. This machine says whether the thread can
  * move by its own record, as This computer does for its own (`threadMoveRefusal`), and fences it under the move's ID in the
@@ -396,7 +409,9 @@ export class HostThreadMoveSources {
         || delegatedThreadsBelow(snapshot.threads, threadId).some(child => { const item = byId.get(child); return item !== undefined && isThreadTurnRunning(item) }) })
     if (refusal) return sourceRefused('not-movable', refusal)
     if ([...this.records.values()].filter(item => item.state === 'held').length >= HOST_THREAD_MOVES_MAX) return sourceRefused('not-movable', HOST_THREAD_MOVE_WORDS.full)
-    const fenced = control.fenceForMove(threadId, THREAD_MOVE_WORDS.fence(machine))
+    // Settled after the record's write either way, so a fence that could not be saved is this step's error, never an unhandled one.
+    const fenced = Promise.resolve(control.fenceForMove(threadId, THREAD_MOVE_WORDS.fence(machine)))
+    fenced.catch(() => undefined)
     const at = new Date().toISOString()
     const keptBefore = this.kept.has(threadId)
     try {

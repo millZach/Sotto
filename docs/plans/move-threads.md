@@ -126,3 +126,10 @@ After Sol's standards and spec reviews (October 29):
 - A waiting card names the machine the move waits on (`waitingOn`): the host its thread is on, while that host is away or for the steps only it takes, or the machine it goes to.
 - This computer's settling of a moved source and a host's share one routine (`settleMovedSource`).
 
+After Sol's confirmation pass (October 29):
+
+- A host whose Owl answer turns Work across machines off still keeps the worktrees its record of held moves names, reading it without stepping any move (`heldMoveWorktrees`), and every worktree while that record does not read.
+- A hold whose fence cannot be saved is this step's error, never an unhandled rejection that would stop the host, and holds nothing.
+- A move not yet held waits for the machine it goes to before it asks the host its thread is on, and its card says so.
+- Left as it was: `delegatedThreadsBelow` copies a growing list as it walks a thread's delegated threads, which part 1's preview already did; not this part's to change.
+
