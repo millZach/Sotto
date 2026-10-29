@@ -1574,7 +1574,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const cloudTranscription = speechModelsReader === null ? null : new CloudTranscriptionService({
     getSettings: () => settings.forFormatting(),
     models: {
-      best: async () => {
+      defaultModel: async () => {
         const list = await speechModelsReader.list()
         return list.ok ? defaultCloudSpeechModel(list.models) : null
       },
@@ -1596,13 +1596,17 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const releaseLocalIfIdle = (): void => {
     if (cloudChosen && dictationActive && localInFlight === 0) void speechModelManager?.unload()
   }
+  // The one way the model here is loaded while OpenRouter has, or had, it put away: a load already under way is shared
+  // and a ready model is kept, since a second start cancels the first and a restart would orphan the running helper.
+  const loadLocal = (): Promise<void> => {
+    if (speechModelManager === null || speechModelManager.currentEngine() !== null) return Promise.resolve()
+    localLoading ??= speechModelManager.start().finally(() => { localLoading = null })
+    return localLoading
+  }
   const transcribeHere = async (request: TranscriptionRequest, load: boolean): Promise<TranscriptionResult> => {
     localInFlight += 1
     try {
-      if (load && speechModelManager !== null && speechModelManager.currentEngine() === null) {
-        localLoading ??= speechModelManager.start().finally(() => { localLoading = null })
-        await localLoading
-      }
+      if (load) await loadLocal()
       return await localTranscription.transcribe(request)
     } finally {
       localInFlight -= 1
@@ -2045,7 +2049,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     cloudChosen = on
     if (!dictationActive) return
     if (on) releaseLocalIfIdle()
-    else void speechModelManager?.start()
+    else void loadLocal()
   }
 
   const permissionAdapter = createPermissionAdapter()

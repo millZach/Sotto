@@ -27,7 +27,7 @@ function setup(patch: Partial<AppSettings> = {}, models: Partial<CloudSpeechMode
   const recoveries: CloudTranscriptionRecoveryDiagnostic[] = []
   const service = new CloudTranscriptionService({
     getSettings: async () => settings,
-    models: { best: async () => 'microsoft/mai-transcribe-2', zeroRetention: async () => true, ...models },
+    models: { defaultModel: async () => 'microsoft/mai-transcribe-2', zeroRetention: async () => true, ...models },
     fetchFn,
     sleep,
     random: () => 0,
@@ -68,7 +68,7 @@ describe('CloudTranscriptionService', () => {
     const chosen = setup({ cloudSpeechModel: null })
     await chosen.service.transcribe(request)
     expect(body(chosen.fetchFn)).toMatchObject({ model: 'microsoft/mai-transcribe-2' })
-    const unread = setup({ cloudSpeechModel: null }, { best: async () => null })
+    const unread = setup({ cloudSpeechModel: null }, { defaultModel: async () => null })
     expect(await unread.service.transcribe(request)).toEqual({ ok: false, reason: 'network' })
     expect(unread.fetchFn).not.toHaveBeenCalled()
   })
@@ -76,7 +76,7 @@ describe('CloudTranscriptionService', () => {
   it('says no key is saved, without a request, when the key is missing or cannot be read', async () => {
     const { service, fetchFn } = setup({ llmApiKey: '' })
     expect(await service.transcribe(request)).toEqual({ ok: false, reason: 'no-key' })
-    const locked = new CloudTranscriptionService({ getSettings: async () => { throw new Error('locked') }, models: { best: async () => null, zeroRetention: async () => false }, fetchFn })
+    const locked = new CloudTranscriptionService({ getSettings: async () => { throw new Error('locked') }, models: { defaultModel: async () => null, zeroRetention: async () => false }, fetchFn })
     expect(await locked.transcribe(request)).toEqual({ ok: false, reason: 'no-key' })
     expect(fetchFn).not.toHaveBeenCalled()
   })

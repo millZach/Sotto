@@ -37,7 +37,7 @@ describe('OpenRouterSpeechModels', () => {
     })
     expect(list.ok && list.models[3]).toMatchObject({ name: 'New Speech Model', zdr: false, wer: null, medianMs: null, usdPerHour: 0.018, scoredBy: null })
     // With nothing picked, dictation uses MAI-Transcribe-2 while OpenRouter lists it, whatever ranks first.
-    expect(reader.best()).toBe('microsoft/mai-transcribe-2')
+    expect(reader.defaultModel()).toBe('microsoft/mai-transcribe-2')
     expect(reader.zeroRetention('openai/gpt-transcribe')).toBe(false)
     expect(reader.zeroRetention('qwen/qwen3-asr-1.7b')).toBe(true)
     // A model the list does not name cannot be told apart from one with a zero-retention host.
@@ -51,16 +51,22 @@ describe('OpenRouterSpeechModels', () => {
     await reader.list()
     await reader.list()
     expect(fetchFn).toHaveBeenCalledTimes(2)
+    expect(reader.zeroRetention('openai/gpt-transcribe')).toBe(false)
     now = 11 * 60_000
     fetchFn.mockRejectedValue(new TypeError('offline'))
     expect((await reader.list()).ok).toBe(true)
     expect(fetchFn).toHaveBeenCalledTimes(4)
+    // A list older than ten minutes still says which models have a zero-retention host, but no longer that one has none.
+    expect(reader.zeroRetention('qwen/qwen3-asr-1.7b')).toBe(true)
+    expect(reader.zeroRetention('openai/gpt-transcribe')).toBeNull()
+    // Sotto's own measurement that a model's zero-retention route is refused holds without any list.
+    expect(new OpenRouterSpeechModels({ fetchFn }).zeroRetention('mistralai/voxtral-mini-transcribe')).toBe(false)
   })
 
   it('says OpenRouter could not be reached when nothing was ever read', async () => {
     const reader = new OpenRouterSpeechModels({ fetchFn: vi.fn<typeof fetch>().mockRejectedValue(new TypeError('offline')) })
     expect(await reader.list()).toEqual({ ok: false, reason: 'network' })
-    expect(reader.best()).toBeNull()
+    expect(reader.defaultModel()).toBeNull()
     expect(reader.zeroRetention('microsoft/mai-transcribe-2')).toBeNull()
     const refused = new OpenRouterSpeechModels({ fetchFn: vi.fn<typeof fetch>().mockResolvedValue(new Response('', { status: 503 })) })
     expect(await refused.list()).toEqual({ ok: false, reason: 'http' })

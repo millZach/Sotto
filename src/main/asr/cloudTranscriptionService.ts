@@ -68,7 +68,7 @@ export interface CloudTranscriptionRecoveryDiagnostic {
 /** Which model to send to and what Sotto knows about it, from the speech model list (ADR-0160). */
 export interface CloudSpeechModelSource {
   /** The model to use when the user has not chosen one (`defaultCloudSpeechModel`), or null when the list cannot be read. */
-  best(): Promise<string | null>
+  defaultModel(): Promise<string | null>
   /**
    * Whether the model has a host that keeps no audio, or null when the list cannot say. Unknown is sent to zero-retention
    * hosts only, so audio never reaches a host that keeps it because a list could not be read.
@@ -236,7 +236,7 @@ export class CloudTranscriptionService {
       }
       if (controller.signal.aborted) return { ok: false, reason: 'cancelled' }
       if (!settings.llmApiKey.trim()) return { ok: false, reason: 'no-key' }
-      const model = settings.cloudSpeechModel ?? await this.dependencies.models.best().catch(() => null)
+      const model = settings.cloudSpeechModel ?? await this.dependencies.models.defaultModel().catch(() => null)
       if (controller.signal.aborted) return { ok: false, reason: 'cancelled' }
       if (model === null) return { ok: false, reason: 'network' }
       trace.model = model

@@ -1,5 +1,5 @@
 import type { CloudSpeechModelList } from '../../shared/contracts'
-import { defaultCloudSpeechModel, rankCloudSpeechModels, type ListedSpeechModel } from '../../shared/cloudSpeechModels'
+import { CLOUD_SPEECH_SCORES, defaultCloudSpeechModel, rankCloudSpeechModels, type ListedSpeechModel } from '../../shared/cloudSpeechModels'
 
 const SPEECH_MODELS_URL = 'https://openrouter.ai/api/v1/models?output_modalities=transcription'
 const ZDR_ENDPOINTS_URL = 'https://openrouter.ai/api/v1/endpoints/zdr'
@@ -44,15 +44,20 @@ export class OpenRouterSpeechModels {
   }
 
   /**
-   * Whether the model has a host that keeps no audio, from the last list read: null while no list has been read, or for
-   * a model the list does not name, so the caller can keep to zero retention when it cannot tell.
+   * Whether the model has a host that keeps no audio. Yes from any list read. No only from a list read in the last ten
+   * minutes, since a model can gain such a host, or from Sotto's own measurement that its zero-retention route is
+   * refused. Null otherwise, so the caller keeps to zero retention when it cannot tell.
    */
   zeroRetention(id: string): boolean | null {
-    return this.last?.list.models.find((model) => model.id === id)?.zdr ?? null
+    if (CLOUD_SPEECH_SCORES[id]?.zeroRetentionRoute === false) return false
+    const listed = this.last?.list.models.find((model) => model.id === id)
+    if (listed === undefined) return null
+    if (listed.zdr) return true
+    return this.now() - this.last!.at < FRESH_MS ? false : null
   }
 
   /** The model dictation uses until the user picks one, or null before a list has been read. */
-  best(): string | null {
+  defaultModel(): string | null {
     return this.last === null ? null : defaultCloudSpeechModel(this.last.list.models)
   }
 
