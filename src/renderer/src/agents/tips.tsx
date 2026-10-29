@@ -204,7 +204,7 @@ export function tipCandidates(facts: TipFacts, setAside: TipsSetAside): TipChoic
  * after any number of others keeps its tip; the window's reload empties it.
  */
 const shownByTurn = new Map<string, string>()
-/** What a turn holds once its tip went: nothing more for the rest of the turn, even if the tip's target comes back. */
+/** What a turn holds once a line saw its tip go: nothing more for the rest of the turn, even if the tip's target comes back, so it never flickers. */
 const GONE = ''
 
 /** The rotation a working line moves along: one per audience and provider, so one list's turns never skip another's. */
