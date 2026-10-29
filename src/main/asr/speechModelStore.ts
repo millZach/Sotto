@@ -66,8 +66,9 @@ export interface SpeechModelStoreDependencies {
  * ready: files already verified load at once; missing or partial files download, resuming where a
  * stopped download left off, and must match their pinned size and SHA-256 before the engine starts.
  * Only one `ensure()` runs at a time; calling it again while it runs returns the same attempt.
- * `unload()` lets go of the model when the user picks another one; an attempt already running then
- * stops at its next chunk and never publishes, so it cannot bring the old model back.
+ * `unload()` lets go of the model when the user picks another one or turns dictation off, which ends the engine's
+ * helper process; an attempt already running then stops at its next chunk and never publishes, so it cannot bring the
+ * old model back.
  */
 export class SpeechModelStore {
   private status: SpeechModelStatus = { state: 'missing' }
@@ -77,6 +78,8 @@ export class SpeechModelStore {
   private latest: Promise<void> = Promise.resolve()
   /** Bumped by `unload()`; an attempt from an earlier generation no longer counts. */
   private generation = 0
+  /** Cancels the engine load under way, so `unload()` ends a helper that has not finished loading. */
+  private loading: AbortController | null = null
   private readonly listeners = new Set<(status: SpeechModelStatus) => void>()
   private readonly fetchFn: typeof fetch
   private readonly now: () => number
@@ -128,10 +131,12 @@ export class SpeechModelStore {
     return this.verifiedOnDisk()
   }
 
-  /** Lets go of the engine when another model is chosen, and goes back to `missing`; the files stay. */
+  /** Lets go of the engine when another model is chosen or dictation goes off, and goes back to `missing`; the files stay. */
   unload(): void {
     this.generation += 1
     this.attempt = null
+    this.loading?.abort()
+    this.loading = null
     disposeEngine(this.engine)
     this.engine = null
     this.publish({ state: 'missing' })
@@ -139,6 +144,9 @@ export class SpeechModelStore {
 
   dispose(): void {
     this.disposed = true
+    this.loading?.abort()
+    this.loading = null
+    disposeEngine(this.engine)
     this.engine = null
   }
 
@@ -175,15 +183,23 @@ export class SpeechModelStore {
         await writeFile(join(this.modelDirectory, VERIFIED_MARKER), JSON.stringify(this.model.files)).catch(() => { throw new SpeechModelError('disk') })
         received = this.totalBytes
       }
+      // Unloaded while the files were checked: start no engine, so no helper outlives the unload.
+      if (stale() || this.disposed) return
       publish({ state: 'loading' })
       let engine: SpeechEngine
+      const loading = new AbortController()
+      this.loading = loading
       try {
-        engine = await this.dependencies.loadEngine(this.modelDirectory)
+        engine = await this.dependencies.loadEngine(this.modelDirectory, loading.signal)
       } catch {
+        // Cancelled by unload(): nothing is wrong with the files, and a newer attempt owns the status.
+        if (loading.signal.aborted) return
         // The marker trusts sizes, and a file can go bad without changing size. Dropping it makes
         // Try again hash every file and download any that no longer match.
         await rm(join(this.modelDirectory, VERIFIED_MARKER), { force: true }).catch(() => undefined)
         throw new SpeechModelError('engine')
+      } finally {
+        if (this.loading === loading) this.loading = null
       }
       if (stale() || this.disposed) {
         disposeEngine(engine)
@@ -191,6 +207,13 @@ export class SpeechModelStore {
       }
       this.engine = engine
       publish({ state: 'ready' })
+      // The helper can stop by itself (a crash, memory pressure, a hang). Say so, so Try again loads the model again;
+      // the files are fine, so their check's record stays.
+      engine.onStopped?.(() => {
+        if (stale() || this.engine !== engine) return
+        this.engine = null
+        publish({ state: 'failed', reason: 'engine', receivedBytes: 0, totalBytes: this.totalBytes })
+      })
     } catch (error) {
       const reason = failureOf(error)
       publish({ state: 'failed', reason, receivedBytes: Math.min(received, this.totalBytes), totalBytes: this.totalBytes })
@@ -326,7 +349,7 @@ export class SpeechModelStore {
   }
 }
 
-/** Stops an engine that has its own process; sherpa's runs in this one and has nothing to stop. */
+/** Stops an engine's helper process, which gives back all the memory its model held; an engine without one has nothing to stop. */
 export function disposeEngine(engine: SpeechEngine | null): void {
   try {
     engine?.dispose?.()

@@ -17,7 +17,7 @@ Dictation is always on. Main registers the dictation hotkey, may run the key lis
 **2. Off, main stops what dictation costs.** With dictation off:
 
 - the dictation hotkey and the other press shortcuts are not registered, hold shortcuts are not watched and the key listener does not run;
-- the speech model is not loaded, downloaded or warmed, and a loaded one is let go;
+- the speech model is not loaded, downloaded or warmed, and a loaded one is let go: its helper process ends, and its memory returns to the system (ADR-0071 §2, amended October 29, 2026; before then the model stayed in main's memory, #1787);
 - the floating widget is not shown, and the tray has no dictation item;
 - setup and start do not ask for the microphone for dictation;
 - a recording is refused, from any source. One under way when dictation goes off ends unsaved, since no shortcut could stop it any more; a dictation already being transcribed finishes, and a kept recording stays kept for when dictation is back on. Requests for the microphone are answered no without asking. On Linux that includes `sotto dictation toggle` and the other commands Hyprland's **compositor bindings** run. Sotto leaves those keys as they are, so they still reach Sotto and do nothing.

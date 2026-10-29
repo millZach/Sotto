@@ -92,11 +92,15 @@ export function joinedTakeovers(live: ReadonlyMap<string, readonly WatcherTakeov
  * there is follows the first.
  */
 export function placeTakeovers(messages: readonly AgentMessage[], takeovers: readonly WatcherTakeover[]): ReadonlyMap<string, readonly WatcherTakeover[]> {
-  const placed = new Map<string, WatcherTakeover[]>()
+  return placeAfterTurns(messages, takeovers)
+}
+/** Places anything of Sotto's own that happened at a time, `at`, after the turn it happened in, as takeover lines are. */
+export function placeAfterTurns<Item extends { readonly at: string }>(messages: readonly AgentMessage[], items: readonly Item[]): ReadonlyMap<string, readonly Item[]> {
+  const placed = new Map<string, Item[]>()
   if (messages.length === 0) return placed
-  for (const line of takeovers) {
-    const at = Date.parse(line.at)
-    add(placed, anchorAfter(messages, messages.findLastIndex(message => message.role === 'user' && Date.parse(message.createdAt) <= at)), line)
+  for (const item of items) {
+    const at = Date.parse(item.at)
+    add(placed, anchorAfter(messages, messages.findLastIndex(message => message.role === 'user' && Date.parse(message.createdAt) <= at)), item)
   }
   return placed
 }

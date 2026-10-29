@@ -26,7 +26,7 @@ import { useWatchedThread, useWatchedThreadIds } from '../watcher/watcherRoom'
 import { WATCHED_BY_WATCHER, WatchedBadge, WatcherOwl } from '../watcher/WatcherOwl'
 import { WatchRowToggle } from '../watcher/WatchControls'
 import { shownCount } from '../state/interfaceNumbers'
-import { NeedsYouQueue } from './NeedsYouQueue'
+import { entryFailure, NeedsYouCard, NeedsYouQueue, popWords } from './NeedsYouQueue'
 import { useOwlFeature } from '../state/owlFeature'
 import { RestartBands, useRestartStopped } from './RestartStopped'
 import './workingThreadsLine.css'
@@ -471,6 +471,11 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const { t, i18n: { locale } } = useLingui()
   const queueOn = useOwlFeature('needs-you-queue')
   const railOn = useOwlFeature('sidebar-rail')
+  /** The waiting thread whose card stands popped open beside its rail tile, and that tile (ADR-0135, October 29 amendment). */
+  const [railCard, setRailCard] = useState<string | null>(null)
+  const railNav = useRef<HTMLElement>(null)
+  const [railDismissing, setRailDismissing] = useState(false)
+  const railCardId = useId()
   const watchedIds = useWatchedThreadIds()
   const [settledOpen, setSettledOpen] = useState(false)
   const settledButton = useRef<HTMLButtonElement>(null)
@@ -561,13 +566,33 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const { open, settled } = organization
   // The collapsed rail's threads: every open one, and the focused one even once settled.
   const railRows = [...open.flatMap(folder => folder.rows), ...settled.flatMap(folder => folder.rows).filter(row => row.thread.id === listed)]
-  const railTile = ({ row, status, waiting, resting }: RailItem, watched: boolean): ReactNode => <button key={row.thread.id} type="button"
-    className="thread-nav__rail-thread thread-nav__rail-mark tt-focusable" data-resting={resting || undefined} data-waiting={waiting || undefined} aria-label={row.thread.title}
+  // A waiting tile whose thread's own request or failure the Needs you card would pop pops the same card beside the
+  // rail; every other tile opens its thread, as the card's own entries do.
+  const railPops = railOn && queueOn ? new Map(organization.needsYou.entries.filter(entry => entry.action !== 'open').map(entry => [entry.row.thread.id, entry])) : undefined
+  const railEntry = railCard !== null && collapsed ? railPops?.get(railCard) : undefined
+  // A tile is found by its thread each time: dismissing or answering can move it to another group, drawn anew.
+  const railTileOf = (threadId: string | null): HTMLElement | null => threadId === null ? null
+    : [...railNav.current?.querySelectorAll<HTMLElement>('[data-rail-thread]') ?? []].find(tile => tile.dataset.railThread === threadId) ?? null
+  // The card closes when its thread stops waiting, is answered elsewhere, or the rail goes; a focus it held goes back to its tile.
+  useLayoutEffect(() => {
+    if (railCard === null || railEntry !== undefined) return
+    setRailCard(null)
+    const active = document.activeElement
+    if (active === null || active === document.body) railTileOf(railCard)?.focus()
+  }, [railCard, railEntry])
+  const railTile = ({ row, status, waiting, resting }: RailItem, watched: boolean): ReactNode => {
+    const pops = railPops?.get(row.thread.id)
+    const id = row.thread.id
+    return <button key={id} type="button" data-rail-thread={id}
+    className="thread-nav__rail-thread thread-nav__rail-mark tt-focusable" data-resting={resting || undefined} data-waiting={waiting || undefined} aria-label={pops ? popWords(pops).name : row.thread.title}
     title={[row.thread.title, status.text, watched ? t`Watched by Watcher` : ''].filter(Boolean).join(' · ')}
-    aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
+    aria-haspopup={pops ? 'dialog' : undefined} aria-expanded={pops ? railCard === id : undefined} aria-controls={pops && railCard === id ? railCardId : undefined}
+    aria-current={listed === id ? 'page' : undefined} onClick={() => { if (pops) setRailCard(current => current === id ? null : id); else onOpen(id) }}
+    onKeyDown={event => { if (pops && railCard === id && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setRailCard(null) } }}>
     {watched ? <span className="thread-nav__rail-watched-mark" aria-hidden="true"><WatcherOwl size={10} /></span> : null}
     <span aria-hidden="true">{railMark(row.thread.title)}</span><StatusRing row={row} {...status} />
   </button>
+  }
   const threads = state.host.threads
   const restartOn = useRestartStopped()
   const failures = useMemo(() => unseenFailures(threads), [threads])
@@ -605,7 +630,15 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       return <div className={`thread-nav__rail-group${watchedPart ? ' thread-nav__rail-watched' : ''}${tray ? ' thread-nav__rail-tray' : ''}`} data-hue={tray}
         role={watchedPart ? 'group' : undefined} aria-label={watchedPart ? t`Watched by Watcher` : undefined}>{items.map(item => railTile(item, watchedPart))}</div>
     }
-    owlRail = <>{part(watched, true)}{part(restAwake, false)}{part(restResting, false)}</>
+    owlRail = <>{part(watched, true)}{part(restAwake, false)}{part(restResting, false)}
+      {railEntry ? <NeedsYouCard id={railCardId} entry={railEntry} state={state} command={command} anchor={() => railTileOf(railCard)} trigger={() => railTileOf(railCard)} placement="beside"
+        dismissing={railDismissing} onClose={focusTile => { setRailCard(null); if (focusTile) railTileOf(railCard)?.focus() }}
+        onOpen={() => { setRailCard(null); onOpen(railEntry.row.thread.id) }}
+        onDismiss={() => {
+          setRailDismissing(true)
+          void command({ type: 'dismiss-failures', failures: [entryFailure(railEntry)] }).finally(() => setRailDismissing(false))
+        }} /> : null}
+    </>
   }
   // The chord opens the chooser (what the top button does) only while no thread is focused; a focused thread
   // answers it from its own project's pen instead, so the top button's aria-keyshortcuts stands down then.
@@ -619,7 +652,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       <RestartBands threads={restartThreads ?? threads} command={command} onOpen={onOpen} />
       {queueOn ? <NeedsYouQueue queue={organization.needsYou} state={state} command={command} failures={failures} panes={panes} onOpen={onOpen} /> : <NeedsAttentionLine failures={failures} command={command} />}
     </>}
-    collapsedContent={<nav aria-label={t`Threads`}>{owlRail ?? railRows.map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row, { restart: restartOn }).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
+    collapsedContent={<nav ref={railNav} aria-label={t`Threads`}>{owlRail ?? railRows.map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row, { restart: restartOn }).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
       <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><StatusRing row={row} {...rowStatus(row, { restart: restartOn })} />
     </button>)}</nav>}>
       <section aria-label={t`Projects`}>

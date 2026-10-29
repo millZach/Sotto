@@ -53,6 +53,8 @@ const machinesEvidence = evidenceDirectory('artifacts/watcher-machines')
 const checksEvidence = evidenceDirectory('artifacts/check-queue-view')
 /** The message scrubber in Watcher's conversation (ADR-0109), beside the thread captures in message-scrubber.spec.ts. */
 const scrubberEvidence = evidenceDirectory('artifacts/message-scrubber')
+/** Moving threads, part 2 (#1178): Move threads, its sheet and each move's card. */
+const movesEvidence = evidenceDirectory('artifacts/move-threads-window')
 const FOOT = 'When Watcher asks, you can allow it once, not for good. Its instructions still tell it to hand changes to a thread.'
 const SIZES = [[1600, 1000], [1280, 800], [820, 560]] as const
 const THEMES = [['t3-code', 'sotto'], ['fern', 'fern']] as const
@@ -87,7 +89,9 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
   /** What the machines read answers (#1032), from the host's ID. */
   readonly machines?: (hostId: string) => NonNullable<WatcherStandInSeed['machines']>
   /** Every machine's check queue (#1312), from the host's ID. */
-  readonly checks?: (hostId: string) => NonNullable<WatcherStandInSeed['checks']> }): Promise<void> {
+  readonly checks?: (hostId: string) => NonNullable<WatcherStandInSeed['checks']>
+  /** Moving threads (#1178), from the host's ID. */
+  readonly moves?: (hostId: string) => NonNullable<WatcherStandInSeed['moves']> }): Promise<void> {
   const hostId = await page.evaluate(async () => (await window.sotto!.agents!.get()).hostId)
   expect(hostId, 'the window names its host').toBeTruthy()
   const target = (threadId: string) => ({ hostId: hostId!, threadId })
@@ -112,6 +116,7 @@ async function seedRoom(page: Page, options: { readonly current: boolean; readon
     ...options.stopDelayMs ? { stopDelayMs: options.stopDelayMs } : {},
     ...options.machines ? { machines: options.machines(hostId!) } : {},
     ...options.checks ? { checks: options.checks(hostId!) } : {},
+    ...options.moves ? { moves: options.moves(hostId!) } : {},
     ...options.startNew ? { startNew: { created: { ...identity, target: target(options.startNew), creationOperationId: randomUUID(), createdAt: at(0) },
       counts: { total: 2, carried: 2, tooLong: 0, notCarried: 0, images: 0, files: 0, visuals: 0, toolRecords: 0, historyKept: true, answered: true },
       text: 'This is a handover from another Sotto thread. The history below is context, not a new request.\n\nThe user:\nFind why the visual gate flakes and fix the footer links. Keep an eye on both.' } } : {},
@@ -406,7 +411,7 @@ async function contrastHolds(page: Page, key: string): Promise<void> {
 test.describe("Watcher's room on the built app", () => {
   test.describe.configure({ mode: 'serial', timeout: 5 * 60_000 })
   test.beforeAll(async () => {
-    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence, machinesEvidence, checksEvidence, scrubberEvidence]) await mkdir(folder, { recursive: true })
+    for (const folder of [evidenceRoot, permissionEvidence, handoverEvidence, polishEvidence, newsEvidence, answerEvidence, macEvidence, newWatcherEvidence, machinesEvidence, checksEvidence, scrubberEvidence, movesEvidence]) await mkdir(folder, { recursive: true })
   })
   test.afterAll(async () => {
     // Each folder gets its own readings, and a run that took none for a folder leaves that folder's file as it was.
@@ -418,11 +423,13 @@ test.describe("Watcher's room on the built app", () => {
     const mac = /^mac-/u
     const fresh = /^new-watcher-/u
     const machines = /^machines-/u
-    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key) && !mac.test(key) && !fresh.test(key) && !machines.test(key))],
+    const moves = /^moves-/u
+    const folders = [[evidenceRoot, [...recorded].filter(([key]) => !note.test(key) && !handover.test(key) && !polish.test(key) && !news.test(key) && !answer.test(key) && !mac.test(key) && !fresh.test(key) && !machines.test(key) && !moves.test(key))],
       [permissionEvidence, [...recorded].filter(([key]) => note.test(key))], [handoverEvidence, [...recorded].filter(([key]) => handover.test(key))],
       [polishEvidence, [...recorded].filter(([key]) => polish.test(key))], [newsEvidence, [...recorded].filter(([key]) => news.test(key))],
       [answerEvidence, [...recorded].filter(([key]) => answer.test(key))], [macEvidence, [...recorded].filter(([key]) => mac.test(key))],
-      [newWatcherEvidence, [...recorded].filter(([key]) => fresh.test(key))], [machinesEvidence, [...recorded].filter(([key]) => machines.test(key))]] as const
+      [newWatcherEvidence, [...recorded].filter(([key]) => fresh.test(key))], [machinesEvidence, [...recorded].filter(([key]) => machines.test(key))],
+      [movesEvidence, [...recorded].filter(([key]) => moves.test(key))]] as const
     for (const [folder, entries] of folders) {
       if (entries.length > 0) await writeFile(resolve(folder, 'readings.json'), `${JSON.stringify(Object.fromEntries(entries), null, 2)}\n`, 'utf8')
     }
@@ -1596,6 +1603,115 @@ test.describe("Watcher's room on the built app", () => {
         await expect(forge).toBeFocused()
         // A waiting check's row in Tools › Agents needs the window's delegation bridge, which this scenario has none of; its
         // row, details and Escape are checked in tests/unit/renderer/checkQueueView.test.tsx.
+      })
+    })
+  })
+
+  test('Move threads asks once in a sheet, and each move is a card in Watcher’s conversation (#1178 part 2, pick B)', async () => {
+    const FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10', STUDIO = 'c5e2a1f8-9b3d-4e72-a6c1-3f8d2b5e9a07', LAB = '4e8a2c6f-1b7d-4a93-9e05-7c3f1d8b2a64'
+    const now = new Date().toISOString()
+    const moves = (hostId: string): NonNullable<WatcherStandInSeed['moves']> => {
+      const card = (id: string, threadId: string, over: Partial<NonNullable<WatcherStandInSeed['moves']>['cards'][number]>) => ({ id, state: 'thread-started' as const,
+        source: { hostId, threadId }, hostId: FORGE, machine: 'forge', model: { name: 'GPT-5.5' }, at: now, updatedAt: now, ...over })
+      return {
+        machines: [{ hostId: FORGE, name: 'forge', connected: true }, { hostId: STUDIO, name: 'studio', connected: true }, { hostId: LAB, name: 'lab', connected: false }],
+        preview: { status: 'ok', confirmationId: randomUUID(), expiresAt: now, machine: 'forge', threads: [
+          { threadId: hostEntityKey(hostId, 'grok-previews'), outcome: 'moves', model: { name: 'Claude Sonnet 4.6' } },
+          { threadId: hostEntityKey(hostId, 'thread-routing'), outcome: 'moves', model: { name: 'Claude Sonnet 4.6', instead: 'Claude Opus 4.7' } },
+          { threadId: hostEntityKey(hostId, 'benchmark'), outcome: 'asks', model: { name: 'Grok 4' }, startsOn: 'Allow edits',
+            words: 'It would start on Allow edits on forge, not this thread’s Full access, since your new-thread default allows no more.' },
+          { threadId: hostEntityKey(hostId, 'visual-gate'), outcome: 'stays', words: 'This thread is waiting for your answer. Answer it, then move it.' },
+          { threadId: hostEntityKey(hostId, 'footer-links'), outcome: 'stays', words: 'A turn is running. Move it once the turn ends, or stop it.' },
+          { threadId: hostEntityKey(hostId, 'notes-cleanup'), outcome: 'stays', words: 'This thread has uncommitted changes. Commit them first, then move it.' }] },
+        cards: [],
+        started: [
+          card(randomUUID(), 'grok-previews', { model: { name: 'Claude Sonnet 4.6' }, watched: true }),
+          card(randomUUID(), 'thread-routing', { state: 'source-settled', moved: { hostId: FORGE, threadId: 'routing-there' }, model: { name: 'Claude Sonnet 4.6', instead: 'Claude Opus 4.7' } }),
+          card(randomUUID(), 'benchmark', { state: 'asks', model: { name: 'Grok 4' }, startsOn: 'Allow edits',
+            words: 'It would start on Allow edits on forge, not this thread’s Full access, since your new-thread default allows no more.' })],
+      }
+    }
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance, 'reduced'), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, moves })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        // Beside Stop all while another machine is connected.
+        const button = page.getByRole('button', { name: 'Move threads to another machine' })
+        await expect(button).toBeVisible()
+        await expect(button).toHaveText('Move threads')
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `Watcher's header with Move threads at ${width}x${height}` }).toEqual([])
+          if (width === 1280) await captureInto(movesEvidence, launched, `moves-header-${appearance}-${width}x${height}.png`)
+        }
+        // From the keyboard: two machines connected, so the sheet asks which, and lab is listed but cannot be picked.
+        await resizeContentWindow(launched, 1280, 800)
+        await button.focus()
+        await page.keyboard.press('Enter')
+        const choose = page.getByRole('dialog', { name: 'Move threads to which machine?' })
+        await expect(choose).toBeVisible()
+        await expect(choose.getByRole('button', { name: /^lab/u })).toBeDisabled()
+        await expect(choose).toContainText('Not connected')
+        await settle(page)
+        await captureInto(movesEvidence, launched, `moves-choose-${appearance}-1280x800.png`)
+        await choose.getByRole('button', { name: 'forge', exact: true }).click()
+        const sheet = page.getByRole('dialog', { name: 'Move 3 threads to forge?' })
+        await expect(sheet).toBeVisible()
+        await expect(sheet.getByRole('button', { name: 'Cancel' })).toBeFocused()
+        await expect(sheet).toContainText('Moves now 2')
+        await expect(sheet).toContainText('Asks you first 1')
+        await expect(sheet).toContainText('Stays here 4')
+        await expect(sheet).toContainText('forge doesn’t have Claude Opus 4.7')
+        // Each row names its thread as the window does, with its provider and project.
+        await expect(sheet.locator('.move-sheet__name')).toHaveText(['Grok voice previews', 'Thread routing', 'Benchmark rerun', 'Visual gate flake', 'Footer links', 'Notes cleanup', 'Watcher'])
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `the sheet at ${width}x${height}` }).toEqual([])
+          // The foot stays in reach in a short window; the lists scroll inside the sheet.
+          await expect(sheet.getByRole('button', { name: 'Move 3 threads' })).toBeInViewport()
+          await captureInto(movesEvidence, launched, `moves-sheet-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `moves-sheet-${appearance}-${width}x${height}`)
+        }
+        // Tab goes on to the move and round to the lists, staying in the sheet; Escape puts it away with nothing moved,
+        // back to Move threads.
+        await page.keyboard.press('Tab')
+        await expect(sheet.getByRole('button', { name: 'Move 3 threads' })).toBeFocused()
+        await page.keyboard.press('Tab')
+        await expect(sheet.getByRole('region', { name: 'What moves and what stays' })).toBeFocused()
+        await page.keyboard.press('Shift+Tab')
+        await expect(sheet.getByRole('button', { name: 'Move 3 threads' })).toBeFocused()
+        await page.keyboard.press('Escape')
+        await expect(sheet).toHaveCount(0)
+        await expect(button).toBeFocused()
+        await expect(page.locator('.move-card')).toHaveCount(0)
+        // Confirmed: Sotto runs the moves, and each is a card in Watcher's conversation.
+        await resizeContentWindow(launched, 1280, 800)
+        await button.click()
+        await page.getByRole('dialog', { name: 'Move threads to which machine?' }).getByRole('button', { name: 'forge', exact: true }).click()
+        await page.getByRole('dialog', { name: 'Move 3 threads to forge?' }).getByRole('button', { name: 'Move 3 threads' }).click()
+        await expect(page.getByRole('dialog')).toHaveCount(0)
+        await expect(page.getByText('You asked to move 3 threads to forge. Sotto reports each move here.')).toBeVisible()
+        await expect(page.locator('.move-card')).toHaveCount(3)
+        await expect(page.locator('.move-card[data-state="source-settled"]')).toContainText('Continued on forge')
+        await expect(page.locator('.move-card[data-state="asks"]')).toContainText('Waits for you')
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await page.locator('.move-card').last().scrollIntoViewIfNeeded()
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `the move cards at ${width}x${height}` }).toEqual([])
+          await captureInto(movesEvidence, launched, `moves-cards-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `moves-cards-${appearance}-${width}x${height}`)
+        }
+        // The narrower one moves only on its own press, on the permission it named.
+        await resizeContentWindow(launched, 1280, 800)
+        await page.getByRole('button', { name: 'Move it on Allow edits' }).click()
+        await expect(page.locator('.move-card').nth(2)).toContainText('Holding sends')
       })
     })
   })

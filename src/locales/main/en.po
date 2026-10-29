@@ -784,6 +784,10 @@ msgstr "Measure your own server from the main Sotto window."
 msgid "Memory is unavailable. Restart Sotto and try again."
 msgstr "Memory is unavailable. Restart Sotto and try again."
 
+#: src/main/agents/threadMovesIpc.ts
+msgid "Move threads from the main Sotto window."
+msgstr "Move threads from the main Sotto window."
+
 #: src/main/tools/checkpoints.ts
 msgid "Native conversation rollback is unavailable for this provider."
 msgstr "Native conversation rollback is unavailable for this provider."

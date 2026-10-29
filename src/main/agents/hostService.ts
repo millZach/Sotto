@@ -25,6 +25,7 @@ import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
 import type { ProjectOrigins, ProjectSetupRequest, ProjectSetupResult } from '../../shared/workerMachine'
 import type { HostBranchMoveRequest } from '../../shared/branchMoves'
+import type { HostThreadMoveRequest } from '../../shared/threadMoves'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { DelegationNews } from '../../shared/delegation'
@@ -138,6 +139,9 @@ export interface HostService {
   /** The host moves branches with this desktop over its socket (`branch-moves`, ADR-0105 decision 8); a remote host's only. */
   readonly supportsBranchMoves?: boolean
   branchMove?(request: HostBranchMoveRequest): Promise<unknown>
+  /** The host lists `thread-move`: it makes a thread moved there from another machine (#1178). */
+  readonly supportsThreadMove?: boolean
+  threadMove?(request: HostThreadMoveRequest): Promise<unknown>
   /**
    * The host runs delegation for its own threads and keeps the desktop defaults a desktop sends it (#1310), present only
    * on a headless host whose Owl answer turns on Work across machines. On a desktop's connection to such a host,

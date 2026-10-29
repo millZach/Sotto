@@ -4,8 +4,9 @@ import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { AppProvider } from './state/AppContext'
 import { createE2EControllerFactory, createE2EMicrophoneTest, createE2ESettingsBridge } from './e2e/deterministicAdapters'
-import { createE2ECheckQueuesBridge, createE2EWatcherBridge } from './e2e/watcherStandIn'
+import { createE2ECheckQueuesBridge, createE2EThreadMovesStandIn, createE2EWatcherBridge } from './e2e/watcherStandIn'
 import { setCheckQueuesStandIn } from './watcher/checkQueues'
+import { setThreadMovesStandIn } from './watcher/MoveThreads'
 import './styles/global.css'
 import './agents/threads.css'
 import './agents/threadSidebar.css'
@@ -34,6 +35,8 @@ const controllerFactory = e2e === undefined ? undefined : createE2EControllerFac
 const watcherBridge = e2e === undefined ? undefined : createE2EWatcherBridge()
 // And each machine's check queue (#1312); otherwise the window reads main's.
 if (e2e !== undefined) setCheckQueuesStandIn(createE2ECheckQueuesBridge())
+// And moving threads (#1178): the machines and the moves; otherwise the window reads main's.
+if (e2e !== undefined) setThreadMovesStandIn(createE2EThreadMovesStandIn())
 
 // The first frame is in the interface language: its catalogs load from the bundle before React draws (ADR-0123).
 await startInterfaceLanguage(window.sotto?.interfaceLanguage)

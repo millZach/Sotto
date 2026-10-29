@@ -49,6 +49,22 @@ msgstr "{0, plural, one {# minute} other {# minutes}}"
 msgid "{0, plural, one {# working} other {# working}}"
 msgstr "{0, plural, one {# working} other {# working}}"
 
+#. placeholder {0}: model.name
+#. placeholder {1}: model.maker
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "{0} by {1}"
+msgstr "{0} by {1}"
+
+#. placeholder {0}: (model.medianMs / 1_000).toFixed(1)
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "{0} s"
+msgstr "{0} s"
+
+#. placeholder {0}: (model.wer * 100).toFixed(1)
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "{0}% words wrong"
+msgstr "{0}% words wrong"
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{added, plural, other {# themes added: {names}}}"
 msgstr "{added, plural, other {# themes added: {names}}}"
@@ -828,6 +844,11 @@ msgstr "A worker never starts wider than your new-thread default, “{ceilingNam
 msgid "About {price} a minute; your first $15 each month is free."
 msgstr "About {price} a minute; your first $15 each month is free."
 
+#. placeholder {0}: model.usdPerHour < 0.05 ? model.usdPerHour.toFixed(3) : model.usdPerHour.toFixed(2)
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "About ${0} per hour of audio, paid with your OpenRouter key."
+msgstr "About ${0} per hour of audio, paid with your OpenRouter key."
+
 #. A family of theme colors in the theme editor
 #. A theme color: the accent
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
@@ -841,6 +862,10 @@ msgstr "Accent color"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Accounts & connections"
 msgstr "Accounts & connections"
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Accuracy"
+msgstr "Accuracy"
 
 #. A family of theme colors in the theme editor
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
@@ -1186,6 +1211,10 @@ msgstr "Background"
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 msgid "Band"
 msgstr "Band"
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Best first, by words wrong and seconds to the text on Sotto’s test clips. Hover a model for its price and whether its host keeps audio."
+msgstr "Best first, by words wrong and seconds to the text on Sotto’s test clips. Hover a model for its price and whether its host keeps audio."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Best rated"
@@ -2818,6 +2847,15 @@ msgstr "its account"
 msgid "Its messages and activity leave Sotto and can’t be brought back."
 msgstr "Its messages and activity leave Sotto and can’t be brought back."
 
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Its price is on openrouter.ai."
+msgstr "Its price is on openrouter.ai."
+
+#. placeholder {0}: (model.medianMs / 1_000).toFixed(1)
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Its text came back in {0} s on Sotto’s test clips."
+msgstr "Its text came back in {0} s on Sotto’s test clips."
+
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 msgid "Its turn has ended and nothing it started is still going."
 msgstr "Its turn has ended and nothing it started is still going."
@@ -3134,6 +3172,7 @@ msgstr "mise stopped with an error. {installed} is still installed."
 #. A worker role field: the model it runs on
 #. The AI model an agent runs on.
 #. The AI model an agent runs on.
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 #: src/renderer/src/features/settings/HostSetupView.tsx
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
@@ -3363,6 +3402,10 @@ msgstr "None."
 msgid "not a theme file"
 msgstr "not a theme file"
 
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Not a zero-retention model: its host may keep your audio under its own terms."
+msgstr "Not a zero-retention model: its host may keep your audio under its own terms."
+
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Not approved in Tailscale"
 msgstr "Not approved in Tailscale"
@@ -3426,6 +3469,10 @@ msgstr "Not signed in"
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Not started"
 msgstr "Not started"
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Not tested yet"
+msgstr "Not tested yet"
 
 #. A setup step still to come.
 #. A setup step still to come.
@@ -3661,6 +3708,23 @@ msgstr "Opened {page} in your browser."
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "OpenRouter key"
 msgstr "OpenRouter key"
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "OpenRouter key for transcription"
+msgstr "OpenRouter key for transcription"
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "OpenRouter no longer lists {choice}. Dictation will fail until you pick another."
+msgstr "OpenRouter no longer lists {choice}. Dictation will fail until you pick another."
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "OpenRouter speech model"
+msgstr "OpenRouter speech model"
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "OpenRouter’s speech models could not be read. Nothing was changed."
+msgstr "OpenRouter’s speech models could not be read. Nothing was changed."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Opens the browser or test iPhone over the thread when an agent uses it. Off, the work still shows in Tools."
@@ -4039,6 +4103,10 @@ msgstr "Reaching {name} over your tailnet…"
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Reaching {name}…"
 msgstr "Reaching {name}…"
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Reading OpenRouter’s speech models…"
+msgstr "Reading OpenRouter’s speech models…"
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
 msgid "Reading phone access on {name}…"
@@ -4448,6 +4516,14 @@ msgstr "Send the prompt"
 msgid "Sends the text, never audio, to OpenRouter to tidy it up. Offline, you get the raw transcript."
 msgstr "Sends the text, never audio, to OpenRouter to tidy it up. Offline, you get the raw transcript."
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Sends your audio to the model you pick. Off, dictation is transcribed on this computer."
+msgstr "Sends your audio to the model you pick. Off, dictation is transcribed on this computer."
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Sent only to a host that keeps no audio."
+msgstr "Sent only to a host that keeps no audio."
+
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 msgid "Sent. If you did not see it, allow Sotto in System Settings → Notifications."
 msgstr "Sent. If you did not see it, allow Sotto in System Settings → Notifications."
@@ -4572,6 +4648,11 @@ msgstr "Shorten the settings page"
 msgid "Show a pairing code"
 msgstr "Show a pairing code"
 
+#. placeholder {0}: models.length
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Show all {0} models"
+msgstr "Show all {0} models"
+
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Show floating widget when idle"
@@ -4622,6 +4703,10 @@ msgstr "Show the client updates on {host}. {summary}"
 #: src/renderer/src/features/settings/themes/CreatureChoice.tsx
 msgid "Show the creature"
 msgstr "Show the creature"
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Show the top five"
+msgstr "Show the top five"
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Show thread"
@@ -4838,6 +4923,10 @@ msgstr "Sotto does this"
 msgid "Sotto hands the code to {name} on {hostName} and keeps nothing."
 msgstr "Sotto hands the code to {name} on {hostName} and keeps nothing."
 
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Sotto has not tested it yet."
+msgstr "Sotto has not tested it yet."
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Sotto heard you. The microphone is closed."
 msgstr "Sotto heard you. The microphone is closed."
@@ -4963,6 +5052,10 @@ msgstr "Speech model"
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Speech recognition by {maker}, on this computer. {languages}."
 msgstr "Speech recognition by {maker}, on this computer. {languages}."
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Speed"
+msgstr "Speed"
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Spending"
@@ -5993,6 +6086,15 @@ msgstr "Toolbar text"
 msgid "Tools & branch bar"
 msgstr "Tools & branch bar"
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Transcribe with OpenRouter"
+msgstr "Transcribe with OpenRouter"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Transcribing with OpenRouter needs a key. It is the same key AI cleanup uses, kept in your system’s credential store. Until one is saved, dictation says so and records nothing."
+msgstr "Transcribing with OpenRouter needs a key. It is the same key AI cleanup uses, kept in your system’s credential store. Until one is saved, dictation says so and records nothing."
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Transcript history cleared."
 msgstr "Transcript history cleared."
@@ -6021,6 +6123,7 @@ msgstr "Trust the SSH host {name}?"
 msgid "Trust this SSH host?"
 msgstr "Trust this SSH host?"
 
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 #: src/renderer/src/features/settings/HostBootStart.tsx
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 #: src/renderer/src/features/settings/HostDialog.tsx
@@ -6298,6 +6401,10 @@ msgstr "Use the Git setting (Off)"
 msgid "Use the Git setting (On)"
 msgstr "Use the Git setting (On)"
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Used for AI cleanup and for transcribing with OpenRouter, and kept in your system’s credential store."
+msgstr "Used for AI cleanup and for transcribing with OpenRouter, and kept in your system’s credential store."
+
 #. {month} is the name of a month, such as October.
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Used in {month}"
@@ -6330,6 +6437,10 @@ msgstr "user and port from your SSH configuration"
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Username <0>(optional)</0>"
 msgstr "Username <0>(optional)</0>"
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Uses the OpenRouter key saved for AI cleanup. Change it in Settings → Cleanup."
+msgstr "Uses the OpenRouter key saved for AI cleanup. Change it in Settings → Cleanup."
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "View source for {extensionName}"

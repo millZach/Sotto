@@ -35,6 +35,7 @@ import { storedFollowups } from '../fixtures/followupQueue'
 import { initializeGitRepository } from '../fixtures/gitRepository'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
+import { MACHINE_START_SETTLES_MS } from '../../src/shared/hostFacts'
 import { lastUserMessageIdOf, type AgentState } from '../../src/shared/agents'
 import { isResumeNoteText } from '../../src/shared/restartResume'
 import { execFile } from 'node:child_process'
@@ -1729,6 +1730,117 @@ it('starts a worker on the paired machine new workers start on, in its copy of t
   expect(here).toMatchObject({ status: 'ok', target: { hostId: f.control.hostId() }, placement: { hostId: f.control.hostId(), name: 'This computer', awayFromDefault: false } })
   expect(await f.call('start_thread', { ...f.onThisComputer(), machine: f.pairing.hostId, title: 'Synthetic named worker' })).toMatchObject({ status: 'ok',
     target: { hostId: f.pairing.hostId }, placement: { hostId: f.pairing.hostId, awayFromDefault: true } })
+})
+
+it('places starts made together one at a time under Watcher\'s choice, so each counts the ones before it in each machine\'s headroom (#1694)', async () => {
+  const f = await acrossMachines('watcher')
+  const GIB = 1024 ** 3, fresh = () => new Date().toISOString()
+  const load = (cpuBusyPercent: number, availableMemoryBytes: number) => ({ observedAt: fresh(), windowMs: 2_000, cpuBusyPercent, loadAverage: null,
+    availableMemoryBytes, windowStartAvailableMemoryBytes: availableMemoryBytes, memoryPressurePercent: null })
+  // This computer is busy: no headroom. The paired machine has room for two workers by memory, less what is on its way there.
+  vi.spyOn(HostFactsSource.prototype, 'load').mockImplementation(async () => load(99, 16 * GIB))
+  const report = f.socket.hostFacts.bind(f.socket)
+  vi.spyOn(f.socket, 'hostFacts').mockImplementation(async () => {
+    const real = await report()
+    return { ...real, facts: { ...real.facts, logicalCpuCount: 64, totalMemoryBytes: 64 * GIB }, load: load(1, 2 * GIB + 2 * 1.5 * GIB + GIB / 2) }
+  })
+  const listed = await f.call('list_machines', {})
+  if (listed.status !== 'ok') throw new Error('list-refused')
+  expect(listed.machines.map(machine => machine.headroom)).toEqual([0, 2])
+  // Hold every start on its way to the paired machine, so its readings cannot see them and only the counting can.
+  const gate = deferred(), control = f.socket.watcherControl!.bind(f.socket)
+  let held = 0
+  vi.spyOn(f.socket, 'watcherControl').mockImplementation(async (...args) => { held += 1; await gate.promise; return control(...args) })
+  const placement = f.watcher.placement.bind(f.watcher), placements: string[] = []
+  vi.spyOn(f.watcher, 'placement').mockImplementation(async (...args) => {
+    const placed = await placement(...args)
+    if (!('status' in placed)) placements.push(placed.hostId)
+    return placed
+  })
+  const starts = [1, 2, 3].map(index => f.watcher.invoke(f.id, 'start_thread', { ...f.onThisComputer(), title: `Synthetic batch worker ${index}` }))
+  await vi.waitFor(() => expect(held).toBe(2))
+  gate.resolve()
+  const placed = (await Promise.all(starts)).map(result => watcherToolSchemas.start_thread.output.parse(result))
+  const there = placed.filter(result => result.status === 'ok' && 'placement' in result && result.placement?.hostId === f.pairing.hostId)
+  expect(there).toHaveLength(2)
+  for (const result of there) expect(result).toMatchObject({ placement: { note: 'This computer is busy, so Sotto started this one on Synthetic remote, which has more room for workers.' } })
+  // The third found both machines with none, and was placed where its project is. This computer's fixture has no model of
+  // the paired machine's, which every start here names, so admission then refuses it there for the model alone.
+  expect(placements.toSorted()).toEqual([f.control.hostId(), f.pairing.hostId, f.pairing.hostId].toSorted())
+  expect(placed.filter(result => !there.includes(result))).toEqual([expect.objectContaining({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'Choose a ready worker model. Sotto will not switch accounts.' })])
+  expect(held).toBe(2)
+})
+
+it('counts a start against its machine\'s headroom for a minute after its first prompt went, by this computer\'s clock (#1694)', async () => {
+  const f = await acrossMachines('watcher')
+  const GIB = 1024 ** 3
+  // A host whose clock runs half a minute ahead: its readings must not be what decides when a start stops counting.
+  const ahead = 30_000
+  const load = (cpuBusyPercent: number, availableMemoryBytes: number) => ({ observedAt: new Date(Date.now() + ahead).toISOString(), windowMs: 2_000, cpuBusyPercent,
+    loadAverage: null, availableMemoryBytes, windowStartAvailableMemoryBytes: availableMemoryBytes, memoryPressurePercent: null })
+  vi.spyOn(HostFactsSource.prototype, 'load').mockImplementation(async () => ({ ...load(99, 16 * GIB), observedAt: new Date().toISOString() }))
+  const report = f.socket.hostFacts.bind(f.socket)
+  vi.spyOn(f.socket, 'hostFacts').mockImplementation(async () => {
+    const real = await report()
+    return { ...real, facts: { ...real.facts, logicalCpuCount: 64, totalMemoryBytes: 64 * GIB }, load: load(1, 2 * GIB + 2 * 1.5 * GIB + GIB / 2) }
+  })
+  const headroom = async () => { const listed = await f.call('list_machines', {}); if (listed.status !== 'ok') throw new Error('list-refused'); return listed.machines[1]!.headroom }
+  expect(await headroom()).toBe(2)
+  // The start reaches the paired machine and its first prompt is accepted there, so it is no longer on its way; the
+  // readings cannot show it yet, so it still counts.
+  const started = await f.call('start_thread', { ...f.onThisComputer(), title: 'Synthetic counted worker' })
+  expect(started).toMatchObject({ status: 'ok', target: { hostId: f.pairing.hostId } })
+  const onItsWay = () => (f.watcher as unknown as { startsNotYetSentOn(hostId: string): string[] }).startsNotYetSentOn(f.pairing.hostId)
+  await expect.poll(onItsWay).toEqual([])
+  expect(await headroom()).toBe(1)
+  // A minute after its start call ended, by this computer's clock, the readings are taken to show what it uses.
+  const now = Date.now()
+  vi.spyOn(Date, 'now').mockReturnValue(now + MACHINE_START_SETTLES_MS + 1)
+  expect(await headroom()).toBe(2)
+})
+
+it('keeps counting a check waiting its turn until it is sent, and forgets a start whose first prompt failed (#1694)', async () => {
+  const f = await acrossMachines('watcher')
+  type Reserved = { target: WatcherThreadTarget; operationId: string; notYetSent: boolean; failed: boolean }
+  const books = f.watcher as unknown as { notePlaced(target: WatcherThreadTarget, operationId: string): void; noteStartEnded(target: WatcherThreadTarget, failed: boolean): void
+    placedSince(hostId: string): string[]; reservedStarts(): readonly Reserved[] }
+  const host = f.pairing.hostId, check = { hostId: host, threadId: 'synthetic-waiting-check' }, failing = { hostId: host, threadId: 'synthetic-failed-start' }
+  let reserved: Reserved[] = [{ target: check, operationId: randomUUID(), notYetSent: true, failed: false }]
+  vi.spyOn(books, 'reservedStarts').mockImplementation(() => reserved)
+  const now = Date.now(), clock = vi.spyOn(Date, 'now').mockReturnValue(now)
+  // A check's call answers while it waits its turn; it is still on its way, so its minute has not begun.
+  books.notePlaced(check, randomUUID()); books.noteStartEnded(check, false)
+  clock.mockReturnValue(now + 10 * MACHINE_START_SETTLES_MS)
+  expect(books.placedSince(host)).toEqual([check.threadId])
+  // Sent at last: it counts for a minute from when Sotto saw it go.
+  reserved = [{ ...reserved[0]!, notYetSent: false }]
+  expect(books.placedSince(host)).toEqual([check.threadId])
+  clock.mockReturnValue(now + 11 * MACHINE_START_SETTLES_MS)
+  expect(books.placedSince(host)).toEqual([check.threadId])
+  clock.mockReturnValue(now + 11 * MACHINE_START_SETTLES_MS + 1)
+  expect(books.placedSince(host)).toEqual([])
+  // A start whose call answered that it failed started nothing; one that fails later, while still reserved, too.
+  books.notePlaced(failing, randomUUID()); books.noteStartEnded(failing, true)
+  expect(books.placedSince(host)).toEqual([])
+  books.notePlaced(failing, randomUUID())
+  reserved = [{ target: failing, operationId: randomUUID(), notYetSent: false, failed: true }]
+  expect(books.placedSince(host)).toEqual([])
+  // A start whose reservation was let go of once its first prompt failed, such as a check whose turn came, counts no
+  // more: its operation, read where it sits in the record, says so.
+  const view = vi.spyOn(f.control, 'watcherRecordView')
+  const lost = { hostId: host, threadId: 'synthetic-failed-check' }, operationId = randomUUID()
+  view.mockReturnValue({ ...f.control.watcherRecordView(), operations: [{ id: operationId, target: lost, deliveryState: 'queued' }] } as never)
+  books.notePlaced(lost, operationId)
+  expect(books.placedSince(host)).toEqual([lost.threadId])
+  view.mockReturnValue({ ...f.control.watcherRecordView(), operations: [{ id: operationId, target: lost, deliveryState: 'failed' }] } as never)
+  expect(books.placedSince(host)).toEqual([])
+  view.mockRestore()
+  // One start noted twice is kept once, so the minute that ends it ends all of it.
+  reserved = []
+  books.notePlaced(check, randomUUID()); books.notePlaced(check, randomUUID())
+  expect(books.placedSince(host)).toEqual([check.threadId])
+  clock.mockReturnValue(now + 13 * MACHINE_START_SETTLES_MS)
+  expect(books.placedSince(host)).toEqual([])
 })
 
 it('starts on This computer and says why when the paired machine new workers start on is not connected (#1032)', async () => {

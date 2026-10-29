@@ -216,6 +216,30 @@ struct DraftPhotoStrip: View {
     }
 }
 
+/// What waits in a reply box above its words, a thread's or Watcher's, as in Messages: the photos across the box, the
+/// files under them as pills, and why the last one chosen wasn't added. Nothing while the box holds none of them.
+struct DraftAttachments: View {
+    @EnvironmentObject var model: AppModel
+    let box: PhotoBox
+    var body: some View {
+        let photos = model.photos(box), files = model.files(box), notice = model.photoNotices[box.id]
+        if !photos.isEmpty || !files.isEmpty || notice != nil {
+            VStack(alignment: .leading, spacing: Space.s2) {
+                if !photos.isEmpty { DraftPhotoStrip(box: box) }
+                if !files.isEmpty { DraftFilePills(box: box) }
+                if let notice {
+                    Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true)
+                        .paragraphDirection()
+                        .padding(.horizontal, ComposerMetrics.wordsInset - ComposerMetrics.attachmentsInset)
+                        .accessibilityAddTraits(.updatesFrequently)
+                }
+            }
+            .padding([.horizontal, .top], ComposerMetrics.attachmentsInset)
+            .padding(.bottom, Space.s2)
+        }
+    }
+}
+
 private struct DraftPhotoView: View {
     let photo: DraftPhoto
     let number: Int
@@ -283,9 +307,12 @@ struct AttachPhotosButton: View {
                 if let fileReason { Text(fileReason) }
             }
         } label: {
-            Image(systemName: "plus").fontWeight(.semibold).frame(width: 44, height: 44)
+            // A circle of its own beside the box, as in Messages, the box's height when it holds one line; it takes a
+            // press across 44 points.
+            Image(systemName: "plus").fontWeight(.semibold).frame(width: ComposerMetrics.height, height: ComposerMetrics.height)
                 .foregroundStyle(reason == nil || fileReason == nil ? Palette.ink : Palette.muted)
-                .background(Palette.raised, in: Circle())
+                .composerSurface(in: Circle(), interactive: true)
+                .pressArea(drawn: ComposerMetrics.height)
         }
         .accessibilityLabel(String(localized: "Attach photos or files"))
         .accessibilityHint([reason, fileReason].compactMap { $0 }.first ?? String(localized: "Choose photos from the library, take one with the camera, or choose files."))

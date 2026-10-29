@@ -1867,7 +1867,7 @@ private struct FailedReplyCard: View {
 
 // MARK: - Reply box
 
-/// The reply box in glass over the bottom of the page, with what the computer or the thread needs said above it.
+/// The reply box floating over the bottom of the page, with what the computer or the thread needs said above it.
 /// While a request waits, the box offers it instead of the field.
 private struct ReplyDock: View, Equatable {
     @EnvironmentObject var model: AppModel
@@ -1879,7 +1879,6 @@ private struct ReplyDock: View, Equatable {
     /// offers opens the same way every time.
     static func == (a: Self, b: Self) -> Bool { a.ref == b.ref }
     @FocusState private var focused: Bool
-    @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sent = 0
     @State private var stopped = 0
@@ -1971,50 +1970,40 @@ private struct ReplyDock: View, Equatable {
     }
 
     private var replyField: some View {
-        let photos = model.photos(ref), files = model.files(ref)
-        let shape = RoundedRectangle(cornerRadius: photos.isEmpty && files.isEmpty ? 26 : 22, style: .continuous)
+        let shape = RoundedRectangle(cornerRadius: ComposerMetrics.radius, style: .continuous)
         let placeholder = model.thread(ref)?.status == "running" ? String(localized: "Reply while it works") : String(localized: "Reply to this thread")
+        // As in Messages: the + on its own beside a slim box, which grows without it. Photos wait inside the box across
+        // its width, above the words, files under them as pills, and Send and Stop sit inside its end.
         return HStack(alignment: .bottom, spacing: Space.s2) {
             AttachPhotosButton(box: .thread(ref))
-            // Photos wait inside the reply box, above the words, as in Messages, and files under them as pills.
-            VStack(alignment: .leading, spacing: Space.s2) {
-                if !photos.isEmpty { DraftPhotoStrip(box: .thread(ref)).padding(.top, Space.s1) }
-                if !files.isEmpty { DraftFilePills(box: .thread(ref)).padding(.top, photos.isEmpty ? Space.s1 : 0) }
-                if let notice = model.photoNotices[ref.id] {
-                    Text(notice).font(.sotto(.small)).foregroundStyle(Palette.dangerText).fixedSize(horizontal: false, vertical: true).paragraphDirection()
-                        .accessibilityAddTraits(.updatesFrequently)
+            VStack(alignment: .leading, spacing: 0) {
+                DraftAttachments(box: .thread(ref))
+                HStack(alignment: .bottom, spacing: Space.s1) {
+                    TextField("Reply", text: draft, prompt: Text(placeholder).foregroundStyle(Palette.placeholder), axis: .vertical)
+                        .font(.sotto(.body))
+                        .foregroundStyle(Palette.ink)
+                        .lineLimit(1...6)
+                        .focused($focused)
+                        // Words added from a reply put the caret after them, here (ADR-0129).
+                        .onChange(of: draftStore.focus) { _, focus in if focus?.key == ref.id { focused = true } }
+                        .padding(.vertical, ComposerMetrics.wordsPadding)
+                        .accessibilityLabel("Reply to this thread")
+                        .accessibilityIdentifier("thread-reply")
+                        .pasteAttaches(to: .thread(ref))
+                        .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == ref.id { model.focusRequest = nil; focused = true } }
+                        // Locked while the reply's photos are staged, so nothing typed now joins it.
+                        .disabled(model.preparingSends.contains(ref.id))
+                    trailingButtons.padding(.bottom, ComposerMetrics.buttonInset)
                 }
-                TextField("Reply", text: draft, prompt: Text(placeholder).foregroundStyle(Palette.placeholder), axis: .vertical)
-                    .font(.sotto(.body))
-                    .foregroundStyle(Palette.ink)
-                    .lineLimit(1...6)
-                    .focused($focused)
-                    // Words added from a reply put the caret after them, here (ADR-0129).
-                    .onChange(of: draftStore.focus) { _, focus in if focus?.key == ref.id { focused = true } }
-                    .padding(.vertical, 11)
-                    .accessibilityLabel("Reply to this thread")
-                    .accessibilityIdentifier("thread-reply")
-                    .pasteAttaches(to: .thread(ref))
-                    .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == ref.id { model.focusRequest = nil; focused = true } }
-                    // Locked while the reply's photos are staged, so nothing typed now joins it.
-                    .disabled(model.preparingSends.contains(ref.id))
+                .padding(.leading, ComposerMetrics.wordsInset)
+                .padding(.trailing, ComposerMetrics.buttonInset)
+                .frame(minHeight: ComposerMetrics.height)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            trailingButtons
+            .composerSurface(in: shape)
         }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canInterrupt(ref))
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written)
-        .padding(6)
-        .glass(in: shape)
-        .overlay(shape.strokeBorder(theme.color(.accent).opacity(focused ? 0.55 : 0), lineWidth: 1))
-        // Two shadows drawn once each and crossfaded, rather than one live shadow redrawn as the conversation moves under it.
-        .background {
-            ZStack {
-                SoftShadow(shape: shape, color: Color.black.opacity(0.22), radius: 16, y: 8).opacity(focused ? 0 : 1)
-                GlowShadow(shape: shape, color: theme.color(.accent), alpha: 0.35, radius: 18).opacity(focused ? 1 : 0)
-            }
-        }
-        .animation(reduceMotion ? nil : .easeInOut(duration: 0.4), value: focused)
     }
 
     /// Whether the box holds something to send: words, photos or files.
@@ -2023,23 +2012,23 @@ private struct ReplyDock: View, Equatable {
             || !model.files(ref).isEmpty
     }
 
-    /// Stop while the turn can be stopped, and beside it, once the box holds something, the button that queues it for
-    /// after the turn. Otherwise Send, as before.
+    /// Stop while the turn can be stopped. Send once the box holds something, as in Messages; while the turn runs it
+    /// queues for after the turn, beside Stop.
     @ViewBuilder private var trailingButtons: some View {
-        let stops = model.canInterrupt(ref)
-        if stops { stopButton.transition(.scale(scale: 0.8).combined(with: .opacity)) }
-        if !stops || written { sendButton.transition(.scale(scale: 0.8).combined(with: .opacity)) }
+        HStack(alignment: .bottom, spacing: ComposerMetrics.buttonGap) {
+            if model.canInterrupt(ref) { stopButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
+            if written || model.preparingSends.contains(ref.id) { sendButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
+        }
     }
 
     private var stopButton: some View {
         Button { stopped += 1; Task { await model.interrupt(ref) } } label: {
-            RoundedRectangle(cornerRadius: 3.5, style: .continuous)
-                .frame(width: 13, height: 13)
-                .frame(width: 44, height: 44)
+            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+                .frame(width: 10, height: 10)
+                .frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
                 .foregroundStyle(Palette.ink)
                 .background(Palette.fillSoft, in: Circle())
-                .overlay(Circle().strokeBorder(Palette.hairline, lineWidth: 1))
-                .contentShape(Circle())
+                .pressArea(drawn: ComposerMetrics.button)
         }
         .buttonStyle(PressStyle())
         .sensoryFeedback(.impact(weight: .medium), trigger: stopped)
@@ -2053,13 +2042,13 @@ private struct ReplyDock: View, Equatable {
         let queues = model.queuesReply(ref)
         return Button { sent += 1; Task { await model.send(ref) } } label: {
             Group {
-                if preparing { ProgressView().tint(Palette.onAccent) }
-                else { Image(systemName: queues ? "text.badge.plus" : "arrow.up").font(.system(size: 17, weight: .semibold)) }
+                if preparing { ProgressView().controlSize(.small).tint(Palette.onAccent) }
+                else { Image(systemName: queues ? "text.badge.plus" : "arrow.up").font(.system(size: 14, weight: .bold)) }
             }
-            .frame(width: 44, height: 44)
+            .frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
             .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
             .background(canSend || preparing ? Palette.accent : Palette.fillSoft, in: Circle())
-            .contentShape(Circle())
+            .pressArea(drawn: ComposerMetrics.button)
         }
         .buttonStyle(PressStyle())
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)

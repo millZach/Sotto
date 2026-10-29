@@ -10,7 +10,7 @@ import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, 
 import { dirname, join, resolve } from 'node:path'
 import { promisify } from 'node:util'
 import { setTimeout as wait } from 'node:timers/promises'
-import { assertPlainTree, copyRegularTree, prepareSandboxBus, prepareSandboxHome, prepareSandboxTmp, rewriteSandboxConfig, snapshotTree, validateSandboxConfig } from './omarchy-shell-sandbox.mjs'
+import { assertPlainTree, assertTreeUnchanged, copyRegularTree, prepareSandboxBus, prepareSandboxHome, prepareSandboxTmp, rewriteSandboxConfig, snapshotTree, validateSandboxConfig } from './omarchy-shell-sandbox.mjs'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, isProofProcessAlive, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
 
 const run = promisify(execFile)
@@ -162,7 +162,7 @@ async function orchestrate() {
     }
     assertProofInstancesPreserved(instanceRoot, before)
     say(`Prior Hyprland instances preserved: ${JSON.stringify([...before.keys()])}`)
-    liveDirectories.forEach((path, index) => { assert.deepEqual(snapshotTree(path), liveStamps[index]); say(`Live ${path} unchanged`) })
+    liveDirectories.forEach((path, index) => { assertTreeUnchanged(path, liveStamps[index]); say(`Live ${path} unchanged`) })
     for (const record of liveProcesses) {
       assert.ok(isProofProcessAlive(record.pid), `Preserve live shell process ${record.pid}`)
       assert.equal(startOf(record.pid), record.start, `Preserve live shell process identity ${record.pid}`)

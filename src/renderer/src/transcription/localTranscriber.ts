@@ -30,6 +30,8 @@ export interface LoadOptions {
 export interface TranscribeOptions extends LoadOptions {
   readonly sessionId: string
   readonly audio: Float32Array
+  /** `local` transcribes on this computer even while OpenRouter transcribes dictation (ADR-0160). */
+  readonly route?: 'local'
 }
 export interface TranscriptionResult {
   readonly text: string
@@ -123,7 +125,7 @@ export class LocalTranscriber implements DictationTranscriber {
       void Promise.resolve()
         .then(() => {
           if (!this.pending.has(requestId)) return { ok: false as const, reason: 'cancelled' as const }
-          return this.bridge.transcribe({ requestId, wav: wav.buffer as ArrayBuffer, timeoutMs })
+          return this.bridge.transcribe({ requestId, wav: wav.buffer as ArrayBuffer, timeoutMs, ...(options.route === undefined ? {} : { route: options.route }) })
         })
         .then(
           (result) => {

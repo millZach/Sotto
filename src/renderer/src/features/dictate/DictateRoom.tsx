@@ -5,6 +5,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import {
   MICROPHONE_NOT_SET_UP_DETAIL,
   SPEECH_MODEL_NOT_READY_DETAIL,
+  OPENROUTER_KEY_MISSING_DETAIL,
   TRANSCRIPTION_ERROR_DETAIL,
   TRANSCRIPTION_KEPT_DETAIL,
   isTranscriptionErrorCode,
@@ -48,6 +49,11 @@ export interface DictateRoomProps {
   readonly onStop: () => Promise<void>
   /** Sends a kept recording again. */
   readonly onRetry?: () => Promise<void>
+  /**
+   * Sends a kept recording to the speech model on this computer, while OpenRouter transcribes dictation (ADR-0160).
+   * Given only when that model is already here, so a press never starts a download.
+   */
+  readonly onTranscribeHere?: () => Promise<void>
   /** Clears an error, letting go of a kept recording. */
   readonly onDismiss?: () => Promise<void>
   /** Opens Settings, at the page or group named when there is one. */
@@ -65,6 +71,8 @@ export interface DictateRoomProps {
 }
 
 const NO_RECORDS: readonly DictationRecord[] = []
+/** Failures Settings → Dictation can fix: the speech model, the OpenRouter key, or the OpenRouter model chosen. */
+const SETTINGS_FIXES: ReadonlySet<string> = new Set(['TRANSCRIPTION_MODEL_NOT_READY', 'TRANSCRIPTION_NO_KEY', 'TRANSCRIPTION_KEY_REJECTED', 'TRANSCRIPTION_MODEL_GONE', 'OPENROUTER_KEY_MISSING'])
 const TIMER_TICK_MS = 250
 /** How long after an error appears an Escape is still taken as meant for the work before it. */
 const ESCAPE_GRACE_MS = 500
@@ -86,6 +94,7 @@ function errorDetail(code: string, copy: PlatformCopy, kept = false, retried = f
     case 'MIC_DEVICE_NOT_FOUND': return t`The selected microphone is unavailable. Choose another microphone in Settings.`
     case 'MIC_NOT_SET_UP': return MICROPHONE_NOT_SET_UP_DETAIL
     case 'SPEECH_MODEL_NOT_READY': return SPEECH_MODEL_NOT_READY_DETAIL
+    case 'OPENROUTER_KEY_MISSING': return OPENROUTER_KEY_MISSING_DETAIL
     case 'NO_SPEECH': return t`No speech was detected. Try again a little closer to the microphone.`
     case 'OUTPUT_FAILED':
     case 'OUTPUT_UNAVAILABLE': return t`Your completed text is below. Copy it again, or select and copy it yourself.`
@@ -156,6 +165,7 @@ export function DictateRoom({
   onStart,
   onStop,
   onRetry,
+  onTranscribeHere,
   onDismiss,
   onOpenSettings,
   onCopy,
@@ -269,7 +279,8 @@ export function DictateRoom({
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [dismiss, errorKey])
-  const modelProblem = !configured || (dictation.status === 'error' && dictation.code === 'TRANSCRIPTION_MODEL_NOT_READY')
+  // A kept recording that failed for want of the model, a key, or a model OpenRouter still offers points at Settings.
+  const modelProblem = !configured || (dictation.status === 'error' && SETTINGS_FIXES.has(dictation.code))
 
   const liveProps = said.tone === 'error'
     ? { role: 'alert' as const, 'aria-live': 'assertive' as const }
@@ -286,6 +297,8 @@ export function DictateRoom({
   let settingsButton: SettingsSectionId | null = null
   if (dictation.status === 'error' && dictation.code === 'DESKTOP_CLIPBOARD_UNAVAILABLE') {
     hint = null
+  } else if (dictation.status === 'error' && dictation.code === 'OPENROUTER_KEY_MISSING') {
+    settingsButton = 'settings-transcription'
   } else if (kept) {
     settingsButton = modelProblem ? 'settings-transcription' : null
   } else if (configured && !microphoneSkipped) {
@@ -337,6 +350,9 @@ export function DictateRoom({
           </div>
           <div className="dictate__actions">
             <Button disabled={actionDisabled} onClick={() => void invoke(action)}>{actionLabel}</Button>
+            {kept && onTranscribeHere !== undefined ? (
+              <Button variant="secondary" disabled={submitting} onClick={() => void invoke(onTranscribeHere)}><Trans>Transcribe on this computer</Trans></Button>
+            ) : null}
             {dismiss === undefined ? null : (
               <Button variant="secondary" disabled={submitting} onClick={() => void invoke(dismiss)}>
                 {kept ? t`Discard recording` : t`Dismiss`}
