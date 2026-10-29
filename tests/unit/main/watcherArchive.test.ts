@@ -3,15 +3,28 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, readdir, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { open } from 'node:fs/promises'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { archivableWatcherRequests, NOTHING_ARCHIVED, removeArchivedWork, WATCHER_ARCHIVE_FILE, WATCHER_ARCHIVE_INDEX, WATCHER_LIVE_CLOSED_REQUESTS,
-  WatcherArchive, watcherArchiveBatch } from '../../../src/main/agents/watcherArchive'
+  WatcherArchive, watcherArchiveBatch, WatcherArchiveUnreadable, type WatcherArchiveOpen } from '../../../src/main/agents/watcherArchive'
 import { emptyWatcherRecord, watcherRecordSchema, type WatcherOperation, type WatcherRecord, type WatcherRequest } from '../../../src/shared/watcher'
 
 // Watcher's archive (#1759): what may leave the live record, that the record stays valid without it, and that the store
 // gives back the work placed on the messages a conversation holds, follows Keep local history and survives a restart.
+/** While `most` is set, every file write takes at most that many bytes, as a short write on a full disk does. */
+const shortWrites = vi.hoisted(() => ({ most: undefined as number | undefined }))
+vi.mock('node:fs/promises', async importOriginal => {
+  const actual = await importOriginal<typeof import('node:fs/promises')>()
+  return { ...actual, open: async (...args: Parameters<typeof actual.open>) => {
+    const file = await actual.open(...args)
+    const most = shortWrites.most
+    if (most === undefined) return file
+    const write = file.write.bind(file) as (buffer: Uint8Array, offset: number, length: number) => Promise<{ bytesWritten: number }>
+    return Object.assign(file, { write: (buffer: Uint8Array, offset = 0, length = buffer.byteLength - offset) => write(buffer, offset, Math.min(length, most)) })
+  } }
+})
 const roots: string[] = []
-afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
+afterEach(async () => { shortWrites.most = undefined; for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }) })
 
 const HOST = '00000000-0000-4000-8000-000000000001'
 const WATCHER = { hostId: HOST, threadId: 'watcher-thread' }
@@ -58,9 +71,13 @@ describe('what leaves the live record', () => {
       for (const index of [7, 8]) Object.assign(next.requests[index]!.participants[0]!, { target: { hostId: HOST, threadId: 'fenced' }, state: 'taken-over', takeover: { reason: 'user-send', at: at(index) } })
       next.operations[7]!.target = next.operations[8]!.target = { hostId: HOST, threadId: 'fenced' }
       next.remoteAbsences = [{ operationId: next.operations[9]!.id, master: next.current!, clientId: 'desktop', observedAt: at(9) }]
+      // A stopped request whose worker Watcher started still holds that thread's queue for the user's review, as does a
+      // participation whose automation was stopped (preserveUserQueue).
+      next.requests[12]!.state = 'stopped'
+      next.requests[13]!.participants[0]!.automationStopped = true
     })
     const retained = new Set(archivableWatcherRequests(value, operation => operation.id === value.operations[10]!.id))
-    for (const index of [0, 1, 2, 3, 4, 5, 6, 8, 9, 10]) expect.soft(retained.has(requestAt(value, index).id), `request ${index}`).toBe(false)
+    for (const index of [0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 12, 13]) expect.soft(retained.has(requestAt(value, index).id), `request ${index}`).toBe(false)
     for (const index of [7, 11, 19]) expect.soft(retained.has(requestAt(value, index).id), `request ${index}`).toBe(true)
   })
 
@@ -128,7 +145,8 @@ describe('the archive on disk', () => {
     history = false
     await archive.privacyChanged()
     expect(await readdir(root)).toEqual([])
-    expect(archive.through()).toBeUndefined()
+    // What this run archived stays, in memory, as this run's conversation does.
+    expect(archive.holds(batch.requests[0]!.id)).toBe(true)
     await archive.append(batch)
     expect(await readdir(root)).toEqual([])
     const held = { threadId: WATCHER.threadId, ids: new Set(['m0']), from: at(0) }
@@ -140,5 +158,60 @@ describe('the archive on disk', () => {
     // A start with history off removes what an earlier run saved.
     await new WatcherArchive(root, () => false).settled()
     expect(await readdir(root)).toEqual([])
+  })
+
+  /** `open` whose append fails, as a locked disk does. */
+  const opening = (behaviour: { appendFails?: boolean }): WatcherArchiveOpen => async (path, flags) => {
+    if (behaviour.appendFails && flags === 'a') throw Object.assign(new Error('EACCES'), { code: 'EACCES' })
+    const file = await open(path, flags)
+    return { read: (buffer, offset, length, position) => file.read(buffer, offset, length, position), sync: () => file.sync(), close: () => file.close(),
+      write: (buffer, offset, length) => file.write(buffer, offset, length) }
+  }
+
+  it('writes every byte of a batch however short each write is, and reads it whole', async () => {
+    const root = await directory(), value = record(260)
+    const ids = archivableWatcherRequests(value)
+    const archive = new WatcherArchive(root, () => true)
+    shortWrites.most = 121
+    await archive.append(watcherArchiveBatch(value, ids))
+    shortWrites.most = undefined
+    const fresh = new WatcherArchive(root, () => true)
+    expect((await fresh.read({ requests: ids })).requests.map(item => item.id)).toEqual(ids)
+  })
+
+  it('refuses a lookup by ID when the batch the index names cannot be read, rather than calling the work absent', async () => {
+    const root = await directory(), value = record(260)
+    const ids = archivableWatcherRequests(value)
+    await new WatcherArchive(root, () => true).append(watcherArchiveBatch(value, ids))
+    const handle = await open(join(root, WATCHER_ARCHIVE_FILE), 'r+')
+    await handle.truncate(100); await handle.close()
+    const archive = new WatcherArchive(root, () => true)
+    await archive.ready()
+    expect(archive.hasRequest(ids[0]!)).toBe(true)
+    await expect(archive.read({ requests: [ids[0]!] })).rejects.toBeInstanceOf(WatcherArchiveUnreadable)
+  })
+
+  it('keeps work held in memory until turning history back on has written it, when the write fails', async () => {
+    const root = await directory(), value = record(260)
+    let history = false
+    const archive = new WatcherArchive(root, () => history, opening({ appendFails: true }))
+    const batch = watcherArchiveBatch(value, archivableWatcherRequests(value))
+    await archive.append(batch)
+    history = true
+    await expect(archive.privacyChanged()).rejects.toThrow()
+    expect(archive.holds(batch.requests[0]!.id)).toBe(true)
+    expect((await archive.read({ requests: [batch.requests[0]!.id] })).requests.map(item => item.id)).toContain(batch.requests[0]!.id)
+  })
+
+  it('gives each request, operation and prompt turn once when a crash left a batch archived twice', async () => {
+    const root = await directory(), value = record(260)
+    const batch = watcherArchiveBatch(value, archivableWatcherRequests(value))
+    const archive = new WatcherArchive(root, () => true)
+    await archive.append(batch); await archive.append(batch)
+    const work = await new WatcherArchive(root, () => true).read({ requests: [batch.requests[0]!.id] })
+    expect(work.requests).toHaveLength(batch.requests.length)
+    expect(work.operations).toHaveLength(batch.operations.length)
+    expect(work.promptTurns).toHaveLength(batch.promptTurns.length)
+    expect(archive.turnPrompts(batch.promptTurns[0]!.id)).toHaveLength(1)
   })
 })

@@ -307,7 +307,7 @@ async function measure(track: OwnerScaleTrack, shape: OwnerScale): Promise<Measu
       const { counts, sites: from } = await count(pipeline, () => until(action()))
       scenarios[name as Scenario] = counts; sites[name as Scenario] = from
     }
-    return { threads: pipeline.counts.threads, counts: pipeline.counts, scenarios, sites, updates, threadChanges: pipeline.threadChanges() }
+    return { threads: pipeline.counts.threads, counts: { ...pipeline.counts, recalledWatcherOperations: pipeline.recalledWatcherOperations }, scenarios, sites, updates, threadChanges: pipeline.threadChanges() }
   } finally {
     counter.record = undefined; counter.wholeThreads = Number.POSITIVE_INFINITY
     await until(pipeline.stop())
@@ -823,6 +823,10 @@ describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track 
     expect(measured[track].quarterHistory.counts).toMatchObject({ threads: 250, remoteThreads: 10, retirements: 64, operations: 38, requests: 40 })
     expect(measured[track].quarterThreads.counts).toMatchObject({ threads: 63, remoteThreads: 40, retirements: 256, operations: 150, requests: 160 })
     if (track === 'owl') expect(measured[track].longWatcher.counts).toMatchObject({ threads: 250, retirements: 256, operations: 1_500, requests: 1_600, watches: 5 })
+    // The long Watcher thread is shown back into its archive, and a page of archived work is read back (#1759); the
+    // owner's is shown back to its first message, all of it live.
+    if (track === 'owl') expect(measured[track].longWatcher.counts.recalledWatcherOperations).toBeGreaterThan(0)
+    if (track === 'owl') expect(measured[track].owner.counts.recalledWatcherOperations).toBe(0)
   })
   // With SOTTO_VERIFY_THREAD_CHANGES=1, every layer's publications are worked into thread changes and applied to a shadow
   // map that is checked against the layer's whole snapshot after every change, through every scenario at every shape.

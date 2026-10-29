@@ -15,6 +15,7 @@ import { ThreadChangesPublisher, ThreadMap, verifyingThreadChanges, type Activit
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { UsageService } from '../../src/main/agents/usageService'
 import { WatcherService } from '../../src/main/agents/watcher'
+import { WATCHER_LIVE_CLOSED_REQUESTS } from '../../src/main/agents/watcherArchive'
 import { CheckQueue } from '../../src/main/agents/checkQueue'
 import { createWatcherRoomDesktop } from '../../src/main/agents/watcherRoomDesktop'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
@@ -52,9 +53,8 @@ const QUESTIONS: NonNullable<AgentRequest['questions']> = [{ id: 'choice', quest
  * publishes is counted (`threadVisits.ts`). A publication of its activity subscription stays one, so the provider switch
  * keeps it without a copy, as it keeps the real adapter's; the counted snapshot is marked from the one it wraps.
  */
-/** Watcher's provider session, and how many messages its conversation holds at the owner's scale (#1759). */
+/** Watcher's provider session (#1759). */
 const WATCHER_SESSION = 'watcher-0'
-const WATCHER_CONVERSATION = 200
 
 class SendingAdapter extends StreamingAdapter {
   override subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void {
@@ -118,6 +118,8 @@ export interface OwnerScalePipeline {
   ownerLookups(): number
   /** The records of Watcher's history (requests, receipts and earlier Watchers) the window's room was sent since the last reset. */
   watcherRoomRecords(): number
+  /** The archived operations Watcher's conversation, shown back, read back from its archive (#1759). */
+  readonly recalledWatcherOperations: number
   resetCounts(): void
   /**
    * With thread changes verified: for each layer, how many of its publications the shadow map applied and checked, and
@@ -504,6 +506,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
 
   const streamIds = streamSessions.map(idOf)
   let watcherThreadId: string | undefined
+  let recalledWatcherOperations = 0
   const openThread = hostEntityKey(localHostId, idOf(openSession))
   const view = control.requestDraftView()
   const asking = view.host.threads.find(item => item.id === idOf('asking-0'))!
@@ -538,9 +541,11 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
       watcherThreadId = current.target.threadId
       registry.reserve(watcherThreadId, 'claude', WATCHER_SESSION, current.projectId)
       state.threads.push({ ...thread(WATCHER_SESSION), projectId: current.projectId, title: 'Watcher' })
-      const conversation = Math.round(WATCHER_CONVERSATION * (scale.watcher ?? 1))
-      for (let index = 0; index < conversation; index++) adapter.log.add(WATCHER_SESSION, { id: `watcher-message-${index}`, role: index % 2 === 0 ? 'user' : 'assistant',
-        text: `Synthetic Watcher ${index % 2 === 0 ? 'instruction' : 'reply'} ${index}`, createdAt: AT })
+      // Each request's message and Watcher's reply to it, as the record names them (`addWatcherHistory`).
+      for (let index = 0; index < counts.requests; index++) {
+        adapter.log.add(WATCHER_SESSION, { id: `watcher-prompt-${index}`, role: 'user', text: `Synthetic Watcher instruction ${index}`, createdAt: AT })
+        adapter.log.add(WATCHER_SESSION, { id: `watcher-reply-${index}`, role: 'assistant', text: `Synthetic Watcher reply ${index}`, createdAt: AT })
+      }
       adapter.emit()
       // One of those starts is a check still holding its place, as a running check does: the pass on every publish reads it
       // by its position, and so must not grow with the history behind it (#1312).
@@ -559,6 +564,14 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     }
     // The window shows one thread and watches the streams, as after the owner opened it.
     await control.command({ type: 'observe-threads', threadIds: [...streamIds, idOf(openSession), ...watcherThreadId ? [watcherThreadId] : []] })
+    if (watcherThreadId) {
+      // The window is shown back to ten requests past the newest closed ones the record keeps (#1759): with a long
+      // Watcher thread, a page of its archived work is read back, cards and all; with the owner's, its first message.
+      await control.command({ type: 'load-earlier-messages', threadId: watcherThreadId,
+        throughMessageId: `watcher-prompt-${Math.max(0, counts.requests - WATCHER_LIVE_CLOSED_REQUESTS - 10)}` })
+      await control.watcherArchiveSettled()
+      recalledWatcherOperations = control.watcherRecalledWork().operations.length
+    }
   } catch (error) { await stop(); throw error }
 
   const client = desktopWindowClient()
@@ -611,6 +624,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     workspaceChangeRecords: () => shadows.carried.workspace,
     ownerLookups: () => lookups,
     watcherRoomRecords: () => roomRecords,
+    recalledWatcherOperations,
     resetCounts: () => { broadcasts = 0; lookups = 0; roomRecords = 0; shadows.reset() },
     // Watcher's observe and wake-up passes, checked against the whole passes in verifying mode, on Owl (#925 step 5), and
     // the window's broadcasts read in part, checked against the whole walk (#925 step 6).

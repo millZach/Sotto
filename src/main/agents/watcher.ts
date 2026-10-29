@@ -14,14 +14,14 @@ import { PlacementRefusal, placeWorker, type PlacementAsk, type PlacementSources
 import { branchStartWords, systemClockTime, type BranchStartReceipt } from '../../shared/branchMoves'
 import type { DesktopBranchMoves } from './branchMoves'
 import { rebuildReservations } from './watcherRecords'
-import { archivableWatcherRequests, closedWatcherRequests, NOTHING_ARCHIVED, WATCHER_ARCHIVE_BATCH, WATCHER_LIVE_CLOSED_REQUESTS, type WatcherArchived } from './watcherArchive'
+import { archivableWatcherRequests, archivedTargetKey, closedWatcherRequests, NOTHING_ARCHIVED, WATCHER_ARCHIVE_BATCH, WATCHER_LIVE_CLOSED_REQUESTS, type WatcherArchived } from './watcherArchive'
 import { isWatcherWorkActive, WATCHER_QUIET_MS, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { CHECK_HOLDS_THROUGH_BACKGROUND, checkWaitingWords, WATCHER_CHECK_STOP, WATCHER_CHECK_STOP_AWAY, type CheckQueue } from './checkQueue'
 import { checkInstallFailedWords, checkInstallWords } from './checkWorktree'
 import { DELEGATION_LEVELS_MAX, delegatedThreadsBelow } from '../../shared/delegation'
 import { WATCHER_COMPACT_AT } from '../../shared/settings'
 import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_READ_BYTES_MAX, WATCHER_REPLY_BYTES_MAX, watcherToolSchemas,
-  type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
+  type WatcherIdentity, type WatcherOperation, type WatcherOutcome, type WatcherPromptTurn, type WatcherRecord, type WatcherRefusal, type WatcherRequest, type WatcherThreadTarget, type WatcherStandingWatch,
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   MACHINE_FACTS_OLDER, MACHINE_FACTS_UNREAD, MACHINE_NOT_CONNECTED, type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
   type WatcherWaitingOnUser } from '../../shared/watcher'
@@ -362,6 +362,16 @@ interface StatePageRow { readonly watching: (WatcherStateThread & { pullRequests
 const stoppedParticipation = (request: Readonly<WatcherRequest>, participant: Readonly<WatcherRequest['participants'][number]>): boolean =>
   participant.automationStopped === true || request.state === 'stopped' && participant.startedBy === 'watcher'
 
+/** What a read back of Watcher's archive brings to the room (`recalledRoom`), and the lists it was joined into. */
+interface RecalledRoom {
+  readonly recalled: WatcherArchived
+  readonly receipts: WatcherRoomState['receipts']
+  readonly replies: NonNullable<WatcherRoomState['receiptReplies']>
+  readonly placements: NonNullable<WatcherRoomState['receiptPlacements']>
+  readonly requests: WatcherRequest[]
+  joined: Partial<Record<'receipts' | 'requests' | 'replies' | 'placements', unknown>> | undefined
+}
+
 /**
  * A start Watcher holds a reservation for, and whether it still counts as placed: its first prompt is still to go
  * (`queued` or `dispatching`), or a paired host did not answer it in time and may yet start it (`timedOut`).
@@ -464,8 +474,8 @@ export class WatcherService implements WatcherControlHooks {
    * The room's receipts, prompt turns and requests with the archived work a conversation shown far back brings (#1759),
    * made again only when the record or that work changes, so the room hands out the same lists while neither does.
    */
-  private roomRecalled: { operations: readonly WatcherOperation[]; promptTurns: WatcherRecord['promptTurns']; requests: readonly WatcherRequest[]; recalled: WatcherArchived
-    shown: { operations: WatcherOperation[]; promptTurns: NonNullable<WatcherRecord['promptTurns']>; requests: WatcherRequest[] } } | undefined
+  /** What the archived work a conversation shown far back brings to the room, worked out once per read back (#1759). */
+  private roomRecalled: RecalledRoom | undefined
   /** The record the last look for closed work to archive was at, and the archiving under way (#1759). */
   private archiveChecked: Readonly<WatcherRecord> | undefined
   private archiving: Promise<unknown> | undefined
@@ -1729,9 +1739,14 @@ export class WatcherService implements WatcherControlHooks {
       this.promptCount(record, operation.target, operation.promptTurnId, operation.requestId)), promptLimit: WATCHER_PROMPTS_PER_THREAD }
   }
   private promptCount(record: Readonly<WatcherRecord>, target: WatcherThreadTarget, promptTurnId: string | undefined, requestId: string): number {
-    return promptTurnId ? record.operations.filter(operation => operation.promptTurnId === promptTurnId && key(operation.target) === key(target)
-      && (operation.action === 'start' || operation.action === 'send') && !operation.promptRefunded).length
-      : record.requests.find(request => request.id === requestId)?.participants.find(participant => key(participant.target) === key(target))?.promptCount ?? 0
+    if (!promptTurnId) return record.requests.find(request => request.id === requestId)?.participants.find(participant => key(participant.target) === key(target))?.promptCount ?? 0
+    const counted = record.operations.filter(operation => operation.promptTurnId === promptTurnId && key(operation.target) === key(target)
+      && (operation.action === 'start' || operation.action === 'send') && !operation.promptRefunded)
+    // The turn's operations Watcher's archive holds count too (#1759): a look-up by the turn, in its index.
+    const archived = this.options.control.archivedWatcherWork()?.turnPrompts(promptTurnId)
+    if (!archived?.length) return counted.length
+    const own = new Set(counted.map(operation => operation.id)), thread = archivedTargetKey(target)
+    return counted.length + archived.filter(([id, counts]) => counts === thread && !own.has(id)).length
   }
   /** `observedThread` is Watcher's thread as the caller already read it; without it, the thread is read from its owning host. */
   private promptTurn(record: WatcherRecord, watcher: WatcherThreadTarget, importedId?: string, observedThread?: AgentThread): PromptTurn {
@@ -1797,9 +1812,9 @@ export class WatcherService implements WatcherControlHooks {
     // A room built again with the record unchanged hands out the same lists, so the window's update finds them unchanged by identity (#1450).
     const keys = this.roomKeys(live), record = { ...view, requests: keys.requests as WatcherRequest[] }
     const current = record.current ? this.localThread(record.current.target.threadId) : undefined
-    // What the room shows of Watcher's work: the record's, with what its conversation shown far back recalled (#1759).
+    // What Watcher's conversation shown far back recalled of its archived work (#1759), worked out once per read back.
     // Only the record's own requests name the watched threads below.
-    const shownWork = this.roomWork(record.operations, record.promptTurns, record.requests)
+    const recalled = this.recalledRoom(current)
     // Every target the record names, with its standing watch and every participation, gathered in one walk of the record by
     // keys built once per record. A walk of every request for each target, building both keys each time, was most of what
     // a publish cost once the record held a few hundred participations (#1231).
@@ -1843,7 +1858,7 @@ export class WatcherService implements WatcherControlHooks {
     const room: WatcherRoomState = { current: record.current, currentOptions: current ? { modelId: current.modelId, reasoningEffort: current.reasoningEffort ?? null,
       runtimeMode: current.runtimeMode ?? 'approval-required', status: current.status, connected: this.connected(current) } : null,
       runtimeMode: record.lastRuntimeMode ?? current?.runtimeMode ?? 'approval-required', standingWatches: watches,
-      ownChanges: current ? watcherOwnChanges(current) : [], history: record.history, requests: shownWork.requests as WatcherRequest[],
+      ownChanges: current ? watcherOwnChanges(current) : [], history: record.history, requests: recalled ? this.withRecalled('requests', recalled, record.requests, recalled.requests, item => item.id) : record.requests,
       watchedThreads: [...targets].map(([targetKey, target]) => {
         const watch = watchOf.get(targetKey)
         const participation = participations.get(targetKey) ?? []
@@ -1872,18 +1887,17 @@ export class WatcherService implements WatcherControlHooks {
           waitsOn: thread?.requests.map(request => ({ id: request.id, kind: request.kind, openTarget: target })) ?? [],
           participation }
       }),
-      receipts: this.roomReceipts(shownWork.operations),
+      receipts: recalled ? this.withRecalled('receipts', recalled, this.roomReceipts(record.operations), recalled.receipts, item => item.id) : this.roomReceipts(record.operations),
       news: this.wakes.news(), recoveryNotice: this.recoveryNotice, observedAt: now(), sequence: ++this.roomSequence,
       // A replacement whose creation stopped part-way, with nothing finishing it now: the room offers to try again.
       creationStopped: view.creation !== null && this.opening === undefined,
       handover: offer ? { source: offer.source.target, provider: offer.source.provider, counts: offer.counts } : null,
-      receiptReplies: watcherReceiptReplies(shownWork.operations === record.operations ? record : { ...record, operations: shownWork.operations as WatcherOperation[],
-        ...shownWork.promptTurns ? { promptTurns: shownWork.promptTurns } : {} }, current), asks: watcherAskPlacements(current, record),
+      receiptReplies: recalled ? [...recalled.replies, ...watcherReceiptReplies(record, current)] : watcherReceiptReplies(record, current), asks: watcherAskPlacements(current, record),
       // Where this run's starts were placed (#1032), from memory as the receipts' `placement` is; none while the feature is off.
-      ...this.placements.size ? { receiptPlacements: shownWork.operations.flatMap(operation => {
+      ...this.placements.size ? { receiptPlacements: [...recalled?.placements ?? [], ...record.operations.flatMap(operation => {
         const placement = this.placements.get(operation.id)
         return placement ? [{ operationId: operation.id, placement }] : []
-      }) } : {} }
+      })] } : {} }
     // Watcher's conversation against its compaction point, and what it keeps through compaction (#1189).
     const snapshot = this.options.control.watcherSnapshot()
     room.context = current ? { tokens: this.contextTokens(current), compactAt: this.compactAt(), canCompact: this.canCompact(snapshot, current),
@@ -1939,9 +1953,22 @@ export class WatcherService implements WatcherControlHooks {
     if (!archive) return undefined
     await archive.ready()
     if (!archive.hasOperation(operationId)) return undefined
-    const work = await archive.read({ operations: [operationId] })
+    const work = await this.readArchive({ operations: [operationId] })
     const operation = work.operations.find(item => item.id === operationId)
     return operation ? { operation, work } : undefined
+  }
+  /**
+   * Archived work by ID (#1759). The archive's index names it, so a batch that cannot be read refuses the call rather than
+   * answer as if the work were never done: a retry is never run again for want of its receipt.
+   */
+  private async readArchive(ids: { readonly requests?: readonly string[]; readonly operations?: readonly string[] }): Promise<WatcherArchived> {
+    try { return await this.options.control.archivedWatcherWork()!.read(ids) }
+    catch { refuse('HISTORY_UNAVAILABLE', 'Watcher’s saved record of this earlier work could not be read. Nothing was sent. Try again, or restart Sotto if it persists.', true) }
+  }
+  /** Whether Watcher started this thread for an earlier request, in the record or in Watcher's archive (#1759). */
+  private startedEarlier(record: Readonly<WatcherRecord>, target: WatcherThreadTarget): boolean {
+    return record.requests.some(request => request.participants.some(item => key(item.target) === key(target) && item.startedBy === 'watcher'))
+      || this.options.control.archivedWatcherWork()?.started(target.hostId, target.threadId) === true
   }
   /** The archived operation made with this retry key whose request `matches`, read with its batch's work (#1759). */
   private async archivedRetry(retryKey: string, matches: (request: WatcherRequest) => boolean): Promise<{ operation: WatcherOperation; work: WatcherArchived } | undefined> {
@@ -1950,7 +1977,7 @@ export class WatcherService implements WatcherControlHooks {
     await archive.ready()
     const ids = archive.retryKeyOperations(retryKey)
     if (!ids.length) return undefined
-    const work = await archive.read({ operations: ids })
+    const work = await this.readArchive({ operations: ids })
     const requests = new Map(work.requests.map(request => [request.id, request] as const))
     const operation = work.operations.find(item => item.retryKey === retryKey && ids.includes(item.id) && requests.has(item.requestId) && matches(requests.get(item.requestId)!))
     return operation ? { operation, work } : undefined
@@ -1982,27 +2009,39 @@ export class WatcherService implements WatcherControlHooks {
     return await this.dispatchRead(call, read, true, hosted, work)
   }
   /**
-   * The room's receipts, prompt turns and requests: the record's, and before them the archived work a Watcher
-   * conversation held far back shows (#1759). The record's own lists while nothing is recalled.
+   * What the archived work a Watcher conversation held far back shows (#1759): its receipts with where each stands, where
+   * each goes in the conversation, where this run placed its starts, and its requests. Worked out once per read back, when
+   * it is first shown, never on each room build: archived work is closed, its turns over, and its outcomes final.
    */
-  private roomWork(operations: readonly WatcherOperation[], promptTurns: WatcherRecord['promptTurns'], requests: readonly WatcherRequest[])
-    : { operations: readonly WatcherOperation[]; promptTurns: WatcherRecord['promptTurns']; requests: readonly WatcherRequest[] } {
+  private recalledRoom(current: AgentThread | undefined): RecalledRoom | undefined {
     const recalled = this.options.control.watcherRecalledWork()
-    if (recalled === NOTHING_ARCHIVED || recalled.operations.length === 0 && recalled.requests.length === 0) return { operations, promptTurns, requests }
+    if (recalled === NOTHING_ARCHIVED || recalled.operations.length === 0 && recalled.requests.length === 0) return undefined
     const kept = this.roomRecalled
-    if (kept && kept.operations === operations && kept.promptTurns === promptTurns && kept.requests === requests && kept.recalled === recalled) return kept.shown
-    const liveRequests = new Set(requests.map(item => item.id)), liveOperations = new Set(operations.map(item => item.id)), liveTurns = new Set((promptTurns ?? []).map(item => item.id))
-    const shown = {
-      operations: [...recalled.operations.filter(item => !liveOperations.has(item.id)), ...operations],
-      promptTurns: [...recalled.promptTurns.filter(item => !liveTurns.has(item.id)), ...promptTurns ?? []],
-      // Which phone started a request stays main's, as for the record's own (`roomKeys`).
-      requests: [...recalled.requests.filter(item => !liveRequests.has(item.id)).map(item => {
-        if (!item.phoneOrigin) return item
-        const { phoneOrigin: _phoneOrigin, ...rest } = item; void _phoneOrigin; return rest
-      }), ...requests],
-    }
-    this.roomRecalled = { operations, promptTurns, requests, recalled, shown }
-    return shown
+    if (kept?.recalled === recalled) return kept
+    const record = this.view()
+    const receipts = recalled.operations.map(operation => { const outcome = this.outcomeOf(operation as WatcherOperation); return outcome ? { ...operation, outcome } : operation })
+    const replies = watcherReceiptReplies({ ...record, operations: recalled.operations as WatcherOperation[], promptTurns: recalled.promptTurns as WatcherPromptTurn[] }, current)
+    const placements = recalled.operations.flatMap(operation => { const placement = this.placements.get(operation.id); return placement ? [{ operationId: operation.id, placement }] : [] })
+    // Which phone started a request stays main's, as for the record's own (`roomKeys`).
+    const requests = recalled.requests.map(item => {
+      if (!item.phoneOrigin) return item
+      const { phoneOrigin: _phoneOrigin, ...rest } = item; void _phoneOrigin; return rest
+    })
+    this.roomRecalled = { recalled, receipts, replies, placements, requests, joined: undefined }
+    return this.roomRecalled
+  }
+  /**
+   * `live` with what `recalled` adds ahead of it, leaving out what the record holds too, the same list while neither changed.
+   * Only a change of the record's list or of the read back makes it again.
+   */
+  private withRecalled<T>(slot: 'receipts' | 'requests' | 'replies' | 'placements', recalled: RecalledRoom, live: readonly T[], added: readonly T[], id: (item: T) => string): T[] {
+    const joined = (recalled.joined ??= {})
+    const kept = joined[slot] as { live: readonly T[]; list: T[] } | undefined
+    if (kept?.live === live) return kept.list
+    const own = new Set(live.map(id))
+    const list = [...added.filter(item => !own.has(id(item))), ...live]
+    joined[slot] = { live, list }
+    return list
   }
   /** Each operation with where it stands (`outcomeOf`), the same list while nothing it was made from changed. */
   private roomReceipts(operations: readonly WatcherOperation[]): WatcherRoomState['receipts'] {
@@ -2422,7 +2461,7 @@ export class WatcherService implements WatcherControlHooks {
     // Watcher's own message, or one Sotto sent itself, such as a wake-up or a delegated brief, is never the user's. Asked
     // on every update for each watched thread, so targets are compared without building keys.
     const machineMessage = (id: string) => record.operations.some(operation => sameTarget(operation.target, target) && operation.messageId === id)
-      || this.sottoMessage(thread, id)
+      || this.options.control.archivedWatcherWork()?.sentMessage(target, id) === true || this.sottoMessage(thread, id)
     if (!head || !machineMessage(head)) return true
     // Conversation events can publish before the adapter's native head. A later non-machine user message in the
     // same ordered window proves human work behind a stale machine head; never downgrade an explicit human head.
@@ -2552,7 +2591,7 @@ export class WatcherService implements WatcherControlHooks {
     if (created) record.requests.push(scope)
     let participant = scope.participants.find(item => key(item.target) === key(target))
     if (!participant) {
-      participant = { requestId: scope.id, target, startedBy: record.requests.some(request => request.participants.some(item => key(item.target) === key(target) && item.startedBy === 'watcher')) ? 'watcher' : 'user',
+      participant = { requestId: scope.id, target, startedBy: this.startedEarlier(record, target) ? 'watcher' : 'user',
         state: 'participating', generation: watch.generation, promptCount: 0 }
       scope.participants.push(participant)
     }
@@ -3277,7 +3316,9 @@ export class WatcherService implements WatcherControlHooks {
     // Watcher's own message, or one Sotto sent itself, such as a wake-up or a delegated brief, is never the user's. Asked
     // only of a head that would otherwise be a takeover, since this pass runs for threads on every update.
     const machineHeadOf = (thread: AgentThread, head: string | null): (() => boolean) => {
+      // Watcher's send its archive holds is Watcher's too (#1759).
       const ownOperation = index.operations.get(thread.id)?.some(item => item.messageId === head) === true
+        || head !== null && this.options.control.archivedWatcherWork()?.sentMessage({ hostId: thread.hostId ?? hostId ?? '', threadId: thread.id }, head) === true
       let sotto: boolean | undefined
       return () => ownOperation || head !== null && (sotto ??= this.sottoMessage(thread, head))
     }
@@ -3863,6 +3904,8 @@ export class WatcherService implements WatcherControlHooks {
   }
   private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress, placed?: PlacedStart, ticket?: string): Promise<unknown> {
     const admitted = await this.transaction(async () => {
+      // Prompts counted below include a turn's archived operations, which the archive's index names once it is read (#1759).
+      await this.options.control.archivedWatcherWork()?.ready()
       if (imported && this.view().remoteAbsences?.some(item => item.operationId === imported.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
       if (imported && this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was sent. Reopen Sotto.')
       if (!imported) this.checkCaller(threadId)
@@ -3874,7 +3917,7 @@ export class WatcherService implements WatcherControlHooks {
       let archivedWork: WatcherArchived | undefined
       if (!request && !imported) {
         const archive = this.options.control.archivedWatcherWork()
-        if (archive) { await archive.ready(); if (archive.hasRequest(input.requestId)) archivedWork = await archive.read({ requests: [input.requestId] }) }
+        if (archive) { await archive.ready(); if (archive.hasRequest(input.requestId)) archivedWork = await this.readArchive({ requests: [input.requestId] }) }
         request = archivedWork?.requests.find(item => item.id === input.requestId)
       }
       // The Watcher turn a new call counts against. A retry of a recorded operation returns its receipt without reading one.
@@ -4086,7 +4129,7 @@ export class WatcherService implements WatcherControlHooks {
         }
         if (remote && !owned.pairedPermissionCeiling) owned.pairedPermissionCeiling = this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required'
         let participant = owned.participants.find(item => key(item.target) === key(target))
-        if (!participant) { participant = { requestId: request.id, target, startedBy: start || next.requests.some(item => item.participants.some(worker => key(worker.target) === key(target) && worker.startedBy === 'watcher')) ? 'watcher' : 'user', generation: operation.generation, state: 'participating', promptCount: 0, lastUserMessageId: thread ? nativeHead(thread) : null }; owned.participants.push(participant) }
+        if (!participant) { participant = { requestId: request.id, target, startedBy: start || this.startedEarlier(next, target) ? 'watcher' : 'user', generation: operation.generation, state: 'participating', promptCount: 0, lastUserMessageId: thread ? nativeHead(thread) : null }; owned.participants.push(participant) }
         if (assignment && !next.watches?.some(watch => key(watch.target) === key(target)) && !imported) (next.watches ??= []).push(assignment)
         if (start || send) participant.promptCount = this.promptCount(next, target, turn?.id, request.id) + 1
         next.operations.push(operation)

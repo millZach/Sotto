@@ -554,7 +554,7 @@ export class AgentControl {
    * The archived work each Watcher conversation shows back to the oldest message main holds for it, read when that
    * conversation was shown that far back (#1759), by thread: the oldest held message it was read for, and the work.
    */
-  private readonly watcherRecalls = new Map<string, { readonly from: string; readonly work: WatcherArchived }>()
+  private readonly watcherRecalls = new Map<string, { readonly from: string; readonly revision: number; readonly work: WatcherArchived }>()
   /** The threads a recall is under way for. */
   private readonly watcherRecalling = new Set<string>()
   /** Every recalled conversation's work together, made again only when a recall changes. */
@@ -607,9 +607,13 @@ export class AgentControl {
   async archiveWatcherWork(ids: readonly string[], stillArchivable: () => readonly string[]): Promise<number> {
     const archive = this.watcherArchive
     if (!archive || this.dependencies.watcherEnabled !== true || ids.length === 0) return 0
-    // A batch at a time, so a read back reads no more than the batches its messages reach.
-    for (let at = 0; at < ids.length; at += WATCHER_ARCHIVE_BATCH) await archive.append(watcherArchiveBatch(this.watcher, ids.slice(at, at + WATCHER_ARCHIVE_BATCH)))
-    const allowed = new Set(stillArchivable()), leaving = new Set(ids.filter(id => allowed.has(id)))
+    await archive.ready()
+    // A batch at a time, so a read back reads no more than the batches its messages reach. Work the archive already holds,
+    // as after a crash between its write and the record's save, is not written again.
+    const fresh = ids.filter(id => !archive.holds(id))
+    for (let at = 0; at < fresh.length; at += WATCHER_ARCHIVE_BATCH) await archive.append(watcherArchiveBatch(this.watcher, fresh.slice(at, at + WATCHER_ARCHIVE_BATCH)))
+    // Only work the archive holds now leaves the record: Keep local history may have changed between the batches.
+    const allowed = new Set(stillArchivable()), leaving = new Set(ids.filter(id => allowed.has(id) && archive.holds(id)))
     if (leaving.size === 0 || this.disposed) return 0
     await this.updateWatcher(record => removeArchivedWork(record, leaving))
     return leaving.size
@@ -631,7 +635,8 @@ export class AgentControl {
     if (!archive || this.watcherRecalling.has(thread.id)) return
     const recalled = this.watcherRecalls.get(thread.id)
     if (!oldest) { if (recalled) void this.recallWatcherWork(thread, true); return }
-    if (recalled?.from === oldest.id || !recalled && !archive.reaches(oldest.createdAt)) return
+    // Read again when the conversation holds another oldest message, or the archive took another batch since.
+    if (recalled?.from === oldest.id && recalled.revision === archive.revision || !recalled && !archive.reaches(oldest.createdAt)) return
     void this.recallWatcherWork(thread, true)
   }
   /**
@@ -642,7 +647,7 @@ export class AgentControl {
   private async recallWatcherWork(thread: AgentThread, reshow: boolean): Promise<void> {
     const archive = this.watcherArchive, oldest = thread.messages[0]
     if (!archive) return
-    const previous = this.watcherRecalls.get(thread.id)?.work ?? NOTHING_ARCHIVED
+    const previous = this.watcherRecalls.get(thread.id)?.work ?? NOTHING_ARCHIVED, revision = archive.revision
     let work: WatcherArchived = NOTHING_ARCHIVED
     if (oldest && archive.reaches(oldest.createdAt)) {
       this.watcherRecalling.add(thread.id)
@@ -651,7 +656,7 @@ export class AgentControl {
       finally { this.watcherRecalling.delete(thread.id) }
       if (this.disposed) return
     }
-    if (oldest) this.watcherRecalls.set(thread.id, { from: oldest.id, work })
+    if (oldest) this.watcherRecalls.set(thread.id, { from: oldest.id, revision, work })
     else this.watcherRecalls.delete(thread.id)
     if (previous === work) return
     const all = [...this.watcherRecalls.values()].map(item => item.work).filter(item => item !== NOTHING_ARCHIVED)
