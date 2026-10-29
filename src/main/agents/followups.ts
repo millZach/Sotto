@@ -65,6 +65,8 @@ const leadsQueue = (item: QueuedFollowup, threadId: string): boolean => waitingW
 const WAKE_UP_NOT_EDITABLE = "A wake-up is Sotto's own message and cannot be edited. Remove it if the thread should not get it."
 
 type Stored = z.infer<typeof storedSchema>
+/** A message moved from a replaced Watcher's queue (#1735): its draft, when it was queued and whether it may have arrived. */
+export interface MovedPrompt { readonly draftId: string; readonly createdAt: string; readonly unconfirmed: boolean }
 /** The durable queue as it stands, for reading only. */
 export interface FollowupView {
   readonly items: readonly Readonly<QueuedFollowup>[]
@@ -411,8 +413,8 @@ export class FollowupStore {
    * they are. Says which drafts moved, when each was queued and whether it may have arrived; none past the other queue's
    * hundred move.
    */
-  async moveUserPrompts(from: string, to: string, error: string, unconfirmed: string): Promise<{ readonly draftId: string; readonly createdAt: string; readonly unconfirmed: boolean }[]> {
-    let moved: { readonly draftId: string; readonly createdAt: string; readonly unconfirmed: boolean }[] = []
+  async moveUserPrompts(from: string, to: string, error: string, unconfirmed: string): Promise<MovedPrompt[]> {
+    let moved: MovedPrompt[] = []
     await this.change(state => {
       const room = 100 - state.items.filter(item => item.threadId === to).length
       const items = state.items.filter(item => item.threadId === from && !item.wakeUp && !item.watcherOperationId && item.status !== 'dispatching').slice(0, Math.max(0, room))

@@ -8,7 +8,7 @@ import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { immutableActivities, immutableUpdates, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
-import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type QueuedFollowup } from './followups'
+import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type MovedPrompt, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -776,7 +776,7 @@ export class AgentControl {
    * not confirmed, each moved to its queue, paused, so the user sends or removes it there and nothing goes twice. Says
    * which drafts moved, when each was queued and whether it may have arrived.
    */
-  async moveWatcherQueue(from: string, to: string): Promise<{ readonly draftId: string; readonly createdAt: string; readonly unconfirmed: boolean }[]> {
+  async moveWatcherQueue(from: string, to: string): Promise<MovedPrompt[]> {
     const moved = await this.followupStore.moveUserPrompts(from, to,
       'This was waiting for the last Watcher. Resume the queue to send it to this one, or remove it.',
       'The last Watcher did not confirm this message, so it may have reached it. Check that conversation in Watcher history before you resume the queue.')

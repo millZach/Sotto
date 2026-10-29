@@ -848,12 +848,17 @@ export class WatcherService implements WatcherControlHooks {
     const current = record.current
     if (!current) return undefined
     if (key(request.watcher) === key(current.target) || this.remote?.hosts().find(host => host.hostId === hostId)?.newOwner === true) return current
-    let identities = this.historyIdentities.get(record.history)
-    if (!identities) this.historyIdentities.set(record.history, identities = new Map(record.history.map(identity => [key(identity.target), identity])))
-    return identities.get(key(request.watcher))
+    // Watcher history only grows, at its end, so the index is made again only when its length or last entry changes,
+    // whichever copy of the record this is.
+    const last = record.history.at(-1), kept = this.historyIdentities
+    if (!kept || kept.length !== record.history.length || kept.last !== (last ? key(last.target) : undefined)) {
+      this.historyIdentities = { length: record.history.length, last: last ? key(last.target) : undefined,
+        identities: new Map(record.history.map(identity => [key(identity.target), identity])) }
+    }
+    return this.historyIdentities!.identities.get(key(request.watcher))
   }
-  /** Watcher history by conversation, once per history list rather than once per host read (`hostMaster`). */
-  private readonly historyIdentities = new WeakMap<readonly WatcherIdentity[], ReadonlyMap<string, WatcherIdentity>>()
+  /** Watcher history by conversation, made once per history rather than once per host read (`hostMaster`). */
+  private historyIdentities: { readonly length: number; readonly last: string | undefined; readonly identities: ReadonlyMap<string, WatcherIdentity> } | undefined
   /** Whether a paired host takes over a replaced Watcher's requests there (`watcher-new-owner`, #1735). */
   private adopts(hostId: string): boolean { return this.remote?.hosts().find(host => host.hostId === hostId)?.newOwner === true }
   /** What every read of a host that takes them over carries, so the host moves them before it answers. */
@@ -2686,8 +2691,6 @@ export class WatcherService implements WatcherControlHooks {
     const questions = prepared?.questions ?? [], unconfirmed = (prepared?.unconfirmed ?? false) || movedDrafts.some(item => item.unconfirmed)
     const cannotStop = [...away.values()].map(target => ({ title: this.owningThread(target.hostId, target.threadId)?.title ?? 'Untitled thread',
       host: (this.machineName(target.hostId) ?? 'another computer').slice(0, 200) }))
-    const byHost = new Map<string, string[]>()
-    for (const row of cannotStop) { const titles = byHost.get(row.host); if (titles) titles.push(row.title); else byHost.set(row.host, [row.title]) }
     this.setCarried({ to, questions, moved, unconfirmed, draftMoved, cannotStop })
   }
   /** What carried over, and the note's form of it, made once each time it changes rather than on every publish. */
@@ -2724,13 +2727,18 @@ export class WatcherService implements WatcherControlHooks {
     const current = this.view().current?.target
     if (!settled.length || !current) return
     this.lateQueue = this.lateQueue.filter(from => !settled.includes(from))
-    for (const from of settled) void this.options.control.moveWatcherQueue(from.threadId, current.threadId).then(async moved => {
+    for (const from of settled) void (async () => {
+      // A message sent at once that failed is back in the last Watcher's box; one that went unconfirmed is only told of.
+      const draftMoved = await this.options.control.moveWatcherDraft(from.threadId, current.threadId).catch(() => false)
+      const unconfirmed = this.options.control.unconfirmedDirectSend(from.threadId)
+      const moved = await this.options.control.moveWatcherQueue(from.threadId, current.threadId).catch(() => [])
       await this.unlinkMoved(from, moved)
       const carried = this.carried
-      if (moved.length && carried && key(carried.to) === key(current)) {
-        this.setCarried({ ...carried, moved: carried.moved + moved.length, unconfirmed: carried.unconfirmed || moved.some(item => item.unconfirmed) }); this.publish()
+      if ((moved.length || draftMoved || unconfirmed) && carried && key(carried.to) === key(current)) {
+        this.setCarried({ ...carried, moved: carried.moved + moved.length, draftMoved: carried.draftMoved === true || draftMoved,
+          unconfirmed: carried.unconfirmed || unconfirmed || moved.some(item => item.unconfirmed) }); this.publish()
       }
-    }).catch(() => undefined)
+    })().catch(() => undefined)
   }
   private creationPermission(model: AgentModel) {
     const runtimeMode = this.record().lastRuntimeMode ?? 'approval-required'

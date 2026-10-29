@@ -262,10 +262,13 @@ describe('New Watcher', () => {
     await (store as unknown as { change(update: (state: { items: { text: string; status: string }[] }) => void): Promise<void> }).change(state => {
       state.items.find(item => item.text === 'Late words')!.status = 'failed'
     })
+    // A message sent at once that failed is put back in the last Watcher's box.
+    expect((await f.control.commandShell({ type: 'save-thread-draft', threadId: f.first.threadId, draftId: randomUUID(), text: 'Late box words', composer: 'manual' })).error).toBeNull()
     sending.mockReturnValue(false)
     await f.control.commandShell({ type: 'observe-threads', threadIds: [third.threadId] })
     await vi.waitFor(() => expect(store.peek().items.find(item => item.text === 'Late words')).toMatchObject({ threadId: third.threadId, status: 'paused' }))
-    await vi.waitFor(() => expect(f.service.state().carried).toMatchObject({ moved: 1 }))
+    await vi.waitFor(() => expect(f.service.state().carried).toMatchObject({ moved: 1, draftMoved: true }))
+    expect(f.control.get().threadDrafts?.find(draft => draft.threadId === third.threadId)?.text).toBe('Late box words')
   })
 
   it('refuses when Watcher’s model is not ready or its permission mode is not the one in force', async () => {
