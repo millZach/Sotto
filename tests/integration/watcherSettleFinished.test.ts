@@ -270,3 +270,26 @@ it('does not count news as heard while its wake-up is still being saved to Watch
   await f.watcherHears()
   await vi.waitFor(() => expect(f.settled(target.threadId)).toBe(true), { timeout: 15_000 })
 })
+
+it('stops watching a thread the user settles, and restoring it does not watch it again (October 28, 2026)', async () => {
+  const f = await fixture(false), target = await f.watched()
+  await f.endTurn(target.threadId)
+  expect((await f.control.commandShell({ type: 'settle-thread', threadId: target.threadId })).error).toBeNull()
+  await vi.waitFor(() => expect(f.watching(target.threadId)).toBe(false), { timeout: 15_000 })
+  // Not the user's Stop watching: Watcher may watch it again when the user asks, without the user handing it back.
+  expect(f.control.watcherRecord().userUnwatches ?? []).toEqual([])
+  expect((await f.control.commandShell({ type: 'restore-thread', threadId: target.threadId })).error).toBeNull()
+  await f.emit(); await new Promise(resolve => setTimeout(resolve, 100))
+  expect(f.watching(target.threadId)).toBe(false)
+})
+
+it('keeps the watch the user gives a thread that is already settled', async () => {
+  const f = await fixture(false), threadId = randomUUID()
+  const model = f.control.watcherSnapshot().models.find(item => item.providerId === 'codex')!, project = f.control.watcherSnapshot().projects.find(item => item.providerId === 'codex')!
+  expect((await f.control.commandShell({ type: 'create-thread', threadId, projectId: project.id, modelId: model.id,
+    title: 'Synthetic worker', runtimeMode: 'approval-required', workingCopy: 'shared' })).error).toBeNull()
+  expect((await f.control.commandShell({ type: 'settle-thread', threadId })).error).toBeNull()
+  expect(await f.service.watchThread({ target: { hostId: f.control.hostId()!, threadId } })).toMatchObject({ status: 'ok' })
+  await f.emit(); await new Promise(resolve => setTimeout(resolve, 100))
+  expect(f.watching(threadId)).toBe(true)
+})
