@@ -78,6 +78,7 @@ import {
   shell,
   systemPreferences,
   Tray,
+  utilityProcess,
   type Event as ElectronEvent,
   type MenuItemConstructorOptions,
   type WebContents,
@@ -137,7 +138,7 @@ import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { LocalTranscriptionService } from './asr/localTranscriptionService'
 import { CloudTranscriptionService } from './asr/cloudTranscriptionService'
 import { OpenRouterSpeechModels } from './llm/openRouterSpeechModels'
-import { loadParakeetEngine } from './asr/speechEngine'
+import { createParakeetEngineLoader } from './asr/parakeetEngine'
 import { SpeechModelStore } from './asr/speechModelStore'
 import { SpeechModelManager } from './asr/speechModelManager'
 import { createDictationGate } from './hotkeys/dictationGate'
@@ -1510,6 +1511,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // ready, and the renderer uses its fake transcriber. Each failed segment records why and how long it
   // was in the transcription diagnostics, never what was said.
   const transcriptionDiagnostics = diagnosticsAppender('transcription-diagnostics.jsonl')
+  // Sotto's own Parakeet models run in a utility process of their own, built beside main's bundle, so turning dictation
+  // off or switching models ends it and gives its memory back (#1787).
+  const loadParakeetEngine = createParakeetEngineLoader(join(__dirname, 'parakeetHelper.js'), (modulePath, args, options) => utilityProcess.fork(modulePath, args, options))
   const coreMlHelperPath = app.isPackaged
     ? join(process.resourcesPath, 'coreml-asr', 'sotto-coreml-asr')
     : join(__dirname, '../../native/coreml-asr/.build/sotto-coreml-asr')

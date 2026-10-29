@@ -1,5 +1,5 @@
 import type { AgentProject } from '../../shared/agents'
-import type { HostOsFamily, MachineCpuState, MachineMemoryState } from '../../shared/hostFacts'
+import type { HostOsFamily } from '../../shared/hostFacts'
 import type { WatcherRefusal } from '../../shared/watcher'
 import { WORKER_SYSTEM_WORDS, type ProjectOrigins, type ProjectSetupRequest, type ProjectSetupResult, type WorkerMachineSetting, type WorkerPlacementReceipt,
   type WorkerSystem } from '../../shared/workerMachine'
@@ -18,10 +18,14 @@ type WatcherRefusalCode = WatcherRefusal['code']
  *   This computer goes to the machine Settings say new workers start on, when that is another machine; one that is not
  *   connected, or no longer saved, starts the worker on This computer instead, and the receipt says why. So does one
  *   that reuses a worktree there or starts from a base branch read there: those choices mean nothing on another machine.
- *   Where Settings leave the machine to Watcher, a project named on This computer stays here unless This computer is busy
- *   or short on memory and another connected machine is neither; then it goes to the one with the most CPU to spare, and
- *   the receipt says why. A load anywhere unknown moves nothing, and a start Sotto moved that cannot start there comes
- *   back here: Sotto's own choice never refuses a start that would have run on This computer.
+ *   Where Settings leave the machine to Watcher, the start goes to the connected machine with the most **headroom**
+ *   (#1694; Zach, October 29, 2026: most headroom wins), and stays where its project was named on a tie. The receipt says
+ *   why when it moves. Headroom counts the starts on their way to each machine, so a batch spreads as headroom runs down.
+ *   A machine whose headroom is unknown is never chosen, and one unknown where the project was named moves nothing. A
+ *   start Sotto moved that cannot start there comes back: Sotto's own choice never refuses a start that would have run
+ *   where its project was named.
+ * - **A system**, where Settings leave the machine to Watcher, goes to the machine of that system with the most headroom,
+ *   in the order above on a tie or where none is known.
  *
  * On another machine than the project was named on, the project is found by its GitHub origin (`sameRepository`). A
  * machine with no copy gets one (#1690): its host adds a clone already in its usual projects folder, or clones the
@@ -49,10 +53,11 @@ export interface PlacementSources {
    * cannot finish answers in plain words; rejects only when the machine cannot be asked.
    */
   setUp?(hostId: string, request: ProjectSetupRequest): Promise<ProjectSetupResult | undefined>
-  /** How busy a machine is now, or null when it does not say. Read only where Watcher's own choice may move a start. */
-  load?(hostId: string): Promise<MachineLoad | null>
+  /** A machine's headroom now, or null when it cannot be read. Read only where Watcher's own choice places a start. */
+  headroom?(hostId: string): Promise<MachineHeadroom | null>
 }
-export interface MachineLoad { readonly cpu: MachineCpuState; readonly memory: MachineMemoryState; readonly cpuBusyPercent: number | null }
+/** About how many more workers a machine can take now (`machineHeadroom`), null when unknown, and what its load says. */
+export interface MachineHeadroom { readonly headroom: number | null; readonly busy: boolean; readonly short: boolean }
 export interface PlacementAsk {
   readonly machine?: string | undefined
   readonly os?: WorkerSystem | undefined
@@ -96,7 +101,7 @@ export async function placeWorker(ask: PlacementAsk, setting: WorkerMachineSetti
   // A project on a machine this computer no longer knows is refused where its start is admitted, as before.
   const from = machines.find(machine => machine.hostId === project.hostId)
   const defaultId = defaultHostId(setting, local)
-  let target: PlacementMachine, note: string | undefined, moved: { machine: PlacementMachine; state: string; why: string } | undefined
+  let target: PlacementMachine, note: string | undefined, moved: { machine: PlacementMachine; home: PlacementMachine; why: string } | undefined
   if (ask.machine !== undefined) {
     target = machines.find(machine => machine.hostId === ask.machine)
       ?? refuse('UNKNOWN_TARGET', 'Sotto knows no machine by that host ID. Call list_machines and name one it lists. Nothing was started.')
@@ -113,9 +118,19 @@ export async function placeWorker(ask: PlacementAsk, setting: WorkerMachineSetti
     const words = WORKER_SYSTEM_WORDS[ask.os]
     // An explicit system never falls back to another (#1312): with none connected, nothing starts.
     if (!matching.length) refuse('HOST_DISCONNECTED', `No ${words.one} is connected. Connect ${words.a}, or run this on This computer. Nothing was started.`, true)
-    target = [defaultId, project.hostId, local.hostId].flatMap(id => matching.find(machine => machine.hostId === id) ?? []).at(0) ?? matching[0]!
-  } else if (project.hostId === local.hostId && defaultId === undefined && ask.pinnedBy === undefined && (moved = await roomElsewhere(local, machines, sources))) {
-    // Watcher's own choice, with This computer busy and another machine with room (#1690).
+    const order = [defaultId, project.hostId, local.hostId].flatMap(id => matching.find(machine => machine.hostId === id) ?? [])
+    const ranked = [...order, ...matching.filter(machine => !order.includes(machine))]
+    // Watcher's own choice takes the one with the most headroom (#1694); a machine Settings chose keeps its place. Moved
+    // off the machine the project was named on, it comes back there when it cannot start where it was moved.
+    const readings = defaultId === undefined ? await readHeadroom(ranked, sources) : undefined
+    const best = readings && mostHeadroom(ranked, readings)
+    target = best?.machine ?? ranked[0]!
+    if (best && from && target !== ranked[0] && ranked[0] === from) {
+      moved = { machine: target, home: from, why: movedWords(from, readings[0] ?? null, target) }
+      note = moved.why
+    }
+  } else if (defaultId === undefined && ask.pinnedBy === undefined && from?.connected && (moved = await moreHeadroomElsewhere(from, machines, sources))) {
+    // Watcher's own choice, with another machine that has more headroom than where the project was named (#1694).
     target = moved.machine
     note = moved.why
   } else if (project.hostId !== local.hostId || defaultId === undefined || defaultId === local.hostId) {
@@ -148,34 +163,51 @@ export async function placeWorker(ask: PlacementAsk, setting: WorkerMachineSetti
   let found: FoundProject
   try { found = await sameProject(from, target, project.projectId, sources, ask.newWorktree === true) } catch (error) {
     if (!moved || !(error instanceof PlacementRefusal)) throw error
-    // Sotto moved it, so it never refuses what would have run here: it comes back to This computer, and says so.
-    return { hostId: local.hostId, projectId: project.projectId,
-      receipt: receipt(local, `This computer is ${moved.state}, so Sotto tried ${named(moved.machine)}, which has room, but could not start this one there, so it started on This computer.`) }
+    // Sotto moved it, so it never refuses what would have run where its project was named: it comes back, and says so.
+    return { hostId: moved.home.hostId, projectId: project.projectId,
+      receipt: receipt(moved.home, `Sotto tried ${named(moved.machine)}, which has more room for workers than ${named(moved.home)}, but could not start this one there, so it started on ${named(moved.home)}.`) }
   }
   return { hostId: target.hostId, projectId: found.projectId, receipt: { ...receipt(target, note, found.note), ...found.setUp ? { setUp: found.setUp } : {} },
     ...found.fromOrigin ? { fromOrigin: found.fromOrigin } : {} }
 }
 
+/** Each machine's headroom now, in the same order; null where it cannot be read. */
+async function readHeadroom(machines: readonly PlacementMachine[], sources: PlacementSources): Promise<(MachineHeadroom | null)[]> {
+  const read = sources.headroom
+  return read ? Promise.all(machines.map(machine => read(machine.hostId).catch(() => null))) : machines.map(() => null)
+}
+
+/** Of `machines`, the one with the most known headroom in `readings`, the earliest on a tie; undefined when none is known. */
+function mostHeadroom(machines: readonly PlacementMachine[], readings: readonly (MachineHeadroom | null)[]): { machine: PlacementMachine; headroom: number } | undefined {
+  let best: { machine: PlacementMachine; headroom: number } | undefined
+  machines.forEach((machine, index) => {
+    const headroom = readings[index]?.headroom
+    if (headroom !== null && headroom !== undefined && (!best || headroom > best.headroom)) best = { machine, headroom }
+  })
+  return best
+}
+
 /**
- * The connected machine with the most CPU to spare, when This computer is busy or short on memory and that machine is
- * neither (#1690), with the sentence that says why. Undefined when This computer has room, or a load reads unknown.
+ * Why Sotto started a worker on `target` rather than `home`, where its project was named, in words without the figure,
+ * which only Watcher reads (Zach, October 29, 2026).
  */
-async function roomElsewhere(local: PlacementMachine, machines: readonly PlacementMachine[], sources: PlacementSources)
-  : Promise<{ machine: PlacementMachine; state: string; why: string } | undefined> {
-  const load = sources.load
-  if (!load) return undefined
-  const here = await load(local.hostId).catch(() => null)
-  // Either reading alone is enough to move: a Mac reports its memory as unknown and can still be busy.
-  if (!here || here.cpu !== 'busy' && here.memory !== 'short') return undefined
-  const others = machines.filter(machine => !machine.thisComputer && machine.connected)
-  const loads = await Promise.all(others.map(machine => load(machine.hostId).catch(() => null)))
-  const chosen = others.flatMap((machine, index) => {
-    const there = loads[index]
-    return there && there.cpu === 'not-busy' && there.memory === 'enough' && there.cpuBusyPercent !== null ? [{ machine, busy: there.cpuBusyPercent }] : []
-  }).sort((a, b) => a.busy - b.busy)[0]?.machine
-  if (!chosen) return undefined
-  const state = here.memory === 'short' && here.cpu === 'busy' ? 'busy and short on memory' : here.memory === 'short' ? 'short on memory' : 'busy'
-  return { machine: chosen, state, why: `This computer is ${state}, so Sotto started this one on ${named(chosen)}, which has room.` }
+function movedWords(home: PlacementMachine, here: MachineHeadroom | null, target: PlacementMachine): string {
+  const state = here?.busy && here.short ? 'is busy and short on memory' : here?.short ? 'is short on memory' : here?.busy ? 'is busy' : undefined
+  return state ? `${capital(named(home))} ${state}, so Sotto started this one on ${named(target)}, which has more room for workers.`
+    : `${capital(named(target))} has more room for workers than ${named(home)}, so Sotto started this one there.`
+}
+
+/**
+ * The connected machine with more headroom than `home`, where the project was named, and the most of any (#1694), with the
+ * sentence that says why. Undefined when none has more, or `home`'s headroom is unknown.
+ */
+async function moreHeadroomElsewhere(home: PlacementMachine, machines: readonly PlacementMachine[], sources: PlacementSources)
+  : Promise<{ machine: PlacementMachine; home: PlacementMachine; why: string } | undefined> {
+  const others = machines.filter(machine => machine.connected && machine.hostId !== home.hostId)
+  const [here, ...readings] = await readHeadroom([home, ...others], sources)
+  const best = mostHeadroom(others, readings)
+  if (here?.headroom === null || here?.headroom === undefined || !best || best.headroom <= here.headroom) return undefined
+  return { machine: best.machine, home, why: movedWords(home, here, best.machine) }
 }
 
 interface FoundProject { readonly projectId: string; readonly setUp?: NonNullable<WorkerPlacementReceipt['setUp']>; readonly note?: string; readonly fromOrigin?: string }

@@ -1,0 +1,95 @@
+{
+  "platform": "win32-x64",
+  "model": "parakeet-ultra-int8",
+  "steps": [
+    {
+      "step": "started",
+      "main": {
+        "workingSetMB": 295.7,
+        "peakWorkingSetMB": 298.1,
+        "privateMB": 273.8,
+        "rssMB": 295.8,
+        "heapUsedMB": 62.6,
+        "proc": null,
+        "onnxruntimeLoaded": false
+      },
+      "helper": null
+    },
+    {
+      "step": "model loaded",
+      "main": {
+        "workingSetMB": 1016.9,
+        "peakWorkingSetMB": 1033.9,
+        "privateMB": 984.7,
+        "rssMB": 1016.9,
+        "heapUsedMB": 51.5,
+        "proc": null,
+        "onnxruntimeLoaded": true
+      },
+      "helper": null,
+      "transcription": {
+        "ok": true,
+        "words": 38,
+        "ms": 3212
+      }
+    },
+    {
+      "step": "loaded, after one transcription",
+      "main": {
+        "workingSetMB": 1134.9,
+        "peakWorkingSetMB": 1138.4,
+        "privateMB": 1201.2,
+        "rssMB": 1134.9,
+        "heapUsedMB": 51.6,
+        "proc": null,
+        "onnxruntimeLoaded": true
+      },
+      "helper": null
+    },
+    {
+      "step": "dictation off, 5 s later",
+      "main": {
+        "workingSetMB": 250.8,
+        "peakWorkingSetMB": 1140.1,
+        "privateMB": 214.7,
+        "rssMB": 250.8,
+        "heapUsedMB": 51.3,
+        "proc": null,
+        "onnxruntimeLoaded": true
+      },
+      "helper": null
+    },
+    {
+      "step": "dictation back on, model loaded",
+      "main": {
+        "workingSetMB": 921.2,
+        "peakWorkingSetMB": 1140.1,
+        "privateMB": 887.8,
+        "rssMB": 921.2,
+        "heapUsedMB": 51.9,
+        "proc": null,
+        "onnxruntimeLoaded": true
+      },
+      "helper": null,
+      "transcription": {
+        "ok": true,
+        "words": 38,
+        "ms": 3108
+      }
+    },
+    {
+      "step": "reloaded, after one transcription",
+      "main": {
+        "workingSetMB": 1096.4,
+        "peakWorkingSetMB": 1140.1,
+        "privateMB": 1161.8,
+        "rssMB": 1096.4,
+        "heapUsedMB": 51.9,
+        "proc": null,
+        "onnxruntimeLoaded": true
+      },
+      "helper": null
+    }
+  ],
+  "helperEndedAfterOff": true
+}
