@@ -34,7 +34,7 @@ taken at its word as running in the background.
 **It survives the turn and holds its session.** The `result` frame ends a turn, not its agents, so it does not
 clear background work. The matching `task_notification`, a terminal status or a `task_updated` end time does, and
 so does anything after which Sotto can no longer hear the bookend or trust the process to send it: an interrupt,
-an error result, a disconnect, a process exit and a restart. While it is live the session reaper (ADR-0016) leaves the session running, because stopping
+an error result, a disconnect, a process exit and a restart. An error result that answers a `/compact` is the exception: a failed compaction stops nothing in the CLI, so it keeps the work (amended October 29, 2026, in [ADR-0127](0127-sotto-compacts-an-idle-claude-thread-before-its-cache-expires.md)). While it is live the session reaper (ADR-0016) leaves the session running, because stopping
 the CLI would stop the work it reports. For the same reason changing the thread's settings and rewinding it,
 which both restart the CLI, are refused while it is live, with an error that says nothing was changed and to wait
 for the agents. If a bookend is ever lost, a reconnect clears the state and lets both through again.
