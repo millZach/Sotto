@@ -20,12 +20,24 @@ export type OwnerScaleCounts = { -readonly [K in keyof typeof OWNER_SCALE]: numb
  * owner accumulated besides them: the remote host's answered threads, the answer retirements and Watcher owners, and
  * Watcher's requests, operations and watches. The work budget grows each on its own, so a failure can say which grew.
  */
-export interface OwnerScale { readonly threads: number; readonly history: number }
+export interface OwnerScale {
+  readonly threads: number
+  readonly history: number
+  /**
+   * How much longer Watcher's own record is than the rest of the history makes it: its requests and operations are
+   * scaled by `history` times this. A long-running Watcher thread grows them on its own, with every instruction it is
+   * given (October 28, 2026: 1,255 requests and 1,126 operations, from 160 and 150 eight days before).
+   */
+  readonly watcher?: number
+}
+
+const WATCHER_RECORD = new Set(['requests', 'operations'])
 
 /** The owner's counts at `scale`, at least one of each. A number scales both the threads and the history. */
 export function ownerScaleCounts(scale: number | OwnerScale): OwnerScaleCounts {
-  const { threads, history } = typeof scale === 'number' ? { threads: scale, history: scale } : scale
-  return Object.fromEntries(Object.entries(OWNER_SCALE).map(([name, count]) => [name, Math.max(1, Math.round(count * (name === 'threads' ? threads : history)))])) as OwnerScaleCounts
+  const { threads, history, watcher = 1 } = typeof scale === 'number' ? { threads: scale, history: scale } : scale
+  return Object.fromEntries(Object.entries(OWNER_SCALE).map(([name, count]) => [name,
+    Math.max(1, Math.round(count * (name === 'threads' ? threads : history * (WATCHER_RECORD.has(name) ? watcher : 1))))])) as OwnerScaleCounts
 }
 
 const AT = '2026-10-20T12:00:00.000Z'
