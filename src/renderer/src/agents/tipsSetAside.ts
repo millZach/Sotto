@@ -5,17 +5,15 @@ import { useSyncExternalStore } from 'react'
  * shows again until Settings › Threads › Show hidden tips again clears the list. Ids only; never what a tip said.
  */
 const SET_ASIDE_KEY = 'sotto.tips.setAside'
-/** Where the rotation stands, so the next turn shows the next tip even after Sotto restarts. */
+/** Where each rotation stands (`sotto.tips.next.thread:claude`), so the next turn shows the next tip even after Sotto restarts. */
 const ROTATION_KEY = 'sotto.tips.next'
-/** Enough for every tip Sotto ships and every skill a user is likely to see; the oldest go first past it. */
-export const SET_ASIDE_LIMIT = 400
 
 export interface TipsSetAsideStore {
   readonly ids: () => ReadonlySet<string>
   readonly setAside: (id: string) => void
   readonly clear: () => void
-  /** The rotation's next place, moved on by one. */
-  readonly nextRotation: () => number
+  /** The named rotation's next place, moved on by one. */
+  readonly nextRotation: (rotation: string) => number
   readonly subscribe: (listener: () => void) => () => void
 }
 
@@ -40,13 +38,15 @@ export function createTipsSetAsideStore(storage: Pick<Storage, 'getItem' | 'setI
     ids: () => ids,
     setAside: id => {
       if (ids.has(id)) return
-      write(new Set([...ids, id].slice(-SET_ASIDE_LIMIT)))
+      // Never trimmed: a tip set aside stays aside until the user asks for them back, and the list grows only by presses.
+      write(new Set([...ids, id]))
     },
     clear: () => { if (ids.size) write(new Set()) },
-    nextRotation: () => {
+    nextRotation: rotation => {
+      const key = `${ROTATION_KEY}.${rotation}`
       let at = 0
-      try { at = Number.parseInt(storage?.getItem(ROTATION_KEY) ?? '0', 10) || 0 } catch { /* starts from the first tip */ }
-      try { storage?.setItem(ROTATION_KEY, String((at + 1) % 1_000_000)) } catch { /* the next turn repeats the rotation's place */ }
+      try { at = Number.parseInt(storage?.getItem(key) ?? '0', 10) || 0 } catch { /* starts from the first tip */ }
+      try { storage?.setItem(key, String((at + 1) % 1_000_000)) } catch { /* the next turn repeats the rotation's place */ }
       return at
     },
     subscribe: listener => { listeners.add(listener); return () => { listeners.delete(listener) } },

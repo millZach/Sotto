@@ -13,7 +13,7 @@ import { THREAD_SHORTCUT_IDS } from '../../../src/shared/threadShortcuts'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import type { PromptEditorElement } from '../../../src/renderer/src/agents/promptSelection'
-import { chooseTip, forgetShownTips, TIP_CATALOG, tipCandidates, tipSources, type TipFacts } from '../../../src/renderer/src/agents/tips'
+import { chooseTip, forgetShownTips, TIP_CATALOG, tipCandidates, tipRotation, tipSources, type TipFacts } from '../../../src/renderer/src/agents/tips'
 import { createTipsSetAsideStore, tipsSetAside } from '../../../src/renderer/src/agents/tipsSetAside'
 import { ThreadTipsSetting } from '../../../src/renderer/src/features/settings/ThreadTipsSetting'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
@@ -31,7 +31,7 @@ const memory = (): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> => {
 }
 
 const facts = (patch: Partial<TipFacts> = {}): TipFacts => ({
-  audience: 'thread', providerId: 'claude', platform: 'win32', settings: DEFAULT_SETTINGS, owl: () => true, skills: true, catalog: undefined, ...patch,
+  audience: 'thread', providerId: 'claude', platform: 'win32', settings: DEFAULT_SETTINGS, owl: () => true, skills: true, catalog: undefined, nextPrompts: true, ...patch,
 })
 const ids = (patch: Partial<TipFacts> = {}, setAside: ReadonlySet<string> = new Set()): string[] => tipCandidates(facts(patch), setAside).map(tip => tip.id)
 
@@ -81,6 +81,9 @@ describe('which tips a working line can show', () => {
     expect(ids()).toContain('sotto.add-selection')
     expect(ids({ settings: { ...DEFAULT_SETTINGS, threadShortcuts: { 'stop-turn': null } } })).not.toContain('sotto.stop-turn')
     expect(ids({ settings: { ...DEFAULT_SETTINGS, nextPromptSuggestions: false } })).not.toContain('sotto.next-prompt')
+    // ADR-0132 suggests nothing for Devin, a delegated thread or with local history off, so the tip would promise nothing.
+    expect(ids()).toContain('sotto.next-prompt')
+    expect(ids({ nextPrompts: false })).not.toContain('sotto.next-prompt')
     expect(ids({ settings: { ...DEFAULT_SETTINGS, dictationEnabled: false } })).not.toContain('sotto.dictate')
     expect(ids({ platform: 'linux' })).not.toContain('sotto.dictate')
     expect(ids({ skills: false })).not.toContain('skills:claude')
@@ -93,22 +96,64 @@ describe('one tip per turn', () => {
   it('keeps a turn’s tip across renders and moves the next turn on to the next tip', () => {
     const store = createTipsSetAsideStore(memory())
     const candidates = tipCandidates(facts(), new Set())
-    const first = chooseTip('t:1', candidates, store)!
-    expect(chooseTip('t:1', candidates, store)!.id).toBe(first.id)
-    expect(chooseTip('t:2', candidates, store)!.id).toBe(candidates[1]!.id)
+    const first = chooseTip('t:1', 'thread:claude', candidates, new Set(), store)!
+    expect(chooseTip('t:1', 'thread:claude', candidates, new Set(), store)!.id).toBe(first.id)
+    expect(chooseTip('t:2', 'thread:claude', candidates, new Set(), store)!.id).toBe(candidates[1]!.id)
     expect(first.id).toBe(candidates[0]!.id)
     // Hidden mid-turn, the turn shows nothing more rather than a second tip.
-    expect(chooseTip('t:2', candidates.filter(tip => tip.id !== candidates[1]!.id), store)).toBeNull()
+    expect(chooseTip('t:2', 'thread:claude', candidates, new Set([candidates[1]!.id]), store)).toBeNull()
+  })
+
+  it('keeps the turn’s tip when the skills list loads part-way through, until the user sets it aside', () => {
+    const store = createTipsSetAsideStore(memory())
+    const before = tipCandidates(facts(), new Set())
+    expect(chooseTip('load:1', 'thread:claude', before, new Set(), store)!.id).toBe('skills:claude')
+    const after = tipCandidates(facts({ catalog: [skill('deploy', 'repo')] }), new Set())
+    expect(after.map(tip => tip.id)).not.toContain('skills:claude')
+    expect(chooseTip('load:1', 'thread:claude', after, new Set(), store)!.id).toBe('skills:claude')
+    expect(chooseTip('load:1', 'thread:claude', after, new Set(['skills:claude']), store)).toBeNull()
+  })
+
+  it('moves each audience and provider along its own rotation, so Watcher’s next turn never repeats for a thread’s', () => {
+    expect(tipRotation({ audience: 'thread', providerId: 'claude' })).toBe('thread:claude')
+    expect(tipRotation({ audience: 'thread', providerId: 'grok' })).toBe('thread:sotto')
+    expect(tipRotation({ audience: 'watcher', providerId: 'claude' })).toBe('watcher:sotto')
+    const store = createTipsSetAsideStore(memory())
+    const watcher = tipCandidates(facts({ audience: 'watcher' }), new Set())
+    const thread = tipCandidates(facts(), new Set())
+    const first = chooseTip('w:1', 'watcher:sotto', watcher, new Set(), store)!
+    chooseTip('t:9', 'thread:claude', thread, new Set(), store)
+    chooseTip('t:10', 'thread:claude', thread, new Set(), store)
+    expect(chooseTip('w:2', 'watcher:sotto', watcher, new Set(), store)!.id).not.toBe(first.id)
+  })
+
+  it('keeps a turn’s tip while hundreds of other turns come and go, as long as its line keeps drawing', () => {
+    const store = createTipsSetAsideStore(memory())
+    const candidates = tipCandidates(facts(), new Set())
+    const first = chooseTip('long:1', 'thread:claude', candidates, new Set(), store)!
+    for (let turn = 0; turn < 2_000; turn++) {
+      chooseTip(`other:${turn}`, 'thread:claude', candidates, new Set(), store)
+      if (turn % 100 === 0) expect(chooseTip('long:1', 'thread:claude', candidates, new Set(), store)!.id).toBe(first.id)
+    }
+    expect(chooseTip('long:1', 'thread:claude', candidates, new Set(), store)!.id).toBe(first.id)
+  })
+
+  it('never lets a set-aside tip come back on its own, however many are set aside', () => {
+    const store = createTipsSetAsideStore(memory())
+    for (let index = 0; index < 1_000; index++) store.setAside(`skill:claude:s${index}`)
+    expect(store.ids().has('skill:claude:s0')).toBe(true)
+    expect(store.ids().size).toBe(1_000)
   })
 
   it('remembers hidden tips and the rotation in storage, and clears them on request', () => {
     const storage = memory()
     const store = createTipsSetAsideStore(storage)
     store.setAside('sotto.dictate')
-    store.nextRotation()
+    store.nextRotation('thread:claude')
     const again = createTipsSetAsideStore(storage)
     expect([...again.ids()]).toEqual(['sotto.dictate'])
-    expect(again.nextRotation()).toBe(1)
+    expect(again.nextRotation('thread:claude')).toBe(1)
+    expect(again.nextRotation('watcher:sotto'), 'each rotation keeps its own place').toBe(0)
     again.clear()
     expect(createTipsSetAsideStore(storage).ids().size).toBe(0)
   })
@@ -201,6 +246,19 @@ describe('the tip under a working thread’s working line', () => {
     expect(promptText(screen.getByRole('textbox', { name: 'Prompt' }))).toBe('/deploy ')
     expect(tipsSetAside.ids().has('skill:claude:deploy')).toBe(true)
     expect(within(transcript).queryByRole('note', { name: 'Tip' })).toBeNull()
+  })
+
+  it('offers no Try it while the prompt already carries as many skills as Claude takes', () => {
+    const catalog: AgentSkillCatalog = { threadId: THREAD, providerId: 'claude', cwd: 'x', status: 'ready', errors: [], maxSkillsPerMessage: 1,
+      skills: [skill('deploy', 'repo', 'Ship it to staging.'), skill('review', 'system', 'Review it.')] }
+    const state = stateWith({}, catalog)
+    state.threadDrafts = [{ threadId: THREAD, draftId: '7d1f6a2e-3c4b-4d5e-8f90-a1b2c3d4e5f6', text: '/review ', attachments: [],
+      skills: [{ name: 'review', path: 'claude-command:x:review' }], files: [], requestId: null, updatedAt: new Date(NOW).toISOString() }]
+    const { transcript } = mount(state)
+    const tip = within(transcript).getByRole('note', { name: 'Tip' })
+    expect(tip).toHaveAttribute('data-tip', 'skill:claude:deploy')
+    expect(within(tip).queryByRole('button', { name: 'Put /deploy in the prompt' })).toBeNull()
+    expect(within(tip).getByRole('button', { name: 'Hide this tip' })).toBeVisible()
   })
 
   it('shows nothing on stable, while the provider is away, or once the thread is not working', () => {

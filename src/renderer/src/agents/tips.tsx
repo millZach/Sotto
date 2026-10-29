@@ -13,9 +13,9 @@ import type { ThreadShortcutId } from '../../../shared/threadShortcuts'
 import { ShortcutKey } from '../components/ShortcutKey'
 import { useOptionalApp } from '../state/AppContext'
 import { owlFeatureEnabledOf, useOwlFeature } from '../state/owlFeature'
-import { insertSkill, pickableSkills, skillSigils, skillToken, type CatalogSkill } from './composerSkills'
+import { insertSkill, pickableSkills, skillLimitReached, skillSigils, skillToken, type CatalogSkill } from './composerSkills'
 import { withNextText } from './nextPrompts'
-import type { ThreadDraftStore } from './threadDraftStore'
+import { useThreadComposer, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
 import { acceleratorForChord, claimedThreadChord, type ThreadShortcutSettings } from './threadShortcuts'
 import { tipsSetAside, useTipsSetAside, type TipsSetAsideStore } from './tipsSetAside'
@@ -41,12 +41,16 @@ export interface TipFacts {
   readonly audience: TipAudience
   readonly providerId: string | undefined
   readonly platform: SottoPlatform
-  readonly settings: (ThreadShortcutSettings & Pick<AppSettings, 'dictationEnabled' | 'nextPromptSuggestions'>) | null
+  readonly settings: (ThreadShortcutSettings & Pick<AppSettings, 'dictationEnabled' | 'nextPromptSuggestions' | 'historyEnabled'>) | null
   readonly owl: (id: OwlFeatureId) => boolean
   /** The thread's provider lists skills (its capabilities say so). */
   readonly skills: boolean
   /** The thread's skill catalog, when it is already loaded; a tip never asks the provider for it. */
   readonly catalog: readonly CatalogSkill[] | undefined
+  /** How many skills one message may carry, as the catalog says; undefined is no limit. */
+  readonly maxSkills?: number | undefined
+  /** This thread is one ADR-0132 suggests a next prompt for: not Devin's, not delegated, with local history on. */
+  readonly nextPrompts: boolean
 }
 
 type TipSourceId = keyof typeof TIP_SOURCES
@@ -103,7 +107,7 @@ export const TIP_CATALOG: readonly CatalogTip[] = [
   { kind: 'shortcut', id: 'sotto.add-selection', shortcut: 'add-selection', audience: ['thread'], feature: 'reply-quote',
     Text: ({ keys }) => <Trans comment="A tip under a working thread. {keys} is a keyboard shortcut.">Select words in a reply and press {keys} to quote them in your prompt.</Trans> },
   { kind: 'setting', id: 'sotto.next-prompt', setting: 'nextPromptSuggestions', audience: ['thread'], feature: 'next-prompt',
-    shows: facts => facts.settings?.nextPromptSuggestions === true,
+    shows: facts => facts.nextPrompts && facts.settings?.nextPromptSuggestions === true,
     Text: () => <Trans comment="A tip under a working thread.">When this turn ends, press <kbd>Tab</kbd> in an empty prompt to use the suggested next prompt.</Trans> },
   { kind: 'shortcut', id: 'sotto.terminal-drawer', shortcut: 'terminal-drawer', audience: ['thread'],
     Text: ({ keys }) => <Trans comment="A tip under a working thread. {keys} is a keyboard shortcut.">Press {keys} to show this thread’s terminal drawer.</Trans> },
@@ -175,16 +179,34 @@ export function tipCandidates(facts: TipFacts, setAside: ReadonlySet<string>): T
   return out
 }
 
-/** Which tip each turn showed, so a turn keeps its tip across renders and the next turn moves on (Zach's pick: one per turn). */
-const shownByTurn = new Map<string, string>()
-const SHOWN_LIMIT = 64
+/**
+ * Which tip each turn showed, so a turn keeps its tip across renders and the next turn moves on (Zach's pick: one per
+ * turn). A turn read again moves to the newest place, so only turns no working line has drawn for hundreds of newer
+ * turns are forgotten; a running turn's line draws far more often than that.
+ */
+const shownByTurn = new Map<string, TipChoice>()
+const SHOWN_LIMIT = 512
 
-export function chooseTip(turnKey: string, candidates: readonly TipChoice[], store: TipsSetAsideStore = tipsSetAside): TipChoice | null {
+/** The rotation a working line moves along: one per audience and provider, so one list's turns never skip another's. */
+export function tipRotation(facts: Pick<TipFacts, 'audience' | 'providerId'>): string {
+  return `${facts.audience}:${facts.audience === 'thread' && facts.providerId !== undefined && PROVIDER_TIPS.has(facts.providerId) ? facts.providerId : 'sotto'}`
+}
+
+/**
+ * The turn's tip: the one it started with, drawn from today's candidates when it is still among them, and as it was chosen
+ * when it is not (the skills list loading part-way through replaces the general skills tip, which this turn keeps), until
+ * the user sets it aside. A new turn takes the next place in its rotation.
+ */
+export function chooseTip(turnKey: string, rotation: string, candidates: readonly TipChoice[], setAside: ReadonlySet<string>, store: TipsSetAsideStore = tipsSetAside): TipChoice | null {
   const shown = shownByTurn.get(turnKey)
-  if (shown !== undefined) return candidates.find(tip => tip.id === shown) ?? null
+  if (shown !== undefined) {
+    shownByTurn.delete(turnKey)
+    shownByTurn.set(turnKey, shown)
+    return setAside.has(shown.id) ? null : candidates.find(tip => tip.id === shown.id) ?? shown
+  }
   if (!candidates.length) return null
-  const tip = candidates[store.nextRotation() % candidates.length]!
-  shownByTurn.set(turnKey, tip.id)
+  const tip = candidates[store.nextRotation(rotation) % candidates.length]!
+  shownByTurn.set(turnKey, tip)
   if (shownByTurn.size > SHOWN_LIMIT) shownByTurn.delete(shownByTurn.keys().next().value!)
   return tip
 }
@@ -198,10 +220,13 @@ export function forgetShownTips(): void { shownByTurn.clear() }
  * the prompt and counts as using the tip; Hide sets it aside. Either way it never shows again. It is not a live region:
  * a tip is there to be read when the reader looks, never announced.
  */
-export const ThreadTip = memo(function ThreadTip({ turnKey, facts, onTry, store = tipsSetAside }: {
+export const ThreadTip = memo(function ThreadTip({ turnKey, facts, onTry, drafts, threadId, store = tipsSetAside }: {
   /** The thread and its running turn: a turn keeps one tip. */
   readonly turnKey: string
   readonly facts: TipFacts
+  /** The thread's draft, read so Try it is offered only while the prompt has room for the tip's skill. */
+  readonly drafts: ThreadDraftStore
+  readonly threadId: string
   /** Try it: put the skill or the words in this thread's prompt and move focus there. */
   readonly onTry: (tip: TipChoice, insert: string | undefined) => void
   readonly store?: TipsSetAsideStore
@@ -209,10 +234,13 @@ export const ThreadTip = memo(function ThreadTip({ turnKey, facts, onTry, store 
   const { t, i18n } = useLingui()
   const setAside = useTipsSetAside(store)
   const candidates = useMemo(() => tipCandidates(facts, setAside), [facts, setAside])
-  const tip = chooseTip(turnKey, candidates, store)
+  const tip = chooseTip(turnKey, tipRotation(facts), candidates, setAside, store)
+  const selected = useThreadComposer(drafts, threadId).draft.skills
   if (tip === null) return null
+  // A prompt already carrying as many skills as the provider takes has no room for this one, as the skills list says.
+  const room = !tip.skill || !skillLimitReached(selected, tip.skill, facts.maxSkills)
   const insert = tip.insert ? i18n._(tip.insert) : undefined
-  const tryName = tip.skill ? t({ message: `Put ${skillToken(tip.skill)} in the prompt`, comment: 'A tip\'s Try it button, named for what it does. {0} is a skill as written in the prompt.' })
+  const tryName = !room ? null : tip.skill ? t({ message: `Put ${skillToken(tip.skill)} in the prompt`, comment: 'A tip\'s Try it button, named for what it does. {0} is a skill as written in the prompt.' })
     : insert !== undefined ? t({ message: `Put “${insert}” in the prompt`, comment: 'A tip\'s Try it button, named for what it does.' }) : null
   const hide = t({ message: 'Hide this tip', comment: 'The button on a tip that hides it for good.' })
   // The hidden tip's buttons leave with it, so focus goes back to the working line, or to the transcript holding it.
@@ -259,10 +287,13 @@ export function useTipLine({ row, state, store, watcher, onFocusPrompt }: {
   const skills = on && !watcher && capabilitiesForThread(state.host, thread).skills === true
   const catalog = on && skills ? state.skillCatalogs?.find(item => item.threadId === thread.id) : undefined
   const ready = catalog?.status === 'ready' ? catalog.skills : undefined
+  const maxSkills = catalog?.status === 'ready' ? catalog.maxSkillsPerMessage : undefined
+  // ADR-0132 asks Devin (no side call) and a delegated thread for nothing, and nothing while local history is off.
+  const nextPrompts = providerId !== 'devin' && thread.delegatedBy === undefined && settings?.historyEnabled !== false
   const facts = useMemo<TipFacts>(() => ({
-    audience: watcher ? 'watcher' : 'thread', providerId, platform, settings, skills, catalog: ready,
+    audience: watcher ? 'watcher' : 'thread', providerId, platform, settings, skills, catalog: ready, maxSkills, nextPrompts,
     owl: id => owlFeatureEnabledOf(update, id),
-  }), [watcher, providerId, platform, settings, skills, ready, update])
+  }), [watcher, providerId, platform, settings, skills, ready, maxSkills, nextPrompts, update])
   const threadId = thread.id
   const onTry = useCallback((tip: TipChoice, insert: string | undefined): void => {
     const draft = store.draft(threadId)
@@ -275,5 +306,5 @@ export function useTipLine({ row, state, store, watcher, onFocusPrompt }: {
     onFocusPrompt?.()
   }, [store, threadId, providerId, onFocusPrompt])
   return useMemo(() => !on || settings?.threadTips === false ? undefined
-    : (turnId: string) => <ThreadTip turnKey={`${threadId}:${turnId}`} facts={facts} onTry={onTry} />, [on, settings?.threadTips, threadId, facts, onTry])
+    : (turnId: string) => <ThreadTip turnKey={`${threadId}:${turnId}`} facts={facts} onTry={onTry} drafts={store} threadId={threadId} />, [on, settings?.threadTips, threadId, facts, onTry, store])
 }

@@ -156,7 +156,7 @@ test('a working Claude thread shows one tip under its working words, Hide takes 
     await hostKeys.read(page)
     await size(launched, 1280, 800)
     // The rotation's first place is a Sotto tip; one on, the turn shows its provider's own (ADR-0159).
-    await page.evaluate(() => localStorage.setItem('sotto.tips.next', '1'))
+    await page.evaluate(() => localStorage.setItem('sotto.tips.next.thread:claude', '1'))
     await selectThread(page, 'Grok voice previews')
     const pane = paneOf(page, 'grok-previews')
     await startTurn(page, 'grok-previews', 'tips-turn-1', 'The voice preview stutters on its first play. Find out why and fix it.', 'npm test -- --run tests/unit/voice')
@@ -274,7 +274,7 @@ test('a working Codex thread shows a Codex or Sotto tip, any other provider Sott
     await size(launched, 1280, 800)
 
     // Footer links is a Codex thread the fixture has working; one place into the rotation it shows a Codex tip.
-    await page.evaluate(() => localStorage.setItem('sotto.tips.next', '1'))
+    await page.evaluate(() => localStorage.setItem('sotto.tips.next.thread:codex', '1'))
     await selectThread(page, 'Footer links')
     const codex = paneOf(page, 'footer-links')
     await expect(tipIn(codex)).toBeVisible()
