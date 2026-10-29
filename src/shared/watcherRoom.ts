@@ -119,6 +119,15 @@ export const watcherRoomStateSchema = z.object({
    * user's own answer from that card. A wake-up outside the window main holds places nothing.
    */
   asks: z.array(watcherAskSchema.extend({ messageId: z.string(), wakeUpMessageId: z.string() }).strict()).optional(),
+  /**
+   * The archived work Watcher's conversation, shown back past what the record keeps, read back from Watcher's archive
+   * (#1759): its receipts, where each goes, its requests and where this run placed its starts. Kept apart from the
+   * record's own lists and the same object until another read back, so an update carries none of it again and a room
+   * build copies none of it. A reader joins the two with `watcherRoomWork`, the record's winning. Absent while nothing
+   * was read back, and from older hosts.
+   */
+  recalled: z.object({ receipts: z.array(watcherOperationSchema), receiptReplies: z.array(z.object({ operationId: z.uuid(), messageId: z.string() }).strict()),
+    requests: z.array(watcherRequestSchema), receiptPlacements: z.array(z.object({ operationId: z.uuid(), placement: workerPlacementReceiptSchema }).strict()).optional() }).strict().optional(),
 }).strict()
 export const watcherOpenRequestSchema = z.object({ provider: watcherProviderSchema,
   modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).optional() }).strict()
@@ -152,6 +161,28 @@ export type WatcherMachine = Extract<WatcherMachinesRead, { status: 'ok' }>['mac
 export type WatcherWatchThreadRequest = z.infer<typeof watcherWatchThreadRequestSchema>
 
 export type WatcherRoomState = z.infer<typeof watcherRoomStateSchema>
+/** What the room shows of Watcher's work: the record's receipts, their places, requests and start placements. */
+export interface WatcherRoomWork {
+  readonly receipts: WatcherRoomState['receipts']
+  readonly receiptReplies: NonNullable<WatcherRoomState['receiptReplies']>
+  readonly requests: WatcherRoomState['requests']
+  readonly receiptPlacements: NonNullable<WatcherRoomState['receiptPlacements']>
+}
+/**
+ * The room's work with what its conversation shown back recalled (`recalled`, #1759) ahead of it: one entry for each
+ * operation and request, the record's wherever both hold it, so a card is never shown twice.
+ */
+export function watcherRoomWork(room: Pick<WatcherRoomState, 'receipts' | 'receiptReplies' | 'requests' | 'receiptPlacements' | 'recalled'>): WatcherRoomWork {
+  const live: WatcherRoomWork = { receipts: room.receipts, receiptReplies: room.receiptReplies ?? [], requests: room.requests, receiptPlacements: room.receiptPlacements ?? [] }
+  const recalled = room.recalled
+  if (!recalled) return live
+  const join = <T>(older: readonly T[], own: readonly T[], id: (item: T) => string): T[] => {
+    const held = new Set(own.map(id))
+    return [...older.filter(item => !held.has(id(item))), ...own]
+  }
+  return { receipts: join(recalled.receipts, live.receipts, item => item.id), receiptReplies: join(recalled.receiptReplies, live.receiptReplies, item => item.operationId),
+    requests: join(recalled.requests, live.requests, item => item.id), receiptPlacements: join(recalled.receiptPlacements ?? [], live.receiptPlacements, item => item.operationId) }
+}
 type WatcherRoomRow = WatcherRoomState['watchedThreads'][number]
 
 /**
