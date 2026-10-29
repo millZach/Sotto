@@ -462,13 +462,14 @@ export class MuseMspHost implements AgentHost {
    * Answer Muse's prompt with its one-time allow (ADR-0079) when it is before a call to one of this session's own Sotto
    * tools, as Grok's adapter answers Grok's (ADR-0020, ADR-0035), or from a subagent under a mode that would not have
    * asked. The first admits the agent to Sotto's own endpoint and nothing more; the tools still ask the user wherever they
-   * always do. The second only applies the mode the user chose and Muse confirmed: a mode change Muse has not confirmed,
-   * and Watcher, admit no subagent. A request already shown is the user's to answer, and one Sotto could not answer is
-   * shown after all. The decision is not awaited here: its reply comes on the frame queue.
+   * always do, whoever made the call. The second only applies the mode the user chose and Muse confirmed: a mode change
+   * Muse has not confirmed, and Watcher, admit no subagent on the mode's account. A request already shown, or one the user
+   * answered whose answer Muse may not have received, is the user's to answer, and one Sotto could not answer is shown
+   * after all. The decision is not awaited here: its reply comes on the frame queue.
    */
   private admit(pending: Extract<MusePending, { kind: 'approval' }>, entry: ThreadProcess): boolean {
     const alias = this.aliases[pending.threadId]
-    if (!alias?.museSessionId || this.pending.has(pending.request.id)) return false
+    if (!alias?.museSessionId || this.pending.has(pending.request.id) || alias.answeredRequestIds.includes(pending.request.id)) return false
     const choiceId = (alias.kind !== 'personal' && entry.tools?.size ? museToolAdmission(pending.approval, entry.tools) : undefined)
       ?? (entry.watcher || alias.pendingRuntimeMode ? undefined : museChildAdmission(pending.approval, alias.runtimeMode ?? 'approval-required'))
     if (!choiceId) return false
