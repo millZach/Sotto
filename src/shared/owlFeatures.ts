@@ -55,6 +55,7 @@ export const OWL_FEATURES = [
   { id: 'glass-theme', name: 'Glass theme', owlSince: '2026-10-26', owner: 'docs/adr/0150-glass-is-a-see-through-theme-held-in-owl.md', sentToStable: false },
   { id: 'click-effect', name: 'Click effect', owlSince: '2026-10-27', owner: 'docs/adr/0156-a-press-sends-waves-of-0s-and-1s-through-the-room.md', sentToStable: false },
   { id: 'sidebar-rail', name: 'Watcher and Needs you on the collapsed sidebar', owlSince: '2026-10-26', owner: 'docs/adr/0146-the-collapsed-rail-keeps-watcher-and-a-needs-you-tray.md', sentToStable: false },
+  { id: 'thread-tips', name: 'Tips while threads work', owlSince: '2026-10-28', owner: 'docs/adr/0159-tips-come-from-what-they-point-at.md', sentToStable: false },
   { id: 'quiet-browser', name: 'The quiet browser pane', owlSince: '2026-10-27', owner: 'docs/adr/0154-the-browser-is-a-quiet-pane-in-tools.md', sentToStable: false },
 ] as const satisfies readonly OwlFeature[]
 

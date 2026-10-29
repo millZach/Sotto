@@ -443,7 +443,7 @@ function StepsButton({ steps }: { readonly steps: StepsDisclosure }): ReactNode 
  * variant A of docs/prototypes/turn-steps-glow-prototype.html). The words carry the wait; what the turn is doing is one
  * press away, and assistive tech hears how many steps it has taken instead of the words.
  */
-export function LiveActivity({ thread, connected, provider, onDisclosure, sendingSince }: {
+export function LiveActivity({ thread, connected, provider, onDisclosure, sendingSince, tip }: {
   readonly thread: Pick<AgentThread, 'status' | 'activities' | 'messages'> & Partial<Pick<AgentThread, 'compaction'>>; readonly connected: boolean
   /** Display name of the provider, for the opened steps' "Reported by Codex". */
   readonly provider: string
@@ -454,6 +454,8 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
    * provider's first word; its own running turn takes the line over as soon as it arrives.
    */
   readonly sendingSince?: string | undefined
+  /** The tip under the working words for this running turn (ADR-0159), when tips are on. */
+  readonly tip?: ((turnId: string) => ReactNode) | undefined
 }): ReactNode {
   const { t } = useLingui()
   // The turn whose steps the user opened or folded here, so the next turn starts as the user last left any turn's steps
@@ -514,9 +516,12 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
     <i className="thread-activity__pulse" data-connected={connected || undefined} aria-hidden="true" />
     <span className="thread-activity-live__state">{connected ? <WorkingWord /> : t`Last seen working`}</span>
   </>
+  // A tip sits under the words while the provider is connected, and above the steps once they open.
+  const tipLine = connected && turnId !== null && tip ? tip(turnId) : null
   // Until the turn has a step there is nothing to open, so the line is only its words.
   if (!disclosure) return <div className="thread-activity-live" data-testid="thread-activity-live" data-connected={connected || undefined}>
     <div className="thread-activity-live__line">{words}</div>
+    {tipLine}
   </div>
   const taken = disclosure.label
   const name = connected ? t({ message: `Working, ${taken} so far`, comment: '{taken} is how many steps the running turn has taken, such as 3 steps.' })
@@ -528,6 +533,7 @@ export function LiveActivity({ thread, connected, provider, onDisclosure, sendin
       {words}
       <ChevronRight className="thread-activity__chevron" size={14} aria-hidden="true" />
     </button>
+    {tipLine}
     {disclosure.opened}
   </div>
 }

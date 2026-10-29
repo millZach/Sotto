@@ -101,6 +101,10 @@ msgstr ""
 msgid "{cleared, plural, one {Cleared # thread.} other {Cleared # threads.}} {changed, plural, one {# thread changed since the list was made and was kept.} other {# threads changed since the list was made and were kept.}}"
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
+msgid "{count, plural, one {{tips} tip hidden or used.} other {{tips} tips hidden or used.}}"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "{count, plural, one {# provider} other {# providers}}"
 msgstr ""
@@ -3334,6 +3338,14 @@ msgstr ""
 msgid "No supported open-source themes found. Try a broader search."
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
+msgid "No tips are hidden."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
+msgid "No tips under a working thread or Watcher."
+msgstr ""
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "None of them can go yet."
 msgstr ""
@@ -3528,6 +3540,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "One restart, now"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
+msgid "One short tip under a working thread, and under Watcher while it works, about Sotto and the thread’s provider. A tip you hide or use does not come back."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -4561,6 +4577,10 @@ msgstr ""
 msgid "Show floating widget when idle"
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
+msgid "Show hidden tips again"
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Show or hide the focused pane’s terminal drawer."
 msgstr ""
@@ -4609,6 +4629,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Show thread {thread}"
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
+msgid "Show tips while threads work"
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
