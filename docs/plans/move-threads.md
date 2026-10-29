@@ -22,6 +22,12 @@ Zach, October 29, 2026, on the question card, from the walkthrough (tag `prototy
 - **A moved thread starts working at once** from its handover; it does not wait for a first message.
 - **Move threads is hidden** while no other machine is connected.
 
+Zach, October 29, 2026, on the question card for part 2:
+
+- **Continue on another machine…** picks a machine, then opens the same sheet for that one thread; its move is reported on its card in Watcher's conversation like every other.
+- **A model the target lacks:** the thread moves to that provider's first ready model there, and the sheet and the card name the model it runs on and the one the machine doesn't have.
+- **Anything queued** (the user's or Sotto's own news) keeps the thread here, as part 1 built it.
+
 ## Build order
 
 1. **Core, This computer to a paired host.** The move record (`moves.json`, states fenced, branch sent, thread started, first turn ended, source settled, or given back, written before anything is sent, every step idempotent by the move's ID); the fence (the source refuses sends while it moves); eligibility with its plain words; the branch over the host socket (`DesktopBranchMoves`); the handover and facts block built here; an optional host-v1 feature that makes the new thread from the incoming ref and sends its first prompt, idempotent by move ID; confirmation, settling the source, and re-pointing Watcher's watch. Driven over IPC as a prepare/move pair modelled on Stop all. No UI yet.
@@ -39,7 +45,7 @@ Then #1309, suggesting a move to a machine with room, on top of this flow.
 - The fence is the coordinator's (`fenceForMove`, `liftMoveFence` in `control.ts`); a move settles the source with `commandFromMove`. Watcher carries a standing watch with `moveWatch`.
 - The bridge is `window.sotto.threadMoves`, offered where the machines line is (Watcher and Work across machines on), and registered only where main built the service.
 
-Decisions made while building, for Zach to confirm:
+Decisions made while building (the first and fourth confirmed by Zach on October 29, with the model named first):
 
 - A thread whose model the target lacks moves to its provider's first ready model there, and its effort only where that model offers it. The preview does not ask first for that.
 - A move that would start narrower and is not pressed for is answered "asks" and nothing is recorded for it; the card's press in part 2 asks for a fresh preview of that one thread.
@@ -77,3 +83,14 @@ After Sol's third pass (October 29), only what could lose or duplicate work (Wat
 The other four findings of that pass went to #1797: the target's limit restart after a move ends as stayed, the cleanup sweep and auto-settle racing a move's hold, kept worktrees when `moves.json` does not parse, and a grant taken away between the preview and the start.
 
 Left for later parts: the GitHub sign-in half of asking first (a host does not yet say whether it has one), starting babysitting on the target, an exact read of a move and Keep it here (part 4, `ThreadMoveService.stalled()` names what waits), the other directions (part 3), the window (part 2), and the moved thread's first message shown as Sotto's on the desktop, which the continued thread's display does only for This computer's threads.
+
+## Part 2, as built (October 29, 2026)
+
+- `src/renderer/src/watcher/MoveThreads.tsx`: **Move threads** beside Stop all, the sheet (`MoveThreadsSheetHost`, mounted once in the main window), the machines it offers, read once through the hosts bridge however many panes ask, and each move's card in Watcher's conversation (`WatcherMoveCards`). `ThreadPane.tsx` adds **Continue on another machine…** to the More menu, beside Continue on another provider.
+- The sheet offers This computer's open threads, settled, archived and Watcher's own left out, up to the hundred a preview takes. With one machine connected it asks that one at once; with more, it lists them, one not connected disabled with why. It sends what moves and what asks, never pressing for the narrower ones: those wait on their cards.
+- Main holds the cards (`ThreadMoveService.view`), pushed on every change: a move's from its record, and this run's own for a thread that asks first, one kept here from that press, and one the confirmation could not move. Those three are not saved. A press to move one plans that thread again and moves it in the card's place; one that can no longer move says why on its card.
+- The cards go after the turn they were confirmed in, as takeover lines do (`placeAfterTurns`), each machine's under one line of Sotto's ("You asked to move 3 threads to forge."). A move from before the current Watcher's first message is the last Watcher's and is not shown.
+- Watcher hears of each move as it ends as `thread-moved` news (`WatcherWakeUp.threadMoved`), under the request that watched the thread, found on the new thread once the watch has moved, or under none.
+- The preview and the cards name the model there (`movedModel`), and the permission a narrower move would start on (`startsOn`), for **Move it on …**.
+
+Left for later parts, as before: a move whose machine stopped answering says so on its card and that nothing was lost, with no **Keep it here** yet (part 4); the other directions (part 3).

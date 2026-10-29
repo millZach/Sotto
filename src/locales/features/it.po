@@ -36,6 +36,29 @@ msgstr ""
 msgid "{0, plural, one {One message you wrote had not sent.} other {# messages you wrote had not sent.}}"
 msgstr ""
 
+#. placeholder {0}: card.machine
+#. placeholder {1}: card.model.instead
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "{0} doesn’t have {1}"
+msgstr ""
+
+#. placeholder {0}: planned.words ?? ''
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "{0} It waits on its card in Watcher’s conversation for your press before it moves."
+msgstr ""
+
+#. The model a moved thread runs on there, and the machine
+#. placeholder {0}: planned.model.name
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "{0} on {named}"
+msgstr ""
+
+#. The model a moved thread runs on the other machine
+#. placeholder {0}: card.model.name
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "{0} there"
+msgstr ""
+
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "{about}, {system}. No account with Sotto and no telemetry.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
 msgstr ""
@@ -124,6 +147,14 @@ msgstr ""
 msgid "{count, plural, one {It can’t stop one thread on {host}} other {It can’t stop # threads on {host}}}"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "{count, plural, one {Move # thread to {named}?} other {Move # threads to {named}?}}"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "{count, plural, one {Move # thread} other {Move # threads}}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "{count, plural, one {Stop # thread} other {Stop # threads}}"
 msgstr ""
@@ -138,6 +169,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
 msgid "{count, plural, one {Watcher changed {files} file itself.} other {Watcher changed {files} files itself.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "{count, plural, one {You asked to move # thread to {machine}. Sotto reports its move here.} other {You asked to move # threads to {machine}. Sotto reports each move here.}}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherMachines.tsx
@@ -493,12 +528,21 @@ msgstr ""
 msgid "{name}’s memory changed during the reading, so Watcher treats it as unknown until the next one."
 msgstr ""
 
+#. placeholder {0}: planned.model.instead
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "{named} doesn’t have {0}"
+msgstr ""
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "{named} window"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "{oldCount, plural, one {{oldNames} counts only its Sotto threads until its host update.} other {{oldNames} count only their Sotto threads until their hosts update.}}"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "{one} can’t move to {named} now"
 msgstr ""
 
 #: src/renderer/src/features/starting/startingView.ts
@@ -794,10 +838,12 @@ msgstr ""
 msgid "A thread"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "a thread no longer here"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "A thread no longer here"
 msgstr ""
@@ -1017,6 +1063,10 @@ msgstr ""
 msgid "Asks you before it edits a file or runs a command that changes something."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Asks you first"
+msgstr ""
+
 #. Before a token figure some records left out
 #: src/renderer/src/features/usage/UsageCharts.tsx
 msgid "at least"
@@ -1082,6 +1132,10 @@ msgstr ""
 msgid "blocked"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Branch sent"
+msgstr ""
+
 #. The kind of work a delegated thread or check was asked for.
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgctxt "kind of work"
@@ -1141,6 +1195,7 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
+#: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Cancel"
 msgstr ""
@@ -1245,6 +1300,10 @@ msgstr ""
 msgid "Checking which threads are Watcher’s…"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Checking which threads can move…"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
 msgid "Checking…"
 msgstr ""
@@ -1342,6 +1401,7 @@ msgid "Clear usage…"
 msgstr ""
 
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
+#: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Close"
 msgstr ""
@@ -1527,6 +1587,21 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Continue with the handover"
+msgstr ""
+
+#. placeholder {0}: link(moved, moved.title ?? title)
+#. placeholder {1}: card.machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Continued in {0} on {1}."
+msgstr ""
+
+#. placeholder {0}: card.machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Continued on {0}."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Continued on {machine}"
 msgstr ""
 
 #. A transcript copy button, after it copied
@@ -1859,6 +1934,10 @@ msgstr ""
 msgid "Each bar is one second of the last minute; taller means main was blocked longer."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Each continues on {named} as a new thread, in the same project, on the same provider, with a handover of the thread here. Its first turn starts at once. Watcher’s conversation reports each move."
+msgstr ""
+
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Each model, {valuesWhen}"
 msgstr ""
@@ -1885,6 +1964,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Each stops its current turn and keeps the work it has done. Threads you started or took over keep running."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Each thread here is settled once its new thread’s first turn ends, and its worktree is kept."
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
@@ -1962,6 +2045,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "First project"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "First turn ended"
 msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
@@ -2130,6 +2217,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Hold F9 to try it"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Holding sends"
 msgstr ""
 
 #: src/renderer/src/features/memory/questions.ts
@@ -2312,12 +2403,24 @@ msgstr ""
 msgid "It stopped at {progress}."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "It takes no sends here while it moves."
+msgstr ""
+
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
 msgid "It was blocked {blocked} of the last minute. The longest freeze was {longest}. Threads, typing and the window may lag until it recovers."
 msgstr ""
 
 #: src/renderer/src/languages.ts
 msgid "Italian"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Its branch is on {machine}. Starting the new thread there…"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Its first turn on {machine} ended. Settling the thread here…"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
@@ -2360,6 +2463,10 @@ msgstr ""
 msgid "Keep history"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Keep it here"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Keep local history is off, so it holds only what Sotto kept since it last started."
 msgstr ""
@@ -2374,6 +2481,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Keep usage"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Kept here"
 msgstr ""
 
 #: src/renderer/src/components/OpenRouterKeyField.tsx
@@ -2766,6 +2877,71 @@ msgstr ""
 msgid "Most used model"
 msgstr ""
 
+#. placeholder {0}: request.title
+#. placeholder {1}: phase.machine.name
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Move {0} to {1}?"
+msgstr ""
+
+#. placeholder {0}: request.title
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Move {0} to which machine?"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Move {one} to {named}?"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Move it anyway"
+msgstr ""
+
+#. placeholder {0}: card.startsOn
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Move it on {0}"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Move it to {named}"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Move threads"
+msgstr ""
+
+#. placeholder {0}: phase.machine.name
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Move threads to {0}?"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Move threads to another machine"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Move threads to which machine?"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Moved"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Moves now"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Moves to {machine}"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Moving"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Moving…"
+msgstr ""
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Muse subscription"
 msgstr ""
@@ -2936,6 +3112,10 @@ msgstr ""
 msgid "No subscription readings on the selected computers."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "No thread can move to {named} now"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "No thread matches “{typed}”."
 msgstr ""
@@ -2996,6 +3176,7 @@ msgid "not connected"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
+#: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Not connected"
 msgstr ""
 
@@ -3017,6 +3198,14 @@ msgstr ""
 
 #: src/renderer/src/components/CleanupModelFields.tsx
 msgid "Not measured yet. Measure again finds the fastest setting for this server."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Not moved"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Not moved yet"
 msgstr ""
 
 #: src/renderer/src/App.tsx
@@ -3111,6 +3300,10 @@ msgstr ""
 msgid "Nothing matches “{searched}”."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Nothing moves: each thread says why it stays."
+msgstr ""
+
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Nothing needs a restart."
 msgstr ""
@@ -3121,6 +3314,14 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Nothing recorded yet"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Nothing was moved"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Nothing was sent to {machine}. You can send here as before."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
@@ -3194,10 +3395,16 @@ msgctxt "Open a thread"
 msgid "Open"
 msgstr ""
 
+#. placeholder {0}: card.machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Open {label} on {0} beside Watcher"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "Open {title} at its failed turn"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherAsks.tsx
 #: src/renderer/src/watcher/WatcherNightScene.tsx
 #: src/renderer/src/watcher/WatcherOverview.tsx
@@ -3258,6 +3465,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
 msgid "Open the {provider} install guide"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Open the new thread"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
@@ -4167,6 +4378,10 @@ msgstr ""
 msgid "Settled"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Settled here, and its worktree is kept."
+msgstr ""
+
 #. Before a thread’s name on a receipt card
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Settling"
@@ -4387,6 +4602,10 @@ msgstr ""
 msgid "Sotto could not check Omarchy setup. Your files were left alone. Try again."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Sotto could not check which threads can move. Nothing was moved. Try again."
+msgstr ""
+
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
 msgid "Sotto could not check your coding agents. Nothing was changed. Press Check again."
 msgstr ""
@@ -4413,6 +4632,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Sotto could not put the handover away, so it still goes with your next message. Nothing was sent. Press X to try again."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Sotto could not reach the move. Nothing changed. Try again."
 msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
@@ -4571,6 +4794,10 @@ msgstr ""
 msgid "Sotto looks for new releases on GitHub and installs them itself."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Sotto lost the answer, so some threads may be moving. Each move’s card in Watcher’s conversation says where it stands."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Sotto lost the answer, so the stop may or may not have reached these threads. Open each one to see whether its turn stopped, and press Stop all again for any still running."
 msgstr ""
@@ -4713,6 +4940,10 @@ msgstr ""
 msgid "Started"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Started on {machine}"
+msgstr ""
+
 #. Before a thread’s name on a receipt card
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Starting"
@@ -4773,6 +5004,14 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "State"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stayed here"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stays here"
 msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
@@ -5049,6 +5288,10 @@ msgstr ""
 msgid "The model’s files are no longer on this computer."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "The new thread on {machine} is working from its handover. This one is settled once that first turn ends."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "The new Watcher could not be started. Nothing was sent, and the last conversation is in Watcher history on the Threads page."
 msgstr ""
@@ -5152,6 +5395,7 @@ msgstr ""
 #: src/renderer/src/features/usage/usagePresentation.ts
 #: src/renderer/src/features/usage/UsageView.tsx
 #: src/renderer/src/watcher/machineWords.ts
+#: src/renderer/src/watcher/MoveThreads.tsx
 #: src/renderer/src/watcher/WatcherAsks.tsx
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "This computer"
@@ -5163,6 +5407,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/machineWords.ts
 msgid "This computer does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "This computer has no open threads to move."
 msgstr ""
 
 #: src/renderer/src/watcher/machineWords.ts
@@ -5205,6 +5453,10 @@ msgstr ""
 msgid "This removes the transcript and its numbers from this computer. It cannot be undone."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "This thread is waiting for {machine} to answer about its move. Nothing was lost."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "This Watcher is new, so there is nothing to hand over yet."
 msgstr ""
@@ -5239,6 +5491,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Through {through}"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "to"
 msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
@@ -5660,6 +5916,10 @@ msgstr ""
 msgid "Waiting"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Waiting for {machine}"
+msgstr ""
+
 #: src/renderer/src/features/starting/startingView.ts
 msgid "Waiting for {names}"
 msgstr ""
@@ -5686,6 +5946,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Waits for Watcher’s turn to end"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Waits for you"
 msgstr ""
 
 #: src/renderer/src/watcher/WatchControls.tsx
@@ -5741,8 +6005,16 @@ msgstr ""
 msgid "Watcher message"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Watcher stays on This computer. It watches your threads from here, wherever they run."
+msgstr ""
+
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Watcher stopped watching <0>{title}</0>."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Watcher watches it there now."
 msgstr ""
 
 #. Whose a check is: Watcher started it.
@@ -5811,6 +6083,10 @@ msgstr ""
 
 #: src/renderer/src/features/memory/questions.ts
 msgid "What makes a change ready for you?"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "What moves and what stays"
 msgstr ""
 
 #: src/renderer/src/features/memory/Questionnaire.tsx

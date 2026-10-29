@@ -590,6 +590,61 @@
 .watcher-stop__said { display: block; color: var(--tt-text-2); }
 .watcher-stop__result[data-result='uncertain'] .watcher-stop__said { color: var(--watcher-needs-ink); }
 
+/* ---------- Moving threads to another machine (#1178 part 2, Zach's pick B on October 29, 2026) ---------- */
+/* Move threads, beside Stop all in Watcher's header while another machine is connected: Stop all's quiet outline, its
+   label giving way before Stop all's does, since the room keeps its words for what stops work. */
+.watcher-move-threads { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; margin-right: 6px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border);
+  border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; -webkit-app-region: no-drag;
+  transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.watcher-move-threads:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.watcher-move-threads:hover > svg { color: var(--tt-accent-text); }
+@container thread-pane (width < 900px) { .watcher-move-threads { padding: 0 7px; } .watcher-move-threads__text { display: none; } }
+@container thread-pane (width < 450px) { .watcher-move-threads { margin-right: 2px; } }
+/* The sheet: the question, what moves and why, then Cancel and the move. The lists scroll inside it in a short window. */
+.tt-dialog.move-sheet { display: flex; flex-direction: column; width: min(560px, 100%); overflow: hidden; }
+.move-sheet h2 { flex: none; }
+.move-sheet__lead { flex: none; margin: 8px 0 14px; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.move-sheet__body { min-height: 0; overflow-y: auto; margin: 0 -24px; padding: 0 24px 4px; border-block: 1px solid var(--tt-hairline); }
+.move-sheet__body h3 { display: flex; align-items: baseline; gap: 8px; margin: 14px 0 6px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; }
+.move-sheet__body h3 > span { color: var(--tt-text-muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.move-sheet__body h3[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.move-sheet__list { display: grid; gap: 8px; margin: 0 0 6px; padding: 0; list-style: none; }
+.move-sheet__row { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 8px; align-items: center; font-size: 13.5px; }
+.move-sheet__row > :is(.thread-nav__mark, svg) { width: 14px; height: 14px; color: var(--tt-text-muted); }
+.move-sheet__name { min-width: 0; overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.move-sheet__meta, .move-sheet__line { grid-column: 2; margin: 1px 0 0; font-size: 12.5px; line-height: 1.45; }
+.move-sheet__meta { display: flex; flex-wrap: wrap; color: var(--tt-text-muted); }
+.move-sheet__meta > :not(:first-child)::before { margin: 0 7px; content: '·'; }
+.move-sheet__instead { color: var(--tt-text-2); }
+.move-sheet__line { color: var(--tt-text-2); }
+.move-sheet__line[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.move-sheet__note { flex: none; margin: 12px 0 16px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.move-sheet__refused { color: var(--tt-error-text); }
+.move-sheet .tt-dialog__actions { flex: none; }
+.move-sheet__machines { display: grid; gap: 6px; margin: 14px 0 18px; padding: 0; list-style: none; }
+.move-sheet__machine { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 14px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-sm);
+  background: transparent; color: var(--tt-text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+.move-sheet__machine:hover:not(:disabled) { border-color: var(--tt-border-faint); background: var(--tt-hover); }
+.move-sheet__machine > svg { flex: none; color: var(--tt-accent-text); }
+.move-sheet__machine:disabled { border-style: dashed; color: var(--tt-text-2); cursor: default; }
+.move-sheet__machine:disabled > svg { color: var(--tt-text-muted); }
+.move-sheet__machine-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.move-sheet__machine-why { flex: none; color: var(--tt-text-muted); font-size: 12.5px; }
+/* Each move's card in Watcher's conversation: a receipt card, with the move's steps, its line, and a press while it asks. */
+.move-cards .sotto-line { margin-bottom: 10px; }
+.move-cards__list { margin-top: 0; }
+.move-card[data-tone='needs'] { border-color: color-mix(in srgb, var(--watcher-needs-ink) 45%, var(--tt-hairline)); }
+.move-card[data-tone='needs'] :is(.receipt-card__lead, .receipt-card__glyph) { color: var(--watcher-needs-ink); }
+.move-card .receipt-card__machine { gap: 4px; }
+.move-card .receipt-card__placement[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.move-card__steps { display: flex; gap: 4px; margin: 4px 0 0; padding: 0 0 0 23px; list-style: none; }
+.move-card__steps > li { width: 18px; height: 3px; border-radius: 2px; background: var(--tt-hairline); }
+.move-card__steps > li[data-done] { background: var(--tt-activity); }
+.move-card[data-tone='needs'] .move-card__steps > li[data-done] { background: var(--watcher-needs-ink); }
+.move-card__actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; padding-left: 23px; }
+.move-card__actions .tt-button { min-height: 32px; padding: 0 12px; font-size: 13px; }
+.move-card__refused { color: var(--tt-error-text); }
+
 /* ---------- Night falls: the move between Dictate or Threads and Watcher's room (nightFalls.ts) ---------- */
 /* The pages' own crossfade is off: the page being left stays whole underneath, and the script clips the opened one in
    behind the band. The band is a canvas of its own above both, and the room switch's owl rides it from the foot to

@@ -7,11 +7,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildHandover } from '../../../src/main/agents/handover'
-import { firstTurnEnded, holdUnfinishedMoves, ThreadMoveService, type MoveControl, type MoveRecord, type MoveTargets } from '../../../src/main/agents/threadMoves'
+import { firstTurnEnded, holdUnfinishedMoves, ThreadMoveService, type MoveControl, type MoveNews, type MoveRecord, type MoveTargets } from '../../../src/main/agents/threadMoves'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentModel, type AgentState, type AgentThread, type ThreadContinuedIn } from '../../../src/shared/agents'
 import { branchMoveRefusal, branchMoveWords, type BranchMoveReceipt } from '../../../src/shared/branchMoves'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
-import { MOVE_HANDOVER_CLOSE, THREAD_MOVE_WORDS, type HostThreadMoveRequest, type ThreadMovePrepare, type ThreadMoveStart } from '../../../src/shared/threadMoves'
+import { MOVE_HANDOVER_CLOSE, THREAD_MOVE_WORDS, type HostThreadMoveRequest, type ThreadMovePrepare, type ThreadMovesView, type ThreadMoveStart } from '../../../src/shared/threadMoves'
 
 const HERE = randomUUID(), FORGE = randomUUID(), COMMIT = 'c'.repeat(40)
 const model: AgentModel = { id: 'codex:gpt', provider: 'Codex', providerId: 'codex', name: 'GPT', ready: true, reasoningEfforts: ['low', 'high'],
@@ -31,9 +31,13 @@ function source(id: string, patch: Partial<AgentThread> = {}): AgentThread {
 /** This computer, the machine the threads move to, and the move service between them, over one data folder. */
 function world() {
   const threads: AgentThread[] = [source('a'), source('b'), source('busy', { status: 'running' }), source('child', { delegatedBy: 'a' })]
+  /** This computer's models: forge has only the first. */
+  const localModels: AgentModel[] = [model]
+  /** What Watcher heard of each move as it ended. */
+  const news: MoveNews[] = []
   const fences = new Map<string, string>(), settled: string[] = [], links: { threadId: string; link: ThreadContinuedIn }[] = [], forgotten: string[] = []
   const control: MoveControl = {
-    hostId: () => HERE, watcherSnapshot: () => ({ ...EMPTY_AGENT_HOST, hostId: HERE, models: [model], threads }),
+    hostId: () => HERE, watcherSnapshot: () => ({ ...EMPTY_AGENT_HOST, hostId: HERE, models: localModels, threads }),
     configuration: () => ({ newThreadRuntimeMode: 'full-access' }), moveHoldReason: () => null,
     fenceForMove: (threadId, words) => { fences.set(threadId, words) }, liftMoveFence: threadId => { fences.delete(threadId) }, fencedForMove: () => [...fences.keys()], moveFenceOf: threadId => fences.get(threadId),
     commandFromMove: async command => {
@@ -110,14 +114,14 @@ function world() {
       if (watch.refuses) return false
       watch.moved.push(`${from.threadId}->${to.hostId}:${to.threadId}`); return true
     } }
-  const service = (retryMs = 20) => new ThreadMoveService(directory, { control, workspace, branches, watch, delegations, retryMs })
+  const service = (retryMs = 20) => new ThreadMoveService(directory, { control, workspace, branches, watch, delegations, retryMs, news: move => { news.push(move) } })
   /** The machine's thread for a move ends its first turn, and the machine says so. */
   const endTurn = (moveId: string, status: 'completed' | 'failed' = 'completed', patch: Partial<AgentThread> = {}) => {
     const thread = remote.threads.find(item => item.id === remote.made.get(moveId))!
     Object.assign(thread, { status: 'idle', lastTurn: { id: 'turn', status } }, patch)
     changed()
   }
-  return { threads, fences, settled, links, forgotten, control, workspace, delegations, branches, remote, host, targets, watch, service, endTurn, changed, connected }
+  return { threads, localModels, news, fences, settled, links, forgotten, control, workspace, delegations, branches, remote, host, targets, watch, service, endTurn, changed, connected }
 }
 type World = ReturnType<typeof world>
 const key = (threadId: string): string => hostEntityKey(HERE, threadId)
@@ -139,10 +143,10 @@ describe('prepare: what moves now, what asks first, and what stays and why', () 
     const prepared = moves.prepare({ threadIds: [key('a'), key('busy'), key('child'), key('wide'), hostEntityKey(FORGE, 'x')], hostId: FORGE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
     expect(prepared).toMatchObject({ status: 'ok', machine: 'forge' })
     expect(prepared.threads).toEqual([
-      { threadId: key('a'), outcome: 'asks', words: 'It would start on Ask for approval on forge, not this thread’s Allow edits, since forge doesn’t let This computer answer there.' },
+      { threadId: key('a'), outcome: 'asks', words: 'It would start on Ask for approval on forge, not this thread’s Allow edits, since forge doesn’t let This computer answer there.', model: { name: 'GPT' }, startsOn: 'Ask for approval' },
       { threadId: key('busy'), outcome: 'stays', words: THREAD_MOVE_WORDS.running },
       { threadId: key('child'), outcome: 'stays', words: THREAD_MOVE_WORDS.delegated },
-      { threadId: key('wide'), outcome: 'asks', words: expect.stringContaining('not this thread’s Full access') },
+      { threadId: key('wide'), outcome: 'asks', words: expect.stringContaining('not this thread’s Full access'), model: { name: 'GPT' }, startsOn: 'Ask for approval' },
       { threadId: hostEntityKey(FORGE, 'x'), outcome: 'stays', words: THREAD_MOVE_WORDS.remote },
     ])
     expect(w.fences.size).toBe(0); expect(w.branches.forStart).not.toHaveBeenCalled()
@@ -544,11 +548,110 @@ describe('Sol’s third pass', () => {
   it('plans a thread named twice, by its own ID and by This computer’s key for it, once', async () => {
     const w = world(), moves = w.service(); moves.useTargets(w.targets)
     const prepared = moves.prepare({ threadIds: ['a', key('a')], hostId: FORGE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
-    expect(prepared.threads).toEqual([{ threadId: 'a', outcome: 'moves' }, { threadId: key('a'), outcome: 'stays', words: THREAD_MOVE_WORDS.twice }])
+    expect(prepared.threads).toEqual([{ threadId: 'a', outcome: 'moves', model: { name: 'GPT' } }, { threadId: key('a'), outcome: 'stays', words: THREAD_MOVE_WORDS.twice }])
     const started = await moves.move({ confirmationId: prepared.confirmationId, threadIds: ['a', key('a')], allowNarrower: [] })
     expect(started).toEqual({ status: 'ok', moves: [{ threadId: 'a', outcome: 'moving', moveId: expect.any(String) }, { threadId: key('a'), outcome: 'stays', words: THREAD_MOVE_WORDS.twice }] })
     await vi.waitFor(() => expect(moves.list()[0]?.state).toBe('thread-started'))
     expect(moves.list()).toHaveLength(1); expect(w.remote.threads).toHaveLength(1)
+    moves.close()
+  })
+})
+
+describe('part 2: the cards in Watcher’s conversation, the press on one that asks, and Watcher’s news', () => {
+  it('names the model a thread moves to, and the one forge lacks (Zach, October 29, 2026)', () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.localModels.push({ ...model, id: 'codex:o5', name: 'O5' })
+    w.threads.push(source('old', { modelId: 'codex:o5' }))
+    const prepared = moves.prepare({ threadIds: [key('a'), key('old')], hostId: FORGE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
+    expect(prepared.threads.map(item => item.model)).toEqual([{ name: 'GPT' }, { name: 'GPT', instead: 'O5' }])
+    moves.close()
+  })
+  it('shows each move as a card, and a press on one that asks moves it in that card’s place or keeps it here', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.remote.mayAnswer = false
+    const views: ThreadMovesView[] = []
+    moves.subscribe(view => { views.push(view) })
+    const started = await confirmed(w, moves, ['a', 'b'])
+    expect(started.moves.map(item => item.outcome)).toEqual(['asks', 'asks'])
+    // Nothing moved, nothing is fenced, and each waits on its own card.
+    expect(w.fences.size).toBe(0); expect(moves.list()).toEqual([])
+    const asks = moves.view().cards
+    expect(asks).toEqual([
+      expect.objectContaining({ state: 'asks', source: { hostId: HERE, threadId: 'a' }, hostId: FORGE, machine: 'forge', model: { name: 'GPT' }, startsOn: 'Ask for approval', words: expect.stringContaining('Ask for approval') }),
+      expect.objectContaining({ state: 'asks', source: { hostId: HERE, threadId: 'b' } }),
+    ])
+    expect(views.at(-1)).toEqual({ cards: asks })
+    expect(await moves.answer({ cardId: asks[1]!.id, answer: 'keep' })).toEqual({ status: 'ok' })
+    expect(moves.view().cards[1]).toMatchObject({ id: asks[1]!.id, state: 'kept' })
+    // A press to move it anyway moves it on the permission the card named, where the card was.
+    expect(await moves.answer({ cardId: asks[0]!.id, answer: 'move' })).toEqual({ status: 'ok' })
+    await vi.waitFor(() => expect(moves.list()[0]?.state).toBe('thread-started'))
+    expect(w.remote.requests[0]).toMatchObject({ runtimeMode: 'approval-required' })
+    const card = moves.view().cards.find(item => item.source.threadId === 'a')!
+    expect(card).toMatchObject({ id: moves.list()[0]!.id, state: 'thread-started', at: asks[0]!.at, moved: { hostId: FORGE, threadId: w.remote.made.get(moves.list()[0]!.id) } })
+    expect(moves.view().cards.filter(item => item.state === 'asks')).toEqual([])
+    // A card answered once is not answered again.
+    expect(await moves.answer({ cardId: asks[0]!.id, answer: 'move' })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.noCard })
+    expect(await moves.answer({ cardId: asks[1]!.id, answer: 'move' })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.noCard })
+    moves.close()
+  })
+  it('says on its card why a pressed thread can no longer move, and moves nothing', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.remote.mayAnswer = false
+    await confirmed(w, moves, ['a'])
+    const [card] = moves.view().cards
+    w.threads.find(thread => thread.id === 'a')!.status = 'running'
+    expect(await moves.answer({ cardId: card!.id, answer: 'move' })).toEqual({ status: 'ok' })
+    expect(moves.view().cards).toEqual([expect.objectContaining({ id: card!.id, state: 'stays', words: THREAD_MOVE_WORDS.running })])
+    expect(moves.list()).toEqual([]); expect(w.fences.size).toBe(0)
+    moves.close()
+  })
+  it('moves a pressed card only on the permission it named: one that would now start wider says so and moves nothing', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.remote.mayAnswer = false
+    await confirmed(w, moves, ['a'])
+    const [card] = moves.view().cards
+    expect(card).toMatchObject({ state: 'asks', startsOn: 'Ask for approval' })
+    // The machine now lets This computer answer there, so the thread would start on its own Allow edits, not Ask for approval.
+    w.remote.mayAnswer = true
+    expect(await moves.answer({ cardId: card!.id, answer: 'move' })).toEqual({ status: 'ok' })
+    expect(moves.view().cards).toEqual([expect.objectContaining({ id: card!.id, state: 'stays', words: THREAD_MOVE_WORDS.changed })])
+    expect(moves.list()).toEqual([]); expect(w.fences.size).toBe(0); expect(w.remote.requests).toEqual([])
+    moves.close()
+  })
+  it('pushes the cards when a machine change makes a move wait, and not for every update that changes nothing they say', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    const views: ThreadMovesView[] = []
+    moves.subscribe(view => { views.push(view) })
+    for (let index = 0; index < 20; index++) { w.connected(); w.changed() }
+    expect(views).toEqual([])
+    w.remote.connected = false; w.connected()
+    await vi.waitFor(() => expect(views.at(-1)?.cards[0]).toMatchObject({ id: moveId, waiting: true }))
+    moves.close()
+  })
+  it('tells Watcher of each move as it ends: moved, stayed or given back', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    const moved = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moved)).toBe('thread-started'))
+    expect(w.news).toEqual([])
+    w.endTurn(moved)
+    await vi.waitFor(() => expect(stateOf(moves, moved)).toBe('source-settled'))
+    expect(w.news).toEqual([{ moveId: moved, source: { hostId: HERE, threadId: 'a' }, movedTo: { hostId: FORGE, threadId: w.remote.made.get(moved) }, machine: 'forge', outcome: 'moved' }])
+    const stayed = (await confirmed(w, moves, ['b'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, stayed)).toBe('thread-started'))
+    w.endTurn(stayed, 'failed')
+    await vi.waitFor(() => expect(stateOf(moves, stayed)).toBe('stayed'))
+    expect(w.news[1]).toMatchObject({ source: { threadId: 'b' }, outcome: 'stayed' })
+    w.threads.push(source('back'))
+    w.branches.receipt = branchMoveRefusal('uncommitted', branchMoveWords.uncommitted)
+    const back = (await confirmed(w, moves, ['back'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, back)).toBe('given-back'))
+    expect(w.news[2]).toEqual({ moveId: back, source: { hostId: HERE, threadId: 'back' }, machine: 'forge', outcome: 'given-back' })
+    expect(w.news).toHaveLength(3)
+    // Each card says how its move ended, and Watcher watches the one that moved.
+    expect(moves.view().cards.map(card => card.state)).toEqual(['source-settled', 'stayed', 'given-back'])
     moves.close()
   })
 })

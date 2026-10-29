@@ -664,7 +664,7 @@ export class WatcherWakeUp {
       if (event.kind === 'prototype-closed' && this.due(event)) this.event('prototype-closed', event.target, [watcherPrototypeSource(event)], fields)
     }
     // A restart is news of a change too: one whose send may not have gone is told again while its thread is still there.
-    const restarted = events.filter(event => event.kind === 'threads-restarted' && this.due(event))
+    const restarted = events.filter(event => (event.kind === 'threads-restarted' || event.kind === 'thread-moved') && this.due(event))
     if (restarted.length) this.tell(restarted)
   }
   /**
@@ -696,6 +696,26 @@ export class WatcherWakeUp {
         observedAt, restartedBy: provider, id: observationDigest(['threads-restarted', target, observedAt]) }
     }))
     this.tell(events)
+  }
+  /**
+   * A move the user made of a thread to another machine ended (#1178). Sotto ran it, not Watcher, so Watcher hears of
+   * each, watched or not: under the request that watched the thread here, and one no request watched under none.
+   */
+  threadMoved(move: { readonly moveId: string; readonly source: WatcherThreadTarget; readonly movedTo?: WatcherThreadTarget | undefined; readonly machine: string; readonly outcome: 'moved' | 'stayed' | 'given-back' }): void {
+    if (!this.started || this.closed) return
+    const observedAt = new Date(this.now()).toISOString()
+    const event = this.withPassReads((): WatcherEvent => {
+      // A thread that moved took its watch with it before it settled, so the request is found on the new thread.
+      const watching = (target: WatcherThreadTarget) => {
+        const eligible = (this.workerIndex(false).byTarget.get(targetKey(target)) ?? []).filter(({ participant }) => participant.state === 'participating' && !participant.automationStopped)
+        return eligible.find(item => item.request.standingWatchId !== undefined) ?? eligible.at(-1)
+      }
+      const one = watching(move.source) ?? (move.movedTo ? watching(move.movedTo) : undefined)
+      return { kind: 'thread-moved', target: move.source, requestId: one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
+        observedAt, moveId: move.moveId, moveOutcome: move.outcome, machine: move.machine.slice(0, 200), ...move.movedTo ? { movedTo: move.movedTo } : {},
+        id: observationDigest(['thread-moved', move.moveId]) }
+    })
+    this.tell([event])
   }
   /** News made outside a pass, which needs Watcher by itself: it waits in the ordinary batch with whatever else came. */
   private tell(events: readonly WatcherEvent[]): void {
@@ -1433,6 +1453,8 @@ export class WatcherWakeUp {
   dueAll(events: readonly WatcherEvent[]): boolean[] { return this.withPassReads(() => events.map(event => this.due(event))) }
   due(event: WatcherEvent): boolean {
     if (!this.started || this.closed) return false
+    // A move is news while Watcher is there, whether or not a request watched the thread; a settled one is news too (#1178).
+    if (event.kind === 'thread-moved') return !!this.record().current
     // A restart is news while Watcher is there and its thread still is, whether or not a request watches it (ADR-0144).
     if (event.kind === 'threads-restarted') {
       if (!this.record().current) return false

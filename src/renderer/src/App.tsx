@@ -40,6 +40,7 @@ import type { RecoveryNotice } from '../../shared/recoveryNotice'
 import type { SottoPlatform } from '../../shared/platform'
 import type { SystemSettingsPane } from '../../shared/systemSettings'
 import { AgentProvider } from './agents/AgentContext'
+import { MoveThreadsSheetHost } from './watcher/MoveThreads'
 import { ClientUpdateCard } from './agents/ClientUpdateCard'
 import { UpdateAllCard } from './features/updates/UpdateAllCard'
 import { PageSidebar } from './agents/PageSidebar'
@@ -558,6 +559,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
             onCancel={updateFlow.cancelInstall}
           />
         ) : null}
+        {/* Move threads' sheet (#1178), opened from Watcher's header or a thread's More menu: Owl, with Watcher on. */}
+        {watcherEnabled ? <MoveThreadsSheetHost /> : null}
         {threadsTour && threadsPage ? <ThreadsTour shortcut={app.settings.hotkey} platform={app.platform} onDone={() => setThreadsTour(false)} /> : null}
         <ThemeEditorHost
           settings={app.settings}
