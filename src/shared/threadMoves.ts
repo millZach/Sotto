@@ -117,6 +117,8 @@ export const threadMoveCardSchema = z.object({
   startsOn: machineName.optional(),
   /** The move waits on a machine that is not connected or has not answered. Part 4 reconciles it. */
   waiting: z.literal(true).optional(),
+  /** Which machine it waits on, by its name: the one it goes to, or the host its thread is on. */
+  waitingOn: machineName.optional(),
   /** Whether Watcher watches the new thread now. */
   watched: z.literal(true).optional(),
   /** When the user confirmed it, where the card goes in Watcher's conversation; and when it last changed. */

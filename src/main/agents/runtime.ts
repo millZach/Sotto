@@ -184,6 +184,11 @@ export interface AgentRuntimeOptions {
   missingAttachment?: ControlDependencies['missingAttachment']
   /** The headless host says so: it connects every signed-in provider at start and names itself in refusals (ADR-0036). */
   runsAs?: ControlDependencies['runsAs']
+  /**
+   * A headless host's threads that a move holds or moved away (#1178 part 3), whose worktrees no automatic cleanup removes.
+   * The desktop keeps its own (`ThreadMoveService`).
+   */
+  keepsWorktree?: (threadId: string) => boolean
   /** Desktop design fixtures replace the whole provider boundary. */
   host?: AgentHost
   /** Native process overrides keep tests on the production coordinator path. */
@@ -532,7 +537,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
     removeUnsentThreads: () => agentControl.removeUnsentThreads(),
     // A move's source keeps its worktree, whatever the rules say (Zach, October 21, 2026).
-    ...moveKeeps ? { keeps: (threadId: string) => moveKeeps.keepsWorktree(threadId) } : {},
+    ...moveKeeps ? { keeps: (threadId: string) => moveKeeps.keepsWorktree(threadId) } : options.keepsWorktree ? { keeps: options.keepsWorktree } : {},
     ...clearsOnItsOwn(options) ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays,
       clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => agentControl.clearSettledThreads(days, keep) } } : {},
     ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {},

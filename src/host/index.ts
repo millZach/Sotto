@@ -169,7 +169,11 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const delegationRemote = crossMachineEnabled ? new HostRemoteCallers(directory, { recorded: clientId => recordedDesktop(clientId), mayAnswer: desktopCounts,
       ...options.log ? { log: (event: 'delegation-remote-news-failed') => options.log?.(event) } : {} }) : undefined
     await delegationRemote?.load()
+    // This host's threads a move holds or moved away keep their worktrees (#1178 part 3). The record is made once the
+    // runtime is, so until then, and until it reads, cleanup keeps every worktree; null where this host holds none.
+    let heldMoves: HostThreadMoveSources | null | undefined
     const runtime = await createAgentRuntime({
+      ...crossMachineEnabled ? { keepsWorktree: (threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId) } : {},
       observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, clearThreadsEnabled,
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
       // This host's own threads delegate on this machine (#1310) where its Owl answer turns on Work across machines, held to
@@ -243,6 +247,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const about = () => ({ tailnetAddress: phones?.address(), startedBy: options.startedBy })
     try {
       await pairing.load()
+      if (options.port === undefined) heldMoves = null
       if (options.port !== undefined) {
         // The host's two listeners keep one set of command receipts, so a desktop that moves between them never runs a
         // retried command twice (ADR-0053).
@@ -268,10 +273,13 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // A thread moved here from another machine starts from the branch moved here for it (#1178), on the same Owl answer,
         // held to what this host lets the asking desktop give a thread here. This host's own threads move too (part 3): it
         // holds one for the desktop, by its own record, and fences it until the move ends.
+        heldMoves = branchMoves ? new HostThreadMoveSources(directory, { control: runtime.agentControl, workspace: runtime.agentHost,
+          ...runtime.delegation ? { delegations: runtime.delegation } : {} }) : null
+        // The coordinator has read its own record, so the fences are made to agree with the held moves before any desktop asks.
+        await heldMoves?.start().catch(() => options.log?.('thread-moves-held-start-failed'))
+        if (heldMoves) { const held = heldMoves; runtime.agentControl.onThreadsDeleted(threadIds => { held.forgetThreads(threadIds) }) }
         threadMoves = branchMoves ? new HostThreadMoves(directory, { control: runtime.agentControl, workspace: runtime.agentHost,
-          mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
-          sources: new HostThreadMoveSources(directory, { control: runtime.agentControl, workspace: runtime.agentHost,
-            ...runtime.delegation ? { delegations: runtime.delegation } : {} }) }) : undefined
+          mayAnswer: client => policy?.mayGrant(client).allowed ?? false, ...heldMoves ? { sources: heldMoves } : {} }) : undefined
         const moves = { ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}

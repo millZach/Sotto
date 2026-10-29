@@ -765,7 +765,7 @@ describe('a host’s thread moves too (#1178 part 3)', () => {
     w.lab.connected = false
     w.endTurn(moveId, 'failed')
     await vi.waitFor(() => expect(moves.list()[0]).toMatchObject({ state: 'first-turn-ended', ending: 'stayed' }))
-    expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true, from: 'lab' })
+    expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true, waitingOn: 'lab', from: 'lab' })
     expect(w.lab.fences.has('lab-1')).toBe(true)
     w.lab.connected = true; w.reconnected(LAB)
     await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('stayed'))

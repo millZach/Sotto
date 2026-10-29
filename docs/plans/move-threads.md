@@ -118,3 +118,11 @@ Decisions made while building:
 - A move of a host's thread that must end, given back or stayed, waits for that host to let go of it before it counts as ended, so the thread is never left fenced there with the desktop's record saying it is free.
 - The fixture host in the integration suite reads history only from provider events, which its fakes do not send, so none of its threads can be held; the whole move from a host is covered over stand-ins, and the integration suite covers the host's refusals and the feature over the real socket.
 
+After Sol's standards and spec reviews (October 29):
+
+- A host keeps the worktree of each thread held or moved away from its cleanup sweep, as This computer does for its own (`kept` in `thread-moves-held.json`, the runtime's `keepsWorktree`); every worktree is kept until that record reads.
+- A stop between a hold's fence and its record no longer strands the thread: the record is written before the fence is known saved, and at start the host fences every thread it holds and lifts any fence no held move names.
+- The host indexes its threads once for a hold, and the desktop's preview reads each thread by its snapshot's index, so neither grows faster than the threads.
+- A waiting card names the machine the move waits on (`waitingOn`): the host its thread is on, while that host is away or for the steps only it takes, or the machine it goes to.
+- This computer's settling of a moved source and a host's share one routine (`settleMovedSource`).
+

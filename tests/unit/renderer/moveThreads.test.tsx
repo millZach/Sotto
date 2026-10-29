@@ -195,8 +195,8 @@ describe('Each move’s card in Watcher’s conversation', () => {
     expect(screen.getByRole('listitem').textContent).toContain('Settled on lab, and its worktree is kept there.')
     rerender(<WatcherMoveCards cards={[card({ state: 'given-back', from: 'lab', words: 'A turn is running. This thread stays on lab and takes sends again.' })]} threads={threads} />)
     expect(within(screen.getByRole('listitem')).getByText('Stays on lab')).toBeTruthy()
-    // A move to This computer waits only on the host its thread is on.
-    rerender(<WatcherMoveCards cards={[card({ state: 'fenced', from: 'lab', here: true, machine: 'This computer', waiting: true })]} threads={threads} />)
+    // A move that waits on the host its thread is on names that host.
+    rerender(<WatcherMoveCards cards={[card({ state: 'fenced', from: 'lab', waiting: true, waitingOn: 'lab' })]} threads={threads} />)
     expect(screen.getByText('Waiting for lab')).toBeTruthy()
   })
 

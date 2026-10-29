@@ -21,6 +21,7 @@ import { readStrictJson } from '../storage/strictJsonFile'
 import type { DesktopBranchMoves } from './branchMoves'
 import type { CheckoutPendingWork } from './checkoutMutations'
 import type { Handover } from './handover'
+import { settleMovedSource } from './threadMovesHost'
 import { handoverCounts, handoverPrefixProof } from './watcherHandover'
 import { watcherBackgroundWorkCount } from './watcherWakeUp'
 import type { WatcherService } from './watcher'
@@ -447,7 +448,7 @@ export class ThreadMoveService {
       return { id: record.id, state: record.state, source: { hostId: record.sourceHostId ?? here, threadId: record.sourceThreadId },
         ...record.threadId ? { moved: { hostId: record.targetHostId, threadId: record.threadId } } : {}, hostId: record.targetHostId, machine: record.machine,
         ...record.from ? { from: record.from } : {}, ...record.targetHostId === here ? { here: true as const } : {},
-        ...record.givenBack ? { words: record.givenBack } : {}, model, ...waiting.has(record.id) ? { waiting: true as const } : {},
+        ...record.givenBack ? { words: record.givenBack } : {}, model, ...waiting.has(record.id) ? { waiting: true as const, waitingOn: this.waitingOn(record) } : {},
         ...record.watchMoved === true ? { watched: true as const } : {}, at: this.placedAt.get(record.id) ?? record.createdAt, updatedAt: record.updatedAt }
     })
     const run = [...this.runCards.values()].map((card): ThreadMoveCard => ({ id: card.id, state: card.state, source: card.source, hostId: card.hostId, machine: card.machine,
@@ -472,6 +473,15 @@ export class ThreadMoveService {
    * update it pushes, a streamed reply's included, pushes the cards only when this changes, so the update path never
    * rebuilds the cards of moves long finished.
    */
+  /**
+   * The machine a waiting move waits on: the host its thread is on while that host is away, or for the steps only it takes,
+   * holding the thread and settling or letting go of it; otherwise the machine it goes to.
+   */
+  private waitingOn(record: MoveRecord): string {
+    if (!record.sourceHostId) return record.machine
+    const onSource = record.ending !== undefined || !this.targets?.snapshot(record.sourceHostId) || record.state === 'fenced' && !record.held || record.state === 'first-turn-ended'
+    return onSource ? this.fromName(record) : record.machine
+  }
   private waitingNow(): string { return this.stalled().map(record => record.id).sort().join(',') }
   private waitingChanged(): void { if (this.listeners.size && this.waitingNow() !== this.waitingKey) this.changed() }
   /** The model a move's card names: its name there, and the source's when the machine lacked it (Zach, October 29, 2026). */
@@ -671,7 +681,7 @@ export class ThreadMoveService {
       if (!host.supportsThreadMoveSource) return { threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.olderSource(from) }
       snapshot = there
     }
-    const source = snapshot.threads.find(thread => thread.id === (key?.id ?? threadId))
+    const source = this.indexOf(snapshot).threads.get(key?.id ?? threadId)
     if (!source?.providerId) return { threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.gone }
     const moving = this.movingRecord(this.sourceKey({ sourceHostId, sourceThreadId: source.id }))
     // What only the host's own record knows, its queue and its fences, it reads again as it holds the thread.
@@ -680,7 +690,7 @@ export class ThreadMoveService {
       backgroundWork: watcherBackgroundWorkCount(source),
       unresolved: !sourceHostId && this.options.control.moveHoldReason(source.id) !== null,
       delegatedWorking: this.options.delegations?.hasOpen(this.windowKey(sourceHostId ?? here ?? '', source.id)) === true
-        || delegatedThreadsBelow(snapshot.threads, source.id).some(child => { const thread = snapshot.threads.find(item => item.id === child); return thread !== undefined && isThreadTurnRunning(thread) }) })
+        || delegatedThreadsBelow(snapshot.threads, source.id).some(child => { const thread = this.indexOf(snapshot).threads.get(child); return thread !== undefined && isThreadTurnRunning(thread) }) })
     if (refusal) return { threadId, outcome: 'stays', words: refusal }
     const sourceModel = resolveModel(snapshot.models, source.modelId), model = targetModel(source, sourceModel, target.models)
     if (!model) return { threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.noProvider(source.providerId, machine) }
@@ -984,10 +994,9 @@ export class ThreadMoveService {
     if (record.sourceHostId) {
       if (record.threadId && !await this.sourceStep(record, { action: 'settle', moveId: record.id, link: this.linkOf(record) })) { this.later(record.id); return false }
     } else if (source) {
-      // The link is Sotto's record and must survive (ADR-0089): a write that fails fails the step, which is tried again.
-      if (record.threadId) await this.options.workspace.addContinuedIn(source.id, { threadId: record.threadId, provider: record.start.provider, at: record.updatedAt, host: record.targetHostId })
-      const settled = await this.options.control.commandFromMove({ type: 'settle-thread', threadId: source.id }, () => { if (this.closed) throw new Error('Sotto is stopping.') })
-      if (settled.error && !this.options.control.watcherSnapshot().threads.find(thread => thread.id === source.id)?.workspaceSettledAt) throw new Error('The source did not settle.')
+      await settleMovedSource(this.options.control, this.options.workspace, source.id,
+        record.threadId ? { threadId: record.threadId, provider: record.start.provider, at: record.updatedAt, host: record.targetHostId } : undefined,
+        () => { if (this.closed) throw new Error('Sotto is stopping.') })
     }
     await this.update(record, { state: 'source-settled' })
     if (!record.sourceHostId) this.lift(record.sourceThreadId)

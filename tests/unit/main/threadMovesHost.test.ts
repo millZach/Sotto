@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto'
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { buildHandover } from '../../../src/main/agents/handover'
 import type { ClientIdentity } from '../../../src/main/agents/hostService'
 import { HOST_THREAD_MOVES_MAX, HostThreadMoves, HostThreadMoveSources } from '../../../src/main/agents/threadMovesHost'
@@ -141,6 +141,7 @@ function sources() {
     fenceForMove: (threadId: string, words: string) => { fences.set(threadId, words) },
     liftMoveFence: (threadId: string) => { fences.delete(threadId) },
     moveFenceOf: (threadId: string) => fences.get(threadId),
+    fencedForMove: () => [...fences.keys()],
     commandFromMove: async (command: Extract<AgentCommand, { type: 'settle-thread' }>): Promise<AgentState> => {
       settled.push(command.threadId)
       threads.find(thread => thread.id === command.threadId)!.workspaceSettledAt = new Date().toISOString()
@@ -154,7 +155,7 @@ function sources() {
   const held = new HostThreadMoveSources(directory, { control, workspace })
   const moves = new HostThreadMoves(directory, { control: { watcherSnapshot: control.watcherSnapshot, commandFromMove: async () => ({ error: null }) as AgentState },
     workspace: { setContinuedFrom: async () => undefined }, mayAnswer: () => true, sources: held })
-  return { threads, fences, settled, links, state, moves }
+  return { threads, fences, settled, links, state, moves, held }
 }
 const link = { threadId: 'new-thread', provider: 'codex' as const, hostId: randomUUID(), at: '2026-10-29T11:00:00.000Z' }
 
@@ -203,11 +204,44 @@ describe('this host’s own thread as a move’s source (#1178 part 3)', () => {
     // A released move holds nothing: it is not held again under the same ID.
     expect(await s.moves.handle({ action: 'hold', moveId, threadId: 'wav', machine: 'forge' }, desktop)).toMatchObject({ type: 'refused', reason: 'unknown-move' })
   })
+  it('keeps the worktree of a thread held or moved away from cleanup, and of every thread until its record reads', async () => {
+    const s = sources(), moved = randomUUID(), stays = randomUUID()
+    expect(s.held.keepsWorktree('wav')).toBe(true)
+    await s.held.start()
+    expect(s.held.keepsWorktree('wav')).toBe(false)
+    await s.moves.handle({ action: 'hold', moveId: moved, threadId: 'wav', machine: 'forge' }, desktop)
+    expect(s.held.keepsWorktree('wav')).toBe(true)
+    await s.moves.handle({ action: 'settle', moveId: moved, link }, desktop)
+    expect(s.held.keepsWorktree('wav')).toBe(true)
+    // One that stays here is no moved thread.
+    s.threads.push({ ...s.threads[0]!, id: 'tray', workspaceSettledAt: undefined })
+    await s.moves.handle({ action: 'hold', moveId: stays, threadId: 'tray', machine: 'forge' }, desktop)
+    await s.moves.handle({ action: 'release', moveId: stays }, desktop)
+    expect(s.held.keepsWorktree('tray')).toBe(false)
+    // A deleted thread keeps nothing, and that is saved.
+    s.held.forgetThreads(['wav'])
+    expect(s.held.keepsWorktree('wav')).toBe(false)
+    await vi.waitFor(async () => expect(JSON.parse(await readFile(join(directory, 'thread-moves-held.json'), 'utf8')).kept).toEqual([]))
+  })
+  it('makes the fences agree with the held moves at start: a held thread fenced, and a fence no move names lifted', async () => {
+    const at = new Date().toISOString()
+    await writeFile(join(directory, 'thread-moves-held.json'), JSON.stringify({ version: 1, held: [{ moveId: randomUUID(), clientId: 'laptop', threadId: 'wav', machine: 'forge', state: 'held', createdAt: at, updatedAt: at }] }))
+    const s = sources()
+    // A stop after the fence was saved and before its move was: the fence names no move.
+    s.fences.set('busy', THREAD_MOVE_WORDS.fence('forge'))
+    await s.held.start()
+    expect([...s.fences.keys()]).toEqual(['wav'])
+    expect(s.fences.get('wav')).toBe(THREAD_MOVE_WORDS.fence('forge'))
+    expect(s.held.keepsWorktree('wav')).toBe(true)
+  })
   it('refuses every step, fencing and lifting nothing, while its record does not read', async () => {
     await writeFile(join(directory, 'thread-moves-held.json'), '{"version": 1, "held": [{"moveId": 3}]}')
     const s = sources()
+    s.fences.set('busy', THREAD_MOVE_WORDS.fence('forge'))
+    await s.held.start()
     expect(await s.moves.handle({ action: 'hold', moveId: randomUUID(), threadId: 'wav', machine: 'forge' }, desktop))
       .toEqual({ type: 'refused', reason: 'unreadable', message: HOST_THREAD_MOVE_WORDS.unreadable })
-    expect(s.fences.size).toBe(0)
+    expect([...s.fences.keys()]).toEqual(['busy'])
+    expect(s.held.keepsWorktree('anything')).toBe(true)
   })
 })

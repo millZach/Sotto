@@ -337,8 +337,8 @@ export function moveCardWords(card: ThreadMoveCard): { readonly lead: string; re
   const machine = card.machine, from = card.from
   const stays = from ? i18n._(msg`Stays on ${from}`) : i18n._(msg`Stays here`)
   if (card.waiting && STEPS.includes(card.state) && card.state !== 'source-settled') {
-    // This computer always answers, so a move to it waits only on the host its thread is on.
-    const waitsOn = card.here && from ? from : machine
+    // Main says which machine it waits on: the one it goes to, or the host its thread is on.
+    const waitsOn = card.waitingOn ?? machine
     return { lead: i18n._(msg`Moving`), short: i18n._(msg`Waiting for ${waitsOn}`), tone: 'needs', line: i18n._(msg`This thread is waiting for ${waitsOn} to answer about its move. Nothing was lost.`) }
   }
   switch (card.state) {
