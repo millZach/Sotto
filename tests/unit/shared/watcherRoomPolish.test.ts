@@ -63,7 +63,7 @@ describe('a shown reply', () => {
 
 describe('where cards and takeover lines are placed', () => {
   it('uses the shared rule in main and in the window, with no copy of its own', () => {
-    for (const file of ['../../../src/main/agents/watcherReceiptReplies.ts', '../../../src/renderer/src/watcher/WatcherReceipts.tsx']) {
+    for (const file of ['../../../src/main/agents/watcherReceiptReplies.ts', '../../../src/renderer/src/watcher/watcherConversationWork.ts']) {
       const source = readFileSync(new URL(file, import.meta.url), 'utf8')
       expect(source, file).toMatch(/import \{[^}]*\bisShownReply\b[^}]*\} from '[./]+shared\/watcherRoom'/u)
       expect(source, file).not.toMatch(/isVisualMessage|role === 'assistant'/u)

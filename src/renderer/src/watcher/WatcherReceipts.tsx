@@ -5,7 +5,7 @@ import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentMessage, ProviderId } from '../../../shared/agents'
 import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
-import { isShownReply, type WatcherTakeover } from '../../../shared/watcherRoom'
+import type { WatcherTakeover } from '../../../shared/watcherRoom'
 import type { WorkerPlacementReceipt } from '../../../shared/workerMachine'
 import { SottoMark } from '../components/SottoMark'
 import { ProviderMark } from '../agents/ProviderMark'
@@ -62,26 +62,6 @@ export function useRepliesKeptInView(): Pick<ReadonlySet<string>, 'has'> | null 
   const receipts = conversation?.receipts, asks = conversation?.asks
   // A look-up rather than a set of every reply: a conversation shown far back holds the read back's cards too (#1759).
   return useMemo(() => receipts === undefined ? null : { has: (id: string) => receipts.has(id) || asks?.has(id) === true }, [receipts, asks])
-}
-
-/**
- * Where each takeover line goes: after the last reply of the Watcher turn it happened in, the turn begun by the last of
- * the user's messages before it, or after that message while the turn has no reply. A line from before every message
- * there is follows the first.
- */
-export function placeTakeovers(messages: readonly AgentMessage[], takeovers: readonly WatcherTakeover[]): ReadonlyMap<string, readonly WatcherTakeover[]> {
-  const placed = new Map<string, WatcherTakeover[]>()
-  if (messages.length === 0) return placed
-  for (const line of takeovers) {
-    const at = Date.parse(line.at)
-    const user = messages.findLastIndex(message => message.role === 'user' && Date.parse(message.createdAt) <= at)
-    let anchor = messages[Math.max(0, user)]!.id
-    if (user >= 0) for (let index = user + 1; index < messages.length && messages[index]!.role !== 'user'; index++) {
-      if (isShownReply(messages[index]!)) anchor = messages[index]!.id
-    }
-    placed.set(anchor, [...placed.get(anchor) ?? [], line])
-  }
-  return placed
 }
 
 // Each lead comes before the thread's name on a receipt card, in its own place: "Sent to", then the name.
