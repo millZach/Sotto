@@ -44,7 +44,7 @@ function sample<T>(creature: Creature, element: ReactElement, seconds: readonly 
 }
 
 /** Every creature read at the same times; each one's own art differs, so `read` keeps only what the schedule decides. */
-function both<T>(element: ReactElement, seconds: readonly number[], read: (container: HTMLElement) => T): { sotto: T[]; claude: T[]; lardo: T[] } {
+function everyCreature<T>(element: ReactElement, seconds: readonly number[], read: (container: HTMLElement) => T): { sotto: T[]; claude: T[]; lardo: T[] } {
   return { sotto: sample('sotto', element, seconds, read), claude: sample('claude', element, seconds, read), lardo: sample('lardo', element, seconds, read) }
 }
 
@@ -70,14 +70,14 @@ describe.each([600, 340])('on a %i px track', track => {
 
     it('monitoring walks to the same place facing the same way', () => {
       const tasks = [{ id: '56d13d2c-f6d0-4968-a9ed-18c87a7d5b5a', label: 'Watch the build' }]
-      expectSchedule(both(<ThreadMonitor tasks={tasks} />, TIMES, container => ({ x: actorX(container), mirrored: mirrored(container) })), motion)
+      expectSchedule(everyCreature(<ThreadMonitor tasks={tasks} />, TIMES, container => ({ x: actorX(container), mirrored: mirrored(container) })), motion)
     })
 
     it.each([1, 3, 6, 9])('working sends %i agents along the same path', agents => {
       const work = Array.from({ length: agents }, (_, index) => ({
         id: `6f0c1a2e-8f4b-4d3c-9a1e-${String(index).padStart(12, '0')}`, label: `Agent ${index + 1}`, type: 'subagent' as const,
       }))
-      const seen = both(<ThreadWorking work={work} />, TIMES, container => ({
+      const seen = everyCreature(<ThreadWorking work={work} />, TIMES, container => ({
         x: actorX(container),
         minis: [...container.querySelectorAll<HTMLElement>('.thread-monitor__mini')].map(mini => mini.style.transform),
       }))
@@ -94,7 +94,7 @@ describe.each([600, 340])('on a %i px track', track => {
         id: 'a1', turnId: 't1', sequence: 1, kind: 'command', status: 'running', title: 'Run tests',
         command: 'npm test', startedAt: '2026-10-22T14:59:15.000Z',
       }
-      expectSchedule(both(<ThreadHeld action={action} now={Date.parse('2026-10-22T15:00:00.000Z')} />, [0, 1, 2, 3, 4, 5.4, 5.75, 6.1, 7], container => {
+      expectSchedule(everyCreature(<ThreadHeld action={action} now={Date.parse('2026-10-22T15:00:00.000Z')} />, [0, 1, 2, 3, 4, 5.4, 5.75, 6.1, 7], container => {
         // Both draw the sand from hourglass.ts, so the same grains are the same path, in either chamber.
         const [top, bottom] = [...container.querySelectorAll('.thread-monitor__sand')].map(sand => sand.getAttribute('d'))
         return {

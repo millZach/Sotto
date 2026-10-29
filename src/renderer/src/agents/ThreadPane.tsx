@@ -34,7 +34,7 @@ import { ThreadWebLinks } from '../tools/webLinks'
 import { RunCommands } from '../tools/runCommand'
 import { ThreadBabysitting, ThreadMonitor, ThreadHeld, ThreadWaitingCommand, ThreadWorking, useHeldAction } from './ThreadMonitor'
 import { ornamentPose } from './threadActivityView'
-import { LardoTurnFinished, useLardoTurnFinished } from './Lardo'
+import { LardoTurns } from './Lardo'
 import { useCreature } from '../state/creature'
 import { compactionBusy, compactionOffered, ThreadCompaction } from './ThreadCompaction'
 import { useWatchedThread } from '../watcher/watcherRoom'
@@ -276,10 +276,9 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     : pose === 'waiting' ? <ThreadWaitingCommand key={`command:${thread.id}`} commands={liveCommands} now={now} />
     : pose === 'babysitting' ? <ThreadBabysitting key={`babysitting:${thread.id}`} thread={thread} now={now} />
     : undefined
-  // Lardo flexes when a turn finishes while he is up; the other creatures never read it.
-  const lardoUp = useCreature() === 'lardo' && staged !== undefined
-  const turnFinished = useLardoTurnFinished(isThreadTurnRunning(thread), lardoUp)
-  const ornament = staged === undefined ? undefined : <LardoTurnFinished.Provider value={turnFinished}>{staged}</LardoTurnFinished.Provider>
+  // Lardo flexes when a turn finishes while he is up; only he is wrapped to hear it, and only where the build offers him.
+  const lardo = useCreature() === 'lardo'
+  const ornament = staged !== undefined && lardo ? <LardoTurns running={isThreadTurnRunning(thread)}>{staged}</LardoTurns> : staged
   const composing = paneHasDraft
   const capabilities = capabilitiesForThread(state.host, thread)
   /** This thread's own lane. Work on another thread leaves every control here live. */

@@ -12,7 +12,7 @@ import { ClaudeBotHeld } from './ClaudeBotHeld'
 import { ClaudeBotMonitoring } from './ClaudeBotMonitoring'
 import { ClaudeBotWorking } from './ClaudeBotWorking'
 import { Lardo } from './Lardo'
-import { EMPTY_PATH, GLASS_FLIP, GLASS_PERIOD, grainPath, HOURGLASS_CENTRE, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, BOTTOM_ROWS, sandPath, TOP_ROWS } from './hourglass'
+import { EMPTY_PATH, glassFrame, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, sandPath, TOP_ROWS } from './hourglass'
 import { usePixelLoop } from './pixelLoop'
 import { shownCount } from '../state/interfaceNumbers'
 import './threadMonitor.css'
@@ -82,22 +82,13 @@ function HeldCreature(): ReactNode {
   const bottomSand = useRef<SVGPathElement>(null)
   const grain = useRef<SVGPathElement>(null)
   usePixelLoop(actor, ({ time, still }) => {
-    // Held motion keeps a half-run glass: the pose still reads as waiting without a frame of movement.
-    const phase = still ? GLASS_PERIOD / 2 : time % GLASS_PERIOD
-    const running = GLASS_PERIOD - GLASS_FLIP
-    const drain = Math.min(1, phase / running)
-    const spin = phase > running ? (phase - running) / GLASS_FLIP : 0
-    const gone = Math.min(3, Math.floor(drain * 3))
+    const sand = glassFrame(time, still)
     body.current?.setAttribute('transform', !still && Math.floor(time * 1.2) % 2 === 1 ? 'translate(0 -1)' : '')
     eyes.current?.setAttribute('d', !still && time % 5 > 4.86 ? SHUT_EYES : OPEN_EYES)
-    // The rotation only ever runs during the flip, and never carries over: the sand rows live in the
-    // rotated group, so a half turn that outlasted the flip would empty the chamber the reader sees
-    // filling, and the sand would climb. Because the vessel is symmetric, ending a flip at half a turn
-    // looks exactly like starting the next cycle upright, so the full chamber stays where the eye left it.
-    glass.current?.setAttribute('transform', `rotate(${spin * 180} ${HOURGLASS_CENTRE})`)
-    topSand.current?.setAttribute('d', sandPath(TOP_ROWS.slice(gone)))
-    bottomSand.current?.setAttribute('d', sandPath(BOTTOM_ROWS.slice(3 - gone)))
-    grain.current?.setAttribute('d', drain < 1 && !still ? grainPath(time) : EMPTY_PATH)
+    glass.current?.setAttribute('transform', sand.turn)
+    topSand.current?.setAttribute('d', sand.top)
+    bottomSand.current?.setAttribute('d', sand.bottom)
+    grain.current?.setAttribute('d', sand.grain)
   })
   return <div className="thread-monitor__actor" ref={actor} aria-hidden="true">
     <svg className="thread-monitor__creature" viewBox="0 0 40 32" width="80" height="64" focusable="false" shapeRendering="crispEdges">

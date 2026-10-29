@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { Lardo, LardoTurnFinished, useLardoTurnFinished, type LardoPose } from '../../../src/renderer/src/agents/Lardo'
+import { Lardo, LardoTurns, type LardoPose } from '../../../src/renderer/src/agents/Lardo'
 import { lardoPaths } from '../../../src/renderer/src/agents/lardoSprite'
 
 let systemReduce = false
@@ -69,10 +69,9 @@ describe('Lardo', () => {
 
   /** The thread pane's part: the turn's state, and which pose (if any) stands, mounted afresh for each `mount`. */
   function Stage({ running, pose, mount = pose ?? '' }: { readonly running: boolean; readonly pose: LardoPose | null; readonly mount?: string }) {
-    const finished = useLardoTurnFinished(running, pose !== null)
-    return <LardoTurnFinished.Provider value={finished}>
-      <div className="thread-monitor__track">{pose ? <Lardo key={mount} pose={pose} /> : null}</div>
-    </LardoTurnFinished.Provider>
+    return <div className="thread-monitor__track">
+      {pose ? <LardoTurns running={running}><Lardo key={mount} pose={pose} /></LardoTurns> : null}
+    </div>
   }
 
   it('flexes when the turn finishes while he is up, and goes back to his pose', () => {

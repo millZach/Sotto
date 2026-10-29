@@ -12,7 +12,7 @@ One thing differs from the request: Zach listed idle, thinking, writing, done an
 
 - `creature` may be `lardo`; `CREATURES` and `CREATURE_LABELS` carry him, and `lardo-creature` is on the Owl list. `creatureShown()` and `offeredCreatures()` in `state/creature.ts` keep him out where he is held: Settings does not offer him, and a saved `lardo` shows and is marked as Sotto's creature while the saved value stays.
 - `lardoSprite.ts` holds his fifteen frames as 40 × 32 rows of letters and a 12 × 10 small Lardo; `Lardo.tsx` wears the four poses on the shared frame loop and schedule. The babysitting pose has no frame loop of its own and runs one only while he flexes or rages.
-- `useLardoTurnFinished` in `ThreadPane` marks a turn that ended with Lardo up through it and still up after, and `LardoTurnFinished` hands it to him, so he flexes even when the turn's end swaps his pose (a held action becoming a command left waiting mounts him anew).
+- `LardoTurns`, which `ThreadPane` wraps round the ornament only while Lardo is the creature standing there (so a build that holds him runs none of it), marks a turn that ended while he was up and hands it to him, so he flexes even when the turn's end swaps his pose (a held action becoming a command left waiting mounts him anew).
 - The throw (`LardoThrow`) is a portal over the window with no pointer events: the bite at the composer's top edge, the piece, 22 shards, the cracks, and the bite growing back in 4 px squares. It reads only the composer's place on the screen, every frame, so the bite stays in the top edge if the composer grows while he throws.
 - `lardo.css` is on `themeTokens.test.ts`'s owned list; every colour is a token.
 

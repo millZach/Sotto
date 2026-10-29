@@ -1,7 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { pixelPath } from './claudeBotSprite'
-import { BOTTOM_ROWS, EMPTY_PATH, GLASS_FLIP, GLASS_PERIOD, grainPath, HOURGLASS_CENTRE, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, sandPath, TOP_ROWS } from './hourglass'
+import { EMPTY_PATH, glassFrame, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, sandPath, TOP_ROWS } from './hourglass'
 import { LARDO_FACING_LEFT, LARDO_LETTERS, LARDO_MINI_ROWS, LARDO_SPARKLES, LARDO_STEAM, lardoPaths, type LardoFrame, type LardoLetter } from './lardoSprite'
 import { usePixelLoop, type PixelFrame } from './pixelLoop'
 import './lardo.css'
@@ -9,31 +9,27 @@ import './lardo.css'
 export type LardoPose = 'monitoring' | 'working' | 'held' | 'babysitting'
 
 /**
- * When the thread's last turn finished with Lardo up throughout (`performance.now()`), so he can flex for it. The thread
- * pane provides it around the ornament from `useLardoTurnFinished`; anywhere else (the Appearance preview) no turn ever
- * finishes, so he never flexes there.
+ * When the thread's last turn finished with Lardo up throughout (`performance.now()`), so he can flex for it. `LardoTurns`
+ * provides it; anywhere else (the Appearance preview) no turn ever finishes, so he never flexes there.
  */
-export const LardoTurnFinished = createContext<number | null>(null)
+const LardoTurnFinished = createContext<number | null>(null)
 /** A finish this recent is still his to flex for, even if the turn's end has just swapped him for another pose. */
 const FRESH_FINISH_MS = 250
 
 /**
- * The thread pane's half of the flex: the moment a turn ends while he stood above the composer during it and still
- * stands there after, whichever pose he wears. Judged here rather than in Lardo because the turn's end can change his
- * pose (a held action becoming a command left waiting), which mounts him anew. He never appears just to flex.
+ * The thread pane's half of the flex, wrapped round Lardo's pose only while he is the creature standing there, so a build
+ * that holds him runs none of it: the moment a turn ends that he stood above the composer for, whichever pose he wears.
+ * Judged here rather than in Lardo because the turn's end can change his pose (a held action becoming a command left
+ * waiting), which mounts him anew while this stays. Unmounted when he leaves, so he never appears just to flex.
  */
-export function useLardoTurnFinished(running: boolean, up: boolean): number | null {
+export function LardoTurns({ running, children }: { readonly running: boolean; readonly children: ReactNode }): ReactNode {
   const [finished, setFinished] = useState<number | null>(null)
-  const turn = useRef({ running, upDuring: running && up })
+  const wasRunning = useRef(running)
   useEffect(() => {
-    const was = turn.current
-    if (running) turn.current = { running, upDuring: (was.running && was.upDuring) || up }
-    else {
-      if (was.running && was.upDuring && up) setFinished(performance.now())
-      turn.current = { running: false, upDuring: false }
-    }
-  }, [running, up])
-  return finished
+    if (wasRunning.current && !running) setFinished(performance.now())
+    wasRunning.current = running
+  }, [running])
+  return <LardoTurnFinished.Provider value={finished}>{children}</LardoTurnFinished.Provider>
 }
 
 /** What Lardo is doing instead of his pose for a moment: a flex when a turn finishes, or a tantrum when clicked. */
@@ -188,16 +184,12 @@ export function Lardo({ pose, agents = 1, playful = true }: { readonly pose: Lar
       })
     } else if (pose === 'held') {
       frame = !still && Math.floor(time * 1.2) % 2 === 1 ? 'vacuumHold' : 'vacuum'
-      // The glass runs as the other creatures' does; held still, it keeps half its sand.
-      const phase = still ? GLASS_PERIOD / 2 : time % GLASS_PERIOD
-      const runs = GLASS_PERIOD - GLASS_FLIP
-      const drain = Math.min(1, phase / runs)
-      const spin = phase > runs ? (phase - runs) / GLASS_FLIP : 0
-      const gone = Math.min(3, Math.floor(drain * 3))
-      glass.current?.setAttribute('transform', `rotate(${spin * 180} ${HOURGLASS_CENTRE})`)
-      topSand.current?.setAttribute('d', sandPath(TOP_ROWS.slice(gone)))
-      bottomSand.current?.setAttribute('d', sandPath(BOTTOM_ROWS.slice(3 - gone)))
-      grain.current?.setAttribute('d', drain < 1 && !still ? grainPath(time) : EMPTY_PATH)
+      // The glass every creature holds; held still, it keeps half its sand.
+      const sand = glassFrame(time, still)
+      glass.current?.setAttribute('transform', sand.turn)
+      topSand.current?.setAttribute('d', sand.top)
+      bottomSand.current?.setAttribute('d', sand.bottom)
+      grain.current?.setAttribute('d', sand.grain)
     } else frame = 'abdominalThigh'
     // Only the poses that travel write a place, as the other creatures do; the rest stand at the track's start.
     if (actor.current) actor.current.style.transform = pose === 'monitoring' || pose === 'working' ? `translateX(${Math.round(x / 2) * 2}px)` : ''

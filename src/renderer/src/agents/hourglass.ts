@@ -17,3 +17,35 @@ export const HOURGLASS_OUTLINE = 'M30 9h7v1h-7z M30 19h7v1h-7z M30 10h1v2h-1z M3
 /** The point the glass turns about in a flip, and a falling grain's column and rows. */
 export const HOURGLASS_CENTRE = '33.5 14.5'
 export const grainPath = (time: number): string => `M33 ${13 + Math.floor(time * 8) % 3}h1v1h-1z`
+
+/** One frame of the glass every creature holds: its turn, the sand in each chamber and the falling grain. */
+export interface GlassFrame {
+  readonly turn: string
+  readonly top: string
+  readonly bottom: string
+  readonly grain: string
+  /** True during the flip, when a creature may glance at it. */
+  readonly spinning: boolean
+}
+
+/**
+ * The glass `time` seconds into its cycle. Held motion keeps a half-run glass: the pose still reads as waiting without a
+ * frame of movement. The rotation only ever runs during the flip, and never carries over: the sand rows live in the
+ * rotated group, so a half turn that outlasted the flip would empty the chamber the reader sees filling, and the sand
+ * would climb. Because the vessel is symmetric, ending a flip at half a turn looks exactly like starting the next cycle
+ * upright, so the full chamber stays where the eye left it.
+ */
+export function glassFrame(time: number, still: boolean): GlassFrame {
+  const phase = still ? GLASS_PERIOD / 2 : time % GLASS_PERIOD
+  const running = GLASS_PERIOD - GLASS_FLIP
+  const drain = Math.min(1, phase / running)
+  const spin = phase > running ? (phase - running) / GLASS_FLIP : 0
+  const gone = Math.min(3, Math.floor(drain * 3))
+  return {
+    turn: `rotate(${spin * 180} ${HOURGLASS_CENTRE})`,
+    top: sandPath(TOP_ROWS.slice(gone)),
+    bottom: sandPath(BOTTOM_ROWS.slice(3 - gone)),
+    grain: drain < 1 && !still ? grainPath(time) : EMPTY_PATH,
+    spinning: spin > 0,
+  }
+}
