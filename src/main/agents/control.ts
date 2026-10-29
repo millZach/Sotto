@@ -790,6 +790,9 @@ export class AgentControl {
   async moveWatcherDraft(from: string, to: string): Promise<boolean> {
     const draft = this.state.threadDrafts?.find(item => item.threadId === from)
     if (!draft || !draft.text.trim() && !draft.attachments.length || this.state.threadDrafts?.some(item => item.threadId === to)) return false
+    // A draft whose send has not failed may yet arrive: copied, it could go twice, so it stays with the last Watcher.
+    if ((this.state.deliveries ?? []).some(item => item.threadId === from && item.draftId === draft.draftId && item.status !== 'failed')
+      || this.outbox.some(item => item.threadId === from && item.draftId === draft.draftId)) return false
     this.putThreadDraft({ ...structuredClone(draft), threadId: to, draftId: randomUUID(), requestId: null, updatedAt: new Date().toISOString() })
     this.discardThreadDraft(from)
     await this.persist(); this.publish()
@@ -803,9 +806,10 @@ export class AgentControl {
     const queued = new Set(this.followupStore.peek().items.filter(item => item.threadId === threadId).map(item => item.draftId))
     return (this.state.deliveries ?? []).some(item => item.threadId === threadId && item.status === 'uncertain' && item.setAside !== true && !queued.has(item.draftId))
   }
-  /** Whether a message of the user's to this thread is being written to its provider now. */
+  /** Whether a message of the user's to this thread is being written to its provider now, from its queue or sent at once. */
   watcherFollowupSending(threadId: string): boolean {
     return this.followupStore.peek().items.some(item => item.threadId === threadId && !item.wakeUp && !item.watcherOperationId && item.status === 'dispatching')
+      || (this.state.deliveries ?? []).some(item => item.threadId === threadId && (item.status === 'queued' || item.status === 'submitting'))
   }
   async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
     const failed = await this.followupStore.cancelWatcher(operationIds)

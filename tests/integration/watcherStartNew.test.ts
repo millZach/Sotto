@@ -8,6 +8,7 @@ import type { ProviderId } from '../../src/shared/agents'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { deferred } from '../fixtures/deferred'
+import { followupStoreOf } from '../fixtures/followupQueue'
 
 /**
  * New Watcher (ADR-0073): a new Watcher on the current one's own provider, model, effort and permission mode, through the
@@ -236,6 +237,35 @@ describe('New Watcher', () => {
     const handover = f.service.readHandover()
     if (handover.status !== 'ok') throw new Error('handover unreadable')
     expect(handover.text).toContain('- Release from main?')
+  })
+
+  it('moves a message that was still being sent at the press once it comes back unsent, to whichever Watcher is current, and its note counts it (#1735)', async () => {
+    const f = await fixture()
+    await f.exchange('Watch the release.', 'Watching it.')
+    const store = followupStoreOf(f.control)
+    // A message to the last Watcher is still being written to its provider when the press's moment ends.
+    const sending = vi.spyOn(f.control, 'watcherFollowupSending').mockReturnValue(false)
+    expect(await f.service.startNew()).toMatchObject({ status: 'ok' })
+    const second = f.service.state().current!.target
+    await store.enqueue({ threadId: f.first.threadId, draftId: randomUUID(), text: 'Late words', attachments: [] })
+    await (store as unknown as { change(update: (state: { items: { text: string; status: string }[] }) => void): Promise<void> }).change(state => {
+      state.items.find(item => item.text === 'Late words')!.status = 'dispatching'
+    })
+    sending.mockImplementation(threadId => threadId === f.first.threadId)
+    ;(f.service as unknown as { lateQueue: unknown[] }).lateQueue = [f.first]
+    // Another replacement comes before it settles: the message still goes to the Watcher that is current when it does.
+    await f.exchange('Then the notes.', 'On it.')
+    expect(await f.service.startNew()).toMatchObject({ status: 'ok' })
+    const third = f.service.state().current!.target
+    expect(third).not.toEqual(second)
+    // It fails to send, and comes back to the last Watcher's queue, unsent.
+    await (store as unknown as { change(update: (state: { items: { text: string; status: string }[] }) => void): Promise<void> }).change(state => {
+      state.items.find(item => item.text === 'Late words')!.status = 'failed'
+    })
+    sending.mockReturnValue(false)
+    await f.control.commandShell({ type: 'observe-threads', threadIds: [third.threadId] })
+    await vi.waitFor(() => expect(store.peek().items.find(item => item.text === 'Late words')).toMatchObject({ threadId: third.threadId, status: 'paused' }))
+    await vi.waitFor(() => expect(f.service.state().carried).toMatchObject({ moved: 1 }))
   })
 
   it('refuses when Watcher’s model is not ready or its permission mode is not the one in force', async () => {

@@ -505,7 +505,7 @@ export class WatcherService implements WatcherControlHooks {
   /** What the last replacement carried over for the new Watcher's note and handover (#1735), while that one is current. */
   private carried: (WatcherCarried & { readonly to: WatcherThreadTarget; readonly room: WatcherRoomState['carried'] }) | null = null
   /** A message that was still being written to a replaced Watcher when its replacement finished (#1735). */
-  private lateQueue: { readonly from: WatcherThreadTarget; readonly to: WatcherThreadTarget } | null = null
+  private lateQueue: readonly WatcherThreadTarget[] = []
   /** What a replacement found before its new Watcher was made, until it is, for a creation finished on a second try (#1735). */
   private preparedFor: { readonly replaces: WatcherThreadTarget; readonly prepared: Pick<WatcherCarried, 'questions' | 'unconfirmed'> } | null = null
   private handoverOffer: { readonly source: WatcherIdentity; readonly to: WatcherThreadTarget; readonly counts: HandoverCounts
@@ -2677,8 +2677,9 @@ export class WatcherService implements WatcherControlHooks {
     const movedDrafts = await this.options.control.moveWatcherQueue(previous.target.threadId, to.threadId).catch(() => [])
     const moved = movedDrafts.length
     await this.unlinkMoved(previous.target, movedDrafts)
-    // A message still being written to the last Watcher after the press's moment moves once it settles, if it did not go.
-    this.lateQueue = this.options.control.watcherFollowupSending(previous.target.threadId) ? { from: previous.target, to } : null
+    // A message still being written to the last Watcher after the press's moment moves once it settles, if it did not go,
+    // to whichever Watcher is current then, so one still settling from an earlier replacement is kept too.
+    if (this.options.control.watcherFollowupSending(previous.target.threadId)) this.lateQueue = [...this.lateQueue, previous.target]
     // A reservation is a thread Watcher started that is still working (#1183), one per thread, so this reads no history.
     const away = new Map(this.view().reservations.filter(item => item.target.hostId !== this.hostId() && !this.adopts(item.target.hostId))
       .map(item => [key(item.target), item.target]))
@@ -2687,9 +2688,15 @@ export class WatcherService implements WatcherControlHooks {
       host: (this.machineName(target.hostId) ?? 'another computer').slice(0, 200) }))
     const byHost = new Map<string, string[]>()
     for (const row of cannotStop) { const titles = byHost.get(row.host); if (titles) titles.push(row.title); else byHost.set(row.host, [row.title]) }
-    const said = questions.length > 0 || moved > 0 || unconfirmed || draftMoved || cannotStop.length > 0
-    this.carried = { to, questions, moved, unconfirmed, draftMoved, cannotStop, room: said ? Object.freeze({ questionClosed: questions.length > 0, moved, unconfirmed, draftMoved,
-      cannotStop: [...byHost].slice(0, 100).map(([host, titles]) => ({ host, count: Math.min(titles.length, 1_000),
+    this.setCarried({ to, questions, moved, unconfirmed, draftMoved, cannotStop })
+  }
+  /** What carried over, and the note's form of it, made once each time it changes rather than on every publish. */
+  private setCarried(carried: WatcherCarried & { readonly to: WatcherThreadTarget }): void {
+    const byHost = new Map<string, string[]>()
+    for (const row of carried.cannotStop) { const titles = byHost.get(row.host); if (titles) titles.push(row.title); else byHost.set(row.host, [row.title]) }
+    const said = carried.questions.length > 0 || carried.moved > 0 || carried.unconfirmed || carried.draftMoved === true || carried.cannotStop.length > 0
+    this.carried = { ...carried, room: said ? Object.freeze({ questionClosed: carried.questions.length > 0, moved: Math.min(carried.moved, 100), unconfirmed: carried.unconfirmed,
+      draftMoved: carried.draftMoved === true, cannotStop: [...byHost].slice(0, 100).map(([host, titles]) => ({ host, count: Math.min(titles.length, 1_000),
         titles: titles.slice(0, 20).map(title => title.slice(0, 200) || 'Untitled thread') })) }) : undefined }
   }
   /**
@@ -2708,12 +2715,22 @@ export class WatcherService implements WatcherControlHooks {
       }
     })
   }
-  /** Moves a message that was still being written to a replaced Watcher, once it is not, if it did not go (`lateQueue`). */
+  /**
+   * Moves a message that was still being written to a replaced Watcher, once it is not, if it did not go (`lateQueue`), to
+   * the current Watcher, whose note and handover then count it.
+   */
   private followLateQueue(): void {
-    const late = this.lateQueue
-    if (!late || this.options.control.watcherFollowupSending(late.from.threadId)) return
-    this.lateQueue = null
-    void this.options.control.moveWatcherQueue(late.from.threadId, late.to.threadId).then(moved => this.unlinkMoved(late.from, moved)).catch(() => undefined)
+    const settled = this.lateQueue.filter(from => !this.options.control.watcherFollowupSending(from.threadId))
+    const current = this.view().current?.target
+    if (!settled.length || !current) return
+    this.lateQueue = this.lateQueue.filter(from => !settled.includes(from))
+    for (const from of settled) void this.options.control.moveWatcherQueue(from.threadId, current.threadId).then(async moved => {
+      await this.unlinkMoved(from, moved)
+      const carried = this.carried
+      if (moved.length && carried && key(carried.to) === key(current)) {
+        this.setCarried({ ...carried, moved: carried.moved + moved.length, unconfirmed: carried.unconfirmed || moved.some(item => item.unconfirmed) }); this.publish()
+      }
+    }).catch(() => undefined)
   }
   private creationPermission(model: AgentModel) {
     const runtimeMode = this.record().lastRuntimeMode ?? 'approval-required'
@@ -3015,7 +3032,7 @@ export class WatcherService implements WatcherControlHooks {
     })
   }
   observe(snapshot: AgentHostSnapshot, knownUserMessages: Pick<ReadonlySet<string>, 'has'>, changed?: HostThreadsChange): void {
-    if (this.lateQueue) this.followLateQueue()
+    if (this.lateQueue.length) this.followLateQueue()
     // This pass runs on every update. It reads the record without copying it, asks what the record says of each thread from
     // an index built once per record, and changes the record at most once, only when something changed. The record grows
     // with every prompt and wake-up Watcher has had; copying, comparing or walking all of it for each thread made Watcher
@@ -5147,7 +5164,7 @@ ${operation.draftId}`)
     const waiting = [...this.heldChecks.values()].flatMap(check => check.waiting ? [check.waiting] : [])
     this.heldChecks.clear(); this.checkOf.clear(); clearTimeout(this.checkTimer)
     this.lettingGoChecks = Promise.all(waiting.map(check => this.releaseMove(check.landed))).then(() => undefined)
-    this.closed = true; clearTimeout(this.settleTimer); this.settleTimer = undefined; this.handoverOffer = null; this.carried = null; this.preparedFor = null; this.lateQueue = null; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear()
+    this.closed = true; clearTimeout(this.settleTimer); this.settleTimer = undefined; this.handoverOffer = null; this.carried = null; this.preparedFor = null; this.lateQueue = []; this.overtakenHandovers.clear(); this.remoteOff?.(); clearTimeout(this.remoteTimer); this.remotePending.clear(); this.remoteFailures.clear(); this.remoteGuards.clear(); this.remoteProgress.clear(); this.pendingPromptTurns.clear(); this.wakes.close(); this.unsubscribe(); this.listeners.clear(); this.confirmations.clear(); this.pages.clear(); this.copyChoices.clear()
   }
   /** Settles once `close` has let go of the branches its waiting checks would have started from, those still taking their snapshot included. */
   drained(): Promise<void> { return Promise.all([this.lettingGoChecks, ...this.snapshotting]).then(() => undefined) }
