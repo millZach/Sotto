@@ -13,7 +13,8 @@ import type { HostPhonesAdministration, HostPhonesAnswer, HostTailnetAnswer } fr
  * A headless host's phone access (ADR-0050): the desktop's own phone access, run here over this host's service and
  * its one pairing store, so the iPhone reaches this host's threads through Tailscale Serve on this machine. The
  * `phoneAccess` setting lives in this host's settings, so the host puts Serve back each time it starts, on the
- * loopback port it remembers, and takes it away when it stops.
+ * loopback port it remembers while that port is free and on another when something else holds it, and takes it away
+ * when it stops. Either way Serve stays on the same Serve port, so phones keep the host's address.
  *
  * Its listener is the host's tailnet listener, which carries paired desktops' tailnet connections too (ADR-0053). The
  * host's own `tailnetConnections` setting keeps it, and Serve, up for them with phone access off. The launch script

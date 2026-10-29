@@ -136,6 +136,22 @@ export async function verifyPackagedMemoryStore(target) {
       return { recognizer: typeof sherpa.OfflineRecognizer?.createAsync === 'function', onnxruntime: String(sherpa.onnxruntimeVersion ?? '') }
     })
     if (speechEngine?.recognizer !== true) throw new Error('packaged speech engine did not load')
+    // Dictation runs Parakeet in a utility process of its own (#1787). The shipped helper, started on a folder with no
+    // model, answers that the model would not load only once sherpa-onnx-node has loaded inside it from the archive.
+    const speechHelper = await application.evaluate(({ app, utilityProcess }, folder) => {
+      const { join } = process.getBuiltinModule('node:path')
+      return new Promise((resolveProbe, rejectProbe) => {
+        const helper = utilityProcess.fork(join(app.getAppPath(), 'out', 'main', 'parakeetHelper.js'), [folder], { serviceName: 'Sotto speech model', stdio: 'ignore' })
+        const timeout = globalThis.setTimeout(() => { helper.kill(); rejectProbe(new Error('packaged speech helper timed out')) }, 20000)
+        helper.on('message', answer => {
+          globalThis.clearTimeout(timeout)
+          helper.kill()
+          resolveProbe({ answer: typeof answer?.error === 'string' ? answer.error : answer?.ready === true ? 'ready' : 'unknown' })
+        })
+        helper.on('exit', () => { globalThis.clearTimeout(timeout); rejectProbe(new Error('packaged speech helper stopped without answering')) })
+      })
+    }, join(probeRoot, 'no-speech-model'))
+    if (speechHelper?.answer !== 'model') throw new Error(`packaged speech helper did not load sherpa-onnx (${speechHelper?.answer})`)
     // Invoke the shipped main graph through the debugger; installed startup
     // never accepts a probe mode from the environment.
     const result = await Promise.race([application.evaluate(({ app }, root) => {
@@ -152,7 +168,7 @@ export async function verifyPackagedMemoryStore(target) {
         result.migrationVersion !== latestMigrationVersion || result.matchedId !== 'memory-probe' || result.fts5 !== true) {
       throw new Error('invalid store evidence')
     }
-    return { ...result, terminal, speechEngine }
+    return { ...result, terminal, speechEngine, speechHelper }
   } catch (error) {
     fail(`memory store probe failed: ${error.message}; stderr=${stderr}; stdout=${stdout.slice(-4000)}`)
   } finally {
@@ -314,6 +330,7 @@ export async function verifyPackagedResources(input, options = {}) {
     'out/main/threadStoreWorker.js',
     'out/main/usageStoreWorker.js',
     'out/main/hangWatchdogWorker.js',
+    'out/main/parakeetHelper.js',
     'out/main/external-dependencies.json',
     'out/preload/index.js',
     'out/preload/visual.js',

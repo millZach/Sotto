@@ -115,6 +115,8 @@ export default defineConfig({
       gitLauncherWorker: resolve(__dirname, 'src/main/agents/gitLauncherWorker.ts'),
       // Main's hang watch runs on this worker thread, which can see main stop when main cannot (`hangWatchdog.ts`).
       hangWatchdogWorker: resolve(__dirname, 'src/main/performance/hangWatchdogWorker.ts'),
+      // Parakeet runs in this utility process, so letting go of the model gives its memory back (`parakeetHelper.ts`).
+      parakeetHelper: resolve(__dirname, 'src/main/asr/parakeetHelper.ts'),
     } } },
     // electron-updater is a devDependency that is compiled into the main chunk,
     // exactly like zod is compiled into the sandboxed preload: production

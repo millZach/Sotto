@@ -169,8 +169,10 @@ function CheckReplyTray({ id, delegation, names, opener, reply, onClose, onOpenC
     return () => { window.removeEventListener('resize', fit); scroller.style.removeProperty('padding-bottom') }
   }, [opener, scroller, reply])
 
-  // Escape closes it wherever the focus is in this transcript, before the Worked for fold it sits in.
-  useEffect(() => {
+  // Escape closes it wherever the focus is in this transcript, before the Worked for fold it sits in. It listens from the
+  // commit that draws the tray, as the focus moves into it: a passive effect runs a task later, and an Escape in that gap
+  // went to the fold, which closed the turn, and the tray with it, and kept the focus (#1776).
+  useLayoutEffect(() => {
     const transcript = opener.closest('.thread-transcript')
     const onKey = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape' || event.defaultPrevented || event.isComposing) return

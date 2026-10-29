@@ -21,13 +21,14 @@ afterEach(() => vi.restoreAllMocks())
 const evidence = { sqliteVersion: '3.51.2', migrationVersion: latestMigrationVersion, matchedId: 'memory-probe', fts5: true }
 const terminal = { modules: '148', napi: '10', exitCode: 0, output: 'SOTTO_PTY_PACKAGE_OK' }
 const speechEngine = { recognizer: true, onnxruntime: '1.28.2' }
+const speechHelper = { answer: 'model' }
 function launchResult(output, exitCode = 0) {
   const child = new EventEmitter()
   child.stdout = new PassThrough()
   child.stderr = new PassThrough()
   const application = {
     process: () => child,
-    evaluate: vi.fn().mockResolvedValueOnce(terminal).mockResolvedValueOnce(speechEngine).mockImplementationOnce(async () => {
+    evaluate: vi.fn().mockResolvedValueOnce(terminal).mockResolvedValueOnce(speechEngine).mockResolvedValueOnce(speechHelper).mockImplementationOnce(async () => {
       if (exitCode !== 0) throw new Error('packaged process failed')
       return JSON.parse(output)
     }),
@@ -40,7 +41,7 @@ function launchResult(output, exitCode = 0) {
 describe('packaged memory probe', () => {
   it('launches the packaged application with an isolated profile, collects evidence and cleans up', async () => {
     launchResult(`${JSON.stringify(evidence)}\n`)
-    await expect(verifyPackagedMemoryStore('release/win-unpacked')).resolves.toEqual({ ...evidence, terminal, speechEngine })
+    await expect(verifyPackagedMemoryStore('release/win-unpacked')).resolves.toEqual({ ...evidence, terminal, speechEngine, speechHelper })
     const options = electron.launch.mock.calls.at(-1)[0]
     expect(options.env.ELECTRON_RUN_AS_NODE).toBeUndefined()
     expect(options.env.SOTTO_MEMORY_PROBE).toBeUndefined()
@@ -53,7 +54,7 @@ describe('packaged memory probe', () => {
   it('invokes the probe exported by the shipped main entry rather than checkout code', async () => {
     const application = launchResult(JSON.stringify(evidence))
     await verifyPackagedMemoryStore('release/win-unpacked')
-    const [evaluate, root] = application.evaluate.mock.calls[2]
+    const [evaluate, root] = application.evaluate.mock.calls[3]
     const probe = vi.fn(() => evidence)
     const requireApp = vi.fn(path => path === './package.json' ? { main: 'out/main/index.js' } : { probeMemoryStore: probe })
     const builtin = process.getBuiltinModule.bind(process)
@@ -99,6 +100,29 @@ describe('packaged memory probe', () => {
     expect(application.close).toHaveBeenCalledOnce()
   })
 
+  it('fails verification and closes the app when the packaged speech helper does not load sherpa-onnx', async () => {
+    const application = launchResult(JSON.stringify(evidence))
+    application.evaluate.mockReset().mockResolvedValueOnce(terminal).mockResolvedValueOnce(speechEngine).mockResolvedValueOnce({ answer: 'module' })
+    await expect(verifyPackagedMemoryStore('release/win-unpacked')).rejects.toThrow(/speech helper did not load sherpa-onnx \(module\)/)
+    expect(application.close).toHaveBeenCalledOnce()
+  })
+
+  it('starts the packaged speech helper in a utility process on a folder with no model', async () => {
+    const application = launchResult(JSON.stringify(evidence))
+    await verifyPackagedMemoryStore('release/win-unpacked')
+    const [evaluate, folder] = application.evaluate.mock.calls[2]
+    const { EventEmitter } = await import('node:events')
+    const helper = Object.assign(new EventEmitter(), { kill: vi.fn() })
+    const fork = vi.fn(() => helper)
+    const answered = evaluate({ app: { getAppPath: () => 'shipped-app' }, utilityProcess: { fork } }, folder)
+    helper.emit('message', { error: 'model' })
+    await expect(answered).resolves.toEqual(speechHelper)
+    const { join } = process.getBuiltinModule('node:path')
+    expect(fork).toHaveBeenCalledWith(join('shipped-app', 'out', 'main', 'parakeetHelper.js'), [folder], expect.objectContaining({ stdio: 'ignore' }))
+    expect(folder).toMatch(/no-speech-model$/)
+    expect(helper.kill).toHaveBeenCalledOnce()
+  })
+
   it('loads the speech engine from the packaged app rather than the checkout', async () => {
     const application = launchResult(JSON.stringify(evidence))
     await verifyPackagedMemoryStore('release/win-unpacked')
@@ -123,7 +147,7 @@ describe('packaged memory probe', () => {
       const { verifyPackagedMemoryStore } = await import('../../../scripts/verify-packaged-resources.mjs')
       const next = { ...evidence, migrationVersion: latestMigrationVersion + 1 }
       launchResult(JSON.stringify(next))
-      await expect(verifyPackagedMemoryStore('release/win-unpacked')).resolves.toEqual({ ...next, terminal, speechEngine })
+      await expect(verifyPackagedMemoryStore('release/win-unpacked')).resolves.toEqual({ ...next, terminal, speechEngine, speechHelper })
       launchResult(JSON.stringify(evidence))
       await expect(verifyPackagedMemoryStore('release/win-unpacked')).rejects.toThrow(/invalid store evidence/)
     } finally {

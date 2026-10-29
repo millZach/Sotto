@@ -74,24 +74,44 @@ function sameBounds(a: BrowserBounds | null, b: BrowserBounds | null): boolean {
 export class BrowserStore {
   private tasksSnapshot: readonly BrowserTask[] = []
   private readonly taskThreads = new Set<string>()
+  /** Threads whose tasks are still to be read, oldest first, and whether a read is on its way. */
+  private readonly taskQueue: string[] = []
+  private readingTasks = false
   taskSnapshot = (): readonly BrowserTask[] => this.tasksSnapshot
-  /** Subscribe before Tools opens, so background browser work can introduce itself in the player. */
+  /**
+   * Subscribe before Tools opens, so background browser work can introduce itself in the player. The players watch
+   * every local thread, so their tasks are read one thread at a time: read all at once, they filled main's browser and
+   * Files limits and the pane's own list was refused as busy (#1788).
+   */
   watchTasks(bridge: BrowserBridge | undefined, threadIds: readonly string[]): void {
     if (!bridge) return
     this.listen(bridge)
-    const tasks = bridge.tasks
-    if (!tasks) return
+    if (!bridge.tasks) return
     for (const threadId of threadIds) {
       if (this.taskThreads.has(threadId)) continue
       this.taskThreads.add(threadId)
-      // A bridge that refuses another host's thread throws before the promise exists. That must not
-      // skip the rest of the list or unmount the page, and the thread must not stay marked watched.
-      let listed: Promise<ToolsResult<readonly BrowserTask[]>>
-      try { listed = settle(Promise.resolve(tasks({ threadId }))) } catch { this.taskThreads.delete(threadId); continue }
-      void listed.then(result => {
-        if (!result.ok) { this.taskThreads.delete(threadId); return }
+      this.taskQueue.push(threadId)
+    }
+    void this.readTasks(bridge)
+  }
+  private async readTasks(bridge: BrowserBridge): Promise<void> {
+    if (this.readingTasks) return
+    this.readingTasks = true
+    try {
+      for (let threadId = this.taskQueue.shift(); threadId !== undefined; threadId = this.taskQueue.shift()) {
+        // A bridge that refuses another host's thread throws before the promise exists. That must not
+        // skip the rest of the list or unmount the page, and the thread must not stay marked watched.
+        let listed: Promise<ToolsResult<readonly BrowserTask[]>>
+        try { listed = settle(Promise.resolve(bridge.tasks({ threadId }))) } catch { this.taskThreads.delete(threadId); continue }
+        const result = await listed
+        // Another bridge took over meanwhile and queued its own threads; the answer was for the old one.
+        if (this.subscribed !== bridge) return
+        if (!result.ok) { this.taskThreads.delete(threadId); continue }
         for (const task of result.value) this.receiveTask(task)
-      })
+      }
+    } finally {
+      this.readingTasks = false
+      if (this.taskQueue.length > 0 && this.subscribed) void this.readTasks(this.subscribed)
     }
   }
   async controlTask(bridge: BrowserBridge | undefined, task: BrowserTask, control: 'pause' | 'resume'): Promise<string | null> {
@@ -185,10 +205,19 @@ export class BrowserStore {
   async activate(bridge: BrowserBridge | undefined, threadId: string): Promise<void> {
     if (!this.threads.has(threadId)) this.setThread({ threadId, workspace: null, status: 'loading', error: null, pages: [], activePageId: null, busy: false, notice: null, placementProblem: null, grant: null })
     if (!bridge) { this.patch(threadId, { status: 'error', error: unavailable }); return }
+    // An earlier list's failure, such as a player's busy answer before Tools opened, is not shown while this one asks.
+    if (this.threads.get(threadId)!.status === 'error') this.patch(threadId, { status: 'loading', error: null })
     this.listen(bridge)
     const token = (this.listTokens.get(threadId) ?? 0) + 1
     this.listTokens.set(threadId, token)
-    const result = await settle(bridge.list({ threadId }))
+    let result = await settle(bridge.list({ threadId }))
+    // Busy is main's crowd of the moment, not a problem with this thread: ask once more before saying so.
+    if (!result.ok && result.error.code === 'busy' && this.listTokens.get(threadId) === token) {
+      await busyPause()
+      if (this.listTokens.get(threadId) !== token) return
+      // A bridge that has given way to another since is not asked again.
+      if (!this.gaveWay(bridge)) result = await settle(bridge.list({ threadId }))
+    }
     if (this.listTokens.get(threadId) !== token) return
     const latest = this.threads.get(threadId)!
     if (!result.ok) { this.patch(threadId, { status: 'error', error: result.error }); return }
@@ -285,11 +314,20 @@ export class BrowserStore {
     this.mounted.set(slot, { bridge, ...target, bounds, request })
     // A moving panel can report a new rectangle every frame, faster than main validates its folder.
     // Keep only the newest rectangle while that validation is pending; hides still go through immediately.
-    const place = (): void => {
+    const place = (retried = false): void => {
       if (this.mounted.get(slot)?.request !== request) return
       this.placementPending.add(slot)
       void settle(bridge.mount({ ...target, bounds })).then(result => {
         if (result.ok || this.mounted.get(slot)?.request !== request) return
+        // As with the list: a busy main is asked once more, quietly, unless a newer rectangle comes first.
+        if (result.error.code === 'busy' && !retried) {
+          void busyPause().then(() => {
+            // A bridge that has given way to another is not asked again; the page's next rectangle asks the new one.
+            if (!this.gaveWay(bridge)) place(true)
+            else if (this.mounted.get(slot)?.request === request) this.mounted.delete(slot)
+          })
+          return
+        }
         // Main may still draw the page where an earlier request put it, over the explanation.
         this.mounted.delete(slot)
         void settle(bridge.mount({ ...target, bounds: null }))
@@ -335,11 +373,14 @@ export class BrowserStore {
     this.lastSeen.set(threadId, next)
   }
 
+  /** Whether another bridge has taken over this store's events since `bridge` was asked. */
+  private gaveWay(bridge: BrowserBridge): boolean { return this.subscribed !== null && this.subscribed !== bridge }
+
   private listen(bridge: BrowserBridge): void {
     if (this.subscribed === bridge) return
     this.unsubscribe?.()
     this.subscribed = bridge
-    this.taskThreads.clear()
+    this.taskThreads.clear(); this.taskQueue.length = 0
     this.unsubscribe = bridge.onEvent(event => this.receive(event))
   }
 
@@ -436,6 +477,10 @@ function placementReason(error: ToolsError): LaterWords {
     default: return errorWords(error)
   }
 }
+
+/** How long the pane waits before asking a busy main again: long enough for a crowd of quick reads to clear. */
+const BUSY_RETRY_MS = 400
+const busyPause = (): Promise<void> => new Promise(resolve => setTimeout(resolve, BUSY_RETRY_MS))
 
 async function settle<T>(request: Promise<ToolsResult<T>>): Promise<ToolsResult<T>> {
   try { return await request } catch { return { ok: false, error: ownError('unavailable', msg`Sotto did not answer.`) } }

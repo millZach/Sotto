@@ -14,7 +14,7 @@ import { PlacementRefusal, placeWorker, type PlacementAsk, type PlacementSources
 import { branchStartWords, systemClockTime, type BranchStartReceipt } from '../../shared/branchMoves'
 import type { DesktopBranchMoves } from './branchMoves'
 import { rebuildReservations } from './watcherRecords'
-import { archivableWatcherRequests, archivedTargetKey, closedWatcherRequests, NOTHING_ARCHIVED, WATCHER_ARCHIVE_BATCH, WATCHER_LIVE_CLOSED_REQUESTS, type WatcherArchived } from './watcherArchive'
+import { archivableWatcherRequests, archivedTargetKey, closedWatcherRequests, NOTHING_ARCHIVED, returnArchivedWork, WATCHER_ARCHIVE_BATCH, WATCHER_LIVE_CLOSED_REQUESTS, type WatcherArchived } from './watcherArchive'
 import { isWatcherWorkActive, WATCHER_QUIET_MS, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { CHECK_HOLDS_THROUGH_BACKGROUND, checkWaitingWords, WATCHER_CHECK_STOP, WATCHER_CHECK_STOP_AWAY, type CheckQueue } from './checkQueue'
 import { checkInstallFailedWords, checkInstallWords } from './checkWorktree'
@@ -25,7 +25,7 @@ import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_
   type WatcherToolInput, type WatcherToolName, type WatcherToolOutput, WATCHER_MACHINES_MAX, type WatcherKeptState,
   MACHINE_FACTS_OLDER, MACHINE_FACTS_UNREAD, MACHINE_NOT_CONNECTED, type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPendingSettle, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
   type WatcherWaitingOnUser } from '../../shared/watcher'
-import { machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
+import { MACHINE_START_SETTLES_MS, machineHeadroom, machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
@@ -199,6 +199,26 @@ function alignGeneration(record: WatcherRecord, watch: WatcherStandingWatch): nu
   }
   return generation
 }
+/**
+ * Whether a paired desktop's request here was made by an older Watcher of that desktop than `master` (#1735): a newer
+ * Watcher takes such requests over when it first reads, and one brought back from Watcher's archive (#1759) moves as it does.
+ */
+const madeByOlderWatcher = (request: Readonly<WatcherRequest>, master: WatcherIdentity, clientId: string): boolean =>
+  request.remoteOrigin?.clientId === clientId && request.remoteOrigin.master.target.hostId === master.target.hostId
+  && request.remoteOrigin.master.createdAt < master.createdAt
+/** A paired desktop on one master computer, as `adoptedBy` names it. */
+const desktopKey = (clientId: string, masterHostId: string): string => JSON.stringify([clientId, masterHostId])
+/** A paired desktop's Watcher as `adopted` names it. */
+const adoptionKey = (clientId: string, master: WatcherIdentity): string => JSON.stringify([clientId, master.target.hostId, master.creationOperationId])
+/** The record's part of a paired desktop's projection, and the record it was worked out from (`remoteProjection`). */
+interface ProjectedWork {
+  readonly record: Readonly<WatcherRecord>
+  readonly requests: WatcherHostProjection['requests']
+  readonly operations: WatcherHostProjection['operations']
+  readonly standingWatches: NonNullable<WatcherHostProjection['standingWatches']>
+  readonly targets: readonly WatcherThreadTarget[]
+  readonly revision: string
+}
 function withoutOutcome(operation: WatcherOperation): WatcherOperation {
   const copy = { ...operation }
   for (const field of OUTCOME_FIELDS) delete copy[field]
@@ -249,7 +269,12 @@ type RoleReceipt = { readonly id: WorkerKind; readonly named: RoleField[]; reado
  * A start placed before admission (#1032): the call as Watcher made it, which its retries are matched by, the start as it
  * goes, and where its receipt says it went.
  */
-type PlacedStart = { readonly original: WatcherToolInput<'start_thread'>; readonly input: WatcherToolInput<'start_thread'>; readonly placement: WorkerPlacementReceipt }
+type PlacedStart = { readonly original: WatcherToolInput<'start_thread'>; readonly input: WatcherToolInput<'start_thread'>; readonly placement: WorkerPlacementReceipt
+  /**
+   * Called with the start's target once its reservation is recorded, or once it is found a retry of one already
+   * recorded (`retry`), which lets the next start be placed (#1694).
+   */
+  readonly admitted?: (target: WatcherThreadTarget, retry: boolean, operationId: string) => void }
 /** `base` replaces this computer's new-thread default; `paired` narrows it. */
 type PermissionLimits = { readonly base?: AgentRuntimeMode; readonly paired?: AgentRuntimeMode }
 const ROLE_STARTS_KEPT = 500
@@ -372,7 +397,9 @@ interface RecalledRoom {
  * A start Watcher holds a reservation for, and whether it still counts as placed: its first prompt is still to go
  * (`queued` or `dispatching`), or a paired host did not answer it in time and may yet start it (`timedOut`).
  */
-interface ReservedStart { readonly target: WatcherThreadTarget; readonly operationId: string; readonly notYetSent: boolean }
+interface ReservedStart { readonly target: WatcherThreadTarget; readonly operationId: string; readonly notYetSent: boolean
+  /** Its first prompt definitely failed, so nothing was started for it (#1694). */
+  readonly failed: boolean }
 /**
  * The record's reserved starts. Operations are only ever appended, so where a reservation's operation sits holds for as
  * long as the reservation does: `positions` keeps it from one record to the next, and each record checks a known
@@ -400,9 +427,19 @@ function reservedStarts(record: Readonly<WatcherRecord>, positions: Map<string, 
     if (!operation) { positions.delete(operationId); continue }
     if (operation.deliveryState === 'accepted' || operation.deliveryState === 'failed') timedOut.delete(operationId)
     if (operation.action === 'start') starts.push({ target, operationId, notYetSent: operation.deliveryState === 'queued'
-      || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain' && timedOut.has(operationId) })
+      || operation.deliveryState === 'dispatching' || operation.deliveryState === 'uncertain' && timedOut.has(operationId), failed: operation.deliveryState === 'failed' })
   }
   return starts
+}
+
+/**
+ * Whether a start's call answered that nothing started: its receipt says its first prompt failed (#1694). A refusal
+ * without that, such as a host's timeout with an uncertain receipt, a call that threw, or an uncertain one may yet have
+ * started, so none is taken as failed.
+ */
+function definitelyFailedStart(result: unknown): boolean {
+  if (typeof result !== 'object' || result === null) return false
+  return (result as { receipt?: { deliveryState?: unknown } }).receipt?.deliveryState === 'failed'
 }
 
 export class WatcherService implements WatcherControlHooks {
@@ -499,6 +536,19 @@ export class WatcherService implements WatcherControlHooks {
   private readonly remoteGuards = new Map<string, () => void>()
   /** The paired desktops and Watchers whose older requests this run already moved to them (#1735). */
   private readonly adopted = new Set<string>()
+  /**
+   * Paired desktops' requests this run found stopped in Watcher's archive (#1759), as archived: a Stop the desktop that
+   * made one sends again changes nothing, once its identity is checked as the record's would be. Forgotten when Keep local
+   * history changes.
+   */
+  private readonly archivedStops = new Map<string, Readonly<WatcherRequest>>()
+  /** The newest Watcher of each paired desktop that took its older ones' requests over this run (#1735), by `desktopKey`. */
+  private readonly adoptedBy = new Map<string, WatcherIdentity>()
+  /**
+   * What each paired desktop's Watcher is shown of the record (`remoteProjection`), worked out once per record (#1759): a
+   * host builds the projection with every shell it pushes that desktop, many times a second while a thread streams.
+   */
+  private readonly projectedWork = new Map<string, ProjectedWork>()
   /** Whether each paired desktop may answer on this host, as its latest admission's socket says (ADR-0004). */
   private readonly remoteAnswers = new Map<string, () => boolean>()
   private readonly pendingPromptTurns = new Map<string, { watcher: WatcherThreadTarget; messageId: string; headBefore: string | null }>()
@@ -735,7 +785,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** The line a Watcher turn's note carries after a compaction, until Watcher reads its state back (#1189). */
   stateNote(): string | undefined { this.lookAtState(); return this.stateOwed ? WATCHER_COMPACTED_NOTE : undefined }
-  privacyChanged(): Promise<void> { return this.kept.privacyChanged() }
+  privacyChanged(): Promise<void> { this.archivedStops.clear(); return this.kept.privacyChanged() }
   /** A copy of Watcher's record, for a caller that changes what it reads before saving it. */
   private recordCopy(): WatcherRecord { return this.options.control.watcherRecord() }
   /**
@@ -1360,14 +1410,16 @@ export class WatcherService implements WatcherControlHooks {
         : others().find(host => host.hostId === hostId)?.origins && this.remote?.projectOrigins ? this.remote.projectOrigins(hostId) : undefined,
       setUp: async (hostId, request) => hostId === local ? this.options.setUpProject?.(request)
         : others().find(host => host.hostId === hostId)?.setUp && this.remote?.setUpProject ? this.remote.setUpProject(hostId, request) : undefined,
-      // How busy a machine is now, as list_machines says it (#1311); a machine that does not say reads null and is never chosen.
-      load: async hostId => {
+      // A machine's headroom now, as list_machines says it (#1694), counting every start on its way there at any moment of
+      // the read, as list_machines does (`placedNotStartedWith`). A machine that does not say reads null and is never chosen.
+      headroom: async hostId => {
         try {
+          const before = this.startsNotYetSentOn(hostId)
           const report = hostId === local ? await this.options.machineFacts?.()
             : others().find(host => host.hostId === hostId)?.facts && this.remote?.machineFacts ? await this.remote.machineFacts(hostId) : undefined
           if (!report) return null
           const states = machineLoadStates(report.load ?? null, report.facts.totalMemoryBytes, Date.now())
-          return { cpu: states.cpu, memory: states.memory, cpuBusyPercent: report.load?.cpuBusyPercent ?? null }
+          return { headroom: this.headroomOf(report, hostId, [...before, ...this.startsNotYetSentOn(hostId)]), busy: states.cpu === 'busy', short: states.memory === 'short' }
         } catch { return null }
       },
     }
@@ -1921,10 +1973,11 @@ export class WatcherService implements WatcherControlHooks {
     const closed = closedWatcherRequests(record)
     if (closed < Math.max(WATCHER_LIVE_CLOSED_REQUESTS + WATCHER_ARCHIVE_BATCH, this.archiveFloor)) return
     const retains = (operation: Readonly<WatcherOperation>): boolean => this.retainsOperation(operation)
-    const ids = archivableWatcherRequests(record, retains)
+    const remoteGoes = this.options.historyEnabled()
+    const ids = archivableWatcherRequests(record, retains, remoteGoes)
     if (ids.length < WATCHER_ARCHIVE_BATCH) { this.archiveFloor = closed + WATCHER_ARCHIVE_BATCH - ids.length; return }
     this.archiveFloor = 0
-    this.archiving = this.options.control.archiveWatcherWork(ids, () => archivableWatcherRequests(this.view(), retains))
+    this.archiving = this.options.control.archiveWatcherWork(ids, () => archivableWatcherRequests(this.view(), retains, this.options.historyEnabled()))
       .catch(() => 0)
       .finally(() => { this.archiving = undefined; this.archiveWhenDue() })
   }
@@ -1959,7 +2012,7 @@ export class WatcherService implements WatcherControlHooks {
    * Archived work by ID (#1759). The archive's index names it, so a batch that cannot be read refuses the call rather than
    * answer as if the work were never done: a retry is never run again for want of its receipt.
    */
-  private async readArchive(ids: { readonly requests?: readonly string[]; readonly operations?: readonly string[] }): Promise<WatcherArchived> {
+  private async readArchive(ids: { readonly requests?: readonly string[]; readonly operations?: readonly string[]; readonly turns?: boolean }): Promise<WatcherArchived> {
     try { return await this.options.control.archivedWatcherWork()!.read(ids) }
     catch { refuse('HISTORY_UNAVAILABLE', 'Watcher’s saved record of this earlier work could not be read. Nothing was sent. Try again, or restart Sotto if it persists.', true) }
   }
@@ -2585,6 +2638,8 @@ export class WatcherService implements WatcherControlHooks {
 
   async recover(): Promise<void> {
     try {
+      // A paired desktop's work an archive saved before history went off goes back to the record first (#1759).
+      await this.options.control.returnArchivedRemoteWork()
       const record = this.view()
       if (record.creation && !this.options.workerHost) await this.finishCreation(record.creation.identity, record.creation.modelId ? { provider: record.creation.identity.provider, modelId: record.creation.modelId, ...(record.creation.reasoningEffort ? { reasoningEffort: record.creation.reasoningEffort } : {}) } : undefined)
       const current = this.view().current
@@ -3873,13 +3928,29 @@ export class WatcherService implements WatcherControlHooks {
         // check asked later, Watcher's or a delegated one, never overtakes it (#1312). It gives the place back when it is
         // placed on another machine, refused, or a retry; only an admitted check here keeps it.
         const ticket = asked.testRun === true && this.options.checks && this.options.workerMachine ? this.joinChecks(randomUUID(), asked.title).ticket : undefined
+        // Where Settings leave the machine to Watcher, its starts are placed one at a time, each held until its reservation
+        // is recorded, so starts made together each see the ones before them in every machine's headroom (#1694).
+        const release = this.options.workerMachine?.() === 'watcher' ? await this.placingTurn() : undefined
         try {
           const placed = await this.placeStart(asked)
+          if (!placed) release?.()
           if (ticket && (placed?.input.check !== true || placed.input.project.hostId !== this.hostId())) this.dropTicket(ticket)
           // A start refused at admission never ran, so the move it would have made is forgotten with it.
-          try { return await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed, ticket) }
-          finally { if (placed?.input.fromMove) this.branchStartsPlaced.delete(placed.input.fromMove) }
-        } finally { if (ticket) this.dropTicket(ticket) }
+          let target: WatcherThreadTarget | undefined, failed = false
+          // A retry's start was counted when it was first admitted, and is not counted again.
+          const admitted = (at: WatcherThreadTarget, retry: boolean, operationId: string) => { if (!retry) { target = at; this.notePlaced(at, operationId) } release?.() }
+          try {
+            const result = await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed ? { ...placed, admitted } : placed, ticket)
+            failed = definitelyFailedStart(result)
+            return result
+          } finally {
+            if (target) this.noteStartEnded(target, failed)
+            if (placed?.input.fromMove) this.branchStartsPlaced.delete(placed.input.fromMove)
+          }
+        } finally {
+          release?.()
+          if (ticket) this.dropTicket(ticket)
+        }
       }
       if (name === 'stop_thread') {
         const stopped = await this.stopWaitingCheck(threadId, parsed.data as WatcherToolInput<'stop_thread'>)
@@ -4127,6 +4198,8 @@ export class WatcherService implements WatcherControlHooks {
       if (steerFallback) this.rememberSteerFallback(operation.id, steerFallback)
       return { operation, retry: false }
     })
+    // The reservation is recorded, so a start placed after this one counts it against this machine's headroom (#1694).
+    placed?.admitted?.(admitted.operation.target, admitted.retry, admitted.operation.id)
     if (progress) progress.operationId = admitted.operation.id
     if (admitted.retry) {
       // A retry reads its receipt again; only the start's first run says how many threads are working (#1183).
@@ -4852,7 +4925,13 @@ ${operation.draftId}`)
         guard()
         this.checkRemoteMaster(master, clientId)
         if (this.view().remoteAbsences?.some(item => item.operationId === operation.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
+        // A request Watcher's archive holds comes back first, so a late retry answers with its receipt and a new operation
+        // is taken or refused as it was while the record held it (#1759).
+        await this.restoreRemoteRequests([request.id], clientId, guard)
         const existing = this.view().requests.find(item => item.id === request.id)
+        if (!existing && this.archivedForAnotherDesktop(request.id, clientId)) refuse('RETRY_KEY_CONFLICT', 'This request identity belongs to another origin. Nothing was sent.')
+        // An operation of another request Watcher's archive holds keeps its identity, as one in the record does.
+        if (!this.view().operations.some(item => item.id === operation.id) && this.options.control.archivedWatcherWork()?.hasOperation(operation.id)) refuse('TARGET_CHANGED', 'This operation identity or ownership generation changed. Nothing was sent.')
         if (existing && (key(existing.watcher) !== key(master.target) || existing.rootUserMessageId !== request.rootUserMessageId
           || existing.createdAt !== request.createdAt || existing.remoteOrigin?.clientId !== clientId
           || JSON.stringify(existing.remoteOrigin.master) !== JSON.stringify(master)
@@ -4884,7 +4963,24 @@ ${operation.draftId}`)
       : !operation.confirmedStop && fences.some(fence => !fence.remoteOrigin && fence.target && key(fence.target) === key(operation.target))) refuse('REQUEST_NOT_ACTIVE', 'This watch was removed. Nothing was sent.')
   }
   remoteProjection(master: WatcherIdentity, clientId: string): WatcherHostProjection {
-    const record = this.recordCopy(), owned = record.requests.filter(item => key(item.watcher) === key(master.target)
+    const work = this.projectedFor(master, clientId)
+    const evidence = work.targets.flatMap(target => this.wakes.evidence.read(target, true)).slice(-1_000)
+    const targets = new Set(work.targets.map(key))
+    const progress = this.options.control.watcherSnapshot().threads.filter(thread => targets.has(key(this.target(thread.id))))
+      .map(thread => ({ target: this.target(thread.id), fingerprint: watcherProgressFingerprint(thread) })).slice(-1_000)
+    return { hostId: this.hostId(), master, requests: work.requests, operations: work.operations, evidence, progress, standingWatches: work.standingWatches,
+      revision: digest([work.revision, evidence, progress]), observedAt: now() }
+  }
+  /**
+   * The record's part of a paired desktop's projection: that Watcher's newest requests here, their operations and its
+   * standing watches. Read from the record without copying it, as the record is never edited, and only again once the
+   * record has changed, so a shell pushed while nothing in the record moved costs nothing that grows with its history.
+   */
+  private projectedFor(master: WatcherIdentity, clientId: string): ProjectedWork {
+    const record = this.view(), slot = JSON.stringify([clientId, master.target.hostId, master.target.threadId, master.creationOperationId])
+    const held = this.projectedWork.get(slot)
+    if (held?.record === record) return held
+    const owned = record.requests.filter(item => key(item.watcher) === key(master.target)
       && item.remoteOrigin?.clientId === clientId && item.remoteOrigin.creationOperationId === master.creationOperationId)
     const ids = new Set(owned.map(item => item.id)), all = record.operations.filter(item => ids.has(item.requestId))
     const pending = all.filter(item => ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))
@@ -4893,16 +4989,15 @@ ${operation.draftId}`)
     const required = new Set(operations.map(item => item.requestId)), requests = owned.filter(item => required.has(item.id)).slice(-1_000)
     const standingWatches = (record.watches ?? []).filter(watch => watch.remoteOrigin?.clientId === clientId && watch.remoteOrigin.masterHostId === master.target.hostId
       && watch.remoteOrigin.masterCreationOperationId === master.creationOperationId)
-    const targetRows = new Map([...requests.flatMap(request => request.participants.map(item => [key(item.target), item.target] as const)),
+    const targets = new Map([...requests.flatMap(request => request.participants.map(item => [key(item.target), item.target] as const)),
       ...standingWatches.map(watch => [key(watch.target), watch.target] as const)])
-    const evidence = [...targetRows.values()].flatMap(target => this.wakes.evidence.read(target, true)).slice(-1_000)
-    const targets = new Set(targetRows.keys())
-    const progress = this.options.control.watcherSnapshot().threads.filter(thread => targets.has(key(this.target(thread.id))))
-      .map(thread => ({ target: this.target(thread.id), fingerprint: watcherProgressFingerprint(thread) })).slice(-1_000)
     // Outcomes travel only in exact operation reads, which a desktop asks for; an older desktop could not read them here.
     const projected = operations.map(withoutOutcome)
-    return { hostId: this.hostId(), master, requests, operations: projected, evidence, progress, standingWatches,
-      revision: digest([requests, projected, evidence, progress, standingWatches]), observedAt: now() }
+    const work: ProjectedWork = { record, requests, operations: projected, standingWatches, targets: [...targets.values()], revision: digest([requests, projected, standingWatches]) }
+    this.projectedWork.delete(slot)
+    this.projectedWork.set(slot, work)
+    while (this.projectedWork.size > 64) this.projectedWork.delete(this.projectedWork.keys().next().value!)
+    return work
   }
   private async syncRemoteWatches(master: WatcherIdentity, watches: WatcherStandingWatch[], clientId: string, guard?: () => void): Promise<void> {
     const operations = new Set<string>()
@@ -4956,14 +5051,13 @@ ${operation.draftId}`)
    * first reads after a replacement, as the replacement itself is the user's rare command; a read after that costs nothing.
    */
   private async adoptRemoteRequests(master: WatcherIdentity, clientId: string, guard?: () => void): Promise<void> {
-    const seen = JSON.stringify([clientId, master.target.hostId, master.creationOperationId])
+    const seen = adoptionKey(clientId, master)
     if (this.adopted.has(seen)) return
     await this.transaction(async () => {
       guard?.()
       if (master.target.hostId === this.hostId()) refuse('INVALID_INPUT', 'A remote request must belong to its master computer.')
       this.checkRemoteMaster(master, clientId)
-      const older = (request: Readonly<WatcherRequest>) => request.remoteOrigin?.clientId === clientId && request.remoteOrigin.master.target.hostId === master.target.hostId
-        && request.remoteOrigin.master.createdAt < master.createdAt
+      const older = (request: Readonly<WatcherRequest>) => madeByOlderWatcher(request, master, clientId)
       const retained = this.view().remoteMasters?.find(origin => origin.clientId === clientId && origin.masterHostId === master.target.hostId)
       const moves = this.view().requests.some(older) || (this.view().watches ?? []).some(watch => watch.remoteOrigin?.clientId === clientId
         && watch.remoteOrigin.masterHostId === master.target.hostId && watch.remoteOrigin.masterCreatedAt !== undefined && watch.remoteOrigin.masterCreatedAt < master.createdAt)
@@ -4994,6 +5088,9 @@ ${operation.draftId}`)
     })
     this.adopted.add(seen)
     while (this.adopted.size > 1_000) this.adopted.delete(this.adopted.values().next().value!)
+    const desktop = desktopKey(clientId, master.target.hostId), newest = this.adoptedBy.get(desktop)
+    if (!newest || newest.createdAt < master.createdAt) { this.adoptedBy.delete(desktop); this.adoptedBy.set(desktop, master) }
+    while (this.adoptedBy.size > 1_000) this.adoptedBy.delete(this.adoptedBy.keys().next().value!)
   }
   private checkRemoteMaster(master: WatcherIdentity, clientId: string): void {
     const record = this.view(), origins = [...(record.watches ?? []).map(watch => watch.remoteOrigin), ...(record.watchFences ?? []).map(fence => fence.remoteOrigin)]
@@ -5002,18 +5099,96 @@ ${operation.draftId}`)
     if (origins.some(origin => origin?.clientId === clientId && origin.masterHostId === master.target.hostId && origin.masterCreatedAt
       && (origin.masterCreatedAt > master.createdAt || origin.masterCreatedAt === master.createdAt && origin.masterCreationOperationId !== master.creationOperationId))) refuse('NOT_CURRENT_WATCHER', 'That Watcher conversation was replaced. Its old assignments cannot be restored.')
   }
+  /**
+   * Brings back to the record the requests of `ids` that Watcher's archive holds for this paired desktop (#1759), with
+   * their operations and prompt turns, so what the desktop sends under one is taken as it was while the record held it.
+   * Each comes back as the Watcher that owns it now has it (`archivedOwner`), its prompt turns too. `stays` leaves a
+   * request in the archive: one found stopped there is remembered, so a Stop sent again for it reads nothing. Runs inside
+   * a transaction; a request that came back is archived again once it is old and closed.
+   */
+  private async restoreRemoteRequests(ids: readonly string[], clientId: string, guard?: () => void,
+    stays?: (request: Readonly<WatcherRequest>) => boolean): Promise<void> {
+    const archive = this.options.control.archivedWatcherWork()
+    if (!archive || !ids.length) return
+    await archive.ready()
+    const live = new Set(this.view().requests.map(request => request.id))
+    const wanted = new Set(ids.filter(id => archive.hasRequest(id) && !live.has(id)))
+    if (!wanted.size) return
+    // Only the batches holding these requests, which hold their operations: a Stop sent with every read must not read more.
+    const work = await this.readArchive({ requests: [...wanted], turns: false })
+    const requests: WatcherRequest[] = []
+    for (const request of work.requests) {
+      if (!wanted.has(request.id) || request.remoteOrigin?.clientId !== clientId) continue
+      if (stays?.(request)) {
+        this.archivedStops.set(request.id, request)
+        while (this.archivedStops.size > 10_000) this.archivedStops.delete(this.archivedStops.keys().next().value!)
+        continue
+      }
+      requests.push(request)
+    }
+    if (!requests.length) return
+    await this.options.control.updateWatcher(next => { guard?.(); this.returnArchived(next, { requests, operations: work.operations, promptTurns: work.promptTurns }) })
+    for (const request of requests) this.archivedStops.delete(request.id)
+  }
+  /**
+   * Puts archived work back in a record being changed (#1759): each paired desktop's request as the Watcher that owns it
+   * now has it (`archivedOwner`), and the prompt turns of one that moved with it, those the record still holds included,
+   * as adoption moves them (#1735).
+   */
+  returnArchived(record: WatcherRecord, work: WatcherArchived): void {
+    const moved = new Map<string, WatcherThreadTarget>()
+    const requests = work.requests.map(request => {
+      const owner = request.remoteOrigin && this.archivedOwner(request, request.remoteOrigin.clientId)
+      if (!owner || owner === request.remoteOrigin!.master) return request
+      moved.set(key(request.watcher), owner.target)
+      return { ...request, watcher: owner.target, remoteOrigin: { ...request.remoteOrigin!, master: owner, creationOperationId: owner.creationOperationId } }
+    })
+    const held = new Set(record.requests.map(request => request.id))
+    const promptTurns = work.promptTurns.map(turn => { const to = moved.get(key(turn.watcher)); return to ? { ...turn, watcher: to } : turn })
+    returnArchivedWork(record, { requests, operations: work.operations, promptTurns })
+    if (!moved.size) return
+    const turns = new Set(work.operations.flatMap(operation => !held.has(operation.requestId) && operation.promptTurnId ? [operation.promptTurnId] : []))
+    for (const turn of record.promptTurns ?? []) { const to = turns.has(turn.id) ? moved.get(key(turn.watcher)) : undefined; if (to) turn.watcher = to }
+  }
+  /**
+   * The Watcher of this paired desktop that owns an archived request of its now (#1759): the one that made it, unless a
+   * newer Watcher of that desktop took its older ones' requests over this run (#1735), as the record's were. Undefined
+   * for another desktop's.
+   */
+  private archivedOwner(request: Readonly<WatcherRequest>, clientId: string): WatcherIdentity | undefined {
+    if (request.remoteOrigin?.clientId !== clientId) return undefined
+    const newest = this.adoptedBy.get(desktopKey(clientId, request.remoteOrigin.master.target.hostId))
+    return newest && madeByOlderWatcher(request, newest, clientId) ? newest : request.remoteOrigin.master
+  }
+  /** Whether Watcher's archive holds a request by this ID that another paired desktop, or this computer, made. */
+  private archivedForAnotherDesktop(id: string, clientId: string): boolean {
+    return this.archivedStops.get(id)?.remoteOrigin?.clientId !== clientId && this.options.control.archivedWatcherWork()?.hasRequest(id) === true
+  }
+  /** This desktop's request the archive holds stopped (`archivedStops`), as the Watcher that owns it now has it. */
+  private rememberedStop(id: string, clientId: string): WatcherRequest | undefined {
+    const request = this.archivedStops.get(id), owner = request && this.archivedOwner(request, clientId)
+    if (!request || !owner) return undefined
+    return owner === request.remoteOrigin!.master ? request : { ...request, watcher: owner.target, remoteOrigin: { ...request.remoteOrigin!, master: owner, creationOperationId: owner.creationOperationId } }
+  }
   private async stopRemoteRequests(master: WatcherIdentity, stops: NonNullable<WatcherHostRead['stoppedRequests']>, clientId: string, guard?: () => void): Promise<void> {
     const operations = new Set<string>()
     await this.transaction(async () => {
       guard?.()
       if (master.target.hostId === this.hostId()) refuse('INVALID_INPUT', 'A remote request must belong to its master computer.')
+      // A desktop sends its stopped requests with every read. One Watcher's archive holds stopped stays there; one it holds
+      // closed comes back to be stopped, so no operation the desktop sent before its Stop opens it again (#1759).
+      await this.restoreRemoteRequests(stops.map(item => item.request.id).filter(id => !this.rememberedStop(id, clientId)), clientId, guard,
+        request => request.state === 'stopped')
       const record = this.view()
       for (const { request, ceiling } of stops) {
-        const existing = record.requests.find(item => item.id === request.id)
+        // One the archive holds stopped is checked as it would be in the record, as the Watcher that owns it now has it.
+        const existing = record.requests.find(item => item.id === request.id) ?? this.rememberedStop(request.id, clientId)
+        if (!existing && this.archivedForAnotherDesktop(request.id, clientId)) refuse('RETRY_KEY_CONFLICT', 'That stopped request belongs to another origin.')
         if (key(request.watcher) !== key(master.target) || existing && (existing.remoteOrigin?.clientId !== clientId
           || JSON.stringify(existing.remoteOrigin.master) !== JSON.stringify(master) || existing.remoteOrigin.ceiling !== ceiling
           || existing.rootUserMessageId !== request.rootUserMessageId || existing.createdAt !== request.createdAt)) refuse('RETRY_KEY_CONFLICT', 'That stopped request belongs to another origin.')
       }
+      stops = stops.filter(item => record.requests.some(request => request.id === item.request.id) || !this.rememberedStop(item.request.id, clientId))
       const stoppedIds = new Set(stops.map(item => item.request.id))
       for (const operation of record.operations) if (stoppedIds.has(operation.requestId) && !operation.confirmedStop) operations.add(operation.id)
       // A copy this host closed is stopped as well, so no operation the master sent before its Stop opens it again.
@@ -5052,7 +5227,7 @@ ${operation.draftId}`)
       }
       this.pruneRemoteGuards()
       if (!call) return this.remoteProjection(master, clientId)
-      let operation: WatcherOperation | undefined
+      let operation: WatcherOperation | undefined, archived: WatcherArchived | undefined
       if (call.name === 'read_operation') {
         operation = await this.transaction(async () => {
           guard?.()
@@ -5061,7 +5236,24 @@ ${operation.draftId}`)
             && item.remoteOrigin?.clientId === clientId && item.remoteOrigin.creationOperationId === master.creationOperationId)
           if (operation && !request) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this desktop.')
           if (operation) return operation
-          if (!record.remoteAbsences?.some(item => item.operationId === call.input.operationId)) {
+          // One Watcher's archive holds is read from there, for this ID alone, and answers as it did (#1759), so it is never
+          // fenced as unrecorded. A newer Watcher of the desktop that took the older one's requests over reads its work too.
+          const found = await this.archivedOperation(call.input.operationId)
+          if (found) {
+            const request = found.work.requests.find(item => item.id === found.operation.requestId)
+            const owner = request && this.archivedOwner(request, clientId)
+            if (!owner || key(owner.target) !== key(master.target) || owner.creationOperationId !== master.creationOperationId) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this desktop.')
+            archived = found.work
+            return found.operation
+          }
+          // Work handed back to the record while the archive was read (Keep local history going off) is read there, never fenced.
+          const handedBack = this.view().operations.find(item => item.id === call.input.operationId)
+          if (handedBack) {
+            const owner = this.view().requests.find(item => item.id === handedBack.requestId)
+            if (!owner || key(owner.watcher) !== key(master.target) || owner.remoteOrigin?.clientId !== clientId || owner.remoteOrigin.creationOperationId !== master.creationOperationId) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this desktop.')
+            return handedBack
+          }
+          if (!this.view().remoteAbsences?.some(item => item.operationId === call.input.operationId)) {
             if ((record.remoteAbsences?.length ?? 0) >= 1_000) refuse('DELIVERY_UNCERTAIN', 'This host cannot keep track of another missing thread. That start or send stays unconfirmed.')
             await this.options.control.updateWatcher(next => { (next.remoteAbsences ??= []).push({ operationId: call.input.operationId, master, clientId, observedAt: now() }) })
           }
@@ -5070,7 +5262,7 @@ ${operation.draftId}`)
         })
         if (!operation) refuse('OPERATION_NOT_RECORDED', 'That operation was not recorded. Its identity is fenced against later admission.')
       }
-      return await this.dispatchRead(call, operation, outcomes === true)
+      return await this.dispatchRead(call, operation, outcomes === true, undefined, archived)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('INVALID_INPUT', 'This Watcher read could not be completed.') }
   }
 
@@ -5207,22 +5399,86 @@ ${operation.draftId}`)
    * This computer and every host the desktop holds a connection to, each with its host facts when it reports them (#1031).
    * A host that does not list host-facts, or whose read fails, reads unknown; one not connected now reads not connected.
    */
+  /**
+   * Watcher's starts admitted on each machine, by Sotto thread ID, with when Sotto first saw each no longer on its way
+   * (#1694). A start stops counting as on its way once its first prompt is accepted, before a reading of its machine can
+   * show what it uses, so it counts against that machine's headroom from admission until `MACHINE_START_SETTLES_MS` after
+   * it was seen to leave, by this computer's clock (`placedSince`). A check waiting its turn is still on its way, so its
+   * minute begins only once it is sent. Seen late, it counts longer, never shorter. One whose first prompt definitely
+   * failed started nothing, and counts no more, whichever way its reservation was let go of: each keeps where its
+   * operation sits in the record, which only ever appends, so one read says how it ended.
+   */
+  private placedRecently: { readonly hostId: string; readonly threadId: string; readonly operationId: string; readonly position: number; left?: number }[] = []
+  private notePlaced(target: WatcherThreadTarget, operationId: string): void {
+    const kept = this.settledPlacements(Date.now()).filter(item => !sameTarget(item, target))
+    // Just admitted, so its operation is among the newest.
+    const operations = this.view().operations
+    let position = operations.length - 1
+    while (position >= 0 && operations[position]!.id !== operationId) position--
+    this.placedRecently = [...kept, { hostId: target.hostId, threadId: target.threadId, operationId, position }]
+  }
+  /** Ends a start's call: one that failed for certain is forgotten; one already sent begins its minute. */
+  private noteStartEnded(target: WatcherThreadTarget, failed: boolean): void {
+    if (failed) { this.placedRecently = this.placedRecently.filter(item => !sameTarget(item, target)); return }
+    this.placedSince(target.hostId)
+  }
+  /** The kept starts, less those whose minute is over. */
+  private settledPlacements(now: number) { return this.placedRecently.filter(item => item.left === undefined || now - item.left <= MACHINE_START_SETTLES_MS) }
+  /** The starts admitted on `hostId` that may not show in its readings yet. */
+  private placedSince(hostId: string): string[] {
+    const now = Date.now(), reserved = this.reservedStarts().filter(start => start.target.hostId === hostId)
+    const onItsWay = new Set([...reserved.flatMap(start => start.notYetSent ? [start.target.threadId] : []), ...this.delegationStarts?.(hostId) ?? []])
+    const failed = new Set(reserved.flatMap(start => start.failed ? [start.target.threadId] : []))
+    const operations = this.view().operations, held = new Set(reserved.map(start => start.operationId))
+    // One whose reservation is gone is read where its operation sits; one not found there is kept, never guessed failed.
+    const gone = (item: { readonly operationId: string; readonly position: number }) => !held.has(item.operationId)
+      && operations[item.position]?.id === item.operationId && operations[item.position]!.deliveryState === 'failed'
+    this.placedRecently = this.settledPlacements(now).filter(item => item.hostId !== hostId || !failed.has(item.threadId) && !gone(item))
+    return this.placedRecently.flatMap(item => {
+      if (item.hostId !== hostId) return []
+      if (onItsWay.has(item.threadId)) delete item.left
+      else item.left ??= now
+      return [item.threadId]
+    })
+  }
+  /**
+   * A machine's headroom from its report (#1694): its work placed but not started, with `reserved`, the starts on their
+   * way there that it may not count, and this Watcher's starts that its readings may not show yet. Placing a start and
+   * list_machines both read it here, so the figure Watcher reads is the one Sotto places by.
+   */
+  private headroomOf(report: HostMachineReport, hostId: string, reserved: readonly string[] | undefined): number | null {
+    const recent = this.placedSince(hostId)
+    const placed = reserved === undefined && !recent.length ? report.placedNotStarted ?? null : placedNotStartedWith(report, [...reserved ?? [], ...recent])
+    return machineHeadroom(report.facts, report.load ?? null, placed, Date.now())
+  }
+  /** The tail of Watcher's starts waiting to be placed one at a time (#1694). */
+  private placing: Promise<void> = Promise.resolve()
+  /** Waits for every start placed before this one to be admitted or refused, and answers the call that lets the next go. */
+  private async placingTurn(): Promise<() => void> {
+    let done!: () => void
+    const finished = new Promise<void>(resolve => { done = resolve })
+    const before = this.placing
+    this.placing = before.then(() => finished)
+    await before
+    let released = false
+    return () => { if (!released) { released = true; done() } }
+  }
   /** The last machines read (#1032), kept for an iPhone's page between reads. */
   private machinesListed: MachinesListed | null = null
   private async listMachines() {
     // Live load and work placed but not started (#1311) are shown only with Work across machines on, and read unknown
     // wherever the facts do, or where a host does not send them.
     const live = this.options.crossMachine === true
-    const noLoad = live ? { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const } : {}
+    const noLoad = live ? { load: null, placedNotStarted: null, memoryState: 'unknown' as const, cpuState: 'unknown' as const, headroom: null } : {}
     // A paired machine's count gains the starts this desktop has admitted there that it has not counted. Those starts are
     // read before the host is asked and again once it has answered, so every start on its way at any moment of the read
     // is in them: one the answer missed is added, never lost (`placedNotStartedWith`). This computer's own report already
     // holds this Watcher's starts here (`startsNotYetSent`).
-    const loadOf = (report: HostMachineReport, reserved: readonly string[] | undefined) => {
+    const loadOf = (report: HostMachineReport, reserved: readonly string[] | undefined, hostId: string) => {
       if (!live) return {}
       const load = report.load ?? null, states = machineLoadStates(load, report.facts.totalMemoryBytes, Date.now())
       const placedNotStarted = reserved === undefined ? report.placedNotStarted ?? null : placedNotStartedWith(report, reserved)
-      return { load, placedNotStarted, memoryState: states.memory, cpuState: states.cpu }
+      return { load, placedNotStarted, memoryState: states.memory, cpuState: states.cpu, headroom: this.headroomOf(report, hostId, reserved) }
     }
     const unknown = (note: string) => ({ factsState: 'unknown' as const, facts: null, note, runningThreads: null, ...noLoad })
     const read = async (facts: () => Promise<HostMachineReport | undefined>, older: string, remote?: string) => {
@@ -5232,7 +5488,7 @@ ${operation.draftId}`)
         if (!report) return unknown(older)
         // A start admitted while the host was sampling may have reached it after it counted, or not at all yet.
         const reserved = before === undefined ? undefined : [...before, ...this.startsNotYetSentOn(remote!)]
-        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report, reserved) }
+        return { factsState: 'reported' as const, facts: report.facts, runningThreads: report.runningThreads, ...loadOf(report, reserved, remote ?? this.hostId()) }
       } catch { return unknown(MACHINE_FACTS_UNREAD) }
     }
     const local = { hostId: this.hostId(), name: 'This computer', thisComputer: true, connected: true,
