@@ -52,6 +52,10 @@ const QUESTIONS: NonNullable<AgentRequest['questions']> = [{ id: 'choice', quest
  * publishes is counted (`threadVisits.ts`). A publication of its activity subscription stays one, so the provider switch
  * keeps it without a copy, as it keeps the real adapter's; the counted snapshot is marked from the one it wraps.
  */
+/** Watcher's provider session, and how many messages its conversation holds at the owner's scale (#1759). */
+const WATCHER_SESSION = 'watcher-0'
+const WATCHER_CONVERSATION = 200
+
 class SendingAdapter extends StreamingAdapter {
   override subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void {
     return super.subscribe(snapshot => listener({ ...snapshot, threads: countedThreads(snapshot.threads) }))
@@ -499,6 +503,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
   }
 
   const streamIds = streamSessions.map(idOf)
+  let watcherThreadId: string | undefined
   const openThread = hostEntityKey(localHostId, idOf(openSession))
   const view = control.requestDraftView()
   const asking = view.host.threads.find(item => item.id === idOf('asking-0'))!
@@ -525,6 +530,18 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
         if (result.status !== 'ok') throw new Error(`Watcher did not watch a thread: ${JSON.stringify(result)}`)
       }
       await control.updateWatcher(record => { addWatcherHistory(record, targets, counts, undefined, streamed) })
+      // Older closed work moves to Watcher's archive (#1759), as it would have long before a record grew this long.
+      await watcher.archiveSettled()
+      // Watcher's own conversation, as long as its record makes it (#1759): its thread is bound to a provider session
+      // holding the user's messages and Watcher's replies, and the window shows it below, as the open Watcher pane does.
+      const current = watcher.state().current!
+      watcherThreadId = current.target.threadId
+      registry.reserve(watcherThreadId, 'claude', WATCHER_SESSION, current.projectId)
+      state.threads.push({ ...thread(WATCHER_SESSION), projectId: current.projectId, title: 'Watcher' })
+      const conversation = Math.round(WATCHER_CONVERSATION * (scale.watcher ?? 1))
+      for (let index = 0; index < conversation; index++) adapter.log.add(WATCHER_SESSION, { id: `watcher-message-${index}`, role: index % 2 === 0 ? 'user' : 'assistant',
+        text: `Synthetic Watcher ${index % 2 === 0 ? 'instruction' : 'reply'} ${index}`, createdAt: AT })
+      adapter.emit()
       // One of those starts is a check still holding its place, as a running check does: the pass on every publish reads it
       // by its position, and so must not grow with the history behind it (#1312).
       const started = control.watcherRecord().operations.findLast(item => item.action === 'start' && item.target.hostId === localHostId)
@@ -541,7 +558,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
       })
     }
     // The window shows one thread and watches the streams, as after the owner opened it.
-    await control.command({ type: 'observe-threads', threadIds: [...streamIds, idOf(openSession)] })
+    await control.command({ type: 'observe-threads', threadIds: [...streamIds, idOf(openSession), ...watcherThreadId ? [watcherThreadId] : []] })
   } catch (error) { await stop(); throw error }
 
   const client = desktopWindowClient()
@@ -563,7 +580,8 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     openThread: async (): Promise<void> => {
       await router.command({ type: 'select-thread', threadId: openThread }, client)
       await router.threadDetail(openThread)
-      await router.command({ type: 'observe-threads', threadIds: [openThread, ...streamIds.map(id => hostEntityKey(localHostId, id))] }, client)
+      await router.command({ type: 'observe-threads', threadIds: [openThread, ...streamIds.map(id => hostEntityKey(localHostId, id)),
+        ...watcherThreadId ? [hostEntityKey(localHostId, watcherThreadId)] : []] }, client)
     },
     send: async (): Promise<void> => {
       revision++
