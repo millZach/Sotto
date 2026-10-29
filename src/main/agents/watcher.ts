@@ -2689,7 +2689,7 @@ export class WatcherService implements WatcherControlHooks {
     // The last Watcher is looked at once more after this, once nothing is being written to it, so a message that settled
     // while this ran, or settles later, moves then, to whichever Watcher is current; one still settling from an earlier
     // replacement is kept too. It is added only now, so that pass never runs beside this one.
-    this.lateQueue = [...this.lateQueue, previous.target]
+    this.lateQueue = [...this.lateQueue.filter(item => key(item) !== key(previous.target)), previous.target]
     // A reservation is a thread Watcher started that is still working (#1183), one per thread, so this reads no history.
     const away = new Map(this.view().reservations.filter(item => item.target.hostId !== this.hostId() && !this.adopts(item.target.hostId))
       .map(item => [key(item.target), item.target]))
@@ -2740,6 +2740,10 @@ export class WatcherService implements WatcherControlHooks {
       const queued = await this.options.control.moveWatcherQueue(from.threadId, current.threadId).catch(() => [])
       await this.unlinkMoved(from, queued)
       const moved = queued.length + (draft === 'queue' ? 1 : 0), draftMoved = draft === 'box'
+      // A replacement that finished meanwhile retired the Watcher these went to: it and the last one are looked at again,
+      // so what landed there goes on to the one current now.
+      const now = this.view().current?.target
+      if (now && key(now) !== key(current)) this.lateQueue = [...this.lateQueue.filter(item => key(item) !== key(from) && key(item) !== key(current)), from, current]
       const carried = this.carried
       if ((moved || draftMoved || unconfirmed) && carried && key(carried.to) === key(current)) {
         this.setCarried({ ...carried, moved: carried.moved + moved, draftMoved: carried.draftMoved === true || draftMoved,

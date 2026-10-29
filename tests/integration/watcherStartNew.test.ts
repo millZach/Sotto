@@ -302,6 +302,32 @@ describe('New Watcher', () => {
     expect((f.service as unknown as { lateQueue: unknown[] }).lateQueue).toEqual([])
   })
 
+  it('sends a late message on when another replacement retires the Watcher it was moving to (#1735)', async () => {
+    const f = await fixture()
+    await f.exchange('Watch the release.', 'Watching it.')
+    expect(await f.service.startNew()).toMatchObject({ status: 'ok' })
+    const second = f.service.state().current!.target
+    const store = followupStoreOf(f.control)
+    await store.enqueue({ threadId: f.first.threadId, draftId: randomUUID(), text: 'Late words', attachments: [] })
+    await (store as unknown as { change(update: (state: { items: { text: string; status: string }[] }) => void): Promise<void> }).change(state => {
+      state.items.find(item => item.text === 'Late words')!.status = 'failed'
+    })
+    // While the sweep moves it to the second Watcher, a third becomes current.
+    const third = { hostId: second.hostId, threadId: randomUUID() }
+    const move = f.control.moveWatcherQueue.bind(f.control), view = f.control.watcherRecordView.bind(f.control)
+    let retired = false
+    vi.spyOn(f.control, 'moveWatcherQueue').mockImplementation(async (from, to) => { const moved = await move(from, to); retired = true; return moved })
+    vi.spyOn(f.control, 'watcherRecordView').mockImplementation(() => {
+      const record = view()
+      return retired && record.current ? { ...record, current: { ...record.current, target: third } } : record
+    })
+    ;(f.service as unknown as { lateQueue: unknown[]; followLateQueue(): void }).lateQueue = [f.first]
+    ;(f.service as unknown as { followLateQueue(): void }).followLateQueue()
+    // The Watcher it reached and the one it came from are looked at again, for the one current now.
+    await vi.waitFor(() => expect((f.service as unknown as { lateQueue: unknown[] }).lateQueue).toEqual([f.first, second]))
+    expect(store.peek().items.find(item => item.text === 'Late words')).toMatchObject({ threadId: second.threadId })
+  })
+
   it('refuses when Watcher’s model is not ready or its permission mode is not the one in force', async () => {
     const f = await fixture()
     await f.exchange('Watch the release.', 'Watching it.')
