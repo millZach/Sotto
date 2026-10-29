@@ -1802,14 +1802,14 @@ it('counts a start against its machine\'s headroom for a minute after its first 
 it('keeps counting a check waiting its turn until it is sent, and forgets a start whose first prompt failed (#1694)', async () => {
   const f = await acrossMachines('watcher')
   type Reserved = { target: WatcherThreadTarget; operationId: string; notYetSent: boolean; failed: boolean }
-  const books = f.watcher as unknown as { notePlaced(target: WatcherThreadTarget): void; noteStartEnded(target: WatcherThreadTarget, failed: boolean): void
+  const books = f.watcher as unknown as { notePlaced(target: WatcherThreadTarget, operationId: string): void; noteStartEnded(target: WatcherThreadTarget, failed: boolean): void
     placedSince(hostId: string): string[]; reservedStarts(): readonly Reserved[] }
   const host = f.pairing.hostId, check = { hostId: host, threadId: 'synthetic-waiting-check' }, failing = { hostId: host, threadId: 'synthetic-failed-start' }
   let reserved: Reserved[] = [{ target: check, operationId: randomUUID(), notYetSent: true, failed: false }]
   vi.spyOn(books, 'reservedStarts').mockImplementation(() => reserved)
   const now = Date.now(), clock = vi.spyOn(Date, 'now').mockReturnValue(now)
   // A check's call answers while it waits its turn; it is still on its way, so its minute has not begun.
-  books.notePlaced(check); books.noteStartEnded(check, false)
+  books.notePlaced(check, randomUUID()); books.noteStartEnded(check, false)
   clock.mockReturnValue(now + 10 * MACHINE_START_SETTLES_MS)
   expect(books.placedSince(host)).toEqual([check.threadId])
   // Sent at last: it counts for a minute from when Sotto saw it go.
@@ -1820,14 +1820,24 @@ it('keeps counting a check waiting its turn until it is sent, and forgets a star
   clock.mockReturnValue(now + 11 * MACHINE_START_SETTLES_MS + 1)
   expect(books.placedSince(host)).toEqual([])
   // A start whose call answered that it failed started nothing; one that fails later, while still reserved, too.
-  books.notePlaced(failing); books.noteStartEnded(failing, true)
+  books.notePlaced(failing, randomUUID()); books.noteStartEnded(failing, true)
   expect(books.placedSince(host)).toEqual([])
-  books.notePlaced(failing)
+  books.notePlaced(failing, randomUUID())
   reserved = [{ target: failing, operationId: randomUUID(), notYetSent: false, failed: true }]
   expect(books.placedSince(host)).toEqual([])
+  // A start whose reservation was let go of once its first prompt failed, such as a check whose turn came, counts no
+  // more: its operation, read where it sits in the record, says so.
+  const view = vi.spyOn(f.control, 'watcherRecordView')
+  const lost = { hostId: host, threadId: 'synthetic-failed-check' }, operationId = randomUUID()
+  view.mockReturnValue({ ...f.control.watcherRecordView(), operations: [{ id: operationId, target: lost, deliveryState: 'queued' }] } as never)
+  books.notePlaced(lost, operationId)
+  expect(books.placedSince(host)).toEqual([lost.threadId])
+  view.mockReturnValue({ ...f.control.watcherRecordView(), operations: [{ id: operationId, target: lost, deliveryState: 'failed' }] } as never)
+  expect(books.placedSince(host)).toEqual([])
+  view.mockRestore()
   // One start noted twice is kept once, so the minute that ends it ends all of it.
   reserved = []
-  books.notePlaced(check); books.notePlaced(check)
+  books.notePlaced(check, randomUUID()); books.notePlaced(check, randomUUID())
   expect(books.placedSince(host)).toEqual([check.threadId])
   clock.mockReturnValue(now + 13 * MACHINE_START_SETTLES_MS)
   expect(books.placedSince(host)).toEqual([])

@@ -253,7 +253,7 @@ type PlacedStart = { readonly original: WatcherToolInput<'start_thread'>; readon
    * Called with the start's target once its reservation is recorded, or once it is found a retry of one already
    * recorded (`retry`), which lets the next start be placed (#1694).
    */
-  readonly admitted?: (target: WatcherThreadTarget, retry: boolean) => void }
+  readonly admitted?: (target: WatcherThreadTarget, retry: boolean, operationId: string) => void }
 /** `base` replaces this computer's new-thread default; `paired` narrows it. */
 type PermissionLimits = { readonly base?: AgentRuntimeMode; readonly paired?: AgentRuntimeMode }
 const ROLE_STARTS_KEPT = 500
@@ -406,13 +406,13 @@ function reservedStarts(record: Readonly<WatcherRecord>, positions: Map<string, 
 }
 
 /**
- * Whether a start's call answered that nothing started: refused, or its first prompt failed (#1694). A call that threw
- * is not proof, and an uncertain one may yet start; neither is taken as failed.
+ * Whether a start's call answered that nothing started: its receipt says its first prompt failed (#1694). A refusal
+ * without that, such as a host's timeout with an uncertain receipt, a call that threw, or an uncertain one may yet have
+ * started, so none is taken as failed.
  */
 function definitelyFailedStart(result: unknown): boolean {
   if (typeof result !== 'object' || result === null) return false
-  const answer = result as { status?: unknown; receipt?: { deliveryState?: unknown } }
-  return answer.status === 'refused' || answer.receipt?.deliveryState === 'failed'
+  return (result as { receipt?: { deliveryState?: unknown } }).receipt?.deliveryState === 'failed'
 }
 
 export class WatcherService implements WatcherControlHooks {
@@ -3729,7 +3729,7 @@ export class WatcherService implements WatcherControlHooks {
           // A start refused at admission never ran, so the move it would have made is forgotten with it.
           let target: WatcherThreadTarget | undefined, failed = false
           // A retry's start was counted when it was first admitted, and is not counted again.
-          const admitted = (at: WatcherThreadTarget, retry: boolean) => { if (!retry) { target = at; this.notePlaced(at) } release?.() }
+          const admitted = (at: WatcherThreadTarget, retry: boolean, operationId: string) => { if (!retry) { target = at; this.notePlaced(at, operationId) } release?.() }
           try {
             const result = await this.mutate(threadId, name, placed?.input ?? asked, undefined, undefined, progress, placed ? { ...placed, admitted } : placed, ticket)
             failed = definitelyFailedStart(result)
@@ -3974,7 +3974,7 @@ export class WatcherService implements WatcherControlHooks {
       return { operation, retry: false }
     })
     // The reservation is recorded, so a start placed after this one counts it against this machine's headroom (#1694).
-    placed?.admitted?.(admitted.operation.target, admitted.retry)
+    placed?.admitted?.(admitted.operation.target, admitted.retry, admitted.operation.id)
     if (progress) progress.operationId = admitted.operation.id
     if (admitted.retry) {
       // A retry reads its receipt again; only the start's first run says how many threads are working (#1183).
@@ -5060,16 +5060,21 @@ ${operation.draftId}`)
    * show what it uses, so it counts against that machine's headroom from admission until `MACHINE_START_SETTLES_MS` after
    * it was seen to leave, by this computer's clock (`placedSince`). A check waiting its turn is still on its way, so its
    * minute begins only once it is sent. Seen late, it counts longer, never shorter. One whose first prompt definitely
-   * failed started nothing, and counts no more.
+   * failed started nothing, and counts no more, whichever way its reservation was let go of: each keeps where its
+   * operation sits in the record, which only ever appends, so one read says how it ended.
    */
-  private placedRecently: { readonly hostId: string; readonly threadId: string; left?: number }[] = []
-  private notePlaced(target: WatcherThreadTarget): void {
-    const kept = this.settledPlacements(Date.now()).filter(item => item.hostId !== target.hostId || item.threadId !== target.threadId)
-    this.placedRecently = [...kept, { hostId: target.hostId, threadId: target.threadId }]
+  private placedRecently: { readonly hostId: string; readonly threadId: string; readonly operationId: string; readonly position: number; left?: number }[] = []
+  private notePlaced(target: WatcherThreadTarget, operationId: string): void {
+    const kept = this.settledPlacements(Date.now()).filter(item => !sameTarget(item, target))
+    // Just admitted, so its operation is among the newest.
+    const operations = this.view().operations
+    let position = operations.length - 1
+    while (position >= 0 && operations[position]!.id !== operationId) position--
+    this.placedRecently = [...kept, { hostId: target.hostId, threadId: target.threadId, operationId, position }]
   }
   /** Ends a start's call: one that failed for certain is forgotten; one already sent begins its minute. */
   private noteStartEnded(target: WatcherThreadTarget, failed: boolean): void {
-    if (failed) { this.placedRecently = this.placedRecently.filter(item => item.hostId !== target.hostId || item.threadId !== target.threadId); return }
+    if (failed) { this.placedRecently = this.placedRecently.filter(item => !sameTarget(item, target)); return }
     this.placedSince(target.hostId)
   }
   /** The kept starts, less those whose minute is over. */
@@ -5079,7 +5084,11 @@ ${operation.draftId}`)
     const now = Date.now(), reserved = this.reservedStarts().filter(start => start.target.hostId === hostId)
     const onItsWay = new Set([...reserved.flatMap(start => start.notYetSent ? [start.target.threadId] : []), ...this.delegationStarts?.(hostId) ?? []])
     const failed = new Set(reserved.flatMap(start => start.failed ? [start.target.threadId] : []))
-    this.placedRecently = this.settledPlacements(now).filter(item => item.hostId !== hostId || !failed.has(item.threadId))
+    const operations = this.view().operations, held = new Set(reserved.map(start => start.operationId))
+    // One whose reservation is gone is read where its operation sits; one not found there is kept, never guessed failed.
+    const gone = (item: { readonly operationId: string; readonly position: number }) => !held.has(item.operationId)
+      && operations[item.position]?.id === item.operationId && operations[item.position]!.deliveryState === 'failed'
+    this.placedRecently = this.settledPlacements(now).filter(item => item.hostId !== hostId || !failed.has(item.threadId) && !gone(item))
     return this.placedRecently.flatMap(item => {
       if (item.hostId !== hostId) return []
       if (onItsWay.has(item.threadId)) delete item.left
