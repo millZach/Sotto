@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE: cloud dictation through OpenRouter</title>
+<!--
+  PROTOTYPE, throwaway. Answers: what should Settings → Dictation look like when dictation can be transcribed by an
+  OpenRouter speech model instead of on this computer? Round 1 offered three pickers; Zach picked B (the ranked list)
+  and put it on the Dictation page. Round 2 (?variant=1|2): where the Speech model group sits on that page.
+  Numbers: error rates are Artificial Analysis AA-WER v2 (English); speeds are PLACEHOLDERS until Sotto's own test runs.
+-->
+<style>
+:root{
+  --bg:#0b0d0e;--panel:#14181a;--card:#191e20;--sunk:#0f1213;--elev:#232a2d;--hair:#283033;
+  --text:#ecefee;--muted:#9aa5a3;--acc:#3fbfa8;--accbg:#1f4a43;--accfg:#0b0d0e;--warn:#e0a458;--err:#ef7d72;
+  --tipbg:#2a3235;--tipfg:#ecefee;
+}
+:root.light{
+  --bg:#eef1f0;--panel:#f7f9f8;--card:#ffffff;--sunk:#f1f4f3;--elev:#e4eae8;--hair:#d6dddb;
+  --text:#18201e;--muted:#55625f;--acc:#137a69;--accbg:#d3ece6;--accfg:#ffffff;--warn:#8a5a14;--err:#b3362b;
+  --tipbg:#18201e;--tipfg:#f4f6f5;
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 Figtree,"Segoe UI",system-ui,sans-serif}
+button{font:inherit;color:inherit}
+.proto{max-width:1320px;margin:0 auto;padding:16px 16px 96px}
+.banner{border:1px dashed var(--warn);color:var(--warn);border-radius:10px;padding:10px 12px;font-size:13px;margin-bottom:12px}
+.controls{display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;padding:10px 12px;border:1px solid var(--hair);border-radius:10px;background:var(--panel);margin-bottom:16px;font-size:13px}
+.controls b{color:var(--muted);font-weight:600;margin-right:4px}
+.pill{display:inline-flex;border:1px solid var(--hair);border-radius:8px;overflow:hidden}
+.pill button{border:0;background:transparent;padding:5px 10px;cursor:pointer;color:var(--muted)}
+.pill button.on{background:var(--accbg);color:var(--text)}
+h2.sec{font-size:15px;margin:26px 0 6px}
+p.lead{color:var(--muted);margin:0 0 12px;max-width:820px;font-size:13px}
+
+/* window */
+.win{display:grid;grid-template-columns:230px 1fr;min-height:640px;border:1px solid var(--hair);border-radius:12px;overflow:hidden;background:var(--bg)}
+.nav{background:var(--panel);padding:18px 10px;border-right:1px solid var(--hair)}
+.nav h1{font-size:22px;margin:4px 8px 14px}
+.nav .item{padding:8px 10px;border-radius:8px;color:var(--muted);font-size:14px;display:flex;justify-content:space-between}
+.nav .item.on{background:var(--accbg);color:var(--text)}
+.nav hr{border:0;border-top:1px solid var(--hair);margin:10px 8px}
+.detail{padding:26px 40px 30px;overflow:auto}
+.head h2{font-size:26px;margin:0}.head p{margin:2px 0 14px;color:var(--muted)}
+.card{background:var(--card);border:1px solid var(--hair);border-radius:14px;padding:4px 22px}
+.row{display:flex;gap:24px;justify-content:space-between;align-items:flex-start;padding:16px 0;border-bottom:1px solid var(--hair)}
+.row:last-child{border-bottom:0}
+.row .l{max-width:430px}.row .l strong{display:block;font-size:15px;font-weight:600}.row .l>span{display:block;color:var(--muted);font-size:13px;margin-top:2px}
+.row .l strong .tip{margin-left:6px;vertical-align:-3px}.row .l .tip .bubble{left:0;right:auto}
+.row .r{flex:0 0 300px;display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+.row.stack{flex-direction:column;gap:10px}.row.stack .r{flex:none;width:100%;align-items:stretch}
+.switch{width:44px;height:24px;border-radius:12px;background:var(--elev);border:1px solid var(--hair);position:relative;cursor:pointer;flex:none}
+.switch:after{content:"";position:absolute;top:3px;left:3px;width:16px;height:16px;border-radius:50%;background:var(--muted);transition:left .15s}
+.switch.on{background:var(--acc);border-color:var(--acc)}.switch.on:after{left:23px;background:var(--accfg)}
+.input{width:100%;height:38px;border-radius:9px;border:1px solid var(--hair);background:var(--sunk);color:var(--muted);padding:9px 12px;font-size:13.5px}
+.input.focus{border:2px solid var(--acc);color:var(--text)}
+.btn{border:1px solid var(--hair);background:transparent;border-radius:9px;padding:7px 14px;cursor:pointer}
+.btn.primary{background:var(--acc);border-color:var(--acc);color:var(--accfg);font-weight:600}
+.note{color:var(--muted);font-size:13px;padding:14px 0 6px;max-width:640px}
+.small{font-size:12px;color:var(--muted)}
+.ok{color:var(--acc)}
+
+/* Dictation page groups */
+.gh{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;margin:22px 0 10px}.gh:first-child{margin-top:4px}
+.gh svg{width:16px;height:16px;stroke:var(--muted);fill:none;stroke-width:1.8}
+.card.ghost .row .l strong{color:var(--muted)}
+/* tooltip: hover or tap */
+.tip{position:relative;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:50%;border:1px solid var(--hair);color:var(--muted);font-size:11px;cursor:help;flex:none}
+.tip .bubble,.has-tip .bubble{display:none;position:absolute;z-index:20;right:0;top:calc(100% + 6px);width:270px;background:var(--tipbg);color:var(--tipfg);border-radius:8px;padding:9px 11px;font-size:12.5px;line-height:1.4;text-align:left;box-shadow:0 6px 20px #0007;font-weight:400}
+.tip:hover .bubble,.tip.open .bubble,.has-tip:hover>.bubble,.has-tip.open>.bubble{display:block}
+.has-tip{position:relative}
+
+/* Variant A: search box like Cleanup model */
+.combo{width:100%;position:relative}
+.list{margin-top:6px;border:1px solid var(--hair);border-radius:10px;background:var(--card);max-height:330px;overflow:auto;padding:4px}
+.opt{display:flex;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:7px;cursor:pointer}
+.opt:hover{background:var(--elev)}.opt.sel{background:var(--accbg)}
+.opt .n{font-size:13.5px}.opt .m{font-size:12px;color:var(--muted)}
+.opt .stats{font-size:12px;color:var(--muted);text-align:right;white-space:nowrap}
+.grp{font-size:11.5px;color:var(--muted);padding:8px 10px 4px;text-transform:uppercase;letter-spacing:.04em}
+.nozdr{color:var(--warn)}
+
+/* Variant B: inline ranked list */
+.rank{width:100%;border:1px solid var(--hair);border-radius:12px;overflow:visible}
+.rk{display:grid;grid-template-columns:24px 22px 1fr 130px 90px 22px;gap:10px;align-items:center;padding:10px 12px;border-bottom:1px solid var(--hair);cursor:pointer}
+.rk:last-child{border-bottom:0}.rk:hover{background:var(--elev)}.rk.sel{background:var(--accbg)}
+.rk .num{color:var(--muted);font-size:12px;text-align:right}
+.radio{width:16px;height:16px;border-radius:50%;border:2px solid var(--muted)}.rk.sel .radio{border-color:var(--acc);box-shadow:inset 0 0 0 3px var(--card);background:var(--acc)}
+.bar{height:6px;border-radius:3px;background:var(--elev);position:relative}.bar i{position:absolute;left:0;top:0;bottom:0;border-radius:3px;background:var(--acc)}
+.rk .lbl{font-size:11.5px;color:var(--muted);margin-top:3px}
+.rkhead{display:grid;grid-template-columns:24px 22px 1fr 130px 90px 22px;gap:10px;padding:8px 12px;font-size:11.5px;color:var(--muted);border-bottom:1px solid var(--hair)}
+.more{padding:10px 12px;color:var(--acc);cursor:pointer;font-size:13px}
+
+/* Variant C: closed select + facts */
+select.input{appearance:auto;color:var(--text)}
+.facts{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;width:100%;margin-top:4px}
+.fact{background:var(--sunk);border:1px solid var(--hair);border-radius:10px;padding:10px 12px}
+.fact b{display:block;font-size:18px}.fact span{font-size:12px;color:var(--muted)}
+
+/* widget and dictate */
+.panes{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.pane{border:1px solid var(--hair);border-radius:12px;background:var(--panel);padding:18px}
+.pane h3{margin:0 0 4px;font-size:14px}.pane .small{margin-bottom:14px}
+.widget{display:inline-flex;align-items:center;gap:10px;background:#101415;border:1px solid #2b3437;color:#ecefee;border-radius:999px;padding:8px 16px;position:relative;font-size:13px}
+.dots{display:inline-flex;gap:3px}.dots i{width:5px;height:5px;border-radius:50%;background:#3fbfa8;opacity:.6}
+.widget .bubble{display:block;position:static;margin-top:10px;width:auto}
+.widget.err{border-color:var(--err)}
+.x{opacity:.7;margin-left:4px}
+.dict{background:var(--card);border:1px solid var(--hair);border-radius:12px;padding:16px}
+.dict .t{font-weight:600}.dict p{margin:4px 0 12px;color:var(--muted);font-size:13px}
+.dict .acts{display:flex;flex-wrap:wrap;gap:8px}
+
+/* switcher bar */
+.switcher{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:#fff;color:#111;border-radius:999px;padding:6px 8px;box-shadow:0 6px 24px #0008;z-index:50;font-size:13px;max-width:calc(100% - 20px)}
+.switcher button{border:0;background:#111;color:#fff;border-radius:999px;width:32px;height:32px;cursor:pointer;flex:none}
+.switcher span{padding:0 6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+
+@media (max-width:860px){
+  .proto{padding:10px 10px 90px}
+  .win{grid-template-columns:1fr;min-height:0}.nav{display:none}
+  .detail{padding:18px 14px}
+  .row{flex-direction:column;gap:10px}.row .r{flex:none;width:100%;align-items:stretch}
+  .panes{grid-template-columns:1fr}
+  .rk,.rkhead{grid-template-columns:20px 18px 1fr 70px 18px}.rk .speedcol,.rkhead .speedcol{display:none}
+  .facts{grid-template-columns:1fr 1fr 1fr}
+  .tip .bubble,.has-tip .bubble{width:230px}
+}
+</style>
+</head>
+<body>
+<div class="proto">
+  <div class="banner">PROTOTYPE. Error rates are Artificial Analysis's published AA-WER (English). Speeds marked * are placeholders until Sotto's own test runs; the real list will be ranked by a blend of measured error rate and time-to-text. Hover (or tap) the <b>i</b> and model rows for tooltips.</div>
+
+  <div class="controls" id="controls"></div>
+
+  <h2 class="sec">Settings → Dictation</h2>
+  <p class="lead" id="variantLead"></p>
+  <div class="win">
+    <div class="nav">
+      <h1>Settings</h1>
+      <div class="item on">Dictation <span>›</span></div>
+      <div class="item">Cleanup</div>
+      <hr><div class="item">Threads</div><div class="item">Providers</div><div class="item">Hosts &amp; phones</div>
+      <hr><div class="item">Appearance</div><div class="item">Application</div>
+    </div>
+    <div class="detail"><div class="head"><h2>Dictation</h2><p>Microphone, speech model &amp; what happens to the text</p></div><div id="settings"></div></div>
+  </div>
+
+  <h2 class="sec">While a dictation is being transcribed, and when it fails</h2>
+  <p class="lead">You chose to keep the privacy wording to Settings and the docs, so the widget and Dictate gain no new words about the cloud. The one change is that the widget's tooltip stops claiming "Transcribed on this computer" when it isn't. A failed cloud dictation is kept as today, and Dictate offers <b>Transcribe on this computer</b> when a local model is downloaded.</p>
+  <div class="panes" id="panes"></div>
+</div>
+
+<div class="switcher"><button id="prev" aria-label="Previous variant">←</button><span id="vlabel"></span><button id="next" aria-label="Next variant">→</button></div>
+
+<script>
+// [id, name, maker, AA-WER or null, zero-retention host?, $ per audio hour or null (token-billed), placeholder speed s]
+const MODELS = [
+  ['microsoft/mai-transcribe-2','MAI-Transcribe-2','Microsoft',2.0,true,0.10,0.5],
+  ['mistralai/voxtral-small-transcribe-3-0','Voxtral Small Transcribe 3','Mistral',2.1,true,0.24,0.9],
+  ['elevenlabs/scribe-v2','Scribe v2','ElevenLabs',2.2,true,0.22,0.7],
+  ['mistralai/voxtral-mini-transcribe-3-0','Voxtral Mini Transcribe 3','Mistral',2.2,true,0.21,0.6],
+  ['microsoft/mai-transcribe-1.5','MAI-Transcribe-1.5','Microsoft',2.4,true,0.36,0.8],
+  ['google/gemini-3.5-transcribe','Gemini 3.5 Transcribe','Google',2.6,false,null,1.4],
+  ['mistralai/voxtral-small-24b-2507-stt','Voxtral Small','Mistral',2.8,true,0.18,1.1],
+  ['assemblyai/universal-3-5-pro','Universal-3.5 Pro','AssemblyAI',3.0,true,0.30,0.9],
+  ['openai/gpt-transcribe','GPT Transcribe','OpenAI',3.3,false,0.27,1.2],
+  ['nvidia/nemotron-3.5-transcribe','Nemotron 3.5 Transcribe','NVIDIA',3.4,true,0.12,0.7],
+  ['mistralai/voxtral-mini-transcribe','Voxtral Mini Transcribe 2','Mistral',3.6,true,0.18,0.6],
+  ['mistralai/voxtral-mini-3b-2507','Voxtral Mini','Mistral',3.8,true,0.06,0.8],
+  ['openai/gpt-4o-transcribe','GPT-4o Transcribe','OpenAI',4.0,false,null,1.3],
+  ['openai/whisper-large-v3','Whisper Large v3','OpenAI',4.1,true,0.03,0.6],
+  ['openai/whisper-1','Whisper','OpenAI',4.1,false,0.36,1.0],
+  ['google/chirp-3','Chirp 3','Google',4.3,true,0.96,1.5],
+  ['nvidia/parakeet-tdt-0.6b-v3','Parakeet v3','NVIDIA',4.5,true,0.09,0.4],
+  ['openai/gpt-4o-mini-transcribe','GPT-4o mini Transcribe','OpenAI',4.5,false,null,1.0],
+  ['openai/whisper-large-v3-turbo','Whisper Large v3 Turbo','OpenAI',4.6,true,0.01,0.4],
+  ['deepgram/nova-3','Nova-3','Deepgram',5.2,true,0.26,0.4],
+  ['x-ai/grok-stt-1.0','Grok STT 1.0','xAI',null,false,0.10,null],
+  ['assemblyai/universal-3-6-pro','Universal-3.6 Pro','AssemblyAI',null,true,0.30,null],
+  ['elevenlabs/scribe-v2-medical','Scribe v2 Medical','ElevenLabs',null,true,0.22,null],
+  ['fish-audio/transcribe-1','Transcribe 1','Fish Audio',null,true,0.36,null],
+  ['fish-audio/transcribe-1-pro','Transcribe 1 Pro','Fish Audio',null,true,0.36,null],
+  ['meta/muse-voice-transcribe-1.0','Muse Voice Transcribe','Meta',null,false,0.18,null],
+  ['nvidia/nemotron-3.5-asr-streaming-multilingual-0.6b','Nemotron 3.5 ASR Streaming','NVIDIA',null,true,0.01,null],
+  ['qwen/qwen3-asr-1.7b','Qwen3-ASR 1.7B','Qwen',null,true,0.03,null],
+  ['qwen/qwen3-asr-0.6b','Qwen3-ASR 0.6B','Qwen',null,true,0.01,null],
+].map(([id,name,maker,wer,zdr,price,speed])=>({id,name,maker,wer,zdr,price,speed}))
+// Placeholder blend: error rate plus one point per half second of time-to-text. The real weight is Zach's call after the test.
+const score = m => m.wer == null ? Infinity : m.wer + 2 * (m.speed ?? 0)
+const ranked = [...MODELS].sort((a,b)=>score(a)-score(b))
+const tested = ranked.filter(m=>m.wer!=null), untested = ranked.filter(m=>m.wer==null)
+
+const VARIANTS = { 1:'Speech model group where it is today', 2:'Speech model group first on the page' }
+const LEADS = {
+  1:'1. The Speech model group stays where it is today, after Microphone, Shortcuts and While you dictate. The OpenRouter switch is its first row; on, the ranked list (your pick B) replaces the local model picker.',
+  2:'2. The same group moves to the top of the Dictation page, so where your words are transcribed is the first thing on it. Everything else is unchanged.',
+}
+const state = Object.assign({variant:'1',cloud:'on',key:'saved',local:'yes',theme:'dark',open:true,all:false,chosen:'elevenlabs/scribe-v2'},
+  Object.fromEntries(new URLSearchParams(location.search)))
+state.open = state.open !== 'false' && state.open !== false; state.all = state.all === 'true' || state.all === true
+
+const $ = s => document.querySelector(s)
+const esc = s => String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]))
+const price = m => m.price == null ? 'Billed by audio tokens, about $0.15 to $0.60 per hour of audio.' : `$${m.price < 0.05 ? m.price.toFixed(3) : m.price.toFixed(2)} per hour of audio, through your OpenRouter key.`
+const retention = m => m.zdr ? 'Sent to a host that keeps no audio (zero data retention).' : 'Not a zero-retention model: its host may keep audio under its own terms.'
+const tipText = m => `<b>${esc(m.name)}</b> by ${esc(m.maker)}<br>${price(m)}<br>${retention(m)}`
+const speed = m => m.speed == null ? 'not tested' : `${m.speed.toFixed(1)} s*`
+const errs = m => m.wer == null ? 'not tested' : `${m.wer.toFixed(1)}% errors`
+const byId = id => MODELS.find(m=>m.id===id)
+
+function controls(){
+  const group = (label,key,opts) => `<span><b>${label}</b><span class="pill">${opts.map(([v,t])=>`<button data-k="${key}" data-v="${v}" class="${state[key]===v?'on':''}">${t}</button>`).join('')}</span></span>`
+  $('#controls').innerHTML = [
+    group('Placement','variant',Object.keys(VARIANTS).map(k=>[k,k])),
+    group('OpenRouter switch','cloud',[['on','On'],['off','Off']]),
+    group('Key','key',[['saved','Saved in Cleanup'],['none','None yet']]),
+    group('Local model downloaded','local',[['yes','Yes'],['no','No']]),
+    group('Theme','theme',[['dark','Dark'],['light','Light']]),
+  ].join('')
+}
+
+function switchRow(){
+  const on = state.cloud==='on'
+  return `<div class="row"><div class="l"><strong>Transcribe with OpenRouter</strong><span>Sends your audio to the model you pick. Off, dictation is transcribed on this computer.</span></div>
+    <div class="r"><div class="switch ${on?'on':''}" data-toggle="cloud" role="switch" aria-checked="${on}" tabindex="0" aria-label="Transcribe with OpenRouter"></div></div></div>`
+}
+function keyRow(){
+  if (state.key==='saved') return `<div class="row"><div class="l"><strong>OpenRouter API key</strong><span>Uses the key saved for AI cleanup. Change it in Cleanup.</span></div><div class="r"><div class="input">Key saved</div></div></div>`
+  return `<div class="row"><div class="l"><strong>OpenRouter API key</strong><span>Transcribing with OpenRouter needs a key. It is the same key AI cleanup uses, kept in your system's credential store. Until one is saved, dictation says so and records nothing.</span></div>
+    <div class="r"><div class="input focus">sk-or-…</div><button class="btn">Verify key</button><span class="small">No key? Get one at openrouter.ai/keys.</span></div></div>`
+}
+function rankingTip(){
+  return `<span class="tip" tabindex="0">i<span class="bubble">Ranked by Sotto's own test: each model's error rate on Sotto's test clips, plus one point for every half second it takes to return the text. Models not tested yet come last. Updated with each Sotto release; the list itself comes live from OpenRouter.</span></span>`
+}
+
+function pickerB(){
+  const rows = state.all ? ranked : tested.slice(0,5)
+  const maxW = 6, maxS = 1.6
+  const r = (x,i) => `<div class="rk has-tip ${x.id===state.chosen?'sel':''}" data-pick="${x.id}"><span class="num">${x.wer==null?'–':i+1}</span><span class="radio"></span>
+    <div><div>${esc(x.name)} <span class="small">${esc(x.maker)}</span>${x.zdr?'':' <span class="nozdr">◆</span>'}</div></div>
+    <div><div class="bar"><i style="width:${x.wer==null?0:100*(1-x.wer/maxW)}%"></i></div><div class="lbl">${errs(x)}</div></div>
+    <div class="speedcol"><div class="bar"><i style="width:${x.speed==null?0:100*(1-x.speed/maxS)}%"></i></div><div class="lbl">${speed(x)}</div></div>
+    <span class="tip">i</span><span class="bubble">${tipText(x)}</span></div>`
+  return `<div class="row stack"><div class="l"><strong>Model ${rankingTip()}</strong><span>Best first. Longer bars are better.</span></div>
+   <div class="r"><div class="rank"><div class="rkhead"><span>#</span><span></span><span>Model</span><span>Accuracy</span><span class="speedcol">Speed</span><span></span></div>
+   ${rows.map(r).join('')}<div class="more" data-toggle="all">${state.all?'Show the top five':'Show all 29 models'}</div></div></div></div>`
+}
+const ICON = {
+  mic:'<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
+  keys:'<svg viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/></svg>',
+  timer:'<svg viewBox="0 0 24 24"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M10 2h4"/></svg>',
+  wave:'<svg viewBox="0 0 24 24"><path d="M4 10v4M8 6v12M12 9v6M16 4v16M20 10v4"/></svg>',
+  paste:'<svg viewBox="0 0 24 24"><rect x="6" y="4" width="12" height="17" rx="2"/><path d="M9 4h6v3H9z"/></svg>',
+}
+const group = (icon,title,body,ghost) => `<div class="gh">${ICON[icon]}${title}</div><div class="card ${ghost?'ghost':''}">${body}</div>`
+const plain = (label,right) => `<div class="row"><div class="l"><strong>${label}</strong></div><div class="r"><div class="input">${right}</div></div></div>`
+function speechGroup(){
+  const on = state.cloud==='on', m = byId(state.chosen)
+  let h = switchRow()
+  if (on) {
+    h += keyRow() + pickerB()
+    h += `<div class="row"><div class="l"><strong>Whitespace formatting</strong><span>Trims extra spaces without changing any words.</span></div><div class="r"><div class="switch on"></div></div></div>`
+    h += `<div class="note">The audio you dictate is sent through OpenRouter to ${esc(m.maker)} and transcribed there. Your dictionary words go with it as spelling hints when the model takes them. Audio is never saved on this computer. The speech model on this computer is unloaded while this is on; its files are kept. <span class="nozdr">◆</span> marks a model whose host may keep audio.</div>`
+  } else {
+    h += `<div class="row"><div class="l"><strong>Speech model</strong><span>Parakeet Ultra, by Moondream on NVIDIA's v3. 25 European languages. <span class="ok">Ready</span></span></div><div class="r"><select class="input"><option>Parakeet Ultra</option><option>Parakeet v3</option><option>Parakeet v2</option></select></div></div>`
+    h += `<div class="row"><div class="l"><strong>Whitespace formatting</strong><span>Trims extra spaces without changing any words.</span></div><div class="r"><div class="switch on"></div></div></div>`
+    h += `<div class="note">Dictation is transcribed on this computer. Audio never leaves it.</div>`
+  }
+  return group('wave','Speech model',h)
+}
+function settings(){
+  const others = [
+    group('mic','Microphone',plain('Microphone','Windows default')+plain('Microphone test','Test microphone'),true),
+    group('keys','Shortcuts',plain('Press to start and stop','Ctrl + Shift + Space'),true),
+    group('timer','While you dictate',plain('Recording limit','1 min')+plain('Sound cues','On'),true),
+  ]
+  const after = group('paste','After you dictate',plain('Automatic paste','On'),true)
+  const speech = speechGroup()
+  $('#settings').innerHTML = state.variant==='2' ? [speech,...others,after].join('') : [...others,speech,after].join('')
+}
+
+function panes(){
+  const on = state.cloud==='on', local = state.local==='yes'
+  const detail = on ? 'Audio is never saved' : 'Transcribed on this computer, never saved'
+  $('#panes').innerHTML = `
+  <div class="pane"><h3>Widget, transcribing</h3><div class="small">Hovering the stage label. ${on?'Cloud on: the claim about this computer is dropped; nothing new is added.':'Switch off: today\'s wording.'}</div>
+    <div class="widget"><span class="dots"><i></i><i></i><i></i></span>Transcribing</div>
+    <div class="widget" style="display:block;border-radius:8px;margin-top:8px;background:var(--tipbg);color:var(--tipfg);border:0">${detail}</div></div>
+  <div class="pane"><h3>Widget, failed</h3><div class="small">Unchanged from today (ADR-0055). The tooltip carries the reason.</div>
+    <div class="widget err">Click to try again <span class="x">×</span></div>
+    <div class="widget" style="display:block;border-radius:8px;margin-top:8px;background:var(--tipbg);color:var(--tipfg);border:0"><b>OpenRouter is out of credit</b><br>Nothing was lost. Add credit at openrouter.ai, then try again${local?', or transcribe it on this computer from Dictate':''}.</div></div>
+  <div class="pane" style="grid-column:1/-1"><h3>Dictate room, failed</h3><div class="small">${local?'A local model is downloaded, so Dictate offers it for this one dictation. It loads the model first (a few seconds), then unloads it again.':'No local model downloaded: only Try again and Discard.'}</div>
+    <div class="dict"><div class="t">Couldn't transcribe with OpenRouter</div><p>OpenRouter is out of credit. Nothing was lost: the recording is kept until you try again or discard it.</p>
+    <div class="acts"><button class="btn primary">Try again</button>${local?'<button class="btn">Transcribe on this computer</button>':''}<button class="btn">Discard recording</button></div></div></div>`
+}
+
+function render(){
+  document.documentElement.classList.toggle('light', state.theme==='light')
+  controls(); settings(); panes()
+  $('#variantLead').textContent = LEADS[state.variant]
+  $('#vlabel').textContent = `${state.variant}: ${VARIANTS[state.variant]}`
+  const q = new URLSearchParams({variant:state.variant,cloud:state.cloud,key:state.key,local:state.local,theme:state.theme})
+  history.replaceState(null,'','?'+q)
+}
+const cycle = d => { const k = Object.keys(VARIANTS); state.variant = k[(k.indexOf(state.variant)+d+k.length)%k.length]; render() }
+document.addEventListener('click', e => {
+  const c = e.target.closest('[data-k]'); if (c) { state[c.dataset.k] = c.dataset.v; return render() }
+  const t = e.target.closest('[data-toggle]'); if (t) { const k = t.dataset.toggle; state[k] = k==='cloud' ? (state.cloud==='on'?'off':'on') : !state[k]; return render() }
+  const p = e.target.closest('[data-pick]'); if (p) { state.chosen = p.dataset.pick; if (state.variant==='A') state.open = false; return render() }
+  const tip = e.target.closest('.tip,.has-tip'); document.querySelectorAll('.open').forEach(x=>x!==tip&&x.classList.remove('open')); if (tip) tip.classList.toggle('open')
+})
+document.addEventListener('change', e => { if (e.target.matches('[data-select]')) { state.chosen = e.target.value; render() } })
+$('#prev').onclick = () => cycle(-1); $('#next').onclick = () => cycle(1)
+document.addEventListener('keydown', e => { if (e.target.closest('input,textarea,select,[contenteditable]')) return; if (e.key==='ArrowLeft') cycle(-1); if (e.key==='ArrowRight') cycle(1) })
+render()
+</script>
+</body>
+</html>
