@@ -199,6 +199,34 @@ export function snapshotTree(root) {
   return entries
 }
 
+/**
+ * How two snapshots of one tree differ, without building a diff of them: how many paths were added, removed or changed,
+ * and the first few of them. A changed tree is reported in one line however large it is; a deep comparison of two
+ * snapshots of a large tree ran forge out of memory (#1802).
+ */
+export function compareTreeStamps(before, after, limit = 5) {
+  const previous = new Map(before.map(entry => [entry[0], entry]))
+  const paths = []
+  let count = 0
+  const differs = path => {
+    count += 1
+    if (paths.length < limit) paths.push(path)
+  }
+  for (const entry of after) {
+    const old = previous.get(entry[0])
+    previous.delete(entry[0])
+    if (old === undefined || old.length !== entry.length || old.some((value, index) => value !== entry[index])) differs(entry[0])
+  }
+  for (const path of previous.keys()) differs(path)
+  return { count, paths }
+}
+
+/** Throws when the tree at `root` no longer matches its snapshot, naming how many paths differ and the first few. */
+export function assertTreeUnchanged(root, before, limit = 5) {
+  const { count, paths } = compareTreeStamps(before, snapshotTree(root), limit)
+  if (count > 0) throw new Error(`${root} changed: ${count} ${count === 1 ? 'path differs' : 'paths differ'}, first ${paths.join(', ')}`)
+}
+
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const [action, ...args] = process.argv.slice(2)
   if (action === 'setup' && args.length === 2) prepareSandboxHome(...args)

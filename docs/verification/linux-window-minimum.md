@@ -36,6 +36,8 @@ The four 820×560 frames were captured with grim on the owned nested output and 
 
 The [repeatable harness](../../scripts/verify-linux-window-minimum.mjs) compares Electron options with `--probe`, then drives the built app without changing its minimum. It floats and resizes only the owned main window through the nested Hyprland instance and reads content size from both Electron and the renderer. It checks 1600×1000, 1280×800, 820×560 and a below-minimum request in Light and Dark, with reduced motion enabled. It captures with grim, never the desktop portal.
 
+Since October 29, 2026 (#1802), this harness and `scripts/verify-shell-plumbing.mjs` guard only the three Omarchy config and state trees. The run's HOME is private, and hashing all of `~/.sotto`, every thread's worktree included, ran forge out of memory; the runs below that report a `.sotto` guard predate it. A changed tree is now reported as a count and its first few paths, never a full comparison.
+
 ## Reproduce
 
 ```sh
