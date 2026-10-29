@@ -46,7 +46,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
+  service: Pick<HostService, 'shell' | 'activeSelection' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -746,8 +746,25 @@ export class DesktopHostRouter {
     if (proof?.completed.some(item => item.decisionId === answer.decisionId && item.requestId === answer.target.requestId
       && item.questionsDigest === answer.target.questionsDigest)) this.notice = undefined
   }
-  /** Every host's shell read afresh, for a command's reply and any caller that must see the state as it is now. */
+  /** Every host's shell read afresh and copied, for a caller that must see the state as it is now and may change it. */
   shell(): AgentState { return this.build(connection => connection.service.shell()) }
+  /**
+   * A command's answer: every host's state as it is now, the command's own effect included, read in place as a publication
+   * is rather than copied (#1760). It may share records with the last publication, and is read, never written into below
+   * its top level. A publication may still be waiting behind the coordinator's publish window when a command answers, so
+   * the answer is built afresh rather than taken from `lastPublished()`, which could miss the command's effect (#306).
+   */
+  private reply(): AgentState { return this.build(connection => readView(connection.service)) }
+  /**
+   * Publishes every host's state as it is now and answers a command with that publication. It is built from each host's
+   * live state in this same turn, so it holds the command's own effect, and the answer costs no second build (#1760).
+   * Its top level is the caller's, as `reply()`'s is. With no one listening nothing is published, and the answer is built
+   * on its own.
+   */
+  private emitted(): AgentState {
+    this.emit()
+    return this.published ? { ...this.published } : this.reply()
+  }
   /**
    * One host's threads as the router last published them. The host-update and start-at-boot questions ask this on every
    * change; reading every host's shell afresh for it copied the whole state twice per waiting host per update. Before
@@ -1324,7 +1341,7 @@ export class DesktopHostRouter {
         }
       }))
       if (left.length) this.notice = { message: dismissLeft(left) }
-      return this.shell()
+      return this.reply()
     }
     // Clear now acts on this computer's own threads, whichever host is selected (ADR-0140 decision 7).
     if (type === 'preview-clear-threads' || type === 'clear-threads') return this.clearLocalThreads(input, client)
@@ -1335,14 +1352,14 @@ export class DesktopHostRouter {
     // of the thread it began from, and that host brings it to its branch. The window never names a move itself.
     if (command.type === 'bring-changes-back') {
       const across = command.away !== undefined ? { error: BRING_BACK_INTERFACE_WORDS.noTarget() } : await this.bringBackAcross(connection, command)
-      if (across && 'error' in across) return { ...this.shell(), error: across.error }
+      if (across && 'error' in across) return { ...this.reply(), error: across.error }
       if (across) ({ connection, command } = across)
     }
     // Restart stopped threads retired babysitting on this desktop (ADR-0144), whatever the thread's host still offers.
     const refusedNow = this.requiresManagementUpdate(connection.hostId) && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type) ? LEGACY_MANAGEMENT_UPDATE
       : this.options.babysittingRetired === true && (command.type === 'babysit-pull-request' || command.type === 'stop-babysitting') ? BABYSITTING_RETIRED : undefined
     if (refusedNow !== undefined) {
-      return { ...this.shell(), error: refusedNow }
+      return { ...this.reply(), error: refusedNow }
     }
     // Retained local edits publish before the refusal reply. Keep its visible banner stable while typing.
     if (command.type === 'compose' && command.threadId !== undefined && (connection.service.supportsAtomicSend === false || connection.service.supportsDraftRevisions === false)
@@ -1351,7 +1368,7 @@ export class DesktopHostRouter {
       this.selectedHostId = connection.hostId; this.selections++
       if (command.type === 'select-thread') {
         this.selectedThreadId = command.threadId ? hostEntityKey(connection.hostId, command.threadId) : null
-        this.selectedProjectId = this.shell().host.threads.find(thread => thread.id === this.selectedThreadId)?.projectId ?? null
+        this.selectedProjectId = this.reply().host.threads.find(thread => thread.id === this.selectedThreadId)?.projectId ?? null
       } else {
         this.selectedProjectId = command.projectId ? hostEntityKey(connection.hostId, command.projectId) : null; this.selectedThreadId = null
       }
@@ -1360,11 +1377,11 @@ export class DesktopHostRouter {
         const result = await connection.service.command(command, client)
         if (result.error) this.notice = { message: this.refusal(connection, result.error) }
       }
-      this.emit(); return this.shell()
+      return this.emitted()
     }
-    if (connection.kind === 'remote' && command.type === 'set-aside-send') return { ...this.shell(), error: t`Continue with a new message on the desktop that owns this thread. Nothing was changed.` }
+    if (connection.kind === 'remote' && command.type === 'set-aside-send') return { ...this.reply(), error: t`Continue with a new message on the desktop that owns this thread. Nothing was changed.` }
     if (connection.available?.() === false) {
-      if (windowRead(command)) return this.shell()
+      if (windowRead(command)) return this.reply()
       throw new Error(t`${{ host: connection.name }} is disconnected. Nothing was sent. Try again once it reconnects.`)
     }
     if (connection.kind === 'remote' && ['open-thread-folder', 'open-folder'].includes(command.type)) throw new Error(t`This folder is on the host machine. Open it there.`)
@@ -1383,14 +1400,15 @@ export class DesktopHostRouter {
     if (command.type === 'preview-reclaim-thread-worktree') {
       try {
         const result = await connection.service.command(command, client)
-        if (result.error || !result.worktreeReclaimPreview) return { ...this.shell(), error: t`This host could not check the worktree. Nothing was removed. Update the host and try again.` }
-        return { ...this.shell(), error: null, worktreeReclaimPreview: result.worktreeReclaimPreview }
+        if (result.error || !result.worktreeReclaimPreview) return { ...this.reply(), error: t`This host could not check the worktree. Nothing was removed. Update the host and try again.` }
+        return { ...this.reply(), error: null, worktreeReclaimPreview: result.worktreeReclaimPreview }
       } catch {
-        return { ...this.shell(), error: t`This host could not check the worktree. Nothing was removed. Check its connection or update the host and try again.` }
+        return { ...this.reply(), error: t`This host could not check the worktree. Nothing was removed. Check its connection or update the host and try again.` }
       }
     }
-    // Read as values: a host's shell can be its live state, which the command is about to change.
-    const { activeThreadId, activeProjectId } = connection.service.shell()
+    // Read as values: a host's shell can be its live state, which the command is about to change. Only these two are read,
+    // without copying the shell for them (#1760).
+    const { activeThreadId, activeProjectId } = selectionOf(connection.service)
     const selections = this.selections
     const windowShowed = { hostId: this.selectedHostId, threadId: this.selectedThreadId }
     // Stop and settle reach a thread's delegated threads on other machines too (#1316 part 3), as the window saw them before.
@@ -1406,7 +1424,7 @@ export class DesktopHostRouter {
       let decisionId: string | undefined
       let answerTarget: HostAnswerTarget | undefined
       if (connection.kind === 'remote' && command.type === 'answer') {
-        const state = this.shell()
+        const state = this.reply()
         const thread = state.host.threads.find(item => item.id === hostEntityKey(connection.hostId, command.threadId))
         const request = thread?.requests.find(item => item.id === command.requestId)
         const questions = request ? requestDraftQuestions(request) : []
@@ -1458,7 +1476,7 @@ export class DesktopHostRouter {
       }
     } catch (error) {
       for (const undo of unmark) undo()
-      if (windowRead(command) && droppedConnection(error)) return this.shell()
+      if (windowRead(command) && droppedConnection(error)) return this.reply()
       // The host refused this action before dispatch. Return its account through the same state error
       // as a coordinator refusal, so a permission chip does not mistake it for a lost provider answer.
       // A dropped connection is still uncertain and must keep the renderer's recovery path.
@@ -1484,8 +1502,7 @@ export class DesktopHostRouter {
       // its coordinator deletes them, whoever asked (`onThreadsDeleted`).
       await this.cascadedSettles.forget(hostEntityKey(connection.hostId, command.threadId))
     }
-    if (!repeatedUnsupportedCompose) this.emit()
-    const shell = agentShell(this.shell())
+    const shell = repeatedUnsupportedCompose ? this.reply() : this.emitted()
     // A settings save, or a command that named its host, may go to a host other than the selected one, so it answers with
     // its own outcome, never with the selected host's last error, which belongs to some other command (ADR-0074). Continue
     // as a thread answers in the agent's row with its own refusal alone (#1028).
@@ -1590,7 +1607,7 @@ export class DesktopHostRouter {
   }
   /** A clearing or deleting command's answer (ADR-0140): the shell as it is now, built only when one answers, with its outcome. */
   private answer(outcome: Partial<AgentState>, withoutHistory = false): AgentState {
-    const shell = this.shell()
+    const shell = this.reply()
     return { ...withoutHistory ? agentShell(shell) : shell, ...outcome }
   }
   /**
@@ -1613,7 +1630,7 @@ export class DesktopHostRouter {
   /** Refuses, before it is sent, a command that chooses, owns or would enumerate a held provider on that host. */
   private refuseHeld(command: AgentCommand, connection: DesktopHostConnection): void {
     if (!this.held.size) return
-    const held = heldProviderRefusedBy(command, this.held, connection.service.shell().host)
+    const held = heldProviderRefusedBy(command, this.held, readView(connection.service).host)
     if (held) throw new Error(heldProviderRefusal(held))
   }
   /** The host a command's references name, or the selected host, and the command in that host's own IDs. */
@@ -1676,7 +1693,8 @@ export class DesktopHostRouter {
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
     this.refuseHeld(command, connection)
     const threadId = 'threadId' in command ? command.threadId ?? undefined : command.type === 'send' ? command.draft?.threadId : undefined
-    const defaultThread = command.type === 'send' || command.type === 'compose' ? connection.service.shell().draftThreadId ?? connection.service.shell().activeThreadId ?? undefined : undefined
+    const view = command.type === 'send' || command.type === 'compose' ? readView(connection.service) : undefined
+    const defaultThread = view ? view.draftThreadId ?? view.activeThreadId ?? undefined : undefined
     if (!this.watcherAvailable(connection, threadId ?? defaultThread)) throw new Error(watcherDisabledWords())
     return { connection, command }
   }
@@ -1717,10 +1735,10 @@ export class DesktopHostRouter {
   private async startThreadSession(input: unknown, client: ClientIdentity): Promise<AgentState> {
     try {
       const { connection, command } = this.route(input)
-      if (this.requiresManagementUpdate(connection.hostId)) return { ...agentShell(this.shell()), error: LEGACY_MANAGEMENT_UPDATE }
+      if (this.requiresManagementUpdate(connection.hostId)) return { ...this.reply(), error: LEGACY_MANAGEMENT_UPDATE }
       if (connection.available?.() !== false) await connection.service.command(command, client)
     } catch { /* The send that follows starts the session itself and reports what it finds. */ }
-    return agentShell(this.shell())
+    return this.reply()
   }
   /**
    * A remote host keeps a selection for each client and leaves it where it was when that client creates a thread, so
@@ -1742,7 +1760,7 @@ export class DesktopHostRouter {
    * while the command ran wins over the command.
    */
   private follow(connection: DesktopHostConnection, before: Pick<AgentState, 'activeThreadId' | 'activeProjectId'>): void {
-    const after = connection.service.shell()
+    const after = selectionOf(connection.service)
     if (after.activeThreadId === before.activeThreadId && after.activeProjectId === before.activeProjectId) return
     this.moveTo(connection.hostId, after.activeThreadId, after.activeProjectId)
   }
@@ -1794,6 +1812,12 @@ export class DesktopHostRouter {
 
 /** A host's state for a reader that only reads it: its view where it has one, a copy of its shell where it does not. */
 function readView(service: Pick<HostService, 'shell' | 'view'>): AgentState { return service.view?.() ?? service.shell() }
+/** A host's active thread and project, read without a shell built or copied for them where the host can say (#1760). */
+function selectionOf(service: Pick<HostService, 'shell' | 'view' | 'activeSelection'>): Pick<AgentState, 'activeThreadId' | 'activeProjectId'> {
+  if (service.activeSelection) return service.activeSelection()
+  const { activeThreadId, activeProjectId } = readView(service)
+  return { activeThreadId, activeProjectId }
+}
 /** Whether the window shows a thread's provider connected: the host's connection is up and the host says its provider is. */
 function windowConnected(connection: DesktopHostConnection, host: AgentState['host'], thread: AgentThread): boolean {
   return connection.available?.() !== false && isThreadProviderConnected(host, thread)

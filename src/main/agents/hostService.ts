@@ -227,9 +227,15 @@ export interface HostService {
    * host's own state is made for it, so what it holds must never be written into. Absent, read `shell()`.
    */
   view?(): AgentState
+  /**
+   * The active thread and project as `shell()` would give them, read without building or copying a shell (#1760). Absent,
+   * read them from `view()`.
+   */
+  activeSelection?(): Pick<AgentState, 'activeThreadId' | 'activeProjectId'>
   threadDetail(threadId: string): AgentThreadDetail | null
   /** Runs one client's command and answers with the shell, without history. A socket answer's returned
-   * error is its own command outcome; it is independent of the published shell's shared error. */
+   * error is its own command outcome; it is independent of the published shell's shared error. The answer is
+   * read: its top level is the caller's to set, and nothing under it is written into (#1760). */
   command(command: AgentCommand, client: ClientIdentity, answerDecisionId?: string): Promise<AgentState>
   requestAnswerRecovery?(threadId: string, providerId: ProviderId): RequestAnswerRecovery
   /** A user's explicit native read of this exact answer, never a send or a background receipt read. */
@@ -312,13 +318,15 @@ export interface LocalHostControl {
   shell(): AgentState
   /** The shell a broadcast carries: its thread records hold the coordinator's own, so it is read and never written into. */
   broadcastShell?(): AgentState
+  /** The active thread and project as the shell would give them, without building one. */
+  activeSelection?(): Pick<AgentState, 'activeThreadId' | 'activeProjectId'>
   threadKind?(threadId: string): AgentThread['kind']
   threadProvider?(threadId: string): ProviderId | undefined
   projectProvider?(projectId: string): ProviderId | undefined
   threadActivity?(threadId: string, activityId: string): AgentActivity | null
   threadDetail(threadId: string): AgentThreadDetail | null
   subscribe(listener: (state: AgentState) => void): () => void
-  /** Runs one client's command and answers with the shell, without copying any history. */
+  /** Runs one client's command and answers with the shell, without copying any history or thread: read, never written into below its top level. */
   commandShell(command: AgentCommand, client?: ClientIdentity, answerDecisionId?: string): Promise<AgentState>
   requestAnswerRecovery?(threadId: string, providerId: ProviderId): RequestAnswerRecovery
   checkRequestAnswer?(target: HostAnswerTarget, client: ClientIdentity): Promise<void>
@@ -516,6 +524,11 @@ export class LocalHostService implements HostService {
   shell(): AgentState { return this.control.shell() }
   /** What a broadcast would carry now. A Watcher change handed on with a whole copy of the shell cost what a broadcast did. */
   view(): AgentState { return this.control.broadcastShell?.() ?? this.control.shell() }
+  activeSelection(): Pick<AgentState, 'activeThreadId' | 'activeProjectId'> {
+    if (this.control.activeSelection) return this.control.activeSelection()
+    const { activeThreadId, activeProjectId } = this.view()
+    return { activeThreadId, activeProjectId }
+  }
   threadKind(threadId: string): AgentThread['kind'] {
     return this.control.threadKind ? this.control.threadKind(threadId) : this.control.shell().host.threads.find(thread => thread.id === threadId)?.kind
   }
@@ -576,7 +589,8 @@ export class LocalHostService implements HostService {
     else this.shownBy.delete(client.clientId)
     // What every client observes is what the host loads and streams, focused or not; only showing waits on the focus.
     const state = await this.control.commandShell({ type: 'observe-threads', threadIds: [...new Set([...this.observations.values()].flat())] }, client)
-    return this.control.showThreads?.(this.shownThreads()) ? this.control.shell() : state
+    // Showing threads changes the shell; the answer is read again, as a broadcast would carry it, not copied (#1760).
+    return this.control.showThreads?.(this.shownThreads()) ? this.view() : state
   }
   /** Main reports the window's focus as it moves; gaining it shows the window's panes again, which reads their finish. */
   setWindowFocused(focused: boolean): void {

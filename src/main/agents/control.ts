@@ -1473,7 +1473,7 @@ export class AgentControl {
     return task
   }
   /** A clearing command's answer: the shell as it is now, built only when a clearing command answers, with its outcome. */
-  private clearReply(outcome: Partial<AgentState>): AgentState { return { ...this.shell(), ...outcome } }
+  private clearReply(outcome: Partial<AgentState>): AgentState { return { ...this.reply(), ...outcome } }
   private clearCommand(command: Extract<AgentCommand, { type: 'preview-delete-thread' | 'delete-thread' | 'preview-clear-threads' | 'clear-threads' }>): Promise<AgentState> {
     if (this.dependencies.clearThreadsEnabled !== true) return Promise.resolve(this.clearReply({ error: 'Deleting threads is not available in this version of Sotto. Nothing was deleted.' }))
     const host = this.dependencies.host
@@ -1816,6 +1816,22 @@ export class AgentControl {
    * still copies all of it, for a caller that may change what it is handed.
    */
   broadcastShell(): AgentState { return this.shellOf(true) }
+  /**
+   * A command's reply: the shell as a broadcast would carry it now, the command's own effect included. Its top level is
+   * the caller's to set (an `error`, a preview); everything under it is the broadcast's, read and never written into.
+   * Every client that sends a command reads only its outcome from the reply, and the desktop's router discards the rest,
+   * so a reply that copied every thread cost main a whole copy of the state on each draft save (#1760).
+   */
+  private reply(): AgentState { return this.shellOf(true) }
+  /**
+   * The thread and project this coordinator has active, as its shell would give them, read without building one. The
+   * desktop's router reads these two around every command to follow a selection the command made (#1760).
+   */
+  activeSelection(): Pick<AgentState, 'activeThreadId' | 'activeProjectId'> {
+    const { activeThreadId, activeProjectId } = this.state
+    // As `hideWatcher` leaves them in the shell: a dormant thread is no one's selection.
+    return this.threadAvailable(activeThreadId) ? { activeThreadId, activeProjectId } : { activeThreadId: null, activeProjectId: null }
+  }
   private shellOf(shareThreads: boolean): AgentState {
     const { threads, models } = this.state.host
     // A certified catalog is frozen and shared by every layer from the adapter on, so the shell carries it as it is rather
@@ -3139,12 +3155,12 @@ export class AgentControl {
   private startThreadSession(threadId: string): Promise<AgentState> {
     const host = this.dependencies.host
     const thread = this.state.host.threads.find(item => item.id === threadId)
-    if (!host.startThreadSession || !thread || thread.providerSessionOpen || thread.archivedAt || !isThreadProviderConnected(this.state.host, thread)) return Promise.resolve(this.shell())
+    if (!host.startThreadSession || !thread || thread.providerSessionOpen || thread.archivedAt || !isThreadProviderConnected(this.state.host, thread)) return Promise.resolve(this.reply())
     const task = (this.threadActions.get(threadId) ?? Promise.resolve()).catch(() => undefined)
       .then(() => host.startThreadSession!(threadId)).catch(() => undefined)
     this.threadActions.set(threadId, task)
     void task.finally(() => { if (this.threadActions.get(threadId) === task) this.threadActions.delete(threadId) })
-    return task.then(() => this.shell())
+    return task.then(() => this.reply())
   }
   private thread(id: string | null): AgentThread {
     const thread = this.state.host.threads.find(t => t.id === id)
@@ -3316,7 +3332,7 @@ export class AgentControl {
     this.publish()
     // Saving text needs exact revision/durability evidence, not a copy of every loaded history.
     // The desktop router discards those histories anyway; copying them here blocks native input.
-    return privateReply ? { ...this.shell(), error: failure } : this.shell()
+    return privateReply ? { ...this.reply(), error: failure } : this.reply()
   }
   private validateDraftRevision(command: Extract<AgentCommand, { type: 'save-thread-draft' }>, immutableRevision = false, admittedSend = false): { previous?: AgentThreadDraft; sameRevision: boolean } {
     const previous = this.state.threadDrafts?.find(item => item.threadId === command.threadId)
@@ -3401,7 +3417,7 @@ export class AgentControl {
         { threadId, providerId: this.state.host.threads.find(thread => thread.id === threadId)?.providerId ?? 'codex', cwd: '', status: 'error', skills: [], errors: [], error: error instanceof Error ? error.message : 'Skills could not be listed.' },
       ]
     }
-    this.publish(); return this.shell()
+    this.publish(); return this.reply()
   }
   /**
    * The thread's new name. It is a state edit alone: no native work is started, interrupted or queued
@@ -3494,7 +3510,7 @@ export class AgentControl {
       }
     } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'The Git command failed.') }
     this.publish()
-    return this.shell()
+    return this.reply()
   }
   /**
    * The reader that babysits this host's threads' pull requests (ADR-0061), and what the queue asks it before each
@@ -3538,7 +3554,7 @@ export class AgentControl {
       this.state.error = null
     } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'The restart could not be changed.') }
     this.publish()
-    return this.shell()
+    return this.reply()
   }
   /**
    * Whether a wake-up holds news that may no longer go: the last line of defence behind withdrawal, so that whatever
@@ -3609,7 +3625,7 @@ export class AgentControl {
       this.state.error = null
     } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'Babysitting could not be changed. Nothing was started.') }
     this.publish()
-    return this.shell()
+    return this.reply()
   }
   private async renameThread(command: Extract<AgentCommand, { type: 'rename-thread' }>): Promise<AgentState> {
     const title = command.title.trim()
@@ -3623,7 +3639,7 @@ export class AgentControl {
       await this.persist().catch(() => { throw new Error('Could not save the new name. Retry when storage is available.') })
     } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'Could not rename this thread.') }
     this.publish()
-    return this.shell()
+    return this.reply()
   }
   /**
    * A thread names itself once, from its first exchange. Only a thread still carrying a stand-in or
@@ -3716,7 +3732,7 @@ export class AgentControl {
       await this.trackTitleWrite(this.writeThreadTitle(threadId, exchange))
     }
     this.publish()
-    return this.shell()
+    return this.reply()
   }
   /**
    * One client's command, answered with the whole state: every loaded history copied in, as `get()`
@@ -3738,7 +3754,8 @@ export class AgentControl {
    *
    * No history rides on the answer: a window reads a thread's history through `threadDetail`, and
    * copying every history into an answer the window strips again held up main on every command,
-   * a draft save included (issue #313).
+   * a draft save included (issue #313). Nor is any thread copied for it: the answer is the shell a broadcast would carry
+   * (`reply`), read and never written into below its top level (#1760).
    */
   /** An explicit revision owns one immutable Send packet, including after a lost reply or restart. */
   private atomicDraftDigest(draft: NonNullable<Extract<AgentCommand, { type: 'send' }>['draft']>): string {
@@ -3765,19 +3782,19 @@ export class AgentControl {
     }) || this.state.threadDrafts?.some(item => item.draftId === draftId && item.threadId !== threadId)
       || outbox && outbox.threadId !== threadId || accepted && accepted.threadId !== threadId || delivered && delivered.threadId !== threadId
       || delivery && delivery.threadId !== threadId
-    if (this.state.obsoleteDrafts?.some(item => item.threadId === threadId && item.draftId === draftId) && !outbox && !accepted && !delivered) return Promise.resolve({ ...this.shell(), error: 'This draft revision was set aside or replaced. Use a new draft revision to send a new message.' })
+    if (this.state.obsoleteDrafts?.some(item => item.threadId === threadId && item.draftId === draftId) && !outbox && !accepted && !delivered) return Promise.resolve({ ...this.reply(), error: 'This draft revision was set aside or replaced. Use a new draft revision to send a new message.' })
     const ownedDigest = pending?.digest ?? accepted?.atomicDigest ?? outbox?.atomicDigest ?? delivery?.packetDigest
     if (differentOwner || (pending || accepted || outbox || delivered || delivery?.packetDigest) && ownedDigest !== digest) {
-      return Promise.resolve({ ...this.shell(), error: 'This revision already belongs to a submitted prompt. Use a new draft revision for different content.' })
+      return Promise.resolve({ ...this.reply(), error: 'This revision already belongs to a submitted prompt. Use a new draft revision for different content.' })
     }
     if (pending) return pending.task
     if (delivered || accepted) {
       this.setDelivery(threadId, draftId, 'accepted', { packetDigest: digest })
       this.state.deliveredDrafts = this.trimReceipts([...(this.state.deliveredDrafts ?? []).filter(item => item.threadId !== threadId || item.draftId !== draftId),
         { threadId, draftId: draftId }])
-      return this.persist().then(() => { this.publish(); return { ...this.shell(), error: null } })
+      return this.persist().then(() => { this.publish(); return { ...this.reply(), error: null } })
     }
-    if (outbox || delivery?.status === 'uncertain' || delivery?.status === 'submitting') return Promise.resolve({ ...this.shell(), error: 'This Send has an unknown result. Check the original delivery before sending again. Your draft is kept.' })
+    if (outbox || delivery?.status === 'uncertain' || delivery?.status === 'submitting') return Promise.resolve({ ...this.reply(), error: 'This Send has an unknown result. Check the original delivery before sending again. Your draft is kept.' })
     let resolve!: (state: AgentState) => void; let reject!: (error: unknown) => void
     const task = new Promise<AgentState>((done, fail) => { resolve = done; reject = fail })
     this.promptAdmissions.set(key, { digest, task })
@@ -3793,29 +3810,29 @@ export class AgentControl {
         this.setDelivery(threadId, draftId, 'failed')
         await this.persist(); this.publish()
       }
-      return { ...this.shell(), error: result.error }
+      return { ...this.reply(), error: result.error }
     }
     void run().then(resolve, reject)
     void task.finally(() => { this.promptAdmissions.delete(key); this.activeCommands.delete(task) }).catch(() => undefined)
     return task
   }
   private admitCommandShell(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string): Promise<AgentState> {
-    if (this.disposed) return Promise.resolve({ ...this.shell(), error: 'Sotto is stopping. Restart it before sending another command.' })
+    if (this.disposed) return Promise.resolve({ ...this.reply(), error: 'Sotto is stopping. Restart it before sending another command.' })
     const explicitThreadId = 'threadId' in command ? command.threadId : command.type === 'send' ? command.draft?.threadId : undefined
     const implicitThreadId = ['send', 'compose', 'cancel-draft'].includes(command.type)
       ? client.transport === 'socket' ? client.selectedThreadId : this.state.draftThreadId ?? this.state.activeThreadId : undefined
-    if (!this.threadAvailable(explicitThreadId ?? implicitThreadId)) return Promise.resolve({ ...this.shell(), error: this.dormantRefusal(explicitThreadId ?? implicitThreadId) })
+    if (!this.threadAvailable(explicitThreadId ?? implicitThreadId)) return Promise.resolve({ ...this.reply(), error: this.dormantRefusal(explicitThreadId ?? implicitThreadId) })
     const privateDraftReply = client.transport === 'socket' && (command.type === 'save-thread-draft' || command.type === 'compose' && command.threadId !== undefined)
     // A handle is the window's claim; the store is what it is checked against, before the command does anything.
     // A draft save is the exception: it keeps the text and drops what is gone (saveThreadDraft), so typing is never lost.
     try { if (command.type !== 'save-thread-draft') this.attachments.verify(command.type === 'send' && command.draft
       ? command.draft.attachments : 'attachments' in command ? command.attachments : undefined) }
     catch (error) {
-      if (privateDraftReply) return Promise.resolve({ ...this.shell(), error: error instanceof Error ? error.message : this.attachments.missing })
+      if (privateDraftReply) return Promise.resolve({ ...this.reply(), error: error instanceof Error ? error.message : this.attachments.missing })
       this.setCommandError(error, error instanceof Error ? error.message : this.attachments.missing)
       if ((command.type === 'manual-send' || command.type === 'steer' || command.type === 'queue-followup') && command.draftId) this.setDelivery(command.threadId, command.draftId, 'failed')
       this.publish()
-      return Promise.resolve(this.shell())
+      return Promise.resolve(this.reply())
     }
     const sendsDraft = command.type === 'send'
     const draftOwner = () => command.type === 'send' && client.transport === 'socket'
@@ -3859,9 +3876,9 @@ export class AgentControl {
         ...(this.outbox.find(item => item.threadId === thread.id && this.blocksExplicitPrompt(item, packet.draftId))?.id ? { retryId: this.outbox.find(item => item.threadId === thread.id && this.blocksExplicitPrompt(item, packet.draftId))!.id } : {}) }
       }
     } catch (error) {
-      if (privateDraftReply) return Promise.resolve({ ...this.shell(), error: error instanceof Error ? error.message : 'This draft could not be saved. Your draft is kept.' })
+      if (privateDraftReply) return Promise.resolve({ ...this.reply(), error: error instanceof Error ? error.message : 'This draft could not be saved. Your draft is kept.' })
       this.setCommandError(error, error instanceof Error ? error.message : 'This draft could not be saved. Your draft is kept.')
-      this.publish(); return Promise.resolve(this.shell())
+      this.publish(); return Promise.resolve(this.reply())
     }
     const validateDraftOwner = sendsDraft ? () => {
       if (draftOwner() !== answerThreadId) throw new Error('The draft now belongs to a different thread. Review it and send again. Your draft is kept.')
@@ -3870,7 +3887,7 @@ export class AgentControl {
       ?? (command.type === 'send' ? this.state.draftRequestId : null))
     try {
       if (!this.watcherOrigins.has(command)) this.watcherHooks?.userCommand(command, explicitThreadId ?? implicitThreadId ?? undefined, answersQuestion)
-    } catch (error) { return Promise.resolve({ ...this.shell(), error: error instanceof Error ? error.message : 'Watcher could not accept this instruction. Nothing was sent.' }) }
+    } catch (error) { return Promise.resolve({ ...this.reply(), error: error instanceof Error ? error.message : 'Watcher could not accept this instruction. Nothing was sent.' }) }
     // The user's own send pauses delegated sends to the thread, and their Stop stops the threads it delegated to (ADR-0081).
     // Watcher's Stop of a thread stops them too, as the user's does; its sends pause nothing. Delegation only takes note
     // here: it never refuses the command.
@@ -3910,7 +3927,7 @@ export class AgentControl {
     const receipt = queue.receipts.find(matches)
     const delivered = this.state.deliveredDrafts?.some(matches)
     const outbox = this.outbox.find(matches)
-    if ((this.state.obsoleteDrafts?.some(matches) || this.state.deliveries?.some(item => matches(item) && item.setAside)) && !outbox && !delivered && !receipt) return Promise.resolve({ ...this.shell(), error: 'This draft revision was set aside or replaced. Use a new draft revision to send a new message.' })
+    if ((this.state.obsoleteDrafts?.some(matches) || this.state.deliveries?.some(item => matches(item) && item.setAside)) && !outbox && !delivered && !receipt) return Promise.resolve({ ...this.reply(), error: 'This draft revision was set aside or replaced. Use a new draft revision to send a new message.' })
     const ownedDigest = pending?.digest ?? receipt?.digest ?? (queued ? followupDigest(queued) : undefined)
       ?? this.deliveredPromptDigests.find(matches)?.digest ?? outbox?.draftDigest
     // A phone's command hears its own outcome, whatever the desktop's banner says (#1229).
@@ -3919,12 +3936,12 @@ export class AgentControl {
       if (ownedDigest !== digest) {
         const refusal = 'This revision already belongs to a submitted prompt. Use a new draft revision for different content.'
         if (!phone) { this.state.error = refusal; this.publish() }
-        const state = this.shell()
+        const state = this.reply()
         return Promise.resolve(phone ? { ...state, error: refusal } : state)
       }
       if (pending) return pending.task
       if (queued || receipt || delivered || prompt.type === 'queue-followup') {
-        const state = this.shell()
+        const state = this.reply()
         return Promise.resolve(phone ? { ...state, error: null } : state)
       }
       // An explicit retry of an uncertain manual send/steer only reconciles the outbox.
@@ -3941,12 +3958,12 @@ export class AgentControl {
     const origin = this.watcherOrigins.get(command)
     if (command.type === 'set-aside-send') {
       try { this.assertCanSetAside(command.threadId, command.draftId) }
-      catch (error) { return Promise.resolve({ ...this.shell(), error: error instanceof Error ? error.message : 'This prompt could not be set aside.' }) }
+      catch (error) { return Promise.resolve({ ...this.reply(), error: error instanceof Error ? error.message : 'This prompt could not be set aside.' }) }
     }
     const privateDraftReply = client.transport === 'socket' && (command.type === 'save-thread-draft' || command.type === 'compose' && command.threadId !== undefined)
     if (this.retirementFailure) {
-      if (privateDraftReply) return Promise.resolve({ ...this.shell(), error: this.retirementFailure })
-      this.state.error = this.retirementFailure; return Promise.resolve(this.shell())
+      if (privateDraftReply) return Promise.resolve({ ...this.reply(), error: this.retirementFailure })
+      this.state.error = this.retirementFailure; return Promise.resolve(this.reply())
     }
     // Provider discovery has independent progress; a stalled account must not own the thread command lane.
     if ((command.type === 'connect' || command.type === 'disconnect' || command.type === 'refresh') && (command.provider || this.dependencies.host.concurrentProviders)) return this.providerCommand(command)
@@ -3958,9 +3975,9 @@ export class AgentControl {
     if (command.type === 'preview-delete-thread' || command.type === 'delete-thread' || command.type === 'preview-clear-threads' || command.type === 'clear-threads') return this.clearCommand(command)
     if (command.type === 'preview-reclaim-thread-worktree') {
       const preview = this.dependencies.host.previewThreadWorktreeReclaim
-      if (!preview) return Promise.resolve({ ...this.shell(), error: 'Checking this worktree is unavailable. Nothing was removed. Update this host and try again.' })
-      return preview.call(this.dependencies.host, command.threadId).then(worktreeReclaimPreview => ({ ...this.shell(), error: null, worktreeReclaimPreview }),
-        () => ({ ...this.shell(), error: 'The folder could not be checked. Nothing was removed. Check the host connection and try again.' }))
+      if (!preview) return Promise.resolve({ ...this.reply(), error: 'Checking this worktree is unavailable. Nothing was removed. Update this host and try again.' })
+      return preview.call(this.dependencies.host, command.threadId).then(worktreeReclaimPreview => ({ ...this.reply(), error: null, worktreeReclaimPreview }),
+        () => ({ ...this.reply(), error: 'The folder could not be checked. Nothing was removed. Check the host connection and try again.' }))
     }
     // Selection owns no action authority and must not wait for provider actions.
     if (command.type === 'select-thread') return this.navigate(command.threadId)
@@ -3973,7 +3990,7 @@ export class AgentControl {
         // A newly viewed thread needs its history now, not at the next provider frame.
         this.broadcastDetail()
       }
-      return Promise.resolve(this.shell())
+      return Promise.resolve(this.reply())
     }
     if (command.type === 'save-thread-draft') {
       try {
@@ -3986,7 +4003,7 @@ export class AgentControl {
           }
         }
       }
-      catch (error) { return Promise.resolve({ ...this.shell(), error: error instanceof Error ? error.message : REMOTE_PERMISSION_DENIED }) }
+      catch (error) { return Promise.resolve({ ...this.reply(), error: error instanceof Error ? error.message : REMOTE_PERMISSION_DENIED }) }
       return this.saveThreadDraft(command, composer?.order, client.transport === 'socket')
     }
     // A Git action runs as long as its hooks and its push take, on the thread's own lane in the host, never on the global one.
@@ -4101,7 +4118,7 @@ export class AgentControl {
       // Socket replies and receipts keep the command's outcome, including Send answering a question draft.
       // Keep the published shell and desktop response as they are.
       return origin || privateDraftReply || answersInPlace || (command.type === 'answer' || command.type === 'send') && client.transport === 'socket'
-        ? { ...this.shell(), error: failure ?? null } : this.shell()
+        ? { ...this.reply(), error: failure ?? null } : this.reply()
     })
     if (independent) {
       this.threadActions.set(laneThreadId, task)
@@ -4183,7 +4200,7 @@ export class AgentControl {
       if (command.type === 'queue-followup' && !this.followupStore.get().receipts.some(r => r.threadId === command.threadId && r.draftId === command.draftId)) this.setDelivery(command.threadId, command.draftId, 'failed')
     }
     this.publish(); this.pumpFollowups()
-    const state = this.shell()
+    const state = this.reply()
     // A phone's follow-up hears its own outcome, never an older desktop error still on the banner (#1229).
     return origin?.phoneOrigin ? { ...state, error: phoneFailure ?? null } : state
   }
@@ -4539,7 +4556,7 @@ export class AgentControl {
       this.setCommandError(error, failure)
     }
     release()
-    this.publish(); await this.finishTurn(turn, failure); return this.shell()
+    this.publish(); await this.finishTurn(turn, failure); return this.reply()
   }
   private validateInterrupt(threadId: string): void {
     try {
@@ -4621,7 +4638,7 @@ export class AgentControl {
     catch (error) { failure = error instanceof Error ? error.message : 'Provider action failed.'; this.setCommandError(error, failure) }
     await this.finishTurn(turn, failure); this.publish()
     // Provider commands overlap, so each answers with its own outcome and not a refusal another one met meanwhile.
-    const state = this.shell()
+    const state = this.reply()
     return failure === undefined ? { ...state, error: null } : state
   }
   private beginTurn(input: Parameters<TurnRecorder['begin']>[0]): ActiveTurn | undefined {
@@ -4658,7 +4675,7 @@ export class AgentControl {
       this.publish()
     }
     await this.finishTurn(turn, failure)
-    return this.shell()
+    return this.reply()
   }
   private selectThread(threadId: string, revision: number): void {
     if (revision !== this.selectionRevision) return
