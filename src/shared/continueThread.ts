@@ -103,17 +103,24 @@ export interface ContinuePermission {
   readonly narrowed?: { readonly from: AgentRuntimeMode; readonly by: 'default' | 'provider' }
 }
 const ALLOWS: Readonly<Record<'nothing' | 'edits' | 'everything', AgentRuntimeMode>> = { nothing: 'approval-required', edits: 'auto-accept-edits', everything: 'full-access' }
+/**
+ * A thread's own permission in Sotto's four, as continuing reads it: a provider profile counts as what it allows, and one
+ * that says nothing, or a provider's default, as asking. `known` is false when Sotto could not say what it allows.
+ */
+export function sourcePermission(source: Pick<AgentThread, 'runtimeMode' | 'providerMode'>, sourceModel: AgentModel | undefined): { readonly mode: AgentRuntimeMode; readonly known: boolean } {
+  const allows = source.providerMode === undefined ? undefined : sourceModel?.providerModes?.find(mode => mode.id === source.providerMode)?.allows
+  return { mode: source.providerMode !== undefined ? allows ? ALLOWS[allows] : 'approval-required' : source.runtimeMode ?? 'approval-required',
+    known: source.runtimeMode !== undefined || allows !== undefined }
+}
 export function continuePermission(source: Pick<AgentThread, 'runtimeMode' | 'providerMode'>, sourceModel: AgentModel | undefined, target: AgentModel | undefined,
   newThreadDefault: AgentRuntimeMode | undefined): ContinuePermission {
   const index = (mode: AgentRuntimeMode): number => RUNTIME_MODE_ORDER.indexOf(mode)
-  const allows = source.providerMode === undefined ? undefined : sourceModel?.providerModes?.find(mode => mode.id === source.providerMode)?.allows
-  const own: AgentRuntimeMode = source.providerMode !== undefined ? allows ? ALLOWS[allows] : 'approval-required' : source.runtimeMode ?? 'approval-required'
+  const { mode: own, known } = sourcePermission(source, sourceModel)
   const cap = newThreadDefault ?? 'approval-required'
   const wanted = index(own) <= index(cap) ? own : cap
   const resolved = resolveNewThreadPermission(target, wanted)
   if (resolved.providerMode !== undefined) return { providerMode: resolved.providerMode }
   if (resolved.runtimeMode === undefined) return {}
-  const known = source.runtimeMode !== undefined || allows !== undefined
   const narrowed = known && index(resolved.runtimeMode) < index(own) ? { from: own, by: index(wanted) < index(own) ? 'default' as const : 'provider' as const } : undefined
   return { runtimeMode: resolved.runtimeMode, ...(narrowed ? { narrowed } : {}) }
 }

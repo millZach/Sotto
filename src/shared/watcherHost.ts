@@ -5,6 +5,7 @@ import type { WatcherRoomState } from './watcherRoom'
 import type { HostMachineReport } from './hostFacts'
 import type { ProjectOrigins, ProjectSetupRequest, ProjectSetupResult } from './workerMachine'
 import type { HostBranchMoveRequest } from './branchMoves'
+import type { ThreadMoveHost } from './threadMoves'
 
 /** Text-free attribution, bound by the host to its authenticated SSH-recorded desktop. No local tool token travels. */
 export const watcherHostScopeSchema = watcherIdentitySchema
@@ -82,6 +83,11 @@ export interface WatcherRemoteHosts {
    * mover says in plain words when the host does not list `branch-moves`.
    */
   branchMoves?(hostId: string): { readonly supportsBranchMoves: boolean; branchMove(request: HostBranchMoveRequest): Promise<unknown> } | undefined
+  /**
+   * A connected host's socket for a thread moved to it (#1178), whatever it lists, or undefined when it is not connected.
+   * The move says in plain words when the host does not list `thread-move`.
+   */
+  threadMoves?(hostId: string): ThreadMoveHost | undefined
   /**
    * Settles a thread on a connected host the way the user's Settle does from this computer, for Settle finished threads
    * once Watcher has stopped watching it. Rejects when the host is out of reach or refuses.

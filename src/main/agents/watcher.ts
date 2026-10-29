@@ -2305,6 +2305,20 @@ export class WatcherService implements WatcherControlHooks {
       this.scheduleRemote(); this.publish(); return this.get()
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('HOST_DISCONNECTED', 'The connection changed. Check Watcher’s permissions before trying again.', true) }
   }
+  /** Whether Watcher has a standing watch on this thread, which a move carries to the thread that continues it (#1178). */
+  hasStandingWatch(target: WatcherThreadTarget): boolean { return (this.view().watches ?? []).some(watch => key(watch.target) === key(target)) }
+  /**
+   * Carries a standing watch from a thread that moved to the thread that continues it on another machine (#1178, ADR-0105
+   * decision 7): Watcher watches the new one first, then stops watching the source, as its own unwatch_thread does, so the
+   * source is settled with no watch on it. Answers whether the new thread is watched; one Watcher could not watch keeps the
+   * source's watch, which settling the source then ends.
+   */
+  async moveWatch(from: WatcherThreadTarget, to: WatcherThreadTarget): Promise<boolean> {
+    if (!this.hasStandingWatch(from)) return false
+    try { await this.assignWatch({ target: to }, undefined, 'watcher') } catch { return false }
+    await this.unwatchThread({ target: from }, undefined, 'watcher')
+    return true
+  }
   /** The user's own Watch, from the room, a thread's page or the iPhone. It hands back a thread the user stopped watching. */
   async watchThread(input: WatcherWatchThreadRequest, guard?: () => void): Promise<WatcherRoomResult> {
     try { await this.assignWatch(input, guard, 'user'); return this.get() }

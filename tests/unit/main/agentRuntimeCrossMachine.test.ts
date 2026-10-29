@@ -53,6 +53,8 @@ it.each([[undefined], [false]] as const)('offers no machine choice and reports n
     expect(startOffers(host)).not.toContain('fromThread')
     expect(host.hostService.supportsProjectOrigins).toBe(false)
     expect(host.hostService.supportsProjectSetup).toBe(false)
+    // No thread moves to another machine (#1178): no service, so no record is read and nothing is fenced.
+    expect(host.threadMoves).toBeUndefined()
   } finally { await host.close() }
 })
 
@@ -72,10 +74,15 @@ it('offers the choice on the desktop when the Owl answer is on, and a headless h
     expect(desktop.hostService.supportsProjectOrigins).toBe(true)
     expect(await desktop.hostService.projectOrigins()).toEqual({ projects: expect.any(Array) })
     expect(desktop.hostService.supportsProjectSetup).toBe(true)
+    // The desktop moves its threads to paired hosts (#1178), with Watcher's own branch mover.
+    expect(desktop.threadMoves).toBeDefined()
+    expect((desktop.threadMoves as unknown as { options: { branches: unknown } }).options.branches).toBe(watcherMover)
   } finally { await desktop.close() }
   const headless = await runtime(true, 'headless-host')
   try {
     expect(headless.watcherTools).toBeUndefined()
+    // A headless host takes moved threads over its socket only; it moves none of its own yet.
+    expect('threadMoves' in headless ? headless.threadMoves : undefined).toBeUndefined()
     // A headless host moves branches only when the desktop asks over its socket; it places and moves nothing itself.
     expect(movers(headless)[0]).toBeUndefined()
     expect(headless.hostService.supportsProjectOrigins).toBe(true)
