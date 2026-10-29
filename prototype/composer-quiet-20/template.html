@@ -1,0 +1,601 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Drake on October 29, 2026, on docs/prototypes/composer-minimal-20.html: "I don't like any of these. they all
+  look to similair with nothing unique and still too crowded. like take the effort level in a diff direction than words.
+  model stays. full access sheild. things of ways to reduce noise of the prompt box".
+
+  So every composer here holds only: the prompt, attach, the model's name, effort drawn (never written), a shield for
+  permissions and one round Send. Fast mode, Watch, the branch line, key caps, chevrons and the queue tray are gone
+  (queued prompts are a count on Send). The twenty differ in how effort is drawn, in the composer's shape, and in what
+  the effort mark does while a turn runs. Every frame is live: click the effort mark (or scroll on it) to change it,
+  the shield to change permissions, type and press Enter; Play runs it for you.
+
+  Colour comes only from theme roles copied from src/shared/themes/palettes.ts and the --tt-* formulas in tokens.css.
+  Built from template.html by build.py (inlines Figtree). ?mode=dark|light|both; #7 jumps to a mockup.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composer: twenty quiet directions - prototype</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; src: url(data:font/woff2;base64,__FIGTREE__) format('woff2'); }
+
+.t-dark {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265); --theme-surface-raised: oklch(0.185 0.008 265); --theme-text: oklch(0.985 0.005 280);
+  --theme-muted-foreground: oklch(0.72 0.014 265); --theme-placeholder: oklch(0.675 0.012 270); --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265); --theme-accent: oklch(0.714403 0.104089 183.092); --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-update-foreground: oklch(0.83 0.08 183); --theme-accent-surface: oklch(0.32 0.05 185); --theme-warning: oklch(0.82 0.12 75);
+  --tt-card: var(--theme-surface-raised); --tt-provider-claude: #e3b58e; --shadow: oklch(0 0 0 / .55);
+}
+.t-light {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85); --theme-surface-raised: oklch(0.955 0.006 85); --theme-text: oklch(0.235 0.014 75);
+  --theme-muted-foreground: oklch(0.5 0.014 75); --theme-placeholder: oklch(0.525 0.015 78); --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80); --theme-accent: oklch(0.53 0.095 186); --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-update-foreground: oklch(0.43 0.08 186); --theme-accent-surface: oklch(0.92 0.03 186); --theme-warning: oklch(0.55 0.13 65);
+  --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas)); --tt-provider-claude: #c4793f; --shadow: oklch(0.3 0.02 75 / .2);
+}
+.t-dark, .t-light {
+  --tt-canvas: var(--theme-canvas);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-field-border: var(--theme-input);
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-on-accent: var(--theme-accent-foreground);
+  --tt-activity: var(--tt-accent-text);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--theme-canvas);
+  --tt-warning: var(--theme-warning);
+  --ph: color-mix(in srgb, var(--tt-text-muted) 55%, transparent);
+  --out: cubic-bezier(.2, .8, .2, 1); --spring: cubic-bezier(.2, .9, .3, 1.3);
+  --t: calc(200ms * var(--k));
+  background: var(--tt-canvas); color: var(--tt-text);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 28px 32px 60px; background: #0b0b0c; color: #ecebe6; font: 13px/1.4 Figtree, system-ui, sans-serif; --k: 1; }
+body.slow { --k: 4; }
+h1 { margin: 0 0 8px; font-size: 20px; font-weight: 600; }
+.intro { max-width: 1180px; margin: 0 0 16px; color: #a7a6a0; font-size: 13.5px; }
+.intro p { margin: 0 0 8px; }
+.intro b { color: #ecebe6; font-weight: 600; }
+kbd.k0 { font: 600 11.5px Figtree, sans-serif; padding: 1px 5px; border-radius: 4px; background: #2a2a2d; color: #ecebe6; }
+.bar { position: sticky; top: 0; z-index: 9; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 -32px 20px; padding: 10px 32px; background: #0b0b0ce6; backdrop-filter: blur(8px); font-size: 12.5px; color: #a7a6a0; }
+.bar .seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 7px; background: #1d1d1f; margin-right: 10px; }
+.bar button { color: #c9c8c2; padding: 4px 10px; border: 0; border-radius: 5px; background: transparent; font: inherit; cursor: pointer; }
+.bar button[aria-pressed='true'], .bar button.go { background: #3a3a3d; color: #fff; }
+.bar label { display: inline-flex; gap: 6px; align-items: center; margin-right: 8px; }
+.bar nav { display: inline-flex; flex-wrap: wrap; gap: 1px; }
+.bar nav a { color: #c9c8c2; text-decoration: none; padding: 3px 6px; border-radius: 5px; font-variant-numeric: tabular-nums; }
+.bar nav a:hover { background: #2a2a2d; color: #fff; }
+section.dir { margin: 0 0 18px; padding: 14px 20px 16px; border-radius: 14px; background: #131315; }
+section.dir header { display: flex; align-items: baseline; gap: 10px; margin: 0 0 3px; }
+section.dir h2 { margin: 0; font-size: 16px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; }
+section.dir h2 b { display: inline-grid; place-items: center; min-width: 26px; height: 22px; padding: 0 5px; border-radius: 6px; background: #ecebe6; color: #121211; font-size: 12.5px; }
+section.dir[data-id='0'] h2 b { background: #3a3a3d; color: #ecebe6; }
+section.dir header button { margin-left: auto; color: #ecebe6; padding: 4px 12px; border: 0; border-radius: 6px; background: #2a2a2d; font: inherit; font-size: 12.5px; cursor: pointer; }
+.idea { margin: 0 0 2px; color: #e2e1db; font-size: 13.5px; max-width: 1560px; }
+.ef, .cut { margin: 0 0 2px; color: #b9b8b2; font-size: 13px; max-width: 1560px; }
+.ef::before { content: 'Effort: '; color: #8f8e88; }
+.cut::before { content: 'Quieter by: '; color: #8f8e88; }
+.frames { display: grid; grid-template-columns: 784px 784px; gap: 14px; margin-top: 10px; }
+body.m-dark .frames, body.m-light .frames { grid-template-columns: 784px; }
+body.m-dark .fr.t-light, body.m-light .fr.t-dark { display: none; }
+
+.fr { position: relative; height: 176px; border-radius: 10px; overflow: hidden; font-size: 13px; }
+.fr .lastline { position: absolute; top: 14px; left: 24px; right: 24px; color: var(--tt-text-faint); font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cmp { position: absolute; left: 12px; right: 12px; bottom: 16px; }
+
+/* ================= shared parts ================= */
+svg.i { width: 15px; height: 15px; fill: none; stroke: currentcolor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+button { font: inherit; color: inherit; }
+.ib { display: inline-grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; flex: none; transition: background-color var(--t), color var(--t); }
+.ib:hover { background: var(--tt-hover); color: var(--tt-text); }
+.md { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 7px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; flex: none; }
+.md:hover { background: var(--tt-hover); color: var(--tt-text); }
+.mk { width: 14px; height: 14px; flex: none; color: var(--tt-provider-claude); }
+.fx { display: inline-grid; place-items: center; height: 28px; min-width: 28px; padding: 0 4px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-accent); cursor: pointer; flex: none; }
+.fx:hover { background: var(--tt-hover); }
+/* The shield: filled in the warning colour while the thread has full access, an outline when it asks first. */
+.sh svg path { fill: transparent; transition: fill var(--t), stroke var(--t); }
+[data-full] .sh { color: var(--tt-warning); }
+[data-full] .sh svg path { fill: color-mix(in oklab, var(--tt-warning) 28%, transparent); }
+/* Send: a dim disc with nothing to send, the pill pair once there is; Stop with its light while a turn runs; a count of queued prompts. */
+.sd { position: relative; display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%; flex: none; cursor: pointer;
+  background: color-mix(in oklab, var(--tt-pill) 13%, var(--tt-card)); color: var(--tt-text-muted);
+  transition: background-color var(--t) var(--out), color var(--t) var(--out), transform calc(220ms * var(--k)) var(--spring); }
+:is([data-text], [data-run]) .sd { background: var(--tt-pill); color: var(--tt-pill-ink); }
+.sd:active { transform: scale(.9); }
+.sd > .g { grid-area: 1 / 1; display: grid; transition: opacity calc(150ms * var(--k)), transform var(--t) var(--out); }
+.sd .g-sq, .sd .g-q, [data-run] .sd .g-up { opacity: 0; transform: scale(.6); }
+[data-run]:not([data-text]) .sd .g-sq, [data-run][data-text] .sd .g-q { opacity: 1; transform: none; }
+[data-sent] .sd .g-up { opacity: 0; transform: translateY(-15px); }
+.sd .qb { position: absolute; top: -5px; right: -5px; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--tt-accent); color: var(--tt-on-accent); font-size: 10.5px; font-weight: 700; line-height: 16px; opacity: 0; transform: scale(.5); transition: opacity var(--t), transform calc(240ms * var(--k)) var(--spring); }
+[data-queue] .sd .qb { opacity: 1; transform: none; }
+.trace { position: absolute; inset: -3px; overflow: hidden; padding: 1.5px; border-radius: 50%; pointer-events: none; opacity: 0; transition: opacity calc(240ms * var(--k));
+  -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+.trace > i { position: absolute; top: 50%; left: 50%; width: 220%; aspect-ratio: 1; translate: -50% -50%; background: conic-gradient(from 0deg, transparent 0 62%, var(--tt-activity) 88%, transparent 100%); animation: spin 1.6s linear infinite; }
+[data-run]:not([data-text]) .sd .trace { opacity: 1; }
+@keyframes spin { to { transform: rotate(1turn); } }
+.fld { position: relative; flex: 1; min-width: 0; }
+.fld textarea { display: block; width: 100%; margin: 0; padding: 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--tt-text); caret-color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; field-sizing: content; min-height: 22.5px; max-height: 90px; overflow-y: auto; }
+.fld textarea::placeholder { color: var(--ph); }
+.fld .gh { position: absolute; top: 0; left: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; pointer-events: none; color: var(--ph); font-size: 15px; line-height: 1.5; opacity: 0; transition: opacity calc(150ms * var(--k)); }
+.fld .gh kbd { display: inline-grid; place-items: center; height: 17px; margin-left: 8px; padding: 0 5px; border: 1px solid var(--tt-hairline); border-radius: 5px; color: var(--tt-text-muted); font: 600 10.5px Figtree, sans-serif; vertical-align: 1px; }
+[data-ghost]:not([data-text]):not([data-run]) .fld .gh { opacity: 1; }
+.card { position: relative; z-index: 1; padding: 12px 10px 10px 16px; border-radius: 16px; background: var(--tt-card); }
+.row { display: flex; align-items: center; gap: 4px; }
+.sp { flex: 1; }
+
+/* ================= 0 today ================= */
+.v0 .foot { display: flex; align-items: center; gap: 2px; margin: 6px 0 0 -8px; }
+.v0 .t { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 7px; color: var(--tt-text-muted); white-space: nowrap; }
+.v0 .t.m { color: var(--tt-text-2); }
+.v0 .e { color: var(--tt-accent-text); }
+.v0 .key { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 4px 0 8px; border-radius: 6px; font-weight: 600; background: color-mix(in oklab, var(--tt-pill) 16%, var(--tt-card)); color: var(--tt-text-muted); }
+.v0 .key kbd { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 4px; background: color-mix(in oklab, currentcolor 14%, transparent); font: 600 11.5px Figtree; }
+.v0 .br { display: flex; gap: 12px; margin: 6px 6px 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.fr:has(.v0) { height: 196px; }
+
+/* ================= 1 the mark is the effort ================= */
+.v1 .pill { display: flex; align-items: center; gap: 4px; min-height: 48px; padding: 6px 8px 6px 8px; border-radius: 24px; background: var(--tt-card); }
+.v1 .fld { padding: 0 6px; }
+.v1 .rays { width: 30px; }
+.v1 .rays svg { width: 18px; height: 18px; color: var(--tt-provider-claude); overflow: visible; }
+.v1 .rays line { stroke: currentcolor; stroke-width: 2.4; stroke-linecap: round; transform-origin: 12px 12px; transition: transform calc(260ms * var(--k)) var(--spring), opacity var(--t); }
+.v1 .r1, .v1 .r2, .v1 .r3 { transform: scale(0); opacity: 0; }
+.v1[data-effort='1'] .rays line.r1, .v1[data-effort='2'] :is(.r1, .r2), .v1[data-effort='3'] :is(.r1, .r2, .r3) { transform: none; opacity: 1; }
+.v1[data-run] .rays svg { animation: spin calc(3000ms * var(--k)) linear infinite; }
+
+/* ================= 2 weight ================= */
+.v2 .card { padding: 14px 10px 10px 16px; }
+.v2 .foot { display: flex; align-items: center; gap: 2px; margin: 8px 0 0 -8px; }
+.v2 .md { font-size: 13.5px; color: var(--tt-text); transition: font-weight calc(260ms * var(--k)) var(--out), letter-spacing calc(260ms * var(--k)) var(--out); }
+.v2[data-effort='0'] .md { font-weight: 300; letter-spacing: .02em; color: var(--tt-text-muted); }
+.v2[data-effort='1'] .md { font-weight: 450; }
+.v2[data-effort='2'] .md { font-weight: 650; }
+.v2[data-effort='3'] .md { font-weight: 850; letter-spacing: -.01em; }
+.v2[data-run] .md { background: linear-gradient(90deg, var(--tt-text) 0 35%, var(--tt-activity) 50%, var(--tt-text) 65% 100%) 0 0 / 300% 100%; -webkit-background-clip: text; background-clip: text; color: transparent; animation: shimmer calc(1800ms * var(--k)) linear infinite; }
+@keyframes shimmer { from { background-position: 100% 0; } to { background-position: 0 0; } }
+
+/* ================= 3 the level in Send ================= */
+.v3 { padding: 0 6px; }
+.v3 .line { display: flex; align-items: flex-end; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--tt-hairline); transition: border-color var(--t); }
+.v3[data-focus] .line { border-color: color-mix(in oklab, var(--tt-text) 40%, transparent); }
+.v3 .fld { padding-bottom: 4px; }
+.v3 .ticks { display: inline-flex; flex-direction: column-reverse; gap: 3px; height: 30px; justify-content: center; padding: 0 4px; }
+.v3 .ticks button { width: 8px; height: 3px; padding: 0; border: 0; border-radius: 2px; background: color-mix(in oklab, var(--tt-text) 18%, transparent); cursor: pointer; transition: background-color var(--t); }
+.v3[data-effort='0'] .ticks .t0, .v3[data-effort='1'] :is(.t0, .t1), .v3[data-effort='2'] :is(.t0, .t1, .t2), .v3[data-effort='3'] .ticks button { background: var(--tt-accent); }
+.v3 .sd { width: 34px; height: 34px; overflow: hidden; }
+.v3 .sd::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 25%; background: color-mix(in oklab, var(--tt-accent) 55%, transparent); transition: height calc(320ms * var(--k)) var(--spring); }
+.v3[data-effort='1'] .sd::before { height: 50%; } .v3[data-effort='2'] .sd::before { height: 72%; } .v3[data-effort='3'] .sd::before { height: 100%; }
+.v3:is([data-text], [data-run]) .sd::before { background: color-mix(in oklab, var(--tt-accent) 70%, var(--tt-pill)); }
+.v3[data-run] .sd::before { animation: slosh calc(1200ms * var(--k)) ease-in-out infinite; }
+@keyframes slosh { 50% { transform: translateY(3px) skewY(-6deg); } }
+.v3 .sd > .g { position: relative; z-index: 1; }
+.v3 .sd .trace { display: none; }
+.v3 .sub { display: flex; align-items: center; gap: 2px; margin: 4px -7px 0; }
+
+/* ================= 4 the edge ================= */
+.v4 .card { display: flex; align-items: center; gap: 4px; padding: 9px 8px 11px 16px; border-radius: 14px; overflow: hidden; }
+.v4 .edge { position: absolute; left: 0; right: 0; bottom: 0; height: 12px; display: grid; grid-template-columns: repeat(4, 1fr); cursor: pointer; }
+.v4 .edge button { position: relative; border: 0; padding: 0; background: none; cursor: pointer; }
+.v4 .edge::before { content: ''; position: absolute; left: 0; right: 0; bottom: 0; height: 2px; background: color-mix(in oklab, var(--tt-text) 8%, transparent); }
+.v4 .edge::after { content: ''; position: absolute; left: 0; bottom: 0; height: 2px; width: 25%; background: var(--tt-accent); transition: width calc(320ms * var(--k)) var(--out); }
+.v4[data-effort='1'] .edge::after { width: 50%; } .v4[data-effort='2'] .edge::after { width: 75%; } .v4[data-effort='3'] .edge::after { width: 100%; }
+.v4 .edge:hover::before, .v4 .edge:hover::after { height: 4px; }
+.v4[data-run] .edge::after { background: linear-gradient(90deg, var(--tt-accent) 0 40%, var(--tt-activity) 50%, var(--tt-accent) 60% 100%) 0 0 / 250% 100%; animation: shimmer calc(1400ms * var(--k)) linear infinite; }
+
+/* ================= 5 chevrons ================= */
+.v5 .card { padding: 12px 10px 10px 16px; background: transparent; box-shadow: inset 0 0 0 1px var(--tt-field-border); }
+.v5[data-focus] .card { box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tt-text) 45%, transparent); }
+.v5 .foot { display: flex; align-items: center; gap: 2px; margin: 8px 0 0 -8px; }
+.v5 .chev { display: inline-flex; gap: 0; padding: 0 6px; }
+.v5 .chev svg { width: 9px; height: 14px; stroke: var(--tt-accent); stroke-width: 2.4; fill: none; stroke-linecap: round; stroke-linejoin: round; margin-left: -2px; opacity: .14; transition: opacity var(--t); }
+.v5[data-effort='0'] .chev .c0, .v5[data-effort='1'] :is(.c0, .c1), .v5[data-effort='2'] :is(.c0, .c1, .c2), .v5[data-effort='3'] .chev svg { opacity: 1; }
+.v5[data-run] .chev svg { animation: march calc(900ms * var(--k)) linear infinite; }
+.v5[data-run] .chev .c1 { animation-delay: calc(150ms * var(--k)); } .v5[data-run] .chev .c2 { animation-delay: calc(300ms * var(--k)); } .v5[data-run] .chev .c3 { animation-delay: calc(450ms * var(--k)); }
+@keyframes march { 0%, 100% { transform: none; } 30% { transform: translateX(2px); } }
+
+/* ================= 6 the moon ================= */
+.v6 { left: 50%; right: auto; width: 560px; transform: translateX(-50%); }
+.v6 .card { padding: 12px 10px 8px 18px; border-radius: 22px; box-shadow: 0 12px 30px -18px var(--shadow), 0 0 0 1px color-mix(in oklab, var(--tt-hairline) 60%, transparent); }
+.v6 .foot { display: flex; align-items: center; gap: 2px; margin: 6px 0 0 -10px; }
+.v6 .moon svg { width: 15px; height: 15px; overflow: visible; }
+.v6 .moon .o { fill: none; stroke: var(--tt-accent); stroke-width: 1.6; }
+.v6 .moon .f { fill: var(--tt-accent); transition: clip-path calc(320ms * var(--k)) var(--out); clip-path: inset(0 75% 0 0); }
+.v6[data-effort='1'] .moon .f { clip-path: inset(0 50% 0 0); } .v6[data-effort='2'] .moon .f { clip-path: inset(0 25% 0 0); } .v6[data-effort='3'] .moon .f { clip-path: inset(0 0 0 0); }
+.v6[data-run] .moon svg { animation: spin calc(2400ms * var(--k)) linear infinite; }
+
+/* ================= 7 the pulse ================= */
+.v7 { padding: 0 8px; }
+.v7 .row { align-items: flex-end; gap: 6px; }
+.v7 .fld { padding: 4px 0 6px; }
+.v7 .rule { height: 1px; background: var(--tt-hairline); }
+.v7 .under { display: flex; align-items: center; gap: 2px; margin: 4px -7px 0; }
+.v7 .pd { width: 8px; height: 8px; border-radius: 50%; background: var(--tt-accent); animation: pulse var(--pulse) ease-in-out infinite; }
+.v7 { --pulse: calc(2400ms * var(--k)); }
+.v7[data-effort='1'] { --pulse: calc(1600ms * var(--k)); } .v7[data-effort='2'] { --pulse: calc(1000ms * var(--k)); } .v7[data-effort='3'] { --pulse: calc(560ms * var(--k)); }
+.v7[data-run] .pd { background: var(--tt-activity); box-shadow: 0 0 0 4px color-mix(in oklab, var(--tt-activity) 20%, transparent); }
+@keyframes pulse { 50% { opacity: .3; transform: scale(.65); } }
+
+/* ================= 8 arcs ================= */
+.v8 .card { padding: 8px 10px 10px 16px; }
+.v8 .top { display: flex; align-items: center; gap: 0; margin: 0 -4px 2px -9px; }
+.v8 .top .md { height: 24px; font-size: 12.5px; color: var(--tt-text-muted); }
+.v8 .top .ib, .v8 .top .fx { height: 24px; }
+.v8 .arcs svg { width: 16px; height: 14px; overflow: visible; }
+.v8 .arcs path { fill: none; stroke: var(--tt-accent); stroke-width: 2; stroke-linecap: round; opacity: .15; transition: opacity var(--t); }
+.v8 .arcs circle { fill: var(--tt-accent); }
+.v8[data-effort='1'] .arcs .a1, .v8[data-effort='2'] :is(.a1, .a2), .v8[data-effort='3'] .arcs path { opacity: 1; }
+.v8[data-run] .arcs path { animation: wave calc(1200ms * var(--k)) ease-in-out infinite; }
+.v8[data-run] .arcs .a2 { animation-delay: calc(150ms * var(--k)); } .v8[data-run] .arcs .a3 { animation-delay: calc(300ms * var(--k)); }
+@keyframes wave { 50% { opacity: .15; } }
+.v8 .row { align-items: flex-end; }
+
+/* ================= 9 the underline ================= */
+.v9 .card { display: flex; align-items: flex-end; gap: 4px; padding: 12px 8px 8px 18px; border-radius: 18px; }
+.v9 .fld { padding-bottom: 3px; }
+.v9 .md { position: relative; color: var(--tt-text-2); }
+.v9 .md::after { content: ''; position: absolute; left: 7px; bottom: 4px; height: 2px; border-radius: 1px; width: calc((100% - 14px) * .25); background: var(--tt-accent); transition: width calc(300ms * var(--k)) var(--out); }
+.v9[data-effort='1'] .md::after { width: calc((100% - 14px) * .5); } .v9[data-effort='2'] .md::after { width: calc((100% - 14px) * .75); } .v9[data-effort='3'] .md::after { width: calc(100% - 14px); }
+.v9[data-run] .md::after { animation: slide calc(1200ms * var(--k)) ease-in-out infinite alternate; }
+@keyframes slide { to { transform: translateX(calc(100% * .3)); } }
+.v9 .sd { width: 0; opacity: 0; margin-left: -4px; transition: width var(--t) var(--out), opacity var(--t), margin var(--t), background-color var(--t); }
+.v9:is([data-text], [data-run]) .sd { width: 30px; opacity: 1; margin-left: 2px; }
+
+/* ================= 10 the ellipsis ================= */
+.v10 .pill { display: flex; align-items: center; gap: 4px; min-height: 46px; padding: 6px 8px 6px 18px; border-radius: 23px; background: var(--tt-card); }
+.v10 .dots { display: inline-flex; gap: 3px; align-items: center; padding: 0 2px 0 0; margin-left: -4px; }
+.v10 .dots i { width: 4px; height: 4px; border-radius: 50%; background: var(--tt-accent); opacity: .15; transition: opacity var(--t); }
+.v10[data-effort='0'] .dots .d0, .v10[data-effort='1'] :is(.d0, .d1), .v10[data-effort='2'] :is(.d0, .d1, .d2), .v10[data-effort='3'] .dots i { opacity: 1; }
+.v10[data-run] .dots i { animation: bounce calc(900ms * var(--k)) ease-in-out infinite; }
+.v10[data-run] .dots .d1 { animation-delay: calc(120ms * var(--k)); } .v10[data-run] .dots .d2 { animation-delay: calc(240ms * var(--k)); } .v10[data-run] .dots .d3 { animation-delay: calc(360ms * var(--k)); }
+@keyframes bounce { 30% { transform: translateY(-4px); } 60% { transform: none; } }
+
+/* ================= 11 warmth ================= */
+.v11 .card { padding: 14px 10px 10px 16px; transition: background-color calc(400ms * var(--k)) var(--out), box-shadow calc(400ms * var(--k)); }
+.v11[data-effort='1'] .card { background: color-mix(in oklab, var(--tt-accent) 5%, var(--tt-card)); }
+.v11[data-effort='2'] .card { background: color-mix(in oklab, var(--tt-accent) 10%, var(--tt-card)); }
+.v11[data-effort='3'] .card { background: color-mix(in oklab, var(--tt-accent) 16%, var(--tt-card)); box-shadow: 0 0 0 1px color-mix(in oklab, var(--tt-accent) 30%, transparent); }
+.v11[data-run] .card { animation: breathe calc(2000ms * var(--k)) ease-in-out infinite; }
+@keyframes breathe { 50% { box-shadow: 0 0 0 3px color-mix(in oklab, var(--tt-activity) 22%, transparent); } }
+.v11 .foot { display: flex; align-items: center; gap: 2px; margin: 8px 0 0 -8px; }
+.v11 .warm { width: 28px; height: 28px; display: grid; place-items: center; border: 0; border-radius: 8px; background: none; cursor: pointer; }
+.v11 .warm i { width: 12px; height: 12px; border-radius: 50%; background: conic-gradient(var(--tt-accent) var(--deg), color-mix(in oklab, var(--tt-text) 14%, transparent) 0); transition: --deg var(--t); }
+.v11 { --deg: 90deg; } .v11[data-effort='1'] { --deg: 180deg; } .v11[data-effort='2'] { --deg: 270deg; } .v11[data-effort='3'] { --deg: 360deg; }
+
+/* ================= 12 the badge ================= */
+.v12 .row { align-items: flex-end; gap: 8px; }
+.v12 .card { flex: 1; display: flex; align-items: flex-end; gap: 6px; padding: 10px 6px 6px 16px; border-radius: 20px; }
+.v12 .fld { padding-bottom: 4px; }
+.v12 .badge { display: inline-flex; align-items: center; gap: 0; height: 30px; padding: 0 2px 0 4px; border-radius: 15px; background: color-mix(in oklab, var(--tt-text) 6%, transparent); }
+.v12 .badge .md { height: 26px; font-size: 12.5px; }
+.v12 .badge .ib, .v12 .badge .fx { height: 26px; width: 26px; min-width: 26px; }
+.v12 .pips { display: grid; grid-template-columns: 5px 5px; gap: 2px; }
+.v12 .pips i { width: 5px; height: 5px; border-radius: 1.5px; background: color-mix(in oklab, var(--tt-text) 16%, transparent); transition: background-color var(--t); }
+.v12[data-effort='0'] .pips .p0, .v12[data-effort='1'] :is(.p0, .p1), .v12[data-effort='2'] :is(.p0, .p1, .p2), .v12[data-effort='3'] .pips i { background: var(--tt-accent); }
+.v12[data-run] .pips i { animation: wave calc(1000ms * var(--k)) steps(1) infinite; }
+.v12[data-run] .pips .p1 { animation-delay: calc(250ms * var(--k)); } .v12[data-run] .pips .p3 { animation-delay: calc(500ms * var(--k)); } .v12[data-run] .pips .p2 { animation-delay: calc(750ms * var(--k)); }
+.v12 .sd { width: 44px; height: 44px; }
+
+/* ================= 13 the gauge ================= */
+.v13 .card { display: grid; grid-template-columns: 1fr auto; gap: 0 10px; padding: 12px 10px 10px 16px; }
+.v13 .foot { grid-column: 1; display: flex; align-items: center; gap: 2px; margin: 6px 0 0 -8px; }
+.v13 .side { grid-row: 1 / 3; grid-column: 2; display: flex; flex-direction: column; align-items: center; justify-content: space-between; gap: 4px; }
+.v13 .gauge { width: 34px; height: 24px; }
+.v13 .gauge svg { width: 30px; height: 18px; overflow: visible; }
+.v13 .gauge .arc { fill: none; stroke: color-mix(in oklab, var(--tt-text) 16%, transparent); stroke-width: 2.5; stroke-linecap: round; }
+.v13 .gauge .ndl { stroke: var(--tt-accent); stroke-width: 2.5; stroke-linecap: round; transform-origin: 15px 16px; transform: rotate(-60deg); transition: transform calc(380ms * var(--k)) var(--spring); }
+.v13[data-effort='1'] .ndl { transform: rotate(-20deg); } .v13[data-effort='2'] .ndl { transform: rotate(20deg); } .v13[data-effort='3'] .ndl { transform: rotate(60deg); }
+.v13[data-run] .gauge svg { animation: jitter calc(300ms * var(--k)) linear infinite; }
+@keyframes jitter { 50% { transform: rotate(2deg); } }
+
+/* ================= 14 stars ================= */
+.v14 .card { padding: 0; background: transparent; }
+.v14 .well { display: flex; align-items: flex-end; gap: 4px; padding: 10px 8px 8px 14px; border-radius: 12px; background: var(--tt-card); box-shadow: inset 0 1px 3px color-mix(in srgb, var(--tt-text) 9%, transparent), 0 0 0 1px var(--tt-hairline); }
+.v14 .fld { padding-bottom: 3px; }
+.v14 .stars { display: inline-flex; gap: 1px; }
+.v14 .stars svg { width: 10px; height: 10px; fill: var(--tt-accent); opacity: .14; transform: scale(.7); transition: opacity var(--t), transform calc(260ms * var(--k)) var(--spring); }
+.v14[data-effort='0'] .stars .s0, .v14[data-effort='1'] :is(.s0, .s1), .v14[data-effort='2'] :is(.s0, .s1, .s2), .v14[data-effort='3'] .stars svg { opacity: 1; transform: none; }
+.v14[data-run] .stars svg { animation: twinkle calc(1200ms * var(--k)) ease-in-out infinite; }
+.v14[data-run] .stars .s1 { animation-delay: calc(300ms * var(--k)); } .v14[data-run] .stars .s2 { animation-delay: calc(600ms * var(--k)); } .v14[data-run] .stars .s3 { animation-delay: calc(900ms * var(--k)); }
+@keyframes twinkle { 50% { opacity: .3; transform: scale(.7) rotate(45deg); } }
+.v14 .tools { display: flex; align-items: center; margin: 4px -4px 0 -7px; }
+
+/* ================= 15 the line ================= */
+.v15 .card { display: flex; align-items: center; gap: 4px; padding: 7px 7px 7px 14px; border-radius: 12px; }
+.v15 .wav { width: 40px; height: 28px; }
+.v15 .wav svg { width: 30px; height: 16px; overflow: visible; }
+.v15 .wav path { fill: none; stroke: var(--tt-accent); stroke-width: 1.8; stroke-linecap: round; transform-origin: 0 8px; transform: scaleY(.15); transition: transform calc(320ms * var(--k)) var(--spring); stroke-dasharray: 4 3; }
+.v15[data-effort='1'] .wav path { transform: scaleY(.45); } .v15[data-effort='2'] .wav path { transform: scaleY(.75); } .v15[data-effort='3'] .wav path { transform: scaleY(1); }
+.v15 .wav path { stroke-dasharray: none; }
+.v15[data-run] .wav path { stroke-dasharray: 6 4; animation: flow calc(800ms * var(--k)) linear infinite; }
+@keyframes flow { to { stroke-dashoffset: -20; } }
+.v15 .div { width: 1px; height: 18px; background: var(--tt-hairline); margin: 0 4px; }
+
+/* ================= 16 the halo ================= */
+.v16 .pill { display: flex; align-items: center; gap: 6px; min-height: 52px; padding: 6px 8px 6px 6px; border-radius: 26px; background: var(--tt-card); }
+.v16 .halo { position: relative; display: grid; place-items: center; width: 40px; height: 40px; border: 0; border-radius: 50%; padding: 0; background: color-mix(in oklab, var(--tt-provider-claude) 14%, transparent); cursor: pointer; flex: none; }
+.v16 .halo .mk { width: 18px; height: 18px; }
+.v16 .halo i { position: absolute; inset: 0; border-radius: 50%; border: 1.5px solid var(--tt-provider-claude); opacity: 0; transform: scale(.7); transition: opacity var(--t), transform calc(300ms * var(--k)) var(--spring); }
+.v16 .halo .h1 { inset: 9px; } .v16 .halo .h2 { inset: 4px; } .v16 .halo .h3 { inset: 0; }
+.v16[data-effort='1'] .halo .h1, .v16[data-effort='2'] :is(.h1, .h2), .v16[data-effort='3'] .halo i { opacity: .7; transform: none; }
+.v16[data-run] .halo i { animation: ripple calc(1500ms * var(--k)) ease-out infinite; }
+.v16[data-run] .halo .h2 { animation-delay: calc(250ms * var(--k)); } .v16[data-run] .halo .h3 { animation-delay: calc(500ms * var(--k)); }
+@keyframes ripple { from { transform: scale(.6); opacity: .8; } to { transform: scale(1.1); opacity: 0; } }
+.v16 .who { display: flex; flex-direction: column; line-height: 1.2; margin-right: 4px; }
+.v16 .who .md { height: auto; padding: 0; font-size: 12px; color: var(--tt-text-muted); }
+.v16 .fld { padding: 0 6px; }
+
+/* ================= 17 the battery ================= */
+.v17 .card { padding: 12px 10px 10px 16px; }
+.v17 .stat { position: absolute; top: 8px; right: 10px; display: flex; align-items: center; gap: 0; }
+.v17 .stat .md { height: 24px; font-size: 12px; color: var(--tt-text-muted); }
+.v17 .stat .ib, .v17 .stat .fx { height: 24px; }
+.v17 .bat { display: inline-flex; align-items: center; gap: 1.5px; height: 12px; padding: 1.5px; border: 1.3px solid var(--tt-text-muted); border-radius: 3.5px; position: relative; }
+.v17 .bat::after { content: ''; position: absolute; right: -4px; top: 3px; width: 2px; height: 4px; border-radius: 0 1px 1px 0; background: var(--tt-text-muted); }
+.v17 .bat i { width: 4px; height: 100%; border-radius: 1px; background: transparent; transition: background-color var(--t); }
+.v17[data-effort='0'] .bat .b0, .v17[data-effort='1'] :is(.b0, .b1), .v17[data-effort='2'] :is(.b0, .b1, .b2), .v17[data-effort='3'] .bat i { background: var(--tt-accent); }
+.v17[data-run] .bat i { animation: charge calc(1400ms * var(--k)) steps(1) infinite; }
+.v17[data-run] .bat .b1 { animation-delay: calc(350ms * var(--k)); } .v17[data-run] .bat .b2 { animation-delay: calc(700ms * var(--k)); } .v17[data-run] .bat .b3 { animation-delay: calc(1050ms * var(--k)); }
+@keyframes charge { 0% { background: var(--tt-activity); } 50% { background: transparent; } }
+.v17 .row { align-items: flex-end; margin-top: 22px; }
+.fr:has(.v17) { height: 196px; }
+
+/* ================= 18 colour ================= */
+.v18 { padding: 0 8px; }
+.v18 .row { align-items: flex-end; gap: 6px; padding-bottom: 6px; }
+.v18 .rule { height: 1px; background: var(--tt-hairline); }
+.v18 .md { font-weight: 600; transition: color calc(300ms * var(--k)), text-shadow calc(300ms * var(--k)); }
+.v18[data-effort='0'] .md { color: var(--tt-text-faint); font-weight: 500; }
+.v18[data-effort='1'] .md { color: var(--tt-text-2); }
+.v18[data-effort='2'] .md { color: var(--tt-accent-text); }
+.v18[data-effort='3'] .md { color: var(--tt-accent-text); text-shadow: 0 0 10px color-mix(in oklab, var(--tt-accent) 70%, transparent); }
+.v18[data-run] .md { background: linear-gradient(90deg, currentcolor 0 35%, var(--tt-text) 50%, currentcolor 65% 100%) 0 0 / 300% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: shimmer calc(1600ms * var(--k)) linear infinite; }
+.v18 .under { display: flex; align-items: center; gap: 2px; margin: 4px -7px 0; }
+
+/* ================= 19 the stack ================= */
+.v19 .stack { position: relative; isolation: isolate; }
+.v19 .ly { position: absolute; left: 0; right: 0; top: 0; bottom: 0; border-radius: 16px; background: color-mix(in oklab, var(--tt-card) 70%, var(--tt-canvas)); box-shadow: 0 0 0 1px color-mix(in oklab, var(--tt-hairline) 50%, transparent); opacity: 0; transform: translateY(0) scale(1); transition: transform calc(300ms * var(--k)) var(--spring), opacity var(--t); }
+.v19[data-effort='1'] .l1, .v19[data-effort='2'] :is(.l1, .l2), .v19[data-effort='3'] .ly { opacity: 1; }
+.v19[data-effort='1'] .l1, .v19[data-effort='2'] .l1, .v19[data-effort='3'] .l1 { transform: translateY(-6px) scale(.97); }
+.v19[data-effort='2'] .l2, .v19[data-effort='3'] .l2 { transform: translateY(-12px) scale(.94); }
+.v19[data-effort='3'] .l3 { transform: translateY(-18px) scale(.91); }
+.v19 .l3 { z-index: -3; } .v19 .l2 { z-index: -2; } .v19 .l1 { z-index: -1; }
+.v19[data-run] .l1 { animation: shuffle calc(1400ms * var(--k)) ease-in-out infinite; }
+@keyframes shuffle { 50% { transform: translateY(-9px) scale(.97); } }
+.v19 .card { box-shadow: 0 -6px 16px -12px var(--shadow); }
+.v19 .foot { display: flex; align-items: center; gap: 2px; margin: 8px 0 0 -8px; }
+.v19 .lay { width: 18px; height: 16px; position: relative; }
+.v19 .lay svg { width: 16px; height: 16px; }
+
+/* ================= 20 the stairs ================= */
+.v20 .card { padding: 12px 10px 10px 16px; border-radius: 10px; }
+.v20 .foot { display: flex; align-items: center; gap: 2px; margin: 8px 0 0 -8px; }
+.v20 .stairs svg { width: 18px; height: 14px; overflow: visible; }
+.v20 .stairs rect { fill: color-mix(in oklab, var(--tt-text) 14%, transparent); transition: fill var(--t); }
+.v20[data-effort='0'] .stairs .s0, .v20[data-effort='1'] :is(.s0, .s1), .v20[data-effort='2'] :is(.s0, .s1, .s2), .v20[data-effort='3'] .stairs rect { fill: var(--tt-accent); }
+.v20[data-run] .stairs rect { animation: climb calc(1200ms * var(--k)) steps(1) infinite; }
+.v20[data-run] .stairs .s1 { animation-delay: calc(300ms * var(--k)); } .v20[data-run] .stairs .s2 { animation-delay: calc(600ms * var(--k)); } .v20[data-run] .stairs .s3 { animation-delay: calc(900ms * var(--k)); }
+@keyframes climb { 0% { fill: var(--tt-activity); } 25% { fill: color-mix(in oklab, var(--tt-text) 14%, transparent); } }
+
+body.calm .fr *, body.calm .fr *::before, body.calm .fr *::after { transition-duration: 0s !important; animation-duration: 0s !important; animation-iteration-count: 1 !important; }
+@media (prefers-reduced-motion: reduce) { .fr *, .fr *::before, .fr *::after { transition-duration: 0s !important; animation: none !important; } }
+</style>
+</head>
+<body class="m-both">
+<h1>The prompt box: twenty quiet directions</h1>
+<div class="intro">
+  <p>Every composer here holds six things: what you write, attach, <b>the model's name</b>, <b>effort drawn rather than written</b>, <b>a shield</b> for permissions and one round <b>Send</b>. The shield is filled in the warning colour while the thread has full access, and an outline when it asks first. Fast mode and Watch go into the model menu and the pane header. The branch line, key caps, chevrons and the queue tray are gone; a queued prompt is a count on Send.</p>
+  <p>The twenty differ in <b>how effort is drawn</b>, the box's <b>shape</b>, and <b>what the effort mark does while a turn runs</b>, so the one mark says both how hard and that it is working. Each frame is live. Click the effort mark or scroll over it to change it, click the shield, type and press <kbd class="k0">Enter</kbd>; <b>Play</b> runs it for you. Key names live in each control's tooltip and accessible name.</p>
+</div>
+<div class="bar">
+  <span class="seg" id="mode"><button data-v="both" aria-pressed="true">Both</button><button data-v="dark">Dark</button><button data-v="light">Light</button></span>
+  <button type="button" class="go" id="playall">Play all</button>
+  <label><input type="checkbox" id="calm"> Reduce motion</label><label><input type="checkbox" id="slow"> Slow ×4</label>
+  <nav id="nav"></nav>
+</div>
+<main id="main"></main>
+<script>
+const P = (d, c = 'i') => `<svg class="${c}" viewBox="0 0 24 24">${d}</svg>`
+const I = {
+  clip: P('<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>'),
+  plus: P('<path d="M5 12h14"/><path d="M12 5v14"/>'),
+  shield: P('<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>'),
+  up: P('<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>'),
+  sq: '<svg viewBox="0 0 12 12" style="width:10px;height:10px;fill:currentcolor"><rect x=".5" y=".5" width="11" height="11" rx="2.5"/></svg>',
+  queue: P('<path d="M11 12H3"/><path d="M16 6H3"/><path d="M16 18H3"/><path d="M18 9v6"/><path d="M21 12h-6"/>'),
+}
+const MK = '<svg class="mk" viewBox="0 0 24 24" fill="none" stroke="currentcolor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg>'
+const F = '<div class="fld" data-field></div>'
+const ATT = (plus) => `<button type="button" class="ib" data-act="attach" aria-label="Attach files" title="Attach files">${plus ? I.plus : I.clip}</button>`
+const MD = (mark = false) => `<button type="button" class="md" data-act="model" aria-label="Model" title="Model">${mark ? MK : ''}<span data-bind="model"></span></button>`
+const SH = '<button type="button" class="ib sh" data-act="perms" data-title="perms">' + I.shield + '</button>'
+const SD = `<button type="button" class="sd" data-act="primary" aria-label="Send prompt"><span class="g g-up">${I.up}</span><span class="g g-sq">${I.sq}</span><span class="g g-q">${I.queue}</span><span class="qb" data-bind="qcount"></span><span class="trace" aria-hidden="true"><i></i></span></button>`
+const FX = inner => `<button type="button" class="fx" data-act="effort" data-title="effort">${inner}</button>`
+const n4 = (f) => [0, 1, 2, 3].map(f).join('')
+
+const D = [
+  { id: 0, name: 'Today', idea: 'The shipped composer, for comparison: attach, the model, fast mode, effort and permissions as words, Watch, a keyed Send, and the branch line under the card.',
+    html: () => `<div class="card">${F}<div class="foot">${ATT()}<span class="t m">${MK}<span data-bind="model"></span> ⌄</span><span class="t">⚡</span><span class="t e" data-bind="effortWord">High ⌄</span><span class="t">Full access ⌄</span><span class="t">◉ Watch</span><span class="sp"></span><span class="key">Send<kbd>↵</kbd></span></div></div><div class="br"><span>▭ This computer</span><span>▱ Project folder</span><span>⑂ sotto/c9c8e65b</span></div>` },
+  { id: 1, name: 'The mark is the effort', ef: 'the rays of the provider\'s own mark: two rays when it thinks lightly, eight at most. Click the mark.', cut: 'one pill, one line; the model\'s mark doubles as the effort control, so there is no separate effort button at all.',
+    idea: 'Who answers and how hard are one glyph. While a turn runs, the mark turns slowly.',
+    html: () => `<div class="pill">${ATT(true)}${F}${FX(`<span class="rays"><svg viewBox="0 0 24 24"><line class="r0" x1="12" y1="3" x2="12" y2="21"/><line class="r1" x1="3" y1="12" x2="21" y2="12"/><line class="r2" x1="5.6" y1="5.6" x2="18.4" y2="18.4"/><line class="r3" x1="18.4" y1="5.6" x2="5.6" y2="18.4"/></svg></span>`)}${MD()}${SH}${SD}</div>` },
+  { id: 2, name: 'Weight', ef: 'the model\'s name gets heavier: light at Low, black at Max (Figtree is a variable font, so the weight moves). Click the name\'s weight dot or the name.', cut: 'no effort mark at all: the one word the box keeps carries it.',
+    idea: 'Effort is how heavily the model\'s name is set. While a turn runs, light passes through the name.',
+    html: () => `<div class="card">${F}<div class="foot">${ATT()}<button type="button" class="md" data-act="effort" data-title="effort"><span data-bind="model"></span></button>${SH}<span class="sp"></span>${SD}</div></div>` },
+  { id: 3, name: 'The level in Send', ef: 'Send fills like a glass to the effort, a quarter to full; the four ticks beside it set it.', cut: 'no card, a hairline under the words; model and shield sit small under the line.',
+    idea: 'The button you press holds how hard it will think. While a turn runs, the level sways.',
+    html: () => `<div class="line">${F}<span class="ticks">${n4(i => `<button type="button" class="t${i}" data-act="effort-set" data-v="${i}" aria-label="Reasoning ${['Low', 'Medium', 'High', 'Max'][i]}"></button>`)}</span>${SD}</div><div class="sub">${ATT()}${MD()}${SH}</div>` },
+  { id: 4, name: 'The edge', ef: 'the card\'s bottom edge is a meter in the accent, a quarter to full. Click along the edge to set it.', cut: 'one line; no effort control in the row at all.',
+    idea: 'Effort lives on the box\'s edge, out of the way of the words. While a turn runs, light runs along the filled part.',
+    html: () => `<div class="card">${ATT()}${F}${MD()}${SH}${SD}<div class="edge">${n4(i => `<button type="button" data-act="effort-set" data-v="${i}" aria-label="Reasoning ${['Low', 'Medium', 'High', 'Max'][i]}"></button>`)}</div></div>` },
+  { id: 5, name: 'Chevrons', ef: 'one to four chevrons after the model, in the accent: › to ››››.', cut: 'an outline instead of a fill, so the box is a frame and the room shows through.',
+    idea: 'Faster-forward marks for deeper thought. While a turn runs, the chevrons march.',
+    html: () => `<div class="card">${F}<div class="foot">${ATT()}${MD()}${FX(`<span class="chev">${n4(i => `<svg class="c${i}" viewBox="0 0 9 14"><path d="m2 2 5 5-5 5"/></svg>`)}</span>`)}<span class="sp"></span>${SH}${SD}</div></div>` },
+  { id: 6, name: 'The moon', ef: 'a moon that waxes from a sliver to full.', cut: 'a narrower floating box (560 px) centred under the thread, as a search field is.',
+    idea: 'A centred, floating box with a moon for effort. While a turn runs, the moon turns.',
+    html: () => `<div class="card">${F}<div class="foot">${ATT()}${MD()}${FX('<span class="moon"><svg viewBox="0 0 16 16"><circle class="o" cx="8" cy="8" r="6.5"/><circle class="f" cx="8" cy="8" r="6.5"/></svg></span>')}<span class="sp"></span>${SH}${SD}</div></div>` },
+  { id: 7, name: 'The pulse', ef: 'a dot that breathes slowly at Low and quickly at Max: effort as tempo.', cut: 'no card: the words on the room, a hairline, and the few controls under it.',
+    idea: 'Effort you feel rather than read. While a turn runs, the dot takes the activity colour and a ring.',
+    html: () => `<div class="row">${F}${SD}</div><div class="rule"></div><div class="under">${ATT()}${MD()}${FX('<span class="pd"></span>')}<span class="sp"></span>${SH}</div>` },
+  { id: 8, name: 'Signal', ef: 'signal arcs, as for Wi-Fi: a dot, then one to three arcs.', cut: 'model, effort and shield are a small heading over the words; the bottom row is gone and Send sits at the end of the text.',
+    idea: 'Who answers is a quiet heading. While a turn runs, the arcs send outward.',
+    html: () => `<div class="card"><div class="top">${MD(true)}${FX(`<span class="arcs"><svg viewBox="0 0 16 14"><circle cx="8" cy="12" r="1.6"/><path class="a1" d="M5.2 9.2a4 4 0 0 1 5.6 0"/><path class="a2" d="M3 6.9a7 7 0 0 1 10 0"/><path class="a3" d="M.8 4.6a10 10 0 0 1 14.4 0"/></svg></span>`)}${SH}</div><div class="row">${ATT()}${F}${SD}</div></div>` },
+  { id: 9, name: 'Underlined', ef: 'an accent line under the model\'s name, from a quarter of it to all of it.', cut: 'one line; Send is not drawn until there is something to send.',
+    idea: 'The fewest marks: words, a name with a line under it, a shield. While a turn runs, the line slides.',
+    html: () => `<div class="card">${F}${ATT()}<button type="button" class="md" data-act="effort" data-title="effort"><span data-bind="model"></span></button>${SH}${SD}</div>` },
+  { id: 10, name: 'Thinking dots', ef: 'one to four dots after the model, the same dots that show it thinking.', cut: 'one pill; attach is not drawn (paste or drop a file).',
+    idea: 'The dots that say how hard it will think bounce while it does.',
+    html: () => `<div class="pill">${F}${MD()}${FX(`<span class="dots">${n4(i => `<i class="d${i}"></i>`)}</span>`)}${SH}${SD}</div>` },
+  { id: 11, name: 'Warmth', ef: 'the whole box takes more of the accent as effort rises; at Max it gains a faint edge. The small wedge beside the model sets it.', cut: 'no mark to read: the box\'s colour is the setting.',
+    idea: 'Effort as the box\'s temperature. While a turn runs, the box breathes.',
+    html: () => `<div class="card">${F}<div class="foot">${ATT()}${MD()}<button type="button" class="warm" data-act="effort" data-title="effort"><i></i></button><span class="sp"></span>${SH}${SD}</div></div>` },
+  { id: 12, name: 'The badge', ef: 'four pips in a square inside one badge with the model and the shield.', cut: 'everything about who answers is one object; Send stands outside the box, large.',
+    idea: 'One badge says who, how hard and how free. While a turn runs, the pips chase each other.',
+    html: () => `<div class="row"><div class="card">${ATT()}${F}<span class="badge">${MD()}${FX(`<span class="pips">${n4(i => `<i class="p${i}"></i>`)}</span>`)}${SH}</span></div>${SD}</div>` },
+  { id: 13, name: 'The gauge', ef: 'a needle on a small arc, swinging from left to right.', cut: 'effort and Send stand in one column at the right; the footer is attach, model and shield.',
+    idea: 'An instrument, not a label. While a turn runs, the needle trembles.',
+    html: () => `<div class="card">${F}<div class="side">${FX('<span class="gauge"><svg viewBox="0 0 30 18"><path class="arc" d="M3 16a12 12 0 0 1 24 0"/><line class="ndl" x1="15" y1="16" x2="15" y2="5"/></svg></span>')}${SD}</div><div class="foot">${ATT()}${MD()}${SH}</div></div>` },
+  { id: 14, name: 'Stars', ef: 'one to four small stars after the model.', cut: 'an inset well with the tools under it, as a native Mac text field.',
+    idea: 'A familiar rating shape. While a turn runs, the stars twinkle.',
+    html: () => `<div class="card"><div class="well">${F}${SD}</div><div class="tools">${ATT()}${MD()}${FX(`<span class="stars">${n4(i => `<svg class="s${i}" viewBox="0 0 10 10"><path d="M5 0 6.2 3.8 10 5 6.2 6.2 5 10 3.8 6.2 0 5 3.8 3.8z"/></svg>`)}</span>`)}<span class="sp"></span>${SH}</div></div>` },
+  { id: 15, name: 'The wave', ef: 'a small wave whose height rises with effort.', cut: 'one slim line, everything at its end behind a hairline divider.',
+    idea: 'A wave that is flat for a quick answer and tall for a deep one. While a turn runs, it flows.',
+    html: () => `<div class="card">${ATT()}${F}<span class="div"></span>${MD()}${FX('<span class="wav"><svg viewBox="0 0 30 16"><path d="M1 8c3-7 4-7 7 0s4 7 7 0 4-7 7 0 4 7 7 0"/></svg></span>')}${SH}${SD}</div>` },
+  { id: 16, name: 'The halo', ef: 'rings round the provider\'s mark, none to three.', cut: 'who answers is an avatar at the start of the line, as a person in Messages; the model\'s name is small beside it.',
+    idea: 'You are talking to someone; their halo says how hard they will think. While a turn runs, the rings ripple out.',
+    html: () => `<div class="pill"><button type="button" class="halo" data-act="effort" data-title="effort">${MK}<i class="h1"></i><i class="h2"></i><i class="h3"></i></button><span class="who">${MD()}</span>${F}${ATT(true)}${SH}${SD}</div>` },
+  { id: 17, name: 'The battery', ef: 'a small battery with one to four cells.', cut: 'model, effort and shield sit at the box\'s top right like the status items in the menu bar; the bottom has nothing but the words and Send.',
+    idea: 'Status where the Mac keeps status. While a turn runs, the cells charge in turn.',
+    html: () => `<div class="card"><span class="stat">${MD()}${FX(`<span class="bat">${n4(i => `<i class="b${i}"></i>`)}</span>`)}${SH}</span><div class="row">${ATT()}${F}${SD}</div></div>` },
+  { id: 18, name: 'Colour', ef: 'the colour of the model\'s name: faint at Low, plain, then the accent, then the accent glowing at Max.', cut: 'no card and no mark; the name is the control.',
+    idea: 'One word, coloured by how hard it will think. While a turn runs, light passes through it.',
+    html: () => `<div class="row">${F}${SD}</div><div class="rule"></div><div class="under">${ATT()}<button type="button" class="md" data-act="effort" data-title="effort"><span data-bind="model"></span></button><span class="sp"></span>${SH}</div>` },
+  { id: 19, name: 'Depth', ef: 'pages stacked behind the box: none at Low, three at Max. The layers glyph sets it.', cut: 'effort is drawn by the box\'s own shape, so the footer holds only attach, model, shield and Send.',
+    idea: 'Thinking deeper looks deeper. While a turn runs, the top page lifts and settles.',
+    html: () => `<div class="stack"><i class="ly l1"></i><i class="ly l2"></i><i class="ly l3"></i><div class="card">${F}<div class="foot">${ATT()}${MD()}${FX('<span class="lay"><svg class="i" viewBox="0 0 24 24" style="stroke:var(--tt-accent)"><path d="m12 2 10 5-10 5L2 7z"/><path d="m2 12 10 5 10-5"/><path d="m2 17 10 5 10-5"/></svg></span>')}${SH}<span class="sp"></span>${SD}</div></div></div>` },
+  { id: 20, name: 'Stairs', ef: 'a staircase of one to four steps.', cut: 'square corners and the plainest footer.',
+    idea: 'Steps up for more thought. While a turn runs, the steps light one after another.',
+    html: () => `<div class="card">${F}<div class="foot">${ATT()}${MD()}${FX(`<span class="stairs"><svg viewBox="0 0 18 14">${n4(i => `<rect class="s${i}" x="${i * 4.5}" y="${14 - (i + 1) * 3.5}" width="3.5" height="${(i + 1) * 3.5}" rx="1"/>`)}</svg></span>`)}<span class="sp"></span>${SH}${SD}</div></div>` },
+]
+
+const MODELS = ['Opus 5.5', 'Sonnet 5.5', 'Haiku 5.5']
+const EFFORTS = ['Low', 'Medium', 'High', 'Max']
+const SUGG = ['Run the composer e2e spec and fix what fails', 'Open the pull request', 'Write the verification note']
+const TURN = 5200
+const k = () => document.body.classList.contains('slow') ? 4 : 1
+const sleep = ms => new Promise(r => setTimeout(r, ms * k()))
+
+class Frame {
+  constructor(el, d) {
+    this.el = el; this.d = d
+    Object.assign(this, { text: '', focus: false, run: false, queue: 0, ghost: true, si: 0, mi: 0, ei: 2, full: true })
+    el.innerHTML = `<div class="lastline">…and it passes ten runs in a row.</div><div class="cmp v${d.id}">${d.html()}</div>`
+    this.root = el.querySelector('.cmp')
+    const f = this.root.querySelector('[data-field]')
+    f.innerHTML = '<textarea rows="1" aria-label="Prompt"></textarea><span class="gh"><span data-bind="ghost"></span><kbd>Tab</kbd></span>'
+    this.ta = f.querySelector('textarea')
+    this.ta.addEventListener('input', () => { this.text = this.ta.value; this.paint() })
+    this.ta.addEventListener('focus', () => { this.focus = true; this.paint() })
+    this.ta.addEventListener('blur', () => { this.focus = false; this.paint() })
+    this.ta.addEventListener('keydown', e => this.key(e))
+    el.addEventListener('click', e => { const b = e.target.closest('[data-act]'); if (b && el.contains(b)) { e.preventDefault(); this.act(b.dataset.act, b.dataset.v) } })
+    el.addEventListener('wheel', e => { if (e.target.closest('[data-act^=effort]')) { e.preventDefault(); this.ei = Math.max(0, Math.min(3, this.ei + (e.deltaY < 0 ? 1 : -1))); this.paint() } }, { passive: false })
+    this.root.addEventListener('mousedown', e => { if (!e.target.closest('[data-act], textarea')) { e.preventDefault(); this.ta.focus() } })
+    this.paint()
+  }
+  key(e) {
+    const empty = !this.text.trim()
+    if (e.key === 'Tab' && !e.shiftKey && empty && this.ghost && !this.run) { e.preventDefault(); this.ta.value = this.text = SUGG[this.si]; return this.paint() }
+    if (e.key === 'Escape') { e.preventDefault(); return this.ta.blur() }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); return this.act('primary') }
+  }
+  act(a, v) {
+    const t = this.text.trim()
+    if (a === 'model') this.mi = (this.mi + 1) % MODELS.length
+    else if (a === 'effort') this.ei = (this.ei + 1) % 4
+    else if (a === 'effort-set') this.ei = Number(v)
+    else if (a === 'perms') this.full = !this.full
+    else if (a === 'primary') {
+      if (this.run) { if (t) { this.queue++; this.clear() } else this.end(true) }
+      else if (t) { this.root.setAttribute('data-sent', ''); setTimeout(() => this.root.removeAttribute('data-sent'), 380 * k()); this.clear(); this.begin() }
+    }
+    this.paint()
+  }
+  clear() { this.ta.value = this.text = '' }
+  begin() { this.run = true; this.ghost = false; clearTimeout(this.timer); this.timer = setTimeout(() => this.end(false), TURN * k()); this.paint() }
+  end(stopped) {
+    clearTimeout(this.timer); this.run = false
+    if (!stopped && this.queue) { this.queue--; this.begin(); return }
+    if (!stopped) { this.ghost = true; this.si = (this.si + 1) % SUGG.length }
+    this.paint()
+  }
+  paint() {
+    const r = this.root, has = Boolean(this.text.trim())
+    const at = (n, v) => v ? r.setAttribute(n, '') : r.removeAttribute(n)
+    at('data-focus', this.focus); at('data-text', has); at('data-run', this.run); at('data-queue', this.queue > 0); at('data-ghost', this.ghost); at('data-full', this.full)
+    r.dataset.effort = this.ei
+    const b = { model: MODELS[this.mi], effortWord: EFFORTS[this.ei] + ' ⌄', ghost: SUGG[this.si], qcount: String(this.queue) }
+    for (const [n, val] of Object.entries(b)) this.el.querySelectorAll(`[data-bind="${n}"]`).forEach(x => { if (x.textContent !== val) x.textContent = val })
+    this.ta.placeholder = this.run ? 'Write a follow-up to queue it' : this.ghost ? '' : 'Ask anything'
+    this.el.querySelectorAll('[data-title=effort]').forEach(x => { x.title = x.ariaLabel = `Reasoning: ${EFFORTS[this.ei]}` })
+    this.el.querySelectorAll('[data-title=perms]').forEach(x => { x.title = x.ariaLabel = `Thread permissions: ${this.full ? 'Full access' : 'Ask first'}` })
+    this.el.querySelectorAll('.sd').forEach(x => { x.ariaLabel = x.title = this.run ? (has ? 'Queue prompt ↵' : 'Stop agent ⇧⌘S') : 'Send prompt ↵' })
+  }
+  async type(s) { this.ta.focus(); for (const ch of s) { this.ta.value = this.text += ch; this.paint(); await sleep(26) } }
+  async play() {
+    if (this.playing) return; this.playing = true
+    try {
+      if (this.run) this.end(true)
+      this.ta.focus(); await sleep(400)
+      for (const e of [0, 1, 2, 3, 2]) { this.ei = e; this.paint(); await sleep(420) }
+      this.full = false; this.paint(); await sleep(500); this.full = true; this.paint(); await sleep(400)
+      await this.type('Fix the flaky composer spec on Windows'); await sleep(400)
+      this.act('primary'); await sleep(1600)
+      await this.type('Then update the release notes'); await sleep(400)
+      this.act('primary')
+      for (let i = 0; i < 60 && (this.run || this.queue); i++) await sleep(250)
+      await sleep(600); this.ta.blur()
+    } finally { this.playing = false }
+  }
+}
+
+const main = document.getElementById('main'), nav = document.getElementById('nav')
+const frames = []
+for (const d of D) {
+  const sec = document.createElement('section')
+  sec.className = 'dir'; sec.id = String(d.id); sec.dataset.id = d.id
+  sec.innerHTML = `<header><h2><b>${d.id}</b>${d.name}</h2>${d.id ? '<button type="button" class="play">Play</button>' : ''}</header><p class="idea">${d.idea}</p>${d.ef ? `<p class="ef">${d.ef}</p>` : ''}${d.cut ? `<p class="cut">${d.cut}</p>` : ''}
+    <div class="frames"><div class="fr t-dark"></div><div class="fr t-light"></div></div>`
+  main.appendChild(sec)
+  const fs = [...sec.querySelectorAll('.fr')].map(el => new Frame(el, d))
+  frames.push(...fs)
+  sec.querySelector('.play')?.addEventListener('click', () => fs.forEach(f => f.play()))
+}
+nav.innerHTML = D.map(d => `<a href="#${d.id}">${d.id}</a>`).join('')
+document.getElementById('playall').addEventListener('click', () => frames.forEach((f, i) => f.d.id && setTimeout(() => f.play(), (i >> 1) * 100)))
+document.getElementById('calm').addEventListener('change', e => document.body.classList.toggle('calm', e.target.checked))
+document.getElementById('slow').addEventListener('change', e => document.body.classList.toggle('slow', e.target.checked))
+const mode0 = new URLSearchParams(location.search).get('mode') ?? 'both'
+const setMode = v => { document.body.classList.remove('m-both', 'm-dark', 'm-light'); document.body.classList.add('m-' + v) }
+setMode(mode0)
+const seg = document.getElementById('mode')
+const sync = v => seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)))
+seg.addEventListener('click', e => { const v = e.target.dataset?.v; if (v) { setMode(v); sync(v) } })
+sync(mode0)
+if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView()
+window.__frames = frames
+</script>
+</body>
+</html>
