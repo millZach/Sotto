@@ -937,6 +937,9 @@ it('archives a paired desktop\'s closed work on the owning host and answers its 
   expect(reads).toHaveBeenCalledTimes(1)
   expect(hosted().requests.some(item => item.id === request.id)).toBe(false)
   reads.mockRestore()
+  // Another desktop cannot take that request's ID, though this one's Stop of it is remembered.
+  expect(await worker.service.admitRemote(admitted[0]!, randomUUID(), () => undefined)).toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
+  expect(hosted().requests.some(item => item.id === request.id)).toBe(false)
   // A newer Watcher of that desktop reads the older one's archived work once it has taken that one's requests over (#1735).
   const newer = { ...identity, target: { ...identity.target, threadId: randomUUID() }, creationOperationId: randomUUID(), createdAt: new Date(Date.parse(identity.createdAt) + 60_000).toISOString() }
   const readAs = (adopt: boolean) => worker.service.readRemote({ master: newer, ...(adopt ? { adopt: true as const } : {}),
@@ -944,6 +947,16 @@ it('archives a paired desktop\'s closed work on the owning host and answers its 
   expect(await readAs(false)).toMatchObject({ status: 'refused', code: 'UNKNOWN_OPERATION' })
   expect(await readAs(true)).toMatchObject({ status: 'ok', receipt: { requestId: request.id } })
   expect(hosted().remoteAbsences ?? []).toEqual([])
+  // From then on the replaced Watcher cannot read it, as it could not read a request of the record's that moved.
+  expect(await read()).toMatchObject({ status: 'refused', code: 'UNKNOWN_OPERATION' })
+  // The replaced Watcher's retry is refused; the newer one's brings the request back as the newer Watcher's, its prompt
+  // turn too, as adoption leaves the record's, and gives the first receipt.
+  expect(await retry()).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
+  expect(await worker.service.admitRemote({ ...admitted[0]!, master: newer, request: { ...admitted[0]!.request, watcher: newer.target } }, clientId, () => undefined))
+    .toMatchObject({ status: 'ok', receipt: { requestId: request.id } })
+  expect(hosted().requests.find(item => item.id === request.id)).toMatchObject({ watcher: newer.target, remoteOrigin: { creationOperationId: newer.creationOperationId } })
+  expect(operation.promptTurnId).toBeDefined()
+  expect(hosted().promptTurns?.find(item => item.id === operation.promptTurnId)?.watcher).toEqual(newer.target)
 })
 
 it('syncs watches to the owning host, persists takeover there and refuses withdrawn or old-host identities', async () => {

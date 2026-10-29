@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { open } from 'node:fs/promises'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { archivableWatcherRequests, NOTHING_ARCHIVED, removeArchivedWork, WATCHER_ARCHIVE_FILE, WATCHER_ARCHIVE_INDEX, WATCHER_LIVE_CLOSED_REQUESTS,
+import { archivableWatcherRequests, NOTHING_ARCHIVED, removeArchivedWork, returnArchivedWork, WATCHER_ARCHIVE_FILE, WATCHER_ARCHIVE_INDEX, WATCHER_LIVE_CLOSED_REQUESTS,
   WatcherArchive, watcherArchiveBatch, WatcherArchiveUnreadable, type WatcherArchiveOpen } from '../../../src/main/agents/watcherArchive'
 import { emptyWatcherRecord, watcherRecordSchema, type WatcherOperation, type WatcherRecord, type WatcherRequest } from '../../../src/shared/watcher'
 
@@ -80,6 +80,15 @@ describe('what leaves the live record', () => {
     const retained = new Set(archivableWatcherRequests(value, operation => operation.id === value.operations[10]!.id))
     for (const index of [0, 1, 2, 3, 4, 6, 8, 9, 10, 12, 13]) expect.soft(retained.has(requestAt(value, index).id), `request ${index}`).toBe(false)
     for (const index of [5, 7, 11, 19]) expect.soft(retained.has(requestAt(value, index).id), `request ${index}`).toBe(true)
+  })
+
+  it('keeps a paired desktop\'s request while Keep local history is off, since an archive in memory would not outlast a restart', () => {
+    const value = record(WATCHER_LIVE_CLOSED_REQUESTS + 10, next => {
+      next.requests[3]!.remoteOrigin = { clientId: 'desktop', master: next.current!, creationOperationId: randomUUID(), ceiling: 'approval-required' }
+    })
+    expect(archivableWatcherRequests(value)).toContain(requestAt(value, 3).id)
+    expect(archivableWatcherRequests(value, () => false, false)).not.toContain(requestAt(value, 3).id)
+    expect(archivableWatcherRequests(value, () => false, false)).toHaveLength(9)
   })
 
   it('leaves a record that is still valid, with every reference it holds still named', () => {
@@ -157,6 +166,41 @@ describe('the archive on disk', () => {
     expect((await readdir(root)).sort()).toEqual([WATCHER_ARCHIVE_INDEX, WATCHER_ARCHIVE_FILE].sort())
     expect((await new WatcherArchive(root, () => true).recall(held)).requests).toHaveLength(1)
     // A start with history off removes what an earlier run saved.
+    await new WatcherArchive(root, () => false).settled()
+    expect(await readdir(root)).toEqual([])
+  })
+
+  it('hands a paired desktop\'s work back to the record before history going off, or a start with it off, removes the file', async () => {
+    const root = await directory()
+    const value = record(260, next => { for (const index of [0, 1]) next.requests[index]!.remoteOrigin = { clientId: 'desktop', master: next.current!, creationOperationId: randomUUID(), ceiling: 'approval-required' } })
+    const remote = [requestAt(value, 0), requestAt(value, 1)]
+    const handedBack = async (archive: WatcherArchive, change: (keep: (work: Parameters<typeof returnArchivedWork>[1]) => Promise<void>) => Promise<void>) => {
+      const kept = emptyWatcherRecord()
+      await change(async work => { returnArchivedWork(kept, work) })
+      return kept
+    }
+    let history = true
+    const archive = new WatcherArchive(root, () => history)
+    await archive.append(watcherArchiveBatch(value, archivableWatcherRequests(value)))
+    history = false
+    const kept = await handedBack(archive, keep => archive.privacyChanged(keep))
+    expect(kept.requests.map(item => item.id)).toEqual(remote.map(item => item.id))
+    expect(kept.operations.map(item => item.id)).toEqual(remote.map(item => operationOf(value, item).id))
+    expect(kept.promptTurns?.map(item => item.id)).toEqual(remote.map(item => operationOf(value, item).promptTurnId))
+    expect(await readdir(root)).toEqual([])
+    // Saved by an earlier run and started with history off: the file stays, still read, until the work is handed back.
+    history = true
+    await new WatcherArchive(root, () => true).append(watcherArchiveBatch(value, archivableWatcherRequests(value)))
+    const starting = new WatcherArchive(root, () => false)
+    await starting.ready()
+    expect(starting.hasRequest(remote[0]!.id)).toBe(true)
+    expect((await readdir(root)).length).toBeGreaterThan(0)
+    const returned = await handedBack(starting, keep => starting.returnRemoteWork(keep))
+    expect(returned.requests.map(item => item.id)).toEqual(remote.map(item => item.id))
+    expect(await readdir(root)).toEqual([])
+    expect(starting.hasRequest(remote[0]!.id)).toBe(false)
+    // Without a desktop's work, a start with history off removes the file at once, as before.
+    await new WatcherArchive(root, () => true).append(watcherArchiveBatch(record(260), archivableWatcherRequests(record(260))))
     await new WatcherArchive(root, () => false).settled()
     expect(await readdir(root)).toEqual([])
   })

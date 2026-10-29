@@ -84,7 +84,7 @@ import { isResumeNoteText } from '../../shared/restartResume'
 import { isLimitRestartNoteText } from '../../shared/limitRestart'
 import type { LimitRestart } from './limitRestart'
 import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT, watcherRecordForDisk } from './watcherRecords'
-import { NOTHING_ARCHIVED, removeArchivedWork, WATCHER_ARCHIVE_BATCH, WatcherArchive, watcherArchiveBatch, watcherWorkVersion, type WatcherArchived } from './watcherArchive'
+import { NOTHING_ARCHIVED, removeArchivedWork, returnArchivedWork, WATCHER_ARCHIVE_BATCH, WatcherArchive, watcherArchiveBatch, watcherWorkVersion, type WatcherArchived } from './watcherArchive'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
 const EMPTY_MESSAGES: AgentMessage[] = []
@@ -632,6 +632,13 @@ export class AgentControl {
    * answered as it was before the work was archived. Never read on the update path.
    */
   archivedWatcherWork(): WatcherArchive | undefined { return this.watcherArchive }
+  /**
+   * Started with Keep local history off over a saved archive that holds paired desktops' work (#1759): that work goes back
+   * to the record before the archive goes, so a desktop's late retry still gives its first receipt. Asked by Watcher's recovery.
+   */
+  returnArchivedRemoteWork(): Promise<void> {
+    return this.watcherArchive?.returnRemoteWork(work => this.updateWatcher(record => returnArchivedWork(record, work))) ?? Promise.resolve()
+  }
   /** Settles once whatever was asked of Watcher's archive has settled. */
   watcherArchiveSettled(): Promise<void> { return this.watcherArchive?.settled() ?? Promise.resolve() }
   /**
@@ -2656,7 +2663,7 @@ export class AgentControl {
       () => this.dependencies.host.privacyChanged?.(),
       () => this.followupStore.privacyChanged(),
       () => this.watcherHooks?.privacyChanged?.(),
-      () => this.watcherArchive?.privacyChanged(),
+      () => this.watcherArchive?.privacyChanged(work => this.updateWatcher(record => returnArchivedWork(record, work))),
       () => this.persist(),
     ]
     const results = await Promise.allSettled(cleanup.map(operation => Promise.resolve().then(operation)))

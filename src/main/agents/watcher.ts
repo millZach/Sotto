@@ -14,7 +14,7 @@ import { PlacementRefusal, placeWorker, type PlacementAsk, type PlacementSources
 import { branchStartWords, systemClockTime, type BranchStartReceipt } from '../../shared/branchMoves'
 import type { DesktopBranchMoves } from './branchMoves'
 import { rebuildReservations } from './watcherRecords'
-import { archivableWatcherRequests, archivedTargetKey, closedWatcherRequests, NOTHING_ARCHIVED, WATCHER_ARCHIVE_BATCH, WATCHER_LIVE_CLOSED_REQUESTS, type WatcherArchived } from './watcherArchive'
+import { archivableWatcherRequests, archivedTargetKey, closedWatcherRequests, NOTHING_ARCHIVED, returnArchivedWork, WATCHER_ARCHIVE_BATCH, WATCHER_LIVE_CLOSED_REQUESTS, type WatcherArchived } from './watcherArchive'
 import { isWatcherWorkActive, WATCHER_QUIET_MS, watcherOverview, type WatcherObservation } from '../../shared/watcherOverview'
 import { CHECK_HOLDS_THROUGH_BACKGROUND, checkWaitingWords, WATCHER_CHECK_STOP, WATCHER_CHECK_STOP_AWAY, type CheckQueue } from './checkQueue'
 import { checkInstallFailedWords, checkInstallWords } from './checkWorktree'
@@ -206,6 +206,8 @@ function alignGeneration(record: WatcherRecord, watch: WatcherStandingWatch): nu
 const madeByOlderWatcher = (request: Readonly<WatcherRequest>, master: WatcherIdentity, clientId: string): boolean =>
   request.remoteOrigin?.clientId === clientId && request.remoteOrigin.master.target.hostId === master.target.hostId
   && request.remoteOrigin.master.createdAt < master.createdAt
+/** A paired desktop on one master computer, as `adoptedBy` names it. */
+const desktopKey = (clientId: string, masterHostId: string): string => JSON.stringify([clientId, masterHostId])
 /** A paired desktop's Watcher as `adopted` names it. */
 const adoptionKey = (clientId: string, master: WatcherIdentity): string => JSON.stringify([clientId, master.target.hostId, master.creationOperationId])
 function withoutOutcome(operation: WatcherOperation): WatcherOperation {
@@ -508,8 +510,13 @@ export class WatcherService implements WatcherControlHooks {
   private readonly remoteGuards = new Map<string, () => void>()
   /** The paired desktops and Watchers whose older requests this run already moved to them (#1735). */
   private readonly adopted = new Set<string>()
-  /** Paired desktops' requests this run found stopped in Watcher's archive (#1759): a Stop the desktop sends again for one changes nothing. */
-  private readonly archivedStops = new Set<string>()
+  /**
+   * Paired desktops' requests this run found stopped in Watcher's archive (#1759), each with the desktop that made it: a
+   * Stop that desktop sends again for one changes nothing. Forgotten when Keep local history changes.
+   */
+  private readonly archivedStops = new Map<string, string>()
+  /** The newest Watcher of each paired desktop that took its older ones' requests over this run (#1735), by `desktopKey`. */
+  private readonly adoptedBy = new Map<string, WatcherIdentity>()
   /** Whether each paired desktop may answer on this host, as its latest admission's socket says (ADR-0004). */
   private readonly remoteAnswers = new Map<string, () => boolean>()
   private readonly pendingPromptTurns = new Map<string, { watcher: WatcherThreadTarget; messageId: string; headBefore: string | null }>()
@@ -746,7 +753,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   /** The line a Watcher turn's note carries after a compaction, until Watcher reads its state back (#1189). */
   stateNote(): string | undefined { this.lookAtState(); return this.stateOwed ? WATCHER_COMPACTED_NOTE : undefined }
-  privacyChanged(): Promise<void> { return this.kept.privacyChanged() }
+  privacyChanged(): Promise<void> { this.archivedStops.clear(); return this.kept.privacyChanged() }
   /** A copy of Watcher's record, for a caller that changes what it reads before saving it. */
   private recordCopy(): WatcherRecord { return this.options.control.watcherRecord() }
   /**
@@ -1932,10 +1939,11 @@ export class WatcherService implements WatcherControlHooks {
     const closed = closedWatcherRequests(record)
     if (closed < Math.max(WATCHER_LIVE_CLOSED_REQUESTS + WATCHER_ARCHIVE_BATCH, this.archiveFloor)) return
     const retains = (operation: Readonly<WatcherOperation>): boolean => this.retainsOperation(operation)
-    const ids = archivableWatcherRequests(record, retains)
+    const remoteGoes = this.options.historyEnabled()
+    const ids = archivableWatcherRequests(record, retains, remoteGoes)
     if (ids.length < WATCHER_ARCHIVE_BATCH) { this.archiveFloor = closed + WATCHER_ARCHIVE_BATCH - ids.length; return }
     this.archiveFloor = 0
-    this.archiving = this.options.control.archiveWatcherWork(ids, () => archivableWatcherRequests(this.view(), retains))
+    this.archiving = this.options.control.archiveWatcherWork(ids, () => archivableWatcherRequests(this.view(), retains, this.options.historyEnabled()))
       .catch(() => 0)
       .finally(() => { this.archiving = undefined; this.archiveWhenDue() })
   }
@@ -2596,6 +2604,8 @@ export class WatcherService implements WatcherControlHooks {
 
   async recover(): Promise<void> {
     try {
+      // A paired desktop's work an archive saved before history went off goes back to the record first (#1759).
+      await this.options.control.returnArchivedRemoteWork()
       const record = this.view()
       if (record.creation && !this.options.workerHost) await this.finishCreation(record.creation.identity, record.creation.modelId ? { provider: record.creation.identity.provider, modelId: record.creation.modelId, ...(record.creation.reasoningEffort ? { reasoningEffort: record.creation.reasoningEffort } : {}) } : undefined)
       const current = this.view().current
@@ -4865,9 +4875,9 @@ ${operation.draftId}`)
         if (this.view().remoteAbsences?.some(item => item.operationId === operation.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
         // A request Watcher's archive holds comes back first, so a late retry answers with its receipt and a new operation
         // is taken or refused as it was while the record held it (#1759).
-        await this.restoreRemoteRequests([request.id], master, clientId, guard)
+        await this.restoreRemoteRequests([request.id], clientId, guard)
         const existing = this.view().requests.find(item => item.id === request.id)
-        if (!existing && this.archivedElsewhere(request.id)) refuse('RETRY_KEY_CONFLICT', 'This request identity belongs to another origin. Nothing was sent.')
+        if (!existing && this.archivedForAnotherDesktop(request.id, clientId)) refuse('RETRY_KEY_CONFLICT', 'This request identity belongs to another origin. Nothing was sent.')
         if (existing && (key(existing.watcher) !== key(master.target) || existing.rootUserMessageId !== request.rootUserMessageId
           || existing.createdAt !== request.createdAt || existing.remoteOrigin?.clientId !== clientId
           || JSON.stringify(existing.remoteOrigin.master) !== JSON.stringify(master)
@@ -5008,6 +5018,9 @@ ${operation.draftId}`)
     })
     this.adopted.add(seen)
     while (this.adopted.size > 1_000) this.adopted.delete(this.adopted.values().next().value!)
+    const desktop = desktopKey(clientId, master.target.hostId), newest = this.adoptedBy.get(desktop)
+    if (!newest || newest.createdAt < master.createdAt) { this.adoptedBy.delete(desktop); this.adoptedBy.set(desktop, master) }
+    while (this.adoptedBy.size > 1_000) this.adoptedBy.delete(this.adoptedBy.keys().next().value!)
   }
   private checkRemoteMaster(master: WatcherIdentity, clientId: string): void {
     const record = this.view(), origins = [...(record.watches ?? []).map(watch => watch.remoteOrigin), ...(record.watchFences ?? []).map(fence => fence.remoteOrigin)]
@@ -5019,51 +5032,56 @@ ${operation.draftId}`)
   /**
    * Brings back to the record the requests of `ids` that Watcher's archive holds for this paired desktop (#1759), with
    * their operations and prompt turns, so what the desktop sends under one is taken as it was while the record held it.
-   * One moved to a newer Watcher of the desktop since (#1735) moves as it comes back. `stays` leaves a request in the
-   * archive: one found stopped there is remembered, so a Stop sent again for it reads nothing. Runs inside a transaction;
-   * a request that came back is archived again once it is old and closed.
+   * Each comes back as the Watcher that owns it now has it (`archivedOwner`), its prompt turns too. `stays` leaves a
+   * request in the archive: one found stopped there is remembered, so a Stop sent again for it reads nothing. Runs inside
+   * a transaction; a request that came back is archived again once it is old and closed.
    */
-  private async restoreRemoteRequests(ids: readonly string[], master: WatcherIdentity, clientId: string, guard?: () => void,
+  private async restoreRemoteRequests(ids: readonly string[], clientId: string, guard?: () => void,
     stays?: (request: Readonly<WatcherRequest>) => boolean): Promise<void> {
     const archive = this.options.control.archivedWatcherWork()
     if (!archive || !ids.length) return
     await archive.ready()
-    const live = this.view().requests
-    const wanted = new Set(ids.filter(id => archive.hasRequest(id) && !live.some(request => request.id === id)))
+    const live = new Set(this.view().requests.map(request => request.id))
+    const wanted = new Set(ids.filter(id => archive.hasRequest(id) && !live.has(id)))
     if (!wanted.size) return
     const work = await this.readArchive({ requests: [...wanted] })
-    const coming: WatcherRequest[] = []
+    const requests: WatcherRequest[] = [], moved = new Map<string, WatcherThreadTarget>()
     for (const request of work.requests) {
       if (!wanted.has(request.id) || request.remoteOrigin?.clientId !== clientId) continue
-      if (!stays?.(request)) { coming.push(request); continue }
-      this.archivedStops.add(request.id)
-      while (this.archivedStops.size > 1_000) this.archivedStops.delete(this.archivedStops.values().next().value!)
+      if (stays?.(request)) {
+        this.archivedStops.set(request.id, clientId)
+        while (this.archivedStops.size > 1_000) this.archivedStops.delete(this.archivedStops.keys().next().value!)
+        continue
+      }
+      const owner = this.archivedOwner(request, clientId)!
+      if (owner === request.remoteOrigin.master) { requests.push(request); continue }
+      moved.set(key(request.watcher), owner.target)
+      requests.push({ ...request, watcher: owner.target, remoteOrigin: { ...request.remoteOrigin, master: owner, creationOperationId: owner.creationOperationId } })
     }
-    if (!coming.length) return
-    const adopts = this.adopted.has(adoptionKey(clientId, master)), moved = new Set<string>()
-    const requests = coming.map(request => {
-      if (!adopts || !madeByOlderWatcher(request, master, clientId)) return request
-      moved.add(key(request.watcher))
-      return { ...request, watcher: master.target, remoteOrigin: { ...request.remoteOrigin!, master, creationOperationId: master.creationOperationId } }
-    })
-    const restored = new Set(requests.map(request => request.id)), operations = work.operations.filter(operation => restored.has(operation.requestId))
-    const turns = new Set(operations.flatMap(operation => operation.promptTurnId ? [operation.promptTurnId] : []))
-    const promptTurns = work.promptTurns.filter(turn => turns.has(turn.id)).map(turn => moved.has(key(turn.watcher)) ? { ...turn, watcher: master.target } : turn)
+    if (!requests.length) return
+    const restored = new Set(requests.map(request => request.id)), turns = new Set(work.operations.flatMap(operation => restored.has(operation.requestId) && operation.promptTurnId ? [operation.promptTurnId] : []))
+    const promptTurns = work.promptTurns.map(turn => { const to = moved.get(key(turn.watcher)); return to ? { ...turn, watcher: to } : turn })
     await this.options.control.updateWatcher(next => {
       guard?.()
-      const held = new Set(next.requests.map(request => request.id))
-      const back = requests.filter(request => !held.has(request.id)), backIds = new Set(back.map(request => request.id))
-      if (!back.length) return
-      const heldOperations = new Set(next.operations.map(operation => operation.id)), heldTurns = new Set((next.promptTurns ?? []).map(turn => turn.id))
-      next.requests.push(...back)
-      next.operations.push(...operations.filter(operation => backIds.has(operation.requestId) && !heldOperations.has(operation.id)))
-      const turnsBack = promptTurns.filter(turn => !heldTurns.has(turn.id))
-      if (turnsBack.length) (next.promptTurns ??= []).push(...turnsBack)
+      returnArchivedWork(next, { requests, operations: work.operations, promptTurns })
+      // A turn the record still holds goes to the Watcher that took its requests over, as adoption moves it.
+      if (moved.size) for (const turn of next.promptTurns ?? []) { const to = turns.has(turn.id) ? moved.get(key(turn.watcher)) : undefined; if (to) turn.watcher = to }
     })
+    for (const id of restored) this.archivedStops.delete(id)
   }
-  /** Whether Watcher's archive holds a request by this ID that `restoreRemoteRequests` left there for another origin. */
-  private archivedElsewhere(id: string): boolean {
-    return !this.archivedStops.has(id) && this.options.control.archivedWatcherWork()?.hasRequest(id) === true
+  /**
+   * The Watcher of this paired desktop that owns an archived request of its now (#1759): the one that made it, unless a
+   * newer Watcher of that desktop took its older ones' requests over this run (#1735), as the record's were. Undefined
+   * for another desktop's.
+   */
+  private archivedOwner(request: Readonly<WatcherRequest>, clientId: string): WatcherIdentity | undefined {
+    if (request.remoteOrigin?.clientId !== clientId) return undefined
+    const newest = this.adoptedBy.get(desktopKey(clientId, request.remoteOrigin.master.target.hostId))
+    return newest && madeByOlderWatcher(request, newest, clientId) ? newest : request.remoteOrigin.master
+  }
+  /** Whether Watcher's archive holds a request by this ID that another paired desktop, or this computer, made. */
+  private archivedForAnotherDesktop(id: string, clientId: string): boolean {
+    return this.archivedStops.get(id) !== clientId && this.options.control.archivedWatcherWork()?.hasRequest(id) === true
   }
   private async stopRemoteRequests(master: WatcherIdentity, stops: NonNullable<WatcherHostRead['stoppedRequests']>, clientId: string, guard?: () => void): Promise<void> {
     const operations = new Set<string>()
@@ -5072,13 +5090,13 @@ ${operation.draftId}`)
       if (master.target.hostId === this.hostId()) refuse('INVALID_INPUT', 'A remote request must belong to its master computer.')
       // A desktop sends its stopped requests with every read. One Watcher's archive holds stopped stays there; one it holds
       // closed comes back to be stopped, so no operation the desktop sent before its Stop opens it again (#1759).
-      await this.restoreRemoteRequests(stops.map(item => item.request.id).filter(id => !this.archivedStops.has(id)), master, clientId, guard,
+      await this.restoreRemoteRequests(stops.map(item => item.request.id).filter(id => this.archivedStops.get(id) !== clientId), clientId, guard,
         request => request.state === 'stopped')
       const record = this.view()
-      stops = stops.filter(item => !this.archivedStops.has(item.request.id) || record.requests.some(request => request.id === item.request.id))
+      stops = stops.filter(item => this.archivedStops.get(item.request.id) !== clientId || record.requests.some(request => request.id === item.request.id))
       for (const { request, ceiling } of stops) {
         const existing = record.requests.find(item => item.id === request.id)
-        if (!existing && this.archivedElsewhere(request.id)) refuse('RETRY_KEY_CONFLICT', 'That stopped request belongs to another origin.')
+        if (!existing && this.archivedForAnotherDesktop(request.id, clientId)) refuse('RETRY_KEY_CONFLICT', 'That stopped request belongs to another origin.')
         if (key(request.watcher) !== key(master.target) || existing && (existing.remoteOrigin?.clientId !== clientId
           || JSON.stringify(existing.remoteOrigin.master) !== JSON.stringify(master) || existing.remoteOrigin.ceiling !== ceiling
           || existing.rootUserMessageId !== request.rootUserMessageId || existing.createdAt !== request.createdAt)) refuse('RETRY_KEY_CONFLICT', 'That stopped request belongs to another origin.')
@@ -5134,10 +5152,9 @@ ${operation.draftId}`)
           // fenced as unrecorded. A newer Watcher of the desktop that took the older one's requests over reads its work too.
           const found = await this.archivedOperation(call.input.operationId)
           if (found) {
-            const owner = found.work.requests.find(item => item.id === found.operation.requestId)
-            const owned = owner?.remoteOrigin?.clientId === clientId && (key(owner.watcher) === key(master.target) && owner.remoteOrigin.creationOperationId === master.creationOperationId
-              || this.adopted.has(adoptionKey(clientId, master)) && madeByOlderWatcher(owner, master, clientId))
-            if (!owned) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this desktop.')
+            const request = found.work.requests.find(item => item.id === found.operation.requestId)
+            const owner = request && this.archivedOwner(request, clientId)
+            if (!owner || key(owner.target) !== key(master.target) || owner.creationOperationId !== master.creationOperationId) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this desktop.')
             archived = found.work
             return found.operation
           }
