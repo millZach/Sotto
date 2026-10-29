@@ -1979,7 +1979,7 @@ export class WatcherService implements WatcherControlHooks {
    * Archived work by ID (#1759). The archive's index names it, so a batch that cannot be read refuses the call rather than
    * answer as if the work were never done: a retry is never run again for want of its receipt.
    */
-  private async readArchive(ids: { readonly requests?: readonly string[]; readonly operations?: readonly string[] }): Promise<WatcherArchived> {
+  private async readArchive(ids: { readonly requests?: readonly string[]; readonly operations?: readonly string[]; readonly turns?: boolean }): Promise<WatcherArchived> {
     try { return await this.options.control.archivedWatcherWork()!.read(ids) }
     catch { refuse('HISTORY_UNAVAILABLE', 'Watcher’s saved record of this earlier work could not be read. Nothing was sent. Try again, or restart Sotto if it persists.', true) }
   }
@@ -4879,6 +4879,8 @@ ${operation.draftId}`)
         await this.restoreRemoteRequests([request.id], clientId, guard)
         const existing = this.view().requests.find(item => item.id === request.id)
         if (!existing && this.archivedForAnotherDesktop(request.id, clientId)) refuse('RETRY_KEY_CONFLICT', 'This request identity belongs to another origin. Nothing was sent.')
+        // An operation of another request Watcher's archive holds keeps its identity, as one in the record does.
+        if (!this.view().operations.some(item => item.id === operation.id) && this.options.control.archivedWatcherWork()?.hasOperation(operation.id)) refuse('TARGET_CHANGED', 'This operation identity or ownership generation changed. Nothing was sent.')
         if (existing && (key(existing.watcher) !== key(master.target) || existing.rootUserMessageId !== request.rootUserMessageId
           || existing.createdAt !== request.createdAt || existing.remoteOrigin?.clientId !== clientId
           || JSON.stringify(existing.remoteOrigin.master) !== JSON.stringify(master)
@@ -5045,13 +5047,14 @@ ${operation.draftId}`)
     const live = new Set(this.view().requests.map(request => request.id))
     const wanted = new Set(ids.filter(id => archive.hasRequest(id) && !live.has(id)))
     if (!wanted.size) return
-    const work = await this.readArchive({ requests: [...wanted] })
+    // Only the batches holding these requests, which hold their operations: a Stop sent with every read must not read more.
+    const work = await this.readArchive({ requests: [...wanted], turns: false })
     const requests: WatcherRequest[] = []
     for (const request of work.requests) {
       if (!wanted.has(request.id) || request.remoteOrigin?.clientId !== clientId) continue
       if (stays?.(request)) {
         this.archivedStops.set(request.id, request)
-        while (this.archivedStops.size > 1_000) this.archivedStops.delete(this.archivedStops.keys().next().value!)
+        while (this.archivedStops.size > 10_000) this.archivedStops.delete(this.archivedStops.keys().next().value!)
         continue
       }
       requests.push(request)
@@ -5176,7 +5179,14 @@ ${operation.draftId}`)
             archived = found.work
             return found.operation
           }
-          if (!record.remoteAbsences?.some(item => item.operationId === call.input.operationId)) {
+          // Work handed back to the record while the archive was read (Keep local history going off) is read there, never fenced.
+          const handedBack = this.view().operations.find(item => item.id === call.input.operationId)
+          if (handedBack) {
+            const owner = this.view().requests.find(item => item.id === handedBack.requestId)
+            if (!owner || key(owner.watcher) !== key(master.target) || owner.remoteOrigin?.clientId !== clientId || owner.remoteOrigin.creationOperationId !== master.creationOperationId) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this desktop.')
+            return handedBack
+          }
+          if (!this.view().remoteAbsences?.some(item => item.operationId === call.input.operationId)) {
             if ((record.remoteAbsences?.length ?? 0) >= 1_000) refuse('DELIVERY_UNCERTAIN', 'This host cannot keep track of another missing thread. That start or send stays unconfirmed.')
             await this.options.control.updateWatcher(next => { (next.remoteAbsences ??= []).push({ operationId: call.input.operationId, master, clientId, observedAt: now() }) })
           }

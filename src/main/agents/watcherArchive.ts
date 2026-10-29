@@ -322,7 +322,8 @@ export class WatcherArchive {
     if (this.historyEnabled()) for (const entry of (await this.index.read()).batches) this.add({ entry })
     else {
       // A paired desktop's work stays readable until `returnRemoteWork` has handed it back to the record (#1759).
-      const owed = (await this.index.read().catch(() => emptyIndex())).batches.filter(entry => entry.remote?.length)
+      // An index that cannot be read leaves the archive where it is, as with history on, rather than lose a desktop's work.
+      const owed = (await this.index.read()).batches.filter(entry => entry.remote?.length)
       for (const entry of owed) this.add({ entry })
       this.owesRemote = owed.length > 0
       if (!this.owesRemote) await this.removeSaved()
@@ -459,15 +460,15 @@ export class WatcherArchive {
   /**
    * Archived work by ID, for a lookup that did not find it in the live record (#1759): every batch holding one of these
    * requests or operations, and the batches holding the rest of their operations' prompt turns, so prompts are counted as
-   * they were. Read only for the IDs asked for, never on the update path.
+   * they were, unless `turns` is false. Read only for the IDs asked for, never on the update path.
    */
-  read(ids: { readonly requests?: readonly string[]; readonly operations?: readonly string[] }): Promise<WatcherArchived> {
+  read(ids: { readonly requests?: readonly string[]; readonly operations?: readonly string[]; readonly turns?: boolean }): Promise<WatcherArchived> {
     return this.turn(async () => {
       if (!this.loaded) await this.load()
       const slots = new Set<Slot>()
       for (const id of ids.requests ?? []) { const slot = this.requestSlot.get(id); if (slot) slots.add(slot) }
       for (const id of ids.operations ?? []) { const slot = this.operationSlot.get(id); if (slot) slots.add(slot) }
-      for (const slot of [...slots]) for (const [, , , turnId] of slot.entry.operations) if (turnId !== null) for (const other of this.turnSlots.get(turnId) ?? []) slots.add(other)
+      if (ids.turns !== false) for (const slot of [...slots]) for (const [, , , turnId] of slot.entry.operations) if (turnId !== null) for (const other of this.turnSlots.get(turnId) ?? []) slots.add(other)
       if (!slots.size) return NOTHING_ARCHIVED
       const batches = await this.readSlots([...slots], true)
       // A batch archived again after a crash between its write and the record's save holds the same work twice: once each.
