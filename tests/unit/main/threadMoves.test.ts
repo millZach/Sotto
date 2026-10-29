@@ -35,7 +35,7 @@ function world() {
   const control: MoveControl = {
     hostId: () => HERE, watcherSnapshot: () => ({ ...EMPTY_AGENT_HOST, hostId: HERE, models: [model], threads }),
     configuration: () => ({ newThreadRuntimeMode: 'full-access' }), moveHoldReason: () => null,
-    fenceForMove: (threadId, words) => { fences.set(threadId, words) }, liftMoveFence: threadId => { fences.delete(threadId) }, fencedForMove: () => [...fences.keys()],
+    fenceForMove: (threadId, words) => { fences.set(threadId, words) }, liftMoveFence: threadId => { fences.delete(threadId) }, fencedForMove: () => [...fences.keys()], moveFenceOf: threadId => fences.get(threadId),
     commandFromMove: async command => {
       settled.push(command.threadId)
       const thread = threads.find(item => item.id === command.threadId)
@@ -530,5 +530,25 @@ describe('Sol’s second pass', () => {
     const read = w.service(); await read.load(); read.settleFences()
     expect(w.fences.has('stale')).toBe(false)
     read.close()
+  })
+})
+
+describe('Sol’s third pass', () => {
+  it('keeps a thread the coordinator still fences from moving again, though no record here names its move', () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.fences.set('a', THREAD_MOVE_WORDS.fence('forge'))
+    const prepared = moves.prepare({ threadIds: [key('a')], hostId: FORGE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
+    expect(prepared.threads).toEqual([{ threadId: key('a'), outcome: 'stays', words: THREAD_MOVE_WORDS.fenced }])
+    moves.close()
+  })
+  it('plans a thread named twice, by its own ID and by This computer’s key for it, once', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    const prepared = moves.prepare({ threadIds: ['a', key('a')], hostId: FORGE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
+    expect(prepared.threads).toEqual([{ threadId: 'a', outcome: 'moves' }, { threadId: key('a'), outcome: 'stays', words: THREAD_MOVE_WORDS.twice }])
+    const started = await moves.move({ confirmationId: prepared.confirmationId, threadIds: ['a', key('a')], allowNarrower: [] })
+    expect(started).toEqual({ status: 'ok', moves: [{ threadId: 'a', outcome: 'moving', moveId: expect.any(String) }, { threadId: key('a'), outcome: 'stays', words: THREAD_MOVE_WORDS.twice }] })
+    await vi.waitFor(() => expect(moves.list()[0]?.state).toBe('thread-started'))
+    expect(moves.list()).toHaveLength(1); expect(w.remote.threads).toHaveLength(1)
+    moves.close()
   })
 })

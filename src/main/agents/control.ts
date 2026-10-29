@@ -795,6 +795,8 @@ export class AgentControl {
   }
   /** The threads fenced for a move, as the coordinator's own record keeps them. */
   fencedForMove(): readonly string[] { return [...this.moveFences.keys()] }
+  /** The sentence a thread fenced for a move refuses sends with, or undefined while it is not fenced. */
+  moveFenceOf(threadId: string): string | undefined { return this.moveFences.get(threadId) }
   /** The commands a moving thread refuses: everything that would start or steer a turn there. */
   private moveFenceRefusal(command: AgentCommand, threadId: string | null | undefined): string | undefined {
     if (!threadId || !this.moveFences.size) return undefined
@@ -5593,6 +5595,9 @@ export class AgentControl {
         ? resolveModel(this.state.host.models, command.modelId)?.providerId : command.type === 'answer'
           ? requestDraftProvider(this.state.host, this.thread(command.threadId), this.state.configuration.provider) : this.thread(command.threadId).providerId
     if (threadId && command.type !== 'create-thread' && !(command.type === 'configure-thread' && this.thread(threadId).nativeSessionStarted === false)) this.canAct(threadId, draftKept)
+    // A prompt or an answer admitted before its thread was fenced for a move goes no further once it is (#1178): refused
+    // here, at dispatch, before any outbox entry exists, with its draft kept.
+    if (threadId && draftKept) { const fence = this.moveFences.get(threadId); if (fence !== undefined) throw new Error(fence) }
     const toThread = prompt ?? (command.type === 'answer' ? command : null)
     if (toThread) {
       const thread = this.thread(toThread.threadId); const capabilities = capabilitiesForThread(this.state.host, thread)

@@ -55,6 +55,8 @@ export interface MoveControl {
   liftMoveFence(threadId: string): void | Promise<void>
   /** The threads the coordinator's own record keeps fenced for a move, whatever this record says. */
   fencedForMove?(): readonly string[]
+  /** Whether the coordinator fences this thread for a move now: its sentence, or undefined. */
+  moveFenceOf?(threadId: string): string | undefined
   commandFromMove(command: Extract<AgentCommand, { type: 'settle-thread' }>, guard: () => void): Promise<AgentState>
 }
 /** What moving asks of this computer's workspace: a thread's handover, and the source's link to the thread that continues it. */
@@ -357,7 +359,7 @@ export class ThreadMoveService {
     if (this.unreadable) return { status: 'refused', message: THREAD_MOVE_WORDS.unreadableRecord }
     const reach = this.reach(parsed.data.hostId)
     if ('refused' in reach) return { status: 'refused', message: reach.refused }
-    const plans = new Map(parsed.data.threadIds.map(threadId => [threadId, this.plan(threadId, parsed.data.hostId, reach.name, reach.snapshot)]))
+    const plans = this.planAll(parsed.data.threadIds, parsed.data.hostId, reach.name, reach.snapshot)
     this.pruneConfirmations()
     const confirmationId = randomUUID(), expires = Date.now() + THREAD_MOVE_CONFIRMATION_MS
     this.confirmations.set(confirmationId, { hostId: parsed.data.hostId, expires, plans, signature: this.signature(parsed.data.hostId, plans) })
@@ -384,7 +386,7 @@ export class ThreadMoveService {
     if ('refused' in reach) return { status: 'refused', message: reach.refused }
     // The threads named, as they stand now, must be planned as they were.
     const named = new Map(parsed.data.threadIds.map(threadId => [threadId, confirmation.plans.get(threadId)!]))
-    const current = new Map(parsed.data.threadIds.map(threadId => [threadId, this.plan(threadId, confirmation.hostId, reach.name, reach.snapshot)]))
+    const current = this.planAll(parsed.data.threadIds, confirmation.hostId, reach.name, reach.snapshot)
     if (confirmation.expires < Date.now() || this.signature(confirmation.hostId, named) !== this.signature(confirmation.hostId, current)) return { status: 'refused', message: THREAD_MOVE_WORDS.expired }
     const allowed = new Set(parsed.data.allowNarrower)
     const moves: Extract<ThreadMoveStart, { status: 'ok' }>['moves'] = []
@@ -393,6 +395,7 @@ export class ThreadMoveService {
     for (const plan of current.values()) {
       if (plan.outcome === 'stays' || !plan.sourceThreadId || !plan.start || !here) { moves.push({ threadId: plan.threadId, outcome: 'stays', ...plan.words ? { words: plan.words } : {} }); continue }
       if (plan.outcome === 'asks' && !allowed.has(plan.threadId)) { moves.push({ threadId: plan.threadId, outcome: 'asks', ...plan.words ? { words: plan.words } : {} }); continue }
+      if (this.reserved.has(plan.sourceThreadId)) { moves.push({ threadId: plan.threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.twice }); continue }
       // Fenced in the same moment its plan was read, so nothing reaches it between the check and the record.
       const at = now()
       const record: MoveRecord = { id: this.options.newMoveId?.() ?? randomUUID(), sourceThreadId: plan.sourceThreadId, targetHostId: confirmation.hostId, machine: reach.name,
@@ -428,6 +431,27 @@ export class ThreadMoveService {
     if (!host.supportsThreadMove) return { refused: THREAD_MOVE_WORDS.olderHost(name) }
     return { name, snapshot }
   }
+  /**
+   * What each named thread would do, by the window's ID for it. A thread named twice, by its own ID and as
+   * `host:<this computer>:<id>`, is planned once: the second names it again, and stays.
+   */
+  private planAll(threadIds: readonly string[], hostId: string, machine: string, target: AgentHostSnapshot): Map<string, Plan> {
+    const plans = new Map<string, Plan>(), sources = new Set<string>()
+    for (const threadId of threadIds) {
+      if (plans.has(threadId)) continue
+      const plan = this.plan(threadId, hostId, machine, target)
+      const source = plan.sourceThreadId ?? this.localId(threadId)
+      if (source !== undefined && sources.has(source)) { plans.set(threadId, { threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.twice }); continue }
+      if (source !== undefined) sources.add(source)
+      plans.set(threadId, plan)
+    }
+    return plans
+  }
+  /** This computer's own thread ID for a window's ID, or undefined for another machine's thread. */
+  private localId(threadId: string): string | undefined {
+    const key = parseHostEntityKey(threadId)
+    return key ? key.hostId === this.options.control.hostId() ? key.id : undefined : threadId
+  }
   /** What one thread would do: move now, ask first, or stay and why. */
   private plan(threadId: string, hostId: string, machine: string, target: AgentHostSnapshot): Plan {
     const here = this.options.control.hostId(), key = parseHostEntityKey(threadId)
@@ -436,7 +460,8 @@ export class ThreadMoveService {
     const source = snapshot.threads.find(thread => thread.id === (key?.id ?? threadId))
     if (!source?.providerId) return { threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.gone }
     const moving = this.movingRecord(source.id)
-    const refusal = threadMoveRefusal(source, { machine, movingTo: moving?.machine, backgroundWork: watcherBackgroundWorkCount(source),
+    const refusal = threadMoveRefusal(source, { machine, movingTo: moving?.machine, fenced: !moving && this.options.control.moveFenceOf?.(source.id) !== undefined,
+      backgroundWork: watcherBackgroundWorkCount(source),
       unresolved: this.options.control.moveHoldReason(source.id) !== null,
       delegatedWorking: this.options.delegations?.hasOpen(source.id) === true
         || delegatedThreadsBelow(snapshot.threads, source.id).some(child => { const thread = snapshot.threads.find(item => item.id === child); return thread !== undefined && isThreadTurnRunning(thread) }) })

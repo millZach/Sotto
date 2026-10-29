@@ -68,4 +68,12 @@ After Sol's second pass (October 29):
 - Watcher's watch moves in one record write, the new thread's added and the source's ended, and asking again once it has moved answers done.
 - A link back that cannot be saved fails its step, which is tried again: on the host no first prompt goes until `continuedFrom` is saved, and on This computer no move finishes until `continuedIn` is.
 
+After Sol's third pass (October 29), only what could lose or duplicate work (Watcher's call, for Zach):
+
+- A prompt or an answer admitted before its thread was fenced is refused again at dispatch, before any outbox entry, so it never reaches the provider once the move began.
+- A fence the coordinator still keeps in `agents.json` holds the thread back from a second move ("An earlier move of this thread is still open…"), though `moves.json` names no move for it.
+- One preview that names a thread twice, by its own ID and as This computer's key for it, plans it once; the second stays ("This thread is already named in this preview.").
+
+The other four findings of that pass went to #1797: the target's limit restart after a move ends as stayed, the cleanup sweep and auto-settle racing a move's hold, kept worktrees when `moves.json` does not parse, and a grant taken away between the preview and the start.
+
 Left for later parts: the GitHub sign-in half of asking first (a host does not yet say whether it has one), starting babysitting on the target, an exact read of a move and Keep it here (part 4, `ThreadMoveService.stalled()` names what waits), the other directions (part 3), the window (part 2), and the moved thread's first message shown as Sotto's on the desktop, which the continued thread's display does only for This computer's threads.

@@ -104,6 +104,10 @@ export const THREAD_MOVE_WORDS = {
   expired: 'The threads to move changed, or this preview expired. Review Move threads again. Nothing was moved.',
   notInPlan: 'That thread wasn’t in this preview. Review Move threads again. Nothing was moved.',
   unreadable: 'Sotto could not read this thread’s history, so nothing was moved. Try again.',
+  /** The coordinator still fences the thread for a move whose record Sotto cannot account for (#1178). */
+  fenced: 'An earlier move of this thread is still open, and Sotto can’t read its record, so it can’t move again. Nothing was moved. Restart Sotto to try again.',
+  /** One preview names the same thread twice, by two of its IDs. */
+  twice: 'This thread is already named in this preview.',
   unsaved: 'Sotto could not save this move, so nothing was moved. Try again.',
   unread: 'Sotto could not read that request. Nothing was moved.',
   /** A move given back before any thread was made for it: why, in the step's own words, and that the source is open again. */
@@ -131,6 +135,8 @@ export interface MoveEligibility {
   readonly unresolved: boolean
   /** It is moving already, and where to. */
   readonly movingTo?: string | undefined
+  /** The coordinator still fences it for a move this computer's record does not hold. */
+  readonly fenced?: boolean | undefined
 }
 
 /**
@@ -146,6 +152,7 @@ export function threadMoveRefusal(thread: Pick<AgentThread, 'kind' | 'remoteHost
   if (thread.remoteHost === true) return THREAD_MOVE_WORDS.remote
   if (isThreadArchived(thread)) return THREAD_MOVE_WORDS.archived
   if (context.movingTo !== undefined) return THREAD_MOVE_WORDS.moving(context.movingTo)
+  if (context.fenced === true) return THREAD_MOVE_WORDS.fenced
   if (thread.delegatedBy !== undefined) return THREAD_MOVE_WORDS.delegated
   if (context.delegatedWorking) return THREAD_MOVE_WORDS.delegating
   if (isThreadTurnRunning(thread)) return THREAD_MOVE_WORDS.running

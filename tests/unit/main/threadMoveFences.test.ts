@@ -55,3 +55,24 @@ it('keeps a moving thread fenced across a restart when moves.json does not parse
   expect((await send(read.control, 'moving-thread')).error).not.toBe(fence)
   read.moves.close()
 })
+
+it('refuses at dispatch a send admitted before its thread was fenced for a move, and the provider hears nothing of it', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-move-fences-')); roots.push(root)
+  const host = new E2EAgentHost()
+  const control = createAgentControl({ directory: root, host, credentials: await testCredentials(root, { mode: 'unavailable' }), reasoner: e2eAgentReasoner })
+  controls.push(control)
+  await control.start()
+  if (!control.get().host.connected) await control.command({ type: 'connect' })
+  const fence = THREAD_MOVE_WORDS.fence('forge')
+  // A settings change holds the thread's lane, so the send is admitted and waits behind it.
+  host.event({ type: 'settings', text: 'hold', threadId: 'workshop' } as never)
+  const configuring = control.commandShell({ type: 'configure-thread', threadId: 'workshop', reasoningEffort: 'high' })
+  await new Promise(done => setTimeout(done, 20))
+  const sending = control.commandShell({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Admitted before the move.' })
+  await new Promise(done => setTimeout(done, 20))
+  await control.fenceForMove('workshop', fence)
+  host.event({ type: 'settings', text: 'release', threadId: 'workshop' } as never)
+  await configuring
+  expect((await sending).error).toBe(fence)
+  expect((await host.snapshot()).threads.find(thread => thread.id === 'workshop')!.messages.some(message => message.text === 'Admitted before the move.')).toBe(false)
+})
