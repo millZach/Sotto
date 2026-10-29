@@ -283,9 +283,12 @@ struct AttachPhotosButton: View {
                 if let fileReason { Text(fileReason) }
             }
         } label: {
-            Image(systemName: "plus").fontWeight(.semibold).frame(width: 44, height: 44)
+            // A circle of its own beside the box, as in Messages, the box's height when it holds one line; it takes a
+            // press across 44 points.
+            Image(systemName: "plus").fontWeight(.semibold).frame(width: ComposerMetrics.height, height: ComposerMetrics.height)
                 .foregroundStyle(reason == nil || fileReason == nil ? Palette.ink : Palette.muted)
-                .background(Palette.raised, in: Circle())
+                .composerSurface(in: Circle(), interactive: true)
+                .pressArea(drawn: ComposerMetrics.height)
         }
         .accessibilityLabel(String(localized: "Attach photos or files"))
         .accessibilityHint([reason, fileReason].compactMap { $0 }.first ?? String(localized: "Choose photos from the library, take one with the camera, or choose files."))

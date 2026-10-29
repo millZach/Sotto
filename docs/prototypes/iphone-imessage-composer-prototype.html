@@ -1,0 +1,280 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. The iPhone reply box restyled after the iMessage composer.
+  The question: how should the slimmer, floating reply box sit over the conversation?
+  Decided before this mock-up: the + is its own circle left of the field and never stretches; Send is a small arrow
+  inside the right end of the field and appears only once there is something to send; Stop sits beside it while a
+  turn runs; no outline and no focus glow; a thread's reply box and Watcher's box change together.
+  Three float treatments, switchable with ?variant=A|B|C, the bar at the bottom, or the left and right arrow keys:
+    A. Raised: the field is the theme's raised surface, a shade off the background, with a soft shadow under it.
+    B. Frosted: translucent glass with the conversation blurred through it, a soft shadow, no edge.
+    C. Flat: the ink at a low tint over the background, no shadow, the closest to iMessage itself.
+  "Today" shows the box as it was for comparison.
+  Zach picked A on October 29, 2026, with the system's Liquid Glass under the Glass theme (ADR-0051, amended). ?theme=light shows the light palette.
+  Synthetic data only. No network, no persistence. Colours are the Sotto palette from ThemePalettes.swift.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>iPhone reply box, iMessage style (prototype)</title>
+<style>
+@font-face{font-family:Figtree;src:url('../../apps/ios/Sotto/Resources/Figtree.ttf') format('truetype');font-weight:300 900}
+:root,[data-theme=dark]{
+  --canvas:#040507;--surface:#090a0e;--raised:#111316;--overlay:#18191d;
+  --ink:#f9fafd;--muted:#a0a5ae;--placeholder:#94979e;
+  --hair:rgb(249 250 253 / .1);--soft:rgb(249 250 253 / .07);--softer:rgb(249 250 253 / .045);
+  --lift:rgb(249 250 253 / .11);
+  --accent:#47b8a9;--on-accent:#070f0e;--accent-text:#6bc3b6;
+  --bubble:#14171e;--bubble-ink:#f9fafd;
+  --glass:rgb(17 19 22 / .62);--shadow:rgb(0 0 0 / .5);
+  --page:#111214;--page-card:#1b1c20;--page-line:#2c2e34;--page-text:#ececef;--page-muted:#a4a6ae;--bezel:#000;
+}
+[data-theme=light]{
+  --canvas:#f9f8f5;--surface:#fdfcf9;--raised:#f2f0ec;--overlay:#efece8;
+  --ink:#221d17;--muted:#68625b;--placeholder:#6f6961;
+  --hair:rgb(34 29 23 / .1);--soft:rgb(34 29 23 / .07);--softer:rgb(34 29 23 / .045);
+  --lift:rgb(34 29 23 / .075);
+  --accent:#007d74;--on-accent:#fdfcf9;--accent-text:#1e665e;
+  --bubble:#ebe7df;--bubble-ink:#221d17;
+  --glass:rgb(253 252 249 / .68);--shadow:rgb(60 40 20 / .2);
+  --page:#e9e7e3;--page-card:#f7f6f3;--page-line:#d5d0c8;--page-text:#221d17;--page-muted:#68625b;--bezel:#1a1a1a;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--page);color:var(--page-text);font:14px/1.45 Figtree,system-ui,sans-serif;min-height:100vh;
+  display:flex;gap:28px;justify-content:center;align-items:flex-start;padding:24px 16px 96px;flex-wrap:wrap}
+.panel{width:300px;background:var(--page-card);border:1px solid var(--page-line);border-radius:14px;padding:16px}
+.panel h1{font-size:16px;margin:0 0 4px}.panel p{margin:0 0 12px;color:var(--page-muted);font-size:13px}
+.panel h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--page-muted);margin:16px 0 6px}
+.seg{display:flex;flex-wrap:wrap;gap:6px}
+.seg button{font:inherit;font-size:13px;padding:6px 10px;border-radius:8px;border:1px solid var(--page-line);background:transparent;color:var(--page-text);cursor:pointer}
+.seg button[aria-pressed=true]{background:var(--page-text);color:var(--page-card)}
+pre{font:12px/1.4 ui-monospace,monospace;background:var(--page);border-radius:8px;padding:8px;white-space:pre-wrap;margin:0;color:var(--page-muted)}
+
+/* The phone */
+.phone{width:393px;height:780px;border-radius:54px;border:11px solid var(--bezel);background:var(--canvas);position:relative;overflow:hidden;
+  box-shadow:0 30px 60px rgb(0 0 0 / .35);font-family:Figtree,system-ui,sans-serif;color:var(--ink)}
+.status{height:50px;display:flex;justify-content:space-between;align-items:flex-end;padding:0 30px 6px;font-weight:600;font-size:15px}
+.top{display:flex;align-items:center;gap:10px;padding:6px 16px 10px;border-bottom:1px solid var(--hair)}
+.top .back{width:34px;height:34px;border-radius:50%;background:var(--soft);display:grid;place-items:center}
+.top b{font-size:17px}.top small{display:block;color:var(--muted);font-size:12px;font-weight:400}
+.convo{position:absolute;inset:104px 0 0;overflow:auto;padding:14px 16px 220px}
+.msg{margin:0 0 14px;font-size:15.5px;line-height:1.5}
+.me{margin-left:auto;max-width:80%;background:var(--bubble);color:var(--bubble-ink);padding:9px 14px;border-radius:20px}
+.code{font:12.5px/1.5 ui-monospace,monospace;background:var(--surface);border:1px solid var(--hair);border-radius:12px;padding:10px 12px;margin:0 0 14px;color:var(--muted)}
+.dockwrap{position:absolute;left:0;right:0;bottom:0;padding:0 12px 30px;
+  background:linear-gradient(to top,var(--canvas) 30%,transparent)}
+.working{display:flex;align-items:center;gap:8px;font-size:13.5px;color:var(--muted);padding:0 8px 10px}
+.working[hidden]{display:none}
+.working i{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:pulse 1.4s infinite}
+@keyframes pulse{50%{opacity:.25}}
+.home{position:absolute;bottom:8px;left:50%;transform:translateX(-50%);width:134px;height:5px;border-radius:3px;background:var(--ink);opacity:.8}
+
+/* The new box: + on its own, then the field */
+.row{display:flex;align-items:flex-end;gap:8px}
+.plus{flex:none;width:38px;height:38px;border-radius:50%;display:grid;place-items:center;border:0;color:var(--ink);cursor:pointer;padding:0}
+.plus svg{width:18px;height:18px}
+.field{flex:1;min-width:0;border-radius:19px;display:flex;flex-direction:column;transition:border-radius .2s}
+.field.tall{border-radius:20px}
+.photos{display:flex;gap:6px;padding:6px 6px 0}
+.photo{width:62px;height:62px;border-radius:14px;position:relative;background:linear-gradient(135deg,#3d6f8a,#c9a46a)}
+.photo:nth-child(2){background:linear-gradient(135deg,#6a8a3d,#2e3f52)}
+.photo span{position:absolute;top:3px;right:3px;width:18px;height:18px;border-radius:50%;background:rgb(0 0 0 / .6);color:#fff;font-size:11px;display:grid;place-items:center}
+.line{display:flex;align-items:flex-end;gap:4px;padding:0 4px 4px 14px}
+textarea{flex:1;min-width:0;resize:none;border:0;outline:0;background:transparent;color:var(--ink);font:15.5px/20px Figtree,system-ui,sans-serif;
+  padding:9px 0 5px;max-height:128px;height:34px}
+textarea::placeholder{color:var(--placeholder)}
+.btn{flex:none;width:30px;height:30px;border-radius:50%;border:0;display:grid;place-items:center;cursor:pointer;padding:0;
+  transition:transform .18s cubic-bezier(.3,1.4,.6,1),opacity .15s}
+.btn.hide{transform:scale(.6);opacity:0;width:0;margin-left:-4px;pointer-events:none}
+.send{background:var(--accent);color:var(--on-accent)}
+.stop{background:var(--soft);color:var(--ink)}
+.stop i{width:10px;height:10px;border-radius:2.5px;background:currentColor}
+.btn svg{width:16px;height:16px}
+
+/* A. Raised */
+[data-variant=A] .field,[data-variant=A] .plus{background:var(--raised);box-shadow:0 6px 18px var(--shadow),0 1px 3px var(--shadow)}
+[data-theme=dark][data-variant=A] .field,[data-theme=dark][data-variant=A] .plus{background:var(--overlay)}
+/* B. Frosted */
+[data-variant=B] .field,[data-variant=B] .plus{background:var(--glass);backdrop-filter:blur(18px) saturate(1.4);-webkit-backdrop-filter:blur(18px) saturate(1.4);
+  box-shadow:0 8px 22px var(--shadow)}
+/* C. Flat */
+[data-variant=C] .field,[data-variant=C] .plus{background:var(--lift)}
+[data-variant=C] .dockwrap{background:var(--canvas)}
+
+/* Today's box, for comparison */
+.today{display:flex;align-items:flex-end;gap:8px;padding:6px;border-radius:26px;background:var(--glass);backdrop-filter:blur(18px);
+  border:1px solid var(--hair);box-shadow:0 8px 16px var(--shadow)}
+.today.focus{border-color:color-mix(in srgb,var(--accent) 55%,transparent);box-shadow:0 0 22px color-mix(in srgb,var(--accent) 35%,transparent)}
+.today .plus{width:44px;height:44px;background:var(--raised)}
+.today .col{flex:1;min-width:0;display:flex;flex-direction:column}
+.today textarea{padding:12px 0;height:44px}
+.today .btn{width:44px;height:44px}
+.today .send.off{background:var(--soft);color:var(--muted)}
+
+/* Switcher */
+.switcher{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);display:flex;align-items:center;gap:4px;background:#111;color:#fff;
+  border-radius:999px;padding:6px;box-shadow:0 8px 24px rgb(0 0 0 / .4);font:600 13px system-ui,sans-serif;z-index:9}
+.switcher button{width:32px;height:32px;border-radius:50%;border:0;background:#2a2a2a;color:#fff;cursor:pointer;font-size:16px}
+.switcher span{padding:0 12px;min-width:220px;text-align:center}
+/* On a phone the mock phone is the screen: no bezel, the panel below it. */
+@media (max-width:440px){body{padding:0 0 96px;gap:16px}.phone{width:100%;height:88svh;border:0;border-radius:0;box-shadow:none}.phone .status,.phone .home{visibility:hidden}.panel{width:auto;margin:0 12px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+</head>
+<body>
+<div class="phone" id="phone">
+  <div class="status"><span>9:41</span><span>●●● ▮</span></div>
+  <div class="top"><div class="back">‹</div><div><b id="title">Fix the sync retry</b><small id="sub">Claude · forge</small></div></div>
+  <div class="convo" id="convo"></div>
+  <div class="dockwrap">
+    <div class="working" id="working" hidden><i></i>Working · 42s</div>
+    <div id="dock"></div>
+  </div>
+  <div class="home"></div>
+</div>
+
+<div class="panel">
+  <h1>Reply box, iMessage style</h1>
+  <p>Type in the box on the phone. Send appears once there is something to send. Pick a state below to see the others.</p>
+  <h2>Float treatment</h2>
+  <div class="seg" id="variants"></div>
+  <h2>State</h2>
+  <div class="seg" id="states"></div>
+  <h2>Box</h2>
+  <div class="seg" id="boxes"></div>
+  <h2>Theme</h2>
+  <div class="seg" id="themes"></div>
+  <h2>Now showing</h2>
+  <pre id="state"></pre>
+</div>
+
+<div class="switcher" aria-label="Prototype variant">
+  <button id="prev" aria-label="Previous variant">‹</button><span id="label"></span><button id="next" aria-label="Next variant">›</button>
+</div>
+
+<script>
+const VARIANTS = [['A','Raised'],['B','Frosted'],['C','Flat'],['T','Today (current box)']];
+const STATES = [['empty','Empty'],['typing','Typing'],['multi','Several lines'],['photos','With photos'],['running','Working, empty'],['queue','Working, written']];
+const params = new URLSearchParams(location.search);
+const s = {variant: params.get('variant') || 'A', state: params.get('state') || 'empty', box: params.get('box') || 'thread', theme: params.get('theme') || 'dark', text: '', photos: 0};
+const plusSvg = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10 3v14M3 10h14"/></svg>';
+const upSvg = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 16V4M4.5 9.5 10 4l5.5 5.5"/></svg>';
+const queueSvg = '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 5h9M3 10h9M3 15h6M15 12v6M12 15h6"/></svg>';
+
+function convo() {
+  const watcher = s.box === 'watcher';
+  document.getElementById('title').textContent = watcher ? 'Watcher' : 'Fix the sync retry';
+  document.getElementById('sub').textContent = watcher ? 'forge · 3 threads watched' : 'Claude · forge';
+  document.getElementById('convo').innerHTML = (watcher ? [
+    '<p class="msg me">How are the three threads on forge doing?</p>',
+    '<p class="msg">Two are settled. <b>Fix the sync retry</b> is still working: it has a failing test in the retry backoff and is reading the scheduler now.</p>',
+    '<p class="msg">Nothing waits on you yet.</p>'] : [
+    '<p class="msg me">The sync retry gives up after one try. Can you find out why?</p>',
+    '<p class="msg">The retry count is read before the setting loads, so it is always 1 on the first sync. I moved the read into <code>start()</code>.</p>',
+    '<div class="code">src/main/sync.ts  +4 −2</div>',
+    '<p class="msg">The unit test for the backoff passes now. Want me to run the integration suite as well?</p>',
+    '<p class="msg me">Yes, and check the Windows path handling while you are there.</p>',
+    '<p class="msg">Running it now. The Windows path test reads a drive letter the fixture never sets, so I am fixing the fixture first.</p>']).join('');
+}
+
+function placeholder() {
+  const running = s.state === 'running' || s.state === 'queue';
+  if (s.box === 'watcher') return running ? 'Ask Watcher while it works' : 'Ask Watcher';
+  return running ? 'Reply while it works' : 'Reply to this thread';
+}
+
+function applyState() {
+  s.text = {empty:'', typing:'Looks good, ship it', multi:'Before you run the suite, rebase on main. Drake merged the scheduler change this morning and it touches the same file, so the backoff test may move.', photos:'This is what I see on the phone', running:'', queue:'Then open a pull request'}[s.state];
+  s.photos = s.state === 'photos' ? 2 : 0;
+}
+
+function render() {
+  document.documentElement.dataset.theme = s.theme;
+  document.documentElement.dataset.variant = s.variant;
+  const running = s.state === 'running' || s.state === 'queue';
+  const written = s.text.trim() !== '' || s.photos > 0;
+  document.getElementById('working').hidden = !running;
+  const photos = s.photos ? '<div class="photos">' + Array.from({length: s.photos}, () => '<div class="photo"><span>×</span></div>').join('') + '</div>' : '';
+  const dock = document.getElementById('dock');
+  if (s.variant === 'T') {
+    dock.innerHTML = `<div class="today" id="box"><button class="plus" aria-label="Attach photos or files">${plusSvg}</button>
+      <div class="col">${photos}<textarea rows="1" aria-label="Reply to this thread" placeholder="${placeholder()}"></textarea></div>
+      ${running ? '<button class="btn stop" aria-label="Stop this turn"><i></i></button>' : ''}
+      ${!running || written ? `<button class="btn send ${written ? '' : 'off'}" aria-label="Send reply">${running ? queueSvg : upSvg}</button>` : ''}</div>`;
+  } else {
+    dock.innerHTML = `<div class="row"><button class="plus" aria-label="Attach photos or files">${plusSvg}</button>
+      <div class="field" id="box">${photos}<div class="line"><textarea rows="1" aria-label="${s.box === 'watcher' ? 'Ask Watcher' : 'Reply to this thread'}" placeholder="${placeholder()}"></textarea>
+      <button class="btn stop ${running ? '' : 'hide'}" aria-label="Stop this turn"><i></i></button>
+      <button class="btn send ${written ? '' : 'hide'}" id="send" aria-label="${running ? 'Queue for after this turn' : 'Send reply'}">${running ? queueSvg : upSvg}</button></div></div></div>`;
+  }
+  const ta = dock.querySelector('textarea');
+  ta.value = s.text;
+  grow(ta);
+  ta.addEventListener('input', () => { s.text = ta.value; grow(ta); refreshButtons(); show(); });
+  if (s.variant === 'T') {
+    ta.addEventListener('focus', () => document.getElementById('box').classList.add('focus'));
+    ta.addEventListener('blur', () => document.getElementById('box').classList.remove('focus'));
+  }
+  dock.querySelector('.plus').onclick = () => { s.photos = Math.min(s.photos + 1, 3); render(); };
+  const send = dock.querySelector('.send');
+  if (send) send.onclick = () => { if (s.text.trim() || s.photos) { s.text = ''; s.photos = 0; render(); } };
+  convo();
+  document.getElementById('label').textContent = s.variant + ' — ' + Object.fromEntries(VARIANTS)[s.variant];
+  for (const [id, list, key] of [['variants', VARIANTS, 'variant'], ['states', STATES, 'state'], ['boxes', [['thread','Thread'],['watcher','Watcher']], 'box'], ['themes', [['dark','Dark'],['light','Light']], 'theme']]) {
+    document.getElementById(id).innerHTML = list.map(([k, name]) => `<button data-k="${key}" data-v="${k}" aria-pressed="${s[key] === k}">${name}</button>`).join('');
+  }
+  const url = new URL(location.href);
+  for (const k of ['variant', 'state', 'box', 'theme']) url.searchParams.set(k, s[k]);
+  history.replaceState(null, '', url);
+  show();
+}
+
+function refreshButtons() {
+  if (s.variant === 'T') { render(); document.querySelector('#dock textarea').focus(); const t = document.querySelector('#dock textarea'); t.setSelectionRange(t.value.length, t.value.length); return; }
+  const written = s.text.trim() !== '' || s.photos > 0;
+  document.getElementById('send').classList.toggle('hide', !written);
+}
+
+function grow(ta) {
+  ta.style.height = '0px';
+  const h = Math.min(ta.scrollHeight, 128);
+  ta.style.height = Math.max(h, s.variant === 'T' ? 44 : 34) + 'px';
+  const box = document.getElementById('box');
+  if (box && s.variant !== 'T') box.classList.toggle('tall', h > 40 || s.photos > 0);
+}
+
+function show() {
+  const running = s.state === 'running' || s.state === 'queue';
+  const written = s.text.trim() !== '' || s.photos > 0;
+  document.getElementById('state').textContent = [
+    'treatment: ' + Object.fromEntries(VARIANTS)[s.variant],
+    'box: ' + (s.box === 'watcher' ? "Watcher's box" : "a thread's reply box"),
+    'turn running: ' + running,
+    'words: ' + (s.text.trim() ? JSON.stringify(s.text.slice(0, 40)) + (s.text.length > 40 ? '…' : '') : 'none'),
+    'photos: ' + s.photos,
+    'Stop shown: ' + running,
+    'Send shown: ' + (s.variant === 'T' ? (!running || written) + (written ? '' : ' (dimmed)') : written) + (running && written ? ', queues' : ''),
+  ].join('\n');
+}
+
+document.body.addEventListener('click', e => {
+  const b = e.target.closest('button[data-k]');
+  if (!b) return;
+  s[b.dataset.k] = b.dataset.v;
+  if (b.dataset.k === 'state') applyState();
+  render();
+});
+function cycle(d) { const keys = VARIANTS.map(v => v[0]); s.variant = keys[(keys.indexOf(s.variant) + d + keys.length) % keys.length]; render(); }
+document.getElementById('prev').onclick = () => cycle(-1);
+document.getElementById('next').onclick = () => cycle(1);
+addEventListener('keydown', e => {
+  if (e.target.closest('input,textarea,[contenteditable]')) return;
+  if (e.key === 'ArrowLeft') cycle(-1);
+  if (e.key === 'ArrowRight') cycle(1);
+});
+applyState();
+render();
+</script>
+</body>
+</html>

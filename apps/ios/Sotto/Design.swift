@@ -861,6 +861,57 @@ extension View {
     }
 }
 
+/// The reply box's ground, and its **+**'s, as in Messages: solid, a shade off the room, with a soft shadow under it so it
+/// floats over the conversation, and no edge. Under Glass the system's Liquid Glass instead, which the **+** answers the
+/// touch with.
+struct ComposerSurface<S: InsettableShape>: ViewModifier {
+    let shape: S
+    var interactive = false
+    @Environment(\.sottoTheme) private var theme
+    @Environment(\.sottoGlass) private var glass
+    @Environment(\.colorScheme) private var scheme
+    @ViewBuilder func body(content: Content) -> some View {
+        if glass != nil, #available(iOS 26, *) {
+            content.glassEffect(.regular.tint(theme.color(.surface).opacity(scheme == .dark ? 0.58 : 0.68)).interactive(interactive), in: shape)
+        } else if glass != nil {
+            content.glass(in: shape)
+        } else {
+            content
+                // The room with a little of the ink over it, so the box is a shade off whatever the theme's room is.
+                .background(theme.tinted(.canvas, with: .ink, scheme == .dark ? 0.08 : 0.055), in: shape)
+                .softShadow(shape, color: Color.black.opacity(scheme == .dark ? 0.4 : 0.14), radius: 9, y: 4)
+        }
+    }
+}
+
+/// The reply box's measures, shared by a thread's and Watcher's: 38 points tall with one line, as in Messages.
+enum ComposerMetrics {
+    static let height: CGFloat = 38
+    static let radius: CGFloat = height / 2
+    /// The words' room above and below, which makes one line of body text the box's 38 points.
+    static let wordsPadding: CGFloat = 9
+    /// From the box's leading edge to the words.
+    static let wordsInset: CGFloat = 14
+    /// Around the photos and files above the words.
+    static let attachmentsInset: CGFloat = 6
+    /// Send and Stop inside the box's end: their circle, and its gap to the box's edge.
+    static let button: CGFloat = 30
+    static let buttonInset: CGFloat = 4
+    /// Between Stop and Send, wide enough that neither takes a press meant for the other.
+    static let buttonGap: CGFloat = 8
+}
+
+extension View {
+    /// The reply box's floating ground; see `ComposerSurface`.
+    func composerSurface<S: InsettableShape>(in shape: S, interactive: Bool = false) -> some View {
+        modifier(ComposerSurface(shape: shape, interactive: interactive))
+    }
+    /// A round button drawn smaller than 44 points that still takes a press across 44, without taking more room.
+    func pressArea(drawn size: CGFloat) -> some View {
+        frame(width: 44, height: 44).contentShape(Circle()).padding(-(44 - size) / 2)
+    }
+}
+
 // MARK: - Cards and glows
 
 /// How a card is lit. Needs you carries a warm glow, working a breathing accent halo, answered an accent glow.
