@@ -8,7 +8,7 @@ export const historyEntrySchema = z.object({
   createdAt: z.number().int().nonnegative(),
   durationMs: z.number().int().nonnegative(),
   language: z.string().min(1),
-  modelPreset: z.enum(['fast', 'balanced', 'accurate', 'instant', 'mai', 'parakeet']),
+  modelPreset: z.enum(['fast', 'balanced', 'accurate', 'instant', 'mai', 'parakeet', 'openrouter']),
   /** The delivered app: the name of the app that had focus when Sotto pasted or copied it (ADR-0100). */
   app: deliveredAppSchema.optional(),
 })

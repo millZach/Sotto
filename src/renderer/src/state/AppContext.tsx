@@ -16,6 +16,7 @@ import type {
   DictationShortcutsResult,
   OpenRouterKeyCheck,
   OpenRouterModelList,
+  CloudSpeechModelList,
   StartupState,
   SottoBridge,
   TranscriptPolishAsrContext,
@@ -27,7 +28,7 @@ import { E2E_HISTORY_CREATED_AT } from '../../../shared/e2e'
 import type { HistoryEntry } from '../../../shared/history'
 import type { DictationRecord } from '../../../shared/dictationRecord'
 import type { SottoPlatform } from '../../../shared/platform'
-import type { AppSettings, SettingsPatch } from '../../../shared/settings'
+import { cloudTranscriptionOn, type AppSettings, type SettingsPatch } from '../../../shared/settings'
 import type { RecoveryNotice } from '../../../shared/recoveryNotice'
 import { AudioRecorder, type AudioRecorderOptions } from '../audio/audioRecorder'
 import { SoundCuePlayer } from '../audio/soundCues'
@@ -70,8 +71,8 @@ export interface AppController {
   toggle(): Promise<void>
   /** Stops listening or processing, or returns a cancelled Try again to its kept recording. */
   cancel(): Promise<void>
-  /** Sends a kept recording again. */
-  retry?(): Promise<void>
+  /** Sends a kept recording again; `local` sends it to the speech model on this computer (ADR-0160). */
+  retry?(route?: 'local'): Promise<void>
   /** Clears an error, letting go of a kept recording. */
   dismiss?(): Promise<void>
   prewarm?(): Promise<void>
@@ -91,6 +92,10 @@ export interface AppControllerFactoryBindings {
   readonly transcription?: TranscriptionBridge
   /** Whether the speech model can transcribe now; absent where nothing reports it, which counts as ready. */
   readonly speechModelReady?: () => boolean
+  /** Whether OpenRouter transcribes dictation with no key saved (ADR-0160); absent where cloud dictation is off. */
+  readonly openRouterKeyMissing?: () => boolean
+  /** Which kind of model transcribes dictation now, for the history entry. */
+  readonly transcribedWith?: () => 'parakeet' | 'openrouter'
   readonly platform?: SottoPlatform
 }
 
@@ -132,6 +137,8 @@ export function createProductionDictationController(
     addHistory: bindings.addHistory,
     ...(bindings.retainOutput ? { retainOutput: bindings.retainOutput } : {}),
     ...(bindings.speechModelReady ? { speechModelReady: bindings.speechModelReady } : {}),
+    ...(bindings.openRouterKeyMissing ? { openRouterKeyMissing: bindings.openRouterKeyMissing } : {}),
+    ...(bindings.transcribedWith ? { transcribedWith: bindings.transcribedWith } : {}),
     publishWidgetState: bindings.publishWidgetState,
     ...(platform === undefined ? {} : { platform }),
     ...(polish === undefined
@@ -150,6 +157,8 @@ export interface AppActions {
   toggle(): Promise<void>
   cancel(): Promise<void>
   retry(): Promise<void>
+  /** Transcribe on this computer: a kept recording OpenRouter turned away goes to the speech model here (ADR-0160). */
+  retryOnThisComputer(): Promise<void>
   dismiss(): Promise<void>
   /** Opens a page; Settings can be opened at one of its pages or groups (settingsPages.ts), and at one setting on it. */
   navigate(destination: AppNavigation, settingsSection?: SettingsSectionId, setting?: string): void
@@ -167,6 +176,8 @@ export interface AppActions {
   checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
   /** OpenRouter's text models for the cleanup model picker (ADR-0122); a failure is a reason, never a throw. */
   listOpenRouterModels(): Promise<OpenRouterModelList>
+  /** OpenRouter's speech models, best first (Owl cloud-dictation, ADR-0160). */
+  listCloudSpeechModels(): Promise<CloudSpeechModelList>
   /** Starts the speech model download, or retries one that failed. */
   downloadSpeechModel(): Promise<void>
   /**
@@ -261,6 +272,9 @@ export function AppProvider({
   const navigationRef = useRef(navigation)
   navigationRef.current = navigation
   const updateRef = useRef(update)
+  /** Whether an OpenRouter speech model transcribes dictation now: the Owl feature and the setting, both on (ADR-0160). */
+  const cloudTranscribing = (): boolean => settingsRef.current !== null
+    && cloudTranscriptionOn(settingsRef.current, updateRef.current?.owlFeatures?.['cloud-dictation'] === true)
   const navigationGenerationRef = useRef(0)
   updateRef.current = update
   const [speechModel, setSpeechModel] = useState<SpeechModelStatus | null>(null)
@@ -575,8 +589,11 @@ export function AppProvider({
             cancelTranscription: (requestId) =>
               bridge.cancelTranscription(requestId),
           },
-          // Until main has said where the model stands, it is not ready: at launch it is still loading.
-          speechModelReady: () => speechModelRef.current?.state === 'ready',
+          // Until main has said where the model stands, it is not ready: at launch it is still loading. While OpenRouter
+          // transcribes (ADR-0160) the model here is unloaded on purpose, and a missing key is what stops a dictation.
+          speechModelReady: () => cloudTranscribing() || speechModelRef.current?.state === 'ready',
+          openRouterKeyMissing: () => cloudTranscribing() && (settingsRef.current?.llmApiKey ?? '').trim() === '',
+          transcribedWith: () => cloudTranscribing() ? 'openrouter' : 'parakeet',
           addHistory: async (entry) => {
             // E2E dictations get a constant timestamp so design captures do not
             // bake the capture minute into the RECENT log. The widget never sees
@@ -686,6 +703,7 @@ export function AppProvider({
     toggle: () => invokeController(controllerRef.current, (controller) => controller.toggle()),
     cancel: () => invokeController(controllerRef.current, (controller) => controller.cancel()),
     retry: () => invokeController(controllerRef.current, (controller) => controller.retry?.() ?? Promise.resolve()),
+    retryOnThisComputer: () => invokeController(controllerRef.current, (controller) => controller.retry?.('local') ?? Promise.resolve()),
     dismiss: () => invokeController(controllerRef.current, (controller) => controller.dismiss?.() ?? Promise.resolve()),
     navigate: (destination, settingsSection, setting) => {
       // Navigations apply in the order they were asked for: a run's deferred page change gives way to any newer one.
@@ -797,7 +815,11 @@ export function AppProvider({
     listOpenRouterModels: async () => {
       if (bridge === undefined) return { ok: false, reason: 'network' }
       try { return await bridge.listOpenRouterModels() } catch { return { ok: false, reason: 'network' } }
+    },    listCloudSpeechModels: async () => {
+      if (bridge === undefined) return { ok: false, reason: 'network' }
+      try { return await bridge.listCloudSpeechModels() } catch { return { ok: false, reason: 'network' } }
     },
+
     downloadSpeechModel: async () => {
       if (bridge === undefined) return
       try { await bridge.downloadSpeechModel() } catch { /* the status it would have changed stays as it was */ }

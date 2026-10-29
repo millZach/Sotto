@@ -23,6 +23,15 @@ msgid "{shortcut} to finish"
 msgstr "{shortcut} to finish"
 
 #: src/renderer/src/widget/WidgetApp.tsx
+msgid "Audio is never saved"
+msgstr "Audio is never saved"
+
+#. Sotto could not connect to OpenRouter to transcribe dictation.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Can’t reach OpenRouter"
+msgstr "Can’t reach OpenRouter"
+
+#: src/renderer/src/widget/WidgetApp.tsx
 msgid "Cancel dictation"
 msgstr "Cancel dictation"
 
@@ -87,6 +96,11 @@ msgstr "F9 to talk"
 msgid "Failed again · retry"
 msgstr "Failed again · retry"
 
+#. OpenRouter refused the saved OpenRouter key.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Key not accepted"
+msgstr "Key not accepted"
+
 #: src/renderer/src/widget/WidgetApp.tsx
 msgid "Listening"
 msgstr "Listening"
@@ -108,6 +122,11 @@ msgstr "Microphone unavailable"
 msgid "Model not ready"
 msgstr "Model not ready"
 
+#. OpenRouter no longer offers the speech model chosen for dictation.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Model unavailable"
+msgstr "Model unavailable"
+
 #: src/renderer/src/widget/WidgetApp.tsx
 msgid "No microphone found"
 msgstr "No microphone found"
@@ -115,6 +134,11 @@ msgstr "No microphone found"
 #: src/renderer/src/widget/WidgetApp.tsx
 msgid "No microphone set up"
 msgstr "No microphone set up"
+
+#. Dictation is set to transcribe with OpenRouter, and no OpenRouter key is saved.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "No OpenRouter key"
+msgstr "No OpenRouter key"
 
 #: src/renderer/src/widget/WidgetApp.tsx
 msgid "No speech detected"
@@ -131,6 +155,16 @@ msgstr "Open Sotto and try again."
 #: src/renderer/src/widget/WidgetApp.tsx
 msgid "Open Sotto to restore settings."
 msgstr "Open Sotto to restore settings."
+
+#. OpenRouter turned the request away because too many were sent at once.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "OpenRouter busy"
+msgstr "OpenRouter busy"
+
+#. The OpenRouter account has no credit left to pay for transcription.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Out of credit"
+msgstr "Out of credit"
 
 #: src/renderer/src/widget/WidgetApp.tsx
 msgid "Output unavailable"

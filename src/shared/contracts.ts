@@ -58,6 +58,8 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
         'delivering-output',
       ]),
       progress: z.number().finite().min(0).max(1),
+      /** Set while an OpenRouter speech model transcribes (ADR-0160), so the widget does not say the audio stays here. */
+      cloud: z.literal(true).optional(),
       ...widgetMetadataSchema,
     })
     .strict(),
@@ -211,6 +213,9 @@ export type TranscriptPolishResult = z.infer<typeof transcriptPolishResultSchema
 
 export const TRANSCRIPTION_PRIVACY_NOTICE = 'Your audio never leaves this computer. Only AI cleanup, when on, sends the text to OpenRouter.' as const
 
+/** What Settings says while an OpenRouter speech model transcribes dictation (ADR-0160). */
+export const CLOUD_TRANSCRIPTION_PRIVACY_NOTICE = 'Your audio goes through OpenRouter to the model you pick, and the text comes back. Your dictionary words go with it as spelling hints when the model takes them. Audio is never saved on this computer, and the speech model here is unloaded while this is on.' as const
+
 /** The recorder's own ceiling as PCM16 bytes, plus the WAV header. */
 const MAX_TRANSCRIPTION_AUDIO_BYTES = MAX_TRANSCRIPTION_SAMPLES * 2 + 44
 
@@ -227,15 +232,24 @@ export const transcriptionRequestSchema = z.object({
   requestId: z.string().min(1).max(128),
   wav: z.custom<ArrayBuffer>((value) => value instanceof ArrayBuffer && value.byteLength > 44 && value.byteLength <= MAX_TRANSCRIPTION_AUDIO_BYTES),
   timeoutMs: z.number().int().min(250).max(30_000),
+  /**
+   * `local` transcribes this segment on this computer even while an OpenRouter speech model transcribes dictation: the
+   * Dictate room's Transcribe on this computer, for a kept recording the cloud turned away (ADR-0160).
+   */
+  route: z.literal('local').optional(),
 }).strict()
 
 /**
  * Why a segment was not transcribed: the speech model is not downloaded or running yet
  * (`model-not-ready`), it ran and failed (`failed`), it took longer than the deadline (`timeout`),
  * the dictation was cancelled, or the audio was not a WAV the recorder makes (`malformed`).
+ * Transcribing with OpenRouter (ADR-0160) adds why OpenRouter turned it away: no key saved (`no-key`), the key refused
+ * (`unauthorized`), no credit left (`billing`), too many requests (`rate-limited`), OpenRouter not reached (`network`),
+ * or the chosen model no longer offered (`model-unavailable`).
  */
 export const transcriptionFailureReasonSchema = z.enum([
   'model-not-ready', 'failed', 'timeout', 'cancelled', 'malformed',
+  'no-key', 'unauthorized', 'billing', 'rate-limited', 'network', 'model-unavailable',
 ])
 
 export const transcriptionResultSchema = z.discriminatedUnion('ok', [
@@ -256,6 +270,28 @@ export const openRouterModelListSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(false), reason: z.enum(['http', 'network', 'timeout']) }).strict(),
 ])
 
+/**
+ * OpenRouter's speech models, best first, for the list in Settings → Dictation (ADR-0160). `wer` and `medianMs` are
+ * Sotto's own measurements (`scoredBy: 'sotto'`), and null for a model Sotto has not tested yet. `zdr` says whether the model has a host that keeps no audio.
+ */
+export const cloudSpeechModelSchema = z.object({
+  id: z.string().min(1).max(128),
+  name: z.string().max(200),
+  maker: z.string().max(100),
+  zdr: z.boolean(),
+  wer: z.number().min(0).max(10).nullable(),
+  medianMs: z.number().int().min(0).max(120_000).nullable(),
+  usdPerHour: z.number().min(0).max(1_000).nullable(),
+  scoredBy: z.enum(['sotto']).nullable(),
+}).strict()
+
+export const cloudSpeechModelListSchema = z.discriminatedUnion('ok', [
+  z.object({ ok: z.literal(true), models: z.array(cloudSpeechModelSchema).max(500) }).strict(),
+  z.object({ ok: z.literal(false), reason: z.enum(['http', 'network', 'timeout']) }).strict(),
+])
+
+export type CloudSpeechModel = z.infer<typeof cloudSpeechModelSchema>
+export type CloudSpeechModelList = z.infer<typeof cloudSpeechModelListSchema>
 export type TranscriptionFailureReason = z.infer<typeof transcriptionFailureReasonSchema>
 export type TranscriptionRequest = z.infer<typeof transcriptionRequestSchema>
 export type TranscriptionResult = z.infer<typeof transcriptionResultSchema>
@@ -468,6 +504,8 @@ export interface SottoBridge {
   checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
   /** OpenRouter's text models, newest list on every call; no key is sent. */
   listOpenRouterModels(): Promise<OpenRouterModelList>
+  /** OpenRouter's speech models, best first (Owl `cloud-dictation`, ADR-0160); refused while that feature is off. */
+  listCloudSpeechModels(): Promise<CloudSpeechModelList>
   /** Asks the operating system for the microphone before Chromium captures. */
   ensureMicrophoneAccess(): Promise<boolean>
 

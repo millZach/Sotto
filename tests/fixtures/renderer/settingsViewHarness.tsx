@@ -49,6 +49,7 @@ function baseProps(overrides: Partial<SettingsViewProps> = {}): SettingsViewProp
     onClearHistory: vi.fn(async () => true),
     onCheckOpenRouterKey: vi.fn(async () => ({ ok: true } as const)),
     onListOpenRouterModels: vi.fn(async () => ({ ok: true as const, complete: true, models: [] })),
+    onListCloudSpeechModels: vi.fn(async () => ({ ok: true as const, models: [] })),
     speechModel: { state: 'ready' },
     onDownloadSpeechModel: vi.fn(),
     speechModels: [SOTTO_MODEL],

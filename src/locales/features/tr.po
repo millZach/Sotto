@@ -3308,6 +3308,11 @@ msgstr ""
 msgid "OpenRouter returned an error."
 msgstr ""
 
+#. Mid-sentence, after the dictation language: "English, OpenRouter speech model." The dictation was transcribed through OpenRouter.
+#: src/renderer/src/features/dictate/journalFacts.ts
+msgid "OpenRouter speech model"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Opens Apple's TestFlight page in your browser. Install TestFlight on the iPhone first."
 msgstr ""
@@ -5295,6 +5300,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Total tokens are input plus output. Cache reads and writes are part of input, not extra."
+msgstr ""
+
+#: src/renderer/src/features/dictate/DictateRoom.tsx
+msgid "Transcribe on this computer"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx

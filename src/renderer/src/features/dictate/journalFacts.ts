@@ -96,6 +96,7 @@ function lengthLabel(durationMs: number): string {
 /** Entries kept from before Parakeet (ADR-0071) name the model that transcribed them, or an earlier one. */
 function modelLabel(preset: HistoryEntry['modelPreset']): string {
   if (preset === 'parakeet') return t`Parakeet model`
+  if (preset === 'openrouter') return t({ message: 'OpenRouter speech model', comment: 'Mid-sentence, after the dictation language: "English, OpenRouter speech model." The dictation was transcribed through OpenRouter.' })
   return preset === 'mai' ? t`MAI-Transcribe-2 model` : t({ message: 'an earlier model', comment: 'Mid-sentence, after the dictation language: "English, an earlier model."' })
 }
 

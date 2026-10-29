@@ -63,7 +63,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. `babysitting` is on while restarting stopped threads (ADR-0144), which takes babysitting away, is off. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'thread-tips' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'thread-tips' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage' | 'cloud-dictation'
 
 /**
  * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
@@ -128,7 +128,10 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'sound-cues', label: msg`Sound cues`, section: 'settings-capture', words: 'audio beep', gate: 'dictation' },
     { id: 'typing-speed', label: msg`Typing speed`, section: 'settings-capture', words: 'words per minute time saved', gate: 'dictation' },
     { id: 'widget-when-idle', label: msg`Show floating widget when idle`, section: 'settings-capture', words: 'sliver', gate: 'dictation' },
-    { id: 'speech-model', label: msg`Speech model`, section: 'settings-transcription', words: 'transcription parakeet language', gate: 'dictation' },
+    { id: 'cloud-transcription', label: msg`Transcribe with OpenRouter`, section: 'settings-transcription', words: 'cloud online openrouter speech model transcription', gate: 'cloud-dictation' },
+    { id: 'cloud-speech-model', label: msg`OpenRouter speech model`, section: 'settings-transcription', words: 'cloud transcription accuracy speed word error rate', gate: 'cloud-dictation', fallback: 'cloud-transcription' },
+    { id: 'cloud-openrouter-key', label: msg`OpenRouter key for transcription`, section: 'settings-transcription', words: 'api key cloud transcription', gate: 'cloud-dictation', fallback: 'cloud-transcription' },
+    { id: 'speech-model', label: msg`Speech model`, section: 'settings-transcription', words: 'transcription parakeet language', gate: 'dictation', fallback: 'cloud-transcription' },
     { id: 'whitespace-formatting', label: msg`Whitespace formatting`, section: 'settings-transcription', words: 'spaces trim', gate: 'dictation' },
     { id: 'clipboard-copy', label: msg`Automatic clipboard copy`, section: 'settings-output', words: 'output', gate: 'dictation' },
     { id: 'auto-paste', label: msg`Automatic paste`, section: 'settings-output', words: 'output', gate: 'dictation' },

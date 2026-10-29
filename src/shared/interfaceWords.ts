@@ -248,16 +248,35 @@ export function interactiveVisualLabel(): string {
 
 /** What went wrong transcribing when nothing was kept (`TRANSCRIPTION_ERROR_DETAIL`). */
 export function transcriptionErrorDetail(code: TranscriptionErrorCode): string {
-  return code === 'TRANSCRIPTION_MODEL_NOT_READY'
-    ? t`The speech model stopped before it could transcribe. The recording was not kept. Check the speech model in Settings → Dictation, then dictate again.`
-    : t`The speech model could not transcribe this recording. The recording was not kept. Dictate again.`
+  switch (code) {
+    case 'TRANSCRIPTION_MODEL_NOT_READY': return t`The speech model stopped before it could transcribe. The recording was not kept. Check the speech model in Settings → Dictation, then dictate again.`
+    case 'TRANSCRIPTION_NO_KEY': return t`Transcribing with OpenRouter needs a key. The recording was not kept. Add a key in Settings → Dictation, then dictate again.`
+    case 'TRANSCRIPTION_KEY_REJECTED': return t`OpenRouter did not accept your key. The recording was not kept. Check the key in Settings → Cleanup, then dictate again.`
+    case 'TRANSCRIPTION_NO_CREDIT': return t`Your OpenRouter account is out of credit. The recording was not kept. Add credit at openrouter.ai, then dictate again.`
+    case 'TRANSCRIPTION_RATE_LIMITED': return t`OpenRouter was too busy to take the recording. The recording was not kept. Wait a moment, then dictate again.`
+    case 'TRANSCRIPTION_OFFLINE': return t`Sotto could not reach OpenRouter. The recording was not kept. Check your connection, then dictate again.`
+    case 'TRANSCRIPTION_MODEL_GONE': return t`OpenRouter no longer offers the chosen speech model. The recording was not kept. Pick another in Settings → Dictation, then dictate again.`
+    default: return t`The speech model could not transcribe this recording. The recording was not kept. Dictate again.`
+  }
 }
 
 /** What a transcription failure that kept the recording says (`TRANSCRIPTION_KEPT_DETAIL`). */
 export function transcriptionKeptDetail(code: TranscriptionErrorCode): string {
-  return code === 'TRANSCRIPTION_MODEL_NOT_READY'
-    ? t`The speech model is not ready. Your recording is kept until you try again or discard it. Check the speech model in Settings → Dictation, then try again.`
-    : t`The speech model could not transcribe this recording. Your recording is kept until you try again or discard it.`
+  switch (code) {
+    case 'TRANSCRIPTION_MODEL_NOT_READY': return t`The speech model is not ready. Your recording is kept until you try again or discard it. Check the speech model in Settings → Dictation, then try again.`
+    case 'TRANSCRIPTION_NO_KEY': return t`Transcribing with OpenRouter needs a key. Your recording is kept until you try again or discard it. Add a key in Settings → Dictation, then try again.`
+    case 'TRANSCRIPTION_KEY_REJECTED': return t`OpenRouter did not accept your key. Your recording is kept until you try again or discard it. Check the key in Settings → Cleanup, then try again.`
+    case 'TRANSCRIPTION_NO_CREDIT': return t`Your OpenRouter account is out of credit. Your recording is kept until you try again or discard it. Add credit at openrouter.ai, then try again.`
+    case 'TRANSCRIPTION_RATE_LIMITED': return t`OpenRouter was too busy to take the recording. Your recording is kept until you try again or discard it. Wait a moment, then try again.`
+    case 'TRANSCRIPTION_OFFLINE': return t`Sotto could not reach OpenRouter. Your recording is kept until you try again or discard it. Check your connection, then try again.`
+    case 'TRANSCRIPTION_MODEL_GONE': return t`OpenRouter no longer offers the chosen speech model. Your recording is kept until you try again or discard it. Pick another in Settings → Dictation, then try again.`
+    default: return t`The speech model could not transcribe this recording. Your recording is kept until you try again or discard it.`
+  }
+}
+
+/** Dictation started while OpenRouter transcribes and no key is saved (`OPENROUTER_KEY_MISSING_DETAIL`, ADR-0160). */
+export function openRouterKeyMissingDetail(): string {
+  return t`Transcribing with OpenRouter needs a key, so nothing was recorded. Add one in Settings → Dictation.`
 }
 
 /** Dictation started before the speech model was ready (`SPEECH_MODEL_NOT_READY_DETAIL`). */
