@@ -856,7 +856,7 @@ it('replaces the master provider while a worker it started still works, and keep
   expect(f.service.startsInFlight()).toBe(0)
 })
 
-it('changes Watcher’s model with its send queued for a working thread, while a provider change waits for that send (#1325)', async () => {
+it('changes Watcher’s model with its send queued for a working thread, and a provider change hands that send to the new Watcher (#1325, #1735)', async () => {
   const f = await fixture()
   f.workspace.adapters.codex.state.models.push({ ...f.workspace.adapters.codex.state.models[0]!, id: 'fake:other', name: 'Other model' })
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
@@ -880,12 +880,19 @@ it('changes Watcher’s model with its send queued for a working thread, while a
   expect(await f.service.open({ provider: 'codex', modelId: other.id, reasoningEffort: 'low' })).toMatchObject({ status: 'ok', state: { current: { target: { threadId: f.id } } } })
   expect(f.control.watcherSnapshot().threads.find(thread => thread.id === f.id)!.modelId).toBe(other.id)
   expect(f.control.watcherRecord().operations.find(item => item.id === (queued as { receipt: { operationId: string } }).receipt.operationId)!.deliveryState).toBe('queued')
-  // A new Watcher could not send that queued brief, so a provider change waits for it and says what to do.
+  // A provider change no longer waits for that queued brief: the new Watcher takes it over, and it goes when its thread's
+  // turn ends, once, under the receipt it was queued with.
   await f.control.commandShell({ type: 'connect', provider: 'claude' })
   const claude = f.control.watcherSnapshot().models.find(item => item.providerId === 'claude' && item.ready)!
-  expect(await f.service.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY',
-    message: 'Watcher has a message queued for a thread that is still working, which a new Watcher could not send. Wait until it has gone, or stop it with Stop all, then change its provider. Nothing was changed.' })
-  expect(f.service.state()).toMatchObject({ current: { target: { threadId: f.id } }, history: [] })
+  expect(await f.service.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'ok', state: { current: { provider: 'claude' } } })
+  expect(f.service.state().history.at(-1)!.target.threadId).toBe(f.id)
+  const operationId = (queued as { receipt: { operationId: string } }).receipt.operationId
+  expect(f.control.watcherRecord().operations.find(item => item.id === operationId)!.deliveryState).toBe('queued')
+  const worker = f.native(first.target.threadId)
+  worker.status = 'idle'; worker.lastTurn = { id: randomUUID(), status: 'completed' }
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  await vi.waitFor(() => expect(f.control.watcherRecord().operations.find(item => item.id === operationId)!.deliveryState).toBe('accepted'))
+  expect(f.native(first.target.threadId).messages.filter(message => message.role === 'user' && message.text.includes('Synthetic queued brief'))).toHaveLength(1)
 })
 
 it('changes Watcher’s provider at rest when its only queued send waits for the user’s review, not a working thread', async () => {
@@ -905,25 +912,6 @@ it('changes Watcher’s provider at rest when its only queued send waits for the
   expect(await f.service.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'ok' })
   expect(f.service.state().current!.provider).toBe('claude')
   expect(f.service.state().history.at(-1)!.target.threadId).toBe(f.id)
-})
-
-it('counts a queued send toward a provider change only while its prompt can still go: not unconfirmed, nor behind a failed wake-up', async () => {
-  const f = await fixture(), first = await f.call('start_thread', f.start())
-  if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
-  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic GO MERGE' })
-  if (queued.status !== 'ok' || !('receipt' in queued)) throw new Error('queue refused')
-  const operationId = queued.receipt.operationId
-  // Behind a working thread's turn, it waits, and holds a replacement.
-  expect(f.control.watcherQueuedSendsWaiting().has(operationId)).toBe(true)
-  type Items = { items: { id: string; threadId: string; status: string; wakeUp?: boolean; watcherOperationId?: string | undefined }[] }
-  const change = (update: (state: Items) => void) => (followupStoreOf(f.control) as unknown as { change(update: (state: Items) => void): Promise<void> }).change(update)
-  const own = (state: Items) => state.items.find(item => item.watcherOperationId === operationId)!
-  // A restart between the queue's claim and the outbox leaves it unconfirmed: it cannot go as it is, and holds nothing.
-  await change(state => { own(state).status = 'uncertain' })
-  expect(f.control.watcherQueuedSendsWaiting().has(operationId)).toBe(false)
-  // Queued again, but behind a wake-up that failed and waits for the user's review, it cannot go either.
-  await change(state => { own(state).status = 'queued'; state.items.unshift({ ...own(state), id: randomUUID(), wakeUp: true, status: 'failed', watcherOperationId: undefined }) })
-  expect(f.control.watcherQueuedSendsWaiting().has(operationId)).toBe(false)
 })
 
 it('changes Watcher’s model or effort while a send to another thread has been unconfirmed for days, set aside and through a restart, as Settings asks (#1325)', async () => {

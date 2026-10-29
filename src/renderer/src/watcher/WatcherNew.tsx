@@ -8,7 +8,6 @@ import { shownWords, type LaterWords } from '../features/settings/laterWords'
 import type { AgentState, AgentThread } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 import { stopAllRunning, type WatcherRoomState } from '../../../shared/watcherRoom'
-import { promptOnItsWay } from '../agents/ThreadOptions'
 import { Button } from '../components/Button'
 import { WatcherOwl } from './WatcherOwl'
 import { watchedRows, useWatcherRoom, type WatcherRoom } from './watcherRoom'
@@ -24,26 +23,28 @@ import { watchedRows, useWatcherRoom, type WatcherRoom } from './watcherRoom'
 // The English of the chip's title and of why it cannot start one, for the tests that read them; the chip shows them in
 // the interface language.
 export const NEW_WATCHER_TITLE = 'Start a new Watcher with a handover of this one'
-export const NEW_WATCHER_BUSY = 'Wait for Watcher to finish before starting a new one.'
+export const NEW_WATCHER_BUSY = 'Watcher is working. Stop its turn to start a new one.'
 export const NEW_WATCHER_EMPTY = 'This Watcher is new, so there is nothing to hand over yet.'
 const UNAVAILABLE = {
-  busy: msg`Wait for Watcher to finish before starting a new one.`,
+  busy: msg`Watcher is working. Stop its turn to start a new one.`,
   empty: msg`This Watcher is new, so there is nothing to hand over yet.`,
 } as const
 
 /**
- * Why New Watcher cannot start one now: Watcher working, waiting on a card or with a prompt on its way, as the window
- * sees it, or busy by main's own answer (`newWatcher`), which also counts starts still working and deliveries and tool
- * calls in flight; or nothing said yet, so nothing to hand over. A press still asks main. Null when a press may go.
+ * Why New Watcher cannot start one now: Watcher's own turn running, as the window sees it or by main's own answer
+ * (`newWatcher`), or nothing said yet, so nothing to hand over. Zach, October 28, 2026: "If you are in a turn I should have
+ * to stop you to start a new watcher". Nothing else holds it (#1735): a turn that waits on a card of Watcher's is stopped by
+ * the press, and the card's question handed over; a message on its way moves to the new Watcher's queue, paused. A press
+ * still asks main. Null when a press may go.
  */
 export function newWatcherUnavailable(state: AgentState, thread: AgentThread, main?: WatcherRoomState['newWatcher']): string | null {
-  const why = newWatcherBlocked(state, thread, main)
+  void state
+  const why = newWatcherBlocked(thread, main)
   return why === null ? null : i18n._(UNAVAILABLE[why])
 }
 
-function newWatcherBlocked(state: AgentState, thread: AgentThread, main?: WatcherRoomState['newWatcher']): keyof typeof UNAVAILABLE | null {
-  // Main's own answer covers what the window cannot see: starts still working, deliveries and tool calls in flight.
-  if (thread.status === 'running' || thread.requests.length > 0 || promptOnItsWay(state, thread.id) || main === 'busy') return 'busy'
+function newWatcherBlocked(thread: AgentThread, main?: WatcherRoomState['newWatcher']): keyof typeof UNAVAILABLE | null {
+  if (thread.status === 'running' && thread.requests.length === 0 || main === 'busy') return 'busy'
   const said = thread.messages.length > 0 || (thread.summary?.messageCount ?? 0) > 0 || thread.earlierAvailable === true || thread.lastUserMessageId !== undefined
   return said && main !== 'empty' ? null : 'empty'
 }
@@ -103,18 +104,35 @@ export function carriesOnSentence(watching: number, working: number): string | n
  * model it is on and what carried on. Only while it has said nothing and replaced an earlier conversation, by New Watcher
  * or a provider change; null otherwise, and then nothing of the room is counted.
  */
-export function newWatcherNoteFacts(state: AgentState, thread: AgentThread, room: WatcherRoomState | null): { readonly model: string; readonly carries: string | null } | null {
-  if (room === null || room.history.length === 0 || newWatcherBlocked(state, thread) !== 'empty') return null
+export function newWatcherNoteFacts(state: AgentState, thread: AgentThread, room: WatcherRoomState | null): { readonly model: string; readonly carries: string | null; readonly carried: WatcherRoomState['carried'] | null } | null {
+  if (room === null || room.history.length === 0 || newWatcherBlocked(thread) !== 'empty') return null
   return { model: resolveModel(state.host.models, thread.modelId)?.name ?? thread.modelId,
-    carries: carriesOnSentence(watchedRows(room).length, stopAllRunning(room).length) }
+    carries: carriesOnSentence(watchedRows(room).length, stopAllRunning(room).length), carried: room.carried ?? null }
 }
 
-/** The note itself: which model, where the last conversation went, and what carried on. */
-export function NewWatcherNote({ model, carries }: { readonly model: string; readonly carries: string | null }): ReactNode {
+/**
+ * The note itself: which model, where the last conversation went, and what carried on; then a line for each thing the
+ * press carried over (#1735), the fact first, each only when it is so (Zach's pick B of the October 28 prototype).
+ */
+export function NewWatcherNote({ model, carries, carried }: { readonly model: string; readonly carries: string | null; readonly carried?: WatcherRoomState['carried'] | null }): ReactNode {
+  const { t } = useLingui()
+  const lines: { readonly key: string; readonly fact: string; readonly rest: string }[] = []
+  if (carried?.questionClosed) lines.push({ key: 'question', fact: t`Its question to you was closed.`, rest: t`The handover carries it.` })
+  if (carried?.questionOpen) lines.push({ key: 'question-open', fact: t`Its question to you may still be open in the last conversation.`, rest: t`Answer it here instead; the handover carries it.` })
+  if (carried && carried.moved > 0) lines.push({ key: 'moved', fact: plural(carried.moved, { one: 'One message you wrote had not sent.', other: '# messages you wrote had not sent.' }),
+    rest: plural(carried.moved, { one: 'It is in the queue below, paused.', other: 'They are in the queue below, paused.' }) })
+  if (carried?.draftMoved) lines.push({ key: 'draft', fact: t`What you were writing moved here.`, rest: t`It is in the box below, not sent.` })
+  if (carried?.unconfirmed) lines.push({ key: 'unconfirmed', fact: t`Your last message was not confirmed.`, rest: t`If it arrived, it is in the last conversation.` })
+  for (const { host, count, titles } of carried?.cannotStop ?? []) {
+    const named = titles?.length ? titles.join(', ') : null
+    lines.push({ key: `host:${host}`, fact: plural(count, { one: `It can’t stop one thread on ${host}`, other: `It can’t stop # threads on ${host}` }),
+      rest: named === null ? t`until ${host} is updated.` : t`until ${host} is updated: ${named}.` })
+  }
   return <div className="thread-workspace__empty watcher-new-note">
     <WatcherOwl size={26} />
     <h3><Trans>New Watcher on {model}.</Trans></h3>
     <p className="tt-paragraph"><Trans>The last conversation is in Watcher history on the Threads page.</Trans>{carries === null ? '' : ` ${carries}`}</p>
+    {lines.length > 0 ? <ul className="watcher-new-note__carried">{lines.map(line => <li key={line.key}><strong>{line.fact}</strong> {line.rest}</li>)}</ul> : null}
   </div>
 }
 

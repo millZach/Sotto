@@ -439,8 +439,10 @@ export class WatcherWakeUp {
     })
     // A closed request's participation is only ever news as a takeover, so only those need a key. Closed requests are most
     // of an old record, and the pass that asks for them runs every few hundred milliseconds while threads stream.
-    const all = [...standing, ...!current ? [] : record.requests.filter(request => (request.state === 'active' || includeClosed && request.state === 'closed')
-      && request.watcher.hostId === current.target.hostId && request.watcher.threadId === current.target.threadId)
+    // An active request of any of this computer's Watchers is the current one's (#1735); a closed one's takeover is news
+    // only of the conversation that made it.
+    const all = [...standing, ...!current ? [] : record.requests.filter(request => !request.remoteOrigin && request.watcher.hostId === current.target.hostId
+      && (request.state === 'active' || includeClosed && request.state === 'closed' && request.watcher.threadId === current.target.threadId))
       .flatMap(request => request.participants.flatMap((participant): Worker[] => watches.some(watch => watch.target.hostId === participant.target.hostId
         && watch.target.threadId === participant.target.threadId) ? [] : [{ request, participant,
         ...request.state === 'active' || participant.state === 'taken-over' ? { key: targetKey(participant.target) } : {} }]))]
@@ -1444,7 +1446,8 @@ export class WatcherWakeUp {
     const record = this.record(), standing = this.workerIndex(false).byStandingWatch.get(event.requestId)
     const request = standing?.request ?? this.request(event.requestId)
     if (!record.current || !request || request.state !== 'active' && !(event.kind === 'taken-over' && request.state === 'closed')
-      || record.current.target.hostId !== request.watcher.hostId || record.current.target.threadId !== request.watcher.threadId) return false
+      || record.current.target.hostId !== request.watcher.hostId || request.remoteOrigin
+      || request.state === 'closed' && record.current.target.threadId !== request.watcher.threadId) return false
     const participant = standing?.participant ?? request.participants.find(item => item.target.hostId === event.target.hostId && item.target.threadId === event.target.threadId)
     if (!participant || participant.generation !== event.generation || participant.automationStopped) return false
     if (event.kind === 'taken-over') return participant.state === 'taken-over'

@@ -26,6 +26,16 @@ msgstr ""
 msgid "{0, plural, one {and # more} other {and # more}}"
 msgstr ""
 
+#. placeholder {0}: carried.moved
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "{0, plural, one {It is in the queue below, paused.} other {They are in the queue below, paused.}}"
+msgstr ""
+
+#. placeholder {0}: carried.moved
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "{0, plural, one {One message you wrote had not sent.} other {# messages you wrote had not sent.}}"
+msgstr ""
+
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "{about}, {system}. No account with Sotto and no telemetry.<0/>Transcription runs on this computer; AI cleanup uses your OpenRouter account."
 msgstr ""
@@ -108,6 +118,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "{count, plural, one {# waiting} other {# waiting}}"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "{count, plural, one {It can’t stop one thread on {host}} other {It can’t stop # threads on {host}}}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
@@ -960,6 +974,10 @@ msgstr ""
 #: src/renderer/src/features/usage/UsageModels.tsx
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "an unreported share"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Answer it here instead; the handover carries it."
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
@@ -2139,6 +2157,10 @@ msgstr ""
 msgid "If another application owns a shortcut, Sotto keeps your previous working shortcut active. In Settings › Dictation, press the shortcut, then hold the keys you want instead and let go."
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "If it arrived, it is in the last conversation."
+msgstr ""
+
 #: src/renderer/src/platformCopy.ts
 msgid "If recording cannot start, check that your microphone is connected and not muted. Choose an available input in Sotto Settings, then test again."
 msgstr ""
@@ -2278,6 +2300,10 @@ msgstr ""
 msgid "It gave no reason."
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "It is in the box below, not sent."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "It runs on your own {providers} account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions."
 msgstr ""
@@ -2312,6 +2338,14 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherContextTile.tsx
 msgid "Its provider has not reported its context yet."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Its question to you may still be open in the last conversation."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Its question to you was closed."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
@@ -4957,6 +4991,10 @@ msgstr ""
 msgid "The download stopped: Sotto could not reach GitHub, or GitHub did not send the file."
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "The handover carries it."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "The handover, word for word"
 msgstr ""
@@ -5429,6 +5467,14 @@ msgstr ""
 msgid "Unsent remote drafts could not be read. The original file was preserved. Repair local storage, then restart Sotto to try again."
 msgstr ""
 
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "until {host} is updated: {named}."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "until {host} is updated."
+msgstr ""
+
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Update {host}’s host"
 msgstr ""
@@ -5601,10 +5647,6 @@ msgstr ""
 msgid "Voxtype has these keys now. Sotto takes them over; Voxtype stays installed."
 msgstr ""
 
-#: src/renderer/src/watcher/WatcherNew.tsx
-msgid "Wait for Watcher to finish before starting a new one."
-msgstr ""
-
 #: src/renderer/src/features/omarchy/OmarchySetup.tsx
 msgid "Waiting"
 msgstr ""
@@ -5680,6 +5722,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatchControls.tsx
 msgid "Watcher is watching <0>{title}</0>."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Watcher is working. Stop its turn to start a new one."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
@@ -5772,6 +5818,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "What Watcher did"
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "What you were writing moved here."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherPermissionChip.tsx
@@ -5970,6 +6020,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherView.tsx
 msgid "Your first message starts Watcher on {modelName}, with your own {accountProvider} account."
+msgstr ""
+
+#: src/renderer/src/watcher/WatcherNew.tsx
+msgid "Your last message was not confirmed."
 msgstr ""
 
 #: src/renderer/src/components/CleanupModelFields.tsx

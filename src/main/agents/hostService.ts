@@ -102,6 +102,8 @@ export interface HostService {
   readonly supportsWatcherCheckQueue?: boolean
   /** Watcher's stop_thread on a check waiting in the host's queue takes it out of that queue (`watcher-check-stop`, #1637). */
   readonly supportsWatcherCheckStop?: boolean
+  /** The host moves the requests an older Watcher of the same desktop made there to the current one (`watcher-new-owner`, #1735). */
+  readonly supportsWatcherNewOwner?: boolean
   /** The host takes requests from a Watcher on Muse; without it a desktop whose Watcher is on Muse leaves the host alone. */
   readonly supportsWatcherMuse?: boolean
   /** The host lists `watcher-cursor`: it takes Watcher requests whose identity names Cursor (ADR-0128). */

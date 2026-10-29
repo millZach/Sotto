@@ -8,6 +8,7 @@ import type { ProviderId } from '../../src/shared/agents'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { deferred } from '../fixtures/deferred'
+import { followupStoreOf } from '../fixtures/followupQueue'
 
 /**
  * New Watcher (ADR-0073): a new Watcher on the current one's own provider, model, effort and permission mode, through the
@@ -128,41 +129,203 @@ describe('New Watcher', () => {
     expect(await fresh.service.startNew()).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
   })
 
-  it('waits only for Watcher’s own work and says what holds it, while a worker still working and an unconfirmed delivery carry on (#1325)', async () => {
+  it('waits only for Watcher’s own turn, and hands its queued send and its worker still working to the new Watcher (#1325, #1735)', async () => {
     const f = await fixture()
     await f.send('Check the release.')
     const started = { target: await f.startWorker('Release check') }
-    await f.reply('Started Release check.')
-    const unchanged = async (message: string) => {
-      const creates = f.creates()
-      expect(await f.service.startNew()).toMatchObject({ status: 'refused', code: 'THREAD_BUSY', message })
-      expect(f.service.state()).toMatchObject({ current: { target: f.first }, history: [], handover: null })
-      expect(f.creates()).toBe(creates)
-      expect(f.revoke).not.toHaveBeenCalled()
-    }
-    // Watcher's own turn.
+    const queued = await f.call('send_to_thread', { requestId: f.service.state().requests.at(-1)!.id, retryKey: randomUUID(), target: started.target,
+      delivery: 'queue', text: 'Add the release notes too.' })
+    if (queued.status !== 'ok' || !('receipt' in queued)) throw new Error(`queue refused: ${JSON.stringify(queued)}`)
+    expect(queued.receipt.deliveryState).toBe('queued')
+    // Watcher's own turn holds it, and the refusal says to stop it.
     f.native(f.first.threadId).status = 'running'; await f.refresh()
-    await unchanged('Watcher is working. Wait for this turn to finish, or stop it, then start a new Watcher. Nothing was changed.')
-    await f.finish(f.first.threadId)
-    // A send queued behind a working thread, in the record main reads: a new Watcher could not send it.
-    const read = f.control.watcherRecord.bind(f.control)
-    const queued = vi.spyOn(f.control, 'watcherRecord').mockImplementation(() => {
-      const record = read(); record.operations.at(-1)!.deliveryState = 'queued'; return record
-    })
-    const waits = vi.spyOn(f.control, 'watcherQueuedSendsWaiting').mockImplementation(() => new Set(read().operations.map(operation => operation.id)))
-    await unchanged('Watcher has a message queued for a thread that is still working, which a new Watcher could not send. Wait until it has gone, or stop it with Stop all, then start a new Watcher. Nothing was changed.')
-    queued.mockRestore(); waits.mockRestore()
-    // A start still working, whose delivery is not confirmed yet either, holds nothing: it carries on after the replacement.
+    const creates = f.creates()
+    expect(await f.service.startNew()).toMatchObject({ status: 'refused', code: 'THREAD_BUSY',
+      message: 'Watcher is working. Stop its turn, then start a new Watcher. Nothing was changed.' })
+    expect(f.service.state()).toMatchObject({ current: { target: f.first }, history: [], handover: null, newWatcher: 'busy' })
+    expect(f.creates()).toBe(creates)
+    expect(f.revoke).not.toHaveBeenCalled()
+    await f.reply('Started Release check and queued the notes.')
+    // Resting, nothing else holds it: the send queued behind the worker's turn and the worker still working go with it.
+    expect(f.service.state().newWatcher).toBe('available')
     expect(f.service.startsInFlight()).toBe(1)
-    const uncertain = vi.spyOn(f.control, 'watcherRecord').mockImplementation(() => {
-      const record = read(); record.operations.at(-1)!.deliveryState = 'uncertain'; return record
-    })
     expect(await f.service.startNew()).toMatchObject({ status: 'ok', state: { history: [{ target: f.first }] } })
-    uncertain.mockRestore()
     expect(f.service.state().current!.target).not.toEqual(f.first)
     expect(f.service.startsInFlight()).toBe(1)
+    // The handover names the send still to go, which the new Watcher can read by its operation.
+    const handover = f.service.readHandover()
+    if (handover.status !== 'ok') throw new Error('handover unreadable')
+    expect(handover.text).toContain('Starts and sends made before you that have not gone yet')
+    expect(handover.text).toContain(`A send to “Release check”, queued behind its turn (operation ${queued.receipt.operationId})`)
+    expect(handover.text).toContain('The threads you watch and what each waits on:')
+    // When the worker's turn ends, the send goes once, from the new Watcher, under the receipt it was queued with.
+    await f.finish(started.target.threadId)
+    await vi.waitFor(() => expect(f.control.watcherRecord().operations.find(item => item.id === queued.receipt.operationId)!.deliveryState).toBe('accepted'))
+    expect(f.native(started.target.threadId).messages.filter(message => message.role === 'user' && message.text.includes('Add the release notes too.'))).toHaveLength(1)
+    // The new Watcher acts under the request the last one worked on, which is its own now.
+    const inherited = f.service.state().requests.find(item => item.watcher.threadId === f.first.threadId && item.state === 'active')
+    if (!inherited) throw new Error('the last Watcher’s request is no longer active')
+    expect(await f.call('stop_thread', { requestId: inherited.id, retryKey: randomUUID(), target: started.target })).toMatchObject({ status: 'ok' })
     await f.finish(started.target.threadId)
     expect(f.service.startsInFlight()).toBe(0)
+  })
+
+  it('starts while Watcher waits on its own card: stops that turn, hands the question over and moves the user’s queued message, paused (#1735)', async () => {
+    const f = await fixture()
+    await f.exchange('Watch the release.', 'Watching it.')
+    await f.send('Which branch should the release use?')
+    const request = f.service.state().requests.at(-1)!
+    // Watcher asks the user on a card of its own, and the user queues another message behind that turn.
+    const native = f.native(f.first.threadId)
+    native.status = 'running'
+    native.requests = [{ id: 'watcher-card', kind: 'question', text: 'Which branch?', options: [],
+      questions: [{ id: 'branch', question: 'Release from main or from release/1.4?', options: [{ id: 'main', label: 'main' }], multiSelect: false, allowFreeText: true }] }]
+    await f.refresh()
+    const queuedDraft = randomUUID()
+    expect((await f.control.commandShell({ type: 'queue-followup', threadId: f.first.threadId, draftId: queuedDraft, text: 'Also tag it.' })).error).toBeNull()
+    // Queued behind Watcher's turn, it is recorded as a continuation of the request that turn answers.
+    expect(f.service.state().requests.find(item => item.id === request.id)!.userFollowups?.map(item => item.draftId)).toContain(queuedDraft)
+    // And has half a message written in Watcher's box.
+    expect((await f.control.commandShell({ type: 'save-thread-draft', threadId: f.first.threadId, draftId: randomUUID(), text: 'And check the changelog', composer: 'manual' })).error).toBeNull()
+    expect(f.service.state().newWatcher).toBe('available')
+    const interrupts = () => f.workspace.adapters.codex.commands.filter(command => command.type === 'interrupt').length
+    const before = interrupts()
+    expect(await f.service.startNew()).toMatchObject({ status: 'ok', state: { history: [{ target: f.first }] } })
+    const next = f.service.state().current!.target
+    // The last Watcher's turn was stopped, which closes its card. That is not the user's Stop: the request it worked on ends
+    // as a finished turn's does, and nothing it queued is fenced.
+    expect(interrupts()).toBe(before + 1)
+    expect(f.service.state().requests.find(item => item.id === request.id)!.state).not.toBe('stopped')
+    // The user's queued message moved to the new Watcher's queue, paused, and nothing went to the last one. Watcher's sends
+    // steer by default, so it may have been on its way into the stopped turn at the press; then it moves once it comes back.
+    await vi.waitFor(() => {
+      const queue = f.control.shell().followups ?? []
+      expect(queue.filter(item => item.threadId === f.first.threadId && !item.wakeUp)).toEqual([])
+      expect(queue.find(item => item.text === 'Also tag it.')).toMatchObject({ threadId: next.threadId, status: 'paused',
+        error: 'This was waiting for the last Watcher. Resume the queue to send it to this one, or remove it.' })
+      // It no longer continues the last Watcher's request: sent to the new one, it starts a request the new one's tools take.
+      expect(f.service.state().requests.some(item => item.userFollowups?.some(followup => followup.draftId === queuedDraft))).toBe(false)
+    })
+    expect(native.messages.some(message => message.text.includes('Also tag it.'))).toBe(false)
+    // The new Watcher's note says both, and the handover carries the question in its own words.
+    // What was written in the last Watcher's box waits, unsent, in the new one's, and stays gone from the last one's after
+    // a save, which once rebuilt it from the single composer's fields.
+    const drafts = f.control.get().threadDrafts ?? []
+    expect(drafts.find(draft => draft.threadId === next.threadId)?.text).toBe('And check the changelog')
+    expect(drafts.some(draft => draft.threadId === f.first.threadId)).toBe(false)
+    await f.control.commandShell({ type: 'observe-threads', threadIds: [next.threadId] })
+    expect(f.control.get().threadDrafts?.some(draft => draft.threadId === f.first.threadId)).toBe(false)
+    expect(f.control.get().draftThreadId).not.toBe(f.first.threadId)
+    await vi.waitFor(() => expect(f.service.state().carried).toEqual({ questionClosed: true, moved: 1, unconfirmed: false, draftMoved: true, cannotStop: [] }))
+    const handover = f.service.readHandover()
+    if (handover.status !== 'ok') throw new Error('handover unreadable')
+    expect(handover.text).toContain('Its turn was stopped and the card closed unanswered, so ask again if it still matters:\n- Release from main or from release/1.4?')
+    expect(handover.text).toContain('One message the user wrote to the last Watcher had not gone. It waits, paused, in your queue')
+  })
+
+  it('starts anyway when the turn waiting on Watcher’s card cannot be stopped, and says the card may still be open (#1735)', async () => {
+    const f = await fixture()
+    await f.exchange('Watch the release.', 'Watching it.')
+    await f.send('Which branch should the release use?')
+    const native = f.native(f.first.threadId)
+    native.status = 'running'
+    native.requests = [{ id: 'watcher-card', kind: 'question', text: 'Release from main?', options: [] }]
+    await f.refresh()
+    const fromWatcher = f.control.commandFromWatcher.bind(f.control)
+    vi.spyOn(f.control, 'commandFromWatcher').mockImplementation(async (command, origin) => {
+      if (command.type === 'interrupt') throw new Error('synthetic-stalled-provider')
+      return fromWatcher(command, origin)
+    })
+    expect(await f.service.startNew()).toMatchObject({ status: 'ok', state: { history: [{ target: f.first }] } })
+    expect(f.service.state().carried).toMatchObject({ questionClosed: false, questionOpen: true })
+    const handover = f.service.readHandover()
+    if (handover.status !== 'ok') throw new Error('handover unreadable')
+    expect(handover.text).toContain('Its turn could not be stopped, so its card may still be open in that conversation')
+    expect(handover.text).toContain('- Release from main?')
+  })
+
+  it('keeps the closed card’s question for the handover when the first try fails before saving anything (#1735)', async () => {
+    const f = await fixture()
+    await f.exchange('Watch the release.', 'Watching it.')
+    await f.send('Which branch should the release use?')
+    const native = f.native(f.first.threadId)
+    native.status = 'running'
+    native.requests = [{ id: 'watcher-card', kind: 'question', text: 'Release from main?', options: [] }]
+    await f.refresh()
+    // The first try stops the turn, which closes the card, then fails before the new Watcher is saved.
+    const update = f.control.updateWatcher.bind(f.control)
+    const failing = vi.spyOn(f.control, 'updateWatcher').mockImplementationOnce(async () => { throw new Error('synthetic-write-failure') })
+    expect(await f.service.startNew()).toMatchObject({ status: 'refused' })
+    failing.mockImplementation(update)
+    native.requests = []; native.status = 'idle'; native.lastTurn = { id: randomUUID(), status: 'interrupted' }; await f.refresh()
+    expect(f.control.watcherRecord().creation).toBeNull()
+    // The second try finds no card, and still hands the first one's question over.
+    expect(await f.service.startNew()).toMatchObject({ status: 'ok', state: { history: [{ target: f.first }] } })
+    expect(f.service.state().carried).toMatchObject({ questionClosed: true })
+    const handover = f.service.readHandover()
+    if (handover.status !== 'ok') throw new Error('handover unreadable')
+    expect(handover.text).toContain('- Release from main?')
+  })
+
+  it('moves a message that was still being sent at the press once it comes back unsent, and its note counts it (#1735)', async () => {
+    const f = await fixture()
+    await f.exchange('Watch the release.', 'Watching it.')
+    const store = followupStoreOf(f.control)
+    type Items = { items: { text: string; status: string }[] }
+    const change = (update: (state: Items) => void) => (store as unknown as { change(update: (state: Items) => void): Promise<void> }).change(update)
+    // Watcher looks again on the next update from a provider; one is made here, as any provider's progress makes one.
+    const update = async () => { f.native(f.first.threadId).title = `Watcher ${randomUUID()}`; await f.refresh() }
+    // A message to the last Watcher is still being written to its provider when the press's moment ends.
+    const sending = vi.spyOn(f.control, 'watcherFollowupSending').mockReturnValue(false)
+    expect(await f.service.startNew()).toMatchObject({ status: 'ok' })
+    const next = f.service.state().current!.target
+    sending.mockImplementation(threadId => threadId === f.first.threadId)
+    await store.enqueue({ threadId: f.first.threadId, draftId: randomUUID(), text: 'Late words', attachments: [] })
+    await change(state => { state.items.find(item => item.text === 'Late words')!.status = 'dispatching' })
+    // The replacement keeps looking at the last Watcher; nothing moves while its message is still being written.
+    expect((f.service as unknown as { lateQueue: unknown[] }).lateQueue).toContainEqual(f.first)
+    await update()
+    expect(store.peek().items.find(item => item.text === 'Late words')).toMatchObject({ threadId: f.first.threadId })
+    // It fails, coming back to the last Watcher's queue, and a refused send is put back in its box while the user is
+    // already writing in the new one's.
+    await change(state => { state.items.find(item => item.text === 'Late words')!.status = 'failed' })
+    expect((await f.control.commandShell({ type: 'save-thread-draft', threadId: f.first.threadId, draftId: randomUUID(), text: 'Late box words', composer: 'manual' })).error).toBeNull()
+    expect((await f.control.commandShell({ type: 'save-thread-draft', threadId: next.threadId, draftId: randomUUID(), text: 'Already typing', composer: 'manual' })).error).toBeNull()
+    sending.mockReturnValue(false)
+    await update()
+    // Both reach the current Watcher's queue, paused; what the user is writing stays; the note counts both.
+    await vi.waitFor(() => expect(f.service.state().carried).toMatchObject({ moved: 2 }))
+    expect(store.peek().items.find(item => item.text === 'Late words')).toMatchObject({ threadId: next.threadId, status: 'paused' })
+    expect(store.peek().items.find(item => item.text === 'Late box words')).toMatchObject({ threadId: next.threadId, status: 'paused' })
+    expect(f.control.get().threadDrafts?.find(draft => draft.threadId === next.threadId)?.text).toBe('Already typing')
+    expect(f.control.get().threadDrafts?.some(draft => draft.threadId === f.first.threadId)).toBe(false)
+    expect((f.service as unknown as { lateQueue: unknown[] }).lateQueue).toEqual([])
+  })
+
+  it('sends a late message on when another replacement retires the Watcher it was moving to (#1735)', async () => {
+    const f = await fixture()
+    await f.exchange('Watch the release.', 'Watching it.')
+    expect(await f.service.startNew()).toMatchObject({ status: 'ok' })
+    const second = f.service.state().current!.target
+    const store = followupStoreOf(f.control)
+    await store.enqueue({ threadId: f.first.threadId, draftId: randomUUID(), text: 'Late words', attachments: [] })
+    await (store as unknown as { change(update: (state: { items: { text: string; status: string }[] }) => void): Promise<void> }).change(state => {
+      state.items.find(item => item.text === 'Late words')!.status = 'failed'
+    })
+    // While the sweep moves it to the second Watcher, a third becomes current.
+    const third = { hostId: second.hostId, threadId: randomUUID() }
+    const move = f.control.moveWatcherQueue.bind(f.control), view = f.control.watcherRecordView.bind(f.control)
+    let retired = false
+    vi.spyOn(f.control, 'moveWatcherQueue').mockImplementation(async (from, to) => { const moved = await move(from, to); retired = true; return moved })
+    vi.spyOn(f.control, 'watcherRecordView').mockImplementation(() => {
+      const record = view()
+      return retired && record.current ? { ...record, current: { ...record.current, target: third } } : record
+    })
+    ;(f.service as unknown as { lateQueue: unknown[]; followLateQueue(): void }).lateQueue = [f.first]
+    ;(f.service as unknown as { followLateQueue(): void }).followLateQueue()
+    // The Watcher it reached and the one it came from are looked at again, for the one current now.
+    await vi.waitFor(() => expect((f.service as unknown as { lateQueue: unknown[] }).lateQueue).toEqual([f.first, second]))
+    expect(store.peek().items.find(item => item.text === 'Late words')).toMatchObject({ threadId: second.threadId })
   })
 
   it('refuses when Watcher’s model is not ready or its permission mode is not the one in force', async () => {

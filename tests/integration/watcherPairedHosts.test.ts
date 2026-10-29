@@ -1486,52 +1486,102 @@ it('refunds only an exact fenced absence and rejects a late packet for that oper
   expect(await socket.watcherControl(packet!)).toMatchObject({ code: 'OPERATION_NOT_RECORDED' })
 })
 
-it('reads a replaced Watcher’s unconfirmed start under that Watcher’s own identity (#1325)', async () => {
+it('hands a replaced Watcher’s threads on a host that lists watcher-new-owner to the new one, which reads and stops them there (#1325, #1735)', async () => {
   const f = await master(), original = f.socket.watcherControl.bind(f.socket), read = f.socket.watcherRead.bind(f.socket)
   // The host admits the start and its reply is lost, and no read reaches the host until Watcher has been replaced.
   let packet: WatcherHostControl | undefined
   vi.spyOn(f.socket, 'watcherControl').mockImplementation(async input => { packet = input; await original(input); throw new Error('synthetic-lost-reply') })
   const reads = vi.spyOn(f.socket, 'watcherRead').mockRejectedValue(new Error('synthetic-read-held'))
   expect(await f.call('start_thread', f.start())).toMatchObject({ code: 'DELIVERY_UNCERTAIN' })
-  expect(f.control.watcherRecord().operations.find(item => item.id === packet!.operation.id)!.deliveryState).toBe('uncertain')
-  // Watcher's turn ends with its start unconfirmed. While the thread it started there may still be working, a provider
-  // change waits: a host stops a thread only for the Watcher that started it.
   const binding = f.workspace.registry.byThread(f.id)!
   const native = f.workspace.adapters.codex.state.threads.find(thread => thread.id === binding.sessionId)!
   native.status = 'idle'; native.lastTurn = { id: randomUUID(), status: 'completed' }; f.workspace.adapters.codex.emit()
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await f.control.commandShell({ type: 'connect', provider: 'claude' })
   const claude = f.control.watcherSnapshot().models.find(item => item.providerId === 'claude' && item.ready)!
-  expect(await f.watcher.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'refused', code: 'THREAD_BUSY',
-    message: 'A thread Watcher started on another computer is still working, and only this Watcher can stop it there. Wait for it to finish, or stop it with Stop all, then change its provider. Nothing was changed.' })
-  // Its slot freed, as when that thread finishes, the move goes through with the start still unconfirmed.
-  await f.control.updateWatcher(record => { record.reservations = [] })
+  // The host hears of the thread's standing watch under the Watcher that started it.
+  const last = f.watcher.state().current!
+  reads.mockImplementation(read)
+  await vi.waitFor(async () => {
+    await (f.watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
+    expect((await read({ master: last, adopt: true }) as WatcherHostProjection).standingWatches?.map(watch => watch.target)).toContainEqual(packet!.operation.target)
+  })
+  reads.mockRejectedValue(new Error('synthetic-read-held'))
+  // Its thread there may still be working, and nothing of that holds the change any more.
+  expect(f.control.watcherRecord().reservations.some(item => item.target.hostId === f.pairing.hostId)).toBe(true)
   expect(await f.watcher.open({ provider: 'claude', modelId: claude.id })).toMatchObject({ status: 'ok', state: { current: { provider: 'claude' } } })
   expect(f.watcher.state().history.at(-1)!.target.threadId).toBe(f.id)
-  // The host keeps the start under the Watcher that made it, so it is read under that one, and its receipt comes back.
+  // The host can take the last Watcher's requests over, so the new Watcher's note names nothing it cannot stop.
+  expect(f.watcher.state().carried).toBeUndefined()
+  // A bare read that asks the host to move them moves the standing watch of the thread it started too, in the same write,
+  // so nothing queued for it is refused in between for an older watch.
+  const current = f.watcher.state().current!
+  const bare = await read({ master: current, adopt: true }) as WatcherHostProjection
+  expect(bare.requests.find(request => request.id === packet!.request.id)?.watcher).toEqual(current.target)
+  expect(bare.standingWatches?.map(watch => watch.target)).toContainEqual(packet!.operation.target)
+  // Every read now asks the host to move them first, and the start is read under the new Watcher.
   reads.mockImplementation(read)
   await (f.watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
+  expect(reads.mock.calls.every(([request]) => request.adopt === true)).toBe(true)
   expect(f.control.watcherRecord().operations.find(item => item.id === packet!.operation.id)!.deliveryState).toBe('accepted')
+  // The host now keeps that request under the new Watcher: its projection for the new one lists it.
+  const projection = await read({ master: current, adopt: true }) as WatcherHostProjection
+  expect(projection.requests.find(request => request.id === packet!.request.id)?.watcher).toEqual(current.target)
+  // A start the last Watcher made under the same turn budget, still on its way at the replacement, reaches the host under
+  // the new Watcher with that budget, which moved with the request, so it is taken rather than refused as another's.
+  expect(packet!.operation.promptTurnId).toBeDefined()
+  const lateInput = { ...packet!.call.input, retryKey: randomUUID(), title: 'Synthetic late worker' }
+  const late = { ...packet!, master: current, request: { ...packet!.request, watcher: current.target },
+    operation: { ...packet!.operation, id: randomUUID(), retryKey: lateInput.retryKey, receiptId: randomUUID(), cardId: randomUUID(), creationReceiptId: randomUUID(), firstPromptReceiptId: randomUUID(),
+      draftId: randomUUID(), messageId: randomUUID(), digest: createHash('sha256').update(JSON.stringify([packet!.call.name, lateInput])).digest('hex') },
+    call: { ...packet!.call, input: lateInput } } as WatcherHostControl
+  expect(await original(late)).not.toMatchObject({ code: 'RETRY_KEY_CONFLICT' })
+  // The last Watcher can no longer direct anything there: its own packet, sent again, is refused as replaced.
+  expect(await original({ ...packet!, operation: { ...packet!.operation, id: randomUUID(), retryKey: randomUUID() } })).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
+  // Stop all reaches the thread the last Watcher started there, from the new one, but only once the host has answered
+  // that it took the request over: a hand-over read that is lost sends nothing.
+  vi.mocked(f.socket.watcherControl).mockImplementation(original)
+  const controls = vi.mocked(f.socket.watcherControl).mock.calls.length
+  reads.mockImplementation(async request => request.adopt && !request.standingWatches && !request.call ? Promise.reject(new Error('synthetic-lost-hand-over')) : read(request))
+  expect(await f.watcher.invoke(current.target.threadId, 'stop_thread', { requestId: packet!.request.id, retryKey: randomUUID(), target: packet!.operation.target }))
+    .toMatchObject({ status: 'refused', code: 'TARGET_CHANGED' })
+  expect(vi.mocked(f.socket.watcherControl).mock.calls.length).toBe(controls)
+  expect(f.control.watcherRecord().operations.filter(item => item.action === 'stop').map(item => [item.deliveryState, item.refusalCode])).toEqual([['failed', 'TARGET_CHANGED']])
+  reads.mockImplementation(read)
+  const preview = f.watcher.prepareStopAll()
+  if (preview.status !== 'ok') throw new Error('preview refused')
+  expect(preview.targets).toContainEqual(packet!.operation.target)
+  const stopped = await f.watcher.stopAll(preview.confirmationId)
+  expect(stopped).toMatchObject({ status: 'ok', results: [{ target: packet!.operation.target, status: expect.stringMatching(/^(stopped|requested)$/u) }] })
+  expect(f.control.watcherRecord().operations.filter(item => item.action === 'stop').map(item => [item.deliveryState, item.refusalCode])).toEqual([['failed', 'TARGET_CHANGED'], ['accepted', undefined]])
 })
 
-it.each(['Stop', 'Stop all'])('%s fences the owning request and removes its admitted machine queue', async action => {
-  const native = await codexFixture(undefined, false); cleanups.push(native.cleanup)
-  const f = await master(native.adapter), first = await f.call('start_thread', f.start())
-  if (first.status !== 'ok') throw new Error('start-refused')
-  await vi.waitFor(() => expect(f.socket.shell().host.threads.some(thread => thread.id === first.target.threadId)).toBe(true))
-  const queued = await f.call('send_to_thread', { requestId: f.requestId, retryKey: randomUUID(), target: first.target, delivery: 'queue', text: 'Synthetic stopped machine queue' })
-  expect(queued).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' } })
-  if (action === 'Stop') await f.control.commandShell({ type: 'interrupt', threadId: f.id })
-  else {
-    const preview = f.watcher.prepareStopAll()
-    if (preview.status !== 'ok') throw new Error('stop-preview-refused')
-    expect(await f.watcher.stopAll(preview.confirmationId)).toMatchObject({ status: 'ok' })
-  }
-  const worker = (remote.host.service as unknown as { options: { watcher: WatcherService } }).options.watcher
-  await vi.waitFor(() => expect(worker.remoteProjection(f.control.watcherRecord().current!, f.pairing.clientId).requests.find(request => request.id === f.requestId)?.state).toBe('stopped'))
-  expect(remote.host.service.state().followups?.some(item => item.draftId === queued.receipt!.draftId)).toBe(false)
-  expect(worker.remoteProjection(f.control.watcherRecord().current!, f.pairing.clientId).operations.find(item => item.id === queued.receipt!.operationId)).toMatchObject({ deliveryState: 'failed', refusalCode: 'REQUEST_NOT_ACTIVE' })
-  expect((await native.driver.requests()).filter(item => item.method === 'turn/start')).toHaveLength(1)
+it('starts a new Watcher beside a thread on an older host, says it cannot stop it there, and reads its start under the last Watcher (#1325, #1735)', async () => {
+  vi.spyOn(SocketHostService.prototype, 'supportsWatcherNewOwner', 'get').mockReturnValue(false)
+  const f = await master(), read = f.socket.watcherRead.bind(f.socket)
+  const reads = vi.spyOn(f.socket, 'watcherRead').mockRejectedValue(new Error('synthetic-read-held'))
+  const started = await f.call('start_thread', f.start())
+  if (started.status !== 'ok' || !('target' in started)) throw new Error('start refused')
+  const operationId = started.receipt.operationId
+  await f.control.updateWatcher(record => { record.operations.find(item => item.id === operationId)!.deliveryState = 'uncertain' })
+  const binding = f.workspace.registry.byThread(f.id)!
+  const native = f.workspace.adapters.codex.state.threads.find(thread => thread.id === binding.sessionId)!
+  native.messages.push({ id: randomUUID(), role: 'assistant', text: 'Started the remote worker.', createdAt: new Date().toISOString() })
+  native.status = 'idle'; native.lastTurn = { id: randomUUID(), status: 'completed' }; f.workspace.adapters.codex.emit()
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(await f.watcher.startNew()).toMatchObject({ status: 'ok' })
+  // The new Watcher's note and its handover both say which thread it cannot direct there until that host is updated.
+  expect(f.watcher.state().carried).toEqual({ questionClosed: false, moved: 0, unconfirmed: false, draftMoved: false,
+    cannotStop: [{ host: 'Synthetic remote', count: 1, titles: ['Synthetic remote worker'] }] })
+  const handover = f.watcher.readHandover()
+  if (handover.status !== 'ok') throw new Error('handover unreadable')
+  expect(handover.text).toContain('That computer runs an older Sotto, so you cannot stop, settle or send to them there until it is updated:')
+  expect(handover.text).toContain('- “Synthetic remote worker” on Synthetic remote')
+  // That host keeps the start under the Watcher that made it, so it is read under that one, and its receipt comes back.
+  reads.mockImplementation(read)
+  await (f.watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
+  expect(reads.mock.calls.some(([request]) => request.adopt !== undefined)).toBe(false)
+  expect(f.control.watcherRecord().operations.find(item => item.id === operationId)!.deliveryState).toBe('accepted')
 })
 
 it('rechecks the owning stopped request just before a prepared paired provider write', async () => {

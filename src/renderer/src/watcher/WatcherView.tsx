@@ -253,7 +253,10 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   // A Watcher that replaced another says so while its conversation is empty: on which model, and what carried on.
   const note = newWatcherNoteFacts(state, row.thread, room?.state ?? null)
   const noteModel = note?.model, noteCarries = note?.carries
-  const empty = useMemo(() => noteModel === undefined ? undefined : <NewWatcherNote model={noteModel} carries={noteCarries ?? null} />, [noteModel, noteCarries])
+  // Each room update brings a new copy of what carried over, so the note is made again only when its words would change.
+  const carriedKey = note?.carried ? JSON.stringify(note.carried) : ''
+  const noteCarried = useMemo(() => carriedKey === '' ? null : JSON.parse(carriedKey) as NonNullable<WatcherRoomState['carried']>, [carriedKey])
+  const empty = useMemo(() => noteModel === undefined ? undefined : <NewWatcherNote model={noteModel} carries={noteCarries ?? null} carried={noteCarried} />, [noteModel, noteCarries, noteCarried])
   const continueLabel = t`Continue with the handover`
   const gate = useMemo(() => watcherSendGate(room?.handover, room?.settle, offered, continueLabel), [room?.handover, room?.settle, offered, continueLabel])
   // Each action Watcher took is a receipt card under the reply of the turn that took it, where main's record places it,

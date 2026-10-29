@@ -2250,8 +2250,8 @@ test.describe("Watcher's room on the built app", () => {
       // While Watcher works, it stays in the Tab order, says why, and a press does nothing.
       await page.evaluate(async threadId => window.sottoE2E!.agentEvent!({ type: 'stream', threadId, messageId: 'watcher-working', text: 'Checking the release.', status: 'running' }), CURRENT)
       await expect(button).toHaveAttribute('aria-disabled', 'true')
-      await expect(button).toHaveAttribute('title', 'Wait for Watcher to finish before starting a new one.')
-      await expect(button).toHaveAccessibleDescription('Wait for Watcher to finish before starting a new one.')
+      await expect(button).toHaveAttribute('title', 'Watcher is working. Stop its turn to start a new one.')
+      await expect(button).toHaveAccessibleDescription('Watcher is working. Stop its turn to start a new one.')
       await button.focus()
       await page.keyboard.press('Enter')
       await expect(pane.getByRole('region', { name: 'Handover of the last Watcher' })).toHaveCount(0)

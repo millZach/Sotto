@@ -8,7 +8,7 @@ import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AgentActivity } from '../../shared/agentActivity'
 import { immutableActivities, immutableUpdates, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
-import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type QueuedFollowup } from './followups'
+import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type MovedPrompt, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, stat } from 'node:fs/promises'
 import { isAbsolute, join, resolve } from 'node:path'
@@ -763,6 +763,72 @@ export class AgentControl {
   /** Where new projects go by default, as the user configured it; empty for none. Read without copying the state. */
   projectsDirectory(): string { return this.state.configuration.projectsDirectory }
   hasWatcherQueue(operationIds: ReadonlySet<string>): boolean { return this.followupStore.peek().items.some(item => item.watcherOperationId && operationIds.has(item.watcherOperationId)) }
+  /**
+   * Holds the user's own messages waiting for a Watcher that is about to be replaced (#1735), so none goes to it once its
+   * turn ends; `moveWatcherQueue` then moves them to the new one. Should the replacement not happen, they say how to send them.
+   */
+  async holdWatcherQueue(threadId: string): Promise<void> {
+    await this.followupStore.pauseUserPrompts(threadId, 'Paused while a new Watcher started. If none started, resume the queue to send it.', () => true)
+    this.syncFollowups(); this.publish()
+  }
+  /**
+   * A new Watcher takes the user's messages to the one it replaced that have not gone (#1735): queued, paused, failed or
+   * not confirmed, each moved to its queue, paused, so the user sends or removes it there and nothing goes twice. Says
+   * which drafts moved, when each was queued and whether it may have arrived.
+   */
+  async moveWatcherQueue(from: string, to: string): Promise<MovedPrompt[]> {
+    const moved = await this.followupStore.moveUserPrompts(from, to,
+      'This was waiting for the last Watcher. Resume the queue to send it to this one, or remove it.',
+      'The last Watcher did not confirm this message, so it may have reached it. Check that conversation in Watcher history before you resume the queue.')
+    if (moved.length) { this.syncFollowups(); this.observe(); await this.persist(); this.publish() }
+    return moved
+  }
+  /**
+   * What the user left in a replaced Watcher's message box, a send the provider refused put back there included, goes to
+   * the new Watcher's box (#1735). When the user has already begun one there, it goes to the new Watcher's queue instead,
+   * paused, so nothing they wrote stays behind. Says where it went, or false when nothing moved.
+   */
+  async moveWatcherDraft(from: string, to: string): Promise<'box' | 'queue' | false> {
+    const draft = this.state.threadDrafts?.find(item => item.threadId === from)
+    if (!draft || !draft.text.trim() && !draft.attachments.length) return false
+    // A draft whose send has not failed may yet arrive: copied, it could go twice, so it stays with the last Watcher.
+    if ((this.state.deliveries ?? []).some(item => item.threadId === from && item.draftId === draft.draftId && item.status !== 'failed')
+      || this.outbox.some(item => item.threadId === from && item.draftId === draft.draftId)) return false
+    const begun = this.state.threadDrafts?.some(item => item.threadId === to && (item.text.trim() !== '' || item.attachments.length > 0)) === true
+    // Taken from the last Watcher's box before anything is awaited, so a second pass meanwhile finds nothing to move again.
+    // The single composer's fields hold the same words while it is that box, and a save would put them back there.
+    if (this.state.draftThreadId === from) this.clearDraft()
+    else this.discardThreadDraft(from)
+    if (begun) {
+      const draftId = randomUUID()
+      try {
+        await this.followupStore.enqueue({ threadId: to, draftId, text: draft.text, attachments: draft.attachments,
+          ...(draft.skills ? { skills: draft.skills } : {}), ...(draft.files ? { files: draft.files } : {}) }, true)
+        await this.followupStore.pauseUserPrompts(to, 'This was in the last Watcher’s message box. Resume the queue to send it to this one, or remove it.', item => item.draftId === draftId)
+      } catch (error) {
+        // Not queued: the words go back where they were, unless the user has begun another draft there since.
+        if (!this.state.threadDrafts?.some(item => item.threadId === from)) this.putThreadDraft(draft)
+        throw error
+      }
+      this.syncFollowups()
+    // putThreadDraft keeps its own copy, so none is made here.
+    } else this.putThreadDraft({ ...draft, threadId: to, draftId: randomUUID(), requestId: null, updatedAt: new Date().toISOString() })
+    await this.persist(); this.publish()
+    return begun ? 'queue' : 'box'
+  }
+  /**
+   * Whether the user's message to this thread sent straight to its provider, not through its queue, was never confirmed
+   * and not set aside: main keeps only its digest, so a new Watcher can say so but not carry it (#1735).
+   */
+  unconfirmedDirectSend(threadId: string): boolean {
+    const queued = new Set(this.followupStore.peek().items.filter(item => item.threadId === threadId).map(item => item.draftId))
+    return (this.state.deliveries ?? []).some(item => item.threadId === threadId && item.status === 'uncertain' && item.setAside !== true && !queued.has(item.draftId))
+  }
+  /** Whether a message of the user's to this thread is being written to its provider now, from its queue or sent at once. */
+  watcherFollowupSending(threadId: string): boolean {
+    return this.followupStore.peek().items.some(item => item.threadId === threadId && !item.wakeUp && !item.watcherOperationId && item.status === 'dispatching')
+      || (this.state.deliveries ?? []).some(item => item.threadId === threadId && (item.status === 'queued' || item.status === 'submitting'))
+  }
   async cancelWatcherQueue(operationIds: ReadonlySet<string>): Promise<void> {
     const failed = await this.followupStore.cancelWatcher(operationIds)
     // Watcher reads a queued send's failure from its item, which is gone now, so it hears the failure here instead.
@@ -2945,22 +3011,6 @@ export class AgentControl {
    */
   private queuedThreadIds(): string[] {
     return this.followupStore.peek().items.filter(item => !isWaitingWakeUp(item)).map(item => item.threadId)
-  }
-  /**
-   * The Watcher sends whose prompts still wait in their threads' queues for those threads' turns, which only the turn
-   * holds, by operation, in one pass over the queue. Not one that has left the queue or whose send is unconfirmed, nor one
-   * that waits instead on the user, its queue holding a paused or failed item, a wake-up included, nor one for a thread
-   * settled or archived. A provider change waits only for these (#1325).
-   */
-  watcherQueuedSendsWaiting(): ReadonlySet<string> {
-    const items = this.followupStore.peek().items, blocked = new Set<string>(), waiting = new Set<string>()
-    for (const item of items) if (item.status === 'paused' || item.status === 'failed') blocked.add(item.threadId)
-    for (const item of items) {
-      if (!item.watcherOperationId || (item.status !== 'queued' && item.status !== 'dispatching') || blocked.has(item.threadId)) continue
-      const thread = this.threadById(item.threadId)
-      if (thread && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))) waiting.add(item.watcherOperationId)
-    }
-    return waiting
   }
   canDeliverWatcherNews(target: WatcherThreadTarget): boolean {
     if (this.disposed || this.dependencies.watcherEnabled !== true || !this.watcherHooks
@@ -5322,7 +5372,9 @@ export class AgentControl {
     const origin = machineOrigin ?? (operation ? { operationId: operation.id, guard: () => this.watcherHooks!.guardOperation(operation.id) }
       : delegationGuard ? { guard: delegationGuard } : undefined)
     origin?.guard()
-    const writeGuard = origin?.guard ?? queueGuard
+    // A stop the user asked for in Watcher's room, New Watcher's (#1735), is the user's own: it reaches the provider as one,
+    // which declines the cards still waiting there, granting nothing. Watcher's own stops leave them for the user.
+    const writeGuard = origin?.userSetup && command.type === 'interrupt' ? undefined : origin?.guard ?? queueGuard
     const provider = command.type === 'create-project' ? command.provider ?? this.state.configuration.provider
       : command.type === 'create-thread' || (command.type === 'configure-thread' && command.modelId && this.thread(command.threadId).nativeSessionStarted === false)
         ? resolveModel(this.state.host.models, command.modelId)?.providerId : command.type === 'answer'

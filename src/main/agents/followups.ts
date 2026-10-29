@@ -65,6 +65,8 @@ const leadsQueue = (item: QueuedFollowup, threadId: string): boolean => waitingW
 const WAKE_UP_NOT_EDITABLE = "A wake-up is Sotto's own message and cannot be edited. Remove it if the thread should not get it."
 
 type Stored = z.infer<typeof storedSchema>
+/** A message moved from a replaced Watcher's queue (#1735): its draft, when it was queued and whether it may have arrived. */
+export interface MovedPrompt { readonly draftId: string; readonly createdAt: string; readonly unconfirmed: boolean }
 /** The durable queue as it stands, for reading only. */
 export interface FollowupView {
   readonly items: readonly Readonly<QueuedFollowup>[]
@@ -144,7 +146,8 @@ export class FollowupStore {
     this.tail = task
     return task
   }
-  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'> & { watcherOperationId?: string; messageId?: string | undefined; phoneOrigin?: QueuedFollowup['phoneOrigin'] }): Promise<void> {
+  /** `pastLimit`: words moved from a replaced Watcher's box (#1735), which may not stay behind for want of room. */
+  enqueue(input: Pick<AgentFollowup, 'threadId' | 'draftId' | 'text' | 'attachments' | 'skills' | 'files' | 'resumeAfterTurnId'> & { watcherOperationId?: string; messageId?: string | undefined; phoneOrigin?: QueuedFollowup['phoneOrigin'] }, pastLimit = false): Promise<void> {
     return this.change(state => {
       const receipt = state.receipts.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
       const item = state.items.find(r => r.threadId === input.threadId && r.draftId === input.draftId)
@@ -153,14 +156,12 @@ export class FollowupStore {
         if ((receipt?.digest ?? (item ? followupDigest(item) : undefined)) !== digest) throw new Error('This revision already belongs to a submitted prompt. Use a new draft revision for different content.')
         return
       }
-      if (state.items.filter(item => item.threadId === input.threadId).length >= 100) throw new Error('This thread already has 100 follow-ups. Remove or send some first.')
+      if (!pastLimit && state.items.filter(item => item.threadId === input.threadId).length >= 100) throw new Error('This thread already has 100 follow-ups. Remove or send some first.')
       const now = new Date().toISOString()
       // The user's follow-ups go before a wake-up that waits, which goes when the queue would send the next one (decision 8).
       const wakeUp = state.items.findIndex(item => waitingWakeUp(item, input.threadId) && !leadsQueue(item, input.threadId))
       state.items.splice(wakeUp === -1 ? state.items.length : wakeUp, 0, queuedSchema.parse({ ...input, id: randomUUID(), status: 'queued', createdAt: now, updatedAt: now }))
-      const receipts = [...state.receipts, { threadId: input.threadId, draftId: input.draftId, digest }]
-      const ordinary = new Set(receipts.filter(receipt => this.active(receipt.threadId)).slice(-MAX_DELIVERED_DRAFTS))
-      state.receipts = receipts.filter(receipt => !this.active(receipt.threadId) || ordinary.has(receipt))
+      this.keepReceipts(state, [{ threadId: input.threadId, draftId: input.draftId, digest }])
     })
   }
   async privacyChanged(): Promise<void> { await this.change(() => undefined); await this.cleanPrivateCopies() }
@@ -405,6 +406,42 @@ export class FollowupStore {
       if (kept.length === state.items.length) return false
       state.items = kept
     })
+  }
+  /**
+   * Moves the user's own follow-ups that have not gone from one thread's queue to the end of another's, paused, with
+   * `error` saying why: what a new Watcher takes from the one it replaced (#1735). One whose send was not confirmed says
+   * so with `unconfirmed`, since it may have arrived. Sotto's wake-ups, Watcher's sends and one already sending stay where
+   * they are. Says which drafts moved, when each was queued and whether it may have arrived. All move, even past the
+   * hundred a thread's queue takes from the user.
+   */
+  async moveUserPrompts(from: string, to: string, error: string, unconfirmed: string): Promise<MovedPrompt[]> {
+    let moved: MovedPrompt[] = []
+    await this.change(state => {
+      // All of them move, past the hundred a user may queue: none may stay with a Watcher that is gone.
+      const items = state.items.filter(item => item.threadId === from && !item.wakeUp && !item.watcherOperationId && item.status !== 'dispatching')
+      if (!items.length) return false
+      const now = new Date().toISOString()
+      const doubts = new Set<string>()
+      for (const item of items) {
+        // One that may have arrived says so wherever it moves, a second replacement included.
+        const sent = item.status === 'uncertain' || item.error === unconfirmed
+        if (sent) doubts.add(item.draftId)
+        Object.assign(item, { threadId: to, status: 'paused', error: sent ? unconfirmed : error, updatedAt: now })
+        delete item.pausedBy; delete item.commandId; delete item.resumeAfterTurnId
+      }
+      // Each is a revision the new thread now holds, kept as `enqueue` keeps receipts, so the file stays within its limit.
+      this.keepReceipts(state, items.map(item => ({ threadId: to, draftId: item.draftId, digest: followupDigest(item) })))
+      // Moved to the end of the new queue, in the order they had.
+      state.items = [...state.items.filter(item => !items.includes(item)), ...items]
+      moved = items.map(item => ({ draftId: item.draftId, createdAt: item.createdAt, unconfirmed: doubts.has(item.draftId) }))
+    })
+    return moved
+  }
+  /** Adds receipts and keeps the newest of the threads still open, as many as the saved file holds (`MAX_DELIVERED_DRAFTS`). */
+  private keepReceipts(state: State, added: State['receipts']): void {
+    const receipts = [...state.receipts, ...added]
+    const ordinary = new Set(receipts.filter(receipt => this.active(receipt.threadId)).slice(-MAX_DELIVERED_DRAFTS))
+    state.receipts = receipts.filter(receipt => !this.active(receipt.threadId) || ordinary.has(receipt))
   }
   /** Pauses the thread's queued follow-ups. A hidden wake-up never pauses: no one could resume it. */
   pause(threadId: string, error: string, by?: 'watcher'): Promise<void> {

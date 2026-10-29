@@ -886,3 +886,42 @@ it.each([false, true])('lets a Watcher queue go past old set-aside evidence (mis
   await vi.waitFor(() => expect(f.host.attempts.filter(command => command.type === 'send' && command.text === 'Automatic queued continuation')).toHaveLength(1))
   expect(f.host.attempts.filter(command => command.type === 'send' && command.text === 'Unconfirmed user prompt')).toHaveLength(missing ? 0 : 1)
 })
+
+it('moves a replaced Watcher’s unsent messages to the new one paused, keeping receipts within what the file holds (#1735)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-followups-')); roots.push(root)
+  const queue = new FollowupStore(root); await queue.load()
+  const enqueue = (threadId: string) => queue.enqueue({ threadId, draftId: randomUUID(), text: `Message ${randomUUID()}`, attachments: [] })
+  // A full queue moved from one Watcher to the next, again and again: more revisions than the saved file may hold.
+  for (let index = 0; index < 100; index++) await enqueue('watcher-0')
+  for (let round = 0; round < 7; round++) {
+    const moved = await queue.moveUserPrompts(`watcher-${round}`, `watcher-${round + 1}`, 'Moved.', 'Maybe arrived.')
+    expect(moved).toHaveLength(100)
+    expect(queue.peek().items.every(item => item.threadId === `watcher-${round + 1}` && item.status === 'paused' && item.error === 'Moved.')).toBe(true)
+  }
+  // What was saved loads again whole, rather than being read as damaged and dropped.
+  const reloaded = new FollowupStore(root); await reloaded.load()
+  expect(reloaded.peek().items).toHaveLength(100)
+  expect(reloaded.peek().items).toEqual(queue.peek().items)
+})
+
+it('keeps saying a moved message may have arrived, however many times it moves (#1735)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-followups-')); roots.push(root)
+  const queue = new FollowupStore(root); await queue.load()
+  await queue.enqueue({ threadId: 'watcher-a', draftId: randomUUID(), text: 'Ship it', attachments: [] })
+  await (queue as unknown as { change(update: (state: { items: { status: string }[] }) => void): Promise<void> }).change(state => { state.items[0]!.status = 'uncertain' })
+  expect((await queue.moveUserPrompts('watcher-a', 'watcher-b', 'Moved.', 'Maybe arrived.'))[0]).toMatchObject({ unconfirmed: true })
+  expect((await queue.moveUserPrompts('watcher-b', 'watcher-c', 'Moved.', 'Maybe arrived.'))[0]).toMatchObject({ unconfirmed: true })
+  expect(queue.peek().items[0]).toMatchObject({ threadId: 'watcher-c', status: 'paused', error: 'Maybe arrived.' })
+})
+
+it('moves every unsent message of a replaced Watcher, even into a queue already full (#1735)', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'sotto-followups-')); roots.push(root)
+  const queue = new FollowupStore(root); await queue.load()
+  for (let index = 0; index < 100; index++) await queue.enqueue({ threadId: 'watcher-new', draftId: randomUUID(), text: `New ${index}`, attachments: [] })
+  for (let index = 0; index < 3; index++) await queue.enqueue({ threadId: 'watcher-old', draftId: randomUUID(), text: `Old ${index}`, attachments: [] })
+  expect(await queue.moveUserPrompts('watcher-old', 'watcher-new', 'Moved.', 'Maybe arrived.')).toHaveLength(3)
+  expect(queue.peek().items.filter(item => item.threadId === 'watcher-old')).toEqual([])
+  // Words from the last Watcher's box join a full queue too; the user's own hundred-and-first is still refused.
+  await expect(queue.enqueue({ threadId: 'watcher-new', draftId: randomUUID(), text: 'From the box', attachments: [] }, true)).resolves.toBeUndefined()
+  await expect(queue.enqueue({ threadId: 'watcher-new', draftId: randomUUID(), text: 'Typed', attachments: [] })).rejects.toThrow('100 follow-ups')
+})
