@@ -21,8 +21,12 @@ function openRouterKeyStatusCopy(result: OpenRouterKeyCheck): MessageDescriptor 
   }
 }
 
-export function OpenRouterKeyField({ apiKey, migrationFailed = false, onUpdateSettings, onCheckOpenRouterKey }: {
+export function OpenRouterKeyField({ apiKey, migrationFailed = false, onUpdateSettings, onCheckOpenRouterKey, description, setting = 'openrouter-key' }: {
   readonly migrationFailed?: boolean
+  /** What the key is for, where the default (AI cleanup only) is not the whole story. */
+  readonly description?: string
+  /** The setting the field marks for Find a setting; the key shows on more than one page (ADR-0160). */
+  readonly setting?: string
   readonly apiKey: string
   readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
   readonly onCheckOpenRouterKey: () => Promise<OpenRouterKeyCheck>
@@ -73,7 +77,7 @@ export function OpenRouterKeyField({ apiKey, migrationFailed = false, onUpdateSe
 
   return <div className="key-field">
     <div className="settings-input-action">
-      <Field setting="openrouter-key" label={say`OpenRouter API key`} description={say`Used only for AI cleanup and kept in your system’s credential store.`}>
+      <Field setting={setting} label={say`OpenRouter API key`} description={description ?? say`Used only for AI cleanup and kept in your system’s credential store.`}>
         {/* An already-saved key is a state, not 47 characters of prose to show
             as dots in a field the user is meant to be able to read. */}
         <input className="tt-input" type="password" autoComplete="off"

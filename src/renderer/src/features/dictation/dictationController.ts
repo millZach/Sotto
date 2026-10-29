@@ -6,6 +6,7 @@ import {
   isTranscriptionErrorCode,
   MICROPHONE_NOT_SET_UP_DETAIL,
   SPEECH_MODEL_NOT_READY_DETAIL,
+  OPENROUTER_KEY_MISSING_DETAIL,
   reduceDictation,
   TRANSCRIPTION_ERROR_DETAIL,
   TRANSCRIPTION_KEPT_DETAIL,
@@ -19,6 +20,7 @@ import {
 import type { FinishedDictation, HistoryEntry } from '../../../../shared/history'
 import type {
   OutputDeliveryRequest,
+  TranscriptionFailureReason,
   TranscriptPolishAsrContext,
   TranscriptPolishResult,
 } from '../../../../shared/contracts'
@@ -76,6 +78,13 @@ export interface DictationControllerDependencies {
    * dictation records nothing and says so; unset in tests that do not exercise the model.
    */
   readonly speechModelReady?: () => boolean
+  /**
+   * Whether an OpenRouter speech model transcribes dictation with no key saved (ADR-0160). While it does, a dictation
+   * records nothing and says where the key goes; unset where cloud dictation is off.
+   */
+  readonly openRouterKeyMissing?: () => boolean
+  /** Which kind of model transcribes dictation now, for the history entry; Parakeet when unset. */
+  readonly transcribedWith?: () => 'parakeet' | 'openrouter'
   readonly getSettings: () => AppSettings
   readonly deliverOutput: (
     request: OutputDeliveryRequest,
@@ -124,6 +133,8 @@ interface ActiveSession {
   kept: boolean
   /** Try again has been pressed for this recording. */
   retried: boolean
+  /** `local` once Transcribe on this computer sent a kept recording to the speech model here (ADR-0160). */
+  route?: 'local'
   /** Why the recording was kept, so a cancelled Try again can return to it. */
   keptCode?: TranscriptionErrorCode
   /** Whether the kept error being shown came from a Try again, so a cancelled one says the same. */
@@ -161,6 +172,7 @@ const ERROR_MESSAGES = Object.freeze({
   MIC_START_FAILED: msg`The microphone could not be started.`,
   MIC_NOT_SET_UP: MICROPHONE_NOT_SET_UP_DETAIL,
   SPEECH_MODEL_NOT_READY: SPEECH_MODEL_NOT_READY_DETAIL,
+  OPENROUTER_KEY_MISSING: OPENROUTER_KEY_MISSING_DETAIL,
   RECORDING_FAILED: msg`The recording could not be completed.`,
   NO_SPEECH: msg`No speech was detected.`,
   ...TRANSCRIPTION_ERROR_DETAIL,
@@ -217,9 +229,18 @@ function isTerminal(state: DictationState): boolean {
   return state.status === 'success' || state.status === 'cancelled' || state.status === 'error'
 }
 
+const TRANSCRIPTION_FAILURE_CODES: Partial<Record<TranscriptionFailureReason, WidgetErrorCode>> = {
+  'model-not-ready': 'TRANSCRIPTION_MODEL_NOT_READY',
+  'no-key': 'TRANSCRIPTION_NO_KEY',
+  unauthorized: 'TRANSCRIPTION_KEY_REJECTED',
+  billing: 'TRANSCRIPTION_NO_CREDIT',
+  'rate-limited': 'TRANSCRIPTION_RATE_LIMITED',
+  network: 'TRANSCRIPTION_OFFLINE',
+  'model-unavailable': 'TRANSCRIPTION_MODEL_GONE',
+}
+
 function transcriptionFailureCode(error: unknown): WidgetErrorCode {
-  if (error instanceof TranscriptionError && error.reason === 'model-not-ready') return 'TRANSCRIPTION_MODEL_NOT_READY'
-  return 'TRANSCRIPTION_FAILED'
+  return (error instanceof TranscriptionError ? TRANSCRIPTION_FAILURE_CODES[error.reason] : undefined) ?? 'TRANSCRIPTION_FAILED'
 }
 
 function classifyStartFailure(error: unknown): ControllerErrorCode {
@@ -353,6 +374,11 @@ export class DictationController {
       this.fail(session, 'MIC_NOT_SET_UP')
       return Promise.resolve()
     }
+    // OpenRouter transcribes and has no key to do it with: record nothing, and say where the key goes (ADR-0160).
+    if (this.dependencies.openRouterKeyMissing?.() === true) {
+      this.fail(session, 'OPENROUTER_KEY_MISSING')
+      return Promise.resolve()
+    }
     // The speech model is still downloading or did not start: record nothing rather than keep
     // audio for a model that may be minutes away (ADR-0071).
     if (this.dependencies.speechModelReady?.() === false) {
@@ -423,8 +449,11 @@ export class DictationController {
     return this.start()
   }
 
-  /** Sends the parts of a kept recording that have no text yet, then finishes the dictation. */
-  retry(): Promise<void> {
+  /**
+   * Sends the parts of a kept recording that have no text yet, then finishes the dictation. `local` sends them to the
+   * speech model on this computer while OpenRouter transcribes dictation: Transcribe on this computer (ADR-0160).
+   */
+  retry(route?: 'local'): Promise<void> {
     const session = this.session
     if (session === null || !session.kept || this.state.status !== 'error' || !this.isCurrent(session)) {
       return Promise.resolve()
@@ -437,10 +466,11 @@ export class DictationController {
     session.acceptProgress = true
     session.processingStage = 'transcribing'
     session.progress = 0
+    if (route !== undefined) session.route = route
     this.dispatch({ type: 'RETRIED', sessionId: session.id, startedAt: session.startedAt }, session)
     const waiting = session.parts.filter((part) => part.transcript === undefined && part.audio !== null)
     waiting.forEach((part, index) => {
-      part.result = this.sendPart(session, part.audio!, index === waiting.length - 1)
+      part.result = this.sendPart(session, part.audio!, index === waiting.length - 1, route)
     })
     const processing = this.finishRecording(session)
     // Each answer is kept as it arrives, so a part that came back before a
@@ -599,10 +629,11 @@ export class DictationController {
   }
 
   /** Sends one part for transcription; the last part sent reports progress. */
-  private sendPart(session: ActiveSession, audio: Float32Array, reportsProgress: boolean): Promise<TranscriptionResult> {
+  private sendPart(session: ActiveSession, audio: Float32Array, reportsProgress: boolean, route?: 'local'): Promise<TranscriptionResult> {
     const result = this.dependencies.transcriber.transcribe({
       sessionId: session.id,
       audio,
+      ...(route === undefined ? {} : { route }),
       ...(reportsProgress
         ? { onProgress: (progress: TranscriptionProgress) => this.handleProgress(session, progress) }
         : {}),
@@ -743,7 +774,7 @@ export class DictationController {
       createdAt: Math.round(finiteTimestamp(this.now())),
       durationMs: historyDuration(session.durationMs),
       language: result.language,
-      modelPreset: 'parakeet',
+      modelPreset: session.route === 'local' ? 'parakeet' : this.dependencies.transcribedWith?.() ?? 'parakeet',
     }
     let output: DictationOutputResult = 'empty'
     let outputFailure: 'OUTPUT_FAILED' | 'OUTPUT_UNAVAILABLE' | 'DESKTOP_CLIPBOARD_UNAVAILABLE' | undefined
@@ -896,6 +927,7 @@ export class DictationController {
           startedAt: state.startedAt,
           stage: session.processingStage,
           progress: boundedProgress(session.progress),
+          ...(session.route !== 'local' && this.dependencies.transcribedWith?.() === 'openrouter' ? { cloud: true as const } : {}),
           ...metadata,
         }
       case 'success':

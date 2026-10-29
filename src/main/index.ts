@@ -135,6 +135,8 @@ import { createOsascriptPasteAdapter, type OsascriptPasteEvent } from './output/
 import { createSystemSettingsOpener } from './app/systemSettings'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { LocalTranscriptionService } from './asr/localTranscriptionService'
+import { CloudTranscriptionService } from './asr/cloudTranscriptionService'
+import { OpenRouterSpeechModels } from './llm/openRouterSpeechModels'
 import { loadParakeetEngine } from './asr/speechEngine'
 import { SpeechModelStore } from './asr/speechModelStore'
 import { SpeechModelManager } from './asr/speechModelManager'
@@ -202,14 +204,14 @@ import { hostReleaseVersion, updateHostReleaseVersion } from './hosts/hostReleas
 import { WATCHER_CHANGED, WATCHER_MACHINES_RENDERER_ARGUMENT, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, owlFeaturesForRun } from './runningVersion'
 import { heldProvidersOf, releasesHeldProvider } from '../shared/heldProviders'
-import type { DictationCommand } from '../shared/contracts'
+import type { DictationCommand, TranscriptionRequest, TranscriptionResult } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
 import { dockPainter, readDockCoverage } from './dock/dockIcon'
 import { resolvePlatform } from '../shared/platform'
 import { configurePasswordStore } from './app/passwordStore'
 import linuxTrayIconPath from '../../build/icon.png?asset'
-import { defaultSettings, dictationOn, type AppSettings } from '../shared/settings'
+import { cloudTranscriptionOn, defaultSettings, dictationOn, type AppSettings } from '../shared/settings'
 import { blockSpellcheckDictionaryDownloads, disableDnsPrefetching, enableWasmThreadSupport } from './security'
 import {
   createE2EClipboard,
@@ -741,6 +743,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const heldProviders = heldProvidersOf(owlFeatures)
   const usageEnabled = owlFeatures.usage
 const cleanupModelEnabled = owlFeatures['cleanup-model']
+const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const delegationEnabled = owlFeatures['thread-delegation']
   const workerRolesEnabled = owlFeatures['worker-roles']
   // The interface language (ADR-0123) also waits on its catalogs (#1684): until they are drafted Owl is English, as stable is.
@@ -1543,18 +1546,70 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       SOTTO_SPEECH_MODELS.map((model) => sottoSpeechModelOption(model, model.id === PARAKEET_V3.id)),
     ),
     choose: async (id: string): Promise<boolean> => {
-      // Off, choosing would load the model; Settings hides the picker then (ADR-0107).
-      if (!dictationActive) return false
+      // Off, or while OpenRouter transcribes, choosing would load the model; Settings hides the picker then (ADR-0107, ADR-0160).
+      if (!dictationActive || cloudChosen) return false
       if (speechModelManager !== null) return speechModelManager.choose(id)
       if (sottoSpeechModel(id) === undefined) return false
       await saveSpeechModelChoice(id)
       return true
     },
   }
-  const transcription = new LocalTranscriptionService({
+  const localTranscription = new LocalTranscriptionService({
     engine: () => speechModelManager?.currentEngine() ?? null,
     onFailure: transcriptionDiagnostics,
   })
+  // Transcribe with OpenRouter (ADR-0160, Owl): an OpenRouter speech model transcribes every segment, with the key AI
+  // cleanup uses, and the speech model here is unloaded. The list of models is public and read without the key. E2E runs
+  // reach no network: the renderer draws a fixed list and transcribes with its fake. Failures record the model and why in
+  // the same diagnostics, never the audio.
+  let cloudChosen = cloudTranscriptionOn(startupSettings, cloudDictationEnabled)
+  const speechModelsReader = cloudDictationEnabled
+    ? new OpenRouterSpeechModels(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) })
+    : null
+  const cloudTranscription = speechModelsReader === null ? null : new CloudTranscriptionService({
+    getSettings: () => settings.forFormatting(),
+    models: {
+      best: async () => {
+        const list = await speechModelsReader.list()
+        return list.ok ? list.models[0]?.id ?? null : null
+      },
+      hasZeroRetentionHost: async (id) => {
+        await speechModelsReader.list()
+        return speechModelsReader.hasZeroRetentionHost(id)
+      },
+    },
+    onFailure: transcriptionDiagnostics,
+    onRecovered: transcriptionDiagnostics,
+    ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+  })
+  // Transcribe on this computer, for a kept recording OpenRouter turned away, loads the chosen model only if it is
+  // already here (a press must never start a 670 MB download) and lets it go again once no segment needs it.
+  let localBorrowed = 0
+  const transcription = {
+    transcribe: async (request: TranscriptionRequest): Promise<TranscriptionResult> => {
+      if (!cloudChosen || cloudTranscription === null) return localTranscription.transcribe(request)
+      if (request.route !== 'local') return cloudTranscription.transcribe(request)
+      const chosen = workingCopySettings.speechModel
+      const here = (await speechModel.list()).some((option) => option.installed && (chosen === null || option.id === chosen))
+      if (!here) return { ok: false, reason: 'model-not-ready' }
+      localBorrowed += 1
+      try {
+        await speechModelManager?.start()
+        return await localTranscription.transcribe(request)
+      } finally {
+        localBorrowed -= 1
+        if (localBorrowed === 0 && cloudChosen) void speechModelManager?.unload()
+      }
+    },
+    cancel: (requestId: string): void => {
+      localTranscription.cancel(requestId)
+      cloudTranscription?.cancel(requestId)
+    },
+    dispose: (): void => {
+      localTranscription.dispose()
+      cloudTranscription?.dispose()
+    },
+  }
 
   // GitHub Releases is a real feed only for the packaged Windows app and the
   // packaged Mac Owl: stable's macOS disk image ships no update metadata, and a
@@ -1815,6 +1870,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       agentHistoryEnabled = settings.historyEnabled
       const dictationNow = dictationOn(settings, owlFeatures['dictation-off'])
       if (dictationNow !== dictationActive) applyDictation(dictationNow)
+      const cloudNow = cloudTranscriptionOn(settings, cloudDictationEnabled)
+      if (cloudNow !== cloudChosen) applyCloudTranscription(cloudNow)
       await cleanSettingsHistory(agentControl, async () => {
         showWidgetWhenIdle = settings.showWidgetWhenIdle
         widgetPresentation = widgetPresentationFor(settings, glassThemeEnabled)
@@ -1867,7 +1924,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     const stopAlerts = hostRouter.subscribe(state => alerts.track(state))
     app.on('will-quit', () => { stopAlerts(); alerts.dispose(); desktopNotifier.dispose() })
   }
-  if (dictationActive) void speechModelManager?.start()
+  if (dictationActive && !cloudChosen) void speechModelManager?.start()
+  if (dictationActive && cloudChosen) void speechModelsReader?.list()
   const trayController = new TrayController(trayAdapter, {
     ...(!app.isPackaged ? { showTurnRecords } : {}),
     toggleDictation,
@@ -1958,11 +2016,27 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     trayController.update(currentTrayState)
     unloadWhenDone = false
     if (on) {
-      void speechModelManager?.start()
+      if (cloudChosen) void speechModelsReader?.list()
+      else void speechModelManager?.start()
     } else {
       windows.hideWidget()
       if (widgetState.status === 'processing') unloadWhenDone = true
       else void speechModelManager?.unload()
+    }
+  }
+
+  // OpenRouter takes over transcribing, or gives it back (ADR-0160). On, the speech model here is let go once no
+  // dictation is being transcribed with it; off, it loads again. With dictation off nothing loads either way.
+  const applyCloudTranscription = (on: boolean): void => {
+    cloudChosen = on
+    if (!dictationActive) return
+    if (on) {
+      void speechModelsReader?.list()
+      if (widgetState.status === 'processing') unloadWhenDone = true
+      else if (localBorrowed === 0) void speechModelManager?.unload()
+    } else {
+      unloadWhenDone = false
+      void speechModelManager?.start()
     }
   }
 
@@ -2274,6 +2348,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
           ...(cleanupModelEnabled ? {
             models: () => listOpenRouterModels(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
           } : {}),
+          ...(speechModelsReader === null ? {} : { speechModels: () => speechModelsReader.list(true) }),
         },
         updates: {
           status: () => updates.status(),

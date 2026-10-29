@@ -198,6 +198,30 @@ msgstr ""
 msgid "OpenCode tries the key the first time a thread uses one of its models. If {source} refuses it then, sign out here and paste the key again."
 msgstr ""
 
+#: src/shared/interfaceWords.ts
+msgid "OpenRouter did not accept your key. The recording was not kept. Check the key in Settings → Cleanup, then dictate again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "OpenRouter did not accept your key. Your recording is kept until you try again or discard it. Check the key in Settings → Cleanup, then try again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "OpenRouter no longer offers the chosen speech model. The recording was not kept. Pick another in Settings → Dictation, then dictate again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "OpenRouter no longer offers the chosen speech model. Your recording is kept until you try again or discard it. Pick another in Settings → Dictation, then try again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "OpenRouter was too busy to take the recording. The recording was not kept. Wait a moment, then dictate again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "OpenRouter was too busy to take the recording. Your recording is kept until you try again or discard it. Wait a moment, then try again."
+msgstr ""
+
 #. A worker role: the kind of work Watcher itself does.
 #: src/shared/interfaceWords.ts
 msgid "Orchestrating"
@@ -249,6 +273,14 @@ msgstr ""
 
 #: src/shared/interfaceWords.ts
 msgid "Signed out of {source}. Its sign-in is gone from Sotto’s OpenCode."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Sotto could not reach OpenRouter. The recording was not kept. Check your connection, then dictate again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Sotto could not reach OpenRouter. Your recording is kept until you try again or discard it. Check your connection, then try again."
 msgstr ""
 
 #: src/shared/interfaceWords.ts
@@ -377,6 +409,18 @@ msgstr ""
 msgid "Thread providers connected"
 msgstr ""
 
+#: src/shared/interfaceWords.ts
+msgid "Transcribing with OpenRouter needs a key, so nothing was recorded. Add one in Settings → Dictation."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Transcribing with OpenRouter needs a key. The recording was not kept. Add a key in Settings → Dictation, then dictate again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Transcribing with OpenRouter needs a key. Your recording is kept until you try again or discard it. Add a key in Settings → Dictation, then try again."
+msgstr ""
+
 #. A worker role: work on user interfaces.
 #: src/shared/interfaceWords.ts
 msgid "UI"
@@ -414,4 +458,12 @@ msgstr ""
 
 #: src/shared/interfaceWords.ts
 msgid "Your browser did not open the sign-in page. Nothing was saved. Open this address in your browser yourself, or press Open the page again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Your OpenRouter account is out of credit. The recording was not kept. Add credit at openrouter.ai, then dictate again."
+msgstr ""
+
+#: src/shared/interfaceWords.ts
+msgid "Your OpenRouter account is out of credit. Your recording is kept until you try again or discard it. Add credit at openrouter.ai, then try again."
 msgstr ""

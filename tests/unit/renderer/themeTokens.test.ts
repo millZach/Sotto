@@ -289,6 +289,7 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/features/settings/workerMachine.css',
       'src/renderer/src/features/settings/watcherCompaction.css',
       'src/renderer/src/features/settings/threadTips.css',
+      'src/renderer/src/features/settings/cloudSpeechModels.css',
       'src/renderer/src/features/settings/dictationShortcuts.css',
       'src/renderer/src/features/settings/threadShortcuts.css',
       'src/renderer/src/features/settings/menuBarOwl.css',

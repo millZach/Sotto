@@ -43,6 +43,7 @@ import {
   SPEECH_MODEL_LIST,
   OPENROUTER_CHECK_KEY,
   OPENROUTER_LIST_MODELS,
+  OPENROUTER_LIST_SPEECH_MODELS,
   TRANSCRIPTION_TRANSCRIBE,
   MICROPHONE_ENSURE_ACCESS,
   TRANSCRIPT_POLISH,
@@ -80,6 +81,7 @@ import {
   type OutputResult,
   type OpenRouterKeyCheck,
   type OpenRouterModelList,
+  type CloudSpeechModelList,
   type TranscriptionRequest,
   type TranscriptionResult,
   type StartupState,
@@ -139,6 +141,8 @@ const settingKeys = [
   'startMinimized',
   'showWidgetWhenIdle',
   'dictationEnabled',
+  'cloudTranscription',
+  'cloudSpeechModel',
   'notifyNeedsYou',
   'notifyFinished',
   'historyEnabled',
@@ -392,6 +396,8 @@ export interface OpenRouterKeyIpcService {
   check(): Promise<OpenRouterKeyCheck>
   /** Absent while the cleanup model Owl feature is off (ADR-0122). */
   models?: () => Promise<OpenRouterModelList>
+  /** OpenRouter's speech models, best first; absent while the cloud dictation Owl feature is off (ADR-0160). */
+  speechModels?: () => Promise<CloudSpeechModelList>
 }
 
 export interface UpdateIpcService {
@@ -823,6 +829,10 @@ export function registerIpc(
     register(OPENROUTER_LIST_MODELS, noPayloadSchema, 0, async (): Promise<OpenRouterModelList> => {
       const models = dependencies.openRouterKey?.models
       return models === undefined ? { ok: false, reason: 'http' } : models()
+    })
+    register(OPENROUTER_LIST_SPEECH_MODELS, noPayloadSchema, 0, async (): Promise<CloudSpeechModelList> => {
+      const speechModels = dependencies.openRouterKey?.speechModels
+      return speechModels === undefined ? { ok: false, reason: 'http' } : speechModels()
     })
     register(MICROPHONE_ENSURE_ACCESS, noPayloadSchema, 0, async (): Promise<boolean> => {
       if (dependencies.microphoneAccess === undefined) return true

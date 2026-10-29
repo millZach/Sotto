@@ -2,6 +2,8 @@
 
 ## Status
 
+Amended on Owl October 29, 2026, by [ADR-0160](0160-dictation-can-be-transcribed-by-an-openrouter-speech-model.md): **Transcribe with OpenRouter** lets the user send dictation to an OpenRouter speech model instead, with the key AI cleanup uses. Off, which is the default and all of stable, everything below stands.
+
 Accepted October 10, 2026, by the owner's choice. Supersedes the transcription half of [ADR-0006](0006-hosted-transcription-mai.md); its key, migration and reset amendments still describe the OpenRouter key, which now serves AI cleanup only. Amends [ADR-0018](0018-terminals-run-on-node-pty.md) and [ADR-0063](0063-first-run-setup-covers-the-agents-and-ends-in-the-threads-tour.md).
 
 Superseded in part October 19, 2026, by [ADR-0094](0094-dictation-runs-the-speech-model-the-user-chooses.md): the model no longer downloads on first run, and setup no longer starts the download. Nothing downloads until the user picks one of Sotto's speech models, now Parakeet Ultra, Parakeet v3 or Parakeet v2, and on Apple silicon Macs the user can pick a Core ML Parakeet model already on this computer instead. Decisions 3 and 4 apply to each of Sotto's models once it is chosen, each under its own tag, and decision 8's setup step is ADR-0094's; everything else here stands.

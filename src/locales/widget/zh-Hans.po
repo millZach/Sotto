@@ -23,6 +23,15 @@ msgid "{shortcut} to finish"
 msgstr ""
 
 #: src/renderer/src/widget/WidgetApp.tsx
+msgid "Audio is never saved"
+msgstr ""
+
+#. Sotto could not connect to OpenRouter to transcribe dictation.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Can’t reach OpenRouter"
+msgstr ""
+
+#: src/renderer/src/widget/WidgetApp.tsx
 msgid "Cancel dictation"
 msgstr ""
 
@@ -87,6 +96,11 @@ msgstr ""
 msgid "Failed again · retry"
 msgstr ""
 
+#. OpenRouter refused the saved OpenRouter key.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Key not accepted"
+msgstr ""
+
 #: src/renderer/src/widget/WidgetApp.tsx
 msgid "Listening"
 msgstr ""
@@ -108,12 +122,22 @@ msgstr ""
 msgid "Model not ready"
 msgstr ""
 
+#. OpenRouter no longer offers the speech model chosen for dictation.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Model unavailable"
+msgstr ""
+
 #: src/renderer/src/widget/WidgetApp.tsx
 msgid "No microphone found"
 msgstr ""
 
 #: src/renderer/src/widget/WidgetApp.tsx
 msgid "No microphone set up"
+msgstr ""
+
+#. Dictation is set to transcribe with OpenRouter, and no OpenRouter key is saved.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "No OpenRouter key"
 msgstr ""
 
 #: src/renderer/src/widget/WidgetApp.tsx
@@ -130,6 +154,16 @@ msgstr ""
 
 #: src/renderer/src/widget/WidgetApp.tsx
 msgid "Open Sotto to restore settings."
+msgstr ""
+
+#. OpenRouter turned the request away because too many were sent at once.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "OpenRouter busy"
+msgstr ""
+
+#. The OpenRouter account has no credit left to pay for transcription.
+#: src/renderer/src/widget/WidgetApp.tsx
+msgid "Out of credit"
 msgstr ""
 
 #: src/renderer/src/widget/WidgetApp.tsx

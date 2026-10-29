@@ -15,6 +15,8 @@ import { AudioLines, ChevronRight, ClipboardPaste, Cloud, Command, Download, Eye
 
 import {
   TRANSCRIPTION_PRIVACY_NOTICE,
+  CLOUD_TRANSCRIPTION_PRIVACY_NOTICE,
+  type CloudSpeechModelList as CloudSpeechModels,
   UPDATE_CHECK_PRIVACY_NOTICE,
   type DictationShortcutsChange,
   type DictationShortcutsResult,
@@ -55,6 +57,7 @@ import { type SpeechModelOption, type SpeechModelStatus } from '../../../../shar
 import { platformCopy } from '../../platformCopy'
 import { OpenRouterKeyField } from '../../components/OpenRouterKeyField'
 import { CleanupModelFields } from '../../components/CleanupModelFields'
+import { CloudSpeechModelList } from './CloudSpeechModelList'
 import { AgentSetupFields } from '../../agents/AgentAccountSettings'
 import { ProvidersSettings } from '../../agents/ProvidersSettings'
 import { useOwnServersBridge } from '../../agents/OwnModelServers'
@@ -83,6 +86,9 @@ import {
   type MicrophoneTestState,
 } from '../onboarding/microphoneTest'
 
+
+/** No list without the bridge; the group shows only with it (ADR-0160). */
+const NO_CLOUD_SPEECH_MODELS = (): Promise<CloudSpeechModels> => Promise.resolve({ ok: false, reason: 'http' })
 export interface SettingsViewProps {
   readonly openRouterKeyMigrationFailed?: boolean
   readonly settings: AppSettings
@@ -105,6 +111,8 @@ export interface SettingsViewProps {
   readonly onCheckOpenRouterKey: () => Promise<OpenRouterKeyCheck>
   /** Owl `cleanup-model`: OpenRouter's text models for the cleanup model picker. */
   readonly onListOpenRouterModels: () => Promise<OpenRouterModelList>
+  /** OpenRouter's speech models, best first, for Transcribe with OpenRouter (Owl, ADR-0160). */
+  readonly onListCloudSpeechModels?: () => Promise<CloudSpeechModels>
   /** Where the speech model stands (ADR-0071); null until main answers. */
   readonly speechModel: SpeechModelStatus | null
   /** Starts the speech model download, or retries one that failed. */
@@ -225,6 +233,7 @@ export function SettingsView({
   onClearHistory,
   onCheckOpenRouterKey,
   onListOpenRouterModels,
+  onListCloudSpeechModels,
   speechModel,
   onDownloadSpeechModel,
   speechModels = null,
@@ -460,6 +469,13 @@ export function SettingsView({
   const clickEffect = useOwlFeature('click-effect')
   const usageOn = useOwlFeature('usage')
   const cleanupModelOn = useOwlFeature('cleanup-model')
+  // Transcribe with OpenRouter (ADR-0160): the switch while its Owl feature is on, and the list and key once it is on.
+  const cloudDictationOn = useOwlFeature('cloud-dictation')
+  const cloudTranscription = cloudDictationOn && settings.cloudTranscription
+  // Asked for once no key is saved, the key field stays through this visit, so a key just saved can still be verified.
+  const [cloudKeyAsked, setCloudKeyAsked] = useState(false)
+  const cloudKeyMissing = settings.llmApiKey.trim() === ''
+  useEffect(() => { if (cloudTranscription && cloudKeyMissing) setCloudKeyAsked(true) }, [cloudTranscription, cloudKeyMissing])
   const clearThreadsOn = useOwlFeature('clear-threads')
   const ownServersBridge = useOwnServersBridge()
   const ownServersOn = ownServersBridge !== undefined
@@ -468,7 +484,7 @@ export function SettingsView({
   const ownCleanup = ownServerCleanupOn && ownServersBridge ? window.sotto?.ownServerCleanup : undefined
   const keepMainCurrent = useOwlFeature('keep-main-current')
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, 'thread-tips': threadTipsOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn }
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, 'thread-tips': threadTipsOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -664,17 +680,33 @@ export function SettingsView({
                       : { description: t`Keep the small dictation sliver on screen between sessions. Click it to dictate.` })} />
                 </SettingsGroup>
                 <SettingsGroup id="settings-transcription" title={t`Speech model`} icon={AudioLines}>
-                  <SpeechModelPicker
-                    models={speechModels}
-                    choice={settings.speechModel}
-                    status={speechModel}
-                    onChoose={onChooseSpeechModel}
-                    refused={speechModelRefused}
-                    onRetry={onDownloadSpeechModel}
-                    platform={platform}
-                  />
+                  {cloudDictationOn ? (
+                    <Toggle setting="cloud-transcription" label={t`Transcribe with OpenRouter`} checked={settings.cloudTranscription}
+                      onCheckedChange={(checked) => void save({ cloudTranscription: checked })}
+                      description={t`Sends your audio to the model you pick. Off, dictation is transcribed on this computer.`} />
+                  ) : null}
+                  {cloudTranscription ? <>
+                    {cloudKeyMissing || cloudKeyAsked ? (
+                      <OpenRouterKeyField setting="cloud-openrouter-key" migrationFailed={openRouterKeyMigrationFailed} apiKey={settings.llmApiKey}
+                        onUpdateSettings={onUpdateSettings} onCheckOpenRouterKey={onCheckOpenRouterKey}
+                        description={t`Transcribing with OpenRouter needs a key. It is the same key AI cleanup uses, kept in your system’s credential store. Until one is saved, dictation says so and records nothing.`} />
+                    ) : (
+                      <p className="settings-disclosure tt-paragraph">{t`Uses the OpenRouter key saved for AI cleanup. Change it in Settings → Cleanup.`}</p>
+                    )}
+                    <CloudSpeechModelList choice={settings.cloudSpeechModel} onChoose={(id) => void save({ cloudSpeechModel: id })} onList={onListCloudSpeechModels ?? NO_CLOUD_SPEECH_MODELS} />
+                  </> : (
+                    <SpeechModelPicker
+                      models={speechModels}
+                      choice={settings.speechModel}
+                      status={speechModel}
+                      onChoose={onChooseSpeechModel}
+                      refused={speechModelRefused}
+                      onRetry={onDownloadSpeechModel}
+                      platform={platform}
+                    />
+                  )}
                   <Toggle setting="whitespace-formatting" label={t`Whitespace formatting`} checked={settings.formatWhitespace} onCheckedChange={(checked) => void save({ formatWhitespace: checked })} description={t`Trims extra spaces without changing any words.`} />
-                  <p className="settings-disclosure tt-paragraph">{TRANSCRIPTION_PRIVACY_NOTICE}</p>
+                  <p className="settings-disclosure tt-paragraph">{cloudTranscription ? CLOUD_TRANSCRIPTION_PRIVACY_NOTICE : TRANSCRIPTION_PRIVACY_NOTICE}</p>
                 </SettingsGroup>
                 <SettingsGroup id="settings-output" title={t`After you dictate`} icon={ClipboardPaste}>
                   <Toggle setting="clipboard-copy" label={t`Automatic clipboard copy`} checked disabled onCheckedChange={() => undefined} description={t`Always on. Every successful transcript is copied.`} />
@@ -689,7 +721,8 @@ export function SettingsView({
                 <div className="settings-section__heading"><h2><Trans>Cleanup</Trans></h2><p className="tt-paragraph"><Trans>AI cleanup through OpenRouter</Trans></p></div>
                 <div className="settings-rows">
                   <Toggle setting="ai-formatting" label={t`AI formatting`} checked={settings.llmFormatting} onCheckedChange={(checked) => void save({ llmFormatting: checked })} description={t`Sends the text, never audio, to OpenRouter to tidy it up. Offline, you get the raw transcript.`} />
-                  <OpenRouterKeyField migrationFailed={openRouterKeyMigrationFailed} apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckOpenRouterKey={onCheckOpenRouterKey} />
+                  <OpenRouterKeyField migrationFailed={openRouterKeyMigrationFailed} apiKey={settings.llmApiKey} onUpdateSettings={onUpdateSettings} onCheckOpenRouterKey={onCheckOpenRouterKey}
+                    {...(cloudTranscription ? { description: t`Used for AI cleanup and for transcribing with OpenRouter, and kept in your system’s credential store.` } : {})} />
                   {cleanupModelOn ? <CleanupModelFields settings={settings} onSave={save} onListModels={onListOpenRouterModels}
                     {...(ownCleanup ? { ownServers: ownServersBridge, ownCleanup } : {})} /> : null}
                   <div className="settings-input-action">

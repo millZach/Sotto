@@ -10,13 +10,13 @@ import {
 } from '../../../src/shared/agents'
 import { BOOT_UNSUPPORTED_REASONS, bootUnsupportedSentence } from '../../../src/shared/bootStart'
 import { BRING_BACK_FROM_DESKTOP, BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_OTHER_DESKTOP, BRING_BACK_QUESTION_GONE, BRING_BACK_UNSUPPORTED, bringBackNotConnected } from '../../../src/shared/bringChangesBack'
-import { MICROPHONE_NOT_SET_UP_DETAIL, SPEECH_MODEL_NOT_READY_DETAIL, TRANSCRIPTION_ERROR_DETAIL, TRANSCRIPTION_KEPT_DETAIL, type TranscriptionErrorCode } from '../../../src/shared/dictation'
+import { MICROPHONE_NOT_SET_UP_DETAIL, OPENROUTER_KEY_MISSING_DETAIL, SPEECH_MODEL_NOT_READY_DETAIL, TRANSCRIPTION_ERROR_DETAIL, TRANSCRIPTION_KEPT_DETAIL, type TranscriptionErrorCode } from '../../../src/shared/dictation'
 import { HOST_BUSY, LEGACY_MANAGEMENT_UPDATE, MANAGEMENT_REMOVED } from '../../../src/shared/hostProtocol'
 import { HOST_PROVIDER_JOB_WORDS, hostProviderJobTitle, type HostProviderJobCase } from '../../../src/shared/hostProviders'
 import {
   bootUnsupportedWords, BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, effortColorLabel, gitMergeMethodLabel, HOST_ANSWER_LOST_WORDS, hostBusyWords, hostCannotStageScreenshotsWords, hostProviderJobHeading,
   hostProviderJobWords, inInterfaceLanguage, interactiveVisualLabel, microphoneNotSetUpDetail, opencodeHostNeedsUpdateWords,
-  opencodeNotOnHostWords, shownSignInAnswer, SIGN_IN_INTERFACE_WORDS, signInWordsInInterfaceLanguage, speechModelNotReadyDetail, threadStartsUnsupportedWords, transcriptionErrorDetail, transcriptionKeptDetail,
+  opencodeNotOnHostWords, shownSignInAnswer, SIGN_IN_INTERFACE_WORDS, signInWordsInInterfaceLanguage, speechModelNotReadyDetail, openRouterKeyMissingDetail, threadStartsUnsupportedWords, transcriptionErrorDetail, transcriptionKeptDetail,
   watcherDisabledWords, workerRoleWords,
 } from '../../../src/shared/interfaceWords'
 import { HOST_ANSWER_LOST, opencodeHostNeedsUpdate, opencodeNotOnHost, SIGN_IN_WORDS } from '../../../src/shared/opencodeSignIn'
@@ -87,6 +87,7 @@ describe('interface words', () => {
       expect(transcriptionKeptDetail(code)).toBe(TRANSCRIPTION_KEPT_DETAIL[code])
     }
     expect(speechModelNotReadyDetail()).toBe(SPEECH_MODEL_NOT_READY_DETAIL)
+    expect(openRouterKeyMissingDetail()).toBe(OPENROUTER_KEY_MISSING_DETAIL)
     expect(microphoneNotSetUpDetail()).toBe(MICROPHONE_NOT_SET_UP_DETAIL)
     expect(interactiveVisualLabel()).toBe(INTERACTIVE_VISUAL_LABEL)
   })

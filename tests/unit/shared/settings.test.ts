@@ -20,6 +20,7 @@ import {
   parseSettings,
   settingsSchema,
   type AppSettings,
+  cloudTranscriptionOn,
 } from '../../../src/shared/settings'
 
 const aurora = parseThemeFile({ version: 1, name: 'Aurora', appearance: 'dark', colors: createVividThemeColors('dark', '#101820', '#e0a040') })
@@ -76,6 +77,8 @@ const customSettings = {
   startMinimized: true,
   showWidgetWhenIdle: false,
   dictationEnabled: true,
+  cloudTranscription: true,
+  cloudSpeechModel: 'elevenlabs/scribe-v2',
   notifyNeedsYou: false,
   notifyFinished: false,
   historyEnabled: false,
@@ -463,6 +466,8 @@ describe('settings', () => {
       startMinimized: false,
       showWidgetWhenIdle: true,
       dictationEnabled: true,
+      cloudTranscription: false,
+      cloudSpeechModel: null,
       notifyNeedsYou: true,
       notifyFinished: true,
       historyEnabled: true,
@@ -612,6 +617,15 @@ describe('settings', () => {
     expect(parseSettings({}).dictationEnabled).toBe(true)
     expect(parseSettings({ dictationEnabled: false }).dictationEnabled).toBe(false)
     expect(parseSettings({ dictationEnabled: 'no' }).dictationEnabled).toBe(true)
+  })
+
+  it('keeps Transcribe with OpenRouter off and no OpenRouter speech model chosen for older profiles, and refuses a malformed choice (ADR-0160)', () => {
+    expect(parseSettings({})).toMatchObject({ cloudTranscription: false, cloudSpeechModel: null })
+    expect(parseSettings({ cloudTranscription: true, cloudSpeechModel: 'elevenlabs/scribe-v2' })).toMatchObject({ cloudTranscription: true, cloudSpeechModel: 'elevenlabs/scribe-v2' })
+    expect(parseSettings({ cloudTranscription: 'yes', cloudSpeechModel: 'not a slug!' })).toMatchObject({ cloudTranscription: false, cloudSpeechModel: null })
+    expect(cloudTranscriptionOn({ cloudTranscription: true }, false)).toBe(false)
+    expect(cloudTranscriptionOn({ cloudTranscription: true }, true)).toBe(true)
+    expect(cloudTranscriptionOn({ cloudTranscription: false }, true)).toBe(false)
   })
 
   it('reads the two notification switches on by default and keeps a saved off, recovering anything else (ADR-0117)', () => {
