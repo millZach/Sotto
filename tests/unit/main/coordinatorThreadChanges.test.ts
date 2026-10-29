@@ -40,6 +40,7 @@ import { UsageService } from '../../../src/main/agents/usageService'
 import { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { startSocketServer } from '../../../src/host/socketServer'
 import { DesktopHostRouter } from '../../../src/main/hosts/desktopHostRouter'
+import { threadsReplacedSince } from '../../../src/shared/threadListPatches'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { createAgentControl, type TestControlOptions } from '../../fixtures/agentControlFixture'
 import { FakeProviderHost } from '../../fixtures/fakeProviderHost'
@@ -532,8 +533,9 @@ describe('the coordinator at its limits', () => {
     await expect.poll(() => [keptOf(changed).includes(sotto(c)), keptOf(whole).includes(sotto(c))], { timeout: 10_000 }).toEqual([false, false])
     // The whole path reads C without its kept reply here; the changes path has to name C again on the next change.
     made.adapter.log.add('s1', { id: 'unrelated', role: 'user', text: 'Unrelated', createdAt: AT }); publish()
-    await quiet()
-    expect(await differences(made)).toEqual([])
+    // Waited for as every other step is: the phone's shell goes through its own publish window and a socket, which a
+    // loaded runner can hold past a fixed pause. A difference that lasts still fails.
+    await agree(made, 'an unrelated change')
   }, 120_000)
 
   /**
@@ -770,6 +772,33 @@ describe('the coordinator\'s thread changes', () => {
     const after = changed.control.watcherSnapshot().threads
     // Every other thread is the very record it was shown as.
     expect(after.filter((item, index) => item !== before[index]).map(item => item.title)).toEqual(['Thread s2'])
+  })
+
+  it('leaves the broadcast after a command\'s reply to list the change that came before it, as made from the last broadcast (#1760)', async () => {
+    vi.useFakeTimers({ toFake: ['Date'], now: new Date(AT) })
+    // Each broadcast's window closes only when the test says, so a change can wait in it while a command answers.
+    const due: (() => void)[] = []
+    const schedule = (run: () => void): (() => void) => { due.push(run); return () => { const at = due.indexOf(run); if (at >= 0) due.splice(at, 1) } }
+    const closeWindows = (): void => { while (due.length) due.shift()!() }
+    const made = await stack({ schedule }, 6, false, false)
+    const { adapter, changed, whole, sotto, at } = made
+    for (const each of [changed, whole]) await each.control.command({ type: 'connect' })
+    closeWindows(); await made.settle(); closeWindows()
+    // A change goes out at once and opens a window; the next one waits in it.
+    at('s1').title = 'Thread s1 again'; adapter.mark('s1'); adapter.publish(false); await made.settle()
+    const last = changed.broadcast!
+    expect(due.length).toBeGreaterThan(0)
+    at('s2').title = 'Thread s2 again'; adapter.mark('s2'); adapter.publish(false); await made.settle()
+    expect(changed.broadcast).toBe(last)
+    // A command answers while the change waits.
+    for (const each of [changed, whole]) await each.control.commandShell({ type: 'observe-threads', threadIds: [] })
+    closeWindows()
+    const next = changed.broadcast!
+    const position = next.host.threads.findIndex(thread => thread.id === sotto('s2'))
+    expect(next.host.threads[position]!.title).toBe('Thread s2 again')
+    // The broadcast names the change itself, as made from the last broadcast, not from the reply in between.
+    expect([...threadsReplacedSince(next.host, last.host, 1) ?? []]).toEqual([position])
+    await agree(made, 'a command answering while a change waited')
   })
 
   it('takes the first change after anything else set the host snapshot in whole', async () => {

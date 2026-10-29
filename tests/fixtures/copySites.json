@@ -23,7 +23,6 @@
   },
   "src/main/agents/control.ts": {
     "structuredClone(": 21,
-    "shell()": 40,
     "watcherRecord()": 2,
     "clonePlainData(": 2
   },
@@ -52,7 +51,7 @@
     "structuredClone(": 2
   },
   "src/main/agents/hostService.ts": {
-    "shell()": 4
+    "shell()": 3
   },
   "src/main/agents/ipc.ts": {
     "shell()": 1
@@ -120,7 +119,7 @@
   },
   "src/main/hosts/desktopHostRouter.ts": {
     "structuredClone(": 1,
-    "shell()": 31
+    "shell()": 10
   },
   "src/main/hosts/desktopHosts.ts": {
     "structuredClone(": 1,
