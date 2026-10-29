@@ -127,6 +127,11 @@ interface RecalledPlacement {
   readonly newest: number
   /** The lines of the turns before it, placed once for the read back. */
   readonly settled: ReadonlyMap<string, readonly WatcherTakeover[]>
+  /**
+   * The lines of turns that were the newest when the read back was placed and have ended since, by message: kept apart
+   * from `settled`, which is never copied, so a new turn settles them without reading the read back's lines again.
+   */
+  readonly since: ReadonlyMap<string, readonly WatcherTakeover[]>
   /** The latest of those lines' times: a user message that came since and is no later would take some of them. */
   readonly settledUntil: number
   /** The newest turn's lines, placed again whenever its messages change. */
@@ -182,32 +187,48 @@ function placeAll(messages: readonly AgentMessage[], takeovers: readonly Watcher
     add(settled, anchor, line)
     if (at > settledUntil) settledUntil = at
   }
-  return withOpen({ messages, newest: newestTurn < 0 ? -1 : users[newestTurn]!, settled, settledUntil, open })
+  return withOpen({ messages, newest: newestTurn < 0 ? -1 : users[newestTurn]!, settled, since: NONE_SINCE, settledUntil, open })
 }
 
-/** The lines again for messages that follow the ones they were placed against: only what came since, and the newest turn while it has lines, is read. */
+const NONE_SINCE: ReadonlyMap<string, readonly WatcherTakeover[]> = new Map()
+
+/**
+ * The lines again for messages that follow the ones they were placed against: only what came since, and the newest turn
+ * while it has lines, is read. A new turn settles the newest turn's lines from before it where that turn ends, and the rest
+ * are the new turn's, as `placeAll` would place them.
+ */
 function placeSince(held: RecalledPlacement, messages: readonly AgentMessage[], takeovers: readonly WatcherTakeover[]): RecalledPlacement {
-  let newest = held.newest
+  let { newest, open, since, settledUntil } = held
   for (let index = held.messages.length; index < messages.length; index++) {
     const message = messages[index]!
     if (message.role !== 'user') continue
-    // A new turn: the newest turn's lines may be its own now, and with clocks apart so may earlier ones.
-    if (held.open.length > 0 || userTime(message) <= held.settledUntil) return placeAll(messages, takeovers)
+    const time = userTime(message)
+    // With clocks apart, a user message no later than lines already settled may take some of them.
+    if (time <= settledUntil) return placeAll(messages, takeovers)
+    if (open.length > 0) {
+      const ended = open.filter(line => Date.parse(line.at) < time)
+      if (ended.length > 0) {
+        const anchor = anchorAfter(messages, newest), next = new Map(since)
+        next.set(anchor, [...next.get(anchor) ?? [], ...ended])
+        since = next
+        for (const line of ended) settledUntil = Math.max(settledUntil, Date.parse(line.at))
+        open = open.filter(line => Date.parse(line.at) >= time)
+      }
+    }
     newest = index
   }
-  const next = { messages, newest, settled: held.settled, settledUntil: held.settledUntil, open: held.open }
-  return held.open.length === 0 ? { ...next, lines: held.lines } : withOpen(next)
+  const next = { messages, newest, settled: held.settled, since, settledUntil, open }
+  return open.length === 0 && held.open.length === 0 && since === held.since ? { ...next, lines: held.lines } : withOpen(next)
 }
 
-/** Each message's lines: the settled ones, and the newest turn's after the message that turn has reached. */
+/** Each message's lines: the settled ones, those settled since, and the newest turn's after the message that turn has reached. */
 function withOpen(placement: Omit<RecalledPlacement, 'lines'>): RecalledPlacement {
-  const { messages, newest, settled, open } = placement
-  if (open.length === 0) return { ...placement, lines: settled }
-  const anchor = anchorAfter(messages, newest)
+  const { messages, newest, settled, since, open } = placement
+  if (open.length === 0 && since.size === 0) return { ...placement, lines: settled }
+  const anchor = open.length > 0 ? anchorAfter(messages, newest) : undefined
   const get = (messageId: string): readonly WatcherTakeover[] | undefined => {
-    const older = settled.get(messageId)
-    if (messageId !== anchor) return older
-    return older ? [...older, ...open].sort(byAt) : open
+    const parts = [settled.get(messageId), since.get(messageId), messageId === anchor ? open : undefined].filter(part => part !== undefined)
+    return parts.length < 2 ? parts[0] : parts.flat().sort(byAt)
   }
   return { ...placement, lines: { get, has: messageId => get(messageId) !== undefined } }
 }

@@ -69,7 +69,7 @@ const recalledLines = (takeovers: readonly WatcherTakeover[]): RecalledConversat
  * the read back placed its lines once: `turns` turns read back, each with a thread taken over in it, then the live turn.
  * Each change streams the newest reply or begins a turn, as a conversation does while it is shown far back (#1773).
  */
-function readsPerChange(turns: number, changes: number): number {
+function readsPerChange(turns: number, changes: number, newestLine = false): number {
   let reads = 0, counting = false
   const counted = <T extends object>(value: T): T => new Proxy(value, { get(target, property, receiver) { if (counting) reads++; return Reflect.get(target, property, receiver) } })
   const held: AgentMessage[] = [], lines: WatcherTakeover[] = []
@@ -79,6 +79,9 @@ function readsPerChange(turns: number, changes: number): number {
     lines.push(counted(line(turn, minutes(turn * 10 + 5))))
   }
   held.push({ id: 'live', role: 'user', text: 'Synthetic instruction', createdAt: minutes(turns * 10) }, { id: 'live-reply', role: 'assistant', text: '', createdAt: minutes(turns * 10 + 1) })
+  const archivedLast = lines.at(-1)
+  // A thread the read back says was taken over in the turn still being written, which the next turn settles (#1773).
+  if (newestLine) lines.push(counted(line(turns, new Date(Date.parse(minutes(turns * 10)) + 30_000).toISOString())))
   const recalled = recalledLines(counted(lines))
   expect(recalledTakeovers(counted([...held]), recalled)!.get('archived-reply-0')).toEqual([lines[0]])
   for (let change = 0; change < changes; change++) {
@@ -90,7 +93,7 @@ function readsPerChange(turns: number, changes: number): number {
     counting = true
     const placed = recalledTakeovers(messages, recalled)
     counting = false
-    expect(placed!.get(`archived-reply-${turns - 1}`)).toEqual([lines.at(-1)])
+    expect(placed!.get(`archived-reply-${turns - 1}`)).toEqual([archivedLast])
   }
   return reads
 }
@@ -98,6 +101,11 @@ function readsPerChange(turns: number, changes: number): number {
 describe('the read back\'s takeover lines in Watcher\'s conversation (#1773)', () => {
   it('are placed once for the read back: a streamed reply or a new turn reads as much at 2,000 turns read back as at 50', () => {
     const few = readsPerChange(50, 6), many = readsPerChange(2_000, 6)
+    expect(many).toBe(few)
+  })
+
+  it('settle the newest turn\'s line when the next turn begins, reading as much at 2,000 turns read back as at 50', () => {
+    const few = readsPerChange(50, 6, true), many = readsPerChange(2_000, 6, true)
     expect(many).toBe(few)
   })
 
