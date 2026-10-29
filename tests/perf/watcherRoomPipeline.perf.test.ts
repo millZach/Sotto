@@ -14,17 +14,19 @@ describe.skipIf(!PERF_BENCH)('actual Electron Watcher room pipeline (#991)', () 
     const root = await mkdtemp(join(tmpdir(), 'sotto-watcher-room-entry-'))
     if (dirname(resolve(root)) !== resolve(tmpdir()) || !root.includes('sotto-watcher-room-entry-')) throw new Error('Unexpected owned fixture path')
     const main = join(root, 'main.cjs'), preload = join(root, 'preload.cjs'), page = join(root, 'page.js')
-    // The room reaches the page through the real preload's reassembly of main's room updates (#1450), on the real channel.
-    // Each send's source revision comes just before it on a channel of the benchmark's own.
+    // Main's room updates reach the page through the real preload's forwarding, on the real channel, and the page puts
+    // the room back together on its side of the context bridge (#1450, #1759). Each send's source revision comes just
+    // before it on a channel of the benchmark's own.
     await build({ stdin: { contents: `import {contextBridge,ipcRenderer} from 'electron';
-      import {watcherRoomChanges} from './src/preload/watcherRoomChanges';let start,roomRevision=0,offRoom;const receivers={};
-      const onRoomChanged=watcherRoomChanges(ipcRenderer);ipcRenderer.on('room-revision',(_event,revision)=>{roomRevision=revision});
+      import {watcherRoomForwarding} from './src/preload/watcherRoomForwarding';let start,roomRevision=0,offRoom;const receivers={};
+      const onRoomChanged=watcherRoomForwarding(ipcRenderer);ipcRenderer.on('room-revision',(_event,revision)=>{roomRevision=revision});
       for(const channel of ['shell','detail'])ipcRenderer.on(channel,(_event,value,revision)=>receivers[channel]?.(value,revision));contextBridge.exposeInMainWorld('bench',{
-      onRoom:listener=>{offRoom?.();offRoom=onRoomChanged(room=>listener(room,roomRevision))},onState:listener=>{receivers.shell=listener},onDetail:listener=>{receivers.detail=listener},
+      onRoom:listener=>{offRoom?.();offRoom=onRoomChanged(change=>listener(change,roomRevision))},onState:listener=>{receivers.shell=listener},onDetail:listener=>{receivers.detail=listener},
       get:()=>ipcRenderer.invoke('get'),startCpu:()=>{start=process.cpuUsage()},endCpu:()=>{const used=process.cpuUsage(start);return{cpuMs:(used.user+used.system)/1000}},
       measure:options=>ipcRenderer.invoke('measure',options)});`, resolveDir: process.cwd() }, bundle: true, platform: 'node', format: 'cjs', external: ['electron'], outfile: preload })
     await build({ stdin: { contents: `import {wrapAgentBridge} from './src/renderer/src/agents/agentStateCatalogs';
       import {createRoomCompletion} from './tests/fixtures/watcherRoomCompletion';
+      import {watcherRoomChanges} from './src/shared/watcherRoomChanges';
       import {createStateSharing} from './src/renderer/src/agents/stateSharing';
       import {applyAgentThreadDetailDelta,isAgentThreadDetailDelta} from './src/shared/agentThreadDetail';
       window.restart=()=>{const held=new Map(),share=createStateSharing();let shell=null,last=null;
@@ -35,7 +37,9 @@ describe.skipIf(!PERF_BENCH)('actual Electron Watcher room pipeline (#991)', () 
         if(!detail)throw Error('Unexpected detail miss');held.set(detail.threadId,detail);assemble()});
       const completion=createRoomCompletion(()=>window.bench.endCpu().cpuMs);
       window.completeRoom=(target,timeout)=>completion.wait(target,timeout);
-      window.room=null;window.bench.onRoom((value,revision)=>{window.room=value;completion.receive(value,revision)})};window.restart();`, resolveDir: process.cwd() }, bundle: true, platform: 'browser', outfile: page })
+      let roomRevision=0;const onRoom=watcherRoomChanges({onChanged:listener=>{window.bench.onRoom((change,revision)=>{roomRevision=revision;listener(change)});return()=>undefined},
+        get:()=>Promise.reject(Error('Unexpected room recovery'))});
+      window.room=null;onRoom(value=>{window.room=value;completion.receive(value,roomRevision)})};window.restart();`, resolveDir: process.cwd() }, bundle: true, platform: 'browser', outfile: page })
     // Main's half runs main's own Watcher room and socket client, whose words are messages, so it is built as main is.
     await bundleDesktopMain('watcherRoomPipelineMain.ts', main, { external: ['electron'], contents: `import './src/main/interfaceLanguage';
       import {app,BrowserWindow,ipcMain} from 'electron';
