@@ -1,11 +1,11 @@
 import { useSyncExternalStore } from 'react'
-import { hostForThread, type AgentCommand, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
+import { hostForThread, type AgentCommand, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentState, type AgentThread } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
 
-/** The settings an option chip changes: the three choice chips and the fast mode toggle (ADR-0143). */
+/** The settings an option chip changes: the three choice chips and the speed bolt (ADR-0143), whose kind is still `fast`. */
 export type SettingKind = 'model' | 'effort' | 'permissions' | 'fast'
-export type SettingsPatch = { readonly modelId?: string; readonly reasoningEffort?: string; readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string; readonly fastMode?: boolean }
-/** A thread's settings as the window drew them from main's published state, one string per chip; fast mode is `on` or `off`. */
+export type SettingsPatch = { readonly modelId?: string; readonly reasoningEffort?: string; readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string; readonly speed?: AgentSpeed | null; readonly fastMode?: boolean }
+/** A thread's settings as the window drew them from main's published state, one string per chip; speed is `standard`, `fast` or `ultrafast`. */
 export type SettingValues = Readonly<Record<SettingKind, string>>
 /** The connection's command, from the render a press was made in: a press belongs to the thread it was made on. */
 export type SendSettings = (command: Extract<AgentCommand, { type: 'configure-thread' }>) => Promise<AgentState | null>
@@ -50,25 +50,31 @@ interface Entry {
   unconfirmed: { readonly error: string | null; drawn: boolean } | null
 }
 
-/** Fast mode's two values, as the toggle's pending setting holds them. */
-export const FAST_ON = 'on', FAST_OFF = 'off'
+/** Standard speed, as the bolt's pending setting holds it; the other values are the speed's own ID. */
+export const SPEED_STANDARD = 'standard'
+/** The speed a thread chose (ADR-0143): its own `speed`, else the older `fastMode: true`, else Standard (null). */
+export const threadSpeed = (thread: Pick<AgentThread, 'speed' | 'fastMode'>): AgentSpeed | null =>
+  thread.speed !== undefined ? thread.speed : thread.fastMode === true ? 'fast' : null
+/** Older hosts advertise only fastMode and accept its boolean command; new catalogs take the named speed. */
+export const speedPatch = (value: string, model?: AgentModel): SettingsPatch => model?.speeds === undefined && model?.fastMode
+  ? { fastMode: value === 'fast' } : { speed: value === SPEED_STANDARD ? null : value as AgentSpeed }
 /**
- * The fast mode refusal a model change leaves when the provider took the model and not the fast mode it carried. It
- * stands in a refusal's `error`, and the toggle's line says it in its own words; it is never shown as it is.
+ * The speed refusal a model change leaves when the provider took the model and not the speed it carried. It stands in a
+ * refusal's `error`, and the bolt's line says it in its own words; it is never shown as it is.
  */
-export const FAST_MODE_NOT_CARRIED = 'fast-mode-not-carried'
+export const SPEED_NOT_CARRIED = 'speed-not-carried'
 /** Each setting's value on this thread as its own model reads it: the defaults are the model's. */
 export function settingValues(state: AgentState, thread: AgentThread): SettingValues {
   const model = resolveModel(hostForThread(state.host, thread).models, thread.modelId)
   return settingValuesFor(thread, model)
 }
-export function settingValuesFor(thread: Pick<AgentThread, 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'providerMode' | 'fastMode'>, model: AgentModel | undefined): SettingValues {
+export function settingValuesFor(thread: Pick<AgentThread, 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'providerMode' | 'speed' | 'fastMode'>, model: AgentModel | undefined): SettingValues {
   return {
     model: thread.modelId,
     effort: thread.reasoningEffort ?? model?.defaultReasoningEffort ?? '',
     permissions: (usesProviderModes(model) ? thread.providerMode ?? model?.providerModes?.[0]?.id : thread.runtimeMode) ?? '',
-    // The user's choice, which a model without fast mode keeps (ADR-0143); whether it runs is the model's to say.
-    fast: thread.fastMode === true ? FAST_ON : FAST_OFF,
+    // The user's choice, which a model without that speed keeps (ADR-0143); whether it runs is the model's to say.
+    fast: threadSpeed(thread) ?? SPEED_STANDARD,
   }
 }
 /** Whether this model's permission list is the provider's own vocabulary rather than Sotto's four. */
@@ -85,7 +91,7 @@ export function unconfirmedKinds(state: AgentState | null, threadId: string): Re
     if (item.modelId !== undefined) kinds.add('model')
     if (item.reasoningEffort !== undefined) kinds.add('effort')
     if (item.runtimeMode !== undefined || item.providerMode !== undefined) kinds.add('permissions')
-    if (item.fastMode !== undefined) kinds.add('fast')
+    if (item.speed !== undefined || item.fastMode !== undefined) kinds.add('fast')
   }
   return kinds
 }
@@ -228,10 +234,12 @@ export class PendingSettingsStore {
         }
         const thread = reply.host.threads.find(item => item.id === threadId)
         const expected = thread ? settingValues(reply, thread)[kind] : null
-        // A model change that ends with fast mode off where it was on is the provider refusing the fast mode the change
-        // carried (ADR-0143): the model went through, and the toggle's line says fast mode did not.
-        if (kind === 'model' && thread && this.lastDrawn.get(threadId)?.fast === FAST_ON && settingValues(reply, thread).fast === FAST_OFF) {
-          this.refusals.set(keyOf(threadId, 'fast'), { kind: 'fast', wanted: FAST_ON, patch: { fastMode: true }, error: FAST_MODE_NOT_CARRIED })
+        // A model change that ends at Standard where the thread had chosen a faster speed is the provider refusing the speed
+        // the change carried (ADR-0143): the model went through, and the bolt's line says the speed did not.
+        const carried = this.lastDrawn.get(threadId)?.fast
+        if (kind === 'model' && thread && carried !== undefined && carried !== SPEED_STANDARD && settingValues(reply, thread).fast === SPEED_STANDARD) {
+          const model = resolveModel(hostForThread(reply.host, thread).models, thread.modelId)
+          this.refusals.set(keyOf(threadId, 'fast'), { kind: 'fast', wanted: carried, patch: speedPatch(carried, model), error: SPEED_NOT_CARRIED })
         }
         if (expected === null || this.lastDrawn.get(threadId)?.[kind] === expected) { this.drop(key, entry); return }
         this.hold(entry, expected, () => { if (this.entries.get(key) === entry && !entry.sending) { this.drop(key, entry); this.emit(threadId) } })

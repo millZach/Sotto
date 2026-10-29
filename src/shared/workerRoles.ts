@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, everyProvider, parsePublicProviderEntityId, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type ProviderId } from './agents'
+import { agentRuntimeModeSchema, agentSpeedSchema, everyProvider, parsePublicProviderEntityId, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type ProviderId } from './agents'
 import { resolveModel } from './modelCatalog'
 import { watcherProviderIds } from './providerProfile'
 import { nearestRuntimeMode, RUNTIME_MODE_ORDER } from './newThreadDefaults'
@@ -21,12 +21,13 @@ export type WorkerKind = z.infer<typeof workerKindSchema>
 export type WorkerRoleId = z.infer<typeof workerRoleIdSchema>
 
 /**
- * A row as the user chose it. The whole row counts as their choice once any of its three settings changed, and it stays
+ * A row as the user chose it. The whole row counts as their choice once any of its four settings changed, and it stays
  * until they reset it. Orchestrating saves no permission: Watcher's permission is its own, chosen in its room.
  */
 export const workerRoleChoiceSchema = z.object({
   modelId: z.string().min(1).max(512),
   reasoningEffort: z.string().min(1).max(64).nullable(),
+  speed: agentSpeedSchema.nullable().optional(),
   runtimeMode: agentRuntimeModeSchema.optional(),
 }).strict()
 export type WorkerRoleChoice = z.infer<typeof workerRoleChoiceSchema>
@@ -163,6 +164,13 @@ export function fitEffort(wanted: string | null | undefined, model: AgentModel |
   }
   return best ?? model?.defaultReasoningEffort ?? null
 }
+/** A saved speed runs only where the model offers it; Standard leaves the saved choice whole. */
+export function fitSpeed(wanted: AgentSpeed | null | undefined, model: AgentModel | undefined): AgentSpeed | null {
+  if (!wanted || !model) return null
+  return (model.speeds?.some(speed => speed.id === wanted) ?? (wanted === 'fast' && model.fastMode !== undefined)) ? wanted : null
+}
+const speedName = (speed: AgentSpeed | null, model?: AgentModel): string => speed
+  ? model?.speeds?.find(item => item.id === speed)?.name ?? (speed === 'fast' ? 'Fast' : 'Ultrafast') : 'Standard'
 /** A wanted mode as a model can take it: the nearest it offers, none for a provider with its own permission profiles. */
 export function fitRuntimeMode(wanted: AgentRuntimeMode | null | undefined, model: AgentModel | undefined): AgentRuntimeMode | undefined {
   if (!wanted || !model || model.providerModes?.length) return undefined
@@ -178,6 +186,7 @@ export interface RoleDefaultInForce {
   readonly index: number
   readonly model: AgentModel
   readonly reasoningEffort: string | null
+  readonly speed: AgentSpeed | null
   readonly runtimeMode: AgentRuntimeMode | undefined
 }
 /**
@@ -188,12 +197,12 @@ export function roleDefaultInForce(id: WorkerRoleId, models: readonly AgentModel
   const role = workerRole(id)
   for (const [index, entry] of role.defaults.entries()) {
     const model = defaultModel(entry, models)
-    if (usable(id, model)) return { index, model, reasoningEffort: fitEffort(entry.effort, model), runtimeMode: fitRuntimeMode(role.permission, model) }
+    if (usable(id, model)) return { index, model, reasoningEffort: fitEffort(entry.effort, model), speed: null, runtimeMode: fitRuntimeMode(role.permission, model) }
   }
   for (const provider of PROVIDER_ORDER) {
     const ready = models.filter(model => model.providerId === provider && usable(id, model))
     const model = ready.find(item => item.recommended) ?? ready[0]
-    if (model) return { index: -1, model, reasoningEffort: fitEffort(null, model), runtimeMode: fitRuntimeMode(role.permission, model) }
+    if (model) return { index: -1, model, reasoningEffort: fitEffort(null, model), speed: null, runtimeMode: fitRuntimeMode(role.permission, model) }
   }
   return undefined
 }
@@ -215,6 +224,7 @@ export interface RoleStartChoice {
   /** The ID to start on: a choice's own, which may name a long-context variant the catalog lists under its base. */
   readonly modelId: string
   readonly reasoningEffort: string | null
+  readonly speed: AgentSpeed | null
   readonly runtimeMode: AgentRuntimeMode | undefined
   readonly from: 'choice' | 'default'
 }
@@ -223,10 +233,10 @@ export function roleInForce(id: WorkerRoleId, choices: WorkerRoleChoices, models
   const chosen = choice ? resolveModel(models, choice.modelId) : undefined
   const choiceReady = usable(id, chosen)
   const start: RoleStartChoice | undefined = choice && choiceReady
-    ? { model: chosen!, modelId: choice.modelId, reasoningEffort: fitEffort(choice.reasoningEffort, chosen), runtimeMode: fitRuntimeMode(choice.runtimeMode ?? role.permission, chosen), from: 'choice' }
+    ? { model: chosen!, modelId: choice.modelId, reasoningEffort: fitEffort(choice.reasoningEffort, chosen), speed: fitSpeed(choice.speed, chosen), runtimeMode: fitRuntimeMode(choice.runtimeMode ?? role.permission, chosen), from: 'choice' }
     // While a chosen model's provider is away, the default in force starts on the permission the user chose, as near as
     // its model offers at or below it, never on the role's own wider one.
-    : fallback ? { model: fallback.model, modelId: fallback.model.id, reasoningEffort: fallback.reasoningEffort,
+    : fallback ? { model: fallback.model, modelId: fallback.model.id, reasoningEffort: fallback.reasoningEffort, speed: fitSpeed(choice?.speed, fallback.model),
       runtimeMode: choice ? fitRuntimeMode(choice.runtimeMode ?? role.permission, fallback.model) : fallback.runtimeMode, from: 'default' } : undefined
   return { role, choice, choiceReady, fallback, start }
 }
@@ -234,7 +244,7 @@ export function roleInForce(id: WorkerRoleId, choices: WorkerRoleChoices, models
 /** Whether a row as it would be saved is the role's default in force exactly, so it follows the defaults again. */
 export function isRoleDefault(id: WorkerRoleId, row: WorkerRoleChoice, models: readonly AgentModel[]): boolean {
   const fallback = roleDefaultInForce(id, models)
-  if (!fallback || row.modelId !== fallback.model.id || (row.reasoningEffort ?? null) !== fallback.reasoningEffort) return false
+  if (!fallback || row.modelId !== fallback.model.id || (row.reasoningEffort ?? null) !== fallback.reasoningEffort || (row.speed ?? null) !== fallback.speed) return false
   return id === 'orchestrating' || (row.runtimeMode ?? workerRole(id).permission) === (fallback.runtimeMode ?? workerRole(id).permission)
 }
 
@@ -253,14 +263,16 @@ export function withRoleRow(choices: WorkerRoleChoices, id: WorkerRoleId, row: W
 export interface RoleStartRequest {
   readonly modelId?: string | undefined
   readonly reasoningEffort?: string | undefined
+  readonly speed?: AgentSpeed | null | undefined
   readonly runtimeMode?: AgentRuntimeMode | undefined
 }
-export type RoleField = 'model' | 'effort' | 'permission'
-/** A start by role: the role's model, effort and permission, with whatever the request named in their place. */
+export type RoleField = 'model' | 'effort' | 'speed' | 'permission'
+/** A start by role: the role's model, effort, speed and permission, with whatever the request named in their place. */
 export interface RoleStart {
   readonly role: WorkerKind
   readonly modelId: string | undefined
   readonly reasoningEffort: string | undefined
+  readonly speed: AgentSpeed | null
   /** Before the new-thread default caps it. */
   readonly runtimeMode: AgentRuntimeMode | undefined
   /** What the request named itself. */
@@ -275,14 +287,15 @@ export interface RoleStart {
  */
 export function startFromRole(role: WorkerKind, choices: WorkerRoleChoices, models: readonly AgentModel[], request: RoleStartRequest = {}): RoleStart {
   const inForce = roleInForce(role, choices, models).start
-  const named: RoleField[] = [...(request.modelId ? ['model' as const] : []), ...(request.reasoningEffort ? ['effort' as const] : []), ...(request.runtimeMode ? ['permission' as const] : [])]
+  const named: RoleField[] = [...(request.modelId ? ['model' as const] : []), ...(request.reasoningEffort ? ['effort' as const] : []), ...(request.speed !== undefined ? ['speed' as const] : []), ...(request.runtimeMode ? ['permission' as const] : [])]
   const modelId = request.modelId ?? inForce?.modelId
   const model = modelId ? resolveModel(models, modelId) : undefined
   const sameModel = inForce !== undefined && model !== undefined && model.id === inForce.modelId
   const reasoningEffort = request.reasoningEffort ?? (sameModel ? inForce.reasoningEffort : fitEffort(inForce?.reasoningEffort, model)) ?? undefined
+  const speed = request.speed !== undefined ? request.speed : fitSpeed(choices[role]?.speed, model)
   const wanted = choices[role]?.runtimeMode ?? workerRole(role).permission
   const runtimeMode = request.runtimeMode ?? (sameModel ? inForce.runtimeMode : fitRuntimeMode(wanted, model))
-  return { role, modelId, reasoningEffort, runtimeMode, named, roleModelId: inForce?.modelId }
+  return { role, modelId, reasoningEffort, speed, runtimeMode, named, roleModelId: inForce?.modelId }
 }
 
 /**
@@ -314,16 +327,17 @@ const HELD_BY: Readonly<Record<NonNullable<HeldPermission['by']>, string>> = {
 export function roleStartNote(start: RoleStart, models: readonly AgentModel[], held?: HeldPermission): string {
   const role = workerRole(start.role)
   const name = (id: string | undefined) => id ? resolveModel(models, id)?.name ?? id : 'no model'
-  const words: Record<RoleField, string> = { model: 'model', effort: 'effort', permission: 'permission' }
-  const rest = (['model', 'effort', 'permission'] as const).filter(field => !start.named.includes(field)).map(field => words[field])
+  const words: Record<RoleField, string> = { model: 'model', effort: 'effort', speed: 'speed', permission: 'permission' }
+  const rest = (['model', 'effort', 'speed', 'permission'] as const).filter(field => !start.named.includes(field)).map(field => words[field])
   const list = (items: readonly string[]) => items.length < 2 ? items.join('') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`
   const parts = [`Started as ${role.name}, a worker role in the user's Settings.`]
-  if (!start.named.length) parts.push(`Its model, ${name(start.modelId)}, its effort and its permission came from that role.`)
+  if (!start.named.length) parts.push(`Its model, ${name(start.modelId)}, its effort, speed and permission came from that role.`)
   else {
     const model = start.named.includes('model') ? ` (${name(start.modelId)}, where ${role.name} uses ${name(start.roleModelId)})` : ''
     parts.push(`This request named its ${list(start.named.map(field => words[field]))}${model}, which overrides ${role.name} for this start only.`)
     if (rest.length) parts.push(`Its ${list(rest)} came from the role.`)
   }
+  parts.push(`Its speed is ${speedName(start.speed, start.modelId ? resolveModel(models, start.modelId) : undefined)}.`)
   if (held) {
     const wanted = RUNTIME_MODE_WORDS[held.wanted], startedOn = RUNTIME_MODE_WORDS[held.startedOn]
     parts.push(held.unoffered ? `Its permission, ${wanted}, was held to ${startedOn}: ${HELD_BY[held.by ?? 'new-thread-default']} is ${RUNTIME_MODE_WORDS[held.unoffered]}, which this model does not offer, so it starts on the nearest mode the model does.`
@@ -357,6 +371,8 @@ export interface SubagentRole {
   /** The model as the user knows it. */
   readonly modelName: string
   readonly reasoningEffort: string | null
+  readonly speed: AgentSpeed | null
+  readonly speedName?: string
   /** Before the thread's own permission caps it; undefined for a model with its own permission profiles. */
   readonly runtimeMode: AgentRuntimeMode | undefined
 }
@@ -370,7 +386,7 @@ export function subagentRoleTable(choices: WorkerRoleChoices, models: readonly A
     if (!start || !provider) return []
     const role = workerRole(kind)
     return [{ kind, name: role.name, what: role.what, provider, model: parsePublicProviderEntityId(start.modelId)?.value ?? start.modelId,
-      modelName: start.model.name, reasoningEffort: start.reasoningEffort, runtimeMode: start.runtimeMode }]
+      modelName: start.model.name, reasoningEffort: start.reasoningEffort, speed: start.speed, speedName: speedName(start.speed, start.model), runtimeMode: start.runtimeMode }]
   })
 }
 
@@ -389,13 +405,15 @@ export const roleWork = (role: Pick<WorkerRole, 'what'>): string => `${role.what
 const atEffort = (effort: string | null): string => effort ? ` at ${effort} effort` : ''
 /** One role's line: which agent, which model on this provider, or the delegation that reaches another provider. */
 function reachLine(role: SubagentRole, reach: SubagentReach): string {
-  const name = subagentName(role.kind), on = `${role.modelName}${atEffort(role.reasoningEffort)}`
+  const speed = `${role.speedName ?? speedName(role.speed)} speed`
+  const name = subagentName(role.kind), on = `${role.modelName}${atEffort(role.reasoningEffort)}, ${speed}`
   if (reach.agents.has(role.kind)) return reach.agentTool === 'codex'
     ? `call spawn_agent with agent_type "${name}" (${on}).`
     : `use the Agent tool with subagent_type "${name}" (${on}).`
+  if (role.provider === reach.provider && reach.canDelegate) return `${on}: call delegate with work "${role.kind}" so it starts at the role's speed.`
   if (role.provider === reach.provider) return reach.agentTool === 'codex'
-    ? `call spawn_agent with model "${role.model}"${role.reasoningEffort ? ` and reasoning_effort "${role.reasoningEffort}"` : ''}.`
-    : `start your sub-agent on ${role.model}${atEffort(role.reasoningEffort)} when you can choose its model.`
+    ? `call spawn_agent with model "${role.model}"${role.reasoningEffort ? ` and reasoning_effort "${role.reasoningEffort}"` : ''} (${speed}).`
+    : `start your sub-agent on ${role.model}${atEffort(role.reasoningEffort)}, ${speed} when you can choose its model.`
   return reach.canDelegate
     ? `${on} on ${PROVIDER_LABELS[role.provider]}, another provider: call delegate with work "${role.kind}".`
     : `${on} on ${PROVIDER_LABELS[role.provider]}, which this thread cannot start: do that work yourself.`
@@ -408,8 +426,8 @@ function reachLine(role: SubagentRole, reach: SubagentReach): string {
 export function subagentRoleInstructions(table: readonly SubagentRole[], reach: SubagentReach): string | undefined {
   if (!table.length) return undefined
   return [
-    'The user\'s Settings give each kind of work a worker role and the model it runs on. When you hand part of your work to a sub-agent or another thread, follow them:',
+    'The user\'s Settings give each kind of work a worker role and the model, effort and speed it runs on. When you hand part of your work to a sub-agent or another thread, follow them:',
     ...table.map(role => `- ${role.name} (${roleWork(role)}): ${reachLine(role, reach)}`),
-    'A model, effort or permission the user names for a request wins over the role. Work you do yourself needs no role.',
+    'A model, effort, speed or permission the user names for a request wins over the role. Work you do yourself needs no role.',
   ].join('\n')
 }

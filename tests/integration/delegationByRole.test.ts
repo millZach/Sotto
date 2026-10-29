@@ -20,7 +20,10 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
   const workspace = await workspaceFixture(undefined, { history: true, watcherEnabled: false })
   cleanups.push(workspace.remove)
   // Every provider offers every mode, so only the ceiling narrows a permission.
-  for (const adapter of Object.values(workspace.adapters)) adapter.state.models[0]!.runtimeModes = [...ALL_MODES]
+  for (const adapter of Object.values(workspace.adapters)) {
+    adapter.state.models[0]!.runtimeModes = [...ALL_MODES]
+    adapter.state.models[0]!.speeds = [{ id: 'fast', name: 'Fast' }, { id: 'ultrafast', name: 'Ultrafast' }]
+  }
   if (options.grokModes) workspace.adapters.grok.state.models[0]!.runtimeModes = [...options.grokModes]
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => true, watcherEnabled: false } })
@@ -55,7 +58,7 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
     const binding = workspace.registry.byThread(threadId)!
     const command = workspace.adapters[binding.provider as keyof typeof workspace.adapters].commands.find(item => item.type === 'create-thread' && item.threadId === binding.sessionId)
     if (command?.type !== 'create-thread') throw new Error('not created')
-    return { provider: binding.provider, reasoningEffort: command.reasoningEffort, runtimeMode: command.runtimeMode }
+    return { provider: binding.provider, reasoningEffort: command.reasoningEffort, speed: command.speed ?? null, runtimeMode: command.runtimeMode }
   }
   const delegated = (parent: string) => f.control.shell().host.threads.filter(thread => thread.delegatedBy === parent)
   return { ...f, workspace, service, model, userThread, delegate, ok, created, delegated,
@@ -64,14 +67,17 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
 
 it('starts a thread on its kind of work\'s worker role when the call names nothing else', async () => {
   const f = await fixture({ newThread: 'full-access' }), parent = await f.userThread('full-access')
-  f.setChoices({ 'code-review': { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'auto-accept-edits' } })
+  f.setChoices({ 'code-review': { modelId: f.model('grok').id, reasoningEffort: 'high', speed: 'ultrafast', runtimeMode: 'auto-accept-edits' } })
   const reads = f.reads()
   const result = f.ok(await f.delegate(parent, {}))
   expect(f.reads()).toBe(reads + 1)
-  expect(f.created(result.delegation.thread)).toEqual({ provider: 'grok', reasoningEffort: 'high', runtimeMode: 'auto-accept-edits' })
-  expect(result.role).toMatchObject({ work: 'code-review', named: [] })
+  expect(f.created(result.delegation.thread)).toEqual({ provider: 'grok', reasoningEffort: 'high', speed: 'ultrafast', runtimeMode: 'auto-accept-edits' })
+  expect(result.role).toMatchObject({ work: 'code-review', named: [], speed: 'ultrafast' })
   expect(result.role!.note).toContain('Started as Code review, a worker role in the user\'s Settings.')
   expect(result.role!.note).not.toContain('held')
+  const standard = f.ok(await f.delegate(parent, { speed: null }))
+  expect(f.created(standard.delegation.thread).speed).toBeNull()
+  expect(standard.role).toMatchObject({ named: ['speed'], speed: null })
 })
 
 it('holds a role\'s permission to the narrower of the calling thread\'s own and the new-thread default', async () => {
@@ -97,10 +103,10 @@ it('lets a named provider and model override the role, with effort and permissio
   const f = await fixture({ newThread: 'full-access' }), parent = await f.userThread('full-access')
   f.setChoices({ research: { modelId: f.model('grok').id, reasoningEffort: 'high', runtimeMode: 'auto' } })
   const result = f.ok(await f.delegate(parent, { work: 'research', provider: 'codex', model: f.model('codex').id }))
-  expect(f.created(result.delegation.thread)).toEqual({ provider: 'codex', reasoningEffort: 'high', runtimeMode: 'auto' })
+  expect(f.created(result.delegation.thread)).toEqual({ provider: 'codex', reasoningEffort: 'high', speed: null, runtimeMode: 'auto' })
   expect(result.role).toMatchObject({ work: 'research', named: ['model'] })
   expect(result.role!.note).toContain('which overrides Research for this start only.')
-  expect(result.role!.note).toContain('Its effort and permission came from the role.')
+  expect(result.role!.note).toContain('Its effort, speed and permission came from the role.')
   // A retry with the same key returns the delegation without the role block, and starts nothing new.
   const key = randomUUID(), first = f.ok(await f.delegate(parent, { work: 'research', retry_key: key }))
   expect(first.role).toBeDefined()
@@ -120,10 +126,10 @@ it('still refuses a named permission wider than the ceiling, and a provider or m
 
 it('lists what each kind of work would start on now, held to this thread\'s ceiling', async () => {
   const f = await fixture({ newThread: 'auto' }), parent = await f.userThread('full-access')
-  f.setChoices({ 'computer-use': { modelId: f.model('codex').id, reasoningEffort: 'high' } })
+  f.setChoices({ 'computer-use': { modelId: f.model('codex').id, reasoningEffort: 'high', speed: 'fast' } })
   const listing = await f.service.read(parent, {}) as { status: 'ok'; roles?: { work: string; provider: string; model: string; effort?: string; permission?: string }[] }
   expect(listing.roles?.map(item => item.work)).toEqual(['building', 'ui', 'code-review', 'research', 'computer-use'])
-  expect(listing.roles?.find(item => item.work === 'computer-use')).toEqual({ work: 'computer-use', provider: 'codex', model: f.model('codex').id, effort: 'high', permission: 'auto' })
+  expect(listing.roles?.find(item => item.work === 'computer-use')).toEqual({ work: 'computer-use', provider: 'codex', model: f.model('codex').id, effort: 'high', speed: 'fast', permission: 'auto' })
 })
 
 it('with worker roles off, refuses a new thread that names no provider and model, as before', async () => {

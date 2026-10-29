@@ -230,3 +230,18 @@ it('does not adopt a spare started without fast mode for a first send that turne
   expect(all).toHaveLength(3)
   expect(all[2]![all[2]!.indexOf('--settings') + 1]).toBe('{"fastMode":true,"ultracode":false}')
 })
+
+
+it('applies the speed choice through the Fast flag layer and refuses Ultrafast', async () => {
+  const { f, id } = await fixture()
+  expect((await configure(f, id, { speed: 'fast' })).accepted).toBe(true)
+  expect(await thread(f, id)).toMatchObject({ speed: 'fast', fastMode: true })
+  expect((await settingsFrames(f)).at(-1)).toEqual({ subtype: 'apply_flag_settings', settings: { fastMode: true } })
+  const before = (await settingsFrames(f)).length
+  await expect(configure(f, id, { modelId: 'fixture-model', speed: 'ultrafast' })).rejects.toThrow('This model does not offer ultrafast speed.')
+  expect((await settingsFrames(f)).length).toBe(before)
+  expect((await configure(f, id, { speed: null, fastMode: true })).accepted).toBe(true)
+  expect((await settingsFrames(f)).at(-1)).toEqual({ subtype: 'apply_flag_settings', settings: { fastMode: false } })
+  expect((await thread(f, id)).speed).toBeUndefined()
+  expect((await thread(f, id)).fastMode).toBeUndefined()
+})

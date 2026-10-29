@@ -7,7 +7,7 @@ import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentS
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AnswerGivenEvent } from '../../shared/threadEvents'
 import type { WatcherAsk } from '../../shared/watcherAsks'
-import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentRuntimeMode, AgentThreadOptions, HandoverCounts, ProviderId } from '../../shared/agents'
+import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentRuntimeMode, AgentSpeed, AgentThreadOptions, HandoverCounts, ProviderId } from '../../shared/agents'
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -242,7 +242,8 @@ export interface ThreadSessionDraft {
   readonly workingDirectory?: string | undefined
   readonly reasoningEffort?: string | undefined
   readonly runtimeMode?: AgentRuntimeMode | undefined
-  /** The thread's fast mode choice (ADR-0143), so an early client starts as the first send's would. */
+  /** The thread's speed choice (ADR-0143), so an early client starts as the first send's would. */
+  readonly speed?: AgentSpeed | null | undefined
   readonly fastMode?: boolean | undefined
 }
 /** What an activity subscriber asks of the host it subscribes to. */

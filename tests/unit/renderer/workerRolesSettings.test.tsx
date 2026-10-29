@@ -30,7 +30,10 @@ function state(claudeReady = true, devin = false): AgentState {
         { id: 'codex', connection: 'connected', name: 'Codex', version: '', capabilities: caps }],
       models: [model('claude', 'opus', 'Opus 5.5', FIVE, claudeReady), model('claude', 'sonnet', 'Sonnet 5.5', FIVE, claudeReady), model('claude', 'haiku', 'Haiku 5.5', [], claudeReady),
         model('codex', 'gpt-6.1-sol', 'GPT-6.1 Sol', FIVE), model('codex', 'gpt-6-astra', 'GPT-6 Astra', FIVE), model('codex', 'gpt-6-luna', 'GPT-6 Luna', ['low', 'medium', 'high']),
-        ...devin ? [{ ...model('codex', 'swe-1', 'Devin SWE', FIVE), id: publicProviderEntityId('devin', 'model', 'swe-1'), provider: 'Devin', providerId: 'devin' as const }] : []] },
+        ...devin ? [{ ...model('codex', 'swe-1', 'Devin SWE', FIVE), id: publicProviderEntityId('devin', 'model', 'swe-1'), provider: 'Devin', providerId: 'devin' as const }] : []]
+        // Opus offers Fast the older way, and GPT-6.1 Sol both speeds in Codex's own names (ADR-0143).
+        .map(item => item.name === 'Opus 5.5' ? { ...item, fastMode: {} } : item.name === 'GPT-6.1 Sol'
+          ? { ...item, speeds: [{ id: 'fast' as const, name: 'Fast', description: '2x speed, increased usage' }, { id: 'ultrafast' as const, name: 'Ultrafast', description: '4x speed, highest usage' }] } : item) },
     topLevel: { activeThreadId: null, activeProjectId: null } })
 }
 function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true, devin = false) {
@@ -86,6 +89,28 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
     expect(update).toHaveBeenLastCalledWith({ workerRoles: { building: { modelId: publicProviderEntityId('claude', 'model', 'sonnet'), reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } } })
   })
 
+  it('offers Standard and the model’s own speeds beside Effort, each with its cost as a tooltip, and keeps a speed through a model change', () => {
+    const { update } = show()
+    const speed = within(card('Building')).getByRole('combobox', { name: 'Choose Building’s speed. Now Standard' })
+    expect(speed).toHaveTextContent('Standard')
+    expect(within(card('Research')).getByText('Standard only')).toBeInTheDocument()
+    fireEvent.click(speed)
+    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Standard', 'Fast'])
+    expect(screen.getByRole('option', { name: 'Fast' })).toHaveAttribute('title', 'Up to 2.5x faster output, at twice the price per token.')
+    fireEvent.click(screen.getByRole('option', { name: 'Fast' }))
+    expect(update).toHaveBeenLastCalledWith({ workerRoles: { building: { modelId: publicProviderEntityId('claude', 'model', 'opus'), reasoningEffort: 'xhigh', speed: 'fast', runtimeMode: 'auto-accept-edits' } } })
+    fireEvent.click(within(card('Code review')).getByRole('combobox', { name: /^Choose Code review’s speed/u }))
+    expect(screen.getAllByRole('option').map(option => option.textContent)).toEqual(['Standard', 'Fast', 'Ultrafast'])
+    expect(screen.getByRole('option', { name: 'Ultrafast' })).toHaveAttribute('title', '4x speed, highest usage.')
+    cleanup()
+    // Sonnet offers no speed: the choice stays saved, and the role starts at Standard there.
+    const chosen = show({ building: { modelId: publicProviderEntityId('claude', 'model', 'opus'), reasoningEffort: 'xhigh', speed: 'fast', runtimeMode: 'auto-accept-edits' } })
+    expect(within(card('Building')).getByRole('combobox', { name: 'Choose Building’s speed. Now Fast' })).toHaveTextContent('Fast')
+    fireEvent.click(within(card('Building')).getByRole('combobox', { name: /model/u }))
+    fireEvent.click(screen.getByRole('option', { name: 'Sonnet 5.5' }))
+    expect(chosen.update).toHaveBeenLastCalledWith({ workerRoles: { building: { modelId: publicProviderEntityId('claude', 'model', 'sonnet'), reasoningEffort: 'xhigh', speed: 'fast', runtimeMode: 'auto-accept-edits' } } })
+  })
+
   it('resets every role at once, and opens Agents from a held permission', () => {
     const { update, open } = show({ ui: { modelId: publicProviderEntityId('codex', 'model', 'gpt-6.1-sol'), reasoningEffort: 'high', runtimeMode: 'approval-required' },
       research: { modelId: publicProviderEntityId('codex', 'model', 'gpt-6-luna'), reasoningEffort: 'low', runtimeMode: 'approval-required' } })
@@ -108,7 +133,7 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
     expect(within(orchestrating).getByRole('combobox', { name: /^Choose Watcher’s model\. Now Opus 5\.5/u })).toBeInTheDocument()
     expect(within(orchestrating).getByText('Permissions, Watcher’s own')).toBeInTheDocument()
     expect(orchestrating.querySelector('.worker-role__composer')).toHaveAttribute('aria-hidden', 'true')
-    expect(within(orchestrating).getByText(/Watcher’s composer shows these three\. A change in either place changes both\./u)).toBeInTheDocument()
+    expect(within(orchestrating).getByText(/Watcher’s composer shows the same choices\. A change in either place changes both\./u)).toBeInTheDocument()
   })
 
   it('names Muse among Watcher’s providers only while Muse is not held to Owl on this run, and Cursor while it is not', () => {

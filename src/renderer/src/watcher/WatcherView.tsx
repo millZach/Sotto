@@ -134,6 +134,8 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const roleModel = roleStart === null ? undefined : resolveModel(models, roleStart.modelId)
   const model = models.find(item => item.id === modelId) ?? roleModel ?? models[0]
   const roleEffort = roleStart !== null && model !== undefined && model.id === roleStart.modelId ? roleStart.reasoningEffort ?? undefined : undefined
+  // The role's speed, where the model is the role's; the first message has no bolt of its own (ADR-0091).
+  const roleSpeed = roleStart !== null && model !== undefined && model.id === roleStart.modelId ? roleStart.speed : null
   const reasoning = effort ?? roleEffort ?? model?.defaultReasoningEffort ?? ''
   const efforts = effortChoices(model, reasoning)
   const starting = phase !== 'writing'
@@ -147,7 +149,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
     firstMessage.update({ phase: 'starting', error: null })
     // Main's answer is kept by the window, not here: the room may be gone by the time it comes.
     try {
-      const refusal = room.settle(await room.open({ provider, modelId: model.id, ...(reasoning ? { reasoningEffort: reasoning } : {}) }))
+      const refusal = room.settle(await room.open({ provider, modelId: model.id, ...(reasoning ? { reasoningEffort: reasoning } : {}), ...(roleSpeed ? { speed: roleSpeed } : {}) }))
       firstMessage.update(refusal === null ? { phase: 'started' } : { phase: 'writing', error: refusal })
     } catch {
       firstMessage.update({ phase: 'writing', error: t`Sotto could not start Watcher. Nothing was started, and your message is still here. Try again.` })

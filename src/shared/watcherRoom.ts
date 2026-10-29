@@ -4,7 +4,7 @@ import { watcherIdentitySchema, watcherOperationSchema, watcherParticipantSchema
 import { workerPlacementReceiptSchema } from './workerMachine'
 import { watcherEventSchema } from './watcherNews'
 import { watcherAskSchema } from './watcherAsks'
-import { agentRuntimeModeSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
+import { agentRuntimeModeSchema, agentSpeedSchema, handoverCountsSchema, isVisualMessage, type AgentMessage } from './agents'
 import { watcherKeptStateSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherStateThreadSchema, watcherWaitingOnUserSchema, type WatcherThreadTarget } from './watcher'
 
 /** Private desktop channels. A host may project the same state later without acquiring command authority. */
@@ -37,7 +37,7 @@ const pending = z.object({ id: z.string(), kind: z.enum(['question', 'permission
   openTarget: watcherThreadTargetSchema }).strict()
 export const watcherRoomStateSchema = z.object({
   current: watcherIdentitySchema.nullable(),
-  currentOptions: z.object({ modelId: z.string(), reasoningEffort: z.string().nullable(),
+  currentOptions: z.object({ modelId: z.string(), reasoningEffort: z.string().nullable(), speed: agentSpeedSchema.nullable().optional(),
     runtimeMode: agentRuntimeModeSchema.optional(),
     status: z.enum(['idle', 'running', 'error']), connected: z.boolean() }).strict().nullable(),
   history: z.array(watcherIdentitySchema),
@@ -130,7 +130,7 @@ export const watcherRoomStateSchema = z.object({
     requests: z.array(watcherRequestSchema), receiptPlacements: z.array(z.object({ operationId: z.uuid(), placement: workerPlacementReceiptSchema }).strict()).optional() }).strict().optional(),
 }).strict()
 export const watcherOpenRequestSchema = z.object({ provider: watcherProviderSchema,
-  modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).optional() }).strict()
+  modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).optional(), speed: agentSpeedSchema.nullable().optional() }).strict()
 export const watcherRoomResultSchema = z.union([
   z.object({ status: z.literal('ok'), state: watcherRoomStateSchema }).strict(), watcherRefusalSchema,
 ])

@@ -8,7 +8,7 @@ import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/thread
 import type { AgentConnection } from './AgentContext'
 import { draftThread, UNCONFIRMED_CREATION } from './draftThreads'
 import type { LaterWords } from './interfaceWords'
-import { pendingSettingsStore, unconfirmedKinds } from './pendingSettings'
+import { pendingSettingsStore, threadSpeed, unconfirmedKinds } from './pendingSettings'
 
 /** A creation on its way, handed over the moment it is issued so the thread can be shown without waiting. */
 export interface ThreadCreationStart {
@@ -62,8 +62,8 @@ export function unusedNewThread(state: AgentState, project: AgentProject): Agent
     && thread.modelId === modelId && (reasoningEffort === undefined || (thread.reasoningEffort ?? selectedModel?.defaultReasoningEffort) === reasoningEffort)
     && (permission.runtimeMode === undefined || thread.runtimeMode === permission.runtimeMode)
     && (permission.providerMode === undefined || thread.providerMode === permission.providerMode)
-    // A new thread starts with fast mode off (ADR-0143), so one the user turned it on for is not reused as new.
-    && thread.fastMode !== true
+    // A new thread starts at Standard speed (ADR-0143), so one the user chose a faster speed for is not reused as new.
+    && threadSpeed(thread) === null
     && (thread.summary?.messageCount ?? thread.messages.length) === 0)
 }
 

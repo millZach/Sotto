@@ -33,7 +33,7 @@ His notes along the way set the brief: the composer was "still too crowded"; eff
 
 **6. The dots stop the turn.** While a turn runs, the lit dots bounce, one after another, and that is the sign that it runs, in place of the light round Stop. The dots then hold Stop: pointing at them or reaching them with Tab shows a Stop button over them, named as Stop is named today. Where a provider cannot change a started thread and so draws no dots, and in the slim composer, which hides them, Stop keeps a small button of its own in the pill.
 
-**7. Less in the line.** Fast mode keeps its bolt. Watch on send is not drawn; Watch stays in the pane header. The model's chevron and the key caps go. The branch toolbar and the queue stay where they are, under and over the pill.
+**7. Less in the line.** Speed keeps its bolt (ADR-0143): a press cycles the speeds the model offers, with a muted outline for Standard, a filled accent for Fast and a small 2 or second bolt for Ultra fast. Only the glyph is drawn; the state and the provider's words live in its accessible name and tooltip. Watch on send is not drawn; Watch stays in the pane header. The model's chevron and the key caps go. The branch toolbar and the queue stay where they are, under and over the pill.
 
 **8. Motion.** The suggested rings pulse and the dots bounce on `transform` alone, pause while the window is hidden, and stop with reduced motion, the system's or Sotto's own.
 

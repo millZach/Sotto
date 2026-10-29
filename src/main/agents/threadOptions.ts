@@ -1,21 +1,37 @@
-import { agentAttachmentHandlesSchema, ATTACHED_FILES_NEED_A_FOLDER, imagesNotReadRefusal, isImageAttachment, SCREENSHOT_WRONG_TYPE, type AgentAttachmentHandle, type AgentHostSnapshot, type AgentThreadOptions } from '../../shared/agents'
+import { agentAttachmentHandlesSchema, ATTACHED_FILES_NEED_A_FOLDER, imagesNotReadRefusal, isImageAttachment, SCREENSHOT_WRONG_TYPE, type AgentAttachmentHandle, type AgentHostSnapshot, type AgentSpeed, type AgentThreadOptions } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 
 /** Validate against the active provider's advertised model, never a substitute. */
-export function validateThreadOptions(snapshot: AgentHostSnapshot, options: AgentThreadOptions, currentModelId?: string): void {
+export function validateThreadOptions(snapshot: AgentHostSnapshot, options: AgentThreadOptions, currentModelId?: string, keptSpeed = false): void {
   const model = resolveModel(snapshot.models, options.modelId ?? currentModelId)
   if (!model?.ready) throw new Error('That model or account is unavailable. Choose a ready model; Sotto will not switch your account.')
   if (options.reasoningEffort !== undefined && !model.reasoningEfforts?.includes(options.reasoningEffort)) throw new Error('That reasoning level is not supported by this model.')
   if (options.runtimeMode !== undefined && !model.runtimeModes?.includes(options.runtimeMode)) throw new Error('That permission mode is not supported by this provider.')
   if (options.providerMode !== undefined && !model.providerModes?.some(mode => mode.id === options.providerMode)) throw new Error('That permission mode is not supported by this provider.')
-  // Turning fast mode on needs a model that has it. A change of model keeps the thread's choice whichever model it lands
-  // on (ADR-0143): that model runs at normal speed and a later model with fast mode takes it up again.
-  if (options.fastMode === true && options.modelId === undefined && !model.fastMode) throw new Error('This model does not offer fast mode.')
+  // Restoring a saved choice keeps it even where it cannot run (ADR-0143). An explicit speed change needs support.
+  const speed = speedAfterChange(options)
+  if (!keptSpeed && speed && (options.speed !== undefined || options.modelId === undefined) && !speedRuns(snapshot, model.id, speed)) {
+    throw new Error(speed === 'fast' ? 'This model does not offer fast mode.' : 'This model does not offer ultrafast speed.')
+  }
 }
 
-/** Whether fast mode runs for a thread on this model: the user turned it on and the model offers it (ADR-0143). */
+/** An explicit speed, including null for standard, wins over the old boolean alias. */
+export function speedAfterChange(options: Pick<AgentThreadOptions, 'speed' | 'fastMode'>, current: AgentSpeed | null = null): AgentSpeed | null {
+  if (options.speed !== undefined) return options.speed
+  if (options.fastMode !== undefined) return options.fastMode ? 'fast' : null
+  return current
+}
+
+/** The selected speed runs only where the model advertises it; older catalogs advertise Fast through fastMode. */
+export function speedRuns(snapshot: Pick<AgentHostSnapshot, 'models'>, modelId: string, speed: AgentSpeed | null | undefined): AgentSpeed | null {
+  const model = resolveModel(snapshot.models, modelId)
+  if (!speed || !model) return null
+  return (model.speeds ? model.speeds.some(candidate => candidate.id === speed) : speed === 'fast' && model.fastMode !== undefined) ? speed : null
+}
+
+/** Compatibility for callers with the old fast-mode choice. Ultrafast is never Fast. */
 export function fastModeRuns(snapshot: Pick<AgentHostSnapshot, 'models'>, modelId: string, fastMode: boolean | undefined): boolean {
-  return fastMode === true && resolveModel(snapshot.models, modelId)?.fastMode !== undefined
+  return speedRuns(snapshot, modelId, fastMode ? 'fast' : null) === 'fast'
 }
 
 /**

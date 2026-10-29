@@ -9,6 +9,7 @@ import type { AppContextValue } from '../../../src/renderer/src/state/AppContext
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { pendingSettingsStore } from '../../../src/renderer/src/agents/pendingSettings'
+import { ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
 import { WorkerRolesSettings } from '../../../src/renderer/src/features/settings/WorkerRolesSettings'
 import { WatcherRoomProvider } from '../../../src/renderer/src/watcher/watcherRoom'
 import { agentContextFixture } from '../../fixtures/agentContext'
@@ -26,15 +27,17 @@ const caps = { projects: true, threads: true, submit: true, observe: true, quest
 const MODES = ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] as const
 const FIVE = ['low', 'medium', 'high', 'xhigh', 'max']
 const model = (provider: 'claude' | 'codex', native: string, name: string): AgentModel => ({ id: publicProviderEntityId(provider, 'model', native), name,
-  provider: provider === 'claude' ? 'Claude Code' : 'Codex', providerId: provider, ready: true, reasoningEfforts: FIVE, defaultReasoningEffort: 'medium', runtimeModes: [...MODES] })
+  provider: provider === 'claude' ? 'Claude Code' : 'Codex', providerId: provider, ready: true, reasoningEfforts: FIVE, defaultReasoningEffort: 'medium', runtimeModes: [...MODES],
+  // Opus and Sol offer Fast (ADR-0143); Sonnet offers none here.
+  ...(native !== 'sonnet' ? { speeds: [{ id: 'fast' as const, name: 'Fast' }] } : {}) })
 const OPUS = publicProviderEntityId('claude', 'model', 'opus'), SONNET = publicProviderEntityId('claude', 'model', 'sonnet'), SOL = publicProviderEntityId('codex', 'model', 'gpt-6.1-sol')
 const identity: WatcherIdentity = { target: { hostId: HOST, threadId: 'watcher' }, projectId: 'workshop', provider: 'claude', creationOperationId: '7a4c2e1f-0b3d-4e5f-8a9b-1c2d3e4f5a6b', createdAt: at }
 
-function agentState(watcherModel = OPUS): AgentState {
+function agentState(watcherModel = OPUS, speed?: 'fast'): AgentState {
   const state = threadsStateFixture({ cloneOverrides: false, configuration: { ...defaultAgentConfiguration(), enabledProviders: ['claude', 'codex'] },
     host: { connected: true, name: 'Agents', version: '', capabilities: caps, projects: [],
       models: [model('claude', 'opus', 'Opus 5.5'), model('claude', 'sonnet', 'Sonnet 5.5'), model('codex', 'gpt-6.1-sol', 'GPT-6.1 Sol')],
-      threads: [{ id: 'watcher', kind: 'watcher', title: 'Watcher', projectId: 'workshop', modelId: watcherModel, reasoningEffort: 'high', runtimeMode: 'approval-required', providerId: 'claude', status: 'idle', requests: [], messages: [] }] },
+      threads: [{ id: 'watcher', kind: 'watcher', title: 'Watcher', projectId: 'workshop', modelId: watcherModel, reasoningEffort: 'high', runtimeMode: 'approval-required', providerId: 'claude', status: 'idle', requests: [], messages: [], ...(speed ? { speed } : {}) }] },
     topLevel: { activeThreadId: null, activeProjectId: null } })
   state.hostId = HOST
   return state
@@ -42,19 +45,21 @@ function agentState(watcherModel = OPUS): AgentState {
 const room: WatcherRoomState = { current: identity, currentOptions: { modelId: OPUS, reasoningEffort: 'high', runtimeMode: 'approval-required', status: 'idle', connected: true },
   history: [], runtimeMode: 'approval-required', requests: [], watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: at }
 
-function show(watcherModel = OPUS) {
-  const state = agentState(watcherModel)
+function show(watcherModel = OPUS, speed?: 'fast', composer = false, quiet = false) {
+  const state = agentState(watcherModel, speed)
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)
   vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, command))
+  const updateSettings = vi.fn()
   vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'settings', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: { owlFeatures: { watcher: true, 'worker-roles': true } }, actions: { navigate: vi.fn(), updateSettings: vi.fn() } } as unknown as AppContextValue)
+    update: { owlFeatures: { watcher: true, 'worker-roles': true } }, actions: { navigate: vi.fn(), updateSettings } } as unknown as AppContextValue)
   const ok = (state: WatcherRoomState): WatcherRoomResult => ({ status: 'ok', state })
   const bridge = { get: vi.fn(async () => ok(room)), open: vi.fn(async () => ok(room)), prepareStopAll: vi.fn(), stopAll: vi.fn(),
     setPermission: vi.fn(async () => ok(room)), onChanged: vi.fn(() => () => undefined) }
   const update = vi.fn<(patch: SettingsPatch) => Promise<boolean>>(async () => true)
   render(<WatcherRoomProvider bridge={bridge as unknown as WatcherBridge}>
-    <WorkerRolesSettings settings={DEFAULT_SETTINGS} platform="win32" onUpdateSettings={update} onOpenSection={vi.fn()} /></WatcherRoomProvider>)
-  return { command, bridge, update }
+    {composer ? <ThreadOptions thread={state.host.threads[0]!} state={state} command={command} watcher quiet={quiet ? { effortScore: 0 } : undefined} />
+      : <WorkerRolesSettings settings={DEFAULT_SETTINGS} platform="win32" onUpdateSettings={update} onOpenSection={vi.fn()} />}</WatcherRoomProvider>)
+  return { command, bridge, update, updateSettings }
 }
 const orchestrating = () => screen.getByRole('article', { name: 'Orchestrating' })
 
@@ -93,5 +98,46 @@ describe('Orchestrating while Watcher runs: one choice in two places (#1041)', (
     expect(update).toHaveBeenLastCalledWith({ workerRoles: {} })
     await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'configure-thread', threadId: 'watcher', modelId: OPUS, reasoningEffort: 'high' })))
     expect(screen.getByText('The role you chose is back on its default.')).toBeInTheDocument()
+  })
+
+  it('sets Watcher’s speed from the card as its bolt does, and Reset all puts it back on Standard', async () => {
+    const { command, update } = show()
+    fireEvent.click(await within(orchestrating()).findByRole('combobox', { name: 'Choose Watcher’s speed. Now Standard' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Fast' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'watcher', speed: 'fast' }))
+    expect(update).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: OPUS, reasoningEffort: 'high', speed: 'fast' } } })
+    cleanup()
+    const fast = show(OPUS, 'fast')
+    expect(await within(orchestrating()).findByRole('combobox', { name: 'Choose Watcher’s speed. Now Fast' })).toBeInTheDocument()
+    expect(orchestrating().querySelector('.worker-role__chip--speed')).toHaveAttribute('data-speed', 'fast')
+    fireEvent.click(await screen.findByRole('button', { name: 'Reset all roles to their defaults. 1 role is your choice' }))
+    await waitFor(() => expect(fast.command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'watcher', speed: null }))
+  })
+
+  it('saves the bolt in Watcher’s composer for the next Watcher, and keeps the speed through a model change there', async () => {
+    const { updateSettings } = show(OPUS, undefined, true)
+    fireEvent.click(await screen.findByRole('button', { name: 'Thread speed: Standard' }))
+    expect(updateSettings).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: OPUS, reasoningEffort: 'high', speed: 'fast' } } })
+    cleanup()
+    const kept = show(OPUS, 'fast', true)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    fireEvent.click(screen.getByRole('option', { name: /^Sonnet 5\.5/u }))
+    expect(kept.updateSettings).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: SONNET, reasoningEffort: 'medium', speed: 'fast' } } })
+  })
+
+  it('keeps the shared speed when the quiet pill changes effort', () => {
+    const { command, updateSettings } = show(OPUS, 'fast', true, true)
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning' }), { key: 'ArrowRight' })
+    expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'watcher', reasoningEffort: 'xhigh' })
+    expect(updateSettings).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: OPUS, reasoningEffort: 'xhigh', speed: 'fast' } } })
+  })
+
+  it('starts another provider’s Watcher on the shared speed where its model offers it', async () => {
+    const { bridge, updateSettings } = show(OPUS, 'fast', true)
+    fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    fireEvent.click(screen.getByRole('tab', { name: 'Codex' }))
+    fireEvent.click(screen.getByRole('option', { name: 'GPT-6.1 Sol' }))
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledWith({ provider: 'codex', modelId: SOL, speed: 'fast' }))
+    expect(updateSettings).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: SOL, reasoningEffort: 'medium', speed: 'fast' } } })
   })
 })

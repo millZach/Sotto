@@ -837,3 +837,9 @@ marketing/launch-video/public/takes/
 marketing/launch-video/public/stills/
 marketing/launch-video/src/takes.json
 marketing/launch-video/out/
+
+artifacts/agent-speed/*
+!artifacts/agent-speed/composer-dark.png
+!artifacts/agent-speed/composer-light.png
+!artifacts/agent-speed/roles-dark.png
+!artifacts/agent-speed/roles-light.png

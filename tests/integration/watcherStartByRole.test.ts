@@ -22,7 +22,9 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
   // Codex offers every mode and a second model, so only the ceiling narrows a permission and a named model can differ.
   const codex = workspace.adapters.codex.state
   codex.models[0]!.runtimeModes = [...ALL_MODES]
+  codex.models[0]!.speeds = [{ id: 'fast', name: 'Fast' }, { id: 'ultrafast', name: 'Ultrafast' }]
   codex.models.push({ id: 'fake:other', provider: 'Fake', name: 'Synthetic other model', ready: true,
+    speeds: [{ id: 'fast', name: 'Fast' }, { id: 'ultrafast', name: 'Ultrafast' }],
     reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium', runtimeModes: [...options.otherModes ?? ALL_MODES] })
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
     credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => true, watcherEnabled: true } })
@@ -58,7 +60,7 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
     const sessionId = workspace.registry.byThread(threadId)!.sessionId
     const command = workspace.adapters.codex.commands.find(item => item.type === 'create-thread' && item.threadId === sessionId)
     if (command?.type !== 'create-thread') throw new Error('not created')
-    return { modelId: command.modelId, reasoningEffort: command.reasoningEffort, runtimeMode: command.runtimeMode }
+    return { modelId: command.modelId, reasoningEffort: command.reasoningEffort, speed: command.speed ?? null, runtimeMode: command.runtimeMode }
   }
   const sends = () => workspace.adapters.codex.commands.filter(item => item.type === 'send' && item.text === 'synthetic_role_prompt_5c1e').length
   return { ...f, workspace, service, tools, id, requestId, base, other, project, start, call, ok, workers, sends, created,
@@ -67,12 +69,13 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
 
 it('starts a worker on its role\'s chosen model, effort and permission, reading Settings once for the start', async () => {
   const f = await fixture({ newThread: 'full-access' })
-  f.setChoices({ building: { modelId: f.other.id, reasoningEffort: 'high', runtimeMode: 'auto' } })
+  f.setChoices({ building: { modelId: f.other.id, reasoningEffort: 'high', speed: 'ultrafast', runtimeMode: 'auto' } })
   const reads = f.reads()
   const result = f.ok(await f.call(f.start({ role: 'building' })))
   expect(result.effectiveChoices.modelId).toBe(f.other.id)
-  expect(f.created(result.target.threadId)).toMatchObject({ reasoningEffort: 'high', runtimeMode: 'auto' })
-  expect(result.role).toMatchObject({ id: 'building', named: [] })
+  expect(result.effectiveChoices.speed).toBe('ultrafast')
+  expect(f.created(result.target.threadId)).toMatchObject({ reasoningEffort: 'high', speed: 'ultrafast', runtimeMode: 'auto' })
+  expect(result.role).toMatchObject({ id: 'building', named: [], speed: 'ultrafast' })
   expect(result.role!.note).toContain('Started as Building, a worker role in the user\'s Settings.')
   expect(result.role!.note).toContain('Synthetic other model')
   expect(result.role!.note).not.toContain('held')
@@ -81,6 +84,9 @@ it('starts a worker on its role\'s chosen model, effort and permission, reading 
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   f.service.state()
   expect(f.reads()).toBe(reads + 1)
+  const standard = f.ok(await f.call(f.start({ role: 'building', speed: null })))
+  expect(f.created(standard.target.threadId).speed).toBeNull()
+  expect(standard.role).toMatchObject({ named: ['speed'], speed: null })
 })
 
 it('starts on the role\'s default in force when the user chose nothing for it', async () => {
@@ -118,7 +124,7 @@ it('lets a named model override the role for this start only, with effort and pe
   expect(f.created(result.target.threadId)).toMatchObject({ reasoningEffort: 'high', runtimeMode: 'auto' })
   expect(result.role).toMatchObject({ id: 'building', named: ['model'] })
   expect(result.role!.note).toContain('(Synthetic other model, where Building uses Test model), which overrides Building for this start only.')
-  expect(result.role!.note).toContain('Its effort and permission came from the role.')
+  expect(result.role!.note).toContain('Its effort, speed and permission came from the role.')
 })
 
 it('still refuses a named permission wider than the new-thread default, and starts nothing', async () => {

@@ -24,7 +24,7 @@ afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) awai
 const flag = (args: string[], name: string) => args[args.indexOf(name) + 1]
 const NAMES: Record<WorkerKind, string> = { building: 'Building', ui: 'UI', 'code-review': 'Code review', research: 'Research', 'computer-use': 'Computer use' }
 function role(kind: WorkerKind, provider: ProviderId, model: string, reasoningEffort: string | null, runtimeMode: AgentRuntimeMode | undefined): SubagentRole {
-  return { kind, name: NAMES[kind], what: 'Synthetic work.', provider, model, modelName: `Synthetic ${model}`, reasoningEffort, runtimeMode }
+  return { kind, name: NAMES[kind], what: 'Synthetic work.', provider, model, modelName: `Synthetic ${model}`, reasoningEffort, speed: null, runtimeMode }
 }
 /** `sotto_delegate` as main offers it to a thread that may delegate: a second-level delegated thread is offered none. */
 function delegateTool(offered = true): ScopedThreadTools {

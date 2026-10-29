@@ -176,7 +176,7 @@ export class ClaudeSubscriptionClient implements SubscriptionClient {
       return parsed.data.response.response.models.map(model => ({
         id: model.value, name: versionedName(model),
         reasoningEfforts: model.supportsEffort === false ? [] : withUltracode(orderReasoningEfforts(model.supportedEffortLevels ?? [])),
-        ...(model.supportsFastMode === true ? { fastMode: {} } : {}),
+        ...(model.supportsFastMode === true ? { speeds: [{ id: 'fast' as const, name: 'Fast' }], fastMode: {} } : {}),
       }))
     }
     throw new Error('Claude Code did not report an available model catalog.')

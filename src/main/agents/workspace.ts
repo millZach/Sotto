@@ -5320,7 +5320,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         await this.launchProfiles.assertCreationBinding(command.threadId, command.projectId, model.providerId)
       }
       this.requireCreation(model.providerId)
+      const speed = command.speed !== undefined ? command.speed : command.fastMode ? 'fast' : null
       const thread: AgentThread = { hostId: this.hostId, id: command.threadId, projectId: command.projectId, title: command.title, modelId: command.modelId,
+        ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}),
         ...(commandProfile ? { kind: 'watcher' } : {}),
         titleSource: command.titleSource ?? 'default',
         ...(model.providerId ? { providerId: model.providerId } : {}),
@@ -5385,8 +5387,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (command.runtimeMode !== undefined) thread.runtimeMode = command.runtimeMode
       if (command.providerMode !== undefined) thread.providerMode = command.providerMode
       // The choice stays through a change of model (ADR-0143); only the toggle itself sets it.
-      if (command.fastMode === true) thread.fastMode = true
-      else if (command.fastMode === false) delete thread.fastMode
+      if (command.speed !== undefined || command.fastMode !== undefined) {
+        const speed = command.speed !== undefined ? command.speed : command.fastMode ? 'fast' : null
+        if (speed) thread.speed = speed
+        else delete thread.speed
+        if (speed === 'fast') thread.fastMode = true
+        else delete thread.fastMode
+      }
       this.dirty = true
       try { await this.flush() }
       catch (error) { Object.keys(thread).forEach(key => { delete (thread as unknown as Record<string, unknown>)[key] }); Object.assign(this.touched(thread), previous); throw error }
@@ -5412,7 +5419,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           }
           preparedSkills = skills
         }
-        validateThreadOptions(this.state.snapshot, thread)
+        validateThreadOptions(this.state.snapshot, thread, undefined, /* keptSpeed */ true)
         this.requireCreation(thread.providerId)
         const priorPhase = creation.phase
         creation.phase = 'starting'; this.touched(thread).nativeSessionStarted = true; this.dirty = true
@@ -5440,7 +5447,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
             ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
             ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}),
             ...(thread.providerMode ? { providerMode: thread.providerMode } : {}),
-            ...(thread.fastMode ? { fastMode: true } : {}) }
+            ...(thread.speed ? { speed: thread.speed } : {}), ...(thread.fastMode ? { fastMode: true } : {}) }
           result = await (watcherGuard && this.inner.executeFromWatcher ? this.inner.executeFromWatcher(createCommand, watcherGuard) : this.inner.execute(createCommand))
         } catch (error) { await rejected(); throw error }
         if (!result.accepted && !result.uncertain) { await rejected(); throw new Error('The provider rejected thread creation. Check its connection and settings, then retry your prompt.') }
@@ -5589,7 +5596,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const workingDirectory = shared ? await existingWorkingDirectory(resolveThreadWorkingDirectory(thread, project)) : undefined
       return start.call(this.inner, threadId, { modelId: thread.modelId, ...(workingDirectory ? { workingDirectory } : {}),
         ...(thread.reasoningEffort ? { reasoningEffort: thread.reasoningEffort } : {}),
-        ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.fastMode ? { fastMode: true } : {}) })
+        ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.speed ? { speed: thread.speed } : {}), ...(thread.fastMode ? { fastMode: true } : {}) })
     }))
   }
   /**

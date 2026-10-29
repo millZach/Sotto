@@ -2,6 +2,7 @@
 // Fast mode on a thread that has not sent yet (ADR-0143): the composer's toggle saves the choice on Sotto's own record,
 // a change of model keeps it, it outlives a restart, and the first send creates the provider's thread with it.
 import { describe, expect, it } from 'vitest'
+import type { AgentSpeed } from '../../../src/shared/agents'
 
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 import { cleanup, fixture, send } from '../../fixtures/workspaceTestFixture'
@@ -9,21 +10,43 @@ import { cleanup, fixture, send } from '../../fixtures/workspaceTestFixture'
 type Fixture = Awaited<ReturnType<typeof fixture>>
 
 /** Codex offers fast mode on its first model and not on a second. */
-async function draft(f: Fixture): Promise<{ fast: string; plain: string }> {
+async function draft(f: Fixture, speed?: AgentSpeed): Promise<{ fast: string; plain: string }> {
   const codex = f.adapters.codex.state
   codex.models[0]!.fastMode = { description: '1.5x speed, increased usage' }
+  codex.models[0]!.speeds = [{ id: 'fast', name: 'Fast' }, { id: 'ultrafast', name: 'Ultrafast' }]
   codex.models.push({ ...codex.models[0]!, id: 'fake:plain', name: 'Plain model' })
   delete codex.models[1]!.fastMode
+  delete codex.models[1]!.speeds
   const snapshot = await f.host.connect()
   const project = snapshot.projects.find(project => project.providerId === 'codex')!
   const fast = snapshot.models.find(model => model.providerId === 'codex' && model.fastMode)!.id
   const plain = snapshot.models.find(model => model.providerId === 'codex' && !model.fastMode)!.id
-  await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'local', projectId: project.id, title: 'New task', modelId: fast })
+  await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'local', projectId: project.id, title: 'New task', modelId: fast, ...(speed ? { speed } : {}) })
   return { fast, plain }
 }
 const shown = (f: { host: Fixture['host'] }) => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!
 
 describe('fast mode before the first send', () => {
+  it('persists ultra fast before first send and clears it through the legacy toggle', async () => {
+    const f = await fixture()
+    await draft(f, 'ultrafast')
+    expect(shown(f)).toMatchObject({ speed: 'ultrafast', nativeSessionStarted: false })
+    expect(shown(f).fastMode).toBeUndefined()
+    await f.stop()
+    const reopened = await workspaceFixture(f.root, { adapters: f.adapters }); cleanup.push(reopened.stop)
+    await reopened.host.connect()
+    expect(shown(reopened).speed).toBe('ultrafast')
+    await reopened.host.execute(send())
+    expect(reopened.adapters.codex.commands.find(command => command.type === 'create-thread')).toMatchObject({ speed: 'ultrafast' })
+    // A separate unsent draft verifies older clients can clear a named speed with fastMode: false.
+    const clear = await fixture()
+    await draft(clear)
+    await clear.host.execute({ type: 'configure-thread', commandId: 'ultra', threadId: 'local', speed: 'ultrafast' })
+    await clear.host.execute({ type: 'configure-thread', commandId: 'off', threadId: 'local', fastMode: false })
+    expect(shown(clear).speed).toBeUndefined()
+    expect(shown(clear).fastMode).toBeUndefined()
+  })
+
   it('starts off, keeps the choice through a model without it, and outlives a restart', async () => {
     const f = await fixture()
     const { fast, plain } = await draft(f)

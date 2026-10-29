@@ -2,11 +2,11 @@ import { createHash, randomUUID } from 'node:crypto'
 import { join, resolve } from 'node:path'
 import { z } from 'zod'
 import { isThreadProviderConnected, lastUserMessageIdOf, providerIdSchema, threadTakesSottoTools,
-  type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
+  type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentThread } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
-import { capRuntimeMode, roleInForce, roleStartNote, startFromRole, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
+import { capRuntimeMode, fitSpeed, roleInForce, roleStartNote, startFromRole, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
 import { countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning } from '../../shared/workingThreads'
 import { workerMachineHostId, type WorkerMachineSetting, type WorkerPlacementReceipt } from '../../shared/workerMachine'
@@ -207,7 +207,7 @@ export const REMOTE_NO_BRANCH = (machine: string): string => `Sotto on ${machine
  */
 export const DELEGATION_FOLLOWS_NEW_WORKER_MACHINE = false
 /** A start's worker role as the `delegate` result says it (#1041). Never saved: a retry's result has none. */
-interface RoleReceipt { readonly work: DelegationWork; readonly named: RoleField[]; readonly note: string }
+interface RoleReceipt { readonly work: DelegationWork; readonly named: RoleField[]; readonly speed: AgentSpeed | null; readonly note: string }
 
 const now = (): string => new Date().toISOString()
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex')
@@ -331,7 +331,7 @@ type RefusedDelegation = z.infer<typeof refusedSchema>
 interface DelegatedStart {
   /** A title the delegating thread gave is a deliberate name, kept as a user's is; without one, Sotto's naming applies. */
   readonly projectId: string; readonly title: string; readonly titleSource: 'user' | 'default'; readonly modelId: string; readonly reasoningEffort?: string
-  readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string; readonly workingCopy: 'shared' | 'independent'
+  readonly speed: AgentSpeed | null; readonly runtimeMode?: AgentRuntimeMode; readonly providerMode?: string; readonly workingCopy: 'shared' | 'independent'
   /** The move that landed the delegating thread's branch for this thread's worktree (#1033). */
   readonly startFromMove?: string
   /**
@@ -1531,11 +1531,12 @@ export class DelegationService {
     const named = input.provider !== undefined && input.model !== undefined
     let byRole: RoleStart | undefined
     if (this.options.roles && (named || input.provider === undefined && input.model === undefined)) {
-      byRole = startFromRole(input.work, this.options.roles(), snapshot.models, { ...(named ? { modelId: input.model } : {}), reasoningEffort: input.effort, runtimeMode: input.permission })
+      byRole = startFromRole(input.work, this.options.roles(), snapshot.models, { ...(named ? { modelId: input.model } : {}), reasoningEffort: input.effort, speed: input.speed, runtimeMode: input.permission })
       if (!byRole.modelId) refuse('PROVIDER_UNAVAILABLE', 'No ready model can do that kind of work. Connect a provider in Settings, under Providers. Nothing was started.')
     } else if (!named) refuse('INVALID_INPUT', `Name the provider and model for a new thread. ${this.readyModels(snapshot, input.provider, where)} Nothing was started.`)
     const model = resolveModel(snapshot.models, byRole?.modelId ?? input.model!)
     if (!model?.ready || named && model.providerId !== input.provider) refuse('PROVIDER_UNAVAILABLE', `That model is not ready on ${where}. ${this.readyModels(snapshot, input.provider, where)} Nothing was started.`)
+    if (input.speed && fitSpeed(input.speed, model) !== input.speed) refuse('INVALID_INPUT', 'Choose a speed this model offers. Nothing was started.')
     // Ultracode is the user's own choice in a thread, never a delegating agent's (ADR-0148).
     const efforts = withoutUltracode(model.reasoningEfforts ?? [])
     const roleEffort = byRole && input.effort === undefined && byRole.reasoningEffort && efforts.includes(byRole.reasoningEffort) ? byRole.reasoningEffort : undefined
@@ -1559,9 +1560,9 @@ export class DelegationService {
     this.touched(record)
     const start: DelegatedStart = { projectId: project.id, title: input.title ?? DELEGATION_WORK_TITLES[input.work], titleSource: input.title ? 'user' : 'default',
       // A role's own choice may name a long-context variant the catalog lists under its base, so its ID is kept.
-      modelId: byRole && !named ? byRole.modelId! : model.id, ...(effort ? { reasoningEffort: effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared',
+      modelId: byRole && !named ? byRole.modelId! : model.id, speed: byRole ? byRole.speed : input.speed ?? null, ...(effort ? { reasoningEffort: effort } : {}), ...permission, workingCopy: input.working_copy ?? 'shared',
       ...(this.options.bringBack === true && input.working_copy === 'independent' && callerBranch(caller) ? { baseBranch: callerBranch(caller)! } : {}) }
-    const role: RoleReceipt | undefined = byRole ? { work: input.work, named: [...byRole.named], note: roleStartNote(byRole, snapshot.models, fromRole?.held) } : undefined
+    const role: RoleReceipt | undefined = byRole ? { work: input.work, named: [...byRole.named], speed: byRole.speed, note: roleStartNote(byRole, snapshot.models, fromRole?.held) } : undefined
     return { record, retry: false, start, ...(role ? { role } : {}) }
   }
   /**
@@ -1585,7 +1586,7 @@ export class DelegationService {
     if (record.action === 'start' && start) {
       try {
         const created = await this.options.control.commandFromDelegation({ type: 'create-thread', threadId: record.delegatedThreadId, projectId: start.projectId,
-          title: start.title, titleSource: start.titleSource, modelId: start.modelId, workingCopy: start.workingCopy,
+          title: start.title, titleSource: start.titleSource, modelId: start.modelId, ...(start.speed ? { speed: start.speed } : {}), workingCopy: start.workingCopy,
           // A start from the delegating thread's branch cuts its worktree from the moved branch; any other new worktree from that branch (#1030).
           ...start.startFromMove ? { startFromMove: start.startFromMove, ...start.madeFrom ? { madeFrom: start.madeFrom } : {} } : start.baseBranch ? { baseBranch: start.baseBranch } : {},
           ...start.check ? { check: true as const } : {},
@@ -2148,7 +2149,8 @@ export class DelegationService {
     // Those started on another machine through the desktop (#1316), with the machine, as last read there.
     const elsewhere = [...this.options.relay?.list(caller.id) ?? [], ...this.options.remote?.list(caller.id) ?? []]
     const ready = this.ready(snapshot).map(model => ({ provider: model.providerId!, model: model.id, name: model.name,
-      efforts: withoutUltracode(model.reasoningEfforts ?? []), permissions: model.runtimeModes ?? [] }))
+      efforts: withoutUltracode(model.reasoningEfforts ?? []),
+      speeds: model.speeds ?? (model.fastMode ? [{ id: 'fast', name: 'Fast', ...model.fastMode }] : []), permissions: model.runtimeModes ?? [] }))
     // On a headless host (#1310), the new-thread default it holds starts to, and why when it holds them to Ask for approval.
     const hold = this.options.newThreadCeiling?.()
     return { status: 'ok' as const, delegations: own, ...(elsewhere.length ? { onOtherMachines: elsewhere } : {}), models: ready, ...(this.options.roles ? { roles: this.roles(caller, snapshot, this.options.roles()) } : {}),
@@ -2166,7 +2168,7 @@ export class DelegationService {
     } catch (error) { return error instanceof Refusal ? error.result : delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read the machines just now. Nothing was changed.') }
   }
   /**
-   * What each kind of work would start on now with nothing named (#1041): the worker role's model, effort and permission,
+   * What each kind of work would start on now with nothing named (#1041): the worker role's model, effort, speed and permission,
    * held to this thread's ceiling. A kind no ready model can do is left out.
    */
   private roles(caller: AgentThread, snapshot: AgentHostSnapshot, choices: WorkerRoleChoices) {
@@ -2175,7 +2177,7 @@ export class DelegationService {
       if (!start) return []
       let permission: AgentRuntimeMode | undefined
       try { permission = start.runtimeMode ? this.heldToCeiling(start.runtimeMode, start.model, caller, snapshot.models)?.mode : undefined } catch { permission = undefined }
-      return [{ work, provider: start.model.providerId, model: start.modelId, ...(start.reasoningEffort ? { effort: start.reasoningEffort } : {}), ...(permission ? { permission } : {}) }]
+      return [{ work, provider: start.model.providerId, model: start.modelId, speed: start.speed, ...(start.reasoningEffort ? { effort: start.reasoningEffort } : {}), ...(permission ? { permission } : {}) }]
     })
   }
   /** Whether the thread's running turn is this brief's own. */

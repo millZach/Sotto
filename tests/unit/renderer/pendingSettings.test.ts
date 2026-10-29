@@ -14,7 +14,7 @@ function state(thread: Partial<AgentThread> = {}, error: string | null = null, u
       threads: [{ id: 'thread', providerId: 'codex', projectId: 'project', title: 'Work', modelId: 'model', status: 'idle', messages: [], requests: [], runtimeMode: 'approval-required', ...thread }] },
     topLevel: { activeThreadId: 'thread', activeProjectId: null, error, ...(unconfirmed ? { unconfirmedSettings: unconfirmed } : {}) } })
 }
-const drawn = (permissions: string, effort = 'low', fast = 'off'): SettingValues => ({ model: 'model', effort, permissions, fast })
+const drawn = (permissions: string, effort = 'low', fast = 'standard'): SettingValues => ({ model: 'model', effort, permissions, fast })
 const settle = async (): Promise<void> => { for (let index = 0; index < 5; index += 1) await Promise.resolve() }
 const lost = 'Codex did not confirm the change, and the session stopped.'
 

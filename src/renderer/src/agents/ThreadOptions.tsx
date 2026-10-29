@@ -3,8 +3,9 @@ import { createPortal } from 'react-dom'
 import { Check, ChevronDown, Lock, Shield, Zap } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
-import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread } from '../../../shared/agents'
+import { hostForThread, capabilitiesForThread, isThreadProviderConnected, PROVIDER_LABELS, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, THREAD_SETTINGS_UNRECONCILED, type AgentModel, type AgentModelSpeed, type AgentRuntimeMode, type AgentSpeed, type AgentState, type AgentThread } from '../../../shared/agents'
 import { catalogEntry, chosenModelId, resolveModel } from '../../../shared/modelCatalog'
+import { fitSpeed } from '../../../shared/workerRoles'
 import { ULTRACODE } from '../../../shared/ultracode'
 import type { AgentConnection } from './AgentContext'
 import { shownWords, wordsOf, type LaterWords } from './interfaceWords'
@@ -18,7 +19,7 @@ import { suggestedEffortIndex } from './effortSuggestion'
 import { ultracodeLevel } from './ultracodeLevel'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { providerKey } from './threadFacts'
-import { FAST_MODE_NOT_CARRIED, FAST_OFF, FAST_ON, pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
+import { pendingSettingsStore, permissionPatch, settingValues, settingValuesFor, speedPatch, SPEED_NOT_CARRIED, SPEED_STANDARD, threadSpeed, unconfirmedKinds, usePendingSettings, usesProviderModes, type SettingKind, type SettingsPatch } from './pendingSettings'
 import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../watcher/watcherRoom'
 import { WatchOnSendToggle } from '../watcher/WatchControls'
@@ -85,6 +86,8 @@ export interface ChoiceOption {
   readonly id: string; readonly label: string; readonly description?: string; readonly disabled?: boolean
   /** The description is a message of Sotto's in the interface language, which runs right to left where that language does. */
   readonly translated?: boolean
+  /** A line shown only on pointing at the option, where the list itself stays short. */
+  readonly tooltip?: string | undefined
 }
 
 /**
@@ -290,7 +293,7 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
   const title = disabled && fixedReason ? t({ message: `${named}. ${fixedReason}`, comment: 'A fixed chip\'s tooltip: its name, then why it cannot be pressed now.' }) : named
   const choose = (id: string): void => { onChange(id); setOpen(false); trigger.current?.focus() }
   const listbox = <div ref={list} id={listId} role="listbox" aria-label={label} className={foot ? 'thread-chip-menu__options' : 'thread-chip-menu__list'} data-below={!foot && below ? 'true' : undefined} onKeyDown={event => moveListboxFocus(event, list.current)}>
-    {options.map(option => <button type="button" role="option" key={option.id} aria-selected={option.id === value} disabled={option.disabled} onClick={() => choose(option.id)}>
+    {options.map(option => <button type="button" role="option" key={option.id} aria-selected={option.id === value} disabled={option.disabled} title={option.tooltip} onClick={() => choose(option.id)}>
       <span>{option.label}{option.description ? <small className={option.translated ? 'tt-paragraph' : undefined}>{option.description}</small> : null}</span>{option.id === value && <Check size={14} aria-hidden="true" />}</button>)}
   </div>
   return <div className="thread-chip-menu"
@@ -323,62 +326,93 @@ export interface ThreadContinueOffer {
 
 const providerNameOf = (thread: AgentThread): string | undefined => thread.providerId ? PROVIDER_LABELS[thread.providerId] : undefined
 
+/** The order speeds step in after Standard (ADR-0143). */
+const SPEED_ORDER: readonly AgentSpeed[] = ['fast', 'ultrafast']
 /**
- * What fast mode costs, said once in the toggle's tooltip (ADR-0143): the provider's own line where it gives one (Codex's
- * tier description), Sotto's for Claude Code, and a plain one otherwise.
+ * The speeds a thread on this model may choose besides Standard, in the provider's own names and words (ADR-0143): the
+ * model's `speeds`, or Fast alone from the older `fastMode`. Only a Claude Code or Codex model offers any.
  */
-export function fastModeCost(model: AgentModel | undefined, provider: string | undefined): string {
-  const own = model?.fastMode?.description?.trim()
+export function offeredSpeeds(model: AgentModel | undefined, provider: string | undefined): AgentModelSpeed[] {
+  if (!model || (provider !== 'claude' && provider !== 'codex')) return []
+  const speeds = model.speeds ?? (model.fastMode ? [{ id: 'fast' as const, name: t({ message: 'Fast', comment: 'A thread speed: faster output at a higher price.' }), ...model.fastMode }] : [])
+  return SPEED_ORDER.flatMap(id => speeds.filter(speed => speed.id === id).slice(0, 1))
+}
+/** A speed's name: the provider's where it offers the speed, Sotto's otherwise, and Standard for the usual speed. */
+export function speedName(value: string, offered: readonly AgentModelSpeed[]): string {
+  if (value === SPEED_STANDARD) return t({ message: 'Standard', comment: 'A thread speed: the model\'s usual speed and price.' })
+  return offered.find(speed => speed.id === value)?.name ?? (value === 'ultrafast' ? t({ message: 'Ultra fast', comment: 'A thread speed: faster than Fast, at a higher price still.' })
+    : t({ message: 'Fast', comment: 'A thread speed: faster output at a higher price.' }))
+}
+/** The speed after this one when the bolt is pressed: Standard, then each offered speed in turn, then Standard again. */
+export function nextSpeed(offered: readonly AgentModelSpeed[], value: string): string {
+  const cycle = [SPEED_STANDARD, ...offered.map(speed => speed.id)]
+  return cycle[(cycle.indexOf(value) + 1) % cycle.length] ?? SPEED_STANDARD
+}
+/**
+ * What a speed costs, said in the bolt's tooltip (ADR-0143): the provider's own line where it gives one (Codex's tier
+ * description), Sotto's for Claude Code's Fast, and a plain one otherwise.
+ */
+export function speedCost(speed: AgentModelSpeed, provider: string | undefined): string {
+  const own = speed.description?.trim()
   if (own) return /[.!?]$/u.test(own) ? own : `${own}.`
-  return provider === 'claude' ? t`Up to 2.5x faster output, at twice the price per token.` : t`Faster output, at a higher price.`
+  return provider === 'claude' && speed.id === 'fast' ? t`Up to 2.5x faster output, at twice the price per token.` : t`Faster output, at a higher price.`
 }
-/** The fast mode toggle's tooltip: whether it is on, what it costs and what a press does. A fixed toggle says no press. */
-export function fastModeTitle(model: AgentModel | undefined, provider: string | undefined, on: boolean, fixed: boolean): string {
-  const cost = fastModeCost(model, provider)
-  if (fixed) return on ? t({ message: `Fast mode is on for this thread. ${cost}`, comment: '{cost} is a sentence about what fast mode costs.' })
-    : t({ message: `Fast mode is off. ${cost}`, comment: '{cost} is a sentence about what fast mode costs.' })
-  return on ? t({ message: `Fast mode is on for this thread. ${cost} Press to turn it off.`, comment: '{cost} is a sentence about what fast mode costs.' })
-    : t({ message: `Fast mode is off. ${cost} Press to turn it on for this thread.`, comment: '{cost} is a sentence about what fast mode costs.' })
+/** The bolt's tooltip: the speed in force, what it costs, and the speed a press steps to with its cost. A fixed bolt says no press. */
+export function speedTitle(offered: readonly AgentModelSpeed[], value: string, provider: string | undefined, fixed: boolean): string {
+  const now = offered.find(speed => speed.id === value)
+  const following = fixed ? undefined : offered.find(speed => speed.id === nextSpeed(offered, value))
+  if (!now) {
+    if (!following) return t({ message: 'Standard speed.', comment: 'The thread speed bolt\'s tooltip while the thread runs at the usual speed and the bolt cannot be pressed.' })
+    const next = following.name, nextCost = speedCost(following, provider)
+    return t({ message: `Standard speed. Press for ${next}: ${nextCost}`, comment: '{name} and {next} are speeds, such as Fast; {cost} and {nextCost} are sentences about what they cost.' })
+  }
+  const name = now.name, cost = speedCost(now, provider)
+  if (fixed) return t({ message: `${name} is on for this thread. ${cost}`, comment: '{name} and {next} are speeds, such as Fast; {cost} and {nextCost} are sentences about what they cost.' })
+  if (!following) return t({ message: `${name} is on for this thread. ${cost} Press for Standard.`, comment: '{name} and {next} are speeds, such as Fast; {cost} and {nextCost} are sentences about what they cost.' })
+  const next = following.name, nextCost = speedCost(following, provider)
+  return t({ message: `${name} is on for this thread. ${cost} Press for ${next}: ${nextCost}`, comment: '{name} and {next} are speeds, such as Fast; {cost} and {nextCost} are sentences about what they cost.' })
 }
 /**
- * The alert after a fast mode press the provider did not take, as `settingRefusalText` says it for the other chips. A
- * model change whose fast mode the provider refused went through, so that line names the model the thread is now on.
+ * The alert after a speed press the provider did not take, as `settingRefusalText` says it for the other chips. A model
+ * change whose speed the provider refused went through, so that line names the model the thread is now on.
  */
-export function fastRefusalText(provider: string, wanted: boolean, error: string | null, model = ''): string {
-  if (error === FAST_MODE_NOT_CARRIED) return t({ message: `${provider} did not switch fast mode on. The thread is on ${model} at normal speed.`, comment: '{provider} is a provider\'s name or "The provider"; {model} is the model the thread is now on.' })
-  if (error === null) return t({ message: `Sotto did not get ${provider}'s answer about fast mode, so the toggle shows what the thread last reported. Try again to send it once more.`, comment: '{provider} is a provider\'s name or "The provider".' })
-  if (error === PROVIDER_REJECTED_ACTION) return wanted
-    ? t({ message: `${provider} did not switch fast mode on. The thread stays at normal speed; nothing else changed.`, comment: '{provider} is a provider\'s name or "The provider".' })
-    : t({ message: `${provider} did not switch fast mode off. The thread stays in fast mode; nothing else changed.`, comment: '{provider} is a provider\'s name or "The provider".' })
-  return wanted ? t({ message: `${provider} did not switch fast mode on. ${error}`, comment: '{error} is the provider\'s or Sotto\'s own reason, shown as it came.' })
-    : t({ message: `${provider} did not switch fast mode off. ${error}`, comment: '{error} is the provider\'s or Sotto\'s own reason, shown as it came.' })
+export function speedRefusalText(provider: string, wanted: string, inForce: string, error: string | null, model = ''): string {
+  if (error === SPEED_NOT_CARRIED) return t({ message: `${provider} did not switch to ${wanted}. The thread is on ${model} at Standard speed.`, comment: '{provider} is a provider\'s name or "The provider"; {wanted} is a thread speed, such as Fast; {model} is the model the thread is now on.' })
+  if (error === null) return t({ message: `Sotto did not get ${provider}'s answer about the speed, so the bolt shows what the thread last reported. Try again to send it once more.`, comment: '{provider} is a provider\'s name or "The provider".' })
+  if (error === PROVIDER_REJECTED_ACTION) return t({ message: `${provider} did not switch to ${wanted}. The thread stays on ${inForce}; nothing else changed.`, comment: '{provider} is a provider\'s name or "The provider"; {wanted} and {inForce} are thread speeds, such as Fast or Standard.' })
+  return t({ message: `${provider} did not switch to ${wanted}. ${error}`, comment: '{provider} is a provider\'s name or "The provider"; {wanted} is a thread speed, such as Fast; {error} is the provider\'s or Sotto\'s own reason, shown as it came.' })
 }
-/** The line when the provider never answered a fast mode press, as `unconfirmedSettingText` says it for the other chips. */
-export function fastUnconfirmedText(provider: string, wanted: boolean, error: string | null): string {
-  if (error === null || error === PROVIDER_RESULT_UNCONFIRMED || error === THREAD_SETTINGS_UNRECONCILED) return wanted
-    ? t({ message: `${provider} has not confirmed fast mode. Until it does, a turn can still run at normal speed.`, comment: '{provider} is a provider\'s name or "The provider".' })
-    : t({ message: `${provider} has not confirmed turning fast mode off. Until it does, a turn can still run in fast mode.`, comment: '{provider} is a provider\'s name or "The provider".' })
+/** The line when the provider never answered a speed press, as `unconfirmedSettingText` says it for the other chips. */
+export function speedUnconfirmedText(provider: string, wanted: string, inForce: string, error: string | null): string {
+  if (error === null || error === PROVIDER_RESULT_UNCONFIRMED || error === THREAD_SETTINGS_UNRECONCILED)
+    return t({ message: `${provider} has not confirmed ${wanted}. Until it does, a turn can still run on ${inForce}.`, comment: '{provider} is a provider\'s name or "The provider"; {wanted} and {inForce} are thread speeds, such as Fast or Standard.' })
   return error
 }
 
 /**
- * Fast mode for this thread (ADR-0143, Zach's pick A of the `prototype/composer-fast-mode` tag): a one-press toggle after
- * the model chip, a muted outline bolt while off and a filled bolt in the accent while on, with `aria-pressed`. Space or
- * Enter toggles it and focus stays on it. Drawn only for a model that offers fast mode, on Claude Code or Codex.
+ * The thread's speed (ADR-0143, Zach's pick A of the `prototype/composer-fast-mode` tag): a one-press bolt after the model
+ * chip that steps from Standard through each speed the model offers and back to Standard. A muted outline at Standard, a
+ * filled bolt in the accent at Fast, and that bolt with a small 2 at Ultra fast. `aria-pressed` says a faster speed is on
+ * and the name says which; the tooltip keeps the provider's words. Space or Enter steps it and focus stays on it. A choice
+ * the model does not offer runs at Standard, so the bolt shows Standard. Drawn only where `offeredSpeeds` finds one.
  */
-export function FastModeToggle({ model, provider, on, disabled, pending, describedBy, onChange }: {
-  readonly model: AgentModel | undefined; readonly provider: string | undefined; readonly on: boolean; readonly disabled: boolean; readonly pending: boolean
-  readonly describedBy?: string | undefined; readonly onChange: (on: boolean) => void
+export function SpeedToggle({ offered, provider, value, disabled, pending, describedBy, onChange }: {
+  readonly offered: readonly AgentModelSpeed[]; readonly provider: string | undefined; readonly value: string; readonly disabled: boolean; readonly pending: boolean
+  readonly describedBy?: string | undefined; readonly onChange: (value: string) => void
 }): ReactNode {
-  return <button type="button" className="thread-chip thread-fast tt-focusable" aria-label={OPTION_CHIP_NAMES.fast} aria-pressed={on}
-    title={fastModeTitle(model, provider, on, disabled)} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined}
-    disabled={disabled} onClick={() => onChange(!on)}>
-    <Zap size={14} aria-hidden="true" fill={on ? 'currentColor' : 'none'} />
+  const current = offered.some(speed => speed.id === value) ? value : SPEED_STANDARD
+  const label = OPTION_CHIP_NAMES.fast, shown = speedName(current, offered)
+  return <button type="button" className="thread-chip thread-fast tt-focusable" data-speed={current} aria-pressed={current !== SPEED_STANDARD}
+    aria-label={t({ message: `${label}: ${shown}`, comment: 'A chip\'s tooltip: the setting\'s name, then its value.' })}
+    title={speedTitle(offered, current, provider, disabled)} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined}
+    disabled={disabled} onClick={() => onChange(nextSpeed(offered, current))}>
+    <Zap size={14} aria-hidden="true" fill={current === SPEED_STANDARD ? 'none' : 'currentColor'} />
+    {current === 'ultrafast' ? <small className="thread-fast__two" aria-hidden="true">2</small> : null}
   </button>
 }
-/** Whether a thread on this model shows the fast mode toggle: the model offers it, on Claude Code or Codex (ADR-0143). */
-export const offersFastMode = (model: AgentModel | undefined, provider: string | undefined): boolean =>
-  model?.fastMode !== undefined && (provider === 'claude' || provider === 'codex')
+/** A speed list for Settings (ADR-0091): Standard, then the speeds the model offers, each with what it costs as its tooltip. */
+export const speedChoices = (offered: readonly AgentModelSpeed[], provider: string | undefined): ChoiceOption[] =>
+  [{ id: SPEED_STANDARD, label: speedName(SPEED_STANDARD, offered) }, ...offered.map(speed => ({ id: speed.id, label: speed.name, tooltip: speedCost(speed, provider) }))]
 
 /**
  * Whether a prompt on this thread is on its way to the provider, which a settings change would have to wait behind. One
@@ -458,11 +492,11 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         .map(([name, providerId]) => ({ name, providerId, reason: continuing.refusal! }))
   const models = others.length > 0 ? [...own, ...others] : continuations.length > 0 ? [...own, ...continuations] : own
   const [replacing, setReplacing] = useState<{ readonly provider: WatcherProvider; readonly refusal: LaterWords | null } | null>(null)
-  const replace = async (provider: WatcherProvider, modelId: string): Promise<void> => {
+  const replace = async (provider: WatcherProvider, modelId: string, speed: AgentSpeed | null): Promise<void> => {
     if (open === null || settle === undefined) return
     setReplacing({ provider, refusal: null })
     try {
-      const refusal = settle(await open({ provider, modelId }))
+      const refusal = settle(await open({ provider, modelId, ...(speed ? { speed } : {}) }))
       setReplacing(refusal === null ? null : { provider, refusal })
     } catch { setReplacing({ provider, refusal: msg`Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.` }) }
   }
@@ -529,13 +563,17 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   // model's default effort, so that is what the effort chip shows meanwhile.
   const unpressed = modelId === thread.modelId ? drawn
     : settingValuesFor({ modelId, ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.providerMode ? { providerMode: thread.providerMode } : {}),
-      ...(thread.fastMode ? { fastMode: true } : {}) }, model)
+      ...(threadSpeed(thread) ? { speed: threadSpeed(thread) } : {}) }, model)
   const reasoning = settings.pending.effort?.value ?? unpressed.effort
   const permission = settings.pending.permissions?.value ?? unpressed.permissions
-  // The choice stays through a change of model; the toggle shows only on a model that offers fast mode (ADR-0143).
-  const fastOn = (settings.pending.fast?.value ?? unpressed.fast) === FAST_ON
-  const fastProvider = model?.providerId ?? thread.providerId
-  const showFast = offersFastMode(model, fastProvider)
+  // The choice stays through a change of model; the bolt shows only on a model that offers a speed (ADR-0143).
+  const speed = settings.pending.fast?.value ?? unpressed.fast
+  const speedProvider = model?.providerId ?? thread.providerId
+  const speeds = offeredSpeeds(model, speedProvider)
+  /** Watcher's speed as the Orchestrating role saves it: the choice, which a model without it keeps. */
+  const roleSpeed = speed === SPEED_STANDARD ? null : speed as AgentSpeed
+  /** A speed as it runs on this model, in words: one the model does not offer runs at Standard. */
+  const speedInForce = (value: string): string => speedName(speeds.some(item => item.id === value) ? value : SPEED_STANDARD, speeds)
   const efforts = effortChoices(model, reasoning, { ultracode: !watcher })
   const modes = modeChoices(model, thread.runtimeMode, thread.providerMode)
   const providers = new Set(models.map(item => item.provider)).size
@@ -564,7 +602,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const caption = pendingPermission === null || permissionUnconfirmed ? '' : permissionInForceCaption(provider, usesProviderModes(confirmedModel)
     ? { providerModeName: valueName('permissions', drawn.permissions, confirmedModel) } : { runtimeMode: (drawn.permissions || undefined) as AgentRuntimeMode | undefined })
   const retry = (kind: SettingKind): void => {
-    if (pendingSettingsStore.retry(thread.id, kind, command, drawn)) bar.current?.querySelector<HTMLButtonElement>(`[aria-label="${OPTION_CHIP_NAMES[kind]}"]`)?.focus()
+    // The bolt's name carries its speed, so it is found by its class.
+    if (pendingSettingsStore.retry(thread.id, kind, command, drawn)) bar.current?.querySelector<HTMLButtonElement>(kind === 'fast' ? '.thread-fast' : `[aria-label="${OPTION_CHIP_NAMES[kind]}"]`)?.focus()
   }
   const kinds: readonly SettingKind[] = ['model', 'effort', 'permissions', 'fast']
   const unconfirmedIds: Readonly<Record<SettingKind, string>> = { model: unconfirmedModelId, effort: unconfirmedEffortId, permissions: unconfirmedId, fast: unconfirmedFastId }
@@ -574,14 +613,14 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       const pending = settings.pending[kind]
       if (pending?.awaiting !== 'unconfirmed') return null
       return <p key={`unconfirmed-${kind}`} id={unconfirmedIds[kind]} className="thread-options__notice tt-paragraph" role="alert">
-        <span>{kind === 'fast' ? fastUnconfirmedText(provider, pending.value === FAST_ON, pending.error)
+        <span>{kind === 'fast' ? speedUnconfirmedText(provider, speedName(pending.value, speeds), speedInForce(drawn.fast), pending.error)
           : unconfirmedSettingText(provider, valueName(kind, pending.value, model), pending.error, kind === 'permissions' ? undefined : valueName(kind, drawn[kind], confirmedModel))}</span></p>
     })}
     {kinds.map(kind => {
       const refusal = settings.refusals[kind]
       if (!refusal) return null
       return <p key={`refused-${kind}`} className="thread-options__notice tt-paragraph" role="alert">
-        <span>{kind === 'fast' ? fastRefusalText(provider, refusal.wanted === FAST_ON, refusal.error, valueName('model', drawn.model, confirmedModel))
+        <span>{kind === 'fast' ? speedRefusalText(provider, speedName(refusal.wanted, speeds), speedInForce(drawn.fast), refusal.error, valueName('model', drawn.model, confirmedModel))
           : settingRefusalText(provider, valueName(kind, refusal.wanted, model), valueName(kind, drawn[kind], confirmedModel), refusal.error)}</span>
         <button type="button" className="tt-focusable" disabled={fixed} onClick={() => retry(kind)}>{t`Try again`}</button></p>
     })}
@@ -598,24 +637,31 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         const picked = others.find(model => model.id === pressed)
         const provider = picked === undefined ? null : watcherProviderOf(picked)
         if (picked !== undefined && provider !== null) {
-          orchestrating?.(picked.id, picked.defaultReasoningEffort ?? null, state.host.models)
-          void replace(provider, picked.id); return
+          const speed = fitSpeed(roleSpeed, picked)
+          orchestrating?.(picked.id, picked.defaultReasoningEffort ?? null, state.host.models, speed)
+          void replace(provider, picked.id, speed); return
         }
         const id = chosenModelId(models, pressed, modelId, thread.modelId); press('model', id, { modelId: id })
-        orchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, state.host.models)
+        orchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, state.host.models, roleSpeed)
       }} />
-      {showFast && <FastModeToggle model={model} provider={fastProvider} on={fastOn} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={unconfirmedFastId}
-        onChange={next => press('fast', next ? FAST_ON : FAST_OFF, { fastMode: next }, unpressed.fast)} />}
+      {speeds.length > 0 && <SpeedToggle offered={speeds} provider={speedProvider} value={speed} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={unconfirmedFastId}
+        onChange={next => {
+          press('fast', next, speedPatch(next, model), unpressed.fast)
+          orchestrating?.(modelId, reasoning || null, state.host.models, next === SPEED_STANDARD ? null : next as AgentSpeed)
+        }} />}
       {quiet ? (levels.length > 0 || quiet.stop) && <EffortDots levels={levels} value={reasoning} provider={model?.providerId ?? thread.providerId} disabled={fixed || modelDisabled}
         pending={settings.pending.effort?.awaiting === 'unconfirmed'} describedBy={unconfirmedEffortId} stop={quiet.stop}
         suggestion={thread.status === 'running' ? null : suggestedEffortIndex(quiet.effortScore, levels.length,
           // On the provider's default, the model's own default is what a suggestion must stand above.
           levels.includes(reasoning) ? levels.indexOf(reasoning) : levels.indexOf(model?.defaultReasoningEffort ?? ''))}
-        onChange={reasoningEffort => press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)} />
+        onChange={reasoningEffort => {
+          press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
+          orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)
+        }} />
       : efforts.length > 0 && <EffortPicker key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
         disabled={fixed || modelDisabled} pending={settings.pending.effort?.awaiting === 'unconfirmed'} describedBy={unconfirmedEffortId} onChange={reasoningEffort => {
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
-          orchestrating?.(modelId, reasoningEffort, state.host.models)
+          orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)
         }}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name} ultracodeEffort={ultracodeLevel(state, thread, model)}
         hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
