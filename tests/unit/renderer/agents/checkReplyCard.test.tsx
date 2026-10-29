@@ -60,6 +60,22 @@ function mount(views: DelegatedView[], shown: DelegationWorld) {
   return { fold, unfold: () => { if (fold.getAttribute('aria-expanded') !== 'true') fireEvent.click(fold) } }
 }
 const row = (name: string): HTMLElement => screen.getByRole('listitem', { name })
+/**
+ * Presses Escape on what `on` names the moment the tray is drawn: in the microtask after the commit that drew it, before
+ * React runs its passive effects a task later, as a loaded runner can (#1776). Answers whether it has pressed yet.
+ */
+function escapeOnceDrawn(on: (tray: HTMLElement) => HTMLElement): () => boolean {
+  let pressed = false
+  const watch = new MutationObserver(() => {
+    const tray = document.querySelector<HTMLElement>('[role="dialog"]')
+    if (tray === null || pressed) return
+    pressed = true
+    watch.disconnect()
+    fireEvent.keyDown(on(tray), { key: 'Escape' })
+  })
+  watch.observe(document.body, { childList: true, subtree: true })
+  return () => pressed
+}
 
 beforeEach(() => { vi.mocked(useOptionalApp).mockReset(); owl(true) })
 afterEach(() => { cleanup(); vi.unstubAllGlobals() })
@@ -166,6 +182,25 @@ describe('the tray a check\'s reply opens in', () => {
     expect(screen.getByRole('button', { name: /^Worked for/u })).toHaveAttribute('aria-expanded', 'true')
     fireEvent.keyDown(read, { key: 'Escape' })
     expect(screen.getByRole('button', { name: /^Worked for/u })).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('closes on an Escape pressed the moment it is drawn, on the tray or on Read its reply, and the turn stays open (#1776)', async () => {
+    const f = world({ [failed.id]: { delegation: failed.id, text: FAILED, truncated: false } })
+    const { fold } = mount([failed], f.world)
+    fireEvent.click(fold)
+    const read = screen.getByRole('button', { name: /^Read the reply from Unit suite after the Stop fix/u })
+    for (const on of [(tray: HTMLElement) => tray, () => read]) {
+      read.focus()
+      const pressed = escapeOnceDrawn(on)
+      fireEvent.click(read)
+      await waitFor(() => expect(pressed()).toBe(true))
+      // The Escape was the tray's: it closed, the focus went back to Read its reply, and the Worked for fold stayed open.
+      expect(screen.queryByRole('dialog')).toBeNull()
+      expect(read).toHaveFocus()
+      expect(read).toHaveAttribute('aria-expanded', 'false')
+      expect(fold).toHaveAttribute('aria-expanded', 'true')
+    }
+    expect(f.asked).toEqual([failed.id, failed.id])
   })
 
   it('closes with Close or a second press, one tray at a time, and Open the check opens the check\'s thread', async () => {
