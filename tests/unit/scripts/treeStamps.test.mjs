@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, sep } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { assertTreeUnchanged, compareTreeStamps, snapshotTree } from '../../../scripts/omarchy-shell-sandbox.mjs'
 
@@ -32,11 +32,13 @@ describe('compareTreeStamps', () => {
   })
 
   it('walks paths in the order snapshotTree visits them, a folder before its contents', () => {
-    // Whole-string order would put "a.b" before "a/x"; the walk visits "a", then "a/x", then "a.b".
-    const before = [entry('/t'), entry('/t/a'), entry('/t/a/x'), entry('/t/a.b')]
+    // Whole-string order would put "a.b" before "a/x"; the walk visits "a", then "a/x", then "a.b". Paths are joined with
+    // this platform's separator, as snapshotTree joins them.
+    const path = (...parts) => join(sep, 't', ...parts)
+    const before = [entry(path()), entry(path('a')), entry(path('a', 'x')), entry(path('a.b'))]
     expect(compareTreeStamps(before, before.map(row => [...row]))).toEqual({ count: 0, paths: [] })
-    const after = [entry('/t'), entry('/t/a'), entry('/t/a/x'), entry('/t/a/y'), entry('/t/a.b')]
-    expect(compareTreeStamps(before, after)).toEqual({ count: 1, paths: ['/t/a/y'] })
+    const after = [entry(path()), entry(path('a')), entry(path('a', 'x')), entry(path('a', 'y')), entry(path('a.b'))]
+    expect(compareTreeStamps(before, after)).toEqual({ count: 1, paths: [path('a', 'y')] })
   })
 })
 
