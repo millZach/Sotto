@@ -35,6 +35,7 @@ import { storedFollowups } from '../fixtures/followupQueue'
 import { initializeGitRepository } from '../fixtures/gitRepository'
 import { markTurnActivity } from '../../src/main/agents/turnActivity'
 import { HostFactsSource, hostMachineReport } from '../../src/main/agents/hostFacts'
+import { MACHINE_START_SETTLES_MS } from '../../src/shared/hostFacts'
 import { lastUserMessageIdOf, type AgentState } from '../../src/shared/agents'
 import { isResumeNoteText } from '../../src/shared/restartResume'
 import { execFile } from 'node:child_process'
@@ -1770,13 +1771,14 @@ it('places starts made together one at a time under Watcher\'s choice, so each c
   expect(held).toBe(2)
 })
 
-it('counts a start against its machine\'s headroom until a reading taken after it could show it (#1694)', async () => {
+it('counts a start against its machine\'s headroom for a minute after its first prompt went, by this computer\'s clock (#1694)', async () => {
   const f = await acrossMachines('watcher')
   const GIB = 1024 ** 3
-  let observedAt = new Date().toISOString()
-  const load = (cpuBusyPercent: number, availableMemoryBytes: number) => ({ observedAt, windowMs: 2_000, cpuBusyPercent, loadAverage: null,
-    availableMemoryBytes, windowStartAvailableMemoryBytes: availableMemoryBytes, memoryPressurePercent: null })
-  vi.spyOn(HostFactsSource.prototype, 'load').mockImplementation(async () => load(99, 16 * GIB))
+  // A host whose clock runs half a minute ahead: its readings must not be what decides when a start stops counting.
+  const ahead = 30_000
+  const load = (cpuBusyPercent: number, availableMemoryBytes: number) => ({ observedAt: new Date(Date.now() + ahead).toISOString(), windowMs: 2_000, cpuBusyPercent,
+    loadAverage: null, availableMemoryBytes, windowStartAvailableMemoryBytes: availableMemoryBytes, memoryPressurePercent: null })
+  vi.spyOn(HostFactsSource.prototype, 'load').mockImplementation(async () => ({ ...load(99, 16 * GIB), observedAt: new Date().toISOString() }))
   const report = f.socket.hostFacts.bind(f.socket)
   vi.spyOn(f.socket, 'hostFacts').mockImplementation(async () => {
     const real = await report()
@@ -1785,15 +1787,15 @@ it('counts a start against its machine\'s headroom until a reading taken after i
   const headroom = async () => { const listed = await f.call('list_machines', {}); if (listed.status !== 'ok') throw new Error('list-refused'); return listed.machines[1]!.headroom }
   expect(await headroom()).toBe(2)
   // The start reaches the paired machine and its first prompt is accepted there, so it is no longer on its way; the
-  // reading, from before it began, cannot show it, so it still counts.
+  // readings cannot show it yet, so it still counts.
   const started = await f.call('start_thread', { ...f.onThisComputer(), title: 'Synthetic counted worker' })
   expect(started).toMatchObject({ status: 'ok', target: { hostId: f.pairing.hostId } })
   const onItsWay = () => (f.watcher as unknown as { startsNotYetSentOn(hostId: string): string[] }).startsNotYetSentOn(f.pairing.hostId)
   await expect.poll(onItsWay).toEqual([])
   expect(await headroom()).toBe(1)
-  // A reading whose window began after it was placed shows what it uses, so it is not counted again.
-  await new Promise(resolve => setTimeout(resolve, 5))
-  observedAt = new Date(Date.now() + 2_001).toISOString()
+  // A minute after its start call ended, by this computer's clock, the readings are taken to show what it uses.
+  const now = Date.now()
+  vi.spyOn(Date, 'now').mockReturnValue(now + MACHINE_START_SETTLES_MS + 1)
   expect(await headroom()).toBe(2)
 })
 

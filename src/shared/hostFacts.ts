@@ -125,6 +125,14 @@ export const MACHINE_WORKER_NEEDS = {
 } as const
 
 /**
+ * How long a worker's start keeps counting against its machine's headroom after its first prompt has gone (#1694), by
+ * this computer's clock alone, since a host's clock may differ: long enough for its client to start and a fresh reading,
+ * which a host keeps for a few seconds, to show what it uses. A reading may show it sooner, and it then counts twice
+ * for a while, which spreads work more, never less.
+ */
+export const MACHINE_START_SETTLES_MS = 60_000
+
+/**
  * A machine's headroom (#1694): about how many more workers it can take now, so machines compare directly. The CPU it has
  * to spare below the busy line, in workers, and the memory it has above the short line on the lower of the window's two
  * readings, in workers, whichever is fewer, less its work placed but not started, which has not shown in the readings yet.
