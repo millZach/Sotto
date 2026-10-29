@@ -1,0 +1,1407 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything. A guided walkthrough: press Next (or the right
+  arrow, or tap the window) and it plays each variant's whole journey, with nothing to type. Auto-play is on and steps
+  about every 4 to 6 seconds; any press pauses it.
+
+  Question (#1178, "Move threads to another machine from Watcher, with a handoff for each"): once Zach picks a machine,
+  how are threads chosen, where does each move's progress show, and does a thread's own pane offer the move too?
+
+    A  Choose from a list    Move threads, then forge, opens a checklist: movable threads ticked, the one that would
+                             start with less permission unticked (ticking it is the yes), the rest greyed with why.
+                             Progress is on each thread's row: the panel, All threads, the Threads sidebar, its pane.
+                             A thread's More menu also has "Continue on another machine…".
+    B  Confirm once, read    Move threads, then forge, asks once in a sheet, with nothing to tick. Progress is only in
+       Watcher's reply       Watcher's reply, one receipt card per thread; the narrower one waits on its card.
+    C  Ask Watcher first     Move threads, then forge, writes the request into Watcher's composer. Watcher answers with
+                             a plan card to confirm. Progress is on the rows; waits show in the needs-you line.
+
+  Fixed (issue #1178 "Decided, October 21"; ADR-0105 decision 7; ADR-0089), and decided by Zach on October 29:
+    - A move is "continue on another machine": a new thread with its own Sotto thread ID. The original is settled once
+      the new thread is confirmed running and its first turn has ended; its worktree is kept.
+    - A moved thread starts working right away with its handover; Zach writes no first message (October 29).
+    - Move threads is hidden while no other machine is connected (October 29).
+    - Uncommitted work refuses the move. Not moved, each with why: a turn running, a question or permission card,
+      background work, an unresolved send; a delegating thread with children working; any delegated thread; Watcher.
+    - A move that would start narrower than the thread runs now says so and waits for a press.
+    - A watched thread's new thread is watched. Babysitting starts on the target.
+    - Lost touch: "This thread is waiting for forge to answer about its move. Nothing was lost." with Keep it here.
+    - Machines: This computer, forge (Linux), studio (a Mac, not connected: listed, disabled, with why).
+
+  Sample: seven threads on This computer. Movable: Tray icon at night (watched), Owl release notes (pull request #1771,
+  babysat), Linux tray menu spacing (Full access here; your new-thread default allows Allow edits). Not movable: Footer
+  links (3 files not committed), Streaming WAV stall (turn running, started by Watcher, so Stop all shows), Make Stop
+  reach waiting checks (its delegated thread is working), Unit suite after the fix (a delegated thread).
+
+  Controls: Back, Next, the step counter and Auto-play; small jump links (Start, A, B, C, End), Light and Reduced
+  motion at the top. The window is drawn at 1280x800 and scaled to fit (on a phone, to the screen's width). Reduced
+  motion shows each step at once with no pointer. URL: theme, motion, and step (for example ?step=b3).
+  Palette, markup and words as in the first version of this file: WatcherView.tsx, WatcherStopAll.tsx,
+  WatcherReceipts.tsx, WatcherOverview.tsx, ContinueThread.tsx and watcher.css on main, October 29, 2026.
+
+  Picked: B, "Confirm once, read Watcher's reply" (Zach, 2026-10-29): Move threads next to Stop all opens one sheet,
+  "Move 3 threads to forge?", listing what moves now, what asks first and what stays and why; progress is reported on
+  one receipt card per thread in Watcher's reply, where a thread that would start narrower waits for its press. Also
+  picked: "Continue on another machine…" in a thread's More menu (yes). Decided the same day: a moved thread starts
+  working right away from its handover, and Move threads is hidden while no other machine is connected.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Sotto - moving threads to another machine, three variants</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; font-display: swap; src: url('../../src/renderer/src/assets/fonts/spline-sans-mono-latin.woff2') format('woff2'); }
+
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265); --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-hover: oklch(0.2 0.01 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092); --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-error: oklch(0.72 0.17 22); --tt-success: oklch(0.79 0.13 165); --tt-warning: oklch(0.83 0.14 80);
+  --tt-message: oklch(0.2 0.01 265);
+  --tt-font-ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-font-mono: 'Spline Sans Mono', ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono', monospace;
+  /* Derived roles (tokens.css, watcher.css). */
+  --tt-hover-strong: oklch(0.235 0.012 265);
+  --tt-sidebar: oklch(0.13 0.008 265);
+  --tt-card: color-mix(in oklab, var(--tt-text) 4%, var(--tt-canvas));
+  --tt-field: var(--tt-surface-sunken);
+  --tt-border-faint: oklch(0.42 0.02 265);
+  --tt-accent-border: color-mix(in srgb, var(--tt-accent) 50%, var(--tt-field-border));
+  --tt-selected: color-mix(in oklab, var(--tt-accent) 12%, var(--tt-surface-elevated));
+  --tt-selected-border: color-mix(in srgb, var(--tt-accent) 30%, var(--tt-field-border));
+  --tt-activity: var(--tt-accent-text); --tt-link: var(--tt-accent-text);
+  --tt-warning-text: var(--tt-warning);
+  --tt-focus-ring: var(--tt-accent);
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-shadow-lg: 0 24px 60px rgb(0 0 0 / 55%);
+  --tt-owl-night: oklch(0.165 0.04 255);
+  --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 11%, transparent);
+  --tt-scrim: rgb(0 0 0 / 52%);
+  --tt-provider-claude: oklch(0.74 0.12 45);
+  --tt-radius-sm: 6px; --tt-radius-md: 10px; --tt-radius-lg: 14px;
+  --watcher-needs-ink: color-mix(in oklab, var(--tt-warning-text) 80%, var(--tt-text));
+  --watcher-ready-ink: color-mix(in oklab, var(--tt-success) 80%, var(--tt-text));
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85); --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-hover: oklch(0.93 0.008 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-hairline: oklch(0.86 0.012 80); --tt-field-border: oklch(0.8 0.016 80);
+  --tt-accent: oklch(0.5 0.09 183); --tt-accent-text: oklch(0.42 0.08 183);
+  --tt-error: oklch(0.52 0.18 25); --tt-success: oklch(0.5 0.12 160); --tt-warning: oklch(0.55 0.13 70);
+  --tt-message: oklch(0.94 0.006 85);
+  --tt-hover-strong: oklch(0.905 0.01 85);
+  --tt-sidebar: oklch(0.965 0.005 85);
+  --tt-border-faint: oklch(0.76 0.016 80);
+  --tt-selected: color-mix(in oklab, var(--tt-accent) 9%, var(--tt-surface));
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+  --tt-shadow-lg: 0 24px 60px rgb(20 24 22 / 18%);
+  --tt-owl-night: color-mix(in oklab, var(--tt-canvas) 90%, oklch(0.9 0.05 183));
+  --tt-owl-glow: color-mix(in srgb, var(--tt-accent) 8%, transparent);
+  --tt-scrim: rgb(30 28 24 / 28%);
+  --tt-provider-claude: oklch(0.55 0.14 45);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; overflow: hidden; background: var(--tt-canvas); color: var(--tt-text); font: 14px/1.5 var(--tt-font-ui); }
+body { display: grid; grid-template-rows: auto minmax(0, 1fr); height: 100dvh; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:where(button, a, input, select, textarea, [tabindex]):focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
+.vh { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+p { text-wrap: pretty; }
+
+/* ---------- the walkthrough around the window (not part of the design) ---------- */
+body { display: grid; grid-template-rows: auto auto minmax(0, 1fr) auto; height: 100dvh; }
+.top { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 8px 16px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); font-size: 12.5px; }
+.top b { font-size: 13px; font-weight: 600; }
+.top .tag { padding: 1px 6px; border: 1px dashed var(--tt-field-border); border-radius: 4px; color: var(--tt-text-muted); font-size: 11px; }
+.top nav { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px; }
+.top .sp { flex: 1; }
+.top button { min-height: 28px; padding: 2px 9px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: transparent; color: var(--tt-text-2); font-size: 12px; cursor: pointer; }
+.top button:hover { background: var(--tt-hover); color: var(--tt-text); }
+.top button[aria-current='step'], .top button[aria-pressed='true'] { border-color: var(--tt-field-border); background: var(--tt-surface-elevated); color: var(--tt-accent-text); }
+.cap { display: grid; align-content: center; gap: 2px; min-height: 112px; padding: 12px 24px 10px; max-width: 1100px; width: 100%; margin: 0 auto; }
+.cap__count { margin: 0; color: var(--tt-accent-text); font-size: 13px; font-weight: 600; letter-spacing: .02em; font-variant-numeric: tabular-nums; }
+.cap__name { margin: 0; font-size: 15px; font-weight: 600; color: var(--tt-text-2); }
+.cap__text { margin: 2px 0 0; font-size: 19px; line-height: 1.45; color: var(--tt-text); text-wrap: pretty; }
+.cap[data-card] { min-height: 160px; }
+.cap[data-card] .cap__name { font-size: 26px; color: var(--tt-text); letter-spacing: -.3px; }
+.cap[data-card] .cap__text { font-size: 19px; color: var(--tt-text-2); }
+.cap__small { margin: 6px 0 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.5; }
+.cap__recap { margin: 8px 0 0; padding: 0; list-style: none; color: var(--tt-text-2); font-size: 15px; line-height: 1.55; }
+.cap__recap b { color: var(--tt-text); }
+.cap__again { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.stage { position: relative; display: grid; place-items: center; min-height: 0; overflow: hidden; padding: 4px 16px 8px; cursor: pointer; }
+.fit { position: relative; }
+.frame { position: absolute; top: 0; left: 0; width: 1280px; height: 800px; overflow: hidden; border: 1px solid var(--tt-field-border); border-radius: 10px; background: var(--tt-canvas); box-shadow: var(--tt-shadow-lg); transform-origin: 0 0; --sidebar: 280px; }
+.frame #app { height: 100%; }
+.frame[data-dim] #app { opacity: .35; filter: saturate(.6); }
+.overlay { position: absolute; inset: 0; z-index: 100; pointer-events: none; }
+.ringhl { position: absolute; border: 3px solid var(--tt-accent); border-radius: 12px; box-shadow: 0 0 0 4px color-mix(in srgb, var(--tt-accent) 28%, transparent), 0 0 24px color-mix(in srgb, var(--tt-accent) 45%, transparent); }
+.pointer { position: absolute; top: 0; left: 0; width: 26px; height: 26px; translate: 1000px 640px; filter: drop-shadow(0 2px 3px rgb(0 0 0 / 50%)); }
+.pointer > svg { display: block; margin: -2px 0 0 -4px; }
+.pointer[hidden] { display: none; }
+.flash { position: absolute; width: 44px; height: 44px; margin: -22px 0 0 -22px; border-radius: 50%; background: color-mix(in srgb, var(--tt-accent) 55%, transparent); }
+.wnav { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; padding: 10px 16px 14px; border-top: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); }
+.wnav button { min-height: 48px; padding: 0 22px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: transparent; color: var(--tt-text); font-size: 16px; font-weight: 500; cursor: pointer; }
+.wnav button:hover:not(:disabled) { background: var(--tt-hover); }
+.wnav button:disabled { border-style: dashed; color: var(--tt-text-muted); cursor: default; }
+.wnav #next { min-width: 180px; border-color: var(--tt-text); background: var(--tt-text); color: var(--tt-canvas); font-weight: 600; }
+.wnav #next:hover { background: color-mix(in oklab, var(--tt-text) 88%, var(--tt-canvas)); }
+.wnav #auto { font-size: 14px; color: var(--tt-text-2); }
+.wnav #auto[aria-pressed='true'] { color: var(--tt-accent-text); border-color: var(--tt-accent-border); }
+.wnav .short { display: none; }
+.wnav__count { min-width: 84px; color: var(--tt-text-2); font-size: 14px; text-align: center; font-variant-numeric: tabular-nums; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .pointer { transition: translate 650ms cubic-bezier(.3, .7, .2, 1); }
+  :root:not([data-reduced-motion='on']) .flash { animation: flash 380ms ease-out forwards; }
+  :root:not([data-reduced-motion='on']) .ringhl { animation: ringin 260ms ease-out; }
+}
+@keyframes flash { from { transform: scale(.3); opacity: 1; } to { transform: scale(1.4); opacity: 0; } }
+@keyframes ringin { from { opacity: 0; transform: scale(1.03); } }
+/* A phone: the page scrolls, the window scales to the screen's width, Back and Next stay at the bottom. */
+@media (max-width: 760px) {
+  html, body { overflow: auto; }
+  body { display: flex; flex-direction: column; height: auto; min-height: 100dvh; }
+  .stage { flex: 1 0 auto; }
+  .wnav .long { display: none; } .wnav .short { display: inline; }
+  .wnav #auto { white-space: nowrap; }
+  .top { padding: 6px 10px; }
+  .top .tag, .top .sp { display: none; }
+  .cap { min-height: 0; padding: 12px 14px 10px; }
+  .cap__text { font-size: 17px; }
+  .cap[data-card] .cap__name { font-size: 22px; }
+  .stage { display: block; padding: 4px 8px 12px; }
+  .wnav { position: sticky; bottom: 0; z-index: 5; gap: 8px; padding: 8px 10px calc(10px + env(safe-area-inset-bottom)); }
+  .wnav button { flex: 1 1 0; min-height: 52px; padding: 0 10px; }
+  .wnav #next { flex: 2 1 0; min-width: 0; }
+  .wnav__count { flex-basis: 100%; order: -1; min-height: 0; }
+}
+/* ---------- shared bits: rings, links, buttons, marks ---------- */
+.ring { display: inline-block; flex: none; width: 10px; height: 10px; border: 1.5px solid var(--tt-hairline); border-radius: 50%; }
+.ring[data-tone='working'] { border: 0; background: conic-gradient(var(--tt-activity) 0 32%, color-mix(in srgb, var(--tt-activity) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, currentcolor 42%); }
+.ring[data-tone='needs'] { border: 2px solid var(--watcher-needs-ink); }
+.ring[data-tone='ready'] { border: 0; background: var(--tt-success); }
+.ring[data-tone='quiet'] { border: 1.5px dashed var(--tt-text-muted); }
+@keyframes spin { to { rotate: 360deg; } }
+.link { display: inline; min-width: 0; max-width: 100%; overflow: hidden; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-text); font: inherit; font-weight: 500; text-align: left;
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-overflow: ellipsis; text-underline-offset: 3px; white-space: nowrap; cursor: pointer; }
+.link:hover { text-decoration-color: currentColor; }
+.textlink { padding: 0; border: 0; border-radius: 2px; background: none; color: var(--tt-link); font: inherit; font-weight: 600; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; cursor: pointer; white-space: nowrap; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 30px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: transparent;
+  color: var(--tt-text); font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease; }
+.btn:hover:not(:disabled) { border-color: var(--tt-border-faint); background: var(--tt-hover); }
+.btn--primary { border-color: var(--tt-text); background: var(--tt-text); color: var(--tt-canvas); }
+.btn--primary:hover:not(:disabled) { border-color: var(--tt-text); background: color-mix(in oklab, var(--tt-text) 88%, var(--tt-canvas)); }
+.btn:disabled { border-style: dashed; background: transparent; color: var(--tt-text-muted); border-color: var(--tt-field-border); cursor: not-allowed; }
+.btn--small { min-height: 26px; padding: 0 10px; font-size: 12.5px; border-radius: 6px; }
+.provider-mark { flex: none; color: var(--tt-text-muted); }
+.provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
+.owl { fill: currentColor; }
+.owl .owl__eyes { fill: var(--owl-eyes, transparent); }
+.where { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.where[data-kind='remote'] > svg { color: var(--tt-accent-text); }
+.dots > :not(:first-child)::before { margin: 0 7px; content: '·'; color: var(--tt-text-muted); }
+
+/* ---------- Watcher's room ---------- */
+.room { position: relative; display: flex; flex-direction: column; height: 100%; overflow: hidden; container: room / size; background: var(--tt-canvas); }
+.room__sky { position: absolute; top: 0; left: 0; width: 520px; max-width: 100%; height: 104px; pointer-events: none;
+  background: radial-gradient(130px 70px at 26px 22px, var(--tt-owl-glow), transparent 72%), var(--tt-owl-night);
+  mask-image: linear-gradient(to right, black 34%, transparent), linear-gradient(to bottom, black 42%, transparent); mask-composite: intersect; }
+.room__stars { position: absolute; inset: 0; pointer-events: none; color: var(--tt-text-muted); font: 12px/1 var(--tt-font-mono); opacity: .45; }
+.room__stars > span { position: absolute; }
+.frame[data-size='820x560'] .room__stars { display: none; }
+
+.watcher-head { position: relative; z-index: 10; display: flex; flex: none; align-items: center; gap: 6px; height: 44px; padding: 0 0 0 14px; }
+.watcher-head__tile { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; margin-right: 2px; border-radius: 6px; background: var(--tt-accent); color: var(--tt-canvas); --owl-eyes: var(--tt-accent); }
+.watcher-head__title { display: flex; flex: 0 1 auto; align-items: center; gap: 6px; min-width: 0; }
+.watcher-head h1 { flex: 0 1 auto; margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; white-space: nowrap; }
+.watcher-head__list { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font-size: 13px; cursor: pointer; }
+.watcher-head__list:hover, .watcher-head__list[aria-expanded='true'] { border-color: var(--tt-hairline); background: var(--tt-hover); color: var(--tt-text); }
+.watcher-head__count { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
+.watcher-head__list:is(:hover, [aria-expanded='true']) .watcher-head__count { color: var(--tt-text-2); }
+.frame[data-size='820x560'] .watcher-head__list-text { display: none; }
+.way { display: inline-flex; flex: none; align-items: center; gap: 2px; margin-left: 4px; }
+.way button { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); cursor: pointer; }
+.way button:hover { background: color-mix(in srgb, var(--tt-text) 6%, transparent); color: var(--tt-text); }
+.way button[aria-current='page'] { background: color-mix(in srgb, var(--tt-text) 12%, transparent); color: var(--tt-text); }
+.way__hair { width: 1px; height: 16px; margin: 0 5px; background: var(--tt-hairline); }
+.watcher-head__actions { display: flex; flex: none; align-items: center; gap: 6px; margin-left: auto; }
+.wc { display: flex; flex: none; align-self: stretch; color: var(--tt-text-muted); font-size: 12px; }
+.wc > span { display: grid; place-items: center; width: 42px; }
+.frame[data-size='820x560'] .wc > span { width: 38px; }
+
+/* Stop all and Move threads: the same quiet pill (watcher.css). */
+.pill { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 10px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 6px;
+  background: transparent; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.pill:hover, .pill[aria-expanded='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
+.pill--stop:hover > svg { color: var(--tt-error); }
+.pill > .chev { margin-left: -1px; color: var(--tt-text-muted); }
+.pill[data-moving] { color: var(--tt-activity); }
+.move-wrap { position: relative; display: flex; }
+
+/* The machine menu under Move threads. */
+.mmenu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; display: grid; gap: 1px; width: 304px; padding: 6px; border: 1px solid var(--tt-border-faint); border-radius: 12px;
+  background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); }
+.mmenu__head { margin: 2px 8px 4px; color: var(--tt-text-2); font-size: 12px; font-weight: 600; }
+.mmenu [role='menuitem'] { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: start; gap: 9px; width: 100%; padding: 7px 8px; border: 0; border-radius: 8px; background: transparent; text-align: left; cursor: pointer; }
+.mmenu [role='menuitem'] > svg { margin-top: 2px; color: var(--tt-text-2); }
+.mmenu [role='menuitem'][data-kind='remote'] > svg { color: var(--tt-accent-text); }
+.mmenu [role='menuitem']:hover:not([aria-disabled='true']), .mmenu [role='menuitem']:focus-visible { background: var(--tt-hover); }
+.mmenu [role='menuitem']:focus-visible { outline-offset: -2px; }
+.mmenu [role='menuitem'] b { display: block; font-size: 13.5px; font-weight: 500; }
+.mmenu [role='menuitem'] small { display: block; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.45; }
+.mmenu [role='menuitem'][aria-disabled='true'] { cursor: default; }
+.mmenu [role='menuitem'][aria-disabled='true'] b { color: var(--tt-text-2); }
+.mmenu [role='menuitem'][aria-disabled='true'] > svg { color: var(--tt-text-muted); }
+.mmenu__off { color: var(--watcher-needs-ink) !important; }
+
+/* A: the move panel under Move threads: the checklist, then each thread's progress. */
+.mpanel { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; display: flex; flex-direction: column; width: min(460px, calc(100cqw - 24px)); max-height: calc(100cqh - 56px);
+  border: 1px solid var(--tt-border-faint); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); }
+.mpanel__head { display: flex; flex: none; align-items: center; gap: 8px; padding: 12px 8px 4px 16px; }
+.mpanel__head h2 { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 600; line-height: 1.4; }
+.mpanel__head h2[tabindex]:focus { outline: none; }
+.xbtn { display: grid; flex: none; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); cursor: pointer; }
+.xbtn:hover { background: var(--tt-hover); color: var(--tt-text); }
+.mpanel__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 0 16px 6px; scrollbar-width: thin; }
+.mpanel__lead { margin: 0 0 8px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.mgroup { display: flex; align-items: center; gap: 6px; margin: 10px 0 4px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; }
+.mgroup span { color: var(--tt-text-muted); font-weight: 400; font-variant-numeric: tabular-nums; }
+.mlist { display: grid; gap: 2px; margin: 0; padding: 0; list-style: none; }
+.mrow { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; column-gap: 9px; row-gap: 2px; padding: 7px 8px; margin: 0 -8px; border-radius: 8px; font-size: 13.5px; }
+.mrow:has(> input:hover) { background: var(--tt-hover); }
+.mrow > input[type='checkbox'] { width: 15px; height: 15px; margin: 0; justify-self: center; accent-color: var(--tt-accent); cursor: pointer; }
+.mrow__name { display: flex; align-items: center; gap: 7px; min-width: 0; font-weight: 500; cursor: pointer; }
+.mrow__name > span:last-child, .mrow__name > .link { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mrow__tag { display: inline-flex; align-items: center; gap: 5px; color: var(--tt-text-2); font-size: 12px; white-space: nowrap; }
+.mrow__meta, .mrow__line, .mrow__warn, .mrow__acts { grid-column: 2 / -1; margin: 0; font-size: 12.5px; line-height: 1.45; }
+.mrow__meta { display: flex; flex-wrap: wrap; color: var(--tt-text-muted); }
+.mrow__line { color: var(--tt-text-2); }
+.mrow__warn { color: var(--watcher-needs-ink); }
+.mrow__acts { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.mrow__nobox { justify-self: center; width: 13px; height: 13px; border: 1.5px dashed var(--tt-text-muted); border-radius: 3px; }
+.mlist--stays .mrow__name { color: var(--tt-text-2); cursor: default; }
+.mrow__state { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; }
+.mrow__state[data-tone='working'] { color: var(--tt-activity); }
+.mrow__state[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.mrow__state[data-tone='ready'] { color: var(--watcher-ready-ink); }
+.mrow > .ring { justify-self: center; }
+.mrow > svg.done { justify-self: center; color: var(--watcher-ready-ink); }
+.mpanel__note { flex: none; margin: 0; padding: 8px 16px 0; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.mpanel__actions { display: flex; flex: none; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; padding: 10px 16px 14px; }
+.mpanel__fold { display: inline-flex; align-items: center; gap: 4px; margin: 10px 0 2px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.mpanel__fold > svg { transition: rotate 120ms ease; }
+.mpanel__fold[aria-expanded='true'] > svg { rotate: 90deg; }
+
+/* B: the sheet over the room. */
+.scrim { position: absolute; inset: 0; z-index: 40; background: var(--tt-scrim); }
+.sheet { position: absolute; top: 50%; left: 50%; z-index: 41; display: flex; flex-direction: column; width: min(540px, calc(100cqw - 32px)); max-height: calc(100cqh - 40px); translate: -50% -50%;
+  border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-lg); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); }
+.sheet__head { flex: none; padding: 16px 20px 6px; }
+.sheet__head h2 { margin: 0 0 4px; font-size: 16px; font-weight: 600; }
+.sheet__head p { margin: 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.sheet__body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 20px 8px; scrollbar-width: thin; }
+.sheet__body:focus-visible { outline-offset: -3px; }
+.sheet h3 { display: flex; align-items: center; gap: 6px; margin: 12px 0 4px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; }
+.sheet h3[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.sheet h3 span { color: var(--tt-text-muted); font-weight: 400; }
+.srow { display: grid; grid-template-columns: 16px minmax(0, 1fr); column-gap: 9px; row-gap: 1px; padding: 6px 0; font-size: 13.5px; }
+.srow + .srow { border-top: 1px solid color-mix(in srgb, var(--tt-hairline) 60%, transparent); }
+.srow > .provider-mark, .srow > svg { margin-top: 3px; }
+.srow__name { min-width: 0; overflow: hidden; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.srow__line { grid-column: 2; margin: 0; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.45; }
+.srow__line--needs { color: var(--watcher-needs-ink); }
+.srow__meta { grid-column: 2; display: flex; flex-wrap: wrap; margin: 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.sheet__stays .srow__name { color: var(--tt-text-2); }
+.sheet__foot { flex: none; padding: 10px 20px 16px; border-top: 1px solid var(--tt-hairline); }
+.sheet__foot p { margin: 0 0 10px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.sheet__actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* The needs-you line and the machines line (watcher.css). */
+.watcher-glance, .watcher-machines { position: relative; z-index: 6; flex: none; margin: 0 max(24px, calc((100% - 760px) / 2)); padding: 3px 0 10px; box-shadow: inset 0 -1px 0 var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.watcher-glance { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 18px; }
+.watcher-glance:has(+ .watcher-machines) { padding-bottom: 2px; box-shadow: none; }
+.watcher-glance + .watcher-machines { padding-top: 0; }
+.watcher-glance__lead { margin: 0; color: var(--watcher-needs-ink); font-weight: 600; white-space: nowrap; }
+.watcher-glance__item { display: inline-flex; align-items: baseline; gap: 7px; min-width: 0; }
+.watcher-glance__item > .ring { align-self: center; width: 8px; height: 8px; }
+.uline { display: inline; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-text); font: inherit; font-weight: 500; white-space: nowrap; cursor: pointer;
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--tt-text) 30%, transparent); text-underline-offset: 3px; }
+.uline:hover { text-decoration-color: currentColor; }
+.watcher-machines__machine { white-space: nowrap; }
+.watcher-machines__sep { padding: 0 7px; }
+.watcher-machines__words { color: var(--watcher-needs-ink); }
+.frame[data-size='820x560'] :is(.watcher-glance, .watcher-machines) { margin: 0 18px; }
+
+/* The conversation. */
+.room__transcript { position: relative; z-index: 1; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 24px max(24px, calc((100% - 760px) / 2)) 12px; scrollbar-width: thin; }
+.room__transcript:focus-visible { outline-offset: -3px; }
+.frame[data-size='820x560'] .room__transcript { padding: 16px 18px 8px; }
+.msg { position: relative; margin: 0 0 28px; }
+.msg header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg__who { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text-2); font-weight: 500; }
+.msg time { font-size: 12px; font-variant-numeric: tabular-nums; }
+.msg[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; border-radius: 14px 14px 4px 14px; background: var(--tt-message); }
+.msg[data-role='user'] p { margin: 0; font-size: 15px; line-height: 1.6; }
+.msg__from { display: inline-flex; align-items: center; gap: 5px; margin: 6px 0 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg__body { color: var(--tt-text-2); font-size: 15px; line-height: 1.6; }
+.msg__body p { margin: 0 0 10px; } .msg__body p:last-child { margin: 0; }
+.frame[data-size='820x560'] .msg[data-role='user'] { margin-left: 24px; }
+
+/* Receipt cards (WatcherReceipts.tsx), and the move's own cards in B. */
+.receipts { display: grid; gap: 8px; margin: -16px 0 28px; padding: 0; list-style: none; }
+.receipt-card { display: grid; gap: 4px; min-width: 0; padding: 11px 14px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface); }
+.receipt-card[data-tone='needs'] { border-color: color-mix(in srgb, var(--watcher-needs-ink) 45%, var(--tt-hairline)); }
+.receipt-card__top { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; }
+.receipt-card__glyph { flex: none; color: var(--tt-text-muted); }
+.receipt-card__lead { flex: none; color: var(--tt-text-2); }
+.receipt-card[data-tone='needs'] :is(.receipt-card__lead, .receipt-card__glyph) { color: var(--watcher-needs-ink); }
+.receipt-card__top > .link { flex: 0 1 auto; }
+.outcome { display: inline-flex; flex: none; align-items: center; gap: 6px; margin-left: auto; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.outcome[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.outcome[data-tone='working'] { color: var(--tt-activity); }
+.outcome[data-tone='ready'] { color: var(--watcher-ready-ink); }
+.receipt-card__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 0; margin: 0; padding-left: 23px; color: var(--tt-text-muted); font-size: 12.5px; }
+.receipt-card__meta > :not(:first-child)::before { margin: 0 7px; content: '·'; }
+.receipt-card__line { margin: 3px 0 0; padding-left: 23px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.45; }
+.receipt-card__line--needs { color: var(--watcher-needs-ink); }
+.receipt-card__acts { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; padding-left: 23px; }
+.steps { display: flex; gap: 3px; margin: 5px 0 1px; padding-left: 23px; list-style: none; }
+.steps li { width: 22px; height: 3px; border-radius: 2px; background: var(--tt-hairline); }
+.steps li[data-done] { background: var(--tt-activity); }
+.mrow .steps { grid-column: 2 / -1; padding-left: 0; margin: 3px 0 1px; }
+
+/* C: Watcher's plan card. */
+.plan { display: grid; gap: 2px; margin: -16px 0 28px; padding: 12px 14px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface); }
+.plan__top { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.plan__top > svg { color: var(--tt-text-muted); }
+.plan__top h3 { flex: 1; min-width: 0; margin: 0; font-size: 14px; font-weight: 600; }
+.plan__state { color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; }
+.plan__state[data-tone='ready'] { color: var(--watcher-ready-ink); }
+.plan .srow { padding-left: 0; }
+.plan__sub { margin: 8px 0 2px; color: var(--watcher-needs-ink); font-size: 12.5px; font-weight: 600; }
+.plan__fold { display: inline-flex; align-items: center; gap: 4px; justify-self: start; margin: 8px 0 0; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.plan__fold > svg { transition: rotate 120ms ease; }
+.plan__fold[aria-expanded='true'] > svg { rotate: 90deg; }
+.plan__stays { margin: 2px 0 0; padding: 0; list-style: none; }
+.plan__note { margin: 10px 0 0; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.plan__acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+
+/* Watcher's composer, floating over the conversation. */
+.wcompose { position: relative; z-index: 5; flex: none; padding: 6px max(24px, calc((100% - 760px) / 2)) 18px; }
+.frame[data-size='820x560'] .wcompose { padding: 4px 18px 12px; }
+.prompt { display: grid; gap: 8px; padding: 12px 14px 10px 16px; border: 1px solid var(--tt-hairline); border-radius: 16px; background: color-mix(in oklab, var(--tt-surface-elevated) 88%, transparent); backdrop-filter: blur(12px); }
+.prompt:focus-within { border-color: var(--tt-accent-border); }
+.prompt textarea { width: 100%; min-height: 44px; max-height: 120px; padding: 0; border: 0; outline: 0; background: transparent; color: var(--tt-text); font-size: 15px; line-height: 1.5; resize: none; }
+.prompt textarea::placeholder { color: var(--tt-text-muted); }
+.prompt textarea:disabled::placeholder { color: var(--tt-text-2); }
+.frame[data-size='820x560'] .prompt textarea { min-height: 24px; }
+.prompt__bar { display: flex; align-items: center; gap: 4px; color: var(--tt-text-2); font-size: 13px; }
+.prompt__chip { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; border-radius: 7px; white-space: nowrap; }
+.prompt__send { display: grid; place-items: center; width: 28px; height: 28px; margin-left: auto; padding: 0; border: 0; border-radius: 50%; background: var(--tt-accent); color: var(--tt-canvas); cursor: pointer; }
+.prompt__send:disabled { background: var(--tt-hover-strong); color: var(--tt-text-muted); cursor: default; }
+
+/* All threads (WatcherOverview.tsx), over the room. */
+.list-scrim { position: absolute; inset: 0; z-index: 20; }
+.wlist { position: absolute; top: 44px; left: 70px; z-index: 21; display: flex; flex-direction: column; width: min(400px, calc(100cqw - 16px)); max-height: calc(100cqh - 56px); overflow: hidden;
+  border: 1px solid var(--tt-border-faint); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); }
+.wlist:focus { outline: none; }
+.wlist__scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 6px 4px 6px; scrollbar-width: thin; }
+.wlist__foot { flex: none; margin: 0; padding: 7px 12px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
+.wgroup { margin: 0 0 6px; }
+.wgroup__label { display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 10px 2px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; }
+.wgroup[data-tone='needs'] .wgroup__label { color: var(--watcher-needs-ink); }
+.wgroup__count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; font-weight: 400; }
+.wgroup ul { margin: 0; padding: 0; list-style: none; }
+.wrow { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 9px; row-gap: 3px; margin: 1px 0; padding: 7px 10px; border-radius: 7px; }
+.wrow:hover { background: var(--tt-hover); }
+.wrow__open { display: flex; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--tt-text); font-size: 13.5px; font-weight: 500; text-align: left; cursor: pointer; }
+.wrow__open > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wrow__open::after { position: absolute; inset: 0; border-radius: 7px; content: ''; }
+.wrow__open:focus-visible { outline: 0; }
+.wrow__open:focus-visible::after { outline: 3px solid var(--tt-focus-ring); outline-offset: -1px; }
+.wrow[data-settled] .wrow__open { color: var(--tt-text-2); }
+.wrow__meta { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+.wrow__status { flex-shrink: 0; margin-left: auto; white-space: nowrap; }
+.wrow__status[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.wrow__status[data-tone='working'] { color: var(--tt-activity); }
+.wrow__status[data-tone='ready'] { color: var(--watcher-ready-ink); }
+.wrow__mark { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ---------- the Threads page ---------- */
+.tpage { display: grid; grid-template-rows: 32px minmax(0, 1fr); height: 100%; }
+.app-strip { display: flex; align-items: center; gap: 10px; padding-left: 14px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; }
+.app-strip b { color: var(--tt-text-2); font-weight: 600; }
+.app-strip .wc { margin-left: auto; }
+.threads-view { display: grid; grid-template-columns: var(--sidebar) minmax(0, 1fr); min-height: 0; }
+.nav { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--tt-hairline); background: var(--tt-sidebar); font-size: 13.5px; }
+.nav__scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 8px; scrollbar-width: thin; }
+.nav__new { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; color: var(--tt-text-2); }
+.nav__project { margin: 12px 8px 4px; color: var(--tt-text-muted); font-size: 12px; }
+.nav ul { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.nrow { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; column-gap: 8px; width: 100%; min-height: 32px; padding: 5px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); text-align: left; cursor: pointer; }
+.nrow:hover { background: var(--tt-hover); }
+.nrow[aria-current='true'] { background: var(--tt-hover-strong); color: var(--tt-text); }
+.nrow__marks { display: inline-flex; align-items: center; gap: 3px; }
+.nrow__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nrow__state { color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.nrow__state[data-tone='working'] { color: var(--tt-activity); }
+.nrow__state[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.nrow__sub { grid-column: 2 / -1; display: flex; align-items: center; gap: 5px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+.nrow__sub > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nrow__sub[data-tone='working'] { color: var(--tt-activity); }
+.nrow__sub[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.nrow__sub > svg { flex: none; }
+.nrow[data-settled] .nrow__title { color: var(--tt-text-muted); }
+.nrow[data-child] { padding-left: 22px; }
+.nrow[data-new] .nrow__marks > svg.srv { color: var(--tt-accent-text); }
+.nav__foot { display: flex; flex: none; align-items: center; gap: 2px; padding: 8px; border-top: 1px solid var(--tt-hairline); }
+
+.tw { display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; container: tpane / inline-size; }
+.tw__head { position: relative; z-index: 10; display: flex; flex: none; align-items: center; gap: 9px; height: 44px; padding: 0 8px 0 18px; }
+.tw__head h2 { min-width: 3em; margin: 0; overflow: hidden; font-size: 15px; font-weight: 500; letter-spacing: -.2px; text-overflow: ellipsis; white-space: nowrap; }
+.tw__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.tw__crumb::before { content: '/'; }
+.tw__actions { position: relative; display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.tw__branch { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; border-radius: 7px; color: var(--tt-text-2); font: 12.5px var(--tt-font-mono); white-space: nowrap; }
+.iconbtn { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); cursor: pointer; }
+.iconbtn:hover, .iconbtn[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.frame[data-size='820x560'] .tw__crumb { display: none; }
+.frame[data-size='820x560'] .tw__head { padding-left: 14px; }
+.pmenu { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; display: grid; gap: 1px; width: 290px; padding: 6px; border: 1px solid var(--tt-border-faint); border-radius: 12px;
+  background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); }
+.pmenu [role='menuitem'] { display: grid; grid-template-columns: 16px minmax(0, 1fr); align-items: start; gap: 9px; width: 100%; padding: 6px 8px; border: 0; border-radius: 7px; background: transparent; font-size: 13.5px; text-align: left; cursor: pointer; }
+.pmenu [role='menuitem'] > svg { margin-top: 2px; color: var(--tt-text-2); }
+.pmenu [role='menuitem']:hover:not([aria-disabled='true']), .pmenu [role='menuitem']:focus-visible { background: var(--tt-hover); }
+.pmenu [role='menuitem']:focus-visible { outline-offset: -2px; }
+.pmenu [role='menuitem'][aria-disabled='true'] { color: var(--tt-text-2); cursor: default; }
+.pmenu small { display: block; color: var(--tt-text-2); font-size: 12px; line-height: 1.4; }
+.pmenu hr { width: 100%; height: 1px; margin: 4px 0; border: 0; background: var(--tt-hairline); }
+.pmenu [data-new-entry] { box-shadow: inset 2px 0 0 var(--tt-accent); }
+.tw__transcript { flex: 1; min-height: 0; overflow-y: auto; padding: 24px max(24px, calc((100% - 720px) / 2)); scrollbar-width: thin; }
+.tw__transcript:focus-visible { outline-offset: -3px; }
+.frame[data-size='820x560'] .tw__transcript { padding: 14px 18px; }
+.tw__compose { flex: none; padding: 6px max(24px, calc((100% - 720px) / 2)) 18px; }
+.frame[data-size='820x560'] .tw__compose { padding: 4px 16px 12px; }
+.note { display: flex; align-items: flex-start; gap: 8px; margin: 0 0 24px; padding: 9px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.note > svg { flex: none; margin-top: 3px; color: var(--tt-text-muted); }
+.note p { margin: 0; }
+.note strong { color: var(--tt-text); font-weight: 600; }
+.handover { margin: 0 0 24px; padding: 12px 14px; border: 1px dashed var(--tt-field-border); border-radius: var(--tt-radius-md); color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+.handover header { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.handover header b { color: var(--tt-text-2); font-weight: 500; }
+.handover dl { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 12px; margin: 6px 0 0; font-size: 12.5px; }
+.handover dt { color: var(--tt-text-muted); }
+.handover dd { margin: 0; color: var(--tt-text); }
+.handover code, .mono { font: 12.5px var(--tt-font-mono); }
+.working-line { display: flex; align-items: center; gap: 8px; margin: 0 0 20px; color: var(--tt-activity); font-size: 13.5px; }
+
+/* Strips over a thread's composer: continuing on another machine (A), and a move under way (A, C). */
+.strip { margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text); font-size: 13.5px; line-height: 1.45; }
+.strip[data-tone='needs'] { border-color: color-mix(in srgb, var(--watcher-needs-ink) 55%, var(--tt-hairline)); }
+.strip[data-tone='quiet'] { border-color: var(--tt-hairline); }
+.strip__lead { display: flex; align-items: flex-start; gap: 8px; }
+.strip__lead > svg, .strip__lead > .ring { flex: none; margin-top: 3px; color: var(--tt-accent-text); }
+.strip[data-tone='needs'] .strip__lead > svg { color: var(--watcher-needs-ink); }
+.strip__lead > p { flex: 1 1 auto; min-width: 0; margin: 0; }
+.strip__lead strong { font-weight: 600; }
+.strip__chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 8px 0 0 23px; }
+.fact { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 1px dashed var(--tt-field-border); border-radius: 4px; color: var(--tt-text-2); font-size: 12.5px; white-space: nowrap; }
+.fact > svg { flex: none; }
+.chipsel { height: 28px; padding: 0 8px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-surface); color: var(--tt-text); font-size: 12.5px; cursor: pointer; }
+.strip__ledger { margin: 8px 0 0 23px; color: var(--tt-text-2); }
+.strip__warn { margin: 8px 0 0 23px; color: var(--watcher-needs-ink); }
+.strip__acts { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0 23px; }
+.strip .steps { padding-left: 23px; }
+
+/* A scrolled list fades its last line while more of it is below. */
+:is(.mpanel__body, .sheet__body, .wlist__scroll)[data-more] { mask-image: linear-gradient(to bottom, #000 calc(100% - 2.2em), transparent); }
+
+/* Motion: a reveal as something opens, the working ring's turn. Off with Reduced motion or the OS setting. */
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .ring[data-tone='working'] { animation: spin 1.3s linear infinite; }
+  :root:not([data-reduced-motion='on']) [data-reveal] { animation: reveal 160ms ease-out; }
+  :root:not([data-reduced-motion='on']) .sheet[data-reveal] { animation: rise 180ms cubic-bezier(.2, .8, .2, 1); }
+}
+:root[data-reduced-motion='on'] *, :root[data-reduced-motion='on'] *::before { transition: none !important; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+@keyframes reveal { from { opacity: 0; translate: 0 -3px; } }
+@keyframes rise { from { opacity: 0; } }
+</style>
+</head>
+<body>
+<header class="top">
+  <b>Moving threads to another machine</b><span class="tag">Prototype · throwaway</span>
+  <nav aria-label="Jump to" id="jumps">
+    <button type="button" data-jump="start">Start</button>
+    <button type="button" data-jump="a">A</button>
+    <button type="button" data-jump="b">B</button>
+    <button type="button" data-jump="c">C</button>
+    <button type="button" data-jump="end">End</button>
+  </nav>
+  <span class="sp"></span>
+  <button type="button" id="theme" aria-pressed="false">Light</button>
+  <button type="button" id="motion" aria-pressed="false">Reduced motion</button>
+</header>
+<section class="cap" id="cap" aria-live="polite">
+  <p class="cap__count" id="count"></p>
+  <h1 class="cap__name" id="vtitle"></h1>
+  <div id="captext"></div>
+</section>
+<main class="stage" id="stage" aria-label="The Sotto window. Tap it to go to the next step">
+  <div class="fit" id="fit">
+    <div class="frame" id="frame" data-size="1280x800">
+      <div id="app" inert></div>
+      <div class="overlay" id="overlay" aria-hidden="true">
+        <div class="pointer" id="pointer" hidden><svg viewBox="0 0 24 24" width="26" height="26"><path d="M4 2.5 4 19.5 8.6 15.4 11.6 22 14.6 20.6 11.7 14.2 18 14.2Z" fill="#fff" stroke="#111" stroke-width="1.4" stroke-linejoin="round"/></svg></div>
+      </div>
+    </div>
+  </div>
+</main>
+<nav class="wnav" aria-label="Steps">
+  <button type="button" id="back">Back</button>
+  <span class="wnav__count" id="navcount"></span>
+  <button type="button" id="auto" aria-pressed="true"><span class="long">Auto-play</span><span class="short">Auto</span>: <span id="autostate">on</span></button>
+  <button type="button" id="next">Next</button>
+</nav>
+<script>
+'use strict'
+const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+/* Lucide paths, as the app's icons are. */
+const P = {
+  server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/>',
+  laptop: '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
+  chevd: '<path d="m6 9 6 6 6-6"/>', chevr: '<path d="m9 18 6-6-6-6"/>',
+  square: '<rect width="16" height="16" x="4" y="4" rx="2"/>',
+  list: '<path d="M3 12h.01M3 18h.01M3 6h.01M8 12h13M8 18h13M8 6h13"/>',
+  move: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
+  cdr: '<polyline points="15 10 20 15 15 20"/><path d="M4 4v7a4 4 0 0 0 4 4h12"/>',
+  cul: '<polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/>',
+  check: '<path d="M20 6 9 17l-5-5"/>', clock: '<circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>',
+  alert: '<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  mic: '<path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/>',
+  threads: '<path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/>',
+  chart: '<path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>',
+  gear: '<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/>',
+  help: '<circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>',
+  refresh: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
+  branch: '<path d="M6 3v12"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/>',
+  more: '<circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/>',
+  archive: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
+  pencil: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>',
+  sparkles: '<path d="M9.94 14.06 4 20M14 4l1.5 3.5L19 9l-3.5 1.5L14 14l-1.5-3.5L9 9l3.5-1.5z"/>',
+  shrink: '<path d="m15 15 6 6m-6-6v4.8m0-4.8h4.8"/><path d="M9 19.8V15m0 0H4.2M9 15l-6 6"/><path d="M15 4.2V9m0 0h4.8M15 9l6-6"/><path d="M9 4.2V9m0 0H4.2M9 9 3 3"/>',
+  clip: '<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>',
+  up: '<path d="m5 12 7-7 7 7"/><path d="M12 19V5"/>',
+  pen: '<path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/>',
+  pr: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7"/><path d="M6 9v12"/>',
+  fork: '<circle cx="12" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><path d="M18 9v2c0 .6-.4 1-1 1H7c-.6 0-1-.4-1-1V9"/><path d="M12 12v3"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  plus: '<path d="M5 12h14"/><path d="M12 5v14"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+}
+const icon = (name, size = 14, cls = '') => `<svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${P[name]}</svg>`
+const OWL_BODY = 'M1.27 4.8C0.84 3.93 0.73 2.31 1.49 1.22C1.63 0.95 1.93 0.68 2.06 1.22C2.12 2.03 2.71 2.9 3.93 2.9C5.83 2.2 10.17 1.76 12.94 3.34C13.69 3.28 14.4 2.71 14.45 1.82C14.51 1.57 14.73 1.57 14.83 1.98C15.32 2.58 15.54 4.26 14.94 5.56C15.38 6.1 15.7 7.46 15.7 9.63C15.76 12.12 15.29 13.37 13.97 14.24C12.75 15.19 10.17 15.24 8 15.24C5.8 15.24 3.23 15.19 2.01 14.24C0.68 13.37 0.22 12.12 0.27 9.63C0.24 7.19 0.52 5.83 1.27 4.8Z'
+const OWL_EYES = 'M1.84 8.95C1.82 7.05 2.25 6.07 3.66 6.07C5.34 6.02 6.75 6.21 6.73 8.54C6.73 10.44 6.1 11.31 4.34 11.31C2.58 11.34 1.82 10.58 1.84 8.95ZM9.33 9.22C9.33 8.14 9.63 7.67 10.44 7.46L13.1 6.92C13.8 6.78 14.13 7.46 14.13 8.81C14.16 10.71 13.69 11.34 11.66 11.34C10.17 11.34 9.33 10.71 9.33 9.22Z'
+const owl = (s = 16) => `<svg class="owl" width="${s}" height="${s}" viewBox="0 0 16 16" aria-hidden="true" focusable="false"><path d="${OWL_BODY + OWL_EYES}" fill-rule="evenodd"/><path class="owl__eyes" d="${OWL_EYES}"/></svg>`
+const MARK = {
+  claude: s => `<svg class="provider-mark" data-provider="claude" width="${s}" height="${s}" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M3.4 3.4l9.2 9.2M12.6 3.4l-9.2 9.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>`,
+  codex: s => `<svg class="provider-mark" data-provider="codex" width="${s}" height="${s}" viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M8 1.6 13.6 4.8v6.4L8 14.4 2.4 11.2V4.8z"/><path d="M5.8 6.4 7.6 8 5.8 9.6M8.6 10h1.8" stroke-linecap="round"/></svg>`,
+}
+const PROVIDER = { claude: 'Claude Code', codex: 'Codex' }
+const ring = tone => `<span class="ring" data-tone="${tone}" aria-hidden="true"></span>`
+
+/* ---------- the sample ---------- */
+const T = {
+  tray: { title: 'Tray icon at night', provider: 'claude', model: 'Opus 5.5', effort: 'High', perm: 'Allow edits', project: 'Sotto', branch: 'fix/tray-night', commit: '4be19a2', watched: true, started: 'watcher',
+    ask: 'The tray icon goes dark at night on Windows 11. Find why and fix it.', said: 'Fixed: the night palette reused the light icon. Committed on fix/tray-night as 4be19a2 and pushed. Nothing is left uncommitted.' },
+  notes: { title: 'Owl release notes', provider: 'codex', model: 'GPT-5.5', effort: 'Medium', perm: 'Allow edits', project: 'Sotto', branch: 'docs/owl-0-49', commit: '9d03e1f', pr: 1771, started: 'watcher',
+    ask: 'Write the release notes for Owl 0.49 and open a pull request.', said: 'Opened #1771 with the notes. I’m babysitting it: CI is green and nobody has commented yet.' },
+  menu: { title: 'Linux tray menu spacing', provider: 'codex', model: 'GPT-5.5', effort: 'High', perm: 'Full access', narrower: 'Allow edits', project: 'Sotto', branch: 'fix/tray-menu-spacing', commit: '51c7a20', watched: true,
+    ask: 'The tray menu on Omarchy has too much space between items. Make it match Windows.', said: 'Tightened the item padding to 6 px and committed it as 51c7a20. It wants a look on a Linux tray.' },
+  footer: { title: 'Footer links', provider: 'codex', model: 'GPT-5.5', effort: 'Medium', perm: 'Allow edits', project: 'sotto-site', branch: 'fix/footer-links',
+    why: 'Its 3 changed files aren’t committed. Commit them, or ask it to, then move it.', hint: 'It has 3 changed files that aren’t committed.',
+    ask: 'Two footer links on the site go nowhere. Fix them.', said: 'Fixed both links and the privacy page’s anchor. I haven’t committed yet; say if you want it as one commit.' },
+  wav: { title: 'Streaming WAV stall', provider: 'claude', model: 'Opus 5.5', effort: 'High', perm: 'Allow edits', project: 'Sotto', branch: 'fix/wav-stall', working: true, started: 'watcher',
+    why: 'A turn is running. Move it once that turn ends.', hint: 'A turn is running.',
+    ask: 'Find why the WAV stream stalls after a minute.', said: 'Reading the stream code. The stall lines up with the second chunk boundary, so I’m checking the chunk reader first.' },
+  stop: { title: 'Make Stop reach waiting checks', provider: 'claude', model: 'Opus 5.5', effort: 'High', perm: 'Allow edits', project: 'Sotto', branch: 'fix/stop-waiting-checks',
+    why: 'Its delegated thread, Unit suite after the fix, is still working. Move it once that thread answers.', hint: 'Its delegated thread is still working.',
+    ask: 'Make Stop take a waiting check out of the queue, then run the unit suite.', said: 'Stop now takes a waiting check out of its queue. I’ve asked for the unit suite; it’s running in a delegated thread.' },
+  suite: { title: 'Unit suite after the fix', provider: 'codex', model: 'GPT-5.5', effort: 'Medium', perm: 'Allow edits', project: 'Sotto', parent: 'stop', working: true,
+    why: 'It’s a delegated thread, so it stays with Make Stop reach waiting checks, which started it.', hint: 'A delegated thread stays with the thread that started it.',
+    ask: 'Run npm test -- --maxWorkers=2 and reply with the verdict first.', said: 'Running the unit suite.' },
+}
+const ORDER = ['tray', 'notes', 'menu', 'wav', 'stop', 'suite', 'footer']
+const MOVABLE = ['tray', 'notes', 'menu']
+const STAYS = ['footer', 'wav', 'stop', 'suite']
+const WATCHER_STAYS = 'Watcher stays on this computer. It watches your threads from here, wherever they run.'
+const STEPS = ['fenced', 'branch', 'started', 'ended', 'settled']
+const IN_FLIGHT = ['fenced', 'branch', 'started', 'ended']
+const forgeId = id => `${id}@forge`
+const baseOf = id => id.replace('@forge', '')
+const isNew = id => id.endsWith('@forge')
+const narrowerWords = t => `On forge it would start on ${t.narrower}, not its ${t.perm} here, since your new-thread default allows no more.`
+const goesWith = (t, short) => {
+  const parts = [`branch <span class="mono">${esc(t.branch)}</span> at <span class="mono">${t.commit}</span>`, 'a handover of the thread']
+  if (t.pr) parts.push(`babysitting #${t.pr}`)
+  if (t.watched) parts.push('Watcher’s watch')
+  return (short ? '' : 'Goes with it: ') + parts.join(', ').replace(/, ([^,]*)$/, ' and $1') + '.' + (t.pr && !short ? ' forge is signed in to GitHub, so the babysitting goes on there.' : '')
+}
+
+/* ---------- state ---------- */
+const params = new URLSearchParams(location.search)
+const VARIANTS = [
+  { k: 'a', n: 'A. Choose from a list' },
+  { k: 'b', n: 'B. Confirm once, read Watcher’s reply' },
+  { k: 'c', n: 'C. Ask Watcher first' },
+]
+const S = {
+  v: 'a',
+  theme: params.get('theme') === 'light' ? 'light' : 'dark',
+  motion: params.get('motion') === 'reduce' ? 'reduce' : 'full',
+}
+function fresh() {
+  Object.assign(S, { page: 'room', layer: null, ticks: new Set(['tray', 'notes']), moves: {}, forgeDown: false, conv: [], plan: null, planFold: false, aFold: false,
+    selected: 'tray', cont: null, draft: '', pdraft: '', minute: 40, planAt: '2:42 PM' })
+}
+fresh()
+const root = document.documentElement, frame = document.getElementById('frame')
+let reveal = null
+const clock = () => `2:${String(S.minute++).padStart(2, '0')} PM`
+const mv = id => S.moves[id]
+const moving = () => Object.entries(S.moves)
+const active = () => moving().filter(([, m]) => IN_FLIGHT.includes(m.step) || ['asks', 'lost', 'keeping'].includes(m.step))
+const rows = () => S.v !== 'b' // where the move shows: on rows (A, C) or in Watcher's reply (B)
+/** The new thread on forge exists once the target started it, including while forge is out of touch after that. */
+const newExists = m => m && (['started', 'ended', 'settled'].includes(m.step) || (['lost', 'keeping'].includes(m.step) && ['started', 'ended'].includes(m.from)))
+
+/* ---------- words for a move, one per state ---------- */
+function stepWords(id) {
+  const t = T[id], m = mv(id), n = STEPS.indexOf(m.step) + 1
+  switch (m.step) {
+    case 'asks': return { lead: 'Not moved yet', short: 'Waits for you', tone: 'needs', line: narrowerWords(t) }
+    case 'fenced': return { lead: 'Moving', short: 'Holding sends', row: 'holding sends', tone: 'working', n, line: 'It takes no new sends here while it moves.' }
+    case 'branch': return { lead: 'Moving', short: 'Branch sent', row: 'branch sent', tone: 'working', n, line: `<span class="mono">${esc(t.branch)}</span> at <span class="mono">${t.commit}</span> is on forge.` }
+    case 'started': return { lead: 'Moving', short: 'Started on forge', row: 'started there', tone: 'working', n,
+      line: ['The new thread on forge is reading the handover.', t.pr ? `Babysitting #${t.pr} goes on there.` : '', t.watched ? 'Watcher watches it there.' : ''].filter(Boolean).join(' ') }
+    case 'ended': return { lead: 'Moving', short: 'First turn ended', row: 'first turn ended', tone: 'working', n, line: 'Its first turn on forge ended. Settling the thread here…' }
+    case 'settled': return { lead: 'Moved', short: 'Continued on forge', tone: 'ready', n: 5, line: `Settled here, and its worktree is kept.${t.watched ? ' Watcher watches it on forge now.' : ''}` }
+    case 'lost': return { lead: 'Moving', short: 'Waiting for forge', row: 'waiting for forge', tone: 'needs', line: 'This thread is waiting for forge to answer about its move. Nothing was lost.' }
+    case 'keeping': return { lead: 'Keeping it here', short: 'Waiting for forge', row: 'waiting for forge', tone: 'needs',
+      line: S.forgeDown ? 'forge isn’t answering, so this thread stays held until it does, since forge may already be running the new thread. Nothing was lost.' : 'Asking forge to stop and settle the thread it made for the move…' }
+    case 'kept': return { lead: 'Kept here', short: 'Kept here', tone: 'quiet',
+      line: m.made ? 'forge stopped and settled the thread it made for the move. You can send here again.' : 'forge holds no thread for the move. You can send here again.' }
+    case 'stayed': return { lead: 'Kept here', short: 'Kept here', tone: 'quiet', line: 'Nothing was sent to forge. You can send here as before.' }
+  }
+}
+const stepsTrack = n => `<ol class="steps" aria-hidden="true">${STEPS.map((_, i) => `<li${i < n ? ' data-done' : ''}></li>`).join('')}</ol>`
+
+/* ---------- what a thread is doing, as its rows say it ---------- */
+function rowState(id) {
+  if (isNew(id)) {
+    const m = mv(baseOf(id))
+    if (m.step === 'started' || (['lost', 'keeping'].includes(m.step) && m.from === 'started')) return { word: 'Working', tone: 'working', sub: 'Reading the handover' }
+    return { word: 'Idle', tone: 'quiet' }
+  }
+  const t = T[id], m = mv(id)
+  if (m && m.step === 'settled') return { word: rows() ? 'Continued on forge' : 'Settled', tone: 'quiet', settled: true }
+  if (m && rows() && !['kept', 'stayed'].includes(m.step)) { const w = stepWords(id); return { word: w.short, tone: w.tone, sub: m.step === 'asks' ? 'Move to forge waits for you' : `To forge · ${w.row}`, moving: true } }
+  if (t.working) return { word: 'Working', tone: 'working' }
+  return { word: t.pr ? 'Pull request open' : 'Idle', tone: 'quiet' }
+}
+
+/* ---------- the room ---------- */
+function roomHTML() {
+  return `<div class="room">
+    <div class="room__sky" aria-hidden="true"></div>${stars()}
+    ${header()}
+    ${glance()}
+    ${machines()}
+    <div class="room__transcript" id="rtx" tabindex="0" role="region" aria-label="Watcher’s conversation">${conversation()}</div>
+    ${watcherComposer()}
+    ${S.layer === 'list' ? allThreads() : ''}
+    ${S.layer === 'sheet' ? sheet() : ''}
+  </div>`
+}
+function stars() {
+  const at = [[3, 22, '+'], [6, 40, '·'], [9, 70, '*'], [4, 88, '·'], [93, 18, '+'], [96, 33, '·'], [91, 52, '*'], [95, 74, '+'], [12, 55, '·'], [88, 64, '·']]
+  return `<div class="room__stars" aria-hidden="true">${at.map(([x, y, c]) => `<span style="left:${x}%;top:${y}%">${c}</span>`).join('')}</div>`
+}
+function header() {
+  const count = threadList().filter(id => !rowState(id).settled).length
+  return `<header class="watcher-head">
+    <span class="watcher-head__tile" role="img" aria-label="Sotto Owl">${owl(16)}</span>
+    <div class="watcher-head__title">
+      <h1>Watcher</h1>
+      <button type="button" class="watcher-head__list" data-act="list" data-key="list" aria-haspopup="dialog" aria-expanded="${S.layer === 'list'}" aria-label="All threads, ${count}. Show the list" title="All threads">
+        ${icon('list', 15)}<span class="watcher-head__list-text">All threads</span><span class="watcher-head__count" aria-hidden="true">${count}</span>${icon('chevd', 13)}</button>
+      <nav class="way" aria-label="Rooms and pages">
+        <button type="button" data-act="nope" data-what="Dictate" aria-label="Dictate" title="Dictate">${icon('mic', 15)}</button>
+        <button type="button" aria-current="page" aria-label="Watcher" title="Watcher" data-act="nope" data-what="Watcher, the room you are in">${owl(15)}</button>
+        <button type="button" data-act="page-threads" data-key="go-threads" aria-label="Threads" title="Threads">${icon('threads', 15)}</button>
+        <span class="way__hair" aria-hidden="true"></span>
+        <button type="button" data-act="nope" data-what="Usage" aria-label="Usage" title="Usage">${icon('chart', 15)}</button>
+        <button type="button" data-act="nope" data-what="Settings" aria-label="Settings" title="Settings">${icon('gear', 15)}</button>
+        <button type="button" data-act="nope" data-what="Help" aria-label="Help" title="Help">${icon('help', 15)}</button>
+        <button type="button" data-act="nope" data-what="Check for updates" aria-label="Check for updates" title="Check for updates">${icon('refresh', 15)}</button>
+      </nav>
+    </div>
+    <div class="watcher-head__actions">${moveControl()}
+      <button type="button" class="pill pill--stop" data-act="nope" data-what="Stop all, which stops Streaming WAV stall, the one thread Watcher started that is running" aria-label="Stop all threads Watcher started, 1 thread" title="Stop all threads Watcher started">${icon('square', 13)}<span>Stop all</span></button>
+    </div>
+    <div class="wc" aria-hidden="true"><span>–</span><span>▢</span><span>✕</span></div>
+  </header>`
+}
+function moveControl() {
+  const running = S.v === 'a' && active().length > 0
+  // Hidden while no other machine is connected (Zach, October 29): forge is the only one that can be, and studio isn't.
+  if (S.forgeDown && !running) return ''
+  const open = S.layer === 'mmenu' || S.layer === 'check'
+  const label = running ? 'Moving to forge' : 'Move threads'
+  return `<div class="move-wrap">
+    <button type="button" class="pill" data-act="move-btn" data-key="move-btn" ${running ? 'data-moving' : ''} aria-haspopup="${running ? 'dialog' : 'menu'}" aria-expanded="${open}"
+      aria-label="${running ? 'Moving threads to forge. Show each one’s move' : 'Move threads to another machine'}" title="${running ? 'Show each thread’s move' : 'Move threads to another machine'}">
+      ${running ? ring('working') : icon('move', 14)}<span>${label}</span>${running ? '' : icon('chevd', 13, 'chev')}</button>
+    ${S.layer === 'mmenu' ? machineMenu() : ''}
+    ${S.layer === 'check' ? movePanel() : ''}
+  </div>`
+}
+function forgeLoad() {
+  const working = moving().filter(([, m]) => m.step === 'started').length
+  const starting = moving().filter(([, m]) => ['fenced', 'branch'].includes(m.step)).length
+  return { working, starting }
+}
+function machineMenu() {
+  const f = forgeLoad()
+  return `<div class="mmenu" role="menu" id="mmenu" aria-label="Move threads to"${reveal === 'mmenu' ? ' data-reveal' : ''}>
+    <p class="mmenu__head" aria-hidden="true">Move threads to</p>
+    <button type="button" role="menuitem" tabindex="-1" aria-disabled="true" data-act="mm-off" data-key="mm-here" data-why="Your threads are on this computer already." aria-describedby="mm-here-why">${icon('laptop', 16)}<span><b>This computer</b><small id="mm-here-why">Your threads are here already.</small></span></button>
+    <button type="button" role="menuitem" tabindex="-1" data-kind="remote" data-act="mm-forge" data-key="mm-forge" aria-describedby="mm-forge-why"${S.forgeDown ? ' aria-disabled="true"' : ''}>${icon('server', 16)}<span><b>forge</b><small id="mm-forge-why">${S.forgeDown ? '<span class="mmenu__off">Not answering.</span> Moves wait for it to answer.' : `Linux · ${f.working} working${f.starting ? `, ${f.starting} starting` : ''}`}</small></span></button>
+    <button type="button" role="menuitem" tabindex="-1" aria-disabled="true" data-act="mm-off" data-key="mm-studio" data-why="studio isn’t connected. Connect it in Settings, under Hosts, to move threads there." aria-describedby="mm-studio-why">${icon('server', 16)}<span><b>studio</b><small id="mm-studio-why">Mac · <span class="mmenu__off">not connected</span>. Connect it in Settings, under Hosts, to move threads there.</small></span></button>
+  </div>`
+}
+
+/* A: the checklist, then each thread's move, in one panel under Move threads. */
+function movePanel() {
+  const started = active().length > 0 || moving().some(([, m]) => ['settled', 'kept', 'stayed'].includes(m.step))
+  const fold = (n) => `<button type="button" class="mpanel__fold" data-act="a-fold" data-key="a-fold" aria-expanded="${S.aFold}" aria-controls="a-stays">${icon('chevr', 13)}${n} stay here</button>
+    ${S.aFold ? `<ul class="mlist mlist--stays" id="a-stays">${STAYS.map(stayRow).join('')}${watcherStayRow()}</ul>` : ''}`
+  if (started) {
+    const ids = Object.keys(S.moves)
+    const live = active().length
+    return `<div class="mpanel" role="dialog" aria-labelledby="mp-title" id="mpanel"${reveal === 'check' ? ' data-reveal' : ''}>
+      <div class="mpanel__head"><h2 id="mp-title" tabindex="-1" data-key="mp-title">${live ? `Moving ${ids.length} thread${ids.length > 1 ? 's' : ''} to forge` : 'Moves to forge'}</h2>
+        <button type="button" class="xbtn" data-act="close-layer" data-key="mp-x" aria-label="Close. The moves go on">${icon('x', 16)}</button></div>
+      <div class="mpanel__body">
+        <ul class="mlist" aria-label="Each thread’s move">${ids.map(progressRow).join('')}</ul>
+        ${fold(STAYS.length + 1)}
+      </div>
+      <p class="mpanel__note">Close puts this away; the moves go on, and each thread’s row shows its move. The thread here is settled once the new one’s first turn ends, and its worktree is kept.</p>
+      <div class="mpanel__actions"><button type="button" class="btn" data-act="close-layer" data-key="mp-close">Close</button></div>
+    </div>`
+  }
+  const n = S.ticks.size
+  return `<div class="mpanel" role="dialog" aria-labelledby="mp-title" aria-describedby="mp-lead" id="mpanel"${reveal === 'check' ? ' data-reveal' : ''}>
+    <div class="mpanel__head"><h2 id="mp-title">Move threads to forge</h2>
+      <button type="button" class="xbtn" data-act="close-layer" data-key="mp-x" aria-label="Close without moving anything">${icon('x', 16)}</button></div>
+    <div class="mpanel__body">
+      <p class="mpanel__lead" id="mp-lead">Each continues on forge as a new thread, in the same project, on the same provider and model, with a handover of the thread here.</p>
+      <h3 class="mgroup">Can move <span>${MOVABLE.length}</span></h3>
+      <ul class="mlist">${MOVABLE.map(tickRow).join('')}</ul>
+      <h3 class="mgroup">Stays here <span>${STAYS.length + 1}</span></h3>
+      <ul class="mlist mlist--stays">${STAYS.map(stayRow).join('')}${watcherStayRow()}</ul>
+    </div>
+    <p class="mpanel__note">The thread here is settled once the new one’s first turn ends. Its worktree is kept.</p>
+    <div class="mpanel__actions">
+      <button type="button" class="btn" data-act="close-layer" data-key="mp-cancel">Cancel</button>
+      <button type="button" class="btn btn--primary" data-act="a-move" data-key="a-move" ${n ? '' : 'disabled'}>${n ? `Move ${n} thread${n > 1 ? 's' : ''}` : 'Tick a thread to move'}</button>
+    </div>
+  </div>`
+}
+function tickRow(id) {
+  const t = T[id], on = S.ticks.has(id)
+  const line = t.narrower
+    ? `<p class="mrow__warn" id="tick-${id}-why">${on ? `It starts on forge on ${t.narrower}, not its ${t.perm} here.` : `${narrowerWords(t)} Tick it to move it on ${t.narrower}.`}</p>`
+    : `<p class="mrow__line" id="tick-${id}-why">${goesWith(t)}</p>`
+  return `<li class="mrow">
+    <input type="checkbox" id="tick-${id}" data-act="tick" data-id="${id}" data-key="tick-${id}" ${on ? 'checked' : ''} aria-describedby="tick-${id}-meta tick-${id}-why">
+    <label class="mrow__name" for="tick-${id}">${MARK[t.provider](13)}<span>${esc(t.title)}</span></label>
+    ${t.watched ? `<span class="mrow__tag" title="Watched by Watcher">${owl(13)}<span class="vh">Watched by Watcher</span></span>` : '<span></span>'}
+    <p class="mrow__meta dots" id="tick-${id}-meta"><span>${PROVIDER[t.provider]} · ${t.model}</span><span>${t.perm}</span><span>${t.project}</span></p>
+    ${line}
+  </li>`
+}
+function stayRow(id) {
+  const t = T[id]
+  return `<li class="mrow"><span class="mrow__nobox" aria-hidden="true"></span>
+    <span class="mrow__name">${MARK[t.provider](13)}<span>${esc(t.title)}</span></span><span></span>
+    <p class="mrow__line">${t.why}</p></li>`
+}
+function watcherStayRow() {
+  return `<li class="mrow"><span class="mrow__nobox" aria-hidden="true"></span>
+    <span class="mrow__name">${owl(13)}<span>Watcher</span></span><span></span>
+    <p class="mrow__line">${WATCHER_STAYS}</p></li>`
+}
+function progressRow(id) {
+  const t = T[id], m = mv(id), w = stepWords(id)
+  const lead = m.step === 'settled' ? icon('check', 15, 'done') : ring(w.tone)
+  const name = `<button type="button" class="link" data-act="open-thread" data-id="${id}" data-key="pr-open-${id}" aria-label="Open ${esc(t.title)}" title="${esc(t.title)}">${esc(t.title)}</button>`
+  let tail = ''
+  if (m.step === 'settled') tail = `<p class="mrow__line">${w.line} <button type="button" class="textlink" data-act="open-thread" data-id="${forgeId(id)}" data-key="pr-new-${id}" aria-label="Open ${esc(t.title)} on forge, the thread that continues it">Open it on forge</button></p>`
+  else if (m.step === 'lost') tail = `<p class="mrow__warn">${w.line}</p><div class="mrow__acts"><button type="button" class="btn btn--small" data-act="keep" data-id="${id}" data-key="keep-${id}">Keep it here</button></div>`
+  else if (m.step === 'keeping') tail = `<p class="mrow__warn">${w.line}</p>`
+  else tail = `<p class="mrow__line">${w.line}</p>`
+  return `<li class="mrow">${lead}<span class="mrow__name">${MARK[t.provider](13)}${name}</span>
+    <span class="mrow__state" data-tone="${w.tone}">${w.short}</span>
+    ${w.n ? stepsTrack(w.n) : ''}${tail}</li>`
+}
+
+/* B: the sheet. */
+function sheet() {
+  const moves = MOVABLE.filter(id => !T[id].narrower), asks = MOVABLE.filter(id => T[id].narrower)
+  const n = MOVABLE.length
+  return `<div class="scrim" data-act="close-layer" aria-hidden="true"></div>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh-title" aria-describedby="sh-lead" id="sheet"${reveal === 'sheet' ? ' data-reveal' : ''}>
+    <div class="sheet__head"><h2 id="sh-title">Move ${n} threads to forge?</h2>
+      <p id="sh-lead">Each continues on forge as a new thread, in the same project, on the same provider and model, with a handover of the thread here. Watcher reports each move in its conversation.</p></div>
+    <div class="sheet__body" tabindex="0" role="region" aria-label="What moves and what stays" data-key="sh-body">
+      <h3>Moves now <span>${moves.length}</span></h3>
+      ${moves.map(id => sheetRow(id, `<p class="srow__line">${goesWith(T[id])}</p>`)).join('')}
+      <h3 data-tone="needs">Asks you first <span>${asks.length}</span></h3>
+      ${asks.map(id => sheetRow(id, `<p class="srow__line srow__line--needs">${narrowerWords(T[id])} Watcher waits for your press on its card before it moves it.</p>`)).join('')}
+      <h3>Stays here <span>${STAYS.length + 1}</span></h3>
+      <div class="sheet__stays">${STAYS.map(id => sheetRow(id, `<p class="srow__line">${T[id].why}</p>`, true)).join('')}
+        <div class="srow">${owl(14)}<span class="srow__name">Watcher</span><p class="srow__line">${WATCHER_STAYS}</p></div></div>
+    </div>
+    <div class="sheet__foot"><p>Each thread here is settled once its new thread’s first turn ends, and its worktree is kept.</p>
+      <div class="sheet__actions"><button type="button" class="btn" data-act="close-layer" data-key="sh-cancel">Cancel</button>
+        <button type="button" class="btn btn--primary" data-act="b-move" data-key="b-move">Move ${n} threads</button></div></div>
+  </div>`
+}
+function sheetRow(id, line, stays) {
+  const t = T[id]
+  return `<div class="srow">${MARK[t.provider](14)}<span class="srow__name">${esc(t.title)}</span>
+    ${stays ? '' : `<p class="srow__meta dots"><span>${PROVIDER[t.provider]} · ${t.model}</span><span>${t.perm}</span><span>${t.project}</span></p>`}${line}</div>`
+}
+
+/* The needs-you line: a move that waits on the user is something that needs them (A, C). */
+function glance() {
+  if (!rows()) return ''
+  const items = moving().filter(([, m]) => ['asks', 'lost', 'keeping'].includes(m.step))
+  if (!items.length) return ''
+  return `<div class="watcher-glance" role="region" aria-label="Needs you">
+    <p class="watcher-glance__lead">${items.length} need${items.length === 1 ? 's' : ''} you</p>
+    ${items.map(([id, m]) => `<span class="watcher-glance__item">${ring('needs')}<button type="button" class="uline" data-act="open-thread" data-id="${id}" data-key="gl-${id}" aria-label="Open ${esc(T[id].title)}">${esc(T[id].title)}</button><span>${m.step === 'asks' ? 'move waits for you' : 'waiting for forge'}</span></span>`).join('')}
+  </div>`
+}
+function machines() {
+  const f = forgeLoad()
+  const forge = S.forgeDown ? `0 working, <span class="watcher-machines__words">not connected</span>` : `${f.working} working${f.starting ? `, ${f.starting} starting` : ''}`
+  return `<div class="watcher-machines" role="region" aria-label="Machines">
+    <span class="watcher-machines__machine"><button type="button" class="uline" data-act="nope" data-what="This computer’s panel">This computer</button> 2 working</span><span class="watcher-machines__sep" aria-hidden="true">·</span>
+    <span class="watcher-machines__machine"><button type="button" class="uline" data-act="nope" data-what="forge’s panel">forge</button> ${forge}</span><span class="watcher-machines__sep" aria-hidden="true">·</span>
+    <span class="watcher-machines__machine"><button type="button" class="uline" data-act="nope" data-what="studio’s panel">studio</button> <span class="watcher-machines__words">not connected</span></span>
+  </div>`
+}
+
+/* ---------- Watcher's conversation ---------- */
+function msgUser(text, at, from) {
+  return `<article class="msg" data-role="user"><header><span class="msg__who">You</span><time>${at}</time></header><p>${esc(text)}</p>${from ? `<p class="msg__from">${icon('move', 12)}${from}</p>` : ''}</article>`
+}
+function msgWatcher(paras, at) {
+  return `<article class="msg" data-role="assistant"><header><span class="msg__who">${owl(14)}Watcher</span><time>${at}</time></header><div class="msg__body">${paras.map(p => `<p>${p}</p>`).join('')}</div></article>`
+}
+function startedCard(id) {
+  const t = T[id], st = rowState(id)
+  const word = mv(id)?.step === 'settled' ? 'Settled' : st.moving && rows() ? 'Moving to forge' : t.working ? 'Working' : t.pr ? 'Pull request open' : 'Idle'
+  const tone = word === 'Working' || word === 'Moving to forge' ? 'working' : 'quiet'
+  return `<li class="receipt-card"><div class="receipt-card__top">${icon('play', 15, 'receipt-card__glyph')}<span class="receipt-card__lead">Started</span>
+    <button type="button" class="link" data-act="open-thread" data-id="${id}" data-key="st-${id}" aria-label="Open ${esc(t.title)} beside Watcher">${esc(t.title)}</button>
+    <span class="outcome" data-tone="${tone}">${ring(tone)}${word}</span></div>
+    <p class="receipt-card__meta"><span class="where">${MARK[t.provider](12)} ${PROVIDER[t.provider]}</span><span class="where" data-kind="local">${icon('laptop', 12)}This computer</span><span>${t.project}</span></p></li>`
+}
+function moveCard(id) {
+  const t = T[id], m = mv(id), w = stepWords(id)
+  const tone = w.tone === 'needs' ? 'needs' : ''
+  const target = m.step === 'settled' ? forgeId(id) : id
+  let tail = ''
+  if (m.step === 'asks') tail = `<p class="receipt-card__line receipt-card__line--needs">${w.line}</p>
+    <div class="receipt-card__acts"><button type="button" class="btn btn--small btn--primary" data-act="narrow-ok" data-id="${id}" data-key="ok-${id}">Move it on ${t.narrower}</button>
+      <button type="button" class="btn btn--small" data-act="narrow-no" data-id="${id}" data-key="no-${id}">Keep it here</button></div>`
+  else if (m.step === 'lost') tail = `<p class="receipt-card__line receipt-card__line--needs">${w.line}</p><div class="receipt-card__acts"><button type="button" class="btn btn--small" data-act="keep" data-id="${id}" data-key="keep-${id}">Keep it here</button></div>`
+  else if (m.step === 'keeping') tail = `<p class="receipt-card__line receipt-card__line--needs">${w.line}</p>`
+  else if (m.step === 'settled') tail = `<p class="receipt-card__line">Continued in <button type="button" class="link" data-act="open-thread" data-id="${forgeId(id)}" data-key="mc-new-${id}" aria-label="Open ${esc(t.title)} on forge">${esc(t.title)}</button> on forge. ${w.line}</p>`
+  else tail = `${w.n ? stepsTrack(w.n) : ''}<p class="receipt-card__line">${w.line}</p>`
+  return `<li class="receipt-card" data-move="${id}" data-tone="${tone}"><div class="receipt-card__top">${icon('move', 15, 'receipt-card__glyph')}<span class="receipt-card__lead">${w.lead}</span>
+    <button type="button" class="link" data-act="open-thread" data-id="${id}" data-key="mc-${id}" aria-label="Open ${esc(t.title)} beside Watcher" title="${esc(t.title)}">${esc(t.title)}</button>
+    <span class="outcome" data-tone="${w.tone}">${m.step === 'settled' ? icon('check', 13) : ring(w.tone)}${w.short}</span></div>
+    <p class="receipt-card__meta"><span class="where">${MARK[t.provider](12)} ${PROVIDER[t.provider]}</span><span class="where" data-kind="remote">${icon('laptop', 12)}This computer → ${icon('server', 12)}forge</span><span>${t.project}</span></p>
+    ${tail}</li>`
+}
+function planCard() {
+  const moves = MOVABLE.filter(id => !T[id].narrower), asks = MOVABLE.filter(id => T[id].narrower)
+  const state = S.plan === 'confirmed' ? `<span class="plan__state" data-tone="ready">Confirmed ${S.planAt}</span>` : S.plan === 'declined' ? '<span class="plan__state">Not moved</span>' : '<span class="plan__state">Nothing moved yet</span>'
+  const acts = S.plan === 'open'
+    ? `<div class="plan__acts"><button type="button" class="btn btn--primary" data-act="c-move" data-key="c-move">Move ${MOVABLE.length} threads</button><button type="button" class="btn" data-act="c-no" data-key="c-no">Not now</button></div>`
+    : S.plan === 'confirmed' ? `<p class="plan__note">Each thread shows its move on its row, in All threads and on the Threads page. <button type="button" class="textlink" data-act="list" data-key="c-list">Show All threads</button></p>`
+    : '<p class="plan__note">Nothing was sent to forge.</p>'
+  return `<section class="plan" aria-labelledby="plan-h">
+    <div class="plan__top">${icon('move', 15)}<h3 id="plan-h">Move ${MOVABLE.length} threads to forge</h3>${state}</div>
+    ${moves.map(id => sheetRow(id, `<p class="srow__line">${goesWith(T[id])}</p>`)).join('')}
+    <p class="plan__sub">Asks you first</p>
+    ${asks.map(id => sheetRow(id, `<p class="srow__line srow__line--needs">${narrowerWords(T[id])} It waits on its row for your press.</p>`)).join('')}
+    <button type="button" class="plan__fold" data-act="plan-fold" data-key="plan-fold" aria-expanded="${S.planFold}" aria-controls="plan-stays">${icon('chevr', 13)}${STAYS.length + 1} stay here</button>
+    ${S.planFold ? `<div class="plan__stays" id="plan-stays">${STAYS.map(id => sheetRow(id, `<p class="srow__line">${T[id].why}</p>`, true)).join('')}<div class="srow">${owl(14)}<span class="srow__name">Watcher</span><p class="srow__line">${WATCHER_STAYS}</p></div></div>` : ''}
+    ${S.plan === 'open' ? '<p class="plan__note">The thread here is settled once the new one’s first turn ends, and its worktree is kept.</p>' : ''}
+    ${acts}
+  </section>`
+}
+function conversation() {
+  let h = msgUser('Fix the tray icon at night and write the Owl release notes. Keep an eye on the tray menu spacing too.', '12:20 PM')
+  h += msgWatcher(['Started Tray icon at night on Claude Code and Owl release notes on Codex. I’m watching Tray icon at night and Linux tray menu spacing.'], '12:21 PM')
+  h += `<ul class="receipts" aria-label="What Watcher did">${startedCard('tray')}${startedCard('notes')}</ul>`
+  h += msgUser('Find why the WAV stream stalls after a minute.', '2:31 PM')
+  h += msgWatcher(['Started Streaming WAV stall on Claude Code. It’s reading the stream code now.'], '2:32 PM')
+  h += `<ul class="receipts" aria-label="What Watcher did">${startedCard('wav')}</ul>`
+  for (const c of S.conv) {
+    if (c.kind === 'user') h += msgUser(c.text, c.at, c.from)
+    else if (c.kind === 'watcher') {
+      h += msgWatcher(c.paras, c.at)
+      if (c.choose) h += `<ul class="receipts"><li class="receipt-card"><div class="receipt-card__top">${icon('move', 15, 'receipt-card__glyph')}<span class="receipt-card__lead">Asked you to choose</span><span class="receipt-card__name">Threads to move to forge</span>
+        <span class="outcome"><button type="button" class="textlink" data-act="choose" data-key="choose">Choose threads</button></span></div></li></ul>`
+      if (c.receipts) h += `<ul class="receipts" aria-label="What Watcher did">${c.receipts.map(moveCard).join('')}</ul>`
+      if (c.plan) h += planCard()
+    }
+  }
+  return h
+}
+function watcherComposer() {
+  return `<div class="wcompose"><div class="prompt">
+    <label class="vh" for="wtext">Watcher message</label>
+    <textarea id="wtext" data-key="wtext" rows="2" placeholder="Ask about your threads, or say what to start or send">${esc(S.draft)}</textarea>
+    <div class="prompt__bar"><span class="prompt__chip" aria-hidden="true">${icon('clip', 15)}</span><span class="prompt__chip">${icon('pen', 14)}New Watcher</span>
+      <span class="prompt__chip">GPT-5.5 ${icon('chevd', 12)}</span><span class="prompt__chip">Ask for approval ${icon('chevd', 12)}</span>
+      <button type="button" class="prompt__send" data-act="w-send" data-key="w-send" aria-label="Send to Watcher" aria-keyshortcuts="Enter" ${S.draft.trim() ? '' : 'disabled'}>${icon('up', 15)}</button></div>
+  </div></div>`
+}
+
+/* All threads, over the room (A and C show each move here; B shows only where things ended). */
+function threadList() {
+  const ids = []
+  for (const id of ORDER) { ids.push(id); if (newExists(mv(id))) ids.push(forgeId(id)) }
+  return ids
+}
+function allThreads() {
+  const groups = { needs: [], moving: [], working: [], idle: [], settled: [] }
+  for (const id of threadList()) {
+    const st = rowState(id)
+    if (st.settled) groups.settled.push(id)
+    else if (st.tone === 'needs' && rows()) groups.needs.push(id)
+    else if (st.moving) groups.moving.push(id)
+    else if (st.tone === 'working') groups.working.push(id)
+    else groups.idle.push(id)
+  }
+  const names = { needs: 'Needs you', moving: 'Moving', working: 'Working', idle: 'Idle', settled: 'Settled' }
+  return `<div class="list-scrim" data-act="close-layer" aria-hidden="true"></div>
+  <div class="wlist" role="dialog" aria-label="All threads" tabindex="-1" data-key="wlist"${reveal === 'list' ? ' data-reveal' : ''}>
+    <div class="wlist__scroll">${Object.entries(groups).filter(([, l]) => l.length).map(([g, l]) => `<section class="wgroup" data-tone="${g}" aria-label="${names[g]}, ${l.length}">
+      <h3 class="wgroup__label"><span>${names[g]}</span><span class="wgroup__count" aria-hidden="true">${l.length}</span></h3><ul>${l.map(wrow).join('')}</ul></section>`).join('')}</div>
+    <p class="wlist__foot">Shift-click opens a thread in Threads. Esc closes.</p>
+  </div>`
+}
+function wrow(id) {
+  const t = T[baseOf(id)], st = rowState(id), remote = isNew(id)
+  return `<li class="wrow"${st.settled ? ' data-settled' : ''}>${ring(st.tone === 'needs' ? 'needs' : st.tone === 'working' ? 'working' : 'quiet')}
+    <button type="button" class="wrow__open" data-act="open-thread" data-id="${id}" data-key="wl-${id}" aria-label="Open ${esc(t.title)}${remote ? ' on forge' : ''} beside Watcher" aria-describedby="wl-${id}-d"><span>${esc(t.title)}</span></button>
+    <span class="wrow__meta" aria-hidden="true"><span class="wrow__mark">${MARK[t.provider](13)}${t.watched && (!st.settled) ? owl(12) : ''}</span>
+      <span class="where" data-kind="${remote ? 'remote' : 'local'}">${remote ? icon('server', 11) + 'forge' : 'This computer'}</span>
+      <span class="wrow__status" data-tone="${st.tone}">${st.moving ? st.sub : st.word}</span></span>
+    <span id="wl-${id}-d" class="vh">${PROVIDER[t.provider]}, ${remote ? 'forge' : 'This computer'}, ${st.moving ? st.sub : st.word}</span></li>`
+}
+
+/* ---------- the Threads page ---------- */
+function threadsHTML() {
+  return `<div class="tpage"><div class="app-strip" aria-hidden="true"><b>Sotto</b><span>Threads</span><span class="wc"><span>–</span><span>▢</span><span>✕</span></span></div>
+    <div class="threads-view">${sidebar()}${pane()}</div></div>`
+}
+function sidebar() {
+  const proj = p => threadList().filter(id => T[baseOf(id)].project === p)
+  return `<nav class="nav" aria-label="Threads"><div class="nav__scroll">
+    <div class="nav__new">${icon('plus', 15)} New thread</div>
+    <p class="nav__project">Sotto</p><ul>${proj('Sotto').map(nrow).join('')}</ul>
+    <p class="nav__project">sotto-site</p><ul>${proj('sotto-site').map(nrow).join('')}</ul>
+  </div>
+  <div class="nav__foot way" style="margin:0">
+    <button type="button" data-act="nope" data-what="Dictate" aria-label="Dictate" title="Dictate">${icon('mic', 15)}</button>
+    <button type="button" data-act="page-room" data-key="go-room" aria-label="Watcher" title="Watcher">${owl(15)}</button>
+    <button type="button" aria-current="page" data-act="nope" data-what="Threads, the page you are on" aria-label="Threads" title="Threads">${icon('threads', 15)}</button>
+    <span class="way__hair" aria-hidden="true"></span>
+    <button type="button" data-act="nope" data-what="Usage" aria-label="Usage">${icon('chart', 15)}</button>
+    <button type="button" data-act="nope" data-what="Settings" aria-label="Settings">${icon('gear', 15)}</button>
+    <button type="button" data-act="nope" data-what="Help" aria-label="Help">${icon('help', 15)}</button>
+  </div></nav>`
+}
+function nrow(id) {
+  const t = T[baseOf(id)], st = rowState(id), remote = isNew(id)
+  const showSub = (rows() && st.moving) || remote || (st.settled && rows())
+  const sub = remote ? `${icon('server', 11)}<span>forge${st.sub ? ' · ' + st.sub : ''}</span>` : st.settled ? `${icon('cdr', 11)}<span>Continued on forge</span>` : `<span>${st.sub}</span>`
+  const word = st.moving ? (st.tone === 'needs' ? 'Waits' : 'Moving') : st.settled ? '' : st.tone === 'working' ? 'Working' : ''
+  return `<li><button type="button" class="nrow" data-act="select" data-id="${id}" data-key="nr-${id}" ${S.selected === id ? 'aria-current="true"' : ''}${st.settled ? ' data-settled' : ''}${t.parent ? ' data-child' : ''}${remote ? ' data-new' : ''}
+    aria-label="${esc(t.title)}${remote ? ', on forge' : ''}${st.moving ? ', ' + st.sub : st.settled && rows() ? ', continued on forge' : st.tone === 'working' ? ', working' : ''}">
+    <span class="nrow__marks">${t.parent ? icon('fork', 12) : MARK[t.provider](14)}</span><span class="nrow__title">${esc(t.title)}</span>
+    <span class="nrow__state" data-tone="${st.tone}">${word}</span>
+    ${showSub ? `<span class="nrow__sub" data-tone="${remote ? '' : st.tone}">${sub}</span>` : ''}</button></li>`
+}
+function pane() {
+  const id = S.selected, base = baseOf(id), t = T[base], m = mv(base), remote = isNew(id)
+  const branch = t.branch ? `<span class="tw__branch" title="Branch">${icon('branch', 13)}${esc(t.branch)}</span>` : ''
+  return `<section class="tw" aria-label="${esc(t.title)}${remote ? ' on forge' : ''}">
+    <header class="tw__head">${MARK[t.provider](15)}<h2>${esc(t.title)}</h2><span class="tw__crumb"><span>${t.project}</span><span class="where" data-kind="${remote ? 'remote' : 'local'}">${remote ? icon('server', 12) + 'forge' : icon('laptop', 12) + 'This computer'}</span></span>
+      <span class="tw__actions">${branch}<button type="button" class="iconbtn" data-act="more" data-key="more" aria-haspopup="menu" aria-expanded="${S.layer === 'pmenu'}" aria-label="More for ${esc(t.title)}" title="More">${icon('more', 16)}</button>
+        ${S.layer === 'pmenu' ? paneMenu(id) : ''}</span></header>
+    <div class="tw__transcript" id="ttx" tabindex="0" role="region" aria-label="Conversation">${paneTranscript(id)}</div>
+    <div class="tw__compose">${paneStrips(id)}${paneComposer(id)}</div>
+  </section>`
+}
+function paneMenu(id) {
+  const base = baseOf(id), t = T[base], m = mv(base)
+  const refusal = isNew(id) ? null : t.hint ?? (m?.step === 'settled' ? 'It continues on forge already.' : m && !['kept', 'stayed'].includes(m.step) ? 'It is already moving to forge.' : null)
+  const entry = S.v === 'a' ? `<button type="button" role="menuitem" tabindex="-1" data-new-entry data-act="${refusal ? 'menu-off' : 'cont-machine'}" data-why="${esc(refusal ?? '')}" data-key="pm-machine" ${refusal ? 'aria-disabled="true"' : ''}>${icon('server', 15)}<span>Continue on another machine…${refusal ? `<small>${refusal}</small>` : ''}</span></button>` : ''
+  return `<div class="pmenu" role="menu" aria-label="More for ${esc(t.title)}"${reveal === 'pmenu' ? ' data-reveal' : ''}>
+    <button type="button" role="menuitem" tabindex="-1" data-act="nope" data-what="Rename" data-key="pm-rename">${icon('pencil', 15)}<span>Rename</span></button>
+    <button type="button" role="menuitem" tabindex="-1" data-act="nope" data-what="Regenerate title">${icon('sparkles', 15)}<span>Regenerate title</span></button><hr>
+    <button type="button" role="menuitem" tabindex="-1" data-act="nope" data-what="Continue on another provider, which opens the model picker on the other providers (ADR-0089)">${icon('cdr', 15)}<span>Continue on another provider…</span></button>
+    ${entry}<hr>
+    <button type="button" role="menuitem" tabindex="-1" data-act="nope" data-what="Compact context">${icon('shrink', 15)}<span>Compact context</span></button><hr>
+    <button type="button" role="menuitem" tabindex="-1" data-act="nope" data-what="Settle">${icon('archive', 15)}<span>Settle</span></button>
+  </div>`
+}
+function paneTranscript(id) {
+  const base = baseOf(id), t = T[base], m = mv(base)
+  if (isNew(id)) {
+    let h = `<div class="note" role="note">${icon('cul', 15)}<p>Continued from <strong>${esc(t.title)}</strong> on This computer. It stays readable there. <button type="button" class="textlink" data-act="select" data-id="${base}" data-key="cf-open">Open it</button></p></div>`
+    h += `<section class="handover" aria-label="Handover"><header>${owl(13)}<b>Sotto</b><span>Handover of ${esc(t.title)}</span></header>
+      <p style="margin:0">The thread’s history, cut to fit, as context rather than a new request, then the facts Sotto wrote:</p>
+      <dl><dt>Branch</dt><dd><code>${esc(t.branch)}</code> at <code>${t.commit}</code>, nothing uncommitted</dd>
+        <dt>Pull request</dt><dd>${t.pr ? `#${t.pr}, open. Babysitting it goes on here.` : 'None'}</dd>
+        <dt>Watch</dt><dd>${t.watched ? 'Watched by Watcher' : 'Not watched'}</dd>
+        <dt>Permission</dt><dd>${t.narrower ?? t.perm}</dd></dl></section>`
+    if (m.step === 'started' || (['lost', 'keeping'].includes(m.step) && m.from === 'started')) h += `<p class="working-line">${ring('working')}Reading the handover…</p>`
+    else h += `<article class="msg" data-role="assistant"><header><span class="msg__who">${PROVIDER[t.provider]}</span><time>2:44 PM</time></header><div class="msg__body"><p>I’ve read the handover. I’m on <code class="mono">${esc(t.branch)}</code> at <code class="mono">${t.commit}</code> here on forge, with nothing uncommitted${t.pr ? `, and I’m babysitting #${t.pr}` : ''}. Ready for the next step.</p></div></article>`
+    return h
+  }
+  let h = `<article class="msg" data-role="user"><header><span class="msg__who">You</span><time>12:20 PM</time></header><p>${esc(t.ask)}</p></article>`
+  if (t.parent) h = `<div class="note" role="note">${icon('fork', 15)}<p>Delegated by <strong>${esc(T[t.parent].title)}</strong>. Its answer goes back to that thread.</p></div>` + h
+  h += `<article class="msg" data-role="assistant"><header><span class="msg__who">${PROVIDER[t.provider]}</span><time>12:48 PM</time></header><div class="msg__body"><p>${esc(t.said)}</p></div></article>`
+  if (t.working) h += `<p class="working-line">${ring('working')}Working</p>`
+  if (m && m.step === 'settled') h += `<div class="note" role="note">${icon('cdr', 15)}<p>Continued in <strong>${esc(t.title)}</strong> on forge, ${m.at ?? '2:44 PM'}, with a handover of this thread. It’s settled here, and its worktree is kept. <button type="button" class="textlink" data-act="select" data-id="${forgeId(base)}" data-key="ci-open" aria-label="Open ${esc(t.title)} on forge, the thread that continues this one">Open it</button></p></div>`
+  return h
+}
+function paneStrips(id) {
+  const base = baseOf(id), t = T[base], m = mv(base)
+  if (isNew(id)) return ''
+  // A: Continue on another machine, as Continue on another provider works (ADR-0089): a strip over the composer.
+  if (S.cont === id && !(m && !['kept', 'stayed'].includes(m.step))) {
+    return `<section class="strip" aria-label="Continue on forge" data-key="strip">
+      <div class="strip__lead">${icon('cdr', 15)}<p>Moves this thread to forge as a <strong>new thread</strong> that starts working there right away, with a handover of this one.</p>
+        <button type="button" class="xbtn" data-act="cont-x" data-key="cont-x" aria-label="Don’t move it: keep this thread here" title="Don’t move it: keep this thread here">${icon('x', 15)}</button></div>
+      <div class="strip__chips"><label class="vh" for="cont-machine">Machine the new thread starts on</label>
+        <select class="chipsel" id="cont-machine" data-key="cont-machine"><option>forge · Linux</option><option disabled>studio · not connected</option></select>
+        <span class="fact" title="Its project on forge">${icon('server', 13)}Sotto on forge, ~/Projects/Sotto</span>
+        <span class="fact" title="The branch goes first">${icon('branch', 13)}<span class="mono">${esc(t.branch)}</span></span></div>
+      <p class="strip__ledger">Its branch goes first, at <span class="mono">${t.commit}</span>. ${t.watched ? 'Watcher’s watch goes with it. ' : ''}${t.pr ? `Babysitting #${t.pr} goes on there. ` : ''}This thread is settled once the new one’s first turn ends, and its worktree is kept.</p>
+      ${t.narrower ? `<p class="strip__warn">It starts on ${t.narrower}, not this thread’s ${t.perm}, since your new-thread default allows no more.</p>` : ''}
+      <div class="strip__acts"><button type="button" class="btn btn--small btn--primary" data-act="cont-go" data-key="cont-go">Move to forge</button></div>
+    </section>`
+  }
+  if (!m || ['kept', 'stayed', 'settled'].includes(m.step)) {
+    if (m && ['kept', 'stayed'].includes(m.step) && rows()) return `<section class="strip" data-tone="quiet"><div class="strip__lead">${icon('check', 15)}<p>${stepWords(base).line}</p></div></section>`
+    return ''
+  }
+  const w = stepWords(base)
+  if (!rows()) return m.step === 'asks' ? '' : `<section class="strip" data-tone="quiet"><div class="strip__lead">${icon('move', 15)}<p>This thread is moving to forge, so it takes no sends here. Watcher reports the move in its conversation.</p></div></section>`
+  if (m.step === 'asks') return `<section class="strip" data-tone="needs" aria-label="Move to forge waits for you"><div class="strip__lead">${icon('alert', 15)}<p><strong>Moving to forge waits for you.</strong> ${w.line}</p></div>
+    <div class="strip__acts"><button type="button" class="btn btn--small btn--primary" data-act="narrow-ok" data-id="${base}" data-key="ok-${base}">Move it on ${t.narrower}</button><button type="button" class="btn btn--small" data-act="narrow-no" data-id="${base}" data-key="no-${base}">Keep it here</button></div></section>`
+  if (m.step === 'lost' || m.step === 'keeping') return `<section class="strip" data-tone="needs"><div class="strip__lead">${icon('alert', 15)}<p>${w.line}</p></div>
+    ${m.step === 'lost' ? `<div class="strip__acts"><button type="button" class="btn btn--small" data-act="keep" data-id="${base}" data-key="keep-${base}">Keep it here</button></div>` : ''}</section>`
+  return `<section class="strip" aria-label="Moving to forge"><div class="strip__lead">${ring('working')}<p><strong>Moving to forge · ${w.short}.</strong> ${w.line}</p></div>${stepsTrack(w.n)}</section>`
+}
+function paneComposer(id) {
+  const base = baseOf(id), t = T[base], m = mv(base)
+  const fenced = !isNew(id) && m && (IN_FLIGHT.includes(m.step) || ['lost', 'keeping'].includes(m.step))
+  const cont = false // the move starts from the strip's own button: nothing to write first (Zach, October 29)
+  const ph = fenced ? 'This thread takes no sends while it moves to forge' : cont ? 'Continue on forge' : t.working ? 'Steer, or queue a message' : 'Ask for a change'
+  return `<div class="prompt"><label class="vh" for="ptext">Message ${esc(t.title)}</label>
+    <textarea id="ptext" data-key="ptext" rows="2" placeholder="${ph}" ${fenced ? 'disabled' : ''}>${esc(S.pdraft)}</textarea>
+    <div class="prompt__bar"><span class="prompt__chip" aria-hidden="true">${icon('clip', 15)}</span><span class="prompt__chip">${t.model} · ${t.effort} ${icon('chevd', 12)}</span><span class="prompt__chip">${icon('shield', 13)}${(isNew(id) || cont) && t.narrower ? t.narrower : t.perm} ${icon('chevd', 12)}</span>
+      <button type="button" class="prompt__send" data-act="p-send" data-key="p-send" aria-label="${cont ? 'Continue on forge and send' : 'Send'}" ${fenced ? 'disabled' : ''}>${icon('up', 15)}</button></div></div>`
+}
+
+/* ---------- the walkthrough: each step is a whole state, a press that leads to it, and what to look at ---------- */
+const app = document.getElementById('app'), overlay = document.getElementById('overlay'), pointer = document.getElementById('pointer')
+const fit = document.getElementById('fit'), stage = document.getElementById('stage'), cap = document.getElementById('cap')
+function render() {
+  app.innerHTML = S.page === 'room' ? roomHTML() : threadsHTML()
+  for (const el of app.querySelectorAll('#rtx, #ttx')) el.scrollTop = el.scrollHeight
+  app.querySelectorAll('.mpanel__body, .sheet__body, .wlist__scroll').forEach(moreBelow)
+  reveal = null
+}
+function moreBelow(el) { if (el.scrollTop + el.clientHeight < el.scrollHeight - 2) el.dataset.more = ''; else delete el.dataset.more }
+
+const B_CONV = () => [
+  { kind: 'user', at: '2:40 PM', text: 'Move Tray icon at night, Owl release notes and Linux tray menu spacing to forge.', from: 'Sent from Move threads' },
+  { kind: 'watcher', at: '2:41 PM', receipts: [...MOVABLE], paras: [
+    'Moving Tray icon at night and Owl release notes to forge now. Linux tray menu spacing would start narrower there, so it waits for your press on its card.',
+    'Four stay here: Footer links has 3 changed files that aren’t committed, Streaming WAV stall has a turn running, Make Stop reach waiting checks has a delegated thread still working, and Unit suite after the fix is that delegated thread.'] }]
+const C_CONV = () => [{ kind: 'user', at: '2:40 PM', text: 'Move threads to forge' },
+  { kind: 'watcher', at: '2:41 PM', plan: true, paras: ['Here’s what I’d move to forge. Nothing moves until you confirm.'] }]
+const moves = o => Object.fromEntries(Object.entries(o).map(([k, v]) => [k, typeof v === 'string' ? { step: v, at: '2:44 PM' } : { at: '2:44 PM', ...v }]))
+const room = () => {}
+
+const STORY = [
+  { kind: 'title' },
+  // A: Choose from a list.
+  { v: 'a', state: room, ring: ['.move-wrap > .pill', '.watcher-machines'],
+    text: 'This is Watcher’s room. Your laptop has 2 threads working and forge has none. Move threads sits next to Stop all, and shows only while another machine is connected.' },
+  { v: 'a', press: '[data-act="move-btn"]', state: S => { S.layer = 'mmenu' }, ring: ['.mmenu'],
+    text: 'Move threads lists your machines. studio is a Mac that isn’t connected, so it can’t be picked and says why.' },
+  { v: 'a', press: '[data-act="mm-forge"]', state: S => { S.layer = 'check' }, ring: ['.mlist--stays'],
+    text: 'A opens a checklist for forge. The threads that can move are ticked. The rest stay here, each saying why: uncommitted work, a turn running, a delegated thread.' },
+  { v: 'a', press: '#tick-menu', state: S => { S.layer = 'check'; S.ticks.add('menu') }, ring: ['.mrow:has(#tick-menu)'],
+    text: 'Linux tray menu spacing would start with less permission on forge, so it starts unticked. Ticking it is your yes.' },
+  { v: 'a', press: '[data-act="a-move"]', state: S => { S.layer = 'check'; S.moves = moves({ tray: 'started', notes: 'started', menu: 'branch' }) }, ring: ['.mpanel .mlist:first-of-type'],
+    text: 'Move turns the list into each thread’s progress. Two have started on forge and are already working from their handover; the third has sent its branch.' },
+  { v: 'a', press: '[data-act="page-threads"]', state: S => { S.page = 'threads'; S.selected = 'tray'; S.moves = moves({ tray: 'settled', notes: 'settled', menu: 'ended' }) }, ring: ['.nav__scroll ul:first-of-type', '.note'],
+    text: 'Each thread’s row says how its move is going. Once the new thread’s first turn ends, the one here is settled and reads “Continued on forge”, with a link. Its worktree is kept.' },
+  { v: 'a', press: '[data-act="select"][data-id="menu"]', state: S => { S.page = 'threads'; S.selected = 'menu'; S.forgeDown = true; S.moves = moves({ tray: 'settled', notes: 'settled', menu: { step: 'lost', from: 'branch' } }) }, ring: ['.strip'],
+    text: 'If forge stops answering mid-move, the thread stays held and says so: nothing was lost. Keep it here asks forge to give it back.' },
+  { v: 'a', pre: S => { S.page = 'threads'; S.selected = 'tray' }, press: '[data-act="more"]', state: S => { S.page = 'threads'; S.selected = 'tray'; S.layer = 'pmenu' }, ring: ['[data-key="pm-machine"]'],
+    text: 'Only in A: a thread’s own More menu has Continue on another machine…, next to Continue on another provider….' },
+  { v: 'a', press: '[data-key="pm-machine"]', state: S => { S.page = 'threads'; S.selected = 'tray'; S.cont = 'tray' }, ring: ['.strip'],
+    text: 'It puts a strip over the composer. Move to forge starts the new thread there at once, working from its handover. There is nothing to write first.' },
+  // B: Confirm once, read Watcher's reply.
+  { v: 'b', press: '[data-act="move-btn"]', state: S => { S.layer = 'mmenu' }, ring: ['[data-key="mm-forge"]'],
+    text: 'B starts the same way: Move threads, then forge.' },
+  { v: 'b', press: '[data-act="mm-forge"]', state: S => { S.layer = 'sheet' }, ring: ['.sheet'],
+    text: 'B asks once, in a sheet: what moves now, what asks you first, and what stays and why. There is nothing to tick.' },
+  { v: 'b', press: '[data-act="b-move"]', state: S => { S.conv = B_CONV(); S.moves = moves({ tray: 'branch', notes: 'branch', menu: 'asks' }) }, ring: ['[data-move="tray"]', '[data-move="notes"]'], show: '[data-move="tray"]',
+    text: 'Watcher reports the moves in its reply, one card per thread. The threads’ own rows show nothing; it all happens here.' },
+  { v: 'b', state: S => { S.conv = B_CONV(); S.moves = moves({ tray: 'branch', notes: 'branch', menu: 'asks' }) }, ring: ['[data-move="menu"]'],
+    text: 'Linux tray menu spacing would start with less permission on forge, so its card waits for your press.' },
+  { v: 'b', press: '[data-move="menu"] [data-act="narrow-ok"]', state: S => { S.conv = B_CONV(); S.moves = moves({ tray: 'started', notes: 'started', menu: 'fenced' }) }, ring: ['[data-move="tray"]', '[data-move="notes"]'], show: '[data-move="tray"]',
+    text: 'Pressed. The first two have started on forge and are already working from their handover. Watcher watches the one it watched here.' },
+  { v: 'b', state: S => { S.conv = B_CONV(); S.forgeDown = true; S.moves = moves({ tray: 'settled', notes: { step: 'lost', from: 'started' }, menu: { step: 'lost', from: 'fenced' } }) }, ring: ['[data-move="tray"]', '[data-move="notes"]'], show: '[data-move="tray"]',
+    text: 'Tray icon at night is done: settled here, continued on forge. Then forge stopped answering, so the others are held. Nothing was lost.' },
+  { v: 'b', press: '[data-move="notes"] [data-act="keep"]', state: S => { S.conv = B_CONV(); S.forgeDown = true; S.moves = moves({ tray: 'settled', notes: { step: 'keeping', from: 'started' }, menu: { step: 'lost', from: 'fenced' } }) }, ring: ['[data-move="notes"]'],
+    text: 'Keep it here asks forge to stop the thread it made. Until forge answers, this one stays held, because forge may already be running the new one.' },
+  // C: Ask Watcher first.
+  { v: 'c', press: '[data-act="move-btn"]', state: S => { S.layer = 'mmenu' }, ring: ['[data-key="mm-forge"]'],
+    text: 'C starts the same way: Move threads, then forge.' },
+  { v: 'c', press: '[data-act="mm-forge"]', state: S => { S.draft = 'Move threads to forge' }, ring: ['.wcompose .prompt'],
+    text: 'C writes the request into Watcher’s composer instead, ready to send. You could change it first, say to “move the Owl threads to forge”.' },
+  { v: 'c', press: '[data-act="w-send"]', state: S => { S.conv = C_CONV(); S.plan = 'open' }, ring: ['.plan'],
+    text: 'Watcher answers with a plan: what moves, what asks you first, and what stays, folded. Nothing moves until you confirm.' },
+  { v: 'c', press: '[data-act="c-move"]', state: S => { S.conv = C_CONV(); S.plan = 'confirmed'; S.moves = moves({ tray: 'branch', notes: 'branch', menu: 'asks' }) }, ring: ['.watcher-glance', '.watcher-machines'],
+    text: 'Confirmed. The reply doesn’t follow the moves; the room’s lines do. forge has 2 starting, and the thread that would start narrower waits in the needs-you line.' },
+  { v: 'c', press: '[data-key="c-list"]', state: S => { S.conv = C_CONV(); S.plan = 'confirmed'; S.layer = 'list'; S.moves = moves({ tray: 'started', notes: 'started', menu: 'asks' }) }, ring: ['.wlist'],
+    text: 'All threads shows each move on the thread’s own row: moving here, and the new thread already working on forge.' },
+  { v: 'c', press: '[data-act="page-threads"]', state: S => { S.page = 'threads'; S.selected = 'menu'; S.moves = moves({ tray: 'settled', notes: 'settled', menu: 'asks' }) }, ring: ['.strip', '.nav__scroll ul:first-of-type'],
+    text: 'The Threads page rows say the same; settled ones read “Continued on forge”. Linux tray menu spacing asks for its press in its own pane.' },
+  { v: 'c', press: '[data-act="narrow-ok"]', state: S => { S.page = 'threads'; S.selected = 'menu'; S.forgeDown = true; S.moves = moves({ tray: 'settled', notes: 'settled', menu: { step: 'lost', from: 'branch' } }) }, ring: ['.strip'],
+    text: 'Pressed, and then forge stopped answering mid-move. The thread stays held and says nothing was lost; Keep it here asks forge to give it back.' },
+  { kind: 'end' },
+]
+const firstOf = k => STORY.findIndex(s => s.v === k)
+const lastIdx = STORY.length - 1
+const stepNo = i => { const s = STORY[i]; const all = STORY.filter(x => x.v === s.v); return [all.indexOf(s) + 1, all.length] }
+const keyOf = i => { const s = STORY[i]; if (s.kind) return s.kind === 'title' ? 'start' : 'end'; return s.v + stepNo(i)[0] }
+
+/* ---------- drawing a step ---------- */
+let idx = 0, token = 0, timer = null, auto = true, scale = 1
+const reduced = () => S.motion === 'reduce' || matchMedia('(prefers-reduced-motion: reduce)').matches
+const wait = ms => new Promise(r => setTimeout(r, ms))
+function build(v, fn) { fresh(); S.v = v; fn?.(S) }
+function preOf(i) {
+  const s = STORY[i]
+  if (s.pre) return s.pre
+  const p = STORY[i - 1]
+  return p && p.v === s.v ? p.state : room
+}
+function box(el) {
+  const f = frame.getBoundingClientRect(), r = el.getBoundingClientRect()
+  return { x: (r.left - f.left) / scale, y: (r.top - f.top) / scale, w: r.width / scale, h: r.height / scale }
+}
+/** Scrolls whatever list holds the element so it is in view. */
+function bringIntoView(el) {
+  const sc = el.closest('.room__transcript, .tw__transcript, .mpanel__body, .sheet__body, .wlist__scroll, .nav__scroll')
+  if (!sc) return
+  const r = box(el), s = box(sc)
+  const top = r.y - s.y, bottom = top + r.h
+  if (top < 8 || bottom > s.h - 8) sc.scrollTop += r.h > s.h - 16 ? top - 8 : top - (s.h - r.h) / 2
+  moreBelow(sc)
+}
+function drawRings(sels) {
+  overlay.querySelectorAll('.ringhl').forEach(n => n.remove())
+  for (const sel of sels ?? []) for (const el of app.querySelectorAll(sel)) {
+    const b = box(el), d = document.createElement('div')
+    d.className = 'ringhl'
+    Object.assign(d.style, { left: `${b.x - 5}px`, top: `${b.y - 5}px`, width: `${b.w + 10}px`, height: `${b.h + 10}px` })
+    overlay.append(d)
+  }
+}
+let capH = 0
+/** The tallest step caption at this width, so the window keeps one size through the story (the cards may differ). */
+function measureCaps() {
+  cap.style.height = 'auto'; capH = 0
+  STORY.forEach((s, i) => { if (!s.kind) { captionFor(i, true); capH = Math.max(capH, cap.offsetHeight) } })
+  captionFor(idx)
+}
+function captionFor(i, measuring) {
+  const s = STORY[i]
+  delete cap.dataset.card
+  cap.style.height = measuring || s.kind || !capH ? 'auto' : `${capH}px`
+  if (s.kind === 'title') {
+    cap.dataset.card = ''
+    document.getElementById('count').textContent = 'Prototype · #1178'
+    document.getElementById('vtitle').textContent = 'Moving threads to another machine'
+    document.getElementById('captext').innerHTML = `<p class="cap__text">Your laptop is busy; forge has room. Three ways it could work: A, B, C. Press Next (or the right arrow, or tap) to watch each one.</p>
+      <p class="cap__small">Already decided: a moved thread starts working on forge right away with its handover, and Move threads only shows while another machine is connected.</p>`
+    return
+  }
+  if (s.kind === 'end') {
+    cap.dataset.card = ''
+    document.getElementById('count').textContent = 'The end'
+    document.getElementById('vtitle').textContent = 'Which felt right? Answer on the question card.'
+    document.getElementById('captext').innerHTML = `<ul class="cap__recap">
+      <li><b>A.</b> Choose from a checklist; each move shows on the thread’s own row. A thread’s More menu can move it too.</li>
+      <li><b>B.</b> Confirm once in a sheet; each move shows only in Watcher’s reply.</li>
+      <li><b>C.</b> Ask Watcher; confirm its plan; each move shows on the thread’s own row.</li></ul>
+      <div class="cap__again"><button type="button" class="btn" data-jump="a">Watch A again</button><button type="button" class="btn" data-jump="b">Watch B again</button><button type="button" class="btn" data-jump="c">Watch C again</button></div>`
+    return
+  }
+  const [n, of] = stepNo(i)
+  document.getElementById('count').textContent = `${s.v.toUpperCase()} · ${n} of ${of}`
+  document.getElementById('vtitle').textContent = VARIANTS.find(v => v.k === s.v).n
+  document.getElementById('captext').innerHTML = `<p class="cap__text">${s.text}</p>`
+}
+function chrome(i) {
+  const s = STORY[i]
+  document.getElementById('back').disabled = i === 0
+  const next = document.getElementById('next')
+  next.textContent = i === 0 ? 'Start' : i === lastIdx ? 'From the start' : 'Next'
+  next.setAttribute('aria-label', i === lastIdx ? 'Watch from the start' : 'Next step')
+  document.getElementById('navcount').textContent = s.kind ? '' : (() => { const [n, of] = stepNo(i); return `${s.v.toUpperCase()} · ${n} of ${of}` })()
+  const here = s.kind === 'title' ? 'start' : s.kind === 'end' ? 'end' : s.v
+  document.querySelectorAll('#jumps [data-jump]').forEach(b => { if (b.dataset.jump === here) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current') })
+  try { const u = new URL(location.href); u.searchParams.set('step', keyOf(i)); u.searchParams.set('theme', S.theme); u.searchParams.set('motion', S.motion); history.replaceState(null, '', u) } catch { /* sandboxed */ }
+}
+function show(s) {
+  render()
+  for (const sel of [s.show, ...(s.ring ?? [])].filter(Boolean)) { const el = app.querySelector(sel); if (el) { bringIntoView(el); break } }
+  drawRings(s.ring)
+}
+async function go(i, animate) {
+  const my = ++token
+  clearTimeout(timer)
+  idx = Math.max(0, Math.min(lastIdx, i))
+  const s = STORY[idx]
+  const wasCard = cap.hasAttribute('data-card')
+  captionFor(idx); chrome(idx)
+  if (wasCard !== Boolean(s.kind)) fitWindow()
+  if (s.kind) { build('a', room); render(); drawRings([]); pointer.hidden = true; frame.dataset.dim = ''; return schedule() }
+  delete frame.dataset.dim
+  if (animate && s.press && !reduced()) {
+    build(s.v, preOf(idx)); render(); drawRings([])
+    const target = app.querySelector(s.press)
+    if (target) {
+      bringIntoView(target)
+      const b = box(target), x = b.x + Math.min(b.w / 2, 40), y = b.y + b.h / 2
+      if (pointer.hidden) { pointer.hidden = false; pointer.style.transition = 'none'; pointer.style.translate = `${Math.min(1180, x + 160)}px ${Math.min(740, y + 140)}px`; pointer.getBoundingClientRect(); pointer.style.transition = '' }
+      await wait(250); if (my !== token) return
+      pointer.style.translate = `${x}px ${y}px`
+      await wait(700); if (my !== token) return
+      const f = document.createElement('div'); f.className = 'flash'; Object.assign(f.style, { left: `${x}px`, top: `${y}px` }); overlay.append(f)
+      await wait(320); f.remove(); if (my !== token) return
+    }
+  } else pointer.hidden = true
+  build(s.v, s.state)
+  if (animate && !reduced() && ['mmenu', 'check', 'sheet', 'list', 'pmenu'].includes(S.layer) && s.press) reveal = S.layer
+  show(s)
+  schedule()
+}
+function schedule() {
+  clearTimeout(timer)
+  if (!auto || idx >= lastIdx) return
+  const s = STORY[idx]
+  const ms = s.kind === 'title' ? 6500 : Math.max(4000, Math.min(6500, (s.text?.length ?? 0) * 34))
+  timer = setTimeout(() => go(idx + 1, true), ms)
+}
+function setAuto(on) {
+  auto = on
+  const b = document.getElementById('auto')
+  b.setAttribute('aria-pressed', String(on)); document.getElementById('autostate').textContent = on ? 'on' : 'off'
+  if (on) schedule(); else clearTimeout(timer)
+}
+function next() { go(idx >= lastIdx ? 0 : idx + 1, true) }
+function back() { go(idx - 1, false) }
+function jump(k) { go(k === 'start' ? 0 : k === 'end' ? lastIdx : firstOf(k), false) }
+
+/* ---------- fitting the 1280x800 window to the screen ---------- */
+function fitWindow() {
+  const phone = innerWidth <= 760
+  const cs = getComputedStyle(stage)
+  const w = stage.clientWidth - parseFloat(cs.paddingLeft) - parseFloat(cs.paddingRight)
+  const h = stage.clientHeight - parseFloat(cs.paddingTop) - parseFloat(cs.paddingBottom)
+  scale = phone ? w / 1282 : Math.min(1, w / 1282, h / 802)
+  fit.style.width = `${1282 * scale}px`; fit.style.height = `${802 * scale}px`
+  frame.style.transform = `scale(${scale})`
+  const s = STORY[idx]; if (s && !s.kind) drawRings(s.ring)
+}
+addEventListener('resize', () => { measureCaps(); fitWindow() })
+
+/* ---------- presses: any press pauses auto-play ---------- */
+document.addEventListener('pointerdown', e => { if (!e.target.closest('#auto')) setAuto(false) }, true)
+document.addEventListener('keydown', e => { if (!['Tab', 'Shift', 'Control', 'Alt', 'Meta'].includes(e.key)) setAuto(false) }, true)
+document.getElementById('next').addEventListener('click', next)
+document.getElementById('back').addEventListener('click', back)
+document.getElementById('auto').addEventListener('click', () => { setAuto(!auto); if (auto) schedule() })
+stage.addEventListener('click', next)
+document.addEventListener('click', e => { const b = e.target.closest('[data-jump]'); if (b) jump(b.dataset.jump) })
+document.getElementById('theme').addEventListener('click', () => { S.theme = S.theme === 'light' ? 'dark' : 'light'; settings() })
+document.getElementById('motion').addEventListener('click', () => { S.motion = S.motion === 'reduce' ? 'full' : 'reduce'; settings(); go(idx, false) })
+document.addEventListener('keydown', e => {
+  if (e.altKey || e.metaKey || e.ctrlKey) return
+  const onButton = e.target.closest?.('button')
+  if (e.key === 'ArrowRight' || e.key === 'PageDown' || (e.key === ' ' && !onButton)) { e.preventDefault(); next() }
+  else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { e.preventDefault(); back() }
+  else if (e.key === 'Home') { e.preventDefault(); jump('start') }
+  else if (e.key === 'End') { e.preventDefault(); jump('end') }
+})
+function settings() {
+  root.dataset.theme = S.theme
+  if (S.motion === 'reduce') root.dataset.reducedMotion = 'on'; else delete root.dataset.reducedMotion
+  document.getElementById('theme').setAttribute('aria-pressed', String(S.theme === 'light'))
+  document.getElementById('motion').setAttribute('aria-pressed', String(S.motion === 'reduce'))
+  chrome(idx)
+}
+const startAt = (() => { const k = params.get('step'); if (!k) return 0; const i = STORY.findIndex((_, j) => keyOf(j) === k); return i < 0 ? 0 : i })()
+idx = startAt
+settings(); measureCaps(); fitWindow(); go(startAt, false)
+document.fonts?.ready.then(() => { measureCaps(); fitWindow(); const s = STORY[idx]; if (!s.kind) drawRings(s.ring) })
+</script>
+</body>
+</html>
