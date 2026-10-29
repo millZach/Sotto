@@ -18,7 +18,7 @@ import { withNextText } from './nextPrompts'
 import { useThreadComposer, type ThreadDraftStore } from './threadDraftStore'
 import type { ThreadRow } from './threadFacts'
 import { acceleratorForChord, claimedThreadChord, type ThreadShortcutSettings } from './threadShortcuts'
-import { tipsSetAside, useTipsSetAside, type TipsSetAsideStore } from './tipsSetAside'
+import { tipsSetAside, useTipsSetAside, type TipsSetAside, type TipsSetAsideStore } from './tipsSetAside'
 import TIP_SOURCES from './tipSources.json'
 
 /**
@@ -133,7 +133,7 @@ function shortDescription(description: string): string {
 const SCOPE_ORDER: Readonly<Record<string, number>> = { repo: 0, user: 1, admin: 2, system: 3 }
 
 /** The skill the next skill tip names: the user's and the project's own first, as the ones a reader is likeliest to have forgotten. */
-function skillTip(facts: TipFacts, setAside: ReadonlySet<string>): TipChoice | null {
+function skillTip(facts: TipFacts, setAside: TipsSetAside): TipChoice | null {
   const provider = facts.providerId ?? ''
   const skills = pickableSkills(facts.catalog ?? []).filter(skill => skill.description.trim() !== '' && !setAside.has(`skill:${provider}:${skill.name}`))
   const skill = [...skills].sort((a, b) => (SCOPE_ORDER[a.scope] ?? 9) - (SCOPE_ORDER[b.scope] ?? 9))[0]
@@ -143,21 +143,23 @@ function skillTip(facts: TipFacts, setAside: ReadonlySet<string>): TipChoice | n
     text: <Trans comment="A tip naming one of the thread's skills. {token} is how it is written in the prompt; {about} is the provider's own description of it.">{token} in the prompt: {about}</Trans> }
 }
 
+/** The general skills tip, for a provider whose skills list is not loaded yet. Claude reads `/` at the start of a line and Codex `$` anywhere; the list opens on either. */
+function skillsTip(provider: string): TipChoice {
+  const sigil = <code>{provider === 'codex' ? '$' : '/'}</code>
+  return { id: `skills:${provider}`, text: <Trans comment="A tip under a working thread. {sigil} is the character that opens the skills list.">Type {sigil} in the prompt to pick one of this thread’s skills.</Trans> }
+}
+
 /**
  * The tips this working line could show, in the rotation's order, less the ones the user hid or used. Provider tips
  * only reach a Claude or Codex thread; Watcher's line gets Sotto's and Watcher's own.
  */
-export function tipCandidates(facts: TipFacts, setAside: ReadonlySet<string>): TipChoice[] {
+export function tipCandidates(facts: TipFacts, setAside: TipsSetAside): TipChoice[] {
   const provider = facts.audience === 'thread' && facts.providerId !== undefined && PROVIDER_TIPS.has(facts.providerId) ? facts.providerId : null
   const out: TipChoice[] = []
   if (provider !== null && facts.skills) {
     const named = skillTip(facts, setAside)
     if (named) out.push(named)
-    else if (facts.catalog === undefined && !setAside.has(`skills:${provider}`)) {
-      // Claude reads `/` at the start of a line and Codex `$` anywhere; the picker opens on either.
-      const sigil = <code>{provider === 'codex' ? '$' : '/'}</code>
-      out.push({ id: `skills:${provider}`, text: <Trans comment="A tip under a working thread. {sigil} is the character that opens the skills list.">Type {sigil} in the prompt to pick one of this thread’s skills.</Trans> })
-    }
+    else if (facts.catalog === undefined && !setAside.has(`skills:${provider}`)) out.push(skillsTip(provider))
   }
   for (const tip of TIP_CATALOG) {
     if (setAside.has(tip.id)) continue
@@ -180,12 +182,11 @@ export function tipCandidates(facts: TipFacts, setAside: ReadonlySet<string>): T
 }
 
 /**
- * Which tip each turn showed, so a turn keeps its tip across renders and the next turn moves on (Zach's pick: one per
- * turn). A turn read again moves to the newest place, so only turns no working line has drawn for hundreds of newer
- * turns are forgotten; a running turn's line draws far more often than that.
+ * Which tip each turn showed, by id, so a turn keeps its tip across renders and the next turn moves on (Zach's pick: one
+ * per turn). One short entry per turn a working line drew in this window, never trimmed, so a running turn read again
+ * after any number of others keeps its tip; the window's reload empties it.
  */
-const shownByTurn = new Map<string, TipChoice>()
-const SHOWN_LIMIT = 512
+const shownByTurn = new Map<string, string>()
 
 /** The rotation a working line moves along: one per audience and provider, so one list's turns never skip another's. */
 export function tipRotation(facts: Pick<TipFacts, 'audience' | 'providerId'>): string {
@@ -193,21 +194,20 @@ export function tipRotation(facts: Pick<TipFacts, 'audience' | 'providerId'>): s
 }
 
 /**
- * The turn's tip: the one it started with, drawn from today's candidates when it is still among them, and as it was chosen
- * when it is not (the skills list loading part-way through replaces the general skills tip, which this turn keeps), until
- * the user sets it aside. A new turn takes the next place in its rotation.
+ * The turn's tip: the one it started with, as today's candidates draw it, until the user sets it aside or what it points
+ * at stops being true (a shortcut removed, a setting turned off), when the turn shows none. One tip stays through a change
+ * that is not about it: the general skills tip a turn started with stays when the skills list loads part-way through and
+ * puts a named skill in its place. A new turn takes the next place in its rotation.
  */
-export function chooseTip(turnKey: string, rotation: string, candidates: readonly TipChoice[], setAside: ReadonlySet<string>, store: TipsSetAsideStore = tipsSetAside): TipChoice | null {
+export function chooseTip(turnKey: string, rotation: string, candidates: readonly TipChoice[], setAside: TipsSetAside, store: TipsSetAsideStore = tipsSetAside): TipChoice | null {
   const shown = shownByTurn.get(turnKey)
   if (shown !== undefined) {
-    shownByTurn.delete(turnKey)
-    shownByTurn.set(turnKey, shown)
-    return setAside.has(shown.id) ? null : candidates.find(tip => tip.id === shown.id) ?? shown
+    if (setAside.has(shown)) return null
+    return candidates.find(tip => tip.id === shown) ?? (shown.startsWith('skills:') ? skillsTip(shown.slice('skills:'.length)) : null)
   }
   if (!candidates.length) return null
   const tip = candidates[store.nextRotation(rotation) % candidates.length]!
-  shownByTurn.set(turnKey, tip)
-  if (shownByTurn.size > SHOWN_LIMIT) shownByTurn.delete(shownByTurn.keys().next().value!)
+  shownByTurn.set(turnKey, tip.id)
   return tip
 }
 
@@ -237,8 +237,9 @@ export const ThreadTip = memo(function ThreadTip({ turnKey, facts, onTry, drafts
   const tip = chooseTip(turnKey, tipRotation(facts), candidates, setAside, store)
   const selected = useThreadComposer(drafts, threadId).draft.skills
   if (tip === null) return null
-  // A prompt already carrying as many skills as the provider takes has no room for this one, as the skills list says.
-  const room = !tip.skill || !skillLimitReached(selected, tip.skill, facts.maxSkills)
+  // A prompt already carrying as many skills as the provider takes has no room for this one, as the skills list says; and
+  // without the loaded list (a refresh that failed) the limit is unknown, so the skill is not offered.
+  const room = !tip.skill || facts.catalog !== undefined && !skillLimitReached(selected, tip.skill, facts.maxSkills)
   const insert = tip.insert ? i18n._(tip.insert) : undefined
   const tryName = !room ? null : tip.skill ? t({ message: `Put ${skillToken(tip.skill)} in the prompt`, comment: 'A tip\'s Try it button, named for what it does. {0} is a skill as written in the prompt.' })
     : insert !== undefined ? t({ message: `Put “${insert}” in the prompt`, comment: 'A tip\'s Try it button, named for what it does.' }) : null

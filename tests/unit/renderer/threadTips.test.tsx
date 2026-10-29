@@ -25,9 +25,11 @@ vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => {
   return { ...actual, useOwlFeature: (id: string) => id === 'thread-tips' ? owl.tips : actual.useOwlFeature(id as never) }
 })
 
-const memory = (): Pick<Storage, 'getItem' | 'setItem' | 'removeItem'> => {
+const memory = (): Pick<Storage, 'getItem' | 'setItem' | 'removeItem' | 'key' | 'length'> & { readonly writes: string[] } => {
   const items = new Map<string, string>()
-  return { getItem: key => items.get(key) ?? null, setItem: (key, value) => { items.set(key, value) }, removeItem: key => { items.delete(key) } }
+  const writes: string[] = []
+  return { writes, getItem: key => items.get(key) ?? null, setItem: (key, value) => { writes.push(key); items.set(key, value) }, removeItem: key => { items.delete(key) },
+    key: index => [...items.keys()][index] ?? null, get length() { return items.size } }
 }
 
 const facts = (patch: Partial<TipFacts> = {}): TipFacts => ({
@@ -127,22 +129,36 @@ describe('one tip per turn', () => {
     expect(chooseTip('w:2', 'watcher:sotto', watcher, new Set(), store)!.id).not.toBe(first.id)
   })
 
-  it('keeps a turn’s tip while hundreds of other turns come and go, as long as its line keeps drawing', () => {
+  it('keeps a turn’s tip however many other turns come and go before it is read again', () => {
     const store = createTipsSetAsideStore(memory())
     const candidates = tipCandidates(facts(), new Set())
     const first = chooseTip('long:1', 'thread:claude', candidates, new Set(), store)!
-    for (let turn = 0; turn < 2_000; turn++) {
-      chooseTip(`other:${turn}`, 'thread:claude', candidates, new Set(), store)
-      if (turn % 100 === 0) expect(chooseTip('long:1', 'thread:claude', candidates, new Set(), store)!.id).toBe(first.id)
-    }
+    for (let turn = 0; turn < 2_000; turn++) chooseTip(`other:${turn}`, 'thread:claude', candidates, new Set(), store)
     expect(chooseTip('long:1', 'thread:claude', candidates, new Set(), store)!.id).toBe(first.id)
   })
 
-  it('never lets a set-aside tip come back on its own, however many are set aside', () => {
-    const store = createTipsSetAsideStore(memory())
+  it('never lets a set-aside tip come back on its own, and writes one entry per press however many came before', () => {
+    const storage = memory()
+    const store = createTipsSetAsideStore(storage)
     for (let index = 0; index < 1_000; index++) store.setAside(`skill:claude:s${index}`)
     expect(store.ids().has('skill:claude:s0')).toBe(true)
     expect(store.ids().size).toBe(1_000)
+    expect(storage.writes).toHaveLength(1_000)
+    expect(storage.writes.at(-1)).toBe('sotto.tips.setAside.skill:claude:s999')
+    expect(createTipsSetAsideStore(storage).ids().size).toBe(1_000)
+    store.clear()
+    expect(createTipsSetAsideStore(storage).ids().size).toBe(0)
+  })
+
+  it('shows no tip for the rest of a turn once what it points at stops being true', () => {
+    const store = createTipsSetAsideStore(memory())
+    const candidates = tipCandidates(facts({ skills: false }), new Set())
+    const first = chooseTip('gone:1', 'thread:claude', candidates, new Set(), store)!
+    expect(chooseTip('gone:1', 'thread:claude', candidates.filter(tip => tip.id !== first.id), new Set(), store)).toBeNull()
+    // A named skill whose list failed to load again goes, rather than offering Try it with no limit to check.
+    const named = tipCandidates(facts({ catalog: [skill('deploy', 'repo')] }), new Set())
+    expect(chooseTip('gone:2', 'thread:claude', [named[0]!], new Set(), store)!.id).toBe('skill:claude:deploy')
+    expect(chooseTip('gone:2', 'thread:claude', tipCandidates(facts({ catalog: undefined }), new Set()), new Set(), store)).toBeNull()
   })
 
   it('remembers hidden tips and the rotation in storage, and clears them on request', () => {
@@ -151,7 +167,8 @@ describe('one tip per turn', () => {
     store.setAside('sotto.dictate')
     store.nextRotation('thread:claude')
     const again = createTipsSetAsideStore(storage)
-    expect([...again.ids()]).toEqual(['sotto.dictate'])
+    expect(again.ids().has('sotto.dictate')).toBe(true)
+    expect(again.ids().size).toBe(1)
     expect(again.nextRotation('thread:claude')).toBe(1)
     expect(again.nextRotation('watcher:sotto'), 'each rotation keeps its own place').toBe(0)
     again.clear()
