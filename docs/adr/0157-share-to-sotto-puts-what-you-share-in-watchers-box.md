@@ -22,3 +22,7 @@ The iPhone app took photos from the + menu and, in a thread's box, files from th
 - The extension opens Sotto through the responder chain, which iOS does not promise to keep. If it stops, the extension says so and the share waits for the next time Sotto is opened (decision 2).
 - A computer whose Sotto keeps no files for Watcher takes the shared photos and words, and says to update it for the files, in the box's own words.
 - An item that comes without a name is named in English ("Shared photo", "Pasted file"), as the + menu's "Photo 1" and "Camera photo" are: the name goes to the computer as a file name.
+
+## Amendment, October 28, 2026: TestFlight leaves the extension out until Apple knows it
+
+The first TestFlight run after this merged failed at the export: Apple had no App ID for `com.millzach.sotto.ios.share` and no App Group `group.com.millzach.sotto.ios`, and only the Apple account owner can register them. Until they exist, `SHARE_EXTENSION: 'off'` in `.github/workflows/ios-testflight.yml` makes `testflight.sh` take the extension out of the archive and leave the app without its App Group, so decision 5 holds only once it is turned back on. The app then finds no shared folder and takes no shares; pasting a copied file into a box still attaches it. The workflow's comment lists the three portal steps that must come first.

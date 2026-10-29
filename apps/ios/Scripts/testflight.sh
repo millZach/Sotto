@@ -4,6 +4,8 @@
 # environment, the App Store Connect key at KEY_PATH, and BUILD_NUMBER rising with every upload.
 # Signing is Xcode's automatic signing with Apple's cloud-managed certificates, so no certificate or
 # profile is kept anywhere; the key needs the Admin role for that.
+# SHARE_EXTENSION=off (the workflow's switch) leaves the share extension and the App Group out of the upload; see the
+# workflow for what must exist in the Apple developer portal before it goes back on.
 set -eu
 cd "$(dirname "$0")/.."
 : "${KEY_ID:?}" "${ISSUER_ID:?}" "${TEAM_ID:?}" "${KEY_PATH:?}" "${BUILD_NUMBER:?}"
@@ -19,10 +21,17 @@ xcodebuild -project Sotto.xcodeproj -scheme Sotto -configuration Release \
 
 # An unsigned archive carries no entitlements, and the export signs with what each binary's signature names. So the app and
 # its share extension are signed ad hoc, with no certificate, to carry their App Group (ADR-0157); the export signs them again.
+# With the switch off the extension is taken out and the app keeps no entitlements, so the export asks for no profile for
+# the extension and no App Group; the app then finds no shared folder and takes no shares.
 app="$out/Sotto.xcarchive/Products/Applications/Sotto.app"
-codesign --force --sign - --entitlements SottoShare/SottoShare.entitlements "$app/PlugIns/SottoShare.appex"
-codesign --force --sign - --entitlements Sotto/Sotto.entitlements "$app"
-codesign -d --entitlements - "$app/PlugIns/SottoShare.appex"
+if [ "${SHARE_EXTENSION:-on}" = off ]; then
+  rm -rf "$app/PlugIns/SottoShare.appex"
+  rmdir "$app/PlugIns" 2>/dev/null || true
+else
+  codesign --force --sign - --entitlements SottoShare/SottoShare.entitlements "$app/PlugIns/SottoShare.appex"
+  codesign --force --sign - --entitlements Sotto/Sotto.entitlements "$app"
+  codesign -d --entitlements - "$app/PlugIns/SottoShare.appex"
+fi
 
 # destination "upload" sends the signed build straight to App Store Connect; nothing is kept on the runner.
 cat > "$out/ExportOptions.plist" <<EOF
