@@ -90,6 +90,28 @@ it('carries the newest five hundred recalled receipts, though a read back gives 
   expect(new Set(shown)).toEqual(new Set(actions.slice(100).map(item => item.id)))
 })
 
+it('puts a read back in time order once, though the current Watcher changes (#1759)', () => {
+  const actions = Array.from({ length: 600 }, (_, index) => ({ id: `00000000-0000-4000-8000-${index.toString(16).padStart(12, '0')}`, requestId: REQUEST,
+    retryKey: '55555555-5555-4555-8555-555555555555', digest: 'a'.repeat(64), action: 'send' as const, target: { hostId: HOST, threadId: `worker-${index}` }, generation: 1,
+    deliveryState: 'accepted' as const, createdAt: new Date(Date.parse(AT) + index * 1_000).toISOString(), updatedAt: AT, receiptId: `receipt-${index}`, cardId: `card-${index}` }))
+  const recalled = { receipts: actions, receiptReplies: [], requests: [{ id: REQUEST, watcher, rootUserMessageId: 'u1', state: 'closed' as const, createdAt: AT, closedAt: AT, participants: [] }] }
+  const identity = (threadId: string) => ({ target: { hostId: HOST, threadId }, projectId: 'project', provider: 'codex' as const, creationOperationId: '33333333-3333-4333-8333-333333333333', createdAt: AT })
+  let room: WatcherRoomState = { current: identity('watcher'), currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status: 'idle', connected: true }, history: [],
+    requests: [], watchedThreads: [], receipts: [], recalled, recoveryNotice: null, observedAt: AT }
+  const service = new WatcherPhoneService({ hostId: () => HOST, threadDetail: () => null, watcherSendRecords: () => ({ deliveries: [], followups: [] }) } as unknown as AgentControl,
+    { state: () => room, phoneSnapshot: () => emptyDesktopState(HOST).host, startsInFlight: () => 0 } as unknown as WatcherService)
+  service.state(false)
+  const parse = vi.spyOn(Date, 'parse')
+  try {
+    service.state(false)
+    const again = parse.mock.calls.length
+    parse.mockClear()
+    room = { ...room, current: identity('new-watcher') }
+    service.state(false)
+    expect(parse.mock.calls.length).toBe(again)
+  } finally { parse.mockRestore() }
+})
+
 it('gives a new Watcher none of the last one’s recalled takeover lines, though the read back is the same (#1759)', () => {
   const taken = { requestId: REQUEST, startedBy: 'watcher' as const, generation: 1, state: 'taken-over' as const, target: { hostId: HOST, threadId: 'auth' },
     promptCount: 1, takeover: { reason: 'user-send' as const, at: AT } }

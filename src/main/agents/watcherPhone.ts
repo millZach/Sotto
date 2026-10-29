@@ -16,9 +16,11 @@ import type { WatcherOperation, WatcherRequest } from '../../shared/watcher'
 /** The phone page's receipt and takeover caps: the newest of each, as protocol version 1 carries them. */
 const PHONE_RECEIPTS_MAX = 500
 /** What a read back of Watcher's archive gives the phone (#1759), worked out once for each read back. */
-interface PhoneRecalled { readonly from: NonNullable<WatcherRoomState['recalled']>; readonly watcher: string; readonly requests: ReadonlyMap<string, WatcherRequest>
+interface PhoneRecalled { readonly from: NonNullable<WatcherRoomState['recalled']>; readonly requests: ReadonlyMap<string, WatcherRequest>
   /** Its receipts oldest first, as the room's own run: a read back gives its batches newest first. */
-  readonly receipts: readonly WatcherOperation[]; readonly takeovers: readonly WatcherTakeover[] }
+  readonly receipts: readonly WatcherOperation[]
+  /** Its takeover lines, which are the current Watcher's, so they are worked out again for another Watcher alone. */
+  takeovers?: { readonly watcher: string; readonly lines: readonly WatcherTakeover[] } }
 
 /**
  * Whether a coordinator refusal is plain words a phone may show as they are: short, and with nothing technical in it, such
@@ -36,15 +38,19 @@ export class WatcherPhoneService {
   private recalled(room: WatcherRoomState): PhoneRecalled | undefined {
     const from = room.recalled
     if (!from) return undefined
-    // The lines are the current Watcher's, so a read back is indexed again for another Watcher.
-    const watcher = room.current ? `${room.current.target.hostId}
-${room.current.target.threadId}` : ''
-    if (this.recalledFor?.from === from && this.recalledFor.watcher === watcher) return this.recalledFor
+    if (this.recalledFor?.from === from) return this.recalledFor
     const receipts = from.receipts.map((operation, at) => ({ operation, at, time: Date.parse(operation.createdAt) }))
       .sort((a, b) => a.time - b.time || a.at - b.at).map(item => item.operation)
-    this.recalledFor = { from, watcher, receipts, requests: new Map(from.requests.map(request => [request.id, request] as const)),
-      takeovers: watcherTakeovers({ current: room.current, requests: from.requests }) }
+    this.recalledFor = { from, receipts, requests: new Map(from.requests.map(request => [request.id, request] as const)) }
     return this.recalledFor
+  }
+  /** The read back's takeover lines for the current Watcher, worked out once for each read back and Watcher. */
+  private recalledTakeovers(room: WatcherRoomState): readonly WatcherTakeover[] | undefined {
+    const recalled = this.recalled(room)
+    if (!recalled) return undefined
+    const watcher = room.current ? `${room.current.target.hostId}\n${room.current.target.threadId}` : ''
+    if (recalled.takeovers?.watcher !== watcher) recalled.takeovers = { watcher, lines: watcherTakeovers({ current: room.current, requests: recalled.from.requests }) }
+    return recalled.takeovers.lines
   }
   /**
    * The phone's receipts, newest last and at most PHONE_RECEIPTS_MAX, with the request each answers to: the room's own,
@@ -191,7 +197,7 @@ ${room.current.target.threadId}` : ''
     let lines = watcherTakeovers(room).slice(-WATCHER_PHONE_TAKEOVERS_MAX)
     // Takeover lines Watcher's conversation shown back recalled (#1759), oldest, while there is room under the cap; a line
     // the room carries too goes once. Bounded by the cap, however much was read back.
-    const recalled = this.recalled(room)?.takeovers
+    const recalled = this.recalledTakeovers(room)
     if (recalled?.length && lines.length < WATCHER_PHONE_TAKEOVERS_MAX) {
       const lineKey = (line: WatcherTakeover): string => `${line.target.hostId}\n${line.target.threadId}\n${line.at}`
       const own = new Set(lines.map(lineKey)), older: WatcherTakeover[] = []
