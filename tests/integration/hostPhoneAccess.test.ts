@@ -149,6 +149,7 @@ it('puts Serve back on the same Serve port, from a loopback port of its own, whe
     await vi.waitFor(async () => expect(await read()).toMatchObject({ phase: 'on', address: `https://${DNS}:8443` }))
     const moved = stand.proxied()!
     expect(moved).not.toBe(held)
+    expect(stand.served()).toBe(8443)
     expect(await (await fetch(`http://127.0.0.1:${moved}/v1/health`)).json()).toMatchObject({ hostId: host.descriptor!.hostId })
     // The next start tries the port it listens on now.
     expect(JSON.parse(await readFile(join(root, 'phone-access.json'), 'utf8'))).toEqual({ port: moved, mapped: true })
