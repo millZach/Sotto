@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { deferred } from '../fixtures/deferred'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
-import { watcherToolSchemas, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
+import { emptyWatcherRecord, watcherToolSchemas, type WatcherRecord, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
 import type { WatcherHostControl, WatcherHostProjection, WatcherRemoteHosts } from '../../src/shared/watcherHost'
 import type { AgentControl } from '../../src/main/agents/control'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -17,6 +17,8 @@ import { watcherRequestLine, watcherRequestNote } from '../../src/main/agents/wa
 import { isWatcherWakeUpTurn } from '../../src/shared/threadActivity'
 import { SLASH_COMMAND_REFUSAL, UNCONFIRMED_SEND_HOLD, USER_TURN_RUNNING } from '../../src/main/agents/watcherSendHolds'
 
+/** A result without the times it was read at, which move between two reads of the same thing. */
+const steady = (value: unknown): unknown => JSON.parse(JSON.stringify(value, (name, item: unknown) => name === 'observedAt' ? undefined : item))
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 async function fixture(workerHost = false, open = true) {
@@ -882,6 +884,87 @@ it('keeps Stop bounded within the current Watcher turn while retaining the stand
   expect(f.service.state().standingWatches).toHaveLength(1)
   expect(await f.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target: started.target, text: 'Synthetic forbidden same-turn restart', delivery: 'now' }))
     .toMatchObject({ status: 'refused', code: 'REQUEST_NOT_ACTIVE' })
+})
+
+it('archives a paired desktop\'s closed work on the owning host and answers its reads, retries, sends and Stop as before (#1759)', async () => {
+  const master = await fixture(), worker = await fixture(true), target = await worker.create()
+  const clientId = randomUUID()
+  const admitted: WatcherHostControl[] = []
+  const remote: WatcherRemoteHosts = {
+    hosts: () => [{ hostId: target.hostId, connected: true, reads: true, control: true, standingWatch: true, permissionCeiling: 'approval-required' }],
+    snapshot: () => worker.control.watcherSnapshot(),
+    read: (_hostId, request) => worker.service.readRemote(request, clientId, () => undefined),
+    control: (_hostId, request) => { admitted.push(request); return worker.service.admitRemote(request, clientId, () => undefined) },
+    subscribe: listener => worker.control.subscribe(() => listener(target.hostId)),
+  }
+  master.service.useRemoteHosts(remote)
+  expect(await master.service.watchThread({ target })).toMatchObject({ status: 'ok' })
+  const watch = master.service.state().standingWatches![0]!, identity = master.service.state().current!
+  expect(await master.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic archived send', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  await worker.finish(target.threadId)
+  const hosted = () => worker.control.watcherRecordView()
+  const request = hosted().requests.find(item => item.remoteOrigin?.clientId === clientId)!, operation = hosted().operations.find(item => item.requestId === request.id)!
+  // The host closes its copy once its threads have settled, though the desktop's turn may go on to send more.
+  await worker.control.updateWatcher(record => { const own = record.requests.find(item => item.id === request.id)!; own.state = 'closed'; own.closedAt = new Date().toISOString()
+    record.reservations = record.reservations.filter(item => item.requestId !== request.id) })
+  const read = (asking = clientId) => worker.service.readRemote({ master: identity, call: { name: 'read_operation', input: { operationId: operation.id } } }, asking, () => undefined)
+  const retry = () => worker.service.admitRemote(admitted[0]!, clientId, () => undefined)
+  const before = { read: steady(await read()), retry: steady(await retry()) }
+  expect(before).toMatchObject({ read: { status: 'ok', receipt: { requestId: request.id } }, retry: { status: 'ok' } })
+  const archive = async () => { expect(await worker.control.archiveWatcherWork([request.id], () => [request.id])).toBe(1); expect(hosted().requests.some(item => item.id === request.id)).toBe(false) }
+  await archive()
+  // An exact read is answered from the archive, never fenced as unrecorded, and a late retry gives its first receipt.
+  expect({ read: steady(await read()), retry: steady(await retry()) }).toEqual(before)
+  expect(await read(randomUUID())).toMatchObject({ status: 'refused', code: 'UNKNOWN_OPERATION' })
+  expect(hosted().remoteAbsences ?? []).toEqual([])
+  expect(hosted().operations.filter(item => item.requestId === request.id).map(item => item.id)).toEqual([operation.id])
+  // A new send of the desktop's turn under the archived copy opens it again, as it would have in the record.
+  await archive()
+  expect(await master.call('send_to_thread', { requestId: watch.id, retryKey: randomUUID(), target, text: 'Synthetic second send', delivery: 'now' })).toMatchObject({ status: 'ok' })
+  expect(hosted().requests.find(item => item.id === request.id)).toMatchObject({ state: 'active' })
+  expect(hosted().operations.filter(item => item.requestId === request.id)).toHaveLength(2)
+  await worker.finish(target.threadId)
+  // The desktop's Stop reaches an archived closed copy and stops it; sent again once that is archived, it reads nothing.
+  await worker.control.updateWatcher(record => { const own = record.requests.find(item => item.id === request.id)!; own.state = 'closed'; own.closedAt = new Date().toISOString()
+    record.reservations = record.reservations.filter(item => item.requestId !== request.id) })
+  await archive()
+  const stoppedRequests = [{ request: { id: request.id, watcher: identity.target, rootUserMessageId: request.rootUserMessageId, createdAt: request.createdAt }, ceiling: request.remoteOrigin!.ceiling }]
+  await worker.service.readRemote({ master: identity, stoppedRequests }, clientId, () => undefined)
+  expect(hosted().requests.find(item => item.id === request.id)).toMatchObject({ state: 'stopped' })
+  await archive()
+  const reads = vi.spyOn(worker.control.archivedWatcherWork()!, 'read')
+  await worker.service.readRemote({ master: identity, stoppedRequests }, clientId, () => undefined)
+  await worker.service.readRemote({ master: identity, stoppedRequests }, clientId, () => undefined)
+  expect(reads).toHaveBeenCalledTimes(1)
+  expect(hosted().requests.some(item => item.id === request.id)).toBe(false)
+  reads.mockRestore()
+  // The remembered Stop still checks the request's identity, as one in the record does.
+  expect(await worker.service.readRemote({ master: identity, stoppedRequests: [{ ...stoppedRequests[0]!, request: { ...stoppedRequests[0]!.request, rootUserMessageId: 'synthetic-other-message' } }] }, clientId, () => undefined))
+    .toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
+  // Another desktop cannot take that request's ID, though this one's Stop of it is remembered.
+  expect(await worker.service.admitRemote(admitted[0]!, randomUUID(), () => undefined)).toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
+  expect(hosted().requests.some(item => item.id === request.id)).toBe(false)
+  // A newer Watcher of that desktop reads the older one's archived work once it has taken that one's requests over (#1735).
+  const newer = { ...identity, target: { ...identity.target, threadId: randomUUID() }, creationOperationId: randomUUID(), createdAt: new Date(Date.parse(identity.createdAt) + 60_000).toISOString() }
+  const readAs = (adopt: boolean) => worker.service.readRemote({ master: newer, ...(adopt ? { adopt: true as const } : {}),
+    call: { name: 'read_operation', input: { operationId: operation.id } } }, clientId, () => undefined)
+  expect(await readAs(false)).toMatchObject({ status: 'refused', code: 'UNKNOWN_OPERATION' })
+  expect(await readAs(true)).toMatchObject({ status: 'ok', receipt: { requestId: request.id } })
+  expect(hosted().remoteAbsences ?? []).toEqual([])
+  // From then on the replaced Watcher cannot read it, as it could not read a request of the record's that moved.
+  expect(await read()).toMatchObject({ status: 'refused', code: 'UNKNOWN_OPERATION' })
+  // Handed back to the record, as when Keep local history goes off, it is the newer Watcher's too.
+  const archivedWork = await worker.control.archivedWatcherWork()!.read({ requests: [request.id] }), handedBack = emptyWatcherRecord()
+  ;(worker.control as unknown as { returnArchived(record: WatcherRecord, work: typeof archivedWork): void }).returnArchived(handedBack, archivedWork)
+  expect(handedBack.requests.find(item => item.id === request.id)?.watcher).toEqual(newer.target)
+  // The replaced Watcher's retry is refused; the newer one's brings the request back as the newer Watcher's, its prompt
+  // turn too, as adoption leaves the record's, and gives the first receipt.
+  expect(await retry()).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })
+  expect(await worker.service.admitRemote({ ...admitted[0]!, master: newer, request: { ...admitted[0]!.request, watcher: newer.target } }, clientId, () => undefined))
+    .toMatchObject({ status: 'ok', receipt: { requestId: request.id } })
+  expect(hosted().requests.find(item => item.id === request.id)).toMatchObject({ watcher: newer.target, remoteOrigin: { creationOperationId: newer.creationOperationId } })
+  expect(operation.promptTurnId).toBeDefined()
+  expect(hosted().promptTurns?.find(item => item.id === operation.promptTurnId)?.watcher).toEqual(newer.target)
 })
 
 it('builds a paired desktop\'s projection from the record without copying it, again only once the record changes (#1759)', async () => {
