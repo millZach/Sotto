@@ -1019,7 +1019,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
         try { await this.persist() } catch (error) { delete alias.compaction; throw error } finally { this.preparingCompaction.delete(id) }
         // Frames read during that write may have started a turn of Claude's own, such as a report on work that ended, or
         // ended work whose report is about to start: either would run before /compact. From here to the write nothing else runs.
-        const started = this.threads.get(id)?.status === 'running'
+        const started = this.threads.get(id)?.status === 'running' || thread.requests.length > 0
         if (started || command.idle && this.reportDue(id)) {
           Object.assign(alias, before)
           await this.persist().catch(() => undefined)
@@ -1866,10 +1866,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (origin) {
         this.completedOrigins.add(origin)
         const messageId = !selfTurn ? alias.origins.find(value => value.uuid === origin)?.messageId : undefined
-        // A compaction is not a turn. A thread already resting on a completed turn keeps it through one that worked, so news
-        // of the work that turn left running stays the turn's (ADR-0127). One with no turn read, as after a restart, rests on
-        // the compaction, and so does any thread whose compaction failed, so what was queued behind it waits for review.
-        const compactedAfterTurn = answersCompaction && status === 'completed' && thread.lastTurn?.status === 'completed'
+        // A compaction is not a turn. A thread already resting on a completed turn keeps it, so news of the work that turn
+        // left running stays the turn's (ADR-0127); one with no turn read, as after a restart, rests on the compaction. What
+        // was queued behind a compaction that failed waits for review on the compaction's own record.
+        const compactedAfterTurn = answersCompaction && thread.lastTurn?.status === 'completed'
         if (!compactedAfterTurn) thread.lastTurn = { id: origin, status, ...(messageId ? { messageId } : {}), ...(limitStop && status === 'failed' ? { limitStop } : {}) }
         // A turn Claude Code gave itself answers no message of Sotto's. The newest message may be a steer whose own
         // turn has not begun, so it has no record to settle here.

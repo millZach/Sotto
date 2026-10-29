@@ -306,7 +306,7 @@ it('Claude shows a report that starts while a compaction is saved as its own tur
   await expect.poll(async () => (await f.host.snapshot()).threads[0]).toMatchObject({ status: 'idle', lastTurn: { id: 'report-turn', status: 'completed' } })
 })
 
-it('Claude keeps background work through a failed compaction, and rests the thread on the failure (ADR-0127)', async () => {
+it('Claude keeps background work and the turn that left it through a failed compaction (ADR-0127)', async () => {
   const f = await claudeFixture(); cleanup.push(f.cleanup)
   await writeFile(join(f.root, 'skills.json'), JSON.stringify([{ name: 'compact', description: 'Native compaction' }]))
   await f.host.connect()
@@ -316,14 +316,34 @@ it('Claude keeps background work through a failed compaction, and rests the thre
   await f.action('thread', { type: 'raw', frame: { type: 'system', subtype: 'task_started', task_id: 'build', task_type: 'local_bash', description: 'Build', is_backgrounded: true } })
   await f.driver.completeTurn('thread', 'The build runs in the background.')
   await expect.poll(async () => (await f.host.snapshot()).threads[0]?.lastTurn?.status).toBe('completed')
+  const turn = (await f.host.snapshot()).threads[0]?.lastTurn
   expect(await f.host.execute({ type: 'compact-thread', commandId: 'idle', threadId: 'thread', idle: true })).toEqual({ accepted: true })
   await expect.poll(async () => (await f.driver.requests()).filter(row => row.method === 'user').at(-1)?.params?.frame).toMatchObject({ message: { content: '/compact' } })
   const compact = ((await f.driver.requests()).filter(row => row.method === 'user').at(-1)!.params!.frame as { uuid: string }).uuid
   await f.action('thread', { type: 'raw', frame: { type: 'result', subtype: 'error_during_execution', is_error: true, result: '', user_message_uuid: compact, user_message_uuids: [compact] } })
   await expect.poll(async () => (await f.host.snapshot()).threads[0]?.compaction?.status).toBe('failed')
-  // The build still runs in the CLI; a follow-up queued behind the compaction waits for review on its failure.
+  // The build still runs in the CLI, and its news stays the turn's that started it.
   expect((await f.host.snapshot()).threads[0]?.backgroundWork).toEqual([expect.objectContaining({ label: 'Build', type: 'command' })])
-  expect((await f.host.snapshot()).threads[0]?.lastTurn).toMatchObject({ id: compact, status: 'failed' })
+  expect((await f.host.snapshot()).threads[0]?.lastTurn).toEqual(turn)
+})
+
+it('Claude refuses an idle compaction when a card appears while it is saved, and writes no /compact (ADR-0127)', async () => {
+  const f = await claudeFixture(); cleanup.push(f.cleanup)
+  await writeFile(join(f.root, 'skills.json'), JSON.stringify([{ name: 'compact', description: 'Native compaction' }]))
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: 'project', projectId: 'project', title: 'Project', path: f.root })
+  await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'thread', projectId: 'project', modelId: 'fixture-model', title: 'Work' })
+  await f.adapter.refreshThread('thread')
+  const adapter = f.adapter as unknown as { persist(): Promise<void> }
+  const persist = adapter.persist.bind(f.adapter)
+  vi.spyOn(adapter, 'persist').mockImplementationOnce(async () => {
+    await f.driver.raisePermission('thread', 'Run the build')
+    await expect.poll(async () => (await f.host.snapshot()).threads[0]?.requests.length).toBe(1)
+    await persist()
+  })
+  await expect(f.host.execute({ type: 'compact-thread', commandId: 'idle', threadId: 'thread', idle: true })).rejects.toThrow(/started working/)
+  expect((await f.host.snapshot()).threads[0]?.compaction).toBeUndefined()
+  expect((await f.driver.requests()).filter(row => row.method === 'user')).toEqual([])
 })
 
 it('Claude asks a machine compaction’s guard again once its CLI is up, and writes nothing when it refuses (ADR-0127)', async () => {
