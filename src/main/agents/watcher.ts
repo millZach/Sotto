@@ -2678,14 +2678,14 @@ export class WatcherService implements WatcherControlHooks {
    */
   private async carryOver(previous: WatcherIdentity, to: WatcherThreadTarget, prepared?: Pick<WatcherCarried, 'questions' | 'unconfirmed'>): Promise<void> {
     this.preparedFor = null
-    // The last Watcher is looked at once more after this, once nothing is being written to it: a message that settled
-    // while this ran, or settles later, moves then, to whichever Watcher is current, so one still settling from an
-    // earlier replacement is kept too.
-    this.lateQueue = [...this.lateQueue, previous.target]
     const draft = await this.options.control.moveWatcherDraft(previous.target.threadId, to.threadId).catch(() => false as const)
     const movedDrafts = await this.options.control.moveWatcherQueue(previous.target.threadId, to.threadId).catch(() => [])
     const moved = movedDrafts.length + (draft === 'queue' ? 1 : 0), draftMoved = draft === 'box'
     await this.unlinkMoved(previous.target, movedDrafts)
+    // The last Watcher is looked at once more after this, once nothing is being written to it, so a message that settled
+    // while this ran, or settles later, moves then, to whichever Watcher is current; one still settling from an earlier
+    // replacement is kept too. It is added only now, so that pass never runs beside this one.
+    this.lateQueue = [...this.lateQueue, previous.target]
     // A reservation is a thread Watcher started that is still working (#1183), one per thread, so this reads no history.
     const away = new Map(this.view().reservations.filter(item => item.target.hostId !== this.hostId() && !this.adopts(item.target.hostId))
       .map(item => [key(item.target), item.target]))

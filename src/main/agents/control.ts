@@ -795,15 +795,22 @@ export class AgentControl {
     if ((this.state.deliveries ?? []).some(item => item.threadId === from && item.draftId === draft.draftId && item.status !== 'failed')
       || this.outbox.some(item => item.threadId === from && item.draftId === draft.draftId)) return false
     const begun = this.state.threadDrafts?.some(item => item.threadId === to && (item.text.trim() !== '' || item.attachments.length > 0)) === true
+    // Taken from the last Watcher's box before anything is awaited, so a second pass meanwhile finds nothing to move again.
+    this.discardThreadDraft(from)
     if (begun) {
       const draftId = randomUUID()
-      await this.followupStore.enqueue({ threadId: to, draftId, text: draft.text, attachments: draft.attachments,
-        ...(draft.skills ? { skills: draft.skills } : {}), ...(draft.files ? { files: draft.files } : {}) })
-      await this.followupStore.pauseUserPrompts(to, 'This was in the last Watcher’s message box. Resume the queue to send it to this one, or remove it.', item => item.draftId === draftId)
+      try {
+        await this.followupStore.enqueue({ threadId: to, draftId, text: draft.text, attachments: draft.attachments,
+          ...(draft.skills ? { skills: draft.skills } : {}), ...(draft.files ? { files: draft.files } : {}) })
+        await this.followupStore.pauseUserPrompts(to, 'This was in the last Watcher’s message box. Resume the queue to send it to this one, or remove it.', item => item.draftId === draftId)
+      } catch (error) {
+        // Not queued: the words go back where they were, unless the user has begun another draft there since.
+        if (!this.state.threadDrafts?.some(item => item.threadId === from)) this.putThreadDraft(draft)
+        throw error
+      }
       this.syncFollowups()
     // putThreadDraft keeps its own copy, so none is made here.
     } else this.putThreadDraft({ ...draft, threadId: to, draftId: randomUUID(), requestId: null, updatedAt: new Date().toISOString() })
-    this.discardThreadDraft(from)
     await this.persist(); this.publish()
     return begun ? 'queue' : 'box'
   }
