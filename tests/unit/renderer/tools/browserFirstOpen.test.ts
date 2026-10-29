@@ -88,6 +88,46 @@ describe('Tools > Browser opened while the players catch up on every thread', ()
     expect(store.thread('thread-1')?.placementProblem).toBeNull()
   })
 
+  it('does not show a player\'s earlier busy answer while Tools asks again', async () => {
+    vi.useFakeTimers()
+    const main = await realMain()
+    const busy = { ok: false as const, error: { code: 'busy' as const, message: 'This tool is busy. Try again shortly.' } }
+    const list = vi.fn(main.bridge.list).mockResolvedValueOnce(busy).mockResolvedValueOnce(busy).mockResolvedValueOnce(busy)
+    const bridge = { ...main.bridge, list }
+    const store = new BrowserStore()
+    // The player listed the thread before Tools opened and was refused twice.
+    const player = store.activate(bridge, 'thread-1')
+    await vi.runAllTimersAsync(); await player
+    expect(store.thread('thread-1')).toMatchObject({ status: 'error', error: { code: 'busy' } })
+    // Tools opens: while its own list waits to ask again, the pane says it is loading, not busy.
+    const opening = store.activate(bridge, 'thread-1')
+    expect(store.thread('thread-1')).toMatchObject({ status: 'loading', error: null })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(store.thread('thread-1')).toMatchObject({ status: 'loading', error: null })
+    await vi.runAllTimersAsync(); await opening
+    expect(store.thread('thread-1')).toMatchObject({ status: 'ready', error: null })
+  })
+
+  it('does not ask a bridge that gave way to another again', async () => {
+    vi.useFakeTimers()
+    const main = await realMain()
+    const busy = { ok: false as const, error: { code: 'busy' as const, message: 'This tool is busy. Try again shortly.' } }
+    const list = vi.fn(async () => busy)
+    const mount = vi.fn(async (): Promise<ToolsResult<void>> => busy)
+    const old = { ...main.bridge, list, mount }
+    const store = new BrowserStore()
+    const workspace = { threadId: 'thread-1', projectId: 'p', workingDirectory: '/work', workspaceId: 'w' }
+    store.adopt({ id: 'page', workspace, url: 'http://localhost:5173/', title: '', status: 'ready', error: null, canGoBack: false, canGoForward: false, sharedOrigin: null, viewport: null, device: null })
+    const opening = store.activate(old, 'thread-2')
+    store.mount(old, 'thread-1', 'page', { x: 0, y: 0, width: 600, height: 400 })
+    await vi.advanceTimersByTimeAsync(0)
+    // Another bridge takes over during the pause before the second ask.
+    store.watchTasks({ ...main.bridge }, [])
+    await vi.runAllTimersAsync(); await opening
+    expect(list).toHaveBeenCalledTimes(1)
+    expect(mount).toHaveBeenCalledTimes(1)
+  })
+
   it('says the browser is busy when it still is on the second ask', async () => {
     vi.useFakeTimers()
     const main = await realMain()

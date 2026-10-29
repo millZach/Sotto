@@ -205,6 +205,8 @@ export class BrowserStore {
   async activate(bridge: BrowserBridge | undefined, threadId: string): Promise<void> {
     if (!this.threads.has(threadId)) this.setThread({ threadId, workspace: null, status: 'loading', error: null, pages: [], activePageId: null, busy: false, notice: null, placementProblem: null, grant: null })
     if (!bridge) { this.patch(threadId, { status: 'error', error: unavailable }); return }
+    // An earlier list's failure, such as a player's busy answer before Tools opened, is not shown while this one asks.
+    if (this.threads.get(threadId)!.status === 'error') this.patch(threadId, { status: 'loading', error: null })
     this.listen(bridge)
     const token = (this.listTokens.get(threadId) ?? 0) + 1
     this.listTokens.set(threadId, token)
@@ -213,7 +215,8 @@ export class BrowserStore {
     if (!result.ok && result.error.code === 'busy' && this.listTokens.get(threadId) === token) {
       await busyPause()
       if (this.listTokens.get(threadId) !== token) return
-      result = await settle(bridge.list({ threadId }))
+      // A bridge that has given way to another since is not asked again.
+      if (!this.gaveWay(bridge)) result = await settle(bridge.list({ threadId }))
     }
     if (this.listTokens.get(threadId) !== token) return
     const latest = this.threads.get(threadId)!
@@ -317,7 +320,14 @@ export class BrowserStore {
       void settle(bridge.mount({ ...target, bounds })).then(result => {
         if (result.ok || this.mounted.get(slot)?.request !== request) return
         // As with the list: a busy main is asked once more, quietly, unless a newer rectangle comes first.
-        if (result.error.code === 'busy' && !retried) { void busyPause().then(() => place(true)); return }
+        if (result.error.code === 'busy' && !retried) {
+          void busyPause().then(() => {
+            // A bridge that has given way to another is not asked again; the page's next rectangle asks the new one.
+            if (!this.gaveWay(bridge)) place(true)
+            else if (this.mounted.get(slot)?.request === request) this.mounted.delete(slot)
+          })
+          return
+        }
         // Main may still draw the page where an earlier request put it, over the explanation.
         this.mounted.delete(slot)
         void settle(bridge.mount({ ...target, bounds: null }))
@@ -362,6 +372,9 @@ export class BrowserStore {
     next.delete(pageId)
     this.lastSeen.set(threadId, next)
   }
+
+  /** Whether another bridge has taken over this store's events since `bridge` was asked. */
+  private gaveWay(bridge: BrowserBridge): boolean { return this.subscribed !== null && this.subscribed !== bridge }
 
   private listen(bridge: BrowserBridge): void {
     if (this.subscribed === bridge) return
