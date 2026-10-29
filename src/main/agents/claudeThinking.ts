@@ -39,6 +39,8 @@ export function claudeNarration(block: Record<string, unknown>): boolean {
   const name = kind && protobufField(kind, 8)
   return name !== undefined && Buffer.from(name).toString('utf8') === 'narration'
 }
+/** Signatures run to about 2 KB; the kind sits at the start, so a longer one is kept only this far. */
+const MAX_SIGNATURE = 65_536
 /** How many streams' replies, open blocks and streamed replies are remembered; the oldest gives way past this. */
 const MAX_REMEMBERED = 64
 
@@ -109,16 +111,16 @@ export class ClaudeThinking {
 
   /** More of an open block's signature, which says at its end whether the block was narration. */
   signed(stream: string, index: number, signature: string): void {
-    const block = this.open.get(`${stream}:${index}`); if (block) block.signature += signature
+    const block = this.open.get(`${stream}:${index}`); if (block) block.signature = (block.signature + signature).slice(0, MAX_SIGNATURE)
   }
 
   /**
-   * A block stops. Only a thinking block has a row to settle. Narration is the reply's words rather than thinking, so
-   * its row goes: its id comes back in `narration` and the reply's message carries the words.
+   * A block stops. Only a thinking block has a row to settle. Narration with words is the reply's words rather than
+   * thinking, so given `narration` its row goes: its id comes back there and the reply's message carries the words.
    */
   stopped(stream: string, index: number, at: string | undefined, narration?: Set<string>): AgentActivity[] {
     const key = `${stream}:${index}`; const block = this.open.get(key)
-    if (block && narration && claudeNarration({ type: 'thinking', signature: block.signature })) { this.open.delete(key); narration.add(block.id); return [] }
+    if (block?.words && narration && claudeNarration({ type: 'thinking', signature: block.signature })) { this.open.delete(key); narration.add(block.id); return [] }
     return this.settle(open => open === key, 'completed', at)
   }
 

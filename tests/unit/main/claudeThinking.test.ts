@@ -198,6 +198,16 @@ describe('Claude narration', () => {
     expect(claudeText(frame.message.content)).toBe('The sky scatters blue light.')
   })
 
+  it('stays Thinking when it has no words or belongs to a subagent, which has no reply to carry it', () => {
+    const empty = thinkingFrame('msg_1', '', { apiBlockIndex: 0 })
+    empty.message.content[0]!.signature = signed('narration')
+    expect(reasoning(run(new ClaudeActivity(), [empty], false))).toHaveLength(1)
+    const projector = new ClaudeActivity()
+    const rows = run(projector, [start('msg_2', 'tool-1'), blockStart(0, { type: 'thinking', thinking: '' }, 'tool-1'), delta(0, { type: 'thinking_delta', thinking: 'Checking.' }, 'tool-1'),
+      delta(0, { type: 'signature_delta', signature: signed('narration') }, 'tool-1'), stop(0, 'tool-1')])
+    expect(reasoning(rows)).toEqual([expect.objectContaining({ status: 'completed', text: 'Checking.' })])
+  })
+
   it('makes no Thinking row when a transcript line replays it', () => {
     const frame = thinkingFrame('msg_1', 'The sky scatters blue light.', { apiBlockIndex: 1 })
     frame.message.content[0]!.signature = signed('narration')

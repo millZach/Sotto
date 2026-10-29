@@ -102,7 +102,7 @@ export class ClaudeActivity {
   apply(previous: AgentActivity[], frame: ClaudeFrame, turnId: string, afterMessageId: string | undefined, cwd: string, live = false, turnEnd?: AgentActivity['status']): AgentActivity[] {
     this.narration.clear()
     const rows = this.project(previous, frame, turnId, afterMessageId, cwd, live, turnEnd)
-    return this.narration.size ? rows.filter(row => !this.narration.has(row.id)) : rows
+    return this.narration.size && rows.some(row => this.narration.has(row.id)) ? rows.filter(row => !this.narration.has(row.id)) : rows
   }
   /** Thinking rows of narration blocks this frame showed to be the reply's words, which `apply` takes back out. */
   private readonly narration = new Set<string>()
@@ -182,8 +182,9 @@ export class ClaudeActivity {
         // started it under, so a replayed block lands on the row the live one made. A live frame carries no index,
         // and a block the stream already showed needs nothing more from it.
         const index = typeof frame.apiBlockIndex === 'number' && blocks.length === 1 ? frame.apiBlockIndex : position
-        // Narration is the reply's words, which the message carries (`claudeText`).
-        if (claudeNarration(block)) this.narration.add(claudeThinkingId(replyId, index))
+        // Narration with words is the thread's own reply, which its message carries (`claudeText`). A subagent's has no
+        // message to carry it, and a block without words has nothing to show there, so both stay Thinking.
+        if (!parentTool && typeof block.thinking === 'string' && block.thinking && claudeNarration(block)) this.narration.add(claudeThinkingId(replyId, index))
         else if (!(live && typeof frame.apiBlockIndex !== 'number' && this.thinking.showed(replyId))) {
           const words = typeof block.thinking === 'string' ? block.thinking : ''
           const durationMs = typeof frame.thinkingDurationMs === 'number' && Number.isFinite(frame.thinkingDurationMs) && frame.thinkingDurationMs >= 0 ? frame.thinkingDurationMs : undefined
@@ -266,7 +267,7 @@ export class ClaudeActivity {
       }
       if (event?.type === 'content_block_stop') {
         this.blocks.delete(key)
-        if (typeof event.index === 'number') rows.push(...this.thinking.stopped(stream, event.index, observedAt, this.narration))
+        if (typeof event.index === 'number') rows.push(...this.thinking.stopped(stream, event.index, observedAt, parentTool ? undefined : this.narration))
       }
     }
     // A turn that ends with a block still open (stopped mid-thought) settles its row, and those of subagents it ran in the foreground.

@@ -2258,8 +2258,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch)); this.activity.set(id, projector) }
     const watcherTurn = live && this.runtimes.get(id)?.watcher && thread.lastTurn?.status === 'running' ? thread.lastTurn.messageId : undefined
     const turnId = watcherTurn ?? this.lastUserMessageId(id) ?? 'native-history'
-    const rows = projector.apply(thread.activities ?? [], frame, turnId, this.lastTextMessageId(id), this.aliases[id]!.cwd, live, turnEnd)
-    if (rows.length) {
+    const previous = thread.activities ?? []
+    const rows = projector.apply(previous, frame, turnId, this.lastTextMessageId(id), this.aliases[id]!.cwd, live, turnEnd)
+    // A narration row taken back out can leave no rows at all, which is still a change.
+    if (rows.length || rows !== previous) {
       // Transcript replay may place a tool after a folded steer. Its already-observed tool identity
       // still belongs to the native turn that wrote it; replay must not move it to the steer.
       if (!live && this.resolvedWatcherProfiles.has(id)) {
