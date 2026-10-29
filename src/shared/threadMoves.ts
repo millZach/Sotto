@@ -108,6 +108,9 @@ export const THREAD_MOVE_WORDS = {
   unread: 'Sotto could not read that request. Nothing was moved.',
   /** A move given back before any thread was made for it: why, in the step's own words, and that the source is open again. */
   givenBack: (why: string): string => `${why} This thread stays on This computer and takes sends again.`,
+  /** A move whose new thread did not finish its first turn: the source stays, and the new thread is left there. */
+  stayed: (machine: string, failed: boolean): string =>
+    `The new thread on ${machine} ${failed ? 'failed' : 'was stopped'} in its first turn, so this thread stays on This computer and takes sends again. The new thread is still on ${machine}.`,
 } as const
 
 /** What a thread's move eligibility reads beside the thread itself, each from the coordinator's own record. */

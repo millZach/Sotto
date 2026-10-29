@@ -81,7 +81,7 @@ export interface MoveTargets {
 export interface MoveDelegations { hasOpen(threadId: string): boolean }
 
 const id = z.string().min(1).max(512)
-export const MOVE_STATES = ['fenced', 'branch-sent', 'thread-started', 'first-turn-ended', 'source-settled', 'given-back'] as const
+export const MOVE_STATES = ['fenced', 'branch-sent', 'thread-started', 'first-turn-ended', 'source-settled', 'given-back', 'stayed'] as const
 export type MoveState = typeof MOVE_STATES[number]
 const recordSchema = z.object({
   id: z.uuid(),
@@ -107,7 +107,7 @@ const recordSchema = z.object({
   firstTurn: z.enum(['completed', 'interrupted', 'failed']).optional(),
   /** Whether Watcher now watches the new thread. */
   watchMoved: z.boolean().optional(),
-  /** Why the move was given back, in its words. */
+  /** Why the move was given back, or why the source stayed, in its words. */
   givenBack: z.string().min(1).max(1_200).optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
@@ -119,7 +119,7 @@ const empty = (): MovesFile => ({ version: 1, moves: [] })
 const FINISHED_KEPT = 500
 /** How long a step that could not reach the target waits before it is tried again, whatever else the machine says. */
 const RETRY_MS = 5_000
-const terminal = (state: MoveState): boolean => state === 'source-settled' || state === 'given-back'
+const terminal = (state: MoveState): boolean => state === 'source-settled' || state === 'given-back' || state === 'stayed'
 const now = (): string => new Date().toISOString()
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
@@ -156,7 +156,7 @@ export class ThreadMoveService {
   private records = new Map<string, MoveRecord>()
   /** The moves under way, the only ones a change on a machine looks at: finished ones are history and are never walked then. */
   private readonly live = new Set<string>()
-  /** Sources of moves not given back, whose worktrees no automatic cleanup removes while #1297 is open. */
+  /** Sources of moves not given back, whose worktrees no automatic cleanup removes. */
   private readonly sources = new Map<string, string>()
   private readonly confirmations = new Map<string, Confirmation>()
   private readonly advancing = new Set<string>()
@@ -207,7 +207,7 @@ export class ThreadMoveService {
     for (const { timer } of this.retryAt.values()) clearTimeout(timer)
     this.retryAt.clear(); this.confirmations.clear()
   }
-  /** Whether this thread is the source of a move not given back, whose worktree is kept (#1297). */
+  /** Whether this thread is the source of a move not given back, whose worktree is kept. */
   keepsWorktree(threadId: string): boolean { return this.sources.has(threadId) }
   /** Every move as its record holds it, oldest first. */
   list(): readonly MoveRecord[] { return [...this.records.values()] }
@@ -419,7 +419,8 @@ export class ThreadMoveService {
         if (!answer.data.sent) { this.later(record.id); return false }
         return true
       }
-      case 'first-turn-ended': return this.settleSource(record, here, source)
+      // A thread that fails to transfer stays where it is (#1178): only a first turn that completed settles the source.
+      case 'first-turn-ended': return record.firstTurn === 'completed' ? this.settleSource(record, here, source) : this.stay(record, source)
       default: return false
     }
   }
@@ -461,6 +462,17 @@ export class ThreadMoveService {
       if (settled.error && !this.options.control.watcherSnapshot().threads.find(thread => thread.id === source.id)?.workspaceSettledAt) throw new Error('The source did not settle.')
     }
     await this.update(record, { state: 'source-settled' })
+    this.options.control.liftMoveFence(record.sourceThreadId)
+    return true
+  }
+  /**
+   * The new thread's first turn failed or was stopped, so it did not pick up the work: the source stays here, unsettled,
+   * still watched where it was, and takes sends again. It links to the new thread, which is left there for the user.
+   */
+  private async stay(record: MoveRecord, source: AgentThread | undefined): Promise<boolean> {
+    if (source && record.threadId) await this.options.workspace.addContinuedIn(source.id, { threadId: record.threadId, provider: record.start.provider, at: record.updatedAt, host: record.targetHostId }).catch(() => undefined)
+    await this.update(record, { state: 'stayed', givenBack: THREAD_MOVE_WORDS.stayed(record.machine, record.firstTurn === 'failed').slice(0, 1_200) })
+    if (this.sources.get(record.sourceThreadId) === record.id) this.sources.delete(record.sourceThreadId)
     this.options.control.liftMoveFence(record.sourceThreadId)
     return true
   }

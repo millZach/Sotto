@@ -43,7 +43,7 @@ Decisions made while building, for Zach to confirm:
 
 - A thread whose model the target lacks moves to its provider's first ready model there, and its effort only where that model offers it. The preview does not ask first for that.
 - A move that would start narrower and is not pressed for is answered "asks" and nothing is recorded for it; the card's press in part 2 asks for a fresh preview of that one thread.
-- The first turn counts whether it completed, was stopped or failed; the record keeps which, for part 2's card.
+- Only a first turn that completed settles the source. One that failed or was stopped leaves the source here, unsettled and taking sends, linked to the new thread left there (state `stayed`), since #1178 says a thread that fails to transfer stays where it is.
 - Anything in a thread's queue, Sotto's own news included, holds it here, so nothing queued goes to a source after it moved.
 - The automatic cleanup sweep skips a moved source's worktree. Clear settled threads after does not yet: it runs after 30 days at the earliest.
 

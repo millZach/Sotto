@@ -172,6 +172,22 @@ describe('confirm, then the move record’s states', () => {
     expect(await readFile(join(directory, 'moves.json'), 'utf8')).not.toContain('Find out why')
     moves.close()
   })
+  it('keeps the source here, unsettled and watched, when the new thread fails its first turn (#1178)', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.watch.watched.add('a')
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    w.endTurn(moveId, 'failed')
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('stayed'))
+    const threadId = w.remote.made.get(moveId)!
+    // A thread that fails to transfer stays where it is: not settled, its watch not moved, and it takes sends again.
+    expect(w.settled).toEqual([]); expect(w.watch.moved).toEqual([]); expect(w.fences.has('a')).toBe(false)
+    // The new thread is left there, and the source links to it.
+    expect(w.links).toEqual([{ threadId: 'a', link: { threadId, provider: 'codex', at: expect.any(String), host: FORGE } }])
+    expect(moves.list().find(record => record.id === moveId)?.givenBack)
+      .toBe('The new thread on forge failed in its first turn, so this thread stays on This computer and takes sends again. The new thread is still on forge.')
+    moves.close()
+  })
   it('holds a thread that asks first until the user presses for it, and moves it narrower when they do', async () => {
     const w = world(), moves = w.service(); moves.useTargets(w.targets)
     w.remote.mayAnswer = false
