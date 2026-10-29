@@ -13,7 +13,7 @@ import { ClaudeBotMonitoring } from './ClaudeBotMonitoring'
 import { ClaudeBotWorking } from './ClaudeBotWorking'
 import { Lardo } from './Lardo'
 import { EMPTY_PATH, glassFrame, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, sandPath, TOP_ROWS } from './hourglass'
-import { usePixelLoop } from './pixelLoop'
+import { usePixelLoop, walkFrame } from './pixelLoop'
 import { shownCount } from '../state/interfaceNumbers'
 import './threadMonitor.css'
 
@@ -30,17 +30,10 @@ export function MonitoringCreature(): ReactNode {
   const feet = useRef<SVGPathElement>(null)
   const glass = useRef<SVGGElement>(null)
   usePixelLoop(actor, ({ time, still, width }) => {
-    const reach = Math.max(0, width - 80), phase = time % 14
-    let x = reach, direction = 1, walking = false
-    if (!still) {
-      if (phase < 4) { x = reach * phase / 4; walking = true }
-      else if (phase < 9) x = reach
-      else if (phase < 13) { x = reach * (1 - (phase - 9) / 4); direction = -1; walking = true }
-      else { x = 0; direction = -1 }
-    }
+    const { x, left: facingLeft, walking } = walkFrame(time, still, width)
     const step = Math.floor(time * 7) % 4
     if (actor.current) actor.current.style.transform = `translateX(${Math.round(x / 2) * 2}px)`
-    facing.current?.setAttribute('transform', direction < 0 ? 'translate(40 0) scale(-1 1)' : '')
+    facing.current?.setAttribute('transform', facingLeft ? 'translate(40 0) scale(-1 1)' : '')
     body.current?.setAttribute('transform', walking && step % 2 === 1 ? 'translate(0 -1)' : '')
     const left = walking ? [9, 11, 13, 11][step]! : 11
     const right = walking ? [23, 21, 19, 21][step]! : 21

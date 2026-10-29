@@ -55,3 +55,25 @@ export function usePixelLoop(actor: RefObject<HTMLDivElement | null>, paint: (fr
   }, [actor])
   useEffect(() => { repaint.current() }, [repaintOn])
 }
+
+/** Where a monitoring creature stands on one frame of its walk: how far along, facing which way, and whether it steps. */
+export interface WalkFrame {
+  readonly x: number
+  readonly left: boolean
+  readonly walking: boolean
+  /** Seconds into the 14 s cycle, for what a creature does at the far end. */
+  readonly phase: number
+}
+
+/**
+ * The walk every creature keeps while monitoring: out along the track 4 s, 5 s at the far end, back 4 s, a second's rest
+ * at the start facing back. Held still, it stands at the far end facing out.
+ */
+export function walkFrame(time: number, still: boolean, width: number): WalkFrame {
+  const reach = Math.max(0, width - 80), phase = time % 14
+  if (still) return { x: reach, left: false, walking: false, phase }
+  if (phase < 4) return { x: reach * phase / 4, left: false, walking: true, phase }
+  if (phase < 9) return { x: reach, left: false, walking: false, phase }
+  if (phase < 13) return { x: reach * (1 - (phase - 9) / 4), left: true, walking: true, phase }
+  return { x: 0, left: true, walking: false, phase }
+}

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { pixelPath } from './claudeBotSprite'
 import { EMPTY_PATH, glassFrame, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, sandPath, TOP_ROWS } from './hourglass'
 import { LARDO_FACING_LEFT, LARDO_LETTERS, LARDO_MINI_ROWS, LARDO_SPARKLES, LARDO_STEAM, lardoPaths, type LardoFrame, type LardoLetter } from './lardoSprite'
-import { usePixelLoop, type PixelFrame } from './pixelLoop'
+import { usePixelLoop, walkFrame, type PixelFrame } from './pixelLoop'
 import './lardo.css'
 
 export type LardoPose = 'monitoring' | 'working' | 'held' | 'babysitting'
@@ -156,15 +156,10 @@ export function Lardo({ pose, agents = 1, playful = true }: { readonly pose: Lar
     const posed = time - hold.total - (hold.since === null ? 0 : time - hold.since)
     let x = 0, frame: LardoFrame, left = false
     if (pose === 'monitoring') {
-      const phase = posed % 14
-      let walking = false
-      x = reach
-      if (!still) {
-        if (phase < 4) { x = reach * phase / 4; walking = true }
-        else if (phase < 9) x = reach
-        else if (phase < 13) { x = reach * (1 - (phase - 9) / 4); left = true; walking = true }
-        else { x = 0; left = true }
-      }
+      const walk = walkFrame(posed, still, width)
+      const walking = walk.walking
+      x = walk.x
+      left = walk.left
       frame = walking ? (['strut0', 'strut1', 'strut2', 'strut3'] as const)[Math.floor(posed * 7) % 4]! : 'sideChest'
     } else if (pose === 'working') {
       x = reach
@@ -324,7 +319,8 @@ function LardoThrow({ actor }: { readonly actor: RefObject<HTMLDivElement | null
     let follow = 0
     const keepInEdge = (): void => {
       const now = composer.getBoundingClientRect()
-      if (bite.current) Object.assign(bite.current.style, { left: `${left + now.left - card.left}px`, top: `${now.top}px` })
+      const edge = Math.max(now.left + 16, Math.min(now.right - BITE.width - 16, left + now.left - card.left))
+      if (bite.current) Object.assign(bite.current.style, { left: `${edge}px`, top: `${now.top}px` })
       follow = requestAnimationFrame(keepInEdge)
     }
     follow = requestAnimationFrame(keepInEdge)

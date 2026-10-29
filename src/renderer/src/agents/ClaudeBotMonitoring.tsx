@@ -1,6 +1,6 @@
 import React, { useRef, type ReactNode } from 'react'
 import { BOT_EMPTY_PATH, ClaudeBotSprite, paintBot, useBotParts } from './claudeBotSprite'
-import { usePixelLoop } from './pixelLoop'
+import { usePixelLoop, walkFrame } from './pixelLoop'
 
 /**
  * Where the glass sits, in the right hand's own units (the arm at rest, x 28-31, y 19-24), so it rises and swings with
@@ -26,14 +26,7 @@ export function ClaudeBotMonitoring(): ReactNode {
   const parts = useBotParts()
   usePixelLoop(actor, ({ time, still, width }) => {
     // Sotto's schedule: out 4 s, inspect 5 s, back 4 s, a second's rest at the start.
-    const reach = Math.max(0, width - 80), phase = time % 14
-    let x = reach, direction = 1, walking = false
-    if (!still) {
-      if (phase < 4) { x = reach * phase / 4; walking = true }
-      else if (phase < 9) x = reach
-      else if (phase < 13) { x = reach * (1 - (phase - 9) / 4); direction = -1; walking = true }
-      else { x = 0; direction = -1 }
-    }
+    const { x, left: facingLeft, walking, phase } = walkFrame(time, still, width)
     // The glass comes up a beat after arriving and goes down a beat before leaving, so the hand visibly lifts it.
     const inspecting = still || (phase >= 4.2 && phase < 8.8)
     const lifting = !still && !inspecting && phase >= 4 && phase < 9
@@ -43,7 +36,7 @@ export function ClaudeBotMonitoring(): ReactNode {
     const leaning = still || [1, 1, 0, 1][Math.floor(time / 1.1) % 4] === 1
     const swing = walking ? [-1, 0, 1, 0][step]! : 0
     if (actor.current) actor.current.style.transform = `translateX(${Math.round(x / 2) * 2}px)`
-    parts.facing.current?.setAttribute('transform', direction < 0 ? 'translate(33 0) scale(-1 1)' : '')
+    parts.facing.current?.setAttribute('transform', facingLeft ? 'translate(33 0) scale(-1 1)' : '')
     paintBot(parts, {
       walking,
       step,

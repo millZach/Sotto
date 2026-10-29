@@ -113,18 +113,24 @@ describe('Lardo', () => {
     expect(pressed).not.toHaveBeenCalled()
   })
 
-  it('keeps the bite in the composer\u2019s top edge as the composer grows during the throw', () => {
+  it('keeps the bite in the composer\u2019s top edge as the composer grows or narrows during the throw', () => {
     const { container } = onComposer(<Lardo pose="held" />)
     const card = container.querySelector<HTMLElement>('.thread-prompt')!
-    let top = 600
-    card.getBoundingClientRect = () => ({ left: 100, right: 900, top, bottom: top + 120, width: 800, height: 120, x: 100, y: top, toJSON: () => ({}) })
+    let top = 600, right = 900
+    card.getBoundingClientRect = () => ({ left: 100, right, top, bottom: top + 120, width: right - 100, height: 120, x: 100, y: top, toJSON: () => ({}) })
+    actorOf(container).getBoundingClientRect = () => ({ left: 700, right: 780, top: top - 64, bottom: top, width: 80, height: 64, x: 700, y: top - 64, toJSON: () => ({}) })
     fireEvent.click(actorOf(container))
     advance(300)
     const bite = document.body.querySelector<HTMLElement>('.lardo-bite')!
     expect(bite.style.top).toBe('600px')
+    expect(bite.style.left).toBe('770px')
     top = 560
     advance(50)
     expect(bite.style.top).toBe('560px')
+    // Narrowed under him, the bite stays inside the composer's right end.
+    right = 700
+    advance(50)
+    expect(parseFloat(bite.style.left) + 56).toBeLessThanOrEqual(700 - 16)
   })
 
   it('throws a piece of the composer when clicked and never touches what is written, the caret or focus', () => {
