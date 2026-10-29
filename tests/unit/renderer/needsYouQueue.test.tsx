@@ -128,6 +128,11 @@ describe('the Needs you queue (ADR-0135)', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     expect(document.activeElement).toBe(press)
     expect(press).toHaveAttribute('aria-expanded', 'false')
+    // The press answers Escape while its card is open, wherever the focus went back to.
+    await act(async () => { fireEvent.click(press) })
+    press.focus()
+    await act(async () => { fireEvent.keyDown(press, { key: 'Escape' }) })
+    expect(screen.queryByRole('dialog')).toBeNull()
     await act(async () => { fireEvent.click(press) })
     await act(async () => { fireEvent.pointerDown(document.body) })
     expect(screen.queryByRole('dialog')).toBeNull()

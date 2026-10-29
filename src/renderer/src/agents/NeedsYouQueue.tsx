@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
+import React, { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { plural, t as tNow } from '@lingui/core/macro'
@@ -181,12 +181,12 @@ function NeedsYouEntryView({ entry, state, command, dismissing, popped, panes, o
           aria-disabled={dismissing || undefined} onClick={() => { if (!dismissing) onDismiss([entryFailure(entry)]) }}><Trans>Dismiss</Trans></Button> : null}
         {pops
           ? <Button ref={trigger} variant="secondary" aria-label={words.name} aria-haspopup="dialog" aria-expanded={popped} aria-controls={popped ? cardId : undefined}
-            onClick={() => onPop(!popped)}>{words.label}</Button>
+            onClick={() => onPop(!popped)} onKeyDown={event => { if (popped && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); close(true) } }}>{words.label}</Button>
           : <Button variant="secondary" aria-label={entry.kind === 'failed' ? t`Open ${title}` : t`Open ${title} to answer`} onClick={() => onOpen(entry, false)}>
             {entry.kind === 'failed' ? t({ message: 'Open', comment: 'Opens the thread.' }) : t`Open to answer`}</Button>}
       </span>
     </div>
-    {popped && pops ? <NeedsYouCard id={cardId} entry={entry} state={state} command={command} anchor={item} trigger={trigger} placement="below"
+    {popped && pops ? <NeedsYouCard id={cardId} entry={entry} state={state} command={command} anchor={() => item.current} trigger={() => trigger.current} placement="below"
       dismissing={dismissing} onClose={close} onOpen={() => onOpen(entry, false)} onDismiss={() => onDismiss([entryFailure(entry)])} /> : null}
   </li>
 }
@@ -204,10 +204,10 @@ export function NeedsYouCard({ id, entry, state, command, anchor, trigger, place
   readonly entry: NeedsYouEntry
   readonly state: AgentState
   readonly command: Command
-  /** What the card stands beside: the entry, or the rail's tile. */
-  readonly anchor: RefObject<HTMLElement | null>
+  /** What the card stands beside: the entry, or the rail's tile, found afresh each time since a tile can be drawn anew. */
+  readonly anchor: () => HTMLElement | null
   /** The press that popped it, which a press on toggles it rather than counting as a press outside. */
-  readonly trigger: RefObject<HTMLElement | null>
+  readonly trigger: () => HTMLElement | null
   readonly placement: NeedsYouCardPlacement
   readonly dismissing: boolean
   /** Closes the card; `focusTrigger` when the focus goes back to the press that opened it (Escape, Close). */
@@ -225,12 +225,16 @@ export function NeedsYouCard({ id, entry, state, command, anchor, trigger, place
   const settled = row.settledBy === 'thread' || row.settledBy === 'project'
   const closeRef = useRef(onClose)
   closeRef.current = onClose
+  const anchorRef = useRef(anchor)
+  anchorRef.current = anchor
+  const triggerRef = useRef(trigger)
+  triggerRef.current = trigger
   useLayoutEffect(() => {
     const card = surface.current
     if (!card) return
     card.showPopover?.()
     const place = (): void => {
-      const box = anchor.current?.getBoundingClientRect()
+      const box = anchorRef.current()?.getBoundingClientRect()
       if (!box) return
       const width = card.offsetWidth, height = card.offsetHeight
       const left = placement === 'beside' ? box.right + 8 : box.left
@@ -245,7 +249,7 @@ export function NeedsYouCard({ id, entry, state, command, anchor, trigger, place
     let placed = ''
     const follow = (): void => {
       frame = requestAnimationFrame(follow)
-      const box = anchor.current?.getBoundingClientRect()
+      const box = anchorRef.current()?.getBoundingClientRect()
       if (!box) return
       const now = `${box.top} ${box.left} ${box.right} ${box.bottom} ${card.offsetHeight} ${card.offsetWidth} ${innerHeight} ${innerWidth}`
       if (now === placed) return
@@ -255,22 +259,22 @@ export function NeedsYouCard({ id, entry, state, command, anchor, trigger, place
     follow()
     card.focus()
     return () => { cancelAnimationFrame(frame); card.hidePopover?.() }
-  }, [anchor, placement])
+  }, [placement])
   useEffect(() => {
     const outside = (event: PointerEvent): void => {
       const target = event.target as Node
-      if (!surface.current?.contains(target) && !trigger.current?.contains(target)) closeRef.current(false)
+      if (!surface.current?.contains(target) && !triggerRef.current()?.contains(target)) closeRef.current(false)
     }
     document.addEventListener('pointerdown', outside, true)
     return () => document.removeEventListener('pointerdown', outside, true)
-  }, [trigger])
+  }, [])
   const kind = [row.stateLabel, entry.wait, settled ? t({ message: 'Settled', comment: 'A thread row\'s state: the thread or its project was put away.' }) : ''].filter(Boolean).join(' · ')
   return <div ref={surface} id={id} className="needs-you-card" role="dialog" aria-labelledby={titleId} tabIndex={-1}
     popover={typeof HTMLElement.prototype.showPopover === 'function' ? 'manual' : undefined}
     onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); onClose(true) } }}
     onBlur={event => {
       const next = event.relatedTarget as Node | null
-      if (next !== null && !event.currentTarget.contains(next) && !trigger.current?.contains(next)) onClose(false)
+      if (next !== null && !event.currentTarget.contains(next) && !trigger()?.contains(next)) onClose(false)
     }}>
     <div className="needs-you-card__head">
       <h3 id={titleId} className="needs-you-card__title">{title}</h3>

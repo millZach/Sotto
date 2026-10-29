@@ -137,6 +137,33 @@ describe('the collapsed rail (ADR-0146)', () => {
     expect(onOpen).toHaveBeenCalledWith('footer-links')
   })
 
+  it('gives the focus back to a tile drawn anew when its card closes with the wait it held', async () => {
+    owl(true, true)
+    const state = threadsStateFixture()
+    const failed = { ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.id === 'wav-stall' ? { ...thread, failureId: 'f1' } : thread) } }
+    const command = vi.fn(async () => failed)
+    const element = (next: AgentState) => <ThreadSidebar state={next} organization={organizeWorkspace(next, describeThreads(next, NOW), '', next.activeProjectId, false, NOW)}
+      command={command} query="" onQuery={vi.fn()} onOpen={vi.fn()} onNewThread={vi.fn()}
+      currentThreadId={null} openThreadIds={[]} onOpenBeside={vi.fn()} onDragThread={vi.fn()} />
+    const view = render(element(failed))
+    act(() => { screen.getByRole('button', { name: 'Collapse sidebar' }).click() })
+    const rail = document.querySelector<HTMLElement>('.thread-nav__rail')!
+    const why = within(rail).getByRole('button', { name: 'Show why Streaming WAV stall needs attention' })
+    act(() => { why.click() })
+    // The press that opened the card answers Escape too.
+    act(() => { why.focus(); fireEvent.keyDown(why, { key: 'Escape' }) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    act(() => { why.click() })
+    const card = screen.getByRole('dialog', { name: 'Streaming WAV stall' })
+    await act(async () => { fireEvent.click(within(card).getByRole('button', { name: 'Dismiss Needs attention on Streaming WAV stall' })) })
+    expect(command).toHaveBeenCalledWith({ type: 'dismiss-failures', failures: [{ threadId: 'wav-stall', failure: 'f1' }] })
+    act(() => { (document.activeElement as HTMLElement | null)?.blur() })
+    // Seen, the thread stops waiting and its tile moves out of the waiting group.
+    act(() => { view.rerender(element({ ...failed, host: { ...failed.host, threads: failed.host.threads.map(thread => thread.id === 'wav-stall' ? { ...thread, failureSeen: true } : thread) } })) })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(tile(rail, 'Streaming WAV stall'))
+  })
+
   it('edges nothing in the attention colour while nothing waits', () => {
     owl(true)
     const rail = mountCollapsed(calm(threadsStateFixture()))
