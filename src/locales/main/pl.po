@@ -783,6 +783,10 @@ msgstr ""
 msgid "Memory is unavailable. Restart Sotto and try again."
 msgstr ""
 
+#: src/main/agents/threadMovesIpc.ts
+msgid "Move threads from the main Sotto window."
+msgstr ""
+
 #: src/main/tools/checkpoints.ts
 msgid "Native conversation rollback is unavailable for this provider."
 msgstr ""

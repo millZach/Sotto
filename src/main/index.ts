@@ -17,6 +17,8 @@ import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent }
 import { registerDelegationIpc } from './agents/delegationIpc'
 import { registerCheckQueueIpc } from './agents/checkQueueIpc'
 import { registerContinueIpc } from './agents/continueThreadIpc'
+import { moveTargetsOf } from './agents/threadMoves'
+import { registerThreadMoveIpc } from './agents/threadMovesIpc'
 import { registerNextPromptIpc, windowNextPrompt } from './agents/nextPromptIpc'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
 import { desktopWindowClient } from './agents/hostService'
@@ -1098,6 +1100,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   app.on('browser-window-blur', windowFocusChanged)
   windowFocusChanged()
   localRuntime.watcher?.useRemoteHosts(hostRouter.watcherHosts())
+  // Moving threads to a paired host (#1178) reaches the machines through Watcher's view of them, and its placement.
+  const threadMoves = 'threadMoves' in localRuntime ? localRuntime.threadMoves : undefined
+  if (threadMoves && localRuntime.watcher) threadMoves.useTargets(moveTargetsOf(hostRouter.watcherHosts(), localRuntime.watcher, listener => hostRouter.subscribeChanges(listener)))
   // The desktop relay (#1316): each host whose threads delegate to This computer through this desktop is heard from here.
   const delegationRelay = 'delegationRelay' in localRuntime ? localRuntime.delegationRelay : undefined
   delegationRelay?.useHosts(hostRouter)
@@ -2064,6 +2069,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const cleanupCheckQueues = registerCheckQueueIpc(ipcMain, watcherEnabled && crossMachineEnabled, 'checks' in localRuntime ? localRuntime.checks : undefined,
         () => windows.getTrustedRenderers(), () => agentControl.hostId(), (channel, payload) => { windows.sendToMain(channel, payload) }, hostRouter)
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
+      // Move threads (#1178): only where Watcher and Work across machines are both on and main built the service, so stable
+      // registers nothing.
+      const cleanupThreadMoves = registerThreadMoveIpc(ipcMain, watcherEnabled && crossMachineEnabled ? threadMoves : undefined, () => windows.getTrustedRenderers())
       const cleanupNextPrompts = registerNextPromptIpc(ipcMain, localRuntime.nextPrompts, () => agentControl.hostId(), () => windows.getTrustedRenderers())
       const cleanupNotifications = registerNotificationIpc(ipcMain, desktopNotifier, () => windows.getTrustedRenderers())
       // A recording profiles the main window that asked, through its own debugger (ADR-0098).
@@ -2314,6 +2322,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         cleanupDelegations()
         cleanupCheckQueues()
         cleanupContinue()
+        cleanupThreadMoves()
         cleanupNextPrompts()
         cleanupMainActivity()
         cleanupGlassWindow()

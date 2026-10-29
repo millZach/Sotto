@@ -35,6 +35,8 @@ import {
   ownCleanupMeasureResultSchema, type OwnServerCleanupBridge,
 } from '../shared/ownServerCleanup'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_READ, NEXT_PROMPT_RENDERER_ARGUMENT, nextPromptEntriesSchema, nextPromptEntrySchema, type NextPromptBridge } from '../shared/nextPrompt'
+import { THREAD_MOVE_PREPARE, THREAD_MOVE_START, threadMovePrepareRequestSchema, threadMovePrepareSchema, threadMoveStartRequestSchema, threadMoveStartSchema,
+  type ThreadMovesBridge } from '../shared/threadMoves'
 import { CONTINUE_READ, CONTINUE_START, CONTINUE_RENDERER_ARGUMENT, continueReadRequestSchema, continueReadSchema, continueStartRequestSchema, continueStartSchema, type ContinueBridge } from '../shared/continueThread'
 import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_CHANGES, MAIN_CHECKOUT_COMMAND, MAIN_CHECKOUT_READ, MAIN_CHECKOUT_RENDERER_ARGUMENT, mainCheckoutChangesSchema, mainCheckoutCommandSchema,
   mainCheckoutStateSchema, type MainCheckoutBridge } from '../shared/mainCheckout'
@@ -451,6 +453,12 @@ export function createSottoBridge(
     ...(watcherMachinesEnabled ? { checks: Object.freeze<CheckQueuesBridge>({
       read: () => invokeParsed(renderer, CHECK_QUEUES_READ, checkQueuesViewSchema),
       onChanged: listener => subscribe(renderer, CHECK_QUEUES_CHANGED, checkQueuesViewSchema, listener),
+    }) } : {}),
+    // Moving threads to another machine (#1178): only where the machines line is, so stable's window has no such bridge.
+    // Main registers it only where it built the service; a call without one is refused there.
+    ...(watcherMachinesEnabled ? { threadMoves: Object.freeze<ThreadMovesBridge>({
+      prepare: request => invokeParsed(renderer, THREAD_MOVE_PREPARE, threadMovePrepareSchema, threadMovePrepareRequestSchema.parse(request)),
+      start: request => invokeParsed(renderer, THREAD_MOVE_START, threadMoveStartSchema, threadMoveStartRequestSchema.parse(request)),
     }) } : {}),
     // Delegation between threads (ADR-0081): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(delegationEnabled ? { delegations: Object.freeze<DelegationsBridge>({

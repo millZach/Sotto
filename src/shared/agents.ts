@@ -400,10 +400,16 @@ export type ThreadHandoverProof = z.infer<typeof threadHandoverProofSchema>
  * handover its first message carried, once that message was sent.
  */
 export const threadContinuedFromSchema = z.object({ threadId: id, provider: providerIdSchema, at: z.string().datetime(),
-  handover: threadHandoverProofSchema.optional() }).strict()
+  handover: threadHandoverProofSchema.optional(),
+  /** A thread moved here from another machine (#1178): that machine's host ID, as the desktop that moved it names it. Read leniently. */
+  host: z.string().min(1).max(512).optional().catch(undefined) }).strict()
 export type ThreadContinuedFrom = z.infer<typeof threadContinuedFromSchema>
-/** One thread that continues this one on another provider (ADR-0089): its Sotto thread ID, its provider and when. */
-export const threadContinuedInSchema = z.object({ threadId: id, provider: providerIdSchema, at: z.string().datetime() }).strict()
+/**
+ * One thread that continues this one on another provider (ADR-0089), or on another machine (#1178): its Sotto thread ID,
+ * its provider and when, and for a move the host ID of the machine it went to. `host` is read leniently.
+ */
+export const threadContinuedInSchema = z.object({ threadId: id, provider: providerIdSchema, at: z.string().datetime(),
+  host: z.string().min(1).max(512).optional().catch(undefined) }).strict()
 export type ThreadContinuedIn = z.infer<typeof threadContinuedInSchema>
 /** The most continuations a thread's record names, the newest kept, so a record cannot grow without end. */
 export const THREAD_CONTINUED_IN_MAX = 100
