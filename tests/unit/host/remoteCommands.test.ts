@@ -14,7 +14,9 @@ const HOST_LOCAL = ['set-aside-send', 'credential', 'check-reasoning', 'update-c
 // A desktop window names the machine a command acts on and its router never sends the name on (ADR-0074, ADR-0077):
 // a settings save, Update all, and Settings > Providers' presses on this computer's own clients.
 const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure: ['hostId'], 'queue-client-updates': ['hostId'],
-  connect: ['hostId'], disconnect: ['hostId'], refresh: ['hostId'], 'check-client-updates': ['hostId'], 'update-client': ['hostId'] }
+  connect: ['hostId'], disconnect: ['hostId'], refresh: ['hostId'], 'check-client-updates': ['hostId'], 'update-client': ['hostId'],
+  // The reading the window showed, which the router names when it asks a paired host for a confirmation receipt (#1691).
+  'git-pull-request-action': ['readId'] }
 /**
  * Fields only the host's own socket server sets, on what it tells its host service: which observed threads its paired
  * desktops show (ADR-0092). A paired client never sends them; one that tries is refused.
@@ -22,7 +24,9 @@ const WINDOW_ONLY: Partial<Record<AgentCommand['type'], string[]>> = { configure
 const HOST_INTERNAL: Partial<Record<AgentCommand['type'], string[]>> = { 'observe-threads': ['shownThreadIds'],
   // A worker started from a moved branch (#1033): only the host's own Watcher or delegation names the move it starts from,
   // and the thread whose branch it was (#1030), and that a start is a check its queue runs (#1312).
-  'create-thread': ['startFromMove', 'madeFrom', 'check'] }
+  'create-thread': ['startFromMove', 'madeFrom', 'check'],
+  // The head a confirmation receipt was given on, set from the receipt as the socket server spends it (#1691).
+  'git-pull-request-action': ['matchHeadCommit'] }
 type Option = { shape: { type: { value?: string; options?: string[] } } & Record<string, unknown> }
 const schemaFields = new Map((agentCommandSchema.options as unknown as Option[]).flatMap(option => {
   const types = option.shape.type.options ?? [option.shape.type.value!]
@@ -31,6 +35,13 @@ const schemaFields = new Map((agentCommandSchema.options as unknown as Option[])
 const refuse = (command: AgentCommand, mayAnswer = false, askingProviderModes?: string[]) => remoteCommandRefusal(command, { mayAnswer, askingProviderModes })
 
 describe('remote command allow-list', () => {
+  it('lets a paired client carry a confirmation receipt on a pull request press, never the head it holds (#1691)', () => {
+    const merge = { type: 'git-pull-request-action', threadId: 'thread', url: 'https://github.com/o/r/pull/1', action: 'merge', method: 'squash' } as const
+    expect(refuse({ ...merge, confirmation: '11111111-1111-4111-8111-111111111111' })).toBeNull()
+    expect(refuse({ ...merge, matchHeadCommit: 'a'.repeat(40) }, true)).toBe('forbidden')
+    expect(refuse({ ...merge, readId: '11111111-1111-4111-8111-111111111111' }, true)).toBe('forbidden')
+    expect(agentCommandSchema.safeParse({ ...merge, matchHeadCommit: '--admin' }).success).toBe(false)
+  })
   it('keeps unconfirmed-send recovery desktop-only', () => {
     const command = agentCommandSchema.parse({ type: 'set-aside-send', threadId: 'thread', draftId: 'bc746d85-565c-4e06-b091-556d98551676' })
     expect(refuse(command, true)).toBe('forbidden')
@@ -157,7 +168,10 @@ describe('remote command allow-list', () => {
       'delegation-relay-name',
       // A delegation on this host for a thread on another machine, asked by a recorded desktop on a listener that offers
       // delegation-remote (#1316 part 2): admitted by the host's own delegation under its own rules, never a grant.
-      'delegation-remote-ask']
+      'delegation-remote-ask',
+      // A confirmation receipt for the merge, close or auto-merge the client sends next (#1691): evidence of a second step,
+      // never a grant, given only for a pull request the host read for that client.
+      'pull-request-confirmation']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })

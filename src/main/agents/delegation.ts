@@ -20,7 +20,7 @@ import { checkInstallFailedWords, checkInstallWords } from './checkWorktree'
 import { WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import { cancelDelegationInputSchema, delegatedThreadsBelow, delegateInputSchema, delegationRefusalCodeSchema, delegationWorkSchema, readDelegationInputSchema,
   DELEGATION_BRIEF_MAX, DELEGATION_LEVELS_MAX, DELEGATION_PROMPTS_PER_THREAD, DELEGATION_VIEWS_MAX, DELEGATION_WAIT_MAX_SECONDS, DELEGATION_WORK_TITLES, RECORDED_REFUSALS,
-  delegationAskedSchema, delegationHostHoldSchema, type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
+  delegationAskedSchema, delegationHostHoldSchema, CHECK_REPLY_EXCERPT_MAX, type CheckReplyExcerpt, type DelegateInput, type DelegationWork, type DelegationNews, type DelegationOutcome, type DelegationRead, type DelegationRefusal, type DelegationRefusalCode, type DelegatedView, type DelegationView, type RefusedView } from '../../shared/delegation'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { WATCHER_FINAL_OUTCOMES, watcherBriefTurnIsNewest, watcherNewestTurnReply, watcherTurnOutcome } from './watcherOutcomes'
 import { delegationNewsText, foldDelegationNews, heldWords, type DelegationNewsDetail } from './delegationNews'
@@ -124,6 +124,12 @@ export interface DelegationServiceOptions {
   readonly checks?: CheckQueue
   /** A time of day as the user's computer writes it in the interface language, for when a check's snapshot was taken. */
   readonly clockTime?: (at: Date) => string
+  /**
+   * The window's read of a check (#1312, Zach's pick C on October 28, 2026): its row's mark and, once answered, its reply
+   * excerpt, and its reply read on a press. Only on the desktop, where checks are offered, so with Watcher and Work across
+   * machines on; a headless host's read keeps the shape desktops from before it parse.
+   */
+  readonly checkReplies?: boolean
   /**
    * Bringing changes back (#1030), on only while Work across machines is on: a new delegated thread's own worktree is made
    * from the delegating thread's branch, so its commits can be brought back to it. Off, it is made as any new worktree is.
@@ -281,6 +287,12 @@ const recordSchema = z.object({
    * no desktop defaults yet, or no desktop that sent them may answer there (#1310): what the desktop's roster says.
    */
   held: delegationHostHoldSchema.optional(),
+  /**
+   * A start this machine's check queue took as a **check** (#1312): its call said it was there to run tests. The window's
+   * row says Check and, once answered, quotes its reply's first line (Zach's pick C, October 28, 2026). Saved whatever the
+   * Owl list says, so a check stays one when Work across machines is turned on again.
+   */
+  check: z.literal(true).optional(),
   createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
 }).strict()
 type DelegationRecord = z.infer<typeof recordSchema>
@@ -424,6 +436,28 @@ function cutUtf8(text: string, bytes: number): string {
   return new TextDecoder().decode(encoded.subarray(0, end))
 }
 
+/**
+ * A check's reply excerpt (#1312, Zach's pick C on October 28, 2026): its first line with words in it, as the thread wrote
+ * it, cut at `CHECK_REPLY_EXCERPT_MAX` and never inside a character. Undefined for a reply with no words. Sotto reads no
+ * verdict from it: a reply that opens with prose shows its prose.
+ */
+export function checkReplyExcerpt(text: string): string | undefined {
+  for (let start = 0; start <= text.length;) {
+    const end = text.indexOf('\n', start)
+    const line = text.slice(start, end === -1 ? text.length : end).trim()
+    if (line) {
+      if (line.length <= CHECK_REPLY_EXCERPT_MAX) return line
+      const last = line.charCodeAt(CHECK_REPLY_EXCERPT_MAX - 1)
+      return line.slice(0, last >= 0xd800 && last <= 0xdbff ? CHECK_REPLY_EXCERPT_MAX - 1 : CHECK_REPLY_EXCERPT_MAX)
+    }
+    if (end === -1) return undefined
+    start = end + 1
+  }
+  return undefined
+}
+/** How many checks' reply excerpts the window's reads keep, newest read last: more than one read returns. */
+const CHECK_EXCERPTS_KEPT = DELEGATION_VIEWS_MAX * 2
+
 /** The list `index` holds for `key`, made empty the first time it is asked for. */
 function listed<T>(index: Map<string, T[]>, key: string): T[] {
   let list = index.get(key)
@@ -452,13 +486,15 @@ export class DelegationService {
   private readonly byDelegated = new Map<string, DelegationRecord[]>()
   /** Each record by its delegating thread and retry key, so a retry is found without walking the user's history. */
   private readonly byRetryKey = new Map<string, DelegationRecord>()
+  /** Each record by its ID, the first with it, so the window's press on one row finds it without walking a thread's history. */
+  private readonly byId = new Map<string, DelegationRecord>()
   private refusalEntries: RefusedDelegation[] = []
   /** Each delegating thread's refusals, oldest first as in `refusalEntries`. */
   private readonly refusedBy = new Map<string, RefusedDelegation[]>()
   private get records(): readonly DelegationRecord[] { return this.entries }
   private set records(records: DelegationRecord[]) {
     this.entries = records
-    this.byDelegating.clear(); this.byDelegated.clear(); this.byRetryKey.clear()
+    this.byDelegating.clear(); this.byDelegated.clear(); this.byRetryKey.clear(); this.byId.clear()
     for (const record of records) this.indexed(record)
   }
   private get refusals(): readonly RefusedDelegation[] { return this.refusalEntries }
@@ -519,6 +555,11 @@ export class DelegationService {
   private closed = false
   /** Moves whenever a record, and with it a brief's message, is let go (`DelegationControlHooks.briefsRevision`). */
   private briefsRevision = 0
+  /**
+   * Answered checks' reply excerpts, by delegation, with the reply they were read from (#1312): made the first time a read
+   * shows one, never on the update path, and kept in memory only, as delegation keeps no reply on disk.
+   */
+  private readonly checkExcerpts = new Map<string, { readonly messageId: string; readonly excerpt: CheckReplyExcerpt }>()
   private unhook: (() => void) | undefined
 
   constructor(private readonly options: DelegationServiceOptions) {
@@ -704,7 +745,8 @@ export class DelegationService {
     const branch = context.landed ? this.landedHere(threadId, context.landed) : await this.fromBranch(threadId, input, context)
     if (branch && 'status' in branch) return branch
     let admitted: { record: DelegationRecord; retry: boolean; start?: DelegatedStart; role?: RoleReceipt }
-    try { admitted = await this.transaction(() => this.admit(threadId, input)) }
+    // A start that took its place in this machine's queue is a check, saved as one with its admission (#1312).
+    try { admitted = await this.transaction(() => this.admit(threadId, input, ticket !== undefined)) }
     catch (error) {
       // A start refused here never runs, so the branch landed for it is let go.
       await this.letGo(branch)
@@ -755,8 +797,8 @@ export class DelegationService {
   /**
    * What the window shows of a thread's delegations (#1029), oldest first: the ones it made, every open one and the
    * newest finished or refused ones, and the briefs it was sent. Identities, outcome and timing from this service's own
-   * record, never a brief, a reply or a refusal's words. Reads no snapshot, so the window may ask whenever a pane opens
-   * or main names the thread.
+   * record, never a brief, a reply or a refusal's words, but for an answered check's reply excerpt among what it made
+   * (`checkReplies`). Reads no snapshot, so the window may ask whenever a pane opens or main names the thread.
    */
   views(threadId: string): { readonly made: DelegationView[]; readonly received: DelegatedView[] } {
     return this.viewsOf([threadId]).get(threadId)!
@@ -787,7 +829,7 @@ export class DelegationService {
       const record = records[index]!
       refusedAfter(record.createdAt)
       if ((finished < DELEGATION_VIEWS_MAX || this.open(record)) && made.length < DELEGATION_VIEWS_MAX * 2) {
-        made.push(this.view(record))
+        made.push(this.view(record, true))
         if (!this.open(record)) finished++
       }
     }
@@ -828,7 +870,8 @@ export class DelegationService {
     this.viewListeners.add(listener)
     return () => { this.viewListeners.delete(listener) }
   }
-  private view(record: DelegationRecord): DelegatedView {
+  /** One delegation as the window shows it; `made`, as a row of delegated work, where a check carries its mark and excerpt. */
+  private view(record: DelegationRecord, made = false): DelegatedView {
     const outcome = this.outcomeOf(record)
     const outcomeAt = record.outcomeAt ?? (record.deliveryState === 'failed' ? record.updatedAt : undefined)
     // Recovery marks what was open when Sotto stopped `unknown`; a brief the provider never confirmed reads unknown without it.
@@ -839,7 +882,49 @@ export class DelegationService {
       ...(unknownWhy ? { unknownWhy } : {}), told: record.told === outcome, createdAt: record.createdAt, ...(outcomeAt ? { outcomeAt } : {}),
       ...(record.deliveryState === 'failed' ? { notSent: record.failure ?? 'provider' } : {}),
       ...(record.waitSeconds !== undefined && record.waitStartedAt ? { wait: { seconds: record.waitSeconds, startedAt: record.waitStartedAt, ...(record.wentOnAt ? { wentOnAt: record.wentOnAt } : {}) } } : {}),
-      waiting: this.calling.has(record.id) && record.wentOnAt === undefined && this.open(record), ...(record.held ? { held: record.held } : {}) }
+      waiting: this.calling.has(record.id) && record.wentOnAt === undefined && this.open(record), ...(record.held ? { held: record.held } : {}),
+      ...(made && record.check && this.options.checkReplies ? { check: true as const, ...this.checkExcerpt(record, outcome) } : {}) }
+  }
+  /**
+   * An answered check's reply excerpt for its row (#1312, Zach's pick C on October 28, 2026), read from the reply as
+   * `read_delegation` reads it the first time a read shows it, then kept for that reply; or that it is not held, which is
+   * read again each time, since the thread's record may not have been ready. Whether its reply may be shown at all is asked
+   * on every read, as `read_delegation` asks it, before anything kept is used: with Keep local history off, a reply from
+   * before Sotto restarted is not kept, whatever was read while it was on. A reply whose message is gone since is found
+   * by the press that asks for it (`checkReply`), which lets go of the excerpt. Nothing before it has answered.
+   */
+  private checkExcerpt(record: DelegationRecord, outcome: WatcherOutcome): { readonly checkReply?: CheckReplyExcerpt } {
+    if (outcome !== 'answered') return {}
+    if (!this.replyKept(record)) return { checkReply: { unavailable: true } }
+    const kept = this.checkExcerpts.get(record.id)
+    if (kept && kept.messageId === record.replyMessageId) return { checkReply: kept.excerpt }
+    const reply = this.replyOf(record, undefined).reply
+    const excerpt = reply ? checkReplyExcerpt(reply.text) : undefined
+    // A reply with no words has nothing to quote, and is still held: its thread has it.
+    if (reply && excerpt === undefined) return {}
+    if (!reply || excerpt === undefined) return { checkReply: { unavailable: true } }
+    const shown: CheckReplyExcerpt = { excerpt, truncated: reply.truncated }
+    this.checkExcerpts.delete(record.id)
+    this.checkExcerpts.set(record.id, { messageId: reply.messageId, excerpt: shown })
+    if (this.checkExcerpts.size > CHECK_EXCERPTS_KEPT) this.checkExcerpts.delete(this.checkExcerpts.keys().next().value!)
+    return { checkReply: shown }
+  }
+  /**
+   * An answered check's reply, as `read_delegation` gives it, cut at 32 KiB, for the window's tray when the user presses
+   * Read its reply on its row (#1312, Zach's pick C on October 28, 2026). Only a check `threadId` delegated on this machine,
+   * only once answered, and only while its reply is held. Reads the thread's record by the message's ID, never a snapshot,
+   * and tells the delegating thread nothing.
+   */
+  checkReply(threadId: string, delegationId: string): { readonly text: string; readonly truncated: boolean } | undefined {
+    if (!this.options.checkReplies) return undefined
+    // Found by its ID, whatever the length of the history; only one `threadId` delegated is its own to read.
+    const record = this.byId.get(delegationId)
+    if (!record?.check || record.delegatingThreadId !== threadId || this.outcomeOf(record) !== 'answered') return undefined
+    const reply = this.replyOf(record, undefined).reply
+    if (reply) return { text: reply.text, truncated: reply.truncated }
+    // Gone since its excerpt was read: the row is told, and says its reply was not kept.
+    if (this.checkExcerpts.delete(record.id)) this.touched(record)
+    return undefined
   }
   /** A refused delegation as the window shows it: the rule that turned it down, and the turn the call was made in. */
   private refusedView(refused: RefusedDelegation): RefusedView {
@@ -1215,6 +1300,7 @@ export class DelegationService {
     listed(this.byDelegating, record.delegatingThreadId).push(record)
     listed(this.byDelegated, record.delegatedThreadId).push(record)
     if (record.retryKey) this.byRetryKey.set(retryIndex(record.delegatingThreadId, record.retryKey), record)
+    if (!this.byId.has(record.id)) this.byId.set(record.id, record)
   }
   /**
    * Lets go of the incoming ref a branch copy landed for a start that will not use it, on whichever machine it landed: this
@@ -1399,7 +1485,7 @@ export class DelegationService {
   }
 
   /** Admission, in one transaction: who calls, under which root, within which ceiling and limits. Records the brief. */
-  private async admit(threadId: string, input: DelegateInput) {
+  private async admit(threadId: string, input: DelegateInput, check = false) {
     if (this.closed) refuse('STOPPING', 'Sotto is stopping. Nothing was started.')
     const snapshot = this.snapshot(), caller = this.caller(threadId, snapshot)
     const inputDigest = digest(input)
@@ -1464,7 +1550,8 @@ export class DelegationService {
     const delegatedThreadId = randomUUID()
     const by = fromRole?.held?.by
     const hostHeld = by === 'not-told' || by === 'no-answer-grant' || by === 'answers-revoked' ? by : undefined
-    const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null, ...(hostHeld ? { held: hostHeld } : {}) })
+    const record: DelegationRecord = recordSchema.parse({ ...base, delegatedThreadId, action: 'start', expectedLastUserMessageId: null, ...(hostHeld ? { held: hostHeld } : {}),
+      ...(check ? { check: true } : {}) })
     this.add(record)
     this.creating.add(record.id)
     this.links.set(delegatedThreadId, { threadId: delegatedThreadId, delegatingThreadId: caller.id, createdAt: time, seenHead: null })
@@ -1995,10 +2082,12 @@ export class DelegationService {
    * An answered brief's reply, cut to `WATCHER_REPLY_BYTES_MAX`, as `read_delegation` and the hidden news both give it, or
    * why it is not there: with Keep local history off, a reply from before a restart is not kept.
    */
+  /** Whether an answered brief's reply may be given at all: with Keep local history off, only one answered in this run. */
+  private replyKept(record: DelegationRecord): boolean { return this.options.historyEnabled() || this.answeredThisRun.has(record.id) }
   private replyOf(record: DelegationRecord, thread: AgentThread | undefined): DelegationNewsDetail {
     const replyId = record.replyMessageId
     if (!replyId) return {}
-    if (!this.options.historyEnabled() && !this.answeredThisRun.has(record.id)) return { replyUnavailable: 'Keep local history is off, so Sotto did not keep this reply after it restarted. Read the delegated thread for what it said.' }
+    if (!this.replyKept(record)) return { replyUnavailable: 'Keep local history is off, so Sotto did not keep this reply after it restarted. Read the delegated thread for what it said.' }
     const message = thread?.messages.find(item => item.id === replyId && item.role === 'assistant') ?? this.options.host.threadMessage(record.delegatedThreadId, replyId)
     if (!message || message.role !== 'assistant') return { replyUnavailable: 'Sotto no longer holds this reply. Read the delegated thread for what it said.' }
     const text = cutUtf8(message.text, WATCHER_REPLY_BYTES_MAX)

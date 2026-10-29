@@ -68,6 +68,8 @@ One-time setup, all in a browser plus `gh`. `bash apps/ios/Scripts/testflight-se
 
 No certificate or profile is stored anywhere: Xcode's automatic signing uses Apple's cloud-managed certificates, authorised by the key. Revoke the key in App Store Connect if the repository's secrets are ever in doubt. The app declares standard encryption only (`ITSAppUsesNonExemptEncryption` is false), because it uses the platform's TLS and Keychain and no cryptography of its own; review that if the implementation changes. External testing is open through the public link `https://testflight.apple.com/join/dJFTeyzp`, which first-run setup's **Get the iPhone beta** opens (`IPHONE_BETA_URL` in `src/shared/phones.ts`). The link accepts testers only while the external group has a build that passed Beta App Review and the link is turned on in App Store Connect. The App Store is not set up.
 
+Share to Sotto (ADR-0157) is left out of TestFlight builds while `SHARE_EXTENSION` is `'off'` in the workflow: Apple must first know the App Group `group.com.millzach.sotto.ios` and the App ID `com.millzach.sotto.ios.share`, with that group on both App IDs. The workflow's comment lists the portal steps; turn the switch on once they are done.
+
 On a Mac, the same archive can be made locally: open the project, set your team under Signing & Capabilities, and use Product > Archive, or run `apps/ios/Scripts/testflight.sh` with the environment it documents.
 
 ## Lifecycle and privacy

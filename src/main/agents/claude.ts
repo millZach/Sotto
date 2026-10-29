@@ -199,12 +199,12 @@ export function settingsSteps(from: ClaudeSettings, to: ClaudeSettings, ultracod
 /** Appended to Claude Code's own system prompt on every thread process, Watcher's included (ADR-0080). */
 const CLAUDE_QUESTIONS = questionInstructions('AskUserQuestion', false)
 /**
- * Claude Code asks the API by default for thinking shown as updates, under which the server may swap the prose a model
- * writes between tool calls for a short summary filed as a thinking block. A reply written just before AskUserQuestion
- * then reached Sotto only as a Thinking row and its card showed with no reply above it (October 28, 2026). Off, the
- * model's prose comes back as text and becomes its message.
+ * The server may return prose a model writes between tool calls as narration: a thinking block in place of the text
+ * (`claudeNarration`). Asked for no thinking text, the block comes back empty and the reply is lost; summarized, it holds
+ * the server's summary of that prose, which Sotto shows as the reply. Claude Code's own default asks for summaries of
+ * narration only when a feature gate allows, so Sotto asks for them on every launch (October 28, 2026).
  */
-const PROSE_STAYS_TEXT = { CLAUDE_CODE_THINKING_DISPLAY_UPDATES: '0' }
+const THINKING_DISPLAY = ['--thinking-display', 'summarized']
 function permissionArguments(mode: AgentRuntimeMode = 'approval-required'): string[] {
   // Two flags, and both are needed. `--permission-prompts host` only says prompts are not force-denied;
   // `--permission-prompt-tool stdio` is what makes this process the surface that answers them, the way
@@ -430,10 +430,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.threadChanges.publish()
   }, () => adapterItemCount(this.messageLog, this.threads.values()))
   private readonly acknowledgements = new Map<string, (delivered?: boolean) => void>()
-  /** For each origin whose send is waiting: records the prompt from what was sent and acknowledges it, for when Claude Code takes it without an echo. */
+  /** For each origin whose send is waiting: records the prompt from what was sent and acknowledges it, for when Claude Code takes it before or without an echo. */
   private readonly recordUnechoed = new Map<string, () => void>()
-  /** Origins Claude Code has said it started running, whose echo has not come. */
-  private readonly startedOrigins = new Set<string>()
   /**
    * Steers Claude Code holds and has not read, by origin. It queues a prompt sent while a turn runs. One sent now cuts
    * the turn and starts the next; one sent while a tool call runs is read into the turn once the call returns, and is
@@ -1073,13 +1071,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
           await this.persist(); throw error
         }
         let timer: ReturnType<typeof setTimeout> | undefined
-        const forget = (): void => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); this.recordUnechoed.delete(origin.uuid); this.startedOrigins.delete(origin.uuid) }
+        const forget = (): void => { clearTimeout(timer); this.acknowledgements.delete(origin.uuid); this.recordUnechoed.delete(origin.uuid) }
         const acknowledged = new Promise<boolean>(resolve => {
           timer = setTimeout(() => { forget(); resolve(false) }, this.options.requestTimeoutMs ?? 15000)
           this.acknowledgements.set(origin.uuid, (delivered = true) => { forget(); resolve(delivered) })
         })
-        // Claude Code answers a slash command it cannot run here, such as /chrome, with a reply of its own. It never echoes
-        // the prompt, so the prompt is recorded from what was sent.
+        // Claude Code echoes the prompt only as the model's reply begins, and never echoes a slash command it cannot run
+        // here, such as /chrome, which it answers with a reply of its own. So once it takes the prompt without its echo,
+        // the prompt is recorded from what was sent.
         this.recordUnechoed.set(origin.uuid, () => {
           this.addMessage(id, { id: origin.messageId, role: 'user', text: nativeText, createdAt: origin.createdAt, commandId: origin.commandId, ...(origin.attachments ? { attachments: origin.attachments } : {}) })
           if (!this.completedOrigins.has(origin.uuid)) { thread.status = 'running'; this.markTurn(id, 'running'); this.changed(id) }
@@ -1493,7 +1492,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const roles = profile ? undefined : this.subagentRoles(alias.runtimeMode ?? 'approval-required', scoped.some(({ tools }) => tools.name === DELEGATE_MCP_SERVER))
     const effort = nativeEffort(alias.reasoningEffort, this.ultracodeAt(alias.modelId))
     const args = [...(this.options.args ?? []), ...toolArguments, '--print', '--input-format', 'stream-json', '--output-format', 'stream-json', '--verbose',
-      '--include-partial-messages', '--replay-user-messages', ...permissionArguments(alias.runtimeMode),
+      '--include-partial-messages', '--replay-user-messages', ...THINKING_DISPLAY, ...permissionArguments(alias.runtimeMode),
       '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : roles?.instructions ? `${CLAUDE_QUESTIONS}\n\n${roles.instructions}` : CLAUDE_QUESTIONS,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(effort.effortLevel ? ['--effort', effort.effortLevel] : []),
       ...flagSettingsArguments(fastModeRuns(this.state, alias.modelId, alias.fastMode), effort.ultracode)]
@@ -1501,7 +1500,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     try {
       this.configurationGuards.get(id)?.()
       runtime = { requests: new Map(), answered: new Set(), answerWrites: new Map(), clientRevision: this.clientRevision, watcher: !!profile, subagentMode: roles?.subagents?.widest,
-        ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...PROSE_STAYS_TEXT, ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
+        ...(effort.ultracode && effort.effortLevel ? { ultracodeEffort: effort.effortLevel as UltracodeEffort } : {}), protocol: new ClaudeProtocol(this.executable, args, alias.cwd, { ...this.client.environment(), ...(toolTimeoutMs ? { MCP_TOOL_TIMEOUT: String(toolTimeoutMs) } : {}) }, this.options.requestTimeoutMs ?? 15000,
       frame => {
         if (this.runtimes.get(id) === runtime) this.frame(id, frame)
         // A spare keeps a bounded handful of frames for the send that adopts it; one that says more is let go.
@@ -1779,16 +1778,14 @@ export class ClaudeStreamJsonHost implements AgentHost {
       return
     }
     if (frame.type === 'control_cancel_request' && typeof frame.request_id === 'string') { runtime.requests.delete(frame.request_id); thread.requests = [...runtime.requests.values()].map(value => value.request) }
-    // A prompt Claude Code took without an echo is taken when its local command replies, which puts it above the reply.
-    // A result naming it is the last word. Any other reply may belong to a turn the prompt is still held behind.
-    if (frame.type === 'command_lifecycle' && frame.state === 'started' && typeof frame.command_uuid === 'string' && this.recordUnechoed.has(frame.command_uuid)) this.startedOrigins.add(frame.command_uuid)
+    // A waiting prompt is taken once Claude Code says its turn started, which it says as it takes the prompt. Its echo
+    // comes only as the model's reply begins, and the first reply after a restart can begin past the deadline (#1511).
+    // Recorded now, the prompt sits above anything its turn says. One held behind Claude Code's own turn starts only once
+    // that turn ends. A result naming a prompt is the last word, for a client that never said the prompt started.
+    if (frame.type === 'command_lifecycle' && frame.state === 'started' && typeof frame.command_uuid === 'string') this.recordUnechoed.get(frame.command_uuid)?.()
     // Any word of a steer's place in Claude Code's own queue means it holds the steer.
     if (frame.type === 'command_lifecycle' && typeof frame.command_uuid === 'string' && this.steers.has(frame.command_uuid)) this.acknowledgements.get(frame.command_uuid)?.()
-    if (this.recordUnechoed.size && !frame.parent_tool_use_id) {
-      const localReply = frame.type === 'assistant' && typeof frame.local_command_source === 'string'
-      const resultFor = frame.type === 'result' && typeof frame.user_message_uuid === 'string' ? frame.user_message_uuid : undefined
-      if (localReply || resultFor) for (const origin of alias.origins) if (origin.uuid === resultFor || localReply && this.startedOrigins.has(origin.uuid)) this.recordUnechoed.get(origin.uuid)?.()
-    }
+    if (frame.type === 'result' && !frame.parent_tool_use_id && typeof frame.user_message_uuid === 'string') this.recordUnechoed.get(frame.user_message_uuid)?.()
     // A result ends its turn, and the turn's own outcome is decided before its activity settles, so a block the turn
     // left open settles the way the turn ended. A turn the user stopped is no failure of Claude Code's, nor finished.
     const ending = frame.type === 'result' && !frame.parent_tool_use_id ? this.resultEnding(id, frame) : undefined
@@ -2261,8 +2258,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
     if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch)); this.activity.set(id, projector) }
     const watcherTurn = live && this.runtimes.get(id)?.watcher && thread.lastTurn?.status === 'running' ? thread.lastTurn.messageId : undefined
     const turnId = watcherTurn ?? this.lastUserMessageId(id) ?? 'native-history'
-    const rows = projector.apply(thread.activities ?? [], frame, turnId, this.lastTextMessageId(id), this.aliases[id]!.cwd, live, turnEnd)
-    if (rows.length) {
+    const previous = thread.activities ?? []
+    const rows = projector.apply(previous, frame, turnId, this.lastTextMessageId(id), this.aliases[id]!.cwd, live, turnEnd)
+    // A narration row taken back out can leave no rows at all, which is still a change.
+    if (rows.length || rows !== previous) {
       // Transcript replay may place a tool after a folded steer. Its already-observed tool identity
       // still belongs to the native turn that wrote it; replay must not move it to the steer.
       if (!live && this.resolvedWatcherProfiles.has(id)) {

@@ -304,9 +304,13 @@ describe('Claude recovery and safety', () => {
     await f.adapter.pollSessionLogs()
     await writeFile(join(f.root, 'script.json'), JSON.stringify({ localCommand: chromeReply, evidence }))
     expect(await f.host.execute({ type: 'send', commandId: 'chrome', messageId: 'chrome', threadId: id, text: '/chrome' })).toEqual({ accepted: true })
-    const messages = (await thread()).messages
+    // The start confirms the send, and the reply may come in a later chunk, so the order is read once it has.
+    const messages = await vi.waitFor(async () => {
+      const current = (await thread()).messages
+      expect(current).toContainEqual(expect.objectContaining({ role: 'assistant', text: chromeReply }))
+      return current
+    })
     expect(messages).toContainEqual(expect.objectContaining({ id: 'chrome', role: 'user', text: '/chrome', commandId: 'chrome' }))
-    expect(messages).toContainEqual(expect.objectContaining({ role: 'assistant', text: chromeReply }))
     expect(messages.map(message => message.role)).toEqual(order)
     await expect.poll(async () => (await thread()).status).toBe('idle')
     await writeFile(join(f.root, 'script.json'), '{}')
@@ -634,15 +638,14 @@ describe('Claude recovery and safety', () => {
       expect(args.filter(argument => argument === '--append-system-prompt')).toHaveLength(1)
     }
   })
-  it('keeps the prose a thread writes before a tool call as its reply, not a summary filed as thinking', async () => {
-    // Under thinking shown as updates the server may replace that prose with a summary, and a question card then shows
-    // with no reply above it.
+  it('asks for summarized thinking so narration before a question carries words', async () => {
+    // The server may return prose written between tool calls as a narration block; asked for no thinking text, it is empty.
     const created = randomUUID()
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: created, projectId: f.projectId, title: 'Prose', modelId: f.modelId })
-    const frames = (await f.driver.requests()).filter(record => record.method === 'launch' || record.method === 'resume').map(record => record.params?.frame as { args: string[]; thinkingDisplayUpdates: string | null })
+    const frames = (await f.driver.requests()).filter(record => record.method === 'launch' || record.method === 'resume').map(record => record.params?.frame as { args: string[] })
       .filter(frame => !frame.args.includes('--no-session-persistence'))
     expect(frames.length).toBeGreaterThan(0)
-    for (const frame of frames) expect(frame.thinkingDisplayUpdates).toBe('0')
+    for (const frame of frames) expect(frame.args.join(' ')).toContain('--thinking-display summarized')
   })
   it('says the approval surface was refused when a session offers no question tool', async () => {
     f.host.disconnect(); await f.adapter.closed()

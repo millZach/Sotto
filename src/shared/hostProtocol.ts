@@ -7,7 +7,7 @@ import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_FILE_BYTES, agentMimeTypeSchema, agen
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
 import { gitRefsRequestSchema } from './gitRefs'
 import { gitChangedFilesRequestSchema } from './gitChangedFiles'
-import { gitPullRequestRequestSchema, type GitPullRequestReadFailure } from './gitPullRequests'
+import { gitPullRequestRequestSchema, pullRequestConfirmationRequestSchema, type GitPullRequestReadFailure } from './gitPullRequests'
 import { hostFoldersRequestSchema } from './hostFolders'
 import { fileListRequestSchema, fileRequestSchema } from './files'
 import { gitReviewRequestSchema } from './gitChanges'
@@ -186,6 +186,14 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * `bring-changes-back`: the host takes `bring-changes-back`, which brings a thread's commits back to the branch of the
  * thread it began from, running Git on the host that holds both folders (#1030). Only a host whose Owl answer turns it on
  * lists it; a desktop refuses the command for a host that does not, and says to update it.
+ * `pull-request-confirmation`: the host gives a **confirmation receipt** for one merge, close or auto-merge
+ * (`pull-request-confirmation`), and refuses a `git-pull-request-action` of those three from any paired client that does
+ * not carry one in `confirmation` (#1691, ADR-0027, October 28 amendment). A receipt counts once, for two minutes, for the
+ * client it was given to and the exact thread, pull request, action and method, and for the head commit of the reading that
+ * client shows, which it names by the `readId` each `git-pull-request` answer carries, and which `gh pr merge
+ * --match-head-commit` holds GitHub to. The desktop asks for one only after the user
+ * confirms in its window. Listed by every host that reads pull requests; the iPhone and Android clients send none of the
+ * three presses.
  * `thread-prompts`: the host answers `thread-prompts` with every message the user sent before one, oldest first, from the
  * thread's store, and takes `load-earlier-messages` with `throughMessageId`, which widens the thread's window back to that
  * message, for the message scrubber (ADR-0109). Only a desktop is offered it. A desktop whose host does not list it marks
@@ -320,7 +328,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * Owl answer turns on Work across machines, and only to a desktop the launch script recorded; a desktop accepts it only
  * where its own Owl answer turns Work across machines on. A desktop that does not accept it is pushed nothing.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'watcher-new-owner'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -519,6 +527,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('git-changed-files'), request: gitChangedFilesRequestSchema }).strict(),
   /** One of a thread's pull requests, read through gh for the Pull request surface; read on request (ADR-0027). */
   z.object({ ...base, op: z.literal('git-pull-request'), request: gitPullRequestRequestSchema }).strict(),
+  /** A confirmation receipt for one merge, close or auto-merge the client is about to send (`pull-request-confirmation`, #1691). */
+  z.object({ ...base, op: z.literal('pull-request-confirmation'), request: pullRequestConfirmationRequestSchema }).strict(),
   /** An image for a draft on this host, sent once; the answer is its handle (ADR-0031). */
   z.object({ ...base, op: z.literal('stage-attachment'), image: hostAttachmentSchema }).strict(),
   /** A staged image's bytes by digest, for a chip the client holds no copy of; null once the host no longer keeps it. */

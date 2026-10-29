@@ -4197,7 +4197,7 @@ msgid "Shortcut conflicts"
 msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
-msgid "Shortcuts for working in threads — New thread, Settle, and the rest — are listed in Settings › Keyboard, where each can be changed."
+msgid "Shortcuts for switching pages and working in threads — New thread, Settle, and the rest — are listed in Settings › Keyboard, where each can be changed."
 msgstr ""
 
 #: src/renderer/src/App.tsx

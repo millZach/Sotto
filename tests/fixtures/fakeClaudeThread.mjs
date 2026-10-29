@@ -46,7 +46,7 @@ if (!metadata && (args.includes('--tools') || args.includes('--safe-mode') || va
 if (!metadata && value('--permission-prompt-tool') !== 'stdio') throw new Error('Coding threads must name this process as the permission prompt surface')
 // The native CLI refuses bypassPermissions unless bypassing was explicitly allowed at launch; never allow it for other modes.
 if (!metadata && (value('--permission-mode') === 'bypassPermissions') !== args.includes('--allow-dangerously-skip-permissions')) throw new Error('bypassPermissions requires --allow-dangerously-skip-permissions, and only that mode may carry it')
-record(args.includes('--resume') ? 'resume' : 'launch', { source: 'child-process-argv', args, executable: process.execPath, cwd: process.cwd(), compactionEnvironment: Object.fromEntries(['DISABLE_AUTO_COMPACT', 'DISABLE_COMPACT', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]])), thinkingDisplayUpdates: process.env.CLAUDE_CODE_THINKING_DISPLAY_UPDATES ?? null })
+record(args.includes('--resume') ? 'resume' : 'launch', { source: 'child-process-argv', args, executable: process.execPath, cwd: process.cwd(), compactionEnvironment: Object.fromEntries(['DISABLE_AUTO_COMPACT', 'DISABLE_COMPACT', 'CLAUDE_AUTOCOMPACT_PCT_OVERRIDE', 'CLAUDE_CODE_AUTO_COMPACT_WINDOW'].filter(key => process.env[key] !== undefined).map(key => [key, process.env[key]])) })
 if (watcher) record('watcher-launch', { serverNames: Object.keys(mcpConfig.mcpServers), allowedTools: allowance, nativeTools: ['Read', 'Grep', 'Glob', 'Edit', 'Bash'] })
 // The isolated Electron journey uses the adapter's normal ~/.claude discovery path.
 const folder = join(process.env.SOTTO_FAKE_CLAUDE_HOME ?? join(root, 'home'), 'projects', process.cwd().replace(/[^a-zA-Z0-9]/gu, '-'))
@@ -96,7 +96,13 @@ let cuts = 0
 const steered = []
 const lifecycleOf = (uuid, state) => output({ type: 'command_lifecycle', command_uuid: uuid, state, uuid: randomUUID(), session_id: session })
 const readSteered = () => { for (const frame of steered.splice(0)) { output(persist(frame)); lifecycleOf(frame.uuid, 'started') } }
-const turnEnded = () => { turnOpen = steered.length > 0; turnPrompt = steered[0]?.uuid; readSteered() }
+// The echo of a prompt taken under script.json `echoAtReply`, which goes just before its turn's reply begins. A turn that
+// ends before its reply began never echoes its prompt.
+let heldEcho
+// Whether this resumed CLI has taken its first prompt (script.json `interruptedOnResume`).
+let resumeSettled = false
+const echoHeld = () => { if (heldEcho) output(heldEcho); heldEcho = undefined }
+const turnEnded = () => { heldEcho = undefined; turnOpen = steered.length > 0; turnPrompt = steered[0]?.uuid; readSteered() }
 const cut = afterTools => {
   cuts++
   output(afterTools
@@ -120,6 +126,7 @@ async function complete(action) {
   // `run_in_background`. The task_started follows the tool call inside the turn, as in a live capture, and
   // nothing ends it before the result, so the work must outlive the result to be seen afterwards.
   const agent = action.background ? { tool: randomUUID(), task: action.background.taskId ?? randomUUID() } : undefined
+  echoHeld()
   output({ type: 'stream_event', session_id: session, event: { type: 'message_start', message: { id, role: 'assistant' } } })
   const thinking = typeof action.thinking === 'string' || action.redacted === true
   if (thinking) {
@@ -218,6 +225,7 @@ const act = () => {
   if (action.type === 'say') {
     readSteered()
     const id = randomUUID()
+    echoHeld()
     output({ type: 'stream_event', session_id: session, event: { type: 'message_start', message: { id, role: 'assistant' } } })
     output({ type: 'stream_event', session_id: session, event: { type: 'content_block_delta', delta: { type: 'text_delta', text: action.text } } })
     output(persist({ type: 'assistant', uuid: randomUUID(), session_id: session, message: { id, role: 'assistant', content: [{ type: 'text', text: action.text }] } })); return
@@ -394,9 +402,24 @@ lines.on('line', async line => {
       record('hook-context', { prompt, uuid: frame.uuid, additionalContext: context ?? null })
       if (typeof context === 'string') persist({ type: 'attachment', uuid: randomUUID(), attachment: { type: 'hook_additional_context', content: [context], hookName: 'UserPromptSubmit', hookEvent: 'UserPromptSubmit' } })
     }
+    // script.json `interruptedOnResume`: a session resumed after its CLI ended mid-tool-call. Before the first prompt the
+    // resumed CLI takes, Claude Code files that call's result as interrupted in the transcript, as 2.1.310 did (#1511).
+    if (script.interruptedOnResume && args.includes('--resume') && !resumeSettled) {
+      resumeSettled = true
+      const entries = existsSync(log) ? readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : []
+      const blocks = type => entries.filter(entry => entry.type === type).flatMap(entry => Array.isArray(entry.message?.content) ? entry.message.content : [])
+      const answered = new Set(blocks('user').filter(block => block.type === 'tool_result').map(block => block.tool_use_id))
+      const open = blocks('assistant').filter(block => block.type === 'tool_use' && !answered.has(block.id)).at(-1)
+      if (open) persist({ type: 'user', uuid: randomUUID(), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: open.id, is_error: true,
+        content: "[Tool call interrupted: the session ended before this call's result was recorded.]" }] } })
+    }
     const reply = persist(frame)
     if (script.writeCwd) writeFileSync(join(process.cwd(), 'native-cwd-proof.txt'), typeof frame.message.content === 'string' ? frame.message.content : frame.message.content.find(item => item.type === 'text')?.text ?? '')
-    if (script.delay) { writeFileSync(scriptPath, '{}'); setTimeout(() => output(reply), script.delay) } else output(reply)
+    // script.json `echoAtReply`: Claude Code 2.1.312 says at once that it took the prompt, `queued` then `started`, and files
+    // it in the transcript, but echoes it only as the model's reply begins, just before `message_start` (`echoHeld`). A
+    // reply slow to begin, as the first one after a restart can be, holds the echo as long.
+    if (script.echoAtReply) { lifecycleOf(frame.uuid, 'queued'); lifecycleOf(frame.uuid, 'started'); heldEcho = { ...reply, isReplay: true } }
+    else if (script.delay) { writeFileSync(scriptPath, '{}'); setTimeout(() => output(reply), script.delay) } else output(reply)
     // script.json `reply`: a model that answers every prompt at once, as the scripted `complete` action answers it.
     if (!script.delay && script.reply !== undefined) { writeFileSync(join(root, `control-${session}.json`), JSON.stringify({ id: randomUUID(), type: 'complete', text: script.reply })); act() }
     // script.json `limit`: every prompt stops at the plan's usage limit, which resets at `limit`, as Claude Code ends a

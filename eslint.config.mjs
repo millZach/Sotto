@@ -48,6 +48,7 @@ export default tseslint.config(
       'artifacts/omarchy-shell-plugin/**',
       'artifacts/linux-shell-plumbing/**',
       'artifacts/linux-package/**',
+      'artifacts/page-shortcuts/**',
       'artifacts/linux-settings-copy/**',
       'artifacts/model-menu-wheel/**',
       'artifacts/new-thread-defaults-every-host/**',

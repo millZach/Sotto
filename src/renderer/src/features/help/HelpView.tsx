@@ -94,7 +94,7 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
               <div><dt><Trans>Search transcripts</Trans></dt><dd><kbd className="tt-kbd">{modifier}</kbd><kbd className="tt-kbd">K</kbd></dd></div>
               <div><dt><Trans>Paste manually</Trans></dt><dd><kbd className="tt-kbd">{linux ? 'Super' : modifier}</kbd><kbd className="tt-kbd">V</kbd></dd></div>
             </dl>
-            <p className="tt-paragraph"><Trans>Shortcuts for working in threads — New thread, Settle, and the rest — are listed in Settings › Keyboard, where each can be changed.</Trans></p>
+            <p className="tt-paragraph"><Trans>Shortcuts for switching pages and working in threads — New thread, Settle, and the rest — are listed in Settings › Keyboard, where each can be changed.</Trans></p>
           </section>
           <section className="tt-panel">
             <div className="tt-panel__header"><h2><Trans comment="Heading over the running version and what Sotto sends where">About</Trans></h2></div>

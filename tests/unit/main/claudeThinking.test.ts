@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
 import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
+import { claudeText } from '../../../src/main/agents/claudeSessionLog'
+import { claudeNarration } from '../../../src/main/agents/claudeThinking'
 import { agentActivitySchema, MAX_ACTIVITY_TEXT, type AgentActivity } from '../../../src/shared/agentActivity'
 
 /**
@@ -167,5 +169,51 @@ describe('Claude thinking as it streams', () => {
     expect(reasoning(rows)[0]!.text).toHaveLength(MAX_ACTIVITY_TEXT)
     expect(reasoning(rows)[0]!.truncated).toBe(true)
     expect(agentActivitySchema.safeParse(reasoning(rows)[0]).success).toBe(true)
+  })
+})
+
+/** A signature envelope as the server writes one, cut to the block kind: field 2, then 1, then 8 names it. */
+const signed = (kind: string) => {
+  const name = Buffer.from(kind); const inner = Buffer.concat([Buffer.from([0x42, name.length]), name]); const middle = Buffer.concat([Buffer.from([0x0a, inner.length]), inner])
+  return Buffer.concat([Buffer.from([0x08, 0x13]), Buffer.from([0x12, middle.length]), middle]).toString('base64')
+}
+
+describe('Claude narration', () => {
+  it('reads the block kind from the signature and treats an unreadable one as thinking', () => {
+    expect(claudeNarration({ type: 'thinking', thinking: '', signature: signed('narration') })).toBe(true)
+    expect(claudeNarration({ type: 'thinking', thinking: '', signature: signed('thinking') })).toBe(false)
+    expect(claudeNarration({ type: 'thinking', thinking: '', signature: 'c2lnbmF0dXJl' })).toBe(false)
+    expect(claudeNarration({ type: 'text', text: '', signature: signed('narration') })).toBe(false)
+  })
+
+  it('becomes the reply text, and its streamed Thinking row goes when the block stops', () => {
+    const projector = new ClaudeActivity()
+    let rows = run(projector, [start('msg_1'), blockStart(0, { type: 'thinking', thinking: '', signature: '' }), delta(0, { type: 'thinking_delta', thinking: 'The sky scatters blue light.' })])
+    expect(reasoning(rows)).toHaveLength(1)
+    rows = run(projector, [delta(0, { type: 'signature_delta', signature: signed('narration') }), stop(0)], true, rows)
+    expect(reasoning(rows)).toEqual([])
+    const frame = thinkingFrame('msg_1', 'The sky scatters blue light.')
+    frame.message.content[0]!.signature = signed('narration')
+    expect(reasoning(run(projector, [frame], true, rows))).toEqual([])
+    expect(claudeText(frame.message.content)).toBe('The sky scatters blue light.')
+  })
+
+  it('stays Thinking when it has no words or belongs to a subagent, which has no reply to carry it', () => {
+    const empty = thinkingFrame('msg_1', '', { apiBlockIndex: 0 })
+    empty.message.content[0]!.signature = signed('narration')
+    expect(reasoning(run(new ClaudeActivity(), [empty], false))).toHaveLength(1)
+    const projector = new ClaudeActivity()
+    const rows = run(projector, [start('msg_2', 'tool-1'), blockStart(0, { type: 'thinking', thinking: '' }, 'tool-1'), delta(0, { type: 'thinking_delta', thinking: 'Checking.' }, 'tool-1'),
+      delta(0, { type: 'signature_delta', signature: signed('narration') }, 'tool-1'), stop(0, 'tool-1')])
+    expect(reasoning(rows)).toEqual([expect.objectContaining({ status: 'completed', text: 'Checking.' })])
+  })
+
+  it('makes no Thinking row when a transcript line replays it', () => {
+    const frame = thinkingFrame('msg_1', 'The sky scatters blue light.', { apiBlockIndex: 1 })
+    frame.message.content[0]!.signature = signed('narration')
+    expect(reasoning(run(new ClaudeActivity(), [frame], false))).toEqual([])
+    // Without words there is no reply to show.
+    frame.message.content[0]!.thinking = ''
+    expect(claudeText(frame.message.content)).toBe('')
   })
 })

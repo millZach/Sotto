@@ -1,8 +1,8 @@
 import { z } from 'zod'
 import {
   parsePullRequestReference, pullRequestAddress, pullRequestKey,
-  GIT_PULL_REQUEST_FILES_MAX,
-  type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestDetail, type GitPullRequestFile, type GitPullRequestMergeMethod, type GitPullRequestReadFailure, type GitPullRequestReview,
+  GIT_PULL_REQUEST_FILES_MAX, gitCommitIdSchema,
+  type GitPullRequestAction, type GitPullRequestCheck, type GitPullRequestPress, type GitPullRequestDetail, type GitPullRequestFile, type GitPullRequestMergeMethod, type GitPullRequestReadFailure, type GitPullRequestReview,
 } from '../../shared/gitPullRequests'
 import { baseRepository, GitHubHosts, GitHubRateLimit, isRateLimitAnswer, isSignInRefusal, isUnreachableAnswer, RATE_LIMIT_SELECTION, rateLimitSchema, readGitHubRemotes, refusalReading, repositoryKey, retryWords, type GitHubRepository } from './github'
 import { GitUnavailableError, runGitStatusCommand, type RunGitCommand } from './gitStatus'
@@ -42,7 +42,7 @@ export class GitPullRequestLimited extends GitPullRequestRefusal {
 }
 
 /** A pull request as GitHub describes it, before the host says how it stands to the thread. */
-export type GitPullRequestView = Omit<GitPullRequestDetail, 'linked' | 'branch'> & { headId?: string; observedAt?: string }
+export type GitPullRequestView = Omit<GitPullRequestDetail, 'linked' | 'branch'> & { observedAt?: string }
 
 /** The repository's merge settings are read with a pull request at most this often (#820); they change rarely. */
 const MERGE_SETTINGS_FRESH_MS = 15 * 60_000
@@ -137,6 +137,11 @@ const ACTION_HINT: Record<GitPullRequestAction, string> = {
   'disable-auto-merge': 'GitHub refused it. Check that you have write access, and that the merge has not already happened.',
 }
 const UPDATE_WITH_REBASE_HINT = 'GitHub refused it. A rebase stops at the first commit that does not apply cleanly; Update branch, with a merge commit, may still work.'
+/** A paired client's confirmation receipt was given on a head the pull request has moved on from (#1691). */
+const HEAD_MOVED: Record<'merge' | 'enable-auto-merge', string> = {
+  merge: 'Could not merge this pull request. It has new commits since you confirmed, so nothing was merged. Refresh it, look at the new commits, then press Merge again.',
+  'enable-auto-merge': 'Could not turn on auto-merge. The pull request has new commits since you confirmed, so auto-merge was not turned on. Refresh it, look at the new commits, then press Merge when ready again.',
+}
 
 const VIEW_TIMEOUT_MS = 30_000
 const ACTION_TIMEOUT_MS = 120_000
@@ -363,17 +368,21 @@ export class GitPullRequests {
    * One press on the Pull request surface, as T3 runs it: `gh pr merge --squash`, `--auto`, `--disable-auto`,
    * `gh pr update-branch [--rebase]`, `gh pr ready [--undo]`, `gh pr close`, `gh pr reopen`. A reply that never
    * came back is settled by reading the pull request again: done when it shows the press happened, the refusal
-   * otherwise. Nothing is pressed twice.
+   * otherwise. Nothing is pressed twice. `matchHeadCommit`, from a paired client's confirmation receipt (#1691), holds a
+   * merge or an auto-merge to the head that client was shown: GitHub refuses it once the head has moved.
    */
-  async act(cwd: string, url: string, action: GitPullRequestAction, method?: GitPullRequestMergeMethod): Promise<GitPullRequestView | null> {
+  async act(cwd: string, press: GitPullRequestPress): Promise<GitPullRequestView | null> {
+    const { url, action, method, matchHeadCommit } = press
     if (!pullRequestAddress(url)) throw new GitPullRequestRefusal('Sotto acts on pull requests from GitHub only.')
     if ((action === 'merge' || action === 'enable-auto-merge') && !method) throw new GitPullRequestRefusal('Choose a merge method first.')
     if (action === 'update-branch' && method === 'squash') throw new GitPullRequestRefusal('Update the branch with a merge commit or a rebase.')
+    if (matchHeadCommit !== undefined && !gitCommitIdSchema.safeParse(matchHeadCommit).success) throw new GitPullRequestRefusal('Sotto could not tell which commit you confirmed. Nothing was changed. Refresh the pull request and press it again.')
+    const head = matchHeadCommit && (action === 'merge' || action === 'enable-auto-merge') ? [`--match-head-commit=${matchHeadCommit}`] : []
     const args: string[] = ['pr']
     switch (action) {
-      case 'merge': args.push('merge', url, `--${method}`); break
+      case 'merge': args.push('merge', url, `--${method}`, ...head); break
       // `--auto` arms the same command instead of running it, and still needs the strategy: GitHub keeps it with the instruction.
-      case 'enable-auto-merge': args.push('merge', url, '--auto', `--${method}`); break
+      case 'enable-auto-merge': args.push('merge', url, '--auto', `--${method}`, ...head); break
       case 'disable-auto-merge': args.push('merge', url, '--disable-auto'); break
       case 'update-branch': args.push('update-branch', url, ...(method === 'rebase' ? ['--rebase'] : [])); break
       case 'ready': args.push('ready', url); break
@@ -392,6 +401,7 @@ export class GitPullRequests {
     else if (key && retryAt !== null) this.primed.set(key, { at: this.now(), retryAt })
     if (!failed) return after
     if (after && settled(action, after)) return after
+    if (head.length && after?.headId && after.headId !== matchHeadCommit) throw new GitPullRequestRefusal(HEAD_MOVED[action as keyof typeof HEAD_MOVED])
     const hint = action === 'update-branch' && method === 'rebase' ? UPDATE_WITH_REBASE_HINT : ACTION_HINT[action]
     throw new GitPullRequestRefusal(`${ACTION_FAILED[action]} ${reasonOf(failure) || hint}`.trim())
   }

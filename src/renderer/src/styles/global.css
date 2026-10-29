@@ -1385,6 +1385,10 @@ textarea.tt-input {
   scrollbar-gutter: stable;
 }
 
+/* The room takes focus only when a page shortcut opens a room whose switch is folded away (ADR-0158): the next Tab
+   goes into the page, and a ring around the whole window would say nothing more. */
+.app-room:focus { outline: none; }
+
 /* A page that owns the window scrolls its own columns, so the room must not
    scroll underneath it or add a gutter beside it. */
 .app-room--page {

@@ -3,12 +3,15 @@ import { open, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { StringDecoder } from 'node:string_decoder'
 import { CLAUDE_MAX_FRAME_BYTES, object, type ClaudeFrame } from './claudeProtocol'
+import { claudeNarration } from './claudeThinking'
 import { carriesAttachedFiles, isAttachedFilesNote, stripAppendedNotes, stripAttachedFilesNote, type RecordedAttachments } from './attachedFiles'
 
 export const claudeDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
 export function claudeText(content: unknown): string {
   if (typeof content === 'string') return content
-  return Array.isArray(content) ? content.map(block => object(block)).filter(block => block?.type === 'text').map(block => typeof block?.text === 'string' ? block.text : '').join('\n') : ''
+  // Narration with words stands in for prose the model wrote to the user, so it reads as the reply's text.
+  return Array.isArray(content) ? content.map(block => object(block)).flatMap(block => block?.type === 'text' ? [typeof block.text === 'string' ? block.text : '']
+    : block && typeof block.thinking === 'string' && block.thinking && claudeNarration(block) ? [block.thinking] : []).join('\n') : ''
 }
 /**
  * A user prompt's own words: its text blocks without the block naming its attached files and its Point at something

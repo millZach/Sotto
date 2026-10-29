@@ -8,8 +8,9 @@
  * has no row in the sidebar and is listed in the Claude thread's Tools › Agents instead (October 17, 2026), where its
  * request rolls up to the Claude thread's row and Open to answer shows it in the pane with Tools kept on the Claude
  * thread; it says "Delegated by" with a link back; the line under its composer speaks only while the user's own turn
- * there runs; Stop on the Claude thread names the delegated thread still working, and a press stops both. Stable offers
- * neither the bridge nor the tool.
+ * there runs; Stop on the Claude thread names the delegated thread still working, and a press stops both. A check it
+ * delegates says Check and quotes its reply's first line once answered, and Read its reply opens the rest in a tray
+ * (#1312). Stable offers neither the bridge nor the tool.
  *
  *   npm run build && npx playwright test tests/e2e/thread-delegation.spec.ts
  */
@@ -31,6 +32,12 @@ const rosterEvidence = evidenceDirectory('artifacts/delegated-threads-in-agents'
 const PARENT = 'Tailnet reconnect fix'
 const REVIEW = 'Review the reconnect diff'
 const JOURNEYS = 'Linux journeys for the fix'
+/** A check (#1312), its reply as its thread writes it, and where its captures go for its verification note. */
+const CHECK = 'Unit suite after the Stop fix'
+const CHECK_REPLY = ['Failed: 2 of 1,214 tests.', '1,209 passed, 2 failed, 3 skipped, in 4 min 38 s. npm test -- --maxWorkers=2 at 7c1e0d4.', '', 'Failing:',
+  'tests/unit/agents/checkQueue.test.ts:212  Stop on a waiting check takes it out of the queue', '  AssertionError: expected [ \'c2\', \'c3\' ] to deeply equal [ \'c3\' ]',
+  'tests/unit/agents/checkQueue.test.ts:248  a check holds its place through background work', '  AssertionError: expected \'released\' to be \'held\'', '', 'I changed nothing.'].join('\n')
+const checkEvidence = evidenceDirectory('artifacts/check-reply-card')
 
 /** A fresh profile whose app finds the fake CLIs under its `native-fixture` folder, and how to put everything back. */
 async function nativeFixtureProfile() {
@@ -478,6 +485,144 @@ test('a Claude thread delegates to a Codex thread: delegated work, the sidebar, 
     await restore()
   }
 })
+
+test('a check\'s row says Check, quotes the first line of its reply, and Read its reply opens the rest in a tray (#1312)', async () => {
+  test.setTimeout(240_000)
+  const { profile, root, project, restore } = await nativeFixtureProfile()
+  const codex = join(root, 'codex')
+  let launched: LaunchedSotto | undefined
+  try {
+    await onReleaseTrack('owl', async () => {
+      launched = await launchSotto('success', profile)
+      const { page } = launched
+      const parentId = await delegatingThread(page, project)
+      await expect.poll(() => fakeClaudePrompts(join(root, 'claude')), { timeout: 30_000 }).toBe(1)
+      await page.reload()
+      await resizeWindow(launched, 1280, 800)
+      await openThreads(page)
+      const parent = await openThread(page, PARENT)
+      const listing = await tool(page, parentId, 'read_delegation', {})
+      const model = listing.models?.find(item => item.provider === 'codex')
+      expect(model, JSON.stringify(listing)).toBeDefined()
+      // The agent asks for a check, as its brief says the user calls a test run, and does not wait for it.
+      const started = await tool(page, parentId, 'delegate', { work: 'building', title: CHECK, brief: 'Run the unit suite. Reply first with the verdict, the counts and the failing lines.',
+        provider: 'codex', model: model!.model, ...model!.efforts.length ? { effort: model!.efforts[0] } : {}, permission: 'approval-required', test_run: true, wait_seconds: 0 })
+      expect(started.delegation?.outcome, JSON.stringify(started)).toBe('working')
+      await delegatedThread(page, parentId, [], CHECK)
+      const row = parent.getByRole('listitem', { name: new RegExp(`^Check: ${CHECK}, `, 'u') })
+      await expect(row).toBeVisible({ timeout: 30_000 })
+      await expect(row.locator('.delegated-work__kind')).toHaveText('Check')
+      await expect(row.locator('.delegated-work__glyph')).toHaveClass(/lucide-flask-conical/u)
+      // Working, its card is as it was: no place in line, no reply.
+      await expect(row.locator('.delegated-work__state')).toHaveText('Working')
+      await expect(row.locator('.check-excerpt, .check-unkept')).toHaveCount(0)
+
+      // The check's thread answers: Answered, and its row quotes the reply's first line as the thread's words.
+      await expect.poll(() => codexPrompts(codex), { timeout: 30_000 }).toBe(1)
+      const [checkNative] = await codexThreads(codex)
+      await writeProviderAction(join(codex, 'control.json'), { type: 'complete', threadId: checkNative, text: CHECK_REPLY })
+      await expect(row.locator('.delegated-work__state')).toHaveText('Answered', { timeout: 30_000 })
+      await expect(row.locator('.check-excerpt q')).toHaveText('Failed: 2 of 1,214 tests.')
+      await expect(row.locator('.check-excerpt')).toHaveText('It replied Failed: 2 of 1,214 tests. Read its reply')
+      for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+        await resizeWindow(launched, width, height)
+        for (const appearance of ['dark', 'light'] as const) {
+          await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
+          await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+          await row.scrollIntoViewIfNeeded()
+          await checkFits(page, `check answered ${appearance} ${width}x${height}`)
+          await readable(page, `check answered ${appearance} ${width}x${height}`)
+          await checkReadable(page, `check answered ${appearance} ${width}x${height}`)
+          await capture(launched, `check-row-${appearance}-${width}x${height}`, checkEvidence)
+        }
+      }
+
+      // From the keyboard: Read its reply opens the tray with the focus in it, and Escape returns it to the control.
+      await resizeWindow(launched, 1280, 800)
+      const read = row.getByRole('button', { name: `Read the reply from ${CHECK}, the check on this computer` })
+      await read.focus()
+      await page.keyboard.press('Enter')
+      const tray = pane(page).getByRole('dialog', { name: new RegExp(`^${CHECK}`, 'u') })
+      await expect(tray).toBeFocused()
+      await expect(read).toHaveAttribute('aria-expanded', 'true')
+      await expect(tray.locator('.check-tray__who')).toContainText('Its reply, in its own words, on this computer · ')
+      await expect(tray.locator('.check-pre')).toHaveText(CHECK_REPLY)
+      await expect(tray.locator('.check-tray__foot')).toHaveText('That is all of its reply.Open the check')
+      for (const [width, height] of [[1280, 800], [820, 560]] as const) {
+        await resizeWindow(launched, width, height)
+        for (const appearance of ['dark', 'light'] as const) {
+          await page.evaluate(appearance => window.sotto!.updateSettings({ appearance }), appearance)
+          await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+          await expect(tray).toBeVisible()
+          // The tray sits over the bottom of the transcript, in its column, above the composer, and its row stays in view above it.
+          const placed = await pane(page).evaluate(element => {
+            const box = (selector: string) => element.querySelector(selector)?.getBoundingClientRect()
+            const shown = box('.check-tray')!, opened = box('.delegated-work__row[data-tray-open]')!, transcript = box('.thread-workspace__transcript')!, prompt = box('.thread-prompt')
+            return { rowAbove: opened.bottom <= shown.top + 1, rowShown: opened.top >= transcript.top - 1, inColumn: shown.left >= transcript.left && shown.right <= transcript.right,
+              abovePrompt: prompt === undefined || shown.bottom <= prompt.top + 1 }
+          })
+          expect(placed, `tray ${appearance} ${width}x${height}`).toEqual({ rowAbove: true, rowShown: true, inColumn: true, abovePrompt: true })
+          await checkFits(page, `tray ${appearance} ${width}x${height}`)
+          await checkReadable(page, `tray ${appearance} ${width}x${height}`)
+          await capture(launched, `check-tray-${appearance}-${width}x${height}`, checkEvidence)
+        }
+      }
+      await page.keyboard.press('Escape')
+      await expect(tray).toHaveCount(0)
+      await expect(read).toBeFocused()
+      await expect(read).toHaveAttribute('aria-expanded', 'false')
+      // Close does the same; Open the check opens the check's thread in the pane.
+      await read.press('Enter')
+      await tray.getByRole('button', { name: 'Close the reply' }).click()
+      await expect(tray).toHaveCount(0)
+      await expect(read).toBeFocused()
+      await read.press('Enter')
+      await tray.getByRole('button', { name: `Open ${CHECK}, the check on this computer, to read all of its reply` }).click()
+      await expect(pane(page).locator('.thread-workspace__head h2')).toHaveText(CHECK)
+      expect(await readFile(join(root, 'claude', 'violations.jsonl'), 'utf8').catch(() => '')).toBe('')
+    })
+  } finally {
+    if (launched) await closeSotto(launched)
+    await restore()
+  }
+})
+
+/**
+ * Nothing in the pane wider than the pane, as `fits` checks it, but for the composer's Stop button, whose label Linux's
+ * font metrics clip on every delegation journey on main (#1730); it is not this journey's to fix.
+ */
+async function checkFits(page: Page, where: string): Promise<void> {
+  expect((await pageBoundProblems(page)).filter(problem => !problem.startsWith('button-Stop agent')), where).toEqual([])
+  const overflow = await pane(page).evaluate(element => [...element.querySelectorAll<HTMLElement>('.thread-workspace__transcript, .delegated-work__row, .check-tray, .check-tray__head, .check-tray__foot')]
+    .filter(item => item.scrollWidth > item.clientWidth + 1).map(item => item.className))
+  expect(overflow, where).toEqual([])
+}
+
+/** A check's quoted line and its tray, 4.5:1 on what each sits on: the tray's own surface, opaque. */
+async function checkReadable(page: Page, where: string): Promise<void> {
+  const pairs = await page.evaluate(() => {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1; canvas.height = 1
+    const context = canvas.getContext('2d', { willReadFrequently: true })!
+    const hex = (value: string): string => {
+      context.clearRect(0, 0, 1, 1); context.fillStyle = 'rgba(0, 0, 0, 0)'; context.fillStyle = value; context.fillRect(0, 0, 1, 1)
+      return `#${[...context.getImageData(0, 0, 1, 1).data.slice(0, 3)].map(channel => channel.toString(16).padStart(2, '0')).join('')}`
+    }
+    const background = (element: Element): string => {
+      for (let node: Element | null = element; node !== null; node = node.parentElement) {
+        const color = getComputedStyle(node).backgroundColor
+        if (color !== 'rgba(0, 0, 0, 0)' && color !== 'transparent') return hex(color)
+      }
+      return hex(getComputedStyle(document.body).backgroundColor)
+    }
+    const selectors = ['.check-excerpt__who', '.check-excerpt q', '.check-excerpt .check-open', '.check-tray__who', '.check-tray__who b', '.check-pre', '.check-tray__foot', '.check-tray__foot .check-open']
+    return selectors.flatMap(selector => [...document.querySelectorAll(selector)].filter(element => element.getClientRects().length > 0 && !element.closest('[data-tray-open]'))
+      .map((element, index) => ({ name: `${selector} ${index}`, ink: hex(getComputedStyle(element).color), on: background(element) })))
+  })
+  const black = { r: 0, g: 0, b: 0 }
+  expect(pairs.length, where).toBeGreaterThan(0)
+  for (const { name, ink, on } of pairs) expect(contrastRatio(parseThemeRgb(ink, black), parseThemeRgb(on, black)), `${name}, ${where}`).toBeGreaterThanOrEqual(4.5)
+}
 
 test('stable offers no delegation bridge and no delegation tool', async () => {
   test.setTimeout(120_000)

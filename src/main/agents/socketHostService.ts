@@ -15,7 +15,7 @@ import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { gitChangedFilesSchema, type GitChangedFiles, type GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import { gitPullRequestResultSchema, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
+import { gitPullRequestResultSchema, pullRequestConfirmationSchema, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
 import { hostFoldersResultSchema, type HostFoldersRequest, type HostFoldersResult } from '../../shared/hostFolders'
 import { fileListingSchema, filePreviewSchema, filesResultSchema, type FileListing, type FileListRequest, type FilePreview, type FileRequest, type FilesResult } from '../../shared/files'
 import { gitListingSchema, gitReviewSchema, type GitChangeListing, type GitReview, type GitReviewRequest } from '../../shared/gitChanges'
@@ -1282,6 +1282,16 @@ export class SocketHostService implements HostService {
   async gitPullRequest(request: GitPullRequestRequest): Promise<GitPullRequestRead> {
     if (!this.features.includes('git-pull-request')) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     return this.read(gitPullRequestResultSchema, await this.call({ op: 'git-pull-request', request }))
+  }
+  /** The host lists `pull-request-confirmation`: it takes a merge, close or auto-merge only with its own confirmation receipt (#1691). */
+  get supportsPullRequestConfirmation(): boolean { return this.features.includes('pull-request-confirmation') }
+  /**
+   * The host's confirmation receipt for one merge, close or auto-merge, by its ID for the command's `confirmation`, or null
+   * from a host from before receipts, which takes the press without one. Asked only by the router, after the user's yes.
+   */
+  async pullRequestConfirmation(request: PullRequestConfirmationRequest): Promise<string | null> {
+    if (!this.supportsPullRequestConfirmation) return null
+    return this.read(pullRequestConfirmationSchema, await this.call({ op: 'pull-request-confirmation', request })).confirmation
   }
   /** A host that does not list `host-folders` is from before the folder browser; the version sentence says which side to bring up to date, and nothing is sent. */
   async hostFolders(request: HostFoldersRequest): Promise<HostFoldersResult> {

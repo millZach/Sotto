@@ -18,6 +18,7 @@ import { WindowControls } from './WindowControls'
 import { MainFreezeNotice } from '../features/performance/MainFreezeNotice'
 import { ClickEffect } from './ClickEffect'
 import { useClickEffectOn } from '../state/clickEffect'
+import { pageShortcutFor, usePageShortcutLabels } from './pageShortcuts'
 
 type ManagementNavigation = Exclude<AppNavigation, 'onboarding'>
 
@@ -97,6 +98,8 @@ export function roomKeyTarget(key: string, index: number, count: number): number
 export interface RoomTabProps {
   readonly 'aria-selected': boolean
   readonly 'aria-label': string
+  /** The page shortcut that opens the room too (ADR-0158), in `aria-keyshortcuts` spelling. */
+  readonly 'aria-keyshortcuts': string | undefined
   readonly title: string | undefined
   readonly tabIndex: 0 | -1
   readonly onClick: () => void
@@ -129,26 +132,35 @@ export function useRoomSwitch(room: AppRoom | null, rooms: ReadonlyArray<Room>, 
   readonly tab: (target: Room, index: number) => RoomTabProps
 } {
   const ref = useRef<HTMLDivElement>(null)
+  const keys = usePageShortcutLabels()
   useLayoutEffect(() => {
-    if (shown && claimRoomFocus(room)) ref.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')?.focus()
+    // A switch folded out of sight (the sidebar's rail) leaves the handed focus to one on screen.
+    const lit = ref.current?.querySelector<HTMLButtonElement>('[role="tab"][aria-selected="true"]')
+    if (shown && lit && lit.checkVisibility?.() !== false && claimRoomFocus(room)) lit.focus()
   })
   const focusable = rooms.some(({ id }) => id === room) ? room : rooms[0]!.id
   // Only a press that opens another room hands focus on; the lit tab already has it.
   const enter = (target: Room): void => { if (target.id !== room) handRoomFocus(target.id); navigate(target.destination) }
-  const tab = (target: Room, index: number): RoomTabProps => ({
-    'aria-selected': target.id === room,
-    'aria-label': target.label,
-    title: target.id === room ? undefined : target.label,
-    tabIndex: target.id === focusable ? 0 : -1,
-    onClick: () => enter(target),
-    onKeyDown: event => {
-      const next = roomKeyTarget(event.key, index, rooms.length)
-      if (next === null) return
-      event.preventDefault()
-      ref.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
-      enter(rooms[next]!)
-    },
-  })
+  const tab = (target: Room, index: number): RoomTabProps => {
+    const id = pageShortcutFor(target.destination)
+    const shortcut = id === undefined ? undefined : keys[id]
+    return {
+      'aria-selected': target.id === room,
+      'aria-label': target.label,
+      'aria-keyshortcuts': shortcut?.keys,
+      // Its keys on every tab; its name alone only on a closed one, since the lit tab shows its name.
+      title: shortcut ? `${target.label} ${shortcut.suffix}` : target.id === room ? undefined : target.label,
+      tabIndex: target.id === focusable ? 0 : -1,
+      onClick: () => enter(target),
+      onKeyDown: event => {
+        const next = roomKeyTarget(event.key, index, rooms.length)
+        if (next === null) return
+        event.preventDefault()
+        ref.current?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus()
+        enter(rooms[next]!)
+      },
+    }
+  }
   return { ref, tab }
 }
 
@@ -219,6 +231,8 @@ export function AppShell({
   const memory = useMemoryEnabled()
   const usage = useOwlFeature('usage')
   const links = footerLinks.filter(({ id }) => (id !== 'memory' || memory) && (id !== 'usage' || usage))
+  const pageKeys = usePageShortcutLabels()
+  const keysFor = (destination: ManagementNavigation) => { const id = pageShortcutFor(destination); return id === undefined ? undefined : pageKeys[id] }
   const go = (destination: ManagementNavigation): void => { onNavigate?.(destination) }
   // A switch press that opened this page's room hands focus to the strip's lit tab, when the strip is what shows.
   const roomSwitch = useRoomSwitch(room, rooms, go, layout === 'strip' && management && rooms.length > 1)
@@ -273,7 +287,8 @@ export function AppShell({
       )}
       {beside ? sidebar : null}
       {beside ? <div className="app-room__top"><MainFreezeNotice />{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div> : null}
-      <main className={page ? 'app-room app-room--page' : 'app-room'} id="main-content">{children}</main>
+      {/* Takes focus only from a page shortcut whose room has no switch on screen (pageShortcuts.ts). */}
+      <main className={page ? 'app-room app-room--page' : 'app-room'} id="main-content" tabIndex={-1}>{children}</main>
       {beside ? <footer className="app-room__foot"><FooterStatus>{statusText}</FooterStatus></footer> : null}
       {!page && !beside && management ? (
         <footer className="app-footer">
@@ -284,6 +299,8 @@ export function AppShell({
                 href={`#${id}`}
                 className="app-footer__link tt-focusable"
                 aria-current={navigation === id ? 'page' : undefined}
+                aria-keyshortcuts={keysFor(id)?.keys}
+                title={keysFor(id) ? `${i18n._(label)} ${keysFor(id)!.suffix}` : undefined}
                 onClick={(event) => followLink(event, id)}
               >
                 {i18n._(label)}

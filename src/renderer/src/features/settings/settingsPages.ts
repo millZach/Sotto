@@ -63,7 +63,7 @@ export function settingsSectionHome(id: SettingsSectionId): { readonly page: Set
 }
 
 /** What has to be on for a setting to show: dictation itself, or an Owl feature that holds it back. `babysitting` is on while restarting stopped threads (ADR-0144), which takes babysitting away, is off. */
-export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect'
+export type SettingGate = 'dictation' | 'dictation-off' | 'watcher' | 'worker-roles' | 'cross-machine-work' | 'main-freeze' | 'resume-after-restart' | 'next-prompt' | 'muse' | 'menu-bar-owl' | 'night-falls' | 'notifications' | 'creature-toggle' | 'cleanup-model' | 'own-model-servers' | 'keep-main-current' | 'clear-threads' | 'restart-stopped-threads' | 'babysitting' | 'click-effect' | 'usage'
 
 /**
  * The attribute that marks a setting's control on its page with the setting's id: Find a setting lands on a control by
@@ -156,6 +156,11 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'clear-settled-threads-after', label: msg`Clear settled threads after`, section: 'settings-agents', words: 'delete old threads history automatically', gate: 'clear-threads' },
     { id: 'clear-threads-now', label: msg`Clear now`, section: 'settings-agents', words: 'delete old settled threads history', gate: 'clear-threads' },
 
+    { id: 'shortcut-page-dictate', label: msg`Dictate page shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey switch pages room dictate', gate: 'dictation' },
+    { id: 'shortcut-page-watcher', label: msg`Watcher page shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey switch pages room watcher', gate: 'watcher' },
+    { id: 'shortcut-page-threads', label: msg`Threads page shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey switch pages room threads' },
+    { id: 'shortcut-page-usage', label: msg`Usage page shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey switch pages usage', gate: 'usage' },
+    { id: 'shortcut-page-settings', label: msg`Settings page shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey switch pages settings' },
     { id: 'shortcut-new-thread', label: msg`New thread shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey new thread' },
     { id: 'shortcut-settle', label: msg`Settle thread shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey settle archive' },
     { id: 'shortcut-restore', label: msg`Restore settled thread shortcut`, section: 'settings-keyboard', words: 'keyboard keys hotkey restore settled' },
