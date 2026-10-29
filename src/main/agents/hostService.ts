@@ -232,6 +232,11 @@ export interface HostService {
    * read them from `view()`.
    */
   activeSelection?(): Pick<AgentState, 'activeThreadId' | 'activeProjectId'>
+  /**
+   * The shell as `view()` reads it, for a command's answer or a read while a command runs: nothing is copied, and what the
+   * host's next publication is worked out from is left as it was (#1760). Absent, read `view()`.
+   */
+  replyView?(): AgentState
   threadDetail(threadId: string): AgentThreadDetail | null
   /** Runs one client's command and answers with the shell, without history. A socket answer's returned
    * error is its own command outcome; it is independent of the published shell's shared error. The answer is
@@ -320,6 +325,8 @@ export interface LocalHostControl {
   broadcastShell?(): AgentState
   /** The active thread and project as the shell would give them, without building one. */
   activeSelection?(): Pick<AgentState, 'activeThreadId' | 'activeProjectId'>
+  /** The shell a broadcast would carry now, for a command's answer, leaving the next broadcast's bookkeeping as it was. */
+  replyShell?(): AgentState
   threadKind?(threadId: string): AgentThread['kind']
   threadProvider?(threadId: string): ProviderId | undefined
   projectProvider?(projectId: string): ProviderId | undefined
@@ -524,6 +531,7 @@ export class LocalHostService implements HostService {
   shell(): AgentState { return this.control.shell() }
   /** What a broadcast would carry now. A Watcher change handed on with a whole copy of the shell cost what a broadcast did. */
   view(): AgentState { return this.control.broadcastShell?.() ?? this.control.shell() }
+  replyView(): AgentState { return this.control.replyShell?.() ?? this.view() }
   activeSelection(): Pick<AgentState, 'activeThreadId' | 'activeProjectId'> {
     if (this.control.activeSelection) return this.control.activeSelection()
     const { activeThreadId, activeProjectId } = this.view()
@@ -590,7 +598,7 @@ export class LocalHostService implements HostService {
     // What every client observes is what the host loads and streams, focused or not; only showing waits on the focus.
     const state = await this.control.commandShell({ type: 'observe-threads', threadIds: [...new Set([...this.observations.values()].flat())] }, client)
     // Showing threads changes the shell; the answer is read again, as a broadcast would carry it, not copied (#1760).
-    return this.control.showThreads?.(this.shownThreads()) ? this.view() : state
+    return this.control.showThreads?.(this.shownThreads()) ? this.replyView() : state
   }
   /** Main reports the window's focus as it moves; gaining it shows the window's panes again, which reads their finish. */
   setWindowFocused(focused: boolean): void {

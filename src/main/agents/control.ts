@@ -1009,8 +1009,6 @@ export class AgentControl {
    */
   private broadcastLast: { readonly from: readonly AgentThread[]; readonly shown: readonly AgentThread[]; readonly display: unknown; readonly revision: number; readonly hostId: string | undefined
     host?: AgentState['host'] } | undefined
-  /** The positions the last broadcast's list replaced in the one before it, or undefined when it listed every thread again. */
-  private broadcastReplaced: number[] | undefined
   private broadcastPatch: { readonly from: readonly AgentThread[]; to: readonly AgentThread[]; readonly ids: Set<string> } | null | undefined = null
   private readonly marksMoved = new Set<string>()
   private broadcastCancel: (() => void) | null = null
@@ -1808,21 +1806,26 @@ export class AgentControl {
     }
     if (state.unconfirmedSettings) state.unconfirmedSettings = state.unconfirmedSettings.filter(item => this.threadAvailable(item.threadId))
   }
-  shell(): AgentState { return this.shellOf(false) }
+  shell(): AgentState { return this.shellOf('copy') }
   /**
    * The shell a broadcast carries, for readers that only read it. Its thread records are its own, but what they hold is
    * the host snapshot's: the workspace's publication, which this coordinator replaces on every accept and never writes
    * into. Copying that for every thread on every broadcast was most of what the shell cost (October 19, 2026). `shell()`
    * still copies all of it, for a caller that may change what it is handed.
    */
-  broadcastShell(): AgentState { return this.shellOf(true) }
+  broadcastShell(): AgentState { return this.shellOf('broadcast') }
   /**
    * A command's reply: the shell as a broadcast would carry it now, the command's own effect included. Its top level is
    * the caller's to set (an `error`, a preview); everything under it is the broadcast's, read and never written into.
    * Every client that sends a command reads only its outcome from the reply, and the desktop's router discards the rest,
    * so a reply that copied every thread cost main a whole copy of the state on each draft save (#1760).
+   *
+   * It is read beside the broadcasts, never as one of them: what the next broadcast is worked out from (the last one's
+   * list and base, the change waiting to go and the marks that moved) is left as it was, so a reply made between a change
+   * and its broadcast leaves that broadcast to list the change itself, as made from the last broadcast.
    */
-  private reply(): AgentState { return this.shellOf(true) }
+  replyShell(): AgentState { return this.shellOf('reply') }
+  private reply(): AgentState { return this.replyShell() }
   /**
    * The thread and project this coordinator has active, as its shell would give them, read without building one. The
    * desktop's router reads these two around every command to follow a selection the command made (#1760).
@@ -1832,7 +1835,9 @@ export class AgentControl {
     // As `hideWatcher` leaves them in the shell: a dormant thread is no one's selection.
     return this.threadAvailable(activeThreadId) ? { activeThreadId, activeProjectId } : { activeThreadId: null, activeProjectId: null }
   }
-  private shellOf(shareThreads: boolean): AgentState {
+  /** `copy` copies everything; `broadcast` shares and moves the broadcasts on; `reply` shares and leaves them as they are. */
+  private shellOf(mode: 'copy' | 'broadcast' | 'reply'): AgentState {
+    const shareThreads = mode !== 'copy'
     const { threads, models } = this.state.host
     // A certified catalog is frozen and shared by every layer from the adapter on, so the shell carries it as it is rather
     // than clone every model on each broadcast (#917). One that is not certified is copied, as everything else is.
@@ -1846,14 +1851,16 @@ export class AgentControl {
       // parts of its state in place, so what changed is found by reading it against the last copy rather than by identity;
       // that reads without making anything, where a copy on every broadcast made every object again. The copy is frozen,
       // so the broadcasts that share it are read and never written into, as their thread records already are.
+      const broadcast = mode === 'broadcast'
       const [base] = immutableUpdates([bare], [this.broadcastBase])
-      this.broadcastBase = base
+      if (broadcast) this.broadcastBase = base
       const previous = this.broadcastLast
-      state = { ...base!, host: { ...base!.host, ...(shared ? { models } : {}), threads: this.broadcastThreads(threads) } }
-      // A list made from the last broadcast's in place says so, for the router to remake only those threads (#925).
-      const replaced = this.broadcastReplaced
+      const { shown, replaced } = this.broadcastThreads(threads, broadcast)
+      state = { ...base!, host: { ...base!.host, ...(shared ? { models } : {}), threads: shown } }
+      // A list made from the last broadcast's in place says so, for the router to remake only those threads (#925). A reply
+      // says so too, but the next broadcast is still noted as made from the last broadcast, not from the reply.
       if (replaced && previous?.host) noteThreadsReplaced(state.host, previous.host, replaced)
-      this.broadcastLast!.host = state.host
+      if (broadcast) this.broadcastLast!.host = state.host
     } else {
       // Every other shell is its caller's to change: it copies containers and keeps strings, several times faster than structuredClone.
       state = clonePlainData(bare)
@@ -1885,8 +1892,11 @@ export class AgentControl {
    * and failure marks, is listed as the very record that broadcast carried: frozen, never written into, and made again only
    * when its thread, a mark or the display its summary came from moved (#1334). It was a new record for every thread on
    * every broadcast, and the router and the window's encoder then worked out again that most had not changed.
+   *
+   * Only a broadcast (`moveOn`) records what it listed and takes the waiting change and the moved marks as listed; a reply
+   * lists the same threads and leaves all of that for the broadcast that follows (#1760).
    */
-  private broadcastThreads(threads: readonly AgentThread[]): AgentThread[] {
+  private broadcastThreads(threads: readonly AgentThread[], moveOn: boolean): { shown: AgentThread[]; replaced: number[] | undefined } {
     const display = this.continuationDisplay, revision = this.watcherMessageDisplay?.revision ?? 0, hostId = this.state.host.hostId
     const last = this.broadcastLast, patch = this.broadcastPatch
     // A list that is the last broadcast's, or that list with threads replaced in place, is made from the last list: only the
@@ -1909,16 +1919,16 @@ export class AgentControl {
     } else {
       shown = threads.map(thread => this.broadcastRecord(thread, display, revision, hostId))
       const records = this.broadcastRecords
-      if (records.size > threads.length) {
+      if (moveOn && records.size > threads.length) {
         const present = new Set(threads.map(thread => thread.id))
         for (const id of records.keys()) if (!present.has(id)) records.delete(id)
       }
     }
+    if (!moveOn) return { shown, replaced }
     this.broadcastLast = { from: threads, shown, display, revision, hostId }
-    this.broadcastReplaced = replaced
     this.broadcastPatch = undefined
     this.marksMoved.clear()
-    return shown
+    return { shown, replaced }
   }
   /** Verifying mode: a list made from the last broadcast's, against the whole walk's. A thread listed as an earlier record is found here. */
   private verifyBroadcast(threads: readonly AgentThread[], shown: readonly AgentThread[], display: unknown, revision: number, hostId: string | undefined): void {

@@ -46,7 +46,7 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'activeSelection' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
+  service: Pick<HostService, 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
@@ -754,7 +754,7 @@ export class DesktopHostRouter {
    * its top level. A publication may still be waiting behind the coordinator's publish window when a command answers, so
    * the answer is built afresh rather than taken from `lastPublished()`, which could miss the command's effect (#306).
    */
-  private reply(): AgentState { return this.build(connection => readView(connection.service)) }
+  private reply(): AgentState { return this.build(connection => commandView(connection.service)) }
   /**
    * Publishes every host's state as it is now and answers a command with that publication. It is built from each host's
    * live state in this same turn, so it holds the command's own effect, and the answer costs no second build (#1760).
@@ -1630,7 +1630,7 @@ export class DesktopHostRouter {
   /** Refuses, before it is sent, a command that chooses, owns or would enumerate a held provider on that host. */
   private refuseHeld(command: AgentCommand, connection: DesktopHostConnection): void {
     if (!this.held.size) return
-    const held = heldProviderRefusedBy(command, this.held, readView(connection.service).host)
+    const held = heldProviderRefusedBy(command, this.held, commandView(connection.service).host)
     if (held) throw new Error(heldProviderRefusal(held))
   }
   /** The host a command's references name, or the selected host, and the command in that host's own IDs. */
@@ -1693,7 +1693,7 @@ export class DesktopHostRouter {
     const { connection } = this.target(hostId ? hostEntityKey(hostId, '_') : undefined)
     this.refuseHeld(command, connection)
     const threadId = 'threadId' in command ? command.threadId ?? undefined : command.type === 'send' ? command.draft?.threadId : undefined
-    const view = command.type === 'send' || command.type === 'compose' ? readView(connection.service) : undefined
+    const view = command.type === 'send' || command.type === 'compose' ? commandView(connection.service) : undefined
     const defaultThread = view ? view.draftThreadId ?? view.activeThreadId ?? undefined : undefined
     if (!this.watcherAvailable(connection, threadId ?? defaultThread)) throw new Error(watcherDisabledWords())
     return { connection, command }
@@ -1812,6 +1812,11 @@ export class DesktopHostRouter {
 
 /** A host's state for a reader that only reads it: its view where it has one, a copy of its shell where it does not. */
 function readView(service: Pick<HostService, 'shell' | 'view'>): AgentState { return service.view?.() ?? service.shell() }
+/**
+ * A host's state read in place for a command: its answer, or what a command is routed and checked by. Unlike `readView`,
+ * it leaves what the host's next publication is worked out from as it was, where the host can (#1760).
+ */
+function commandView(service: Pick<HostService, 'shell' | 'view' | 'replyView'>): AgentState { return service.replyView?.() ?? readView(service) }
 /** A host's active thread and project, read without a shell built or copied for them where the host can say (#1760). */
 function selectionOf(service: Pick<HostService, 'shell' | 'view' | 'activeSelection'>): Pick<AgentState, 'activeThreadId' | 'activeProjectId'> {
   if (service.activeSelection) return service.activeSelection()
