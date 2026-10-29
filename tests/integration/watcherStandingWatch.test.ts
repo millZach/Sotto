@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { deferred } from '../fixtures/deferred'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
-import { watcherToolSchemas, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
+import { emptyWatcherRecord, watcherToolSchemas, type WatcherRecord, type WatcherToolName, type WatcherToolOutput } from '../../src/shared/watcher'
 import type { WatcherHostControl, WatcherHostProjection, WatcherRemoteHosts } from '../../src/shared/watcherHost'
 import type { AgentControl } from '../../src/main/agents/control'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -937,6 +937,9 @@ it('archives a paired desktop\'s closed work on the owning host and answers its 
   expect(reads).toHaveBeenCalledTimes(1)
   expect(hosted().requests.some(item => item.id === request.id)).toBe(false)
   reads.mockRestore()
+  // The remembered Stop still checks the request's identity, as one in the record does.
+  expect(await worker.service.readRemote({ master: identity, stoppedRequests: [{ ...stoppedRequests[0]!, request: { ...stoppedRequests[0]!.request, rootUserMessageId: 'synthetic-other-message' } }] }, clientId, () => undefined))
+    .toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
   // Another desktop cannot take that request's ID, though this one's Stop of it is remembered.
   expect(await worker.service.admitRemote(admitted[0]!, randomUUID(), () => undefined)).toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
   expect(hosted().requests.some(item => item.id === request.id)).toBe(false)
@@ -949,6 +952,10 @@ it('archives a paired desktop\'s closed work on the owning host and answers its 
   expect(hosted().remoteAbsences ?? []).toEqual([])
   // From then on the replaced Watcher cannot read it, as it could not read a request of the record's that moved.
   expect(await read()).toMatchObject({ status: 'refused', code: 'UNKNOWN_OPERATION' })
+  // Handed back to the record, as when Keep local history goes off, it is the newer Watcher's too.
+  const archivedWork = await worker.control.archivedWatcherWork()!.read({ requests: [request.id] }), handedBack = emptyWatcherRecord()
+  ;(worker.control as unknown as { returnArchived(record: WatcherRecord, work: typeof archivedWork): void }).returnArchived(handedBack, archivedWork)
+  expect(handedBack.requests.find(item => item.id === request.id)?.watcher).toEqual(newer.target)
   // The replaced Watcher's retry is refused; the newer one's brings the request back as the newer Watcher's, its prompt
   // turn too, as adoption leaves the record's, and gives the first receipt.
   expect(await retry()).toMatchObject({ status: 'refused', code: 'NOT_CURRENT_WATCHER' })

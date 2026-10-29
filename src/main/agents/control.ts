@@ -636,8 +636,13 @@ export class AgentControl {
    * Started with Keep local history off over a saved archive that holds paired desktops' work (#1759): that work goes back
    * to the record before the archive goes, so a desktop's late retry still gives its first receipt. Asked by Watcher's recovery.
    */
+  /** Puts archived work back as Watcher has it now, a newer Watcher's takeover of a desktop's requests included (#1735). */
+  private returnArchived(record: WatcherRecord, work: WatcherArchived): void {
+    if (this.watcherHooks?.returnArchived) this.watcherHooks.returnArchived(record, work)
+    else returnArchivedWork(record, work)
+  }
   returnArchivedRemoteWork(): Promise<void> {
-    return this.watcherArchive?.returnRemoteWork(work => this.updateWatcher(record => returnArchivedWork(record, work))) ?? Promise.resolve()
+    return this.watcherArchive?.returnRemoteWork(work => this.updateWatcher(record => this.returnArchived(record, work))) ?? Promise.resolve()
   }
   /** Settles once whatever was asked of Watcher's archive has settled. */
   watcherArchiveSettled(): Promise<void> { return this.watcherArchive?.settled() ?? Promise.resolve() }
@@ -2663,7 +2668,7 @@ export class AgentControl {
       () => this.dependencies.host.privacyChanged?.(),
       () => this.followupStore.privacyChanged(),
       () => this.watcherHooks?.privacyChanged?.(),
-      () => this.watcherArchive?.privacyChanged(work => this.updateWatcher(record => returnArchivedWork(record, work))),
+      () => this.watcherArchive?.privacyChanged(work => this.updateWatcher(record => this.returnArchived(record, work))),
       () => this.persist(),
     ]
     const results = await Promise.allSettled(cleanup.map(operation => Promise.resolve().then(operation)))

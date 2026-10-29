@@ -511,10 +511,11 @@ export class WatcherService implements WatcherControlHooks {
   /** The paired desktops and Watchers whose older requests this run already moved to them (#1735). */
   private readonly adopted = new Set<string>()
   /**
-   * Paired desktops' requests this run found stopped in Watcher's archive (#1759), each with the desktop that made it: a
-   * Stop that desktop sends again for one changes nothing. Forgotten when Keep local history changes.
+   * Paired desktops' requests this run found stopped in Watcher's archive (#1759), as archived: a Stop the desktop that
+   * made one sends again changes nothing, once its identity is checked as the record's would be. Forgotten when Keep local
+   * history changes.
    */
-  private readonly archivedStops = new Map<string, string>()
+  private readonly archivedStops = new Map<string, Readonly<WatcherRequest>>()
   /** The newest Watcher of each paired desktop that took its older ones' requests over this run (#1735), by `desktopKey`. */
   private readonly adoptedBy = new Map<string, WatcherIdentity>()
   /** Whether each paired desktop may answer on this host, as its latest admission's socket says (ADR-0004). */
@@ -5045,29 +5046,39 @@ ${operation.draftId}`)
     const wanted = new Set(ids.filter(id => archive.hasRequest(id) && !live.has(id)))
     if (!wanted.size) return
     const work = await this.readArchive({ requests: [...wanted] })
-    const requests: WatcherRequest[] = [], moved = new Map<string, WatcherThreadTarget>()
+    const requests: WatcherRequest[] = []
     for (const request of work.requests) {
       if (!wanted.has(request.id) || request.remoteOrigin?.clientId !== clientId) continue
       if (stays?.(request)) {
-        this.archivedStops.set(request.id, clientId)
+        this.archivedStops.set(request.id, request)
         while (this.archivedStops.size > 1_000) this.archivedStops.delete(this.archivedStops.keys().next().value!)
         continue
       }
-      const owner = this.archivedOwner(request, clientId)!
-      if (owner === request.remoteOrigin.master) { requests.push(request); continue }
-      moved.set(key(request.watcher), owner.target)
-      requests.push({ ...request, watcher: owner.target, remoteOrigin: { ...request.remoteOrigin, master: owner, creationOperationId: owner.creationOperationId } })
+      requests.push(request)
     }
     if (!requests.length) return
-    const restored = new Set(requests.map(request => request.id)), turns = new Set(work.operations.flatMap(operation => restored.has(operation.requestId) && operation.promptTurnId ? [operation.promptTurnId] : []))
-    const promptTurns = work.promptTurns.map(turn => { const to = moved.get(key(turn.watcher)); return to ? { ...turn, watcher: to } : turn })
-    await this.options.control.updateWatcher(next => {
-      guard?.()
-      returnArchivedWork(next, { requests, operations: work.operations, promptTurns })
-      // A turn the record still holds goes to the Watcher that took its requests over, as adoption moves it.
-      if (moved.size) for (const turn of next.promptTurns ?? []) { const to = turns.has(turn.id) ? moved.get(key(turn.watcher)) : undefined; if (to) turn.watcher = to }
+    await this.options.control.updateWatcher(next => { guard?.(); this.returnArchived(next, { requests, operations: work.operations, promptTurns: work.promptTurns }) })
+    for (const request of requests) this.archivedStops.delete(request.id)
+  }
+  /**
+   * Puts archived work back in a record being changed (#1759): each paired desktop's request as the Watcher that owns it
+   * now has it (`archivedOwner`), and the prompt turns of one that moved with it, those the record still holds included,
+   * as adoption moves them (#1735).
+   */
+  returnArchived(record: WatcherRecord, work: WatcherArchived): void {
+    const moved = new Map<string, WatcherThreadTarget>()
+    const requests = work.requests.map(request => {
+      const owner = request.remoteOrigin && this.archivedOwner(request, request.remoteOrigin.clientId)
+      if (!owner || owner === request.remoteOrigin!.master) return request
+      moved.set(key(request.watcher), owner.target)
+      return { ...request, watcher: owner.target, remoteOrigin: { ...request.remoteOrigin!, master: owner, creationOperationId: owner.creationOperationId } }
     })
-    for (const id of restored) this.archivedStops.delete(id)
+    const held = new Set(record.requests.map(request => request.id))
+    const promptTurns = work.promptTurns.map(turn => { const to = moved.get(key(turn.watcher)); return to ? { ...turn, watcher: to } : turn })
+    returnArchivedWork(record, { requests, operations: work.operations, promptTurns })
+    if (!moved.size) return
+    const turns = new Set(work.operations.flatMap(operation => !held.has(operation.requestId) && operation.promptTurnId ? [operation.promptTurnId] : []))
+    for (const turn of record.promptTurns ?? []) { const to = turns.has(turn.id) ? moved.get(key(turn.watcher)) : undefined; if (to) turn.watcher = to }
   }
   /**
    * The Watcher of this paired desktop that owns an archived request of its now (#1759): the one that made it, unless a
@@ -5081,7 +5092,13 @@ ${operation.draftId}`)
   }
   /** Whether Watcher's archive holds a request by this ID that another paired desktop, or this computer, made. */
   private archivedForAnotherDesktop(id: string, clientId: string): boolean {
-    return this.archivedStops.get(id) !== clientId && this.options.control.archivedWatcherWork()?.hasRequest(id) === true
+    return this.archivedStops.get(id)?.remoteOrigin?.clientId !== clientId && this.options.control.archivedWatcherWork()?.hasRequest(id) === true
+  }
+  /** This desktop's request the archive holds stopped (`archivedStops`), as the Watcher that owns it now has it. */
+  private rememberedStop(id: string, clientId: string): WatcherRequest | undefined {
+    const request = this.archivedStops.get(id), owner = request && this.archivedOwner(request, clientId)
+    if (!request || !owner) return undefined
+    return owner === request.remoteOrigin!.master ? request : { ...request, watcher: owner.target, remoteOrigin: { ...request.remoteOrigin!, master: owner, creationOperationId: owner.creationOperationId } }
   }
   private async stopRemoteRequests(master: WatcherIdentity, stops: NonNullable<WatcherHostRead['stoppedRequests']>, clientId: string, guard?: () => void): Promise<void> {
     const operations = new Set<string>()
@@ -5090,17 +5107,18 @@ ${operation.draftId}`)
       if (master.target.hostId === this.hostId()) refuse('INVALID_INPUT', 'A remote request must belong to its master computer.')
       // A desktop sends its stopped requests with every read. One Watcher's archive holds stopped stays there; one it holds
       // closed comes back to be stopped, so no operation the desktop sent before its Stop opens it again (#1759).
-      await this.restoreRemoteRequests(stops.map(item => item.request.id).filter(id => this.archivedStops.get(id) !== clientId), clientId, guard,
+      await this.restoreRemoteRequests(stops.map(item => item.request.id).filter(id => !this.rememberedStop(id, clientId)), clientId, guard,
         request => request.state === 'stopped')
       const record = this.view()
-      stops = stops.filter(item => this.archivedStops.get(item.request.id) !== clientId || record.requests.some(request => request.id === item.request.id))
       for (const { request, ceiling } of stops) {
-        const existing = record.requests.find(item => item.id === request.id)
+        // One the archive holds stopped is checked as it would be in the record, as the Watcher that owns it now has it.
+        const existing = record.requests.find(item => item.id === request.id) ?? this.rememberedStop(request.id, clientId)
         if (!existing && this.archivedForAnotherDesktop(request.id, clientId)) refuse('RETRY_KEY_CONFLICT', 'That stopped request belongs to another origin.')
         if (key(request.watcher) !== key(master.target) || existing && (existing.remoteOrigin?.clientId !== clientId
           || JSON.stringify(existing.remoteOrigin.master) !== JSON.stringify(master) || existing.remoteOrigin.ceiling !== ceiling
           || existing.rootUserMessageId !== request.rootUserMessageId || existing.createdAt !== request.createdAt)) refuse('RETRY_KEY_CONFLICT', 'That stopped request belongs to another origin.')
       }
+      stops = stops.filter(item => record.requests.some(request => request.id === item.request.id) || !this.rememberedStop(item.request.id, clientId))
       const stoppedIds = new Set(stops.map(item => item.request.id))
       for (const operation of record.operations) if (stoppedIds.has(operation.requestId) && !operation.confirmedStop) operations.add(operation.id)
       // A copy this host closed is stopped as well, so no operation the master sent before its Stop opens it again.
