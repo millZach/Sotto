@@ -9,7 +9,7 @@ import { WATCHER_GET, WATCHER_OPEN, WATCHER_PREPARE_STOP_ALL, WATCHER_STOP_ALL, 
   WATCHER_READ_MACHINES, WATCHER_MACHINES_RENDERER_ARGUMENT, watcherMachinesReadSchema, WATCHER_RENDERER_ARGUMENT, watcherOpenRequestSchema, watcherRoomResultSchema,
   watcherPrepareStopAllResultSchema, watcherStopAllRequestSchema, watcherStopAllResultSchema,
   watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, type WatcherBridge } from '../shared/watcherRoom'
-import { watcherRoomChanges } from './watcherRoomChanges'
+import { watcherRoomForwarding } from './watcherRoomForwarding'
 import { hostClientBridge } from './hostClientBridge'
 import { REQUEST_DRAFT_GET, REQUEST_DRAFT_STATUS, REQUEST_DRAFT_SAVE, REQUEST_DRAFT_CHECK, REQUEST_DRAFT_CHANGED, REQUEST_DRAFT_LIST, REQUEST_DRAFT_DISCARD, requestDraftSchema, requestDraftCheckResultSchema, requestDraftStatusSchema, requestDraftTargetSchema, requestDraftOwnerSchema, requestDraftDiscardSchema, type RequestDraftBridge } from '../shared/requestDrafts'
 import { contextBridge, ipcRenderer } from 'electron'
@@ -527,7 +527,7 @@ export function createSottoBridge(
       start: request => invokeParsed(renderer, CONTINUE_START, continueStartSchema, continueStartRequestSchema.parse(request)),
     }) } : {}),
     ...(watcherEnabled ? { watcher: Object.freeze<WatcherBridge>({
-      onChanged: watcherRoomChanges(renderer),
+      onChanged: watcherRoomForwarding(renderer),
       get: () => invokeParsed(renderer, WATCHER_GET, watcherRoomResultSchema),
       open: request => invokeParsed(renderer, WATCHER_OPEN, watcherRoomResultSchema, watcherOpenRequestSchema.parse(request)),
       prepareStopAll: () => invokeParsed(renderer, WATCHER_PREPARE_STOP_ALL, watcherPrepareStopAllResultSchema),

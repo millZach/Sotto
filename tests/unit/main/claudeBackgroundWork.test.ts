@@ -111,6 +111,20 @@ describe('Claude background work', () => {
     expect(work.working).toEqual([])
   })
 
+  it('says when a frame ends the thread’s own work or watch, once, as the CLI sends its end and then its notification', () => {
+    // Claude Code reports on ended work as soon as the thread is free, so idle compaction holds off just after (ADR-0127).
+    const work = new ClaudeMonitoring()
+    expect(work.apply(start())).toBe(false)
+    expect(work.apply(start({ task_id: 'watch', task_type: 'monitor', description: 'Watch the build' }))).toBe(false)
+    expect(work.apply(update({ description: 'Still going' }))).toBe(false)
+    expect(work.apply(update({ status: 'completed', end_time: 123 }))).toBe(true)
+    expect(work.apply(notification())).toBe(false)
+    expect(work.apply(notification('watch'))).toBe(true)
+    expect(work.apply(start({ parent_tool_use_id: 'child', task_id: 'nested' }))).toBe(false)
+    expect(work.apply(notification('nested'))).toBe(false)
+    expect(work.apply(notification('never-started'))).toBe(false)
+  })
+
   it('pauses on a paused status and resumes only on an explicit running update', () => {
     const work = new ClaudeMonitoring()
     work.apply(start())

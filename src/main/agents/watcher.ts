@@ -718,8 +718,13 @@ export class WatcherService implements WatcherControlHooks {
   /** The line a Watcher turn's note carries after a compaction, until Watcher reads its state back (#1189). */
   stateNote(): string | undefined { this.lookAtState(); return this.stateOwed ? WATCHER_COMPACTED_NOTE : undefined }
   privacyChanged(): Promise<void> { return this.kept.privacyChanged() }
-  private record(): WatcherRecord { return this.options.control.watcherRecord() }
-  /** The record for reading only. It is replaced on every change, never edited, so no copy is needed to look at it. */
+  /** A copy of Watcher's record, for a caller that changes what it reads before saving it. */
+  private recordCopy(): WatcherRecord { return this.options.control.watcherRecord() }
+  /**
+   * The record for reading only. It is replaced on every change, never edited, so what this hands out is the record as it
+   * was when asked, however long its holder keeps it, and no copy is needed to look at it. Every check a command, a tool
+   * call or a dispatch made once read a copy, which grew with each request Watcher took (October 28, 2026, #1759).
+   */
   private view(): Readonly<WatcherRecord> { return this.options.control.watcherRecordView() }
   /** What `record` says per thread on this host, worked out once per record (RecordIndex). */
   private recordIndex(record: Readonly<WatcherRecord>): RecordIndex {
@@ -829,7 +834,7 @@ export class WatcherService implements WatcherControlHooks {
     return thread
   }
   private checkCaller(threadId: string): void {
-    if (this.closed || this.options.workerHost || this.record().current?.target.threadId !== threadId || this.record().current?.target.hostId !== this.hostId()
+    if (this.closed || this.options.workerHost || this.view().current?.target.threadId !== threadId || this.view().current?.target.hostId !== this.hostId()
       || this.options.control.watcherSnapshot().threads.some(item => item.id === threadId && item.kind !== 'watcher')) refuse('NOT_CURRENT_WATCHER', 'Only the current Watcher can use these tools. Open Watcher to continue.')
   }
   /**
@@ -1190,7 +1195,7 @@ export class WatcherService implements WatcherControlHooks {
     this.permission(model, permission, this.permissionLimits(request, owner))
   }
   private checkRemoteCeiling(requestId: string, mode: string | undefined): void {
-    const ceiling = this.record().requests.find(request => request.id === requestId)?.remoteOrigin?.ceiling
+    const ceiling = this.view().requests.find(request => request.id === requestId)?.remoteOrigin?.ceiling
     // permission/checkPermission already admits only a provider profile whose allows is nothing.
     if (ceiling && RUNTIME_MODE_ORDER.indexOf((mode ?? 'approval-required') as typeof ceiling) > RUNTIME_MODE_ORDER.indexOf(ceiling)) refuse('PERMISSION_TOO_WIDE', 'The worker exceeds the master’s new-thread permission default. Nothing was sent.')
   }
@@ -1492,7 +1497,7 @@ export class WatcherService implements WatcherControlHooks {
       this.recordOutcome(record, own, 'failed', 'REQUEST_NOT_ACTIVE')
     })
     this.releaseChecks()
-    const operation = this.record().operations.find(item => item.id === operationId)!
+    const operation = this.view().operations.find(item => item.id === operationId)!
     return { status: 'ok', receipt: this.receipt(operation), limits: this.limits(operation), state: this.operationState(operation.target), stopRequested: true }
   }
   /**
@@ -1566,7 +1571,7 @@ export class WatcherService implements WatcherControlHooks {
     const waiting = check.waiting, operationId = check.operationId
     if (!waiting || operationId === undefined) return
     check.waiting = undefined
-    const operation = this.closed ? undefined : this.operationOfCheck(check, this.record().operations)
+    const operation = this.closed ? undefined : this.operationOfCheck(check, this.view().operations)
     if (!operation || operation.deliveryState !== 'queued') { await this.releaseMove(waiting.landed); this.releaseChecks(); return }
     const running = this.executeOperation('start_thread', operation, waiting.input, { resumed: { landed: waiting.landed } })
     this.active.set(operationId, running)
@@ -1696,7 +1701,7 @@ export class WatcherService implements WatcherControlHooks {
     try { return this.withNewWorkersStart(await this.listMachines()) } catch (error) { if (error instanceof Refusal) return error.result; throw error }
   }
   private limits(operation: WatcherOperation) {
-    const record = this.record()
+    const record = this.view()
     return { promptCount: Math.min(WATCHER_PROMPTS_PER_THREAD,
       this.promptCount(record, operation.target, operation.promptTurnId, operation.requestId)), promptLimit: WATCHER_PROMPTS_PER_THREAD }
   }
@@ -1995,7 +2000,7 @@ export class WatcherService implements WatcherControlHooks {
 
   /** A handover of an earlier Watcher conversation, its messages as its pane shows them (ADR-0073). */
   private buildHandover(source: WatcherIdentity): Handover | undefined {
-    const requests = this.record().requests
+    const requests = this.view().requests
     return this.options.host.watcherHandover(source.target.threadId, message => watcherMessageAsShown(source.target.hostId, source.target.threadId, message, requests))
   }
   /**
@@ -2108,7 +2113,7 @@ export class WatcherService implements WatcherControlHooks {
       if (this.closed || this.options.workerHost) refuse('NOT_CURRENT_WATCHER', 'Open Watcher on its desktop to change its permissions.')
       guard?.()
       if (this.opening || this.changing) refuse('THREAD_BUSY', 'Wait for Watcher to finish opening before changing its permissions.', true)
-      const record = this.record(), current = record.current
+      const record = this.view(), current = record.current
       if (current) {
         const snapshot = this.options.control.watcherSnapshot()
         const thread = snapshot.threads.find(item => item.id === current.target.threadId)
@@ -2151,11 +2156,11 @@ export class WatcherService implements WatcherControlHooks {
     if (!parsed.success) refuse('INVALID_INPUT', 'Choose a thread to watch.')
     if (this.closed || this.options.workerHost) refuse('NOT_CURRENT_WATCHER', 'Assign watched threads on Watcher’s desktop.')
     const target = parsed.data.target
-    if (by === 'watcher') this.checkHandedBack(this.record(), target)
+    if (by === 'watcher') this.checkHandedBack(this.view(), target)
     if (target.hostId !== this.hostId()) { this.requireRemote(target.hostId, true); if (!this.remote?.hosts().find(host => host.hostId === target.hostId)?.standingWatch) refuse('HOST_FEATURE_UNAVAILABLE', 'Update this host before assigning a watch.') }
     guard?.(); const thread = this.thread(target); this.protect(thread)
-    const previous = this.record().watches?.find(item => key(item.target) === key(target)), created = previous ?? this.newWatch(target, thread)
-    const assignmentMaster = target.hostId !== this.hostId() ? this.record().current : null
+    const previous = this.view().watches?.find(item => key(item.target) === key(target)), created = previous ? { ...previous } : this.newWatch(target, thread)
+    const assignmentMaster = target.hostId !== this.hostId() ? this.view().current : null
     if (target.hostId !== this.hostId()) {
       const master = assignmentMaster
       if (!master) refuse('NOT_CURRENT_WATCHER', 'Open Watcher before assigning threads on another host.')
@@ -2164,7 +2169,7 @@ export class WatcherService implements WatcherControlHooks {
       try {
         const result = await this.remote!.read(target.hostId, { master, ...this.adoptOn(target.hostId), standingWatches: this.hostWatches(target.hostId) })
         guard?.()
-        if (JSON.stringify(this.record().current) !== JSON.stringify(master)) refuse('NOT_CURRENT_WATCHER', 'Watcher changed while its host confirmed this assignment. Assign the watch again.')
+        if (JSON.stringify(this.view().current) !== JSON.stringify(master)) refuse('NOT_CURRENT_WATCHER', 'Watcher changed while its host confirmed this assignment. Assign the watch again.')
         if (result && typeof result === 'object' && 'status' in result && result.status === 'refused') throw new Refusal(result as WatcherRefusal)
         const projection = watcherHostProjectionSchema.safeParse(result)
         if (!projection.success || projection.data.hostId !== target.hostId || JSON.stringify(projection.data.master) !== JSON.stringify(master)) refuse('HOST_DISCONNECTED', 'The host did not confirm this watch. Reconnect and try again.', true)
@@ -2235,7 +2240,7 @@ export class WatcherService implements WatcherControlHooks {
       await this.options.control.cancelWatcherQueue(operations)
       if (target.hostId !== this.hostId()) {
         this.requireRemote(target.hostId, true)
-        const master = this.record().current
+        const master = this.view().current
         if (!master) refuse('NOT_CURRENT_WATCHER', 'Open Watcher to confirm this host stopped watching.')
         const result = await this.remote!.read(target.hostId, { master, ...this.adoptOn(target.hostId), standingWatches: this.hostWatches(target.hostId) })
         guard?.()
@@ -2302,7 +2307,7 @@ export class WatcherService implements WatcherControlHooks {
       || this.options.control.delegationMessage(messageId)
   }
   private hostWatches(hostId: string): WatcherStandingWatch[] {
-    return [...new Map([...(this.record().watches ?? []).filter(watch => watch.target.hostId === hostId),
+    return [...new Map([...(this.view().watches ?? []).filter(watch => watch.target.hostId === hostId),
       ...[...this.pendingWatchAssignments.values()].filter(watch => watch.target.hostId === hostId)].map(watch => [key(watch.target), watch])).values()]
       .filter(watch => this.owningSnapshot(hostId)?.threads.some(thread => thread.id === watch.target.threadId))
   }
@@ -2421,9 +2426,9 @@ export class WatcherService implements WatcherControlHooks {
 
   async recover(): Promise<void> {
     try {
-      const record = this.record()
+      const record = this.view()
       if (record.creation && !this.options.workerHost) await this.finishCreation(record.creation.identity, record.creation.modelId ? { provider: record.creation.identity.provider, modelId: record.creation.modelId, ...(record.creation.reasoningEffort ? { reasoningEffort: record.creation.reasoningEffort } : {}) } : undefined)
-      const current = this.record().current
+      const current = this.view().current
       if (current && !this.options.workerHost && (this.thread(current.target).kind !== 'watcher' || this.thread(current.target).providerId !== current.provider)) {
         refuse('NOT_CURRENT_WATCHER', 'Watcher’s saved thread does not match its identity. Nothing was started. Restore its saved records before continuing.')
       }
@@ -2503,7 +2508,7 @@ export class WatcherService implements WatcherControlHooks {
       const model = resolveModel(this.options.control.watcherSnapshot().models, input.modelId)
       if (!model?.ready || model.providerId !== input.provider) refuse('PROVIDER_UNAVAILABLE', 'Connect the chosen provider and choose one of its ready models.', true)
       if (input.reasoningEffort && !model.reasoningEfforts?.includes(input.reasoningEffort)) refuse('INVALID_INPUT', 'Choose an effort this model offers.')
-      const record = this.record(), previous = record.current
+      const record = this.view(), previous = record.current
       if (record.creation) {
         if (record.creation.identity.provider !== input.provider || record.creation.modelId !== input.modelId
           || record.creation.reasoningEffort !== input.reasoningEffort) refuse('TARGET_CHANGED', 'Watcher creation is pending with another choice. Reopen that choice before changing it.')
@@ -2546,7 +2551,7 @@ export class WatcherService implements WatcherControlHooks {
     try {
       if (this.options.workerHost) refuse('HOST_FEATURE_UNAVAILABLE', 'Open Watcher on the desktop that coordinates this host.')
       if (this.closed) refuse('NOT_CURRENT_WATCHER', this.recoveryNotice ?? 'Watcher is stopping. Reopen Sotto.')
-      const record = this.record(), previous = record.current
+      const record = this.view(), previous = record.current
       if (record.creation) {
         const { identity, modelId, reasoningEffort } = record.creation
         if (modelId === undefined) refuse('PROVIDER_UNAVAILABLE', 'Watcher creation stopped before its model was saved. Reopen Watcher with the same choice.')
@@ -2774,7 +2779,7 @@ export class WatcherService implements WatcherControlHooks {
     })().catch(() => undefined)
   }
   private creationPermission(model: AgentModel) {
-    const runtimeMode = this.record().lastRuntimeMode ?? 'approval-required'
+    const runtimeMode = this.view().lastRuntimeMode ?? 'approval-required'
     if (!model.runtimeModes?.includes(runtimeMode)) refuse('PERMISSION_NOT_COMPARABLE', 'That model does not offer Watcher’s chosen permission mode. Choose a supported permission mode, then reopen Watcher. Nothing was sent.')
     return runtimeMode
   }
@@ -2809,11 +2814,11 @@ export class WatcherService implements WatcherControlHooks {
   }
   userCommand(command: AgentCommand, threadId: string | undefined, answersQuestion: boolean): void {
     if (!threadId || answersQuestion) return
-    if (threadId === this.record().current?.target.threadId && this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before sending an instruction.', true)
+    if (threadId === this.view().current?.target.threadId && this.changing) refuse('THREAD_BUSY', 'Wait for Watcher’s provider change before sending an instruction.', true)
     // A message queued while Watcher reads news joins no request, so nothing of the newest one holds it back: it goes as its
     // own turn, under a request of its own (#1188).
-    if (threadId === this.record().current?.target.threadId && command.type === 'queue-followup' && command.draftId && !this.options.control.watcherWakeUpTurn(threadId)) {
-      const latest = newestUserRequest(this.record(), threadId)
+    if (threadId === this.view().current?.target.threadId && command.type === 'queue-followup' && command.draftId && !this.options.control.watcherWakeUpTurn(threadId)) {
+      const latest = newestUserRequest(this.view(), threadId)
       if (!latest) refuse('REQUEST_NOT_ACTIVE', 'Send an instruction to Watcher before queuing a continuation.')
       if ((latest.userFollowups?.length ?? 0) >= 1_000) refuse('REQUEST_NOT_ACTIVE', 'This request has too many queued continuations. Send a new instruction instead.')
       this.options.control.mutateWatcher(record => {
@@ -2838,9 +2843,9 @@ export class WatcherService implements WatcherControlHooks {
       this.takeover(threadId, reason, reason === 'user-send' ? 'unobserved-user-turn' : undefined,
         reason === 'user-send' && draftId && packet ? { draftId, digest: followupDigest(packet) } : undefined)
     }
-    if (command.type === 'interrupt' && this.record().current?.target.threadId === threadId) {
-      const stopped = new Set(this.record().requests.filter(item => item.state === 'active').map(item => item.id))
-      const operations = new Set(this.record().operations.filter(item => stopped.has(item.requestId)).map(item => item.id))
+    if (command.type === 'interrupt' && this.view().current?.target.threadId === threadId) {
+      const stopped = new Set(this.view().requests.filter(item => item.state === 'active').map(item => item.id))
+      const operations = new Set(this.view().operations.filter(item => stopped.has(item.requestId)).map(item => item.id))
       this.options.control.mutateWatcher(record => {
         this.revokeQueuedFreshness(record)
         for (const request of record.requests) if (stopped.has(request.id)) { request.state = 'stopped'; request.closedAt = now() }
@@ -2913,7 +2918,7 @@ export class WatcherService implements WatcherControlHooks {
   beforeDispatch(command: AgentHostCommand, _draftId: string | undefined, origin?: WatcherCommandOrigin): AgentHostCommand {
     if (origin?.phoneOrigin && (command.type === 'send' || command.type === 'steer')) this.guardPhoneSend(command.threadId)
     if (!origin?.operationId && _draftId && (command.type === 'send' && !command.wakeUp || command.type === 'steer')) {
-      const target = this.target(command.threadId), proof = this.record().localTakeovers?.find(item => key(item.target) === key(target))
+      const target = this.target(command.threadId), proof = this.view().localTakeovers?.find(item => key(item.target) === key(target))
         ?.userDrafts?.find(item => item.draftId === _draftId && item.digest === followupDigest(command))
       if (proof) this.options.control.mutateWatcher(record => {
         record.localTakeovers!.find(item => key(item.target) === key(target))!.userDrafts!.find(item => item.draftId === _draftId)!.messageId = command.messageId
@@ -2921,12 +2926,12 @@ export class WatcherService implements WatcherControlHooks {
     }
     // Compact context for Watcher's own conversation, the user's or Sotto's, owes it its state whatever the provider
     // reports of it afterwards: Muse reports no compaction of its own (#1189). Here, once control has let it through.
-    if (command.type === 'compact-thread' && command.threadId === this.record().current?.target.threadId) this.stateOwed = true
-    if (command.type === 'send' && command.threadId === this.record().current?.target.threadId) {
+    if (command.type === 'compact-thread' && command.threadId === this.view().current?.target.threadId) this.stateOwed = true
+    if (command.type === 'send' && command.threadId === this.view().current?.target.threadId) {
       this.sendsToWatcher += 1
       // The thread's newest message is read before the provider has this one, so one that comes while it is acknowledged
       // is never taken for the message before it (#1188).
-      this.pendingPromptTurns.set(command.commandId, { watcher: this.record().current!.target, messageId: command.messageId, headBefore: this.headOf(command.threadId) })
+      this.pendingPromptTurns.set(command.commandId, { watcher: this.view().current!.target, messageId: command.messageId, headBefore: this.headOf(command.threadId) })
     }
     if (origin?.operationId) {
       this.options.control.mutateWatcher(record => {
@@ -2940,9 +2945,9 @@ export class WatcherService implements WatcherControlHooks {
     // The user may steer Watcher whatever it is doing, and every steer reaches it under an active request of the user's
     // (#1188). One into a turn that answers such a request is part of that request, so Watcher may act on it as on the
     // turn's own message.
-    if (command.type === 'steer' && _draftId && command.threadId === this.record().current?.target.threadId) {
+    if (command.type === 'steer' && _draftId && command.threadId === this.view().current?.target.threadId) {
       // A try of the same message again keeps what its first try recorded.
-      const opened = this.record().requests.find(item => item.rootUserMessageId === command.messageId)
+      const opened = this.view().requests.find(item => item.rootUserMessageId === command.messageId)
       if (opened) return { ...command, text: command.text + watcherRequestLine(watcherRequestNote(opened.id, this.hostId())) }
       const answered = this.turnRequest(command.threadId)
       if (answered) {
@@ -2972,8 +2977,8 @@ export class WatcherService implements WatcherControlHooks {
       this.lastSteer = { threadId: command.threadId, requestId: created.id, messageId: command.messageId, headBefore: this.headOf(command.threadId) }
       return { ...command, text: command.text + watcherRequestLine(watcherRequestNote(created.id, this.hostId())) }
     }
-    if (command.type !== 'send' || command.wakeUp || command.threadId !== this.record().current?.target.threadId) return command
-    const record = this.record()
+    if (command.type !== 'send' || command.wakeUp || command.threadId !== this.view().current?.target.threadId) return command
+    const record = this.view()
     let request = record.requests.find(item => item.rootUserMessageId === command.messageId
       || _draftId && item.userFollowups?.some(followup => followup.draftId === _draftId))
     // Every Send of the user's reaches Watcher under an active request (#1184). An instruction queued as a continuation
@@ -3045,7 +3050,7 @@ export class WatcherService implements WatcherControlHooks {
   dispatched(command: AgentHostCommand): void {
     const pending = this.pendingPromptTurns.get(command.commandId)
     this.activatePromptTurn(command.commandId)
-    if (command.type === 'send' && command.threadId === this.record().current?.target.threadId) {
+    if (command.type === 'send' && command.threadId === this.view().current?.target.threadId) {
       this.lastSend = { threadId: command.threadId, wakeUp: command.wakeUp === true, messageId: command.messageId, headAtSend: pending ? pending.headBefore : this.headOf(command.threadId) }
       // A new turn: a steer into the one before it answers nothing here.
       if (this.lastSteer?.threadId === command.threadId) this.lastSteer = undefined
@@ -3458,7 +3463,7 @@ export class WatcherService implements WatcherControlHooks {
   }
   private checkOperation(operationId: string, queued = false): void {
     if (this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was sent.')
-    const record = this.record(), operation = record.operations.find(item => item.id === operationId)
+    const record = this.view(), operation = record.operations.find(item => item.id === operationId)
     if (!operation) refuse('UNKNOWN_OPERATION', 'This operation is unavailable.')
     const request = record.requests.find(item => item.id === operation.requestId)!
     if (request.remoteOrigin) {
@@ -3523,7 +3528,7 @@ export class WatcherService implements WatcherControlHooks {
    * The user's active request whose root or recorded continuation is the current Watcher's newest user message, if any.
    * An observe pass hands in the record it reads and the current Watcher's thread, so it copies and refuses nothing.
    */
-  private requestAnsweredByHead(record: Readonly<WatcherRecord> = this.record(), master?: AgentThread): WatcherRequest | undefined {
+  private requestAnsweredByHead(record: Readonly<WatcherRecord> = this.view(), master?: AgentThread): WatcherRequest | undefined {
     const current = record.current
     const head = current && nativeHead(master ?? this.thread(current.target))
     return head ? record.requests.findLast(request => request.state === 'active' && !request.standingWatchId && !request.remoteOrigin
@@ -3535,7 +3540,7 @@ export class WatcherService implements WatcherControlHooks {
    * one a steer into a news turn opened, while that message is the thread's newest or the provider has yet to show it.
    * Otherwise, the one the newest message started or continued, unless that turn is Sotto's own.
    */
-  private turnRequest(threadId: string, record: Readonly<WatcherRecord> = this.record(), master?: AgentThread): WatcherRequest | undefined {
+  private turnRequest(threadId: string, record: Readonly<WatcherRecord> = this.view(), master?: AgentThread): WatcherRequest | undefined {
     const head = master ? nativeHead(master) : this.headOf(threadId)
     const sent = this.currentSend(threadId, head), steer = this.lastSteer
     const active = (match: (request: WatcherRequest) => boolean): WatcherRequest | undefined => record.requests.findLast(request =>
@@ -3556,7 +3561,7 @@ export class WatcherService implements WatcherControlHooks {
     return thread ? nativeHead(thread) : null
   }
   private checkUserAskedWatch(): void {
-    const current = this.record().current
+    const current = this.view().current
     if (!(current && this.turnRequest(current.target.threadId)) && !this.requestAnsweredByHead()) {
       refuse('REQUEST_NOT_ACTIVE', 'Only the user gives Watcher a thread to watch, with Watch or by asking in a message to Watcher. Nothing was watched.')
     }
@@ -3597,7 +3602,7 @@ export class WatcherService implements WatcherControlHooks {
   /** The answer to a call its client would otherwise give up on: where it stands, and how to read how it ends. */
   private stillWorking(name: WatcherToolName, progress: CallProgress): unknown {
     if (!MUTATIONS.has(name)) return watcherRefusal('PROVIDER_UNAVAILABLE', name === 'watch_thread' || name === 'unwatch_thread' || name === 'unsettle_thread' ? STILL_WATCHING : STILL_READING, true)
-    const operation = progress.operationId ? this.record().operations.find(item => item.id === progress.operationId) : undefined
+    const operation = progress.operationId ? this.view().operations.find(item => item.id === progress.operationId) : undefined
     return operation ? { ...watcherRefusal('DELIVERY_UNCERTAIN', STILL_DELIVERING, true), receipt: this.receipt(operation) }
       : watcherRefusal('DELIVERY_UNCERTAIN', STILL_ADMITTING, true)
   }
@@ -3655,23 +3660,23 @@ export class WatcherService implements WatcherControlHooks {
       if (hostId && hostId !== this.hostId() && ['list_threads', 'list_working_copies', 'read_thread'].includes(name)) {
         this.requireRemote(hostId, false)
         // The host is asked as any host can answer, and what Watcher asked for is taken from its full answer here (#1191).
-        return this.slim(name, parsed.data, await this.remote!.read(hostId, { master: this.record().current!, ...this.adoptOn(hostId), call: { name, input: watcherHostInput(name, parsed.data) } } as WatcherHostRead))
+        return this.slim(name, parsed.data, await this.remote!.read(hostId, { master: this.view().current!, ...this.adoptOn(hostId), call: { name, input: watcherHostInput(name, parsed.data) } } as WatcherHostRead))
       }
       if (name === 'list_threads' || name === 'list_projects' || name === 'list_working_copies' || name === 'read_thread' || name === 'read_operation') {
         const call = watcherHostReadSchema.shape.call.unwrap().parse({ name, input: parsed.data })
         let operation: WatcherOperation | undefined
         if (call.name === 'read_operation') {
-          operation = this.record().operations.find(item => item.id === call.input.operationId)
-          if (!operation || !this.record().requests.some(item => item.id === operation!.requestId && this.owns(this.record(), item))) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this Watcher request.')
+          operation = this.view().operations.find(item => item.id === call.input.operationId)
+          if (!operation || !this.view().requests.some(item => item.id === operation!.requestId && this.owns(this.view(), item))) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this Watcher request.')
           let hosted: OutcomeRead | undefined
           if (operation.target.hostId !== this.hostId()) {
             this.requireRemote(operation.target.hostId, false)
             // Only a host that lists watcher-outcomes is asked for them; an older one would refuse the field.
             const outcomes = this.remoteReportsOutcomes(operation.target.hostId)
             // A replaced Watcher's operation on an older host is read under the conversation that made it (#1325, #1735).
-            const request = this.record().requests.find(item => item.id === operation!.requestId)!
+            const request = this.view().requests.find(item => item.id === operation!.requestId)!
             const result = watcherToolSchemas.read_operation.output.parse(await this.remote!.read(operation.target.hostId,
-              { master: this.hostMaster(request, operation.target.hostId) ?? this.record().current!, ...this.adoptOn(operation.target.hostId),
+              { master: this.hostMaster(request, operation.target.hostId) ?? this.view().current!, ...this.adoptOn(operation.target.hostId),
                 call: { name: 'read_operation', input: { operationId: operation.id } }, ...(outcomes ? { outcomes: true as const } : {}) }))
             if (result.status === 'refused') return result
             if (result.receipt.operationId !== operation.id || key(result.receipt.target) !== key(operation.target) || result.receipt.requestId !== operation.requestId) refuse('INVALID_INPUT', 'The owning host returned another receipt. Nothing was sent.')
@@ -3685,11 +3690,11 @@ export class WatcherService implements WatcherControlHooks {
             await this.reconcileRemote(operation.target.hostId)
             const reported = outcomes && result.outcome !== undefined
             const { outcome, reference, outcomeNote, reply, replyUnavailable, evidence } = result
-            const fallback = this.outcomeOf(this.record().operations.find(item => item.id === id)!)
+            const fallback = this.outcomeOf(this.view().operations.find(item => item.id === id)!)
             hosted = reported ? { outcome, reference, outcomeNote, ...(reply ? { reply } : {}), ...(replyUnavailable ? { replyUnavailable } : {}), ...(evidence ? { evidence } : {}) }
               : fallback ? { outcome: fallback, reference: { target: operation.target }, outcomeNote: fallback === 'unknown' && !outcomes ? HOST_WITHOUT_OUTCOMES : OUTCOME_NOTES[fallback] } : {}
           }
-          operation = this.record().operations.find(item => item.id === operation!.id)!
+          operation = this.view().operations.find(item => item.id === operation!.id)!
           return await this.dispatchRead(call, operation, true, hosted)
         }
         return this.slim(name, parsed.data, await this.dispatchRead(call, operation))
@@ -3718,11 +3723,11 @@ export class WatcherService implements WatcherControlHooks {
   }
   private async mutate(threadId: string, name: WatcherToolName, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, imported?: WatcherOperation, connectionGuard?: () => void, progress?: CallProgress, placed?: PlacedStart, ticket?: string): Promise<unknown> {
     const admitted = await this.transaction(async () => {
-      if (imported && this.record().remoteAbsences?.some(item => item.operationId === imported.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
+      if (imported && this.view().remoteAbsences?.some(item => item.operationId === imported.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
       if (imported && this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was sent. Reopen Sotto.')
       if (!imported) this.checkCaller(threadId)
       // A placed start is matched to its retries by the call as Watcher made it, machine and system included (#1032).
-      const record = this.record(), originalInputDigest = digest([name, placed?.original ?? input])
+      const record = this.recordCopy(), originalInputDigest = digest([name, placed?.original ?? input])
       let request = record.requests.find(item => item.id === input.requestId), newStandingRequest: WatcherRecord['requests'][number] | undefined
       // The Watcher turn a new call counts against. A retry of a recorded operation returns its receipt without reading one.
       let turnRead: { readonly value: PromptTurn | undefined } | undefined
@@ -3945,14 +3950,14 @@ export class WatcherService implements WatcherControlHooks {
       if (active) { const answer = await active; if (typeof answer !== 'object' || answer === null || !('warning' in answer)) return answer; const { warning: _warning, ...rest } = answer; void _warning; return rest }
       // A check still waiting its turn answers as it first did, with its place now (#1312); one waiting on a paired host
       // with the place that host last gave.
-      const check = this.checkOf.get(admitted.operation.id), operation = this.record().operations.find(item => item.id === admitted.operation.id) ?? admitted.operation
+      const check = this.checkOf.get(admitted.operation.id), operation = this.view().operations.find(item => item.id === admitted.operation.id) ?? admitted.operation
       if (check?.waiting && operation.deliveryState === 'queued') return this.waitingCheckResult(operation, check.waiting.input)
       if (check?.away?.place && operation.deliveryState === 'queued') return { ...this.waitingCheckResult(operation, check.away.input), check: check.away.place }
       return this.operationResult(name, admitted.operation, input)
     }
     const running = admitted.operation.target.hostId !== this.hostId() ? this.executeRemote(name, admitted.operation, input) : this.executeOperation(name, admitted.operation, input, { ticket })
     this.active.set(admitted.operation.id, running)
-    try { return await running } finally { this.active.delete(admitted.operation.id); this.dispatchRefusals.delete(admitted.operation.id); this.pruneRemoteGuards(); if (admitted.operation.target.hostId !== this.hostId() && this.record().operations.find(item => item.id === admitted.operation.id)?.deliveryState === 'uncertain') this.scheduleRemote(admitted.operation.target.hostId, true); this.publish() }
+    try { return await running } finally { this.active.delete(admitted.operation.id); this.dispatchRefusals.delete(admitted.operation.id); this.pruneRemoteGuards(); if (admitted.operation.target.hostId !== this.hostId() && this.view().operations.find(item => item.id === admitted.operation.id)?.deliveryState === 'uncertain') this.scheduleRemote(admitted.operation.target.hostId, true); this.publish() }
   }
   /**
    * `ticket`: the place a check took in this machine's queue when it was asked for (#1312). `resumed`: a check whose turn
@@ -3966,7 +3971,7 @@ export class WatcherService implements WatcherControlHooks {
     } }
     try {
       // A paired desktop's stop_thread for a check still waiting its turn here takes it out of the queue (#1637).
-      if (name === 'stop_thread' && await this.stopQueuedCheck(operation)) return this.operationResult(name, this.record().operations.find(item => item.id === operation.id)!, input, true)
+      if (name === 'stop_thread' && await this.stopQueuedCheck(operation)) return this.operationResult(name, this.view().operations.find(item => item.id === operation.id)!, input, true)
       let command: WatcherCommand
       if (name === 'start_thread') {
         const create = input as WatcherToolInput<'start_thread'>
@@ -3993,7 +3998,7 @@ export class WatcherService implements WatcherControlHooks {
           if (this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was started. Reopen Sotto.')
         } else landed = await this.moveForStart(operation, create)
         if (check && !checks!.running(check.ticket)) {
-          const live = this.record().operations.find(item => item.id === operation.id)!
+          const live = this.view().operations.find(item => item.id === operation.id)!
           // Stopped while its snapshot was taken: it takes no place, makes nothing, and lets its branch go.
           if (live.deliveryState !== 'queued') { await this.releaseMove(landed); this.releaseChecks(); return this.operationResult(name, live, input, true) }
           check.waiting = { input: create, landed }
@@ -4009,12 +4014,12 @@ export class WatcherService implements WatcherControlHooks {
               : await this.resolveCopies(create)
           // A check this machine queues works in the machine's check worktree when it gets a new worktree (#1312).
           const choices = checks ? { ...copies, check: true as const } : copies
-          const limits = this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId())
+          const limits = this.permissionLimits(this.view().requests.find(item => item.id === operation.requestId), this.hostId())
           const permission = this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), create.permission, limits)
           const createOrigin: WatcherCommandOrigin = { operationId: operation.id, guard: () => {
             origin.guard()
             this.permission(resolveModel(this.options.control.watcherSnapshot().models, modelId), permission,
-              this.permissionLimits(this.record().requests.find(item => item.id === operation.requestId), this.hostId()))
+              this.permissionLimits(this.view().requests.find(item => item.id === operation.requestId), this.hostId()))
             this.checkRemoteCeiling(operation.requestId, permission.kind === 'runtime' ? permission.mode : undefined)
           } }
           created = await this.options.control.commandFromWatcher({ type: 'create-thread', threadId: operation.target.threadId,
@@ -4039,7 +4044,7 @@ export class WatcherService implements WatcherControlHooks {
       } else command = { type: name === 'stop_thread' ? 'interrupt' : 'settle-thread', threadId: operation.target.threadId }
       if (operation.action === 'stop') {
         // The user may have sent since admission; nothing is fenced for a stop that will not go.
-        this.checkStopTurn(this.thread(operation.target), this.record(), operation.requestId)
+        this.checkStopTurn(this.thread(operation.target), this.view(), operation.requestId)
         await this.options.control.updateWatcher(record => {
           const request = record.requests.find(item => item.id === operation.requestId)!
           const watch = record.watches?.find(item => item.id === (request.standingWatchId ?? operation.standingWatchId))
@@ -4052,7 +4057,7 @@ export class WatcherService implements WatcherControlHooks {
           for (const pending of record.operations) if (pending.id !== operation.id && key(pending.target) === key(operation.target)
             && pending.deliveryState === 'queued') { pending.deliveryState = 'failed'; pending.refusalCode = 'REQUEST_NOT_ACTIVE' }
         })
-        await this.options.control.cancelWatcherQueue(new Set(this.record().operations.filter(item => key(item.target) === key(operation.target) && item.action !== 'stop').map(item => item.id)))
+        await this.options.control.cancelWatcherQueue(new Set(this.view().operations.filter(item => key(item.target) === key(operation.target) && item.action !== 'stop').map(item => item.id)))
       }
       const result = await this.options.control.commandFromWatcher(command, origin)
       const guardedRefusal = dispatchRefusal ?? this.dispatchRefusals.get(operation.id)
@@ -4073,7 +4078,7 @@ export class WatcherService implements WatcherControlHooks {
       })
     }
     this.observe(this.options.control.watcherSnapshot(), new Set())
-    return this.operationResult(name, this.record().operations.find(item => item.id === operation.id)!, input, true)
+    return this.operationResult(name, this.view().operations.find(item => item.id === operation.id)!, input, true)
   }
   queueFailed(operationIds: ReadonlySet<string>): void {
     // Never throws: the queue has already removed or failed the items, and its caller still has to save and publish that.
@@ -4230,13 +4235,13 @@ ${operation.draftId}`)
     // A refusal met at the writer keeps only its code. The writer's busy refusals are a turn that began meanwhile (#1203)
     // and the user's own turn, which Watcher may only steer.
     if (operation.refusalCode) {
-      const watched = this.record().watches?.find(watch => key(watch.target) === key(operation.target))
+      const watched = this.view().watches?.find(watch => key(watch.target) === key(operation.target))
       // A branch that could not go to where its worker starts says why in the move's own words (#1033).
       const unmoved = this.branchStarts.get(operation.id)
       if (unmoved && 'refused' in unmoved && operation.refusalCode === 'WORKING_COPY_UNAVAILABLE') return { ...watcherRefusal(operation.refusalCode, unmoved.refused), receipt: base.receipt }
       return { ...watcherRefusal(operation.refusalCode, operation.refusalCode === 'THREAD_TAKEN_OVER'
         ? watched ? 'The user sent this thread an instruction first, so this was not sent. The thread is still watched. Read it before sending again.'
-          : this.takenOverRefusal(this.record(), operation.target, this.record().requests.find(item => item.id === operation.requestId), 'send')
+          : this.takenOverRefusal(this.view(), operation.target, this.view().requests.find(item => item.id === operation.requestId), 'send')
         : operation.refusalCode === 'THREAD_BUSY' ? watched?.pausedByUserMessageId ? this.pausedHold(operation.target) : RUNNING_TURN_HOLD
         // A send the writer turned away as unconfirmed was held by an earlier send to its thread (#1222).
         : operation.refusalCode === 'DELIVERY_UNCERTAIN' && operation.deliveryState === 'failed' && operation.action === 'send' ? this.unconfirmedHold(operation.target)
@@ -4278,14 +4283,14 @@ ${operation.draftId}`)
     return host && this.takesMaster(host) ? host : undefined
   }
   private async executeRemote(name: WatcherToolName, operation: WatcherOperation, input: WatcherToolInput<'start_thread'> | WatcherToolInput<'send_to_thread'> | WatcherToolInput<'stop_thread'>, confirmedStop?: () => void): Promise<unknown> {
-    const request = this.record().requests.find(item => item.id === operation.requestId)!
+    const request = this.view().requests.find(item => item.id === operation.requestId)!
     const guard = () => {
       // The current Watcher acts for every request this computer's Watchers made (#1735), a replaced one's included.
-      if (!this.owns(this.record(), request)) refuse('NOT_CURRENT_WATCHER', 'Only the current Watcher can use these tools. Open Watcher to continue.')
-      this.checkCaller(this.record().current!.target.threadId); this.requireRemote(operation.target.hostId, true)
-      if (!this.hostMaster(request, operation.target.hostId, this.record())) refuse('HOST_FEATURE_UNAVAILABLE', REPLACED_ON_OLDER_HOST)
+      if (!this.owns(this.view(), request)) refuse('NOT_CURRENT_WATCHER', 'Only the current Watcher can use these tools. Open Watcher to continue.')
+      this.checkCaller(this.view().current!.target.threadId); this.requireRemote(operation.target.hostId, true)
+      if (!this.hostMaster(request, operation.target.hostId, this.view())) refuse('HOST_FEATURE_UNAVAILABLE', REPLACED_ON_OLDER_HOST)
       if (!confirmedStop) {
-        const record = this.record(), live = record.operations.find(item => item.id === operation.id)!, scope = record.requests.find(item => item.id === operation.requestId)!
+        const record = this.view(), live = record.operations.find(item => item.id === operation.id)!, scope = record.requests.find(item => item.id === operation.requestId)!
         this.checkLocalWithdrawal(live)
         const participant = scope.participants.find(item => key(item.target) === key(operation.target))
         if (live.deliveryState === 'failed') refuse(live.refusalCode ?? 'REQUEST_NOT_ACTIVE', 'This operation was cancelled before dispatch.')
@@ -4297,7 +4302,7 @@ ${operation.draftId}`)
         if (live.action === 'stop' && !this.queuedCheck(live.target)) this.checkStopTurn(this.thread(live.target), record, live.requestId)
       }
       if (confirmedStop) confirmedStop()
-      else if (this.record().requests.find(item => item.id === operation.requestId)?.state !== 'active') refuse('REQUEST_NOT_ACTIVE', 'This Watcher request has stopped. Nothing was sent.')
+      else if (this.view().requests.find(item => item.id === operation.requestId)?.state !== 'active') refuse('REQUEST_NOT_ACTIVE', 'This Watcher request has stopped. Nothing was sent.')
     }
     // The move a start landed on the host, and whether the start was sent: until it is, a stop or refusal leaves its
     // incoming ref with no thread to own it, so it is let go.
@@ -4305,7 +4310,7 @@ ${operation.draftId}`)
     try {
       if (operation.action === 'send' && operation.standingWatchId) await this.reconcileRemote(operation.target.hostId)
       // A replaced Watcher's request reaches a host that takes it over under the current Watcher, so a read moves it first.
-      else if (this.adopts(operation.target.hostId) && this.record().current && key(request.watcher) !== key(this.record().current!.target)) await this.reconcileRemote(operation.target.hostId)
+      else if (this.adopts(operation.target.hostId) && this.view().current && key(request.watcher) !== key(this.view().current!.target)) await this.reconcileRemote(operation.target.hostId)
       guard()
       // The branch goes before the start does, so the host makes the worker's worktree from it (#1033).
       if (name === 'start_thread') { landed = await this.moveForStart(operation, input as WatcherToolInput<'start_thread'>); guard() }
@@ -4315,14 +4320,14 @@ ${operation.draftId}`)
       // the request over: sent before, the host would refuse it as another origin's, for good. A replacement during the
       // branch move above, or during this read, asks again for the one current then, a few times at most; a read that
       // does not come back, or a Watcher that keeps changing, refuses it here, before anything is sent.
-      if (this.adopts(operation.target.hostId) && this.record().current && key(request.watcher) !== key(this.record().current!.target)) {
+      if (this.adopts(operation.target.hostId) && this.view().current && key(request.watcher) !== key(this.view().current!.target)) {
         let handed = false
         for (let tries = 0; tries < 3 && !handed; tries++) {
-          const asked = this.record().current
+          const asked = this.view().current
           if (!asked) break
           const answer = await this.remote!.read(operation.target.hostId, { master: asked, adopt: true }).catch(() => undefined) as WatcherHostProjection | undefined
           guard()
-          handed = answer !== undefined && JSON.stringify(answer.master) === JSON.stringify(asked) && JSON.stringify(this.record().current) === JSON.stringify(asked)
+          handed = answer !== undefined && JSON.stringify(answer.master) === JSON.stringify(asked) && JSON.stringify(this.view().current) === JSON.stringify(asked)
         }
         if (!handed) refuse('TARGET_CHANGED', 'Sotto could not hand this to its host under the current Watcher, so nothing was sent. Make it again from the current Watcher.', true)
       }
@@ -4332,7 +4337,7 @@ ${operation.draftId}`)
       sent = true
       // An older host knows a replaced Watcher's request only under the conversation that made it, and takes it from that
       // one while no newer Watcher of this computer has reached it; one that lists watcher-new-owner, under the current one.
-      const master = this.hostMaster(request, operation.target.hostId, this.record())!
+      const master = this.hostMaster(request, operation.target.hostId, this.view())!
       const result = await this.remote!.control(operation.target.hostId, { master,
         request: { id: request.id, watcher: master.target, rootUserMessageId: request.rootUserMessageId, createdAt: request.createdAt,
           ...(request.standingWatchId ? { standingWatchId: request.standingWatchId } : {}) },
@@ -4375,7 +4380,7 @@ ${operation.draftId}`)
         this.checkOf.set(operation.id, { ticket: operation.id, operationId: operation.id, away: { landed, input: input as WatcherToolInput<'start_thread'>, place: { ahead: waitingThere.ahead, note } } })
         this.releaseChecks()
       }
-      return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.record().operations.find(item => item.id === operation.id)!),
+      return parsed.status === 'ok' ? { ...parsed, limits: this.limits(this.view().operations.find(item => item.id === operation.id)!),
         ...(name === 'start_thread' ? { ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id, waitingThere !== undefined), ...this.machineWorkingWarning(operation.target),
           ...waitingThere && waitingOn ? { check: this.checkOf.get(operation.id)!.away!.place! } : {} } : {}),
         ...(name === 'send_to_thread' ? this.fallbackBlock(operation.id) : {}) } : parsed
@@ -4389,7 +4394,7 @@ ${operation.draftId}`)
       else if (landed) this.rememberLostStartMove(operation.id, landed)
       if (error instanceof Refusal) {
         await this.options.control.updateWatcher(record => this.recordRemoteRefusal(record, operation.id, error.result.code))
-        return { ...error.result, receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
+        return { ...error.result, receipt: this.receipt(this.view().operations.find(item => item.id === operation.id)!) }
       }
       await this.options.control.updateWatcher(record => { const saved = record.operations.find(item => item.id === operation.id)!;
         if (saved.deliveryState !== 'accepted' && saved.deliveryState !== 'failed') {
@@ -4397,7 +4402,7 @@ ${operation.draftId}`)
           // A request that timed out is still alive on the host, which may start it later; a closed connection fences it.
           if (saved.action === 'start' && requestTimedOut(error)) this.timedOutStarts.add(saved.id)
         } })
-      return { ...watcherRefusal('DELIVERY_UNCERTAIN', 'The host did not confirm this operation, so it stays unconfirmed. Reconnect and read the original receipt.', true), receipt: this.receipt(this.record().operations.find(item => item.id === operation.id)!) }
+      return { ...watcherRefusal('DELIVERY_UNCERTAIN', 'The host did not confirm this operation, so it stays unconfirmed. Reconnect and read the original receipt.', true), receipt: this.receipt(this.view().operations.find(item => item.id === operation.id)!) }
     }
   }
   private rememberLostStartMove(operationId: string, landed: LandedMove): void {
@@ -4413,7 +4418,7 @@ ${operation.draftId}`)
   private async releaseLostStartMoves(hostId: string): Promise<void> {
     for (const [operationId, landed] of [...this.lostStartMoves]) {
       if (landed.hostId !== hostId) continue
-      const operation = this.record().operations.find(item => item.id === operationId)
+      const operation = this.view().operations.find(item => item.id === operationId)
       if (operation?.deliveryState === 'uncertain' || operation?.deliveryState === 'dispatching') continue
       try {
         if (operation?.deliveryState === 'failed' && !this.madeThread(operation.target)) await this.releaseMove(landed)
@@ -4428,7 +4433,7 @@ ${operation.draftId}`)
       const there = projected.find(item => item.id === operationId)
       if (there && there.deliveryState !== 'failed') continue
       this.stoppedAwayMoves.delete(operationId)
-      const operation = this.record().operations.find(item => item.id === operationId)
+      const operation = this.view().operations.find(item => item.id === operationId)
       if (!operation || !this.madeThread(operation.target)) await this.releaseMove(landed)
     }
   }
@@ -4507,35 +4512,35 @@ ${operation.draftId}`)
     return this.reconciling
   }
   private async reconcileRemoteNow(hostId?: string, force = true): Promise<void> {
-    const master = this.record().current
+    const master = this.view().current
     if (!master || !this.remote || this.closed) return
     for (const host of this.remote.hosts().filter(item => item.reads && item.connected && this.takesMaster(item) && (!hostId || item.hostId === hostId))) {
       // A host that lists watcher-new-owner keeps every request this computer's Watchers made under the current one (#1735).
-      const adopts = this.adopts(host.hostId), here = (request: Readonly<WatcherRequest>, record: Readonly<WatcherRecord> = this.record()) =>
+      const adopts = this.adopts(host.hostId), here = (request: Readonly<WatcherRequest>, record: Readonly<WatcherRecord> = this.view()) =>
         adopts ? this.owns(record, request) : key(request.watcher) === key(master.target)
-      const owned = this.record().requests.filter(request => here(request))
+      const owned = this.view().requests.filter(request => here(request))
       // A replaced Watcher's starts and sends on this host are still tracked (#1325): their slots are freed and their receipts
       // read as the current Watcher's are, so a host where only they remain is reconciled too.
       if (!host.standingWatch && !owned.some(request => request.participants.some(item => item.target.hostId === host.hostId)
-        || this.record().operations.some(item => item.requestId === request.id && item.target.hostId === host.hostId))
+        || this.view().operations.some(item => item.requestId === request.id && item.target.hostId === host.hostId))
         && !this.view().reservations.some(item => item.target.hostId === host.hostId)
         && !this.view().operations.some(item => item.target.hostId === host.hostId && ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))) continue
       let receiptFailed = false
       try {
-        const stoppedRequests = this.record().requests.filter(request => request.state === 'stopped' && here(request)
-          && (request.participants.some(item => item.target.hostId === host.hostId) || this.record().operations.some(item => item.requestId === request.id && item.target.hostId === host.hostId)))
+        const stoppedRequests = this.view().requests.filter(request => request.state === 'stopped' && here(request)
+          && (request.participants.some(item => item.target.hostId === host.hostId) || this.view().operations.some(item => item.requestId === request.id && item.target.hostId === host.hostId)))
           .slice(-1_000).map(request => ({ request: { id: request.id, watcher: master.target, rootUserMessageId: request.rootUserMessageId, createdAt: request.createdAt },
             ceiling: request.pairedPermissionCeiling ?? this.options.control.configuration().newThreadRuntimeMode ?? 'approval-required' as const }))
         const cached = !force ? this.remote.projection?.(host.hostId, master) : undefined
         const projection = cached ?? await this.remote.read(host.hostId, { master, ...(adopts ? { adopt: true as const } : {}),
           ...(host.standingWatch ? { standingWatches: this.hostWatches(host.hostId) } : {}),
           ...(stoppedRequests.length ? { stoppedRequests } : {}) }) as WatcherHostProjection
-        if (this.closed || JSON.stringify(this.record().current) !== JSON.stringify(master)) return
+        if (this.closed || JSON.stringify(this.view().current) !== JSON.stringify(master)) return
         if (projection.hostId !== host.hostId || JSON.stringify(projection.master) !== JSON.stringify(master)) throw new Error('wrong-watcher-host')
         const exact = new Map<string, Extract<ReturnType<typeof watcherToolSchemas.read_operation.output.parse>, { status: 'ok' }>['receipt'] | null>()
         const projected = new Set(projection.operations.map(item => item.id))
         let masterOf: ((operation: Readonly<WatcherOperation>) => WatcherIdentity | undefined) | undefined
-        for (const operation of this.record().operations.filter(item => item.target.hostId === host.hostId
+        for (const operation of this.view().operations.filter(item => item.target.hostId === host.hostId
           && ['dispatching', 'uncertain'].includes(item.deliveryState) && !this.active.has(item.id) && !projected.has(item.id))) {
           try {
             // The host keeps a receipt under the Watcher conversation that made it, so a replaced one's is read under its own.
@@ -4546,7 +4551,7 @@ ${operation.draftId}`)
               && key(result.receipt.target) === key(operation.target)) exact.set(operation.id, result.receipt)
           } catch { receiptFailed = true; this.recoveryNotice = 'An exact host receipt could not be read. That start or send stays unconfirmed.' }
         }
-        if (this.closed || JSON.stringify(this.record().current) !== JSON.stringify(master)) return
+        if (this.closed || JSON.stringify(this.view().current) !== JSON.stringify(master)) return
         const apply = (record: WatcherRecord) => {
           for (const watch of projection.standingWatches ?? []) {
             const own = record.watches?.find(item => item.id === watch.id && key(item.target) === key(watch.target))
@@ -4601,11 +4606,11 @@ ${operation.draftId}`)
             return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.requests.length || thread.backgroundWork?.length || thread.monitoring?.length)
           })
         }
-        const before = this.record(), next = structuredClone(before); apply(next)
+        const before = this.view(), next = structuredClone(before); apply(next)
         if (digest(before) !== digest(next)) await this.options.control.updateWatcher(apply)
         for (const [target, progress] of this.remoteProgress) if (progress.hostId === host.hostId) this.remoteProgress.delete(target)
         const targets = new Set([...projection.requests.flatMap(request => request.participants.map(item => key(item.target))),
-          ...(this.record().watches ?? []).filter(watch => watch.target.hostId === host.hostId).map(watch => key(watch.target))])
+          ...(this.view().watches ?? []).filter(watch => watch.target.hostId === host.hostId).map(watch => key(watch.target))])
         for (const progress of projection.progress ?? []) if (progress.target.hostId === host.hostId && targets.has(key(progress.target))) {
           this.remoteProgress.set(key(progress.target), { hostId: host.hostId, fingerprint: progress.fingerprint })
         }
@@ -4620,9 +4625,9 @@ ${operation.draftId}`)
         this.recoveryNotice = 'A paired host could not be reconciled. Its unconfirmed starts and sends are kept until it is. Other hosts continue to refresh.'
       }
     }
-    const beforeObservation = digest(this.record())
+    const beforeObservation = digest(this.view())
     this.observe(this.options.control.watcherSnapshot(), new Set())
-    if (beforeObservation !== digest(this.record())) await this.options.control.updateWatcher(() => undefined)
+    if (beforeObservation !== digest(this.view())) await this.options.control.updateWatcher(() => undefined)
     this.publish()
   }
   /**
@@ -4661,13 +4666,13 @@ ${operation.draftId}`)
       await this.transaction(async () => {
         guard()
         this.checkRemoteMaster(master, clientId)
-        if (this.record().remoteAbsences?.some(item => item.operationId === operation.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
-        const existing = this.record().requests.find(item => item.id === request.id)
+        if (this.view().remoteAbsences?.some(item => item.operationId === operation.id)) refuse('OPERATION_NOT_RECORDED', 'An exact read fenced this unrecorded operation. Nothing was sent.')
+        const existing = this.view().requests.find(item => item.id === request.id)
         if (existing && (key(existing.watcher) !== key(master.target) || existing.rootUserMessageId !== request.rootUserMessageId
           || existing.createdAt !== request.createdAt || existing.remoteOrigin?.clientId !== clientId
           || JSON.stringify(existing.remoteOrigin.master) !== JSON.stringify(master)
           || existing.remoteOrigin.creationOperationId !== master.creationOperationId || existing.remoteOrigin.ceiling !== packet.ceiling)) refuse('RETRY_KEY_CONFLICT', 'This request identity belongs to another origin. Nothing was sent.')
-        const retry = this.record().operations.find(item => item.requestId === request.id && item.retryKey === operation.retryKey)
+        const retry = this.view().operations.find(item => item.requestId === request.id && item.retryKey === operation.retryKey)
         if (retry && (retry.id !== operation.id || retry.digest !== operation.digest || retry.confirmedStop !== operation.confirmedStop || key(retry.target) !== key(operation.target))) refuse('RETRY_KEY_CONFLICT', 'This operation identity changed. Read the original receipt.')
         if (!retry) this.checkRemoteAuthority(operation, master, clientId, request.standingWatchId)
         if (!existing) await this.options.control.updateWatcher(record => { guard(); record.requests.push({ ...request, state: 'active', closedAt: null,
@@ -4679,7 +4684,7 @@ ${operation.draftId}`)
   }
   private checkRemoteAuthority(operation: WatcherOperation, master: WatcherIdentity, clientId: string, standingWatchId?: string): void {
     this.checkRemoteMaster(master, clientId)
-    const record = this.record()
+    const record = this.view()
     if (operation.standingWatchId && record.watchFences?.some(fence => fence.id === operation.standingWatchId)) refuse('REQUEST_NOT_ACTIVE', 'This watch was removed. Nothing was sent.')
     const assignmentId = standingWatchId ?? (operation.action !== 'start' ? operation.standingWatchId : undefined)
     if (assignmentId && !record.watches?.some(watch => watch.id === assignmentId && key(watch.target) === key(operation.target)
@@ -4689,12 +4694,12 @@ ${operation.draftId}`)
       && fence.remoteOrigin?.clientId === clientId && fence.remoteOrigin.masterHostId === master.target.hostId)) refuse('REQUEST_NOT_ACTIVE', 'This thread was unwatched. Use a new watch assignment before continuing.')
   }
   private checkLocalWithdrawal(operation: WatcherOperation): void {
-    const fences = this.record().watchFences ?? []
+    const fences = this.view().watchFences ?? []
     if (operation.standingWatchId ? fences.some(fence => fence.id === operation.standingWatchId)
       : !operation.confirmedStop && fences.some(fence => !fence.remoteOrigin && fence.target && key(fence.target) === key(operation.target))) refuse('REQUEST_NOT_ACTIVE', 'This watch was removed. Nothing was sent.')
   }
   remoteProjection(master: WatcherIdentity, clientId: string): WatcherHostProjection {
-    const record = this.record(), owned = record.requests.filter(item => key(item.watcher) === key(master.target)
+    const record = this.recordCopy(), owned = record.requests.filter(item => key(item.watcher) === key(master.target)
       && item.remoteOrigin?.clientId === clientId && item.remoteOrigin.creationOperationId === master.creationOperationId)
     const ids = new Set(owned.map(item => item.id)), all = record.operations.filter(item => ids.has(item.requestId))
     const pending = all.filter(item => ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))
@@ -4719,7 +4724,7 @@ ${operation.draftId}`)
     await this.transaction(async () => {
       guard?.()
       if (master.target.hostId === this.hostId() || watches.some(watch => watch.target.hostId !== this.hostId() || watch.remoteOrigin)) refuse('INVALID_INPUT', 'The watch assignment does not match its owning host.')
-      const record = this.record()
+      const record = this.view()
       this.checkRemoteMaster(master, clientId)
       for (const watch of watches) {
         if (record.watchFences?.some(fence => fence.id === watch.id)) refuse('REQUEST_NOT_ACTIVE', 'This watch was removed. Assign a new watch to continue.')
@@ -4774,8 +4779,8 @@ ${operation.draftId}`)
       this.checkRemoteMaster(master, clientId)
       const older = (request: Readonly<WatcherRequest>) => request.remoteOrigin?.clientId === clientId && request.remoteOrigin.master.target.hostId === master.target.hostId
         && request.remoteOrigin.master.createdAt < master.createdAt
-      const retained = this.record().remoteMasters?.find(origin => origin.clientId === clientId && origin.masterHostId === master.target.hostId)
-      const moves = this.record().requests.some(older) || (this.record().watches ?? []).some(watch => watch.remoteOrigin?.clientId === clientId
+      const retained = this.view().remoteMasters?.find(origin => origin.clientId === clientId && origin.masterHostId === master.target.hostId)
+      const moves = this.view().requests.some(older) || (this.view().watches ?? []).some(watch => watch.remoteOrigin?.clientId === clientId
         && watch.remoteOrigin.masterHostId === master.target.hostId && watch.remoteOrigin.masterCreatedAt !== undefined && watch.remoteOrigin.masterCreatedAt < master.createdAt)
       if (moves || retained?.creationOperationId !== master.creationOperationId) await this.options.control.updateWatcher(next => {
         guard?.()
@@ -4806,7 +4811,7 @@ ${operation.draftId}`)
     while (this.adopted.size > 1_000) this.adopted.delete(this.adopted.values().next().value!)
   }
   private checkRemoteMaster(master: WatcherIdentity, clientId: string): void {
-    const record = this.record(), origins = [...(record.watches ?? []).map(watch => watch.remoteOrigin), ...(record.watchFences ?? []).map(fence => fence.remoteOrigin)]
+    const record = this.view(), origins = [...(record.watches ?? []).map(watch => watch.remoteOrigin), ...(record.watchFences ?? []).map(fence => fence.remoteOrigin)]
     const retained = record.remoteMasters?.find(origin => origin.clientId === clientId && origin.masterHostId === master.target.hostId)
     if (retained && (retained.createdAt > master.createdAt || retained.createdAt === master.createdAt && retained.creationOperationId !== master.creationOperationId)) refuse('NOT_CURRENT_WATCHER', 'That Watcher conversation was replaced. Its old assignments cannot be restored.')
     if (origins.some(origin => origin?.clientId === clientId && origin.masterHostId === master.target.hostId && origin.masterCreatedAt
@@ -4817,7 +4822,7 @@ ${operation.draftId}`)
     await this.transaction(async () => {
       guard?.()
       if (master.target.hostId === this.hostId()) refuse('INVALID_INPUT', 'A remote request must belong to its master computer.')
-      const record = this.record()
+      const record = this.view()
       for (const { request, ceiling } of stops) {
         const existing = record.requests.find(item => item.id === request.id)
         if (key(request.watcher) !== key(master.target) || existing && (existing.remoteOrigin?.clientId !== clientId
@@ -4854,8 +4859,8 @@ ${operation.draftId}`)
       if (adopt) await this.adoptRemoteRequests(master, clientId, guard)
       if (standingWatches) await this.syncRemoteWatches(master, standingWatches, clientId, guard)
       if (stoppedRequests?.length) await this.stopRemoteRequests(master, stoppedRequests, clientId, guard)
-      if (guard) for (const operation of this.record().operations) {
-        const request = this.record().requests.find(item => item.id === operation.requestId)
+      if (guard) for (const operation of this.view().operations) {
+        const request = this.view().requests.find(item => item.id === operation.requestId)
         if (this.remoteGuards.has(operation.id) && request?.remoteOrigin?.clientId === clientId
           && key(request.watcher) === key(master.target) && request.remoteOrigin.creationOperationId === master.creationOperationId
           && ['queued', 'dispatching', 'uncertain'].includes(operation.deliveryState)) this.remoteGuards.set(operation.id, guard)
@@ -4866,7 +4871,7 @@ ${operation.draftId}`)
       if (call.name === 'read_operation') {
         operation = await this.transaction(async () => {
           guard?.()
-          const record = this.record(), operation = record.operations.find(item => item.id === call.input.operationId)
+          const record = this.view(), operation = record.operations.find(item => item.id === call.input.operationId)
           const request = record.requests.find(item => item.id === operation?.requestId && key(item.watcher) === key(master.target)
             && item.remoteOrigin?.clientId === clientId && item.remoteOrigin.creationOperationId === master.creationOperationId)
           if (operation && !request) refuse('UNKNOWN_OPERATION', 'That operation does not belong to this desktop.')
@@ -4963,7 +4968,7 @@ ${operation.draftId}`)
   }
   private listThreads(input: WatcherToolInput<'list_threads'>) {
     if (input.hostId && input.hostId !== this.hostId() || input.project && input.project.hostId !== this.hostId()) refuse('HOST_FEATURE_UNAVAILABLE', 'Remote Watcher thread reads are not available yet.')
-    const record = this.record(), snapshot = this.snapshot(), watched = input.watchedOnly ? this.wakes.watchedKeys() : new Set<string>()
+    const record = this.view(), snapshot = this.snapshot(), watched = input.watchedOnly ? this.wakes.watchedKeys() : new Set<string>()
     // A thread waits on the cards of the threads it delegated to as well as its own (#1190): they are its to see through.
     const delegatedCards = new Map<string, { id: string; kind: 'question' | 'permission'; openTarget: WatcherThreadTarget }[]>()
     for (const child of snapshot.threads) if (child.delegatedBy && child.requests.length) {
@@ -5168,8 +5173,8 @@ ${operation.draftId}`)
     }
     userGuard()
     const targets = confirmation.targets
-    const requestIds = new Set(this.record().requests.filter(request => request.participants.some(item => targets.some(target => key(item.target) === key(target)))).map(item => item.id))
-    const operationIds = new Set(this.record().operations.filter(item => requestIds.has(item.requestId)).map(item => item.id))
+    const requestIds = new Set(this.view().requests.filter(request => request.participants.some(item => targets.some(target => key(item.target) === key(target)))).map(item => item.id))
+    const operationIds = new Set(this.view().operations.filter(item => requestIds.has(item.requestId)).map(item => item.id))
     await this.options.control.updateWatcher(record => {
       this.revokeQueuedFreshness(record)
       for (const request of record.requests) if (requestIds.has(request.id) && request.state === 'active') { request.state = 'stopped'; request.closedAt = now() }
@@ -5182,7 +5187,7 @@ ${operation.draftId}`)
       const guard = () => {
         userGuard()
         if (this.closed) refuse('NOT_CURRENT_WATCHER', 'Watcher is stopping. Nothing was stopped.')
-        const participant = this.record().requests.flatMap(request => request.participants).find(item => key(item.target) === key(target) && item.startedBy === 'watcher' && item.state === 'participating')
+        const participant = this.view().requests.flatMap(request => request.participants).find(item => key(item.target) === key(target) && item.startedBy === 'watcher' && item.state === 'participating')
         if (!participant) refuse('THREAD_TAKEN_OVER', 'This thread was taken over and was not stopped.')
         if (this.userTurnHolds(target)) refuse('THREAD_TAKEN_OVER', 'The user’s own turn is running in this thread, so it was not stopped.')
         this.protect(this.thread(target))
@@ -5191,7 +5196,7 @@ ${operation.draftId}`)
         guard()
         if (target.hostId !== this.hostId()) {
           this.requireRemote(target.hostId, true)
-          const request = this.record().requests.find(item => requestIds.has(item.id) && item.participants.some(participant => key(participant.target) === key(target)))!
+          const request = this.view().requests.find(item => requestIds.has(item.id) && item.participants.some(participant => key(participant.target) === key(target)))!
           const input = { requestId: request.id, retryKey: randomUUID(), target }
           const participant = request.participants.find(item => key(item.target) === key(target))!
           const stamp = now(), operation: WatcherOperation = { id: randomUUID(), requestId: request.id, retryKey: input.retryKey,
@@ -5206,7 +5211,7 @@ ${operation.draftId}`)
             this.active.delete(operation.id)
             this.dispatchRefusals.delete(operation.id)
             this.pruneRemoteGuards()
-            if (this.record().operations.find(item => item.id === operation.id)?.deliveryState === 'uncertain') this.scheduleRemote(target.hostId, true)
+            if (this.view().operations.find(item => item.id === operation.id)?.deliveryState === 'uncertain') this.scheduleRemote(target.hostId, true)
           }
           const state = this.operationState(target)
           results.push({ target, status: result.status === 'refused' ? 'uncertain' : state.stopped ? 'stopped' : 'requested', message: result.status === 'refused' ? 'The stop was not confirmed. Reconnect and check this thread.' : 'Stop requested.' })

@@ -36,7 +36,7 @@ export interface IdleCompactionOptions {
 /**
  * Whether a thread is due for idle compaction now: a Claude project thread, or Watcher's conversation, that can compact,
  * holds at least {@link IDLE_COMPACTION_MIN_CONTEXT} tokens of context, and last used it between 54 and 59 minutes ago,
- * with nothing running, waiting on the user or queued. Settled and archived threads and Watcher's old conversations are
+ * with no turn running and nothing waiting on the user or queued, whatever background work or watch it has. Settled and archived threads and Watcher's old conversations are
  * left alone; Watcher's own is compacted only while Watcher rests too, which the sweep asks.
  */
 export function idleCompactionDue(host: Readonly<AgentHostSnapshot>, thread: Readonly<AgentThread>, now: number): boolean {
@@ -44,8 +44,9 @@ export function idleCompactionDue(host: Readonly<AgentHostSnapshot>, thread: Rea
   if (thread.providerId !== 'claude' || (kind !== 'project' && kind !== 'watcher')) return false
   if (!capabilitiesForThread(host as AgentHostSnapshot, thread as AgentThread).compact || thread.manualCompactionSupported === false || thread.nativeSessionStarted === false) return false
   if (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, host.projects.find(project => project.id === thread.projectId))) return false
+  // Background work and watches are not the thread's own activity: its cache expires while they run all the same, and
+  // their reports arrive after the compaction and are answered from its summary (amended October 29, 2026).
   if (isThreadTurnRunning(thread) || thread.status !== 'idle' || thread.requests.length || compactionPending(thread.compaction)) return false
-  if (thread.backgroundWork?.length || thread.monitoring?.length) return false
   const usage = thread.usage
   if (!usage || (usage.contextUsed ?? 0) < IDLE_COMPACTION_MIN_CONTEXT) return false
   // A context measured on another model says nothing reliable about this one's cache.

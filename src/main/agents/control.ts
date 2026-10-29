@@ -4325,9 +4325,11 @@ export class AgentControl {
       const head = echoed ?? items.find(item => item.threadId === threadId && !held(item))
       if (!head) continue
       // Native idle status can precede turn/completed. A still-running outcome is
-      // neither permission to dispatch nor a terminal failure requiring review.
+      // neither permission to dispatch nor a terminal failure requiring review. A compaction that failed is one, though the
+      // thread still rests on the completed turn before it (ADR-0127).
       const unreviewed = (item: Readonly<QueuedFollowup>): boolean => !!thread && !isThreadTurnRunning(thread)
-        && (thread.lastTurn ? thread.lastTurn.status !== 'completed' && item.resumeAfterTurnId !== thread.lastTurn.id : item.resumeAfterTurnId !== UNKNOWN_TURN)
+        && (thread.lastTurn ? (thread.lastTurn.status !== 'completed' || thread.status === 'error' && thread.compaction?.status === 'failed')
+          && item.resumeAfterTurnId !== thread.lastTurn.id : item.resumeAfterTurnId !== UNKNOWN_TURN)
       // A delegation's hidden news goes past whatever of the user's waits without going, leaving it in place and in order:
       // paused or failed follow-ups, ones a machine Stop holds, ones a set-aside prompt holds (ADR-0081, October 19, 2026).
       // A ready prompt at the head goes first, and a queue the last turn left unreviewed is paused first, as before.
