@@ -796,7 +796,9 @@ export class AgentControl {
       || this.outbox.some(item => item.threadId === from && item.draftId === draft.draftId)) return false
     const begun = this.state.threadDrafts?.some(item => item.threadId === to && (item.text.trim() !== '' || item.attachments.length > 0)) === true
     // Taken from the last Watcher's box before anything is awaited, so a second pass meanwhile finds nothing to move again.
-    this.discardThreadDraft(from)
+    // The single composer's fields hold the same words while it is that box, and a save would put them back there.
+    if (this.state.draftThreadId === from) this.clearDraft()
+    else this.discardThreadDraft(from)
     if (begun) {
       const draftId = randomUUID()
       try {

@@ -208,10 +208,14 @@ describe('New Watcher', () => {
     })
     expect(native.messages.some(message => message.text.includes('Also tag it.'))).toBe(false)
     // The new Watcher's note says both, and the handover carries the question in its own words.
-    // What was written in the last Watcher's box waits, unsent, in the new one's.
+    // What was written in the last Watcher's box waits, unsent, in the new one's, and stays gone from the last one's after
+    // a save, which once rebuilt it from the single composer's fields.
     const drafts = f.control.get().threadDrafts ?? []
     expect(drafts.find(draft => draft.threadId === next.threadId)?.text).toBe('And check the changelog')
     expect(drafts.some(draft => draft.threadId === f.first.threadId)).toBe(false)
+    await f.control.commandShell({ type: 'observe-threads', threadIds: [next.threadId] })
+    expect(f.control.get().threadDrafts?.some(draft => draft.threadId === f.first.threadId)).toBe(false)
+    expect(f.control.get().draftThreadId).not.toBe(f.first.threadId)
     await vi.waitFor(() => expect(f.service.state().carried).toEqual({ questionClosed: true, moved: 1, unconfirmed: false, draftMoved: true, cannotStop: [] }))
     const handover = f.service.readHandover()
     if (handover.status !== 'ok') throw new Error('handover unreadable')
@@ -263,41 +267,39 @@ describe('New Watcher', () => {
     expect(handover.text).toContain('- Release from main?')
   })
 
-  it('moves a message that was still being sent at the press once it comes back unsent, to whichever Watcher is current, and its note counts it (#1735)', async () => {
+  it('moves a message that was still being sent at the press once it comes back unsent, and its note counts it (#1735)', async () => {
     const f = await fixture()
     await f.exchange('Watch the release.', 'Watching it.')
     const store = followupStoreOf(f.control)
+    type Items = { items: { text: string; status: string }[] }
+    const change = (update: (state: Items) => void) => (store as unknown as { change(update: (state: Items) => void): Promise<void> }).change(update)
+    // Watcher looks again on the next update from a provider; one is made here, as any provider's progress makes one.
+    const update = async () => { f.native(f.first.threadId).title = `Watcher ${randomUUID()}`; await f.refresh() }
     // A message to the last Watcher is still being written to its provider when the press's moment ends.
     const sending = vi.spyOn(f.control, 'watcherFollowupSending').mockReturnValue(false)
     expect(await f.service.startNew()).toMatchObject({ status: 'ok' })
-    const second = f.service.state().current!.target
-    await store.enqueue({ threadId: f.first.threadId, draftId: randomUUID(), text: 'Late words', attachments: [] })
-    await (store as unknown as { change(update: (state: { items: { text: string; status: string }[] }) => void): Promise<void> }).change(state => {
-      state.items.find(item => item.text === 'Late words')!.status = 'dispatching'
-    })
+    const next = f.service.state().current!.target
     sending.mockImplementation(threadId => threadId === f.first.threadId)
-    ;(f.service as unknown as { lateQueue: unknown[] }).lateQueue = [f.first]
-    // Another replacement comes before it settles: the message still goes to the Watcher that is current when it does.
-    await f.exchange('Then the notes.', 'On it.')
-    expect(await f.service.startNew()).toMatchObject({ status: 'ok' })
-    const third = f.service.state().current!.target
-    expect(third).not.toEqual(second)
-    // It fails to send, and comes back to the last Watcher's queue, unsent.
-    await (store as unknown as { change(update: (state: { items: { text: string; status: string }[] }) => void): Promise<void> }).change(state => {
-      state.items.find(item => item.text === 'Late words')!.status = 'failed'
-    })
-    // A message sent at once that failed is put back in the last Watcher's box, while the user is already writing in the
-    // new one's.
+    await store.enqueue({ threadId: f.first.threadId, draftId: randomUUID(), text: 'Late words', attachments: [] })
+    await change(state => { state.items.find(item => item.text === 'Late words')!.status = 'dispatching' })
+    // The replacement keeps looking at the last Watcher; nothing moves while its message is still being written.
+    expect((f.service as unknown as { lateQueue: unknown[] }).lateQueue).toContainEqual(f.first)
+    await update()
+    expect(store.peek().items.find(item => item.text === 'Late words')).toMatchObject({ threadId: f.first.threadId })
+    // It fails, coming back to the last Watcher's queue, and a refused send is put back in its box while the user is
+    // already writing in the new one's.
+    await change(state => { state.items.find(item => item.text === 'Late words')!.status = 'failed' })
     expect((await f.control.commandShell({ type: 'save-thread-draft', threadId: f.first.threadId, draftId: randomUUID(), text: 'Late box words', composer: 'manual' })).error).toBeNull()
-    expect((await f.control.commandShell({ type: 'save-thread-draft', threadId: third.threadId, draftId: randomUUID(), text: 'Already typing', composer: 'manual' })).error).toBeNull()
+    expect((await f.control.commandShell({ type: 'save-thread-draft', threadId: next.threadId, draftId: randomUUID(), text: 'Already typing', composer: 'manual' })).error).toBeNull()
     sending.mockReturnValue(false)
-    await f.control.commandShell({ type: 'observe-threads', threadIds: [third.threadId] })
-    await vi.waitFor(() => expect(store.peek().items.find(item => item.text === 'Late words')).toMatchObject({ threadId: third.threadId, status: 'paused' }))
-    // What the user is writing stays; the late words wait in the new Watcher's queue, paused, and the note counts both.
+    await update()
+    // Both reach the current Watcher's queue, paused; what the user is writing stays; the note counts both.
     await vi.waitFor(() => expect(f.service.state().carried).toMatchObject({ moved: 2 }))
-    expect(f.control.get().threadDrafts?.find(draft => draft.threadId === third.threadId)?.text).toBe('Already typing')
-    expect(store.peek().items.find(item => item.text === 'Late box words')).toMatchObject({ threadId: third.threadId, status: 'paused' })
+    expect(store.peek().items.find(item => item.text === 'Late words')).toMatchObject({ threadId: next.threadId, status: 'paused' })
+    expect(store.peek().items.find(item => item.text === 'Late box words')).toMatchObject({ threadId: next.threadId, status: 'paused' })
+    expect(f.control.get().threadDrafts?.find(draft => draft.threadId === next.threadId)?.text).toBe('Already typing')
     expect(f.control.get().threadDrafts?.some(draft => draft.threadId === f.first.threadId)).toBe(false)
+    expect((f.service as unknown as { lateQueue: unknown[] }).lateQueue).toEqual([])
   })
 
   it('refuses when Watcher’s model is not ready or its permission mode is not the one in force', async () => {
