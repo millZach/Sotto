@@ -22,7 +22,7 @@ function setup(patch: Partial<AppSettings> = {}, models: Partial<CloudSpeechMode
   const credential = randomUUID()
   const settings: AppSettings = { ...DEFAULT_SETTINGS, llmApiKey: credential, cloudTranscription: true, cloudSpeechModel: 'elevenlabs/scribe-v2', ...patch }
   const fetchFn = vi.fn<typeof fetch>().mockResolvedValue(Response.json({ text: '  Hello Sotto.  ' }))
-  const sleep = vi.fn(async (_milliseconds: number, _signal: AbortSignal) => undefined)
+  const sleep = vi.fn<(milliseconds: number, signal: AbortSignal) => Promise<void>>(async () => undefined)
   const failures: CloudTranscriptionFailureDiagnostic[] = []
   const recoveries: CloudTranscriptionRecoveryDiagnostic[] = []
   const service = new CloudTranscriptionService({
