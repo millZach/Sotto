@@ -38,6 +38,7 @@ import { homedir, hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
 import type { PackageInstaller } from './checkWorktree'
 import { ContinueService } from './continueThread'
+import { holdUnfinishedMoves, ThreadMoveService } from './threadMoves'
 import { AgentControl } from './control'
 import { TurnRecorder } from './turns'
 import { ConfiguredAgentReasoner } from './reasoning'
@@ -491,6 +492,19 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
   const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
     ? new ContinueService({ control: agentControl, host: agentHost }) : undefined
+  // Moving This computer's threads to a paired host (#1178, ADR-0105 decision 7): only the desktop moves threads, where Work
+  // across machines is on and its Watcher runs, since moves reach machines and carry watches through Watcher. Every move
+  // under way fences its source as its record is read, before any window or send can reach it.
+  const threadMoves = crossMachine && options.runsAs !== 'headless-host' && watcher && branchMoves
+    ? new ThreadMoveService(directory, { control: agentControl, workspace: agentHost, branches: branchMoves, watch: watcher,
+      news: move => watcher.wakes.threadMoved(move), ...delegation ? { delegations: delegation } : {} }) : undefined
+  await threadMoves?.load()
+  // A run that does not move threads, stable among them, still reads the record and keeps every move not finished fenced,
+  // and its worktree kept: that thread may already work on another machine. Nothing steps, and nothing is shown.
+  const heldMoves = !threadMoves && options.runsAs !== 'headless-host' ? await holdUnfinishedMoves(directory, agentControl) : undefined
+  const moveKeeps = threadMoves ?? heldMoves
+  // A deleted thread keeps no worktree, so its move lets go of it (ADR-0140 decision 4).
+  if (threadMoves) agentControl.onThreadsDeleted(threadIds => { threadMoves.forgetThreads(new Set(threadIds)) })
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
     if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired }); agentHost.useWatcherTools(watcherTools) }
@@ -510,6 +524,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
     removeUnsentThreads: () => agentControl.removeUnsentThreads(),
+    // A move's source keeps its worktree, whatever the rules say (Zach, October 21, 2026).
+    ...moveKeeps ? { keeps: (threadId: string) => moveKeeps.keepsWorktree(threadId) } : {},
     ...clearsOnItsOwn(options) ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays,
       clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => agentControl.clearSettledThreads(days, keep) } } : {},
     ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {},
@@ -598,6 +614,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     delegationRelay?.close()
     delegationRemote?.close()
     continuation?.close()
+    threadMoves?.close()
     closingWatcherTools = watcherTools?.close()
   }
   let stoppingProviders: Promise<void> | undefined
@@ -665,6 +682,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     await restartResume?.start()
     await limitRestart?.start()
     await agentControl.start(switchedOff ? { beforeConnect: async () => { await switchedOff.stop({ startedBy: 'agent' }, 'switch').catch(() => 0) } } : {})
+    // With the coordinator's own record read, a fence it kept for a move the move's record shows over is lifted (#1178).
+    moveKeeps?.settleFences()
   } catch (error) {
     await restartResume?.freeze()
     await limitRestart?.close()
@@ -729,5 +748,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, delegationRemote, continuation, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, prepareForShutdown, close }
 }

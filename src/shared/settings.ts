@@ -310,6 +310,13 @@ export interface AppSettings {
   showWidgetWhenIdle: boolean
   /** Off when the user dictates with another app: no hotkey, speech model, widget or Dictate room (Owl, ADR-0107). */
   dictationEnabled: boolean
+  /**
+   * On, an OpenRouter speech model transcribes dictation instead of this computer's, with the OpenRouter key AI cleanup
+   * uses, and the speech model here is unloaded. An Owl feature (ADR-0160): stable ignores it and keeps it.
+   */
+  cloudTranscription: boolean
+  /** The OpenRouter speech model cloud transcription uses, by its slug, or null for the first in Sotto's ranking. */
+  cloudSpeechModel: string | null
   /** A notification when a thread asks a question or for permission and the window is not showing it (Owl, macOS, ADR-0117). */
   notifyNeedsYou: boolean
   /** A notification when a thread has wrapped up: finished everything, nothing left running or waiting (Owl, macOS, ADR-0117). */
@@ -469,6 +476,8 @@ const fieldSchemas = {
   startMinimized: z.boolean(),
   showWidgetWhenIdle: z.boolean(),
   dictationEnabled: z.boolean(),
+  cloudTranscription: z.boolean(),
+  cloudSpeechModel: z.string().regex(/^[\w.\-/:~]{1,128}$/u).nullable(),
   notifyNeedsYou: z.boolean(),
   notifyFinished: z.boolean(),
   shellPillInUse: z.boolean().optional(),
@@ -582,6 +591,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   startMinimized: false,
   showWidgetWhenIdle: true,
   dictationEnabled: true,
+  cloudTranscription: false,
+  cloudSpeechModel: null,
   notifyNeedsYou: true,
   notifyFinished: true,
   historyEnabled: true,
@@ -766,6 +777,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     startMinimized: parseField(persisted, 'startMinimized', defaults),
     showWidgetWhenIdle: parseField(persisted, 'showWidgetWhenIdle', defaults),
     dictationEnabled: parseField(persisted, 'dictationEnabled', defaults),
+    cloudTranscription: parseField(persisted, 'cloudTranscription', defaults),
+    cloudSpeechModel: parseField(persisted, 'cloudSpeechModel', defaults),
     notifyNeedsYou: parseField(persisted, 'notifyNeedsYou', defaults),
     notifyFinished: parseField(persisted, 'notifyFinished', defaults),
     historyEnabled: parseField(persisted, 'historyEnabled', defaults),
@@ -813,6 +826,11 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     cloudIphoneMonthlyMinutes: parseField(persisted, 'cloudIphoneMonthlyMinutes', defaults),
     cloudIphoneIdleMinutes: parseField(persisted, 'cloudIphoneIdleMinutes', defaults),
   }
+}
+
+/** Whether an OpenRouter speech model transcribes dictation: only with the Owl feature on and the setting on (ADR-0160). */
+export function cloudTranscriptionOn(settings: Pick<AppSettings, 'cloudTranscription'>, owlFeatureOn: boolean): boolean {
+  return owlFeatureOn && settings.cloudTranscription
 }
 
 /** Whether Sotto dictates: the setting counts only while its Owl feature is on, so stable always dictates (ADR-0107). */

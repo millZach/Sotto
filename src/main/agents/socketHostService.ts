@@ -39,6 +39,7 @@ import { heldProviderOfWatcherRequest, heldProviderRefusedBy, heldWatcherRefusal
 import { heldProviderRefusal, heldProvidersOption, type HeldProviderNames, type HeldProviders } from '../../shared/heldProviders'
 import { hostMachineReportSchema, type HostMachineReport } from '../../shared/hostFacts'
 import { branchMoveStepTimeoutMs, type HostBranchMoveRequest } from '../../shared/branchMoves'
+import type { HostThreadMoveRequest } from '../../shared/threadMoves'
 import { HOST_UPDATE_ANSWER_DEADLINES_MS, hostUpdateAnswerSchema, type HostUpdateAnswer, type HostUpdateRequest } from '../../shared/hostSelfUpdate'
 import type { HostUpdateStep } from '../../shared/hostUpdates'
 import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins, type ProjectSetupRequest, type ProjectSetupResult } from '../../shared/workerMachine'
@@ -1336,6 +1337,17 @@ export class SocketHostService implements HostService {
   async branchMove(request: HostBranchMoveRequest): Promise<unknown> {
     this.offers('branch-moves')
     return this.call({ op: 'branch-move', request }, undefined, undefined, branchMoveStepTimeoutMs(request.action))
+  }
+  /** The host lists `thread-move`: it makes a thread moved there from another machine, once per move (#1178). */
+  get supportsThreadMove(): boolean { return this.features.includes('thread-move') }
+  /**
+   * Asks the host to make a move's new thread and send its first prompt (`threadMoves.ts`), answered as the host gave it for the
+   * caller to read. Making a thread and its first send are quick, so the wait is a branch move step's. A host that does not
+   * list `thread-move` is refused before anything is sent.
+   */
+  async threadMove(request: HostThreadMoveRequest): Promise<unknown> {
+    this.offers('thread-move')
+    return this.call({ op: 'thread-move', request }, undefined, undefined, 120_000)
   }
   /** The host lists `project-origins`: it names each of its projects' GitHub repository (#1032). An older host's cannot be matched. */
   get supportsProjectOrigins(): boolean { return this.features.includes('project-origins') }

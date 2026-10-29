@@ -1,5 +1,5 @@
 import React from 'react'
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentCommand, AgentState } from '../../../src/shared/agents'
@@ -10,8 +10,20 @@ import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
 import { ThreadPane } from '../../../src/renderer/src/agents/ThreadPane'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 import { openPaneMenu, paneMenuItems } from '../../fixtures/renderer/paneMenu'
+import { hostsBridgeFixture, hostsState, hostStatus } from '../../fixtures/renderer/hostBridges'
+import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
+import { machinesConnected, moveSheetStore } from '../../../src/renderer/src/watcher/MoveThreads'
+import { useWatcherRoom } from '../../../src/renderer/src/watcher/watcherRoom'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
+vi.mock('../../../src/renderer/src/watcher/watcherRoom', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../src/renderer/src/watcher/watcherRoom')>()
+  return { ...original, useWatcherRoom: vi.fn(original.useWatcherRoom) }
+})
+vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>()
+  return { ...original, useOptionalApp: vi.fn(original.useOptionalApp) }
+})
 const THREAD = 'grok-previews'
 
 /** One idle thread of the fixture, on its own, with a provider that can compact and a place to open beside. */
@@ -79,6 +91,32 @@ describe('the pane header’s More menu', () => {
     const view = mount()
     fireEvent.click(within(openPaneMenu(view.head())).getByRole('menuitem', { name: 'Open beside' }))
     expect(view.onOpenBeside).toHaveBeenCalledOnce()
+  })
+})
+
+describe('Continue on another machine… (#1178 part 2, Owl Work across machines)', () => {
+  const FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10'
+  afterEach(() => { machinesConnected.clear(); moveSheetStore.close(); vi.mocked(useOptionalApp).mockReset(); vi.mocked(useWatcherRoom).mockReset(); delete (window as unknown as { sotto?: unknown }).sotto })
+  const offer = (phase: 'connected' | 'disconnected') => {
+    vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'cross-machine-work': true, watcher: true } } } as unknown as ReturnType<typeof useOptionalApp>)
+    vi.mocked(useWatcherRoom).mockReturnValue({ state: { current: { createdAt: '2026-10-29T14:00:00.000Z' } } } as unknown as ReturnType<typeof useWatcherRoom>)
+    const hosts = hostsBridgeFixture({ initial: hostsState({ hosts: [hostStatus({ id: FORGE, hostId: FORGE, name: 'forge', phase })] }) }).bridge
+    ;(window as unknown as { sotto: unknown }).sotto = { hosts, threadMoves: { prepare: vi.fn(), start: vi.fn(), read: vi.fn(async () => ({ cards: [] })), answer: vi.fn(), onChanged: vi.fn(() => () => undefined) } }
+  }
+  it('opens Move threads’ sheet for this one thread while another machine is connected', async () => {
+    offer('connected')
+    const view = mount()
+    await act(async () => { await Promise.resolve() })
+    const menu = openPaneMenu(view.head())
+    expect(paneMenuItems(menu)).toContain('Continue on another machine…')
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Continue on another machine…' }))
+    expect(moveSheetStore.get()).toMatchObject({ kind: 'one', threadId: THREAD })
+  })
+  it('is left out while no other machine is connected', async () => {
+    offer('disconnected')
+    const view = mount()
+    await act(async () => { await Promise.resolve() })
+    expect(paneMenuItems(openPaneMenu(view.head()))).not.toContain('Continue on another machine…')
   })
 })
 

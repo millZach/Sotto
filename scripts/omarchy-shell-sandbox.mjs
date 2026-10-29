@@ -4,7 +4,7 @@ import console from 'node:console'
 import process from 'node:process'
 import { constants, closeSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, readlinkSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { createHash } from 'node:crypto'
-import { dirname, join, resolve } from 'node:path'
+import { dirname, join, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 function statOrMissing(path) {
@@ -197,6 +197,50 @@ export function snapshotTree(root) {
   }
   visit(root)
   return entries
+}
+
+/**
+ * The order `snapshotTree` visits paths in: a directory before what is in it, and the names in a directory in sorted
+ * order. Comparing segment by segment matches it where comparing whole path strings would not ("a.b" sorts before "a/x").
+ */
+function treeOrder(left, right) {
+  const a = left.split(sep), b = right.split(sep)
+  for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+    if (a[index] !== b[index]) return a[index] < b[index] ? -1 : 1
+  }
+  return a.length - b.length
+}
+
+/**
+ * How two snapshots of one tree differ, without building a diff of them or an index of either: how many paths were
+ * added, removed or changed, and the first few of them. Both snapshots come from `snapshotTree`, in the same order, so
+ * one walk through them side by side finds every difference. A changed tree is reported in one line however large it is;
+ * a deep comparison of two snapshots of a large tree ran forge out of memory (#1802).
+ */
+export function compareTreeStamps(before, after, limit = 5) {
+  const paths = []
+  let count = 0
+  const differs = path => {
+    count += 1
+    if (paths.length < limit) paths.push(path)
+  }
+  let i = 0, j = 0
+  while (i < before.length || j < after.length) {
+    const old = before[i], now = after[j]
+    const order = old === undefined ? 1 : now === undefined ? -1 : treeOrder(old[0], now[0])
+    if (order < 0) { differs(old[0]); i += 1; continue }
+    if (order > 0) { differs(now[0]); j += 1; continue }
+    if (old.length !== now.length || old.some((value, index) => value !== now[index])) differs(now[0])
+    i += 1
+    j += 1
+  }
+  return { count, paths }
+}
+
+/** Throws when the tree at `root` no longer matches its snapshot, naming how many paths differ and the first few. */
+export function assertTreeUnchanged(root, before, limit = 5) {
+  const { count, paths } = compareTreeStamps(before, snapshotTree(root), limit)
+  if (count > 0) throw new Error(`${root} changed: ${count} ${count === 1 ? 'path differs' : 'paths differ'}, first ${paths.join(', ')}`)
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

@@ -35,6 +35,9 @@ export type HarnessOptions = {
   readonly platform?: NonNullable<DictationControllerDependencies['platform']>
   /** Whether the speech model on this computer can transcribe now (ADR-0071); unset counts as ready. */
   readonly speechModelReady?: NonNullable<DictationControllerDependencies['speechModelReady']>
+  /** Whether OpenRouter transcribes with no key saved (ADR-0160); unset counts as no. */
+  readonly openRouterKeyMissing?: NonNullable<DictationControllerDependencies['openRouterKeyMissing']>
+  readonly transcribedWith?: NonNullable<DictationControllerDependencies['transcribedWith']>
 }
 
 export function createHarness(options: HarnessOptions = {}) {
@@ -93,6 +96,8 @@ export function createHarness(options: HarnessOptions = {}) {
     ...(options.cuePlayer === undefined ? {} : { cuePlayer: options.cuePlayer }),
     ...(options.platform === undefined ? {} : { platform: options.platform }),
     ...(options.speechModelReady === undefined ? {} : { speechModelReady: options.speechModelReady }),
+    ...(options.openRouterKeyMissing === undefined ? {} : { openRouterKeyMissing: options.openRouterKeyMissing }),
+    ...(options.transcribedWith === undefined ? {} : { transcribedWith: options.transcribedWith }),
     now: options.now ?? (() => 1_000),
     createId: () => ids.shift() ?? 'later-session',
     setTimer,

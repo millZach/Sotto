@@ -9,7 +9,7 @@ import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, openSync
 import { dirname, join, resolve } from 'node:path'
 import { setTimeout as wait } from 'node:timers/promises'
 import { promisify } from 'node:util'
-import { prepareSandboxBus, snapshotTree } from './omarchy-shell-sandbox.mjs'
+import { assertTreeUnchanged, prepareSandboxBus, snapshotTree } from './omarchy-shell-sandbox.mjs'
 import { assertProofInstancesPreserved, createOwnedProofProcesses, installProofCleanup, snapshotProofInstances, terminateThenCleanup } from './owned-proof-processes.mjs'
 
 const checkout = resolve(import.meta.dirname, '..')
@@ -45,7 +45,9 @@ async function orchestrate() {
   const directory = join(live.XDG_RUNTIME_DIR, 'hypr')
   const before = snapshotProofInstances(directory)
   assert.ok(before.has(live.HYPRLAND_INSTANCE_SIGNATURE))
-  const protectedPaths = ['.config/omarchy', '.config/hypr', '.local/state/omarchy', '.sotto'].map(path => join(live.HOME, path)).filter(existsSync)
+  // The live trees a nested Omarchy session could reach. Not ~/.sotto: the run's HOME is private, so Sotto under test
+  // writes nowhere near it, and hashing every thread's worktree there ran forge out of memory (#1802).
+  const protectedPaths = ['.config/omarchy', '.config/hypr', '.local/state/omarchy'].map(path => join(live.HOME, path)).filter(existsSync)
   const stamps = protectedPaths.map(snapshotTree)
   const root = mkdtempSync('/tmp/slm-')
   const home = join(root, 'home'), runtime = join(root, 'rt'), temporary = join(root, 'tmp')
@@ -87,7 +89,7 @@ async function orchestrate() {
   }, () => {
     assertProofInstancesPreserved(directory, before)
   }, () => {
-    protectedPaths.forEach((path, index) => { assert.deepEqual(snapshotTree(path), stamps[index]); say(`Live ${path} unchanged`) })
+    protectedPaths.forEach((path, index) => { assertTreeUnchanged(path, stamps[index]); say(`Live ${path} unchanged`) })
   }, () => {
     rmSync(root, { recursive: true })
     say(`Removed private root ${root}; prior Hyprland instances preserved`)

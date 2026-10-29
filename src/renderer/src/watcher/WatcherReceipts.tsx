@@ -6,11 +6,13 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentMessage, ProviderId } from '../../../shared/agents'
 import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
 import { isShownReply, type WatcherTakeover } from '../../../shared/watcherRoom'
+import type { ThreadMoveCard } from '../../../shared/threadMoves'
 import type { WorkerPlacementReceipt } from '../../../shared/workerMachine'
 import { SottoMark } from '../components/SottoMark'
 import { ProviderMark } from '../agents/ProviderMark'
 import { clockLabel } from '../agents/threadFacts'
 import { WatcherAsks, type WatcherAskPlacement } from './WatcherAsks'
+import { WatcherMoveCards } from './MoveThreads'
 import type { ByMessage, ByOperation } from './watcherConversationWork'
 import { t } from '@lingui/core/macro'
 
@@ -45,6 +47,10 @@ export interface WatcherConversation {
    * conversation). What the cards answer with comes from `WatcherAskAnsweringContext`, which changes with every update.
    */
   readonly asks?: ReadonlyMap<string, readonly WatcherAskPlacement[]> | undefined
+  /**
+   * The moves Sotto ran for the user (#1178), after the turn each was confirmed in: only while Work across machines is on.
+   */
+  readonly moves?: ReadonlyMap<string, readonly ThreadMoveCard[]> | undefined
   /** Where each start was placed, by operation ID (#1032): only while Work across machines is on, and only this run's. */
   readonly placements?: ByOperation<WorkerPlacementReceipt> | undefined
   readonly describe: (target: WatcherThreadTarget) => ConversationThread
@@ -70,9 +76,13 @@ export function useRepliesKeptInView(): Pick<ReadonlySet<string>, 'has'> | null 
  * there is follows the first.
  */
 export function placeTakeovers(messages: readonly AgentMessage[], takeovers: readonly WatcherTakeover[]): ReadonlyMap<string, readonly WatcherTakeover[]> {
-  const placed = new Map<string, WatcherTakeover[]>()
+  return placeAfterTurns(messages, takeovers)
+}
+/** Places anything of Sotto's own that happened at a time, `at`, after the turn it happened in, as takeover lines are. */
+export function placeAfterTurns<Item extends { readonly at: string }>(messages: readonly AgentMessage[], items: readonly Item[]): ReadonlyMap<string, readonly Item[]> {
+  const placed = new Map<string, Item[]>()
   if (messages.length === 0) return placed
-  for (const line of takeovers) {
+  for (const line of items) {
     const at = Date.parse(line.at)
     const user = messages.findLastIndex(message => message.role === 'user' && Date.parse(message.createdAt) <= at)
     let anchor = messages[Math.max(0, user)]!.id
@@ -178,7 +188,7 @@ function TakeoverLine({ line, conversation }: { readonly line: WatcherTakeover; 
 
 /**
  * What follows a message in Watcher's own pane: its receipt cards, then the cards of the requests its wake-up said wait
- * on the user, then any takeover line. Nothing anywhere else.
+ * on the user, then any takeover line, then the moves confirmed in its turn. Nothing anywhere else.
  */
 export function WatcherAfterMessage({ message }: { readonly message: AgentMessage }): ReactNode {
   const conversation = useContext(WatcherConversationContext)
@@ -186,10 +196,12 @@ export function WatcherAfterMessage({ message }: { readonly message: AgentMessag
   const operations = conversation.receipts.get(message.id)
   const lines = conversation.takeovers.get(message.id)
   const asks = conversation.asks?.get(message.id)
-  if (operations === undefined && lines === undefined && asks === undefined) return null
+  const moves = conversation.moves?.get(message.id)
+  if (operations === undefined && lines === undefined && asks === undefined && moves === undefined) return null
   return <>
     {operations?.length ? <WatcherReceipts operations={operations} conversation={conversation} /> : null}
     {asks?.length ? <WatcherAsks asks={asks} describe={conversation.describe} press={conversation.press} /> : null}
     {lines?.map(line => <TakeoverLine key={`${line.target.hostId}:${line.target.threadId}:${line.at}`} line={line} conversation={conversation} />)}
+    {moves?.length ? <WatcherMoveCards cards={moves} threads={conversation} /> : null}
   </>
 }

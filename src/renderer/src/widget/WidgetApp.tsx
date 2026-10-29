@@ -34,6 +34,7 @@ import {
   isTranscriptionErrorCode,
   MICROPHONE_NOT_SET_UP_DETAIL,
   SPEECH_MODEL_NOT_READY_DETAIL,
+  OPENROUTER_KEY_MISSING_DETAIL,
   TRANSCRIPTION_ERROR_DETAIL,
   TRANSCRIPTION_KEPT_DETAIL,
   type WidgetErrorCode,
@@ -66,6 +67,7 @@ function errorCopyFor(
   i18n: I18n,
 ): Record<WidgetErrorCode, { readonly title: string; readonly detail: string }> {
   const modelNotReady = i18n._(msg({ message: 'Model not ready', comment: 'The speech model that turns dictation into text has not finished loading.' }))
+  const noKey = i18n._(msg({ message: 'No OpenRouter key', comment: 'Dictation is set to transcribe with OpenRouter, and no OpenRouter key is saved.' }))
   return {
     MIC_PERMISSION_DENIED: {
       title: i18n._(msg`Microphone blocked`),
@@ -102,6 +104,34 @@ function errorCopyFor(
     TRANSCRIPTION_FAILED: {
       title: i18n._(msg`Couldn’t transcribe`),
       detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_FAILED,
+    },
+    OPENROUTER_KEY_MISSING: {
+      title: noKey,
+      detail: OPENROUTER_KEY_MISSING_DETAIL,
+    },
+    TRANSCRIPTION_NO_KEY: {
+      title: noKey,
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_NO_KEY,
+    },
+    TRANSCRIPTION_KEY_REJECTED: {
+      title: i18n._(msg({ message: 'Key not accepted', comment: 'OpenRouter refused the saved OpenRouter key.' })),
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_KEY_REJECTED,
+    },
+    TRANSCRIPTION_NO_CREDIT: {
+      title: i18n._(msg({ message: 'Out of credit', comment: 'The OpenRouter account has no credit left to pay for transcription.' })),
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_NO_CREDIT,
+    },
+    TRANSCRIPTION_RATE_LIMITED: {
+      title: i18n._(msg({ message: 'OpenRouter busy', comment: 'OpenRouter turned the request away because too many were sent at once.' })),
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_RATE_LIMITED,
+    },
+    TRANSCRIPTION_OFFLINE: {
+      title: i18n._(msg({ message: 'Can’t reach OpenRouter', comment: 'Sotto could not connect to OpenRouter to transcribe dictation.' })),
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_OFFLINE,
+    },
+    TRANSCRIPTION_MODEL_GONE: {
+      title: i18n._(msg({ message: 'Model unavailable', comment: 'OpenRouter no longer offers the speech model chosen for dictation.' })),
+      detail: TRANSCRIPTION_ERROR_DETAIL.TRANSCRIPTION_MODEL_GONE,
     },
     OUTPUT_UNAVAILABLE: {
       title: i18n._(msg`Output unavailable`),
@@ -215,7 +245,8 @@ function getCopy(snapshot: WidgetSnapshot, platform: SottoPlatform, i18n: I18n):
     case 'processing':
       return {
         tone: 'processing', title: i18n._(processingLabels[snapshot.stage]),
-        detail: copy.widgetProcessingDetail,
+        // While OpenRouter transcribes (ADR-0160) the audio does leave this computer, so only the half that holds is said.
+        detail: snapshot.cloud === true ? i18n._(msg`Audio is never saved`) : copy.widgetProcessingDetail,
         icon: <CircleEllipsis aria-hidden="true" size={23} strokeWidth={2.1} />,
       }
     case 'success':

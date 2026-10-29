@@ -138,6 +138,14 @@ export function sottoSpeechModelOption(model: SottoSpeechModel, installed: boole
 }
 export const speechModelIdSchema = z.string().min(1).max(128)
 
+/**
+ * Whether the speech model dictation would load is already on this computer: the chosen one, or with none chosen any
+ * that is here. Transcribe on this computer is offered, and run, only then, so a press never starts a download (ADR-0160).
+ */
+export function speechModelHere(options: readonly SpeechModelOption[], chosen: string | null): boolean {
+  return options.some((option) => option.installed && (chosen === null || option.id === chosen))
+}
+
 const bytesSchema = z.number().int().min(0)
 const totalSchema = z.number().int().positive()
 

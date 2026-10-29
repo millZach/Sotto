@@ -36,6 +36,20 @@ describe('WidgetApp', () => {
     expect(container).not.toHaveTextContent('Ctrl+Shift+Space')
   })
 
+  it('says only that the audio is never saved while OpenRouter transcribes (ADR-0160)', () => {
+    for (const platform of ['win32', 'darwin', 'linux'] as const) {
+      render(
+        <WidgetApp
+          snapshot={snapshot({ status: 'processing', sessionId: `${platform}-cloud`, startedAt: 0, stage: 'transcribing', progress: 0.5, cancellable: true, cloud: true })}
+          platform={platform}
+          now={0}
+        />,
+      )
+      expect(screen.getByText('Transcribing')).toHaveAttribute('title', 'Audio is never saved')
+      cleanup()
+    }
+  })
+
   it('says the recording is transcribed on this computer at every processing stage, on both platforms', () => {
     // ADR-0071: dictation transcribes on this computer, never saved, at every stage before delivery.
     const cases = [

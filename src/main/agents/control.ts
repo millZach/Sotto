@@ -292,6 +292,11 @@ const savedSchema = z.object({
   prototypesMarked: z.array(z.object({ threadId: z.string(), messageId: z.string(), createdAt: z.string() })).default([]),
   /** The failed threads a client has shown since they failed, or Dismiss all named, oldest first (ADR-0092). */
   failuresSeen: z.array(z.object({ threadId: z.string(), failure: z.string(), turn: z.string().optional(), since: z.number().optional() })).default([]),
+  /**
+   * The threads moving to another machine (#1178), with the sentence a send to one is refused with: the fence kept in the
+   * coordinator's own record, so it holds whatever the move's record says, even one that no longer reads.
+   */
+  moveFences: z.array(z.object({ threadId: z.string().min(1).max(512), words: z.string().min(1).max(600) }).strict()).max(10_000).optional(),
   composing: z.boolean(), outbox: z.array(z.object({
     id: z.string(), type: z.enum(['send', 'steer', 'create-project', 'create-thread', 'configure-thread', 'answer', 'interrupt', 'compact-thread']),
     provider: providerIdSchema.optional(),
@@ -362,6 +367,8 @@ function freezeSaved(value: unknown): void {
   for (const key of Object.keys(value)) freezeSaved((value as Record<string, unknown>)[key])
   Object.freeze(value)
 }
+/** What a moving thread refuses (#1178): every command that would start, steer or answer a turn there. */
+const MOVE_FENCED_COMMANDS: ReadonlySet<AgentCommand['type']> = new Set(['send', 'manual-send', 'steer', 'steer-followup', 'queue-followup', 'answer', 'compact-thread', 'start-thread-session'])
 /** How long a delegation's hidden news waits after a send that surely did not go before it is tried again (ADR-0081). */
 const DELEGATION_NEWS_RETRY_MS = 10_000
 /** How long a thread made in this run stays unsent before the unsent sweep may remove it (ADR-0155). */
@@ -759,6 +766,52 @@ export class AgentControl {
     if (!this.delegationHooks || !['create-thread', 'manual-send', 'interrupt'].includes(command.type)) throw new Error('Delegation cannot answer requests or change permissions.')
     const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard }); this.delegationOrigins.add(parsed)
     return this.admitCommandShell(parsed)
+  }
+  /**
+   * A move's own command (#1178, ADR-0105 decision 7): creating the move's new thread from its incoming ref and sending its
+   * first prompt, on the machine it moves to, and settling the source on the machine it leaves. It carries a main-owned
+   * guard, asked again as it dispatches, and is never taken for the user's own command, so it answers nothing and changes
+   * no permission.
+   */
+  commandFromMove(command: Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'settle-thread' }>, guard: () => void): Promise<AgentState> {
+    if (!['create-thread', 'manual-send', 'settle-thread'].includes(command.type)) throw new Error('A move cannot answer requests or change permissions.')
+    const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard })
+    return this.admitCommandShell(parsed)
+  }
+  /**
+   * Threads moving to another machine (#1178, ADR-0105 decision 7), with the sentence a send to one is refused with. The
+   * move's own record decides; this only refuses the user's, Watcher's and delegation's sends, wake-ups and the queue's
+   * pump for them while it holds. Read once per command and per pump, never copied.
+   */
+  private readonly moveFences = new Map<string, string>()
+  /** The record has been read at start, so a fence set or lifted from now on is saved; one set before joins what it kept. */
+  private moveFencesRead = false
+  /** Fences the thread at once, and resolves once the fence is in the coordinator's own record; rejects when that write fails. */
+  async fenceForMove(threadId: string, words: string): Promise<void> {
+    this.moveFences.set(threadId, words)
+    if (this.moveFencesRead && !this.disposed) await this.persist()
+  }
+  /** The move was given back or finished: the thread takes sends again, and its queue goes on. */
+  async liftMoveFence(threadId: string): Promise<void> {
+    if (!this.moveFences.delete(threadId)) return
+    this.pumpFollowups()
+    if (this.moveFencesRead && !this.disposed) await this.persist()
+  }
+  /** The threads fenced for a move, as the coordinator's own record keeps them. */
+  fencedForMove(): readonly string[] { return [...this.moveFences.keys()] }
+  /** The sentence a thread fenced for a move refuses sends with, or undefined while it is not fenced. */
+  moveFenceOf(threadId: string): string | undefined { return this.moveFences.get(threadId) }
+  /** The commands a moving thread refuses: everything that would start or steer a turn there. */
+  private moveFenceRefusal(command: AgentCommand, threadId: string | null | undefined): string | undefined {
+    if (!threadId || !this.moveFences.size) return undefined
+    return MOVE_FENCED_COMMANDS.has(command.type) ? this.moveFences.get(threadId) : undefined
+  }
+  /**
+   * Why a thread cannot move now for what its queue and deliveries hold: a send on its way or unconfirmed, or anything
+   * waiting in its queue, Sotto's own news included, which would otherwise go to it after it moved. Null when nothing does.
+   */
+  moveHoldReason(threadId: string): CheckoutPendingWork | null {
+    return this.pendingThreadWorkReason(threadId) ?? (this.followupStore.peek().items.some(item => item.threadId === threadId) ? 'pending-work' : null)
   }
   /**
    * Idle compaction's own command (ADR-0127): native compaction of one quiet thread, on that thread's lane. It carries a
@@ -1325,8 +1378,11 @@ export class AgentControl {
     this.persistedDrafts = this.draftSignatures(images.threadDrafts)
     this.persistedObsoleteDrafts = saved.obsoleteDrafts
     await this.attachmentPreviews.load(this.stageInline)
-    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, failuresSeen, prototypesCleared, prototypesSince, prototypesMarked, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
+    const { outbox, manualDraftId, deliveredPromptDigests, answeredRequests, finishedUnread, failuresSeen, prototypesCleared, prototypesSince, prototypesMarked, moveFences, watcher: _watcher, dormantLegacyDraft: _dormantLegacyDraft, dormantMuseConfiguration: _dormantMuseConfiguration, dormantProviderConfigurations: _dormantProviderConfigurations, ...restored } = saved
     void _watcher; void _dormantLegacyDraft; void _dormantMuseConfiguration; void _dormantProviderConfigurations
+    // Fences set before the record was read (the move's own record is read first) stand beside those it kept.
+    for (const fence of moveFences ?? []) if (!this.moveFences.has(fence.threadId)) this.moveFences.set(fence.threadId, fence.words)
+    this.moveFencesRead = true
     this.finishedUnread.restore(finishedUnread)
     this.prototypeReady.restore(prototypesCleared, prototypesSince, prototypesMarked)
     this.failuresSeen.restore(failuresSeen)
@@ -2492,6 +2548,7 @@ export class AgentControl {
       prototypesSince: this.prototypeReady.since(),
       prototypesMarked: this.prototypeReady.marked(),
       failuresSeen: this.failuresSeen.saved(),
+      ...(this.moveFences.size ? { moveFences: [...this.moveFences].map(([threadId, words]) => ({ threadId, words })) } : {}),
       deliveredPromptDigests: this.deliveredPromptDigests,
       answeredRequests: this.answeredRequests,
       threadDrafts: (this.state.threadDrafts ?? []).map(item => this.dormantThreadDrafts.get(item.threadId) ?? item), deliveries: this.savedDeliveries() }
@@ -3179,6 +3236,9 @@ export class AgentControl {
     if (this.disposed) throw new Error('Sotto is closing.')
     if (this.dependencies.babysittingRetired === true && isPullRequestNews(news)) throw new Error(BABYSITTING_RETIRED)
     if (isWatcherNews(news) && (news.watcher.threadId !== threadId || !this.canDeliverWatcherNews(news.watcher))) throw new Error('Watcher is unavailable.')
+    // A moving thread takes no wake-up (#1178): the news stays untold, as for a settled thread.
+    const fence = this.moveFences.get(threadId)
+    if (fence !== undefined) throw new Error(fence)
     const available = (): AgentThread => {
       const thread = this.state.host.threads.find(item => item.id === threadId)
       if (!thread) throw new Error('This thread is not on this host.')
@@ -3896,7 +3956,8 @@ export class AgentControl {
   }
   commandShell(command: AgentCommand, client: ClientIdentity = this.localClient, answerDecisionId?: string): Promise<AgentState> {
     // Admission refuses a dormant owner before the atomic wrapper can alter any delivery ledger.
-    if (command.type !== 'send' || !command.draft?.draftId || this.disposed || !this.threadAvailable(command.draft.threadId)) return this.admitCommandShell(command, client, answerDecisionId)
+    if (command.type !== 'send' || !command.draft?.draftId || this.disposed || !this.threadAvailable(command.draft.threadId)
+      || this.moveFences.has(command.draft.threadId)) return this.admitCommandShell(command, client, answerDecisionId)
     const packet = structuredClone(command)
     const watcherOrigin = this.watcherOrigins.get(command)
     if (watcherOrigin) this.watcherOrigins.set(packet, watcherOrigin)
@@ -3954,6 +4015,8 @@ export class AgentControl {
     const implicitThreadId = ['send', 'compose', 'cancel-draft'].includes(command.type)
       ? client.transport === 'socket' ? client.selectedThreadId : this.state.draftThreadId ?? this.state.activeThreadId : undefined
     if (!this.threadAvailable(explicitThreadId ?? implicitThreadId)) return Promise.resolve({ ...this.reply(), error: this.dormantRefusal(explicitThreadId ?? implicitThreadId) })
+    const fenced = this.moveFenceRefusal(command, explicitThreadId ?? implicitThreadId)
+    if (fenced) return Promise.resolve({ ...this.reply(), error: fenced })
     const privateDraftReply = client.transport === 'socket' && (command.type === 'save-thread-draft' || command.type === 'compose' && command.threadId !== undefined)
     // A handle is the window's claim; the store is what it is checked against, before the command does anything.
     // A draft save is the exception: it keeps the text and drops what is gone (saveThreadDraft), so typing is never lost.
@@ -4409,7 +4472,7 @@ export class AgentControl {
       if (setAsideUpdatesHeld(delivery)) recoveringThreads.add(delivery.threadId)
     }
     for (const threadId of new Set(items.map(item => item.threadId))) {
-      if (!this.threadAvailable(threadId)) continue
+      if (!this.threadAvailable(threadId) || this.moveFences.has(threadId)) continue
       // A queued follow-up waits on a prompt of its own thread, as before, not on the thread's other work.
       if (this.pumping.has(threadId) || this.threadPrompts.has(threadId)) continue
       const thread = this.state.host.threads.find(t => t.id === threadId)
@@ -5536,6 +5599,9 @@ export class AgentControl {
         ? resolveModel(this.state.host.models, command.modelId)?.providerId : command.type === 'answer'
           ? requestDraftProvider(this.state.host, this.thread(command.threadId), this.state.configuration.provider) : this.thread(command.threadId).providerId
     if (threadId && command.type !== 'create-thread' && !(command.type === 'configure-thread' && this.thread(threadId).nativeSessionStarted === false)) this.canAct(threadId, draftKept)
+    // A prompt or an answer admitted before its thread was fenced for a move goes no further once it is (#1178): refused
+    // here, at dispatch, before any outbox entry exists, with its draft kept.
+    if (threadId && draftKept) { const fence = this.moveFences.get(threadId); if (fence !== undefined) throw new Error(fence) }
     const toThread = prompt ?? (command.type === 'answer' ? command : null)
     if (toThread) {
       const thread = this.thread(toThread.threadId); const capabilities = capabilitiesForThread(this.state.host, thread)

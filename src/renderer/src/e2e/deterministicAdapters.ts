@@ -1,6 +1,7 @@
 import type { SottoBridge } from '../../../shared/contracts'
 import { STORED_CREDENTIAL_PLACEHOLDER, type AppSettings } from '../../../shared/settings'
 import { E2E_TRANSCRIPT, type E2EScenario } from '../../../shared/e2e'
+import { rankCloudSpeechModels } from '../../../shared/cloudSpeechModels'
 import type { AudioRecorderOptions, AudioRecordingResult } from '../audio/audioRecorder'
 import { TranscriptionError } from '../transcription/localTranscriber'
 import { BrowserMicrophoneTest, type MicrophoneTestController } from '../features/onboarding/microphoneTest'
@@ -89,6 +90,17 @@ const E2E_OPENROUTER_MODELS = [
   { id: 'inception/mercury-2', name: 'Inception: Mercury 2' },
 ]
 
+/** A fixed speech model list, ranked as Sotto ranks OpenRouter's, so the cloud dictation list draws the same rows (ADR-0160). */
+const E2E_CLOUD_SPEECH_MODELS = rankCloudSpeechModels([
+  { id: 'microsoft/mai-transcribe-2', name: 'Microsoft: MAI-Transcribe-2', promptPrice: 0.1, zdr: true },
+  { id: 'elevenlabs/scribe-v2', name: 'ElevenLabs: Scribe v2', promptPrice: 0.0000611111, zdr: true },
+  { id: 'mistralai/voxtral-mini-transcribe-3-0', name: 'Mistral: Voxtral Mini Transcribe 3', promptPrice: 0.0000583333, zdr: true },
+  { id: 'openai/gpt-transcribe', name: 'OpenAI: GPT Transcribe', promptPrice: 0.000075, zdr: false },
+  { id: 'nvidia/parakeet-tdt-0.6b-v3', name: 'NVIDIA: Parakeet TDT 0.6B v3', promptPrice: 0.000025, zdr: true },
+  { id: 'deepgram/nova-3', name: 'Deepgram: Nova-3', promptPrice: 0.0000716667, zdr: true },
+  { id: 'qwen/qwen3-asr-1.7b', name: 'Qwen: Qwen3-ASR 1.7B', promptPrice: 0.0000075, zdr: true },
+])
+
 /** A display-only saved-key fixture; never enters settings storage or an upload. */
 export function createE2ESettingsBridge(bridge: SottoBridge, enabled: boolean): SottoBridge {
   if (!enabled) return bridge
@@ -107,5 +119,6 @@ export function createE2ESettingsBridge(bridge: SottoBridge, enabled: boolean): 
     onSettingsChanged: (listener) => bridge.onSettingsChanged((settings) => listener(configured(settings))),
     checkOpenRouterKey: async () => ({ ok: true }),
     listOpenRouterModels: async () => ({ ok: true, complete: true, models: E2E_OPENROUTER_MODELS }),
+    listCloudSpeechModels: async () => ({ ok: true, models: E2E_CLOUD_SPEECH_MODELS }),
   }
 }

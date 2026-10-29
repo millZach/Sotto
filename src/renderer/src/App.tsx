@@ -4,7 +4,7 @@ import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 
 import { speechModelSummary } from './components/SpeechModelStatus'
-import { PARAKEET_V3, sottoSpeechModel, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
+import { PARAKEET_V3, sottoSpeechModel, speechModelHere, type SpeechModelOption, type SpeechModelStatus } from '../../shared/speechModel'
 import type { AppSettings } from '../../shared/settings'
 import { AppShell, layoutFor } from './components/AppShell'
 import { usePageShortcuts } from './components/pageShortcuts'
@@ -40,6 +40,7 @@ import type { RecoveryNotice } from '../../shared/recoveryNotice'
 import type { SottoPlatform } from '../../shared/platform'
 import type { SystemSettingsPane } from '../../shared/systemSettings'
 import { AgentProvider } from './agents/AgentContext'
+import { MoveThreadsSheetHost } from './watcher/MoveThreads'
 import { ClientUpdateCard } from './agents/ClientUpdateCard'
 import { UpdateAllCard } from './features/updates/UpdateAllCard'
 import { PageSidebar } from './agents/PageSidebar'
@@ -124,10 +125,12 @@ function chosenSpeechModelName(models: readonly SpeechModelOption[] | null, choi
   return sottoSpeechModel(choice)?.name ?? i18n._(msg`The speech model`)
 }
 
-function FooterStatus({ navigation, dictationOn, speechModel, speechModelName }: {
+function FooterStatus({ navigation, dictationOn, cloudTranscription, speechModel, speechModelName }: {
   readonly navigation: Exclude<AppNavigation, 'onboarding'>
   /** With dictation off (ADR-0107) the speech model is not loaded, so the status says nothing about it. */
   readonly dictationOn: boolean
+  /** Nor while OpenRouter transcribes (ADR-0160): the model here is unloaded on purpose. */
+  readonly cloudTranscription: boolean
   readonly speechModel: SpeechModelStatus | null
   readonly speechModelName: string
 }): ReactNode {
@@ -137,7 +140,7 @@ function FooterStatus({ navigation, dictationOn, speechModel, speechModelName }:
     case 'memory': return t`Your preferences, with their history.`
     case 'settings': return t`Changes save as you make them.`
     case 'help': return t`Shortcuts, privacy, and troubleshooting.`
-    default: return dictationOn ? speechModelSummary(speechModel, speechModelName) : null
+    default: return dictationOn && !cloudTranscription ? speechModelSummary(speechModel, speechModelName) : null
   }
 }
 
@@ -157,7 +160,12 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   }, [app.actions])
   // The models on this computer can change while Sotto runs (another app downloads or deletes one),
   // so the list is read again whenever a page that offers them opens. Settings offers none while dictation is off.
+  // While OpenRouter transcribes (ADR-0160) the speech model here is unloaded on purpose: Dictate and the footer say
+  // nothing about it, and Dictate reads the list only to know whether Transcribe on this computer can be offered.
+  const cloudTranscription = useOwlFeature('cloud-dictation') && app.settings?.cloudTranscription === true
+  const localModelHere = app.speechModels !== null && speechModelHere(app.speechModels, app.speechModelChoice)
   const offersSpeechModels = !app.settings?.onboardingComplete || app.navigation === 'onboarding' || (app.navigation === 'settings' && dictationOn)
+    || (app.navigation === 'home' && cloudTranscription)
   useEffect(() => {
     if (offersSpeechModels) void app.actions.refreshSpeechModels()
   }, [offersSpeechModels, app.actions])
@@ -433,7 +441,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
     const layout = layoutFor(navigation, threadsPage)
     // A capture run holds the sidebar's clocks still.
     const captureNow = window.sottoE2E?.scenario === 'design-threads' ? E2E_THREADS_NOW : undefined
-    const statusText = <FooterStatus navigation={navigation} dictationOn={dictationOn} speechModel={app.speechModel} speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)} />
+    const statusText = <FooterStatus navigation={navigation} dictationOn={dictationOn} cloudTranscription={cloudTranscription} speechModel={app.speechModel} speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)} />
     // An end-to-end run counts the Journal's days from the instant its dictations are stamped near.
     const journalNow = window.sottoE2E === undefined ? undefined : E2E_THREADS_NOW
     const threadWorkspace = (
@@ -473,6 +481,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           onClearHistory={app.actions.clearHistory}
           onCheckOpenRouterKey={app.actions.checkOpenRouterKey}
           onListOpenRouterModels={app.actions.listOpenRouterModels}
+          onListCloudSpeechModels={app.actions.listCloudSpeechModels}
           speechModel={app.speechModel}
           onDownloadSpeechModel={downloadSpeechModel}
           speechModels={app.speechModels}
@@ -492,7 +501,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
       default:
         view = threadsPage ? threadWorkspace : <DictateRoom
           settings={app.settings}
-          speechModel={app.speechModel}
+          speechModel={cloudTranscription ? null : app.speechModel}
           speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)}
           platform={app.platform}
           dictation={app.dictation}
@@ -504,6 +513,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           onStart={app.actions.start}
           onStop={app.actions.stop}
           onRetry={app.actions.retry}
+          {...(cloudTranscription && localModelHere ? { onTranscribeHere: app.actions.retryOnThisComputer } : {})}
           onDismiss={app.actions.dismiss}
           onOpenSettings={section => app.actions.navigate('settings', section)}
           onCopy={app.actions.copyHistory}
@@ -549,6 +559,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
             onCancel={updateFlow.cancelInstall}
           />
         ) : null}
+        {/* Move threads' sheet (#1178), opened from Watcher's header or a thread's More menu: Owl, with Watcher on. */}
+        {watcherEnabled ? <MoveThreadsSheetHost /> : null}
         {threadsTour && threadsPage ? <ThreadsTour shortcut={app.settings.hotkey} platform={app.platform} onDone={() => setThreadsTour(false)} /> : null}
         <ThemeEditorHost
           settings={app.settings}

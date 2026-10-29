@@ -1395,3 +1395,16 @@ it('lifts a watch an unconfirmed Watcher send paused once the user sets it aside
   expect(f.control.watcherRecord().operations.find(item => item.id === operationId)!.deliveryState).toBe('uncertain')
   expect(f.control.shell().deliveries?.find(item => item.draftId === draftId)).toMatchObject({ status: 'uncertain', setAside: true })
 })
+
+it('carries a watch to the thread that continues a moved one in one record write, and a replay changes nothing (#1178)', async () => {
+  const f = await fixture(), from = await f.create(), to = await f.create()
+  expect(await f.service.watchThread({ target: from })).toMatchObject({ status: 'ok' })
+  const writes = vi.spyOn(f.control, 'updateWatcher')
+  expect(await f.service.moveWatch(from, to)).toBe(true)
+  expect(writes).toHaveBeenCalledTimes(1)
+  expect(f.service.state().standingWatches?.map(watch => watch.target)).toEqual([to])
+  // A crash or a lost save after it moved: asked again, it is done, and nothing is written.
+  expect(await f.service.moveWatch(from, to)).toBe(true)
+  expect(writes).toHaveBeenCalledTimes(1)
+  expect(f.service.hasStandingWatch(to)).toBe(true); expect(f.service.hasStandingWatch(from)).toBe(false)
+})

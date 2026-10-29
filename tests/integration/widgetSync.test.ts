@@ -61,6 +61,7 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     onSpeechModelStatus: vi.fn(() => () => undefined),
     checkOpenRouterKey: vi.fn(async () => ({ ok: false as const, reason: 'unconfigured' as const })),
     listOpenRouterModels: vi.fn(async () => ({ ok: false as const, reason: 'network' as const })),
+    listCloudSpeechModels: vi.fn(async () => ({ ok: false as const, reason: 'network' as const })),
     ensureMicrophoneAccess: vi.fn(async () => true),
     getUpdateStatus: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),
     checkForUpdates: vi.fn(async () => ({ ok: false as const, reason: 'unavailable' as const })),

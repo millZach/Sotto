@@ -17,6 +17,8 @@ import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent }
 import { registerDelegationIpc } from './agents/delegationIpc'
 import { registerCheckQueueIpc } from './agents/checkQueueIpc'
 import { registerContinueIpc } from './agents/continueThreadIpc'
+import { moveTargetsOf } from './agents/threadMoves'
+import { registerThreadMoveIpc } from './agents/threadMovesIpc'
 import { registerNextPromptIpc, windowNextPrompt } from './agents/nextPromptIpc'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
 import { desktopWindowClient } from './agents/hostService'
@@ -136,6 +138,9 @@ import { createOsascriptPasteAdapter, type OsascriptPasteEvent } from './output/
 import { createSystemSettingsOpener } from './app/systemSettings'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { LocalTranscriptionService } from './asr/localTranscriptionService'
+import { CloudTranscriptionService } from './asr/cloudTranscriptionService'
+import { OpenRouterSpeechModels } from './llm/openRouterSpeechModels'
+import { defaultCloudSpeechModel } from '../shared/cloudSpeechModels'
 import { createParakeetEngineLoader } from './asr/parakeetEngine'
 import { SpeechModelStore } from './asr/speechModelStore'
 import { SpeechModelManager } from './asr/speechModelManager'
@@ -144,7 +149,7 @@ import { coreMlHelperAvailable, createCoreMlEngineLoader } from './asr/coreMlEng
 import { findFluidAudioModels, fluidAudioModelsRoot } from './asr/fluidAudioModels'
 import { checkOpenRouterKey } from './llm/openRouterKeyCheck'
 import { listOpenRouterModels } from './llm/openRouterModels'
-import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
+import { PARAKEET_V3, SOTTO_SPEECH_MODELS, sottoSpeechModel, sottoSpeechModelOption, speechModelHere, type SpeechModelOption, type SpeechModelStatus } from '../shared/speechModel'
 import { createElectronUpdaterAdapter } from './updates/electronUpdaterAdapter'
 import { newVersionListener, UpdateService, waitingVersion } from './updates/updateService'
 import { e2eUpdater } from './updates/e2eUpdater'
@@ -203,14 +208,14 @@ import { hostReleaseVersion, updateHostReleaseVersion } from './hosts/hostReleas
 import { WATCHER_CHANGED, WATCHER_MACHINES_RENDERER_ARGUMENT, WATCHER_RENDERER_ARGUMENT } from '../shared/watcherRoom'
 import { runningVersion, owlFeaturesForRun } from './runningVersion'
 import { heldProvidersOf, releasesHeldProvider } from '../shared/heldProviders'
-import type { DictationCommand } from '../shared/contracts'
+import type { DictationCommand, TranscriptionRequest, TranscriptionResult } from '../shared/contracts'
 import type { WidgetSnapshot } from '../shared/dictation'
 import { widgetPresentationFor } from '../shared/themeBranding'
 import { dockPainter, readDockCoverage } from './dock/dockIcon'
 import { resolvePlatform } from '../shared/platform'
 import { configurePasswordStore } from './app/passwordStore'
 import linuxTrayIconPath from '../../build/icon.png?asset'
-import { defaultSettings, dictationOn, type AppSettings } from '../shared/settings'
+import { cloudTranscriptionOn, defaultSettings, dictationOn, type AppSettings } from '../shared/settings'
 import { blockSpellcheckDictionaryDownloads, disableDnsPrefetching, enableWasmThreadSupport } from './security'
 import {
   createE2EClipboard,
@@ -742,6 +747,7 @@ async function createRuntime(): Promise<NativeRuntimeController> {
   const heldProviders = heldProvidersOf(owlFeatures)
   const usageEnabled = owlFeatures.usage
 const cleanupModelEnabled = owlFeatures['cleanup-model']
+const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const delegationEnabled = owlFeatures['thread-delegation']
   const workerRolesEnabled = owlFeatures['worker-roles']
   // The interface language (ADR-0123) also waits on its catalogs (#1684): until they are drafted Owl is English, as stable is.
@@ -1098,6 +1104,9 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
   app.on('browser-window-blur', windowFocusChanged)
   windowFocusChanged()
   localRuntime.watcher?.useRemoteHosts(hostRouter.watcherHosts())
+  // Moving threads to a paired host (#1178) reaches the machines through Watcher's view of them, and its placement.
+  const threadMoves = 'threadMoves' in localRuntime ? localRuntime.threadMoves : undefined
+  if (threadMoves && localRuntime.watcher) threadMoves.useTargets(moveTargetsOf(hostRouter.watcherHosts(), localRuntime.watcher, listener => hostRouter.subscribeChanges(listener)))
   // The desktop relay (#1316): each host whose threads delegate to This computer through this desktop is heard from here.
   const delegationRelay = 'delegationRelay' in localRuntime ? localRuntime.delegationRelay : undefined
   delegationRelay?.useHosts(hostRouter)
@@ -1547,18 +1556,84 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       SOTTO_SPEECH_MODELS.map((model) => sottoSpeechModelOption(model, model.id === PARAKEET_V3.id)),
     ),
     choose: async (id: string): Promise<boolean> => {
-      // Off, choosing would load the model; Settings hides the picker then (ADR-0107).
-      if (!dictationActive) return false
+      // Off, or while OpenRouter transcribes, choosing would load the model; Settings hides the picker then (ADR-0107, ADR-0160).
+      if (!dictationActive || cloudChosen) return false
       if (speechModelManager !== null) return speechModelManager.choose(id)
       if (sottoSpeechModel(id) === undefined) return false
       await saveSpeechModelChoice(id)
       return true
     },
   }
-  const transcription = new LocalTranscriptionService({
+  const localTranscription = new LocalTranscriptionService({
     engine: () => speechModelManager?.currentEngine() ?? null,
     onFailure: transcriptionDiagnostics,
   })
+  // Transcribe with OpenRouter (ADR-0160, Owl): an OpenRouter speech model transcribes every segment, with the key AI
+  // cleanup uses, and the speech model here is unloaded. The list of models is public and read without the key. E2E runs
+  // reach no network: the renderer draws a fixed list and transcribes with its fake. Failures record the model and why in
+  // the same diagnostics, never the audio.
+  let cloudChosen = cloudTranscriptionOn(startupSettings, cloudDictationEnabled)
+  const speechModelsReader = cloudDictationEnabled
+    ? new OpenRouterSpeechModels(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) })
+    : null
+  const cloudTranscription = speechModelsReader === null ? null : new CloudTranscriptionService({
+    getSettings: () => settings.forFormatting(),
+    models: {
+      defaultModel: async () => {
+        const list = await speechModelsReader.list()
+        return list.ok ? defaultCloudSpeechModel(list.models) : null
+      },
+      zeroRetention: async (id) => {
+        await speechModelsReader.list()
+        return speechModelsReader.zeroRetention(id)
+      },
+    },
+    onFailure: transcriptionDiagnostics,
+    onRecovered: transcriptionDiagnostics,
+    ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+  })
+  // Every segment the speech model here is transcribing is counted, so OpenRouter taking over lets the model go only once
+  // none is left, even mid-dictation. Transcribe on this computer, for a kept recording OpenRouter turned away, loads the
+  // chosen model only if it is already here (a press must never start a 670 MB download), once for all its segments,
+  // since a second load would cancel the first; the model goes again when they are done.
+  let localInFlight = 0
+  let localLoading: Promise<void> | null = null
+  const releaseLocalIfIdle = (): void => {
+    if (cloudChosen && dictationActive && localInFlight === 0) void speechModelManager?.unload()
+  }
+  // The one way the model here is loaded while OpenRouter has, or had, it put away: a load already under way is shared
+  // and a ready model is kept, since a second start cancels the first and a restart would orphan the running helper.
+  const loadLocal = (): Promise<void> => {
+    if (speechModelManager === null || speechModelManager.currentEngine() !== null) return Promise.resolve()
+    localLoading ??= speechModelManager.start().finally(() => { localLoading = null })
+    return localLoading
+  }
+  const transcribeHere = async (request: TranscriptionRequest, load: boolean): Promise<TranscriptionResult> => {
+    localInFlight += 1
+    try {
+      if (load) await loadLocal()
+      return await localTranscription.transcribe(request)
+    } finally {
+      localInFlight -= 1
+      releaseLocalIfIdle()
+    }
+  }
+  const transcription = {
+    transcribe: async (request: TranscriptionRequest): Promise<TranscriptionResult> => {
+      if (!cloudChosen || cloudTranscription === null) return transcribeHere(request, false)
+      if (request.route !== 'local') return cloudTranscription.transcribe(request)
+      if (!speechModelHere(await speechModel.list(), workingCopySettings.speechModel)) return { ok: false, reason: 'model-not-ready' }
+      return transcribeHere(request, true)
+    },
+    cancel: (requestId: string): void => {
+      localTranscription.cancel(requestId)
+      cloudTranscription?.cancel(requestId)
+    },
+    dispose: (): void => {
+      localTranscription.dispose()
+      cloudTranscription?.dispose()
+    },
+  }
 
   // GitHub Releases is a real feed only for the packaged Windows app and the
   // packaged Mac Owl: stable's macOS disk image ships no update metadata, and a
@@ -1819,6 +1894,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       agentHistoryEnabled = settings.historyEnabled
       const dictationNow = dictationOn(settings, owlFeatures['dictation-off'])
       if (dictationNow !== dictationActive) applyDictation(dictationNow)
+      const cloudNow = cloudTranscriptionOn(settings, cloudDictationEnabled)
+      if (cloudNow !== cloudChosen) applyCloudTranscription(cloudNow)
       await cleanSettingsHistory(agentControl, async () => {
         showWidgetWhenIdle = settings.showWidgetWhenIdle
         widgetPresentation = widgetPresentationFor(settings, glassThemeEnabled)
@@ -1871,7 +1948,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     const stopAlerts = hostRouter.subscribe(state => alerts.track(state))
     app.on('will-quit', () => { stopAlerts(); alerts.dispose(); desktopNotifier.dispose() })
   }
-  if (dictationActive) void speechModelManager?.start()
+  if (dictationActive && !cloudChosen) void speechModelManager?.start()
   const trayController = new TrayController(trayAdapter, {
     ...(!app.isPackaged ? { showTurnRecords } : {}),
     toggleDictation,
@@ -1962,12 +2039,22 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
     trayController.update(currentTrayState)
     unloadWhenDone = false
     if (on) {
-      void speechModelManager?.start()
+      if (!cloudChosen) void speechModelManager?.start()
     } else {
       windows.hideWidget()
       if (widgetState.status === 'processing') unloadWhenDone = true
       else void speechModelManager?.unload()
     }
+  }
+
+  // OpenRouter takes over transcribing, or gives it back (ADR-0160). On, the speech model here is let go once no segment
+  // is being transcribed with it; off, it loads again. With dictation off nothing loads either way. OpenRouter's list is
+  // read only when Settings opens it or a dictation needs it, never here.
+  const applyCloudTranscription = (on: boolean): void => {
+    cloudChosen = on
+    if (!dictationActive) return
+    if (on) releaseLocalIfIdle()
+    else void loadLocal()
   }
 
   const permissionAdapter = createPermissionAdapter()
@@ -2064,6 +2151,10 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const cleanupCheckQueues = registerCheckQueueIpc(ipcMain, watcherEnabled && crossMachineEnabled, 'checks' in localRuntime ? localRuntime.checks : undefined,
         () => windows.getTrustedRenderers(), () => agentControl.hostId(), (channel, payload) => { windows.sendToMain(channel, payload) }, hostRouter)
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
+      // Move threads (#1178): only where Watcher and Work across machines are both on and main built the service, so stable
+      // registers nothing.
+      const cleanupThreadMoves = registerThreadMoveIpc(ipcMain, watcherEnabled && crossMachineEnabled ? threadMoves : undefined, () => windows.getTrustedRenderers(),
+        (channel, payload) => { windows.sendToMain(channel, payload) })
       const cleanupNextPrompts = registerNextPromptIpc(ipcMain, localRuntime.nextPrompts, () => agentControl.hostId(), () => windows.getTrustedRenderers())
       const cleanupNotifications = registerNotificationIpc(ipcMain, desktopNotifier, () => windows.getTrustedRenderers())
       // A recording profiles the main window that asked, through its own debugger (ADR-0098).
@@ -2278,6 +2369,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
           ...(cleanupModelEnabled ? {
             models: () => listOpenRouterModels(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
           } : {}),
+          ...(speechModelsReader === null ? {} : { speechModels: () => speechModelsReader.list(true) }),
         },
         updates: {
           status: () => updates.status(),
@@ -2314,6 +2406,7 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
         cleanupDelegations()
         cleanupCheckQueues()
         cleanupContinue()
+        cleanupThreadMoves()
         cleanupNextPrompts()
         cleanupMainActivity()
         cleanupGlassWindow()

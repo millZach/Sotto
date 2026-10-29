@@ -49,6 +49,22 @@ msgstr ""
 msgid "{0, plural, one {# working} other {# working}}"
 msgstr ""
 
+#. placeholder {0}: model.name
+#. placeholder {1}: model.maker
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "{0} by {1}"
+msgstr ""
+
+#. placeholder {0}: (model.medianMs / 1_000).toFixed(1)
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "{0} s"
+msgstr ""
+
+#. placeholder {0}: (model.wer * 100).toFixed(1)
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "{0}% words wrong"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "{added, plural, other {# themes added: {names}}}"
 msgstr ""
@@ -828,6 +844,11 @@ msgstr ""
 msgid "About {price} a minute; your first $15 each month is free."
 msgstr ""
 
+#. placeholder {0}: model.usdPerHour < 0.05 ? model.usdPerHour.toFixed(3) : model.usdPerHour.toFixed(2)
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "About ${0} per hour of audio, paid with your OpenRouter key."
+msgstr ""
+
 #. A family of theme colors in the theme editor
 #. A theme color: the accent
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
@@ -840,6 +861,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Accounts & connections"
+msgstr ""
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Accuracy"
 msgstr ""
 
 #. A family of theme colors in the theme editor
@@ -1186,6 +1211,10 @@ msgstr ""
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
 msgid "Band"
 msgstr "شريط"
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Best first, by words wrong and seconds to the text on Sotto’s test clips. Hover a model for its price and whether its host keeps audio."
+msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Best rated"
@@ -2818,6 +2847,15 @@ msgstr ""
 msgid "Its messages and activity leave Sotto and can’t be brought back."
 msgstr ""
 
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Its price is on openrouter.ai."
+msgstr ""
+
+#. placeholder {0}: (model.medianMs / 1_000).toFixed(1)
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Its text came back in {0} s on Sotto’s test clips."
+msgstr ""
+
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 msgid "Its turn has ended and nothing it started is still going."
 msgstr ""
@@ -3134,6 +3172,7 @@ msgstr ""
 #. A worker role field: the model it runs on
 #. The AI model an agent runs on.
 #. The AI model an agent runs on.
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 #: src/renderer/src/features/settings/HostSetupView.tsx
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
@@ -3363,6 +3402,10 @@ msgstr ""
 msgid "not a theme file"
 msgstr ""
 
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Not a zero-retention model: its host may keep your audio under its own terms."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Not approved in Tailscale"
 msgstr ""
@@ -3425,6 +3468,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Not started"
+msgstr ""
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Not tested yet"
 msgstr ""
 
 #. A setup step still to come.
@@ -3660,6 +3707,23 @@ msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "OpenRouter key"
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "OpenRouter key for transcription"
+msgstr ""
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "OpenRouter no longer lists {choice}. Dictation will fail until you pick another."
+msgstr ""
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "OpenRouter speech model"
+msgstr ""
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "OpenRouter’s speech models could not be read. Nothing was changed."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -4038,6 +4102,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "Reaching {name}…"
+msgstr ""
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Reading OpenRouter’s speech models…"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
@@ -4448,6 +4516,14 @@ msgstr ""
 msgid "Sends the text, never audio, to OpenRouter to tidy it up. Offline, you get the raw transcript."
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Sends your audio to the model you pick. Off, dictation is transcribed on this computer."
+msgstr ""
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Sent only to a host that keeps no audio."
+msgstr ""
+
 #: src/renderer/src/features/settings/NotificationSettings.tsx
 msgid "Sent. If you did not see it, allow Sotto in System Settings → Notifications."
 msgstr ""
@@ -4572,6 +4648,11 @@ msgstr ""
 msgid "Show a pairing code"
 msgstr ""
 
+#. placeholder {0}: models.length
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Show all {0} models"
+msgstr ""
+
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Show floating widget when idle"
@@ -4621,6 +4702,10 @@ msgstr ""
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/themes/CreatureChoice.tsx
 msgid "Show the creature"
+msgstr ""
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Show the top five"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviders.tsx
@@ -4838,6 +4923,10 @@ msgstr ""
 msgid "Sotto hands the code to {name} on {hostName} and keeps nothing."
 msgstr ""
 
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Sotto has not tested it yet."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Sotto heard you. The microphone is closed."
 msgstr ""
@@ -4962,6 +5051,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Speech recognition by {maker}, on this computer. {languages}."
+msgstr ""
+
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+msgid "Speed"
 msgstr ""
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
@@ -5993,6 +6086,15 @@ msgstr ""
 msgid "Tools & branch bar"
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Transcribe with OpenRouter"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Transcribing with OpenRouter needs a key. It is the same key AI cleanup uses, kept in your system’s credential store. Until one is saved, dictation says so and records nothing."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Transcript history cleared."
 msgstr ""
@@ -6021,6 +6123,7 @@ msgstr ""
 msgid "Trust this SSH host?"
 msgstr ""
 
+#: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 #: src/renderer/src/features/settings/HostBootStart.tsx
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 #: src/renderer/src/features/settings/HostDialog.tsx
@@ -6298,6 +6401,10 @@ msgstr ""
 msgid "Use the Git setting (On)"
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Used for AI cleanup and for transcribing with OpenRouter, and kept in your system’s credential store."
+msgstr ""
+
 #. {month} is the name of a month, such as October.
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Used in {month}"
@@ -6329,6 +6436,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Username <0>(optional)</0>"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Uses the OpenRouter key saved for AI cleanup. Change it in Settings → Cleanup."
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
