@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom'
 import { pixelPath } from './claudeBotSprite'
 import { EMPTY_PATH, glassFrame, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, sandPath, TOP_ROWS } from './hourglass'
 import { LARDO_FACING_LEFT, LARDO_LETTERS, LARDO_MINI_ROWS, LARDO_SPARKLES, LARDO_STEAM, lardoPaths, type LardoFrame, type LardoLetter } from './lardoSprite'
-import { usePixelLoop, walkFrame, type PixelFrame } from './pixelLoop'
+import { miniFrame, motionHeld, usePixelLoop, walkFrame, watchMotion, type PixelFrame } from './pixelLoop'
 import './lardo.css'
 
 export type LardoPose = 'monitoring' | 'working' | 'held' | 'babysitting'
@@ -69,14 +69,7 @@ function cueStep(cue: Cue, elapsed: number): CueStep {
 /** The tantrum's beats: the piece comes away at RIP_AT, leaves his hands at HURL_AT and hits the screen at SHATTER_AT. */
 const RIP_AT = 220, HURL_AT = 620, SHATTER_AT = 1000, REFORM_AT = 1250, REFORM_FOR = 900
 
-/** The same test the frame loop makes: the system's preference, Sotto's own setting, or a window that cannot say. */
-function motionHeld(): boolean {
-  const preference = window.matchMedia?.('(prefers-reduced-motion: reduce)')
-  return preference === undefined || preference.matches || document.documentElement.dataset.reducedMotion === 'on'
-}
-
 const MINI_PATHS = LARDO_MINI_ROWS.map(rows => Object.fromEntries((['k', 's', 't'] as const).map(ch => [ch, pixelPath(rows, ch)])) as Record<'k' | 's' | 't', string>)
-const MINI_WIDTH = 24
 /** As many small Lardos as the other creatures send out, at most; the readout carries the real count. */
 const MAX_WORKING_MINIS = 6
 /** The hourglass stands on the floor at his right, clear of his elbows, in the units the other creatures hold it in. */
@@ -123,12 +116,7 @@ export function Lardo({ pose, agents = 1, playful = true }: { readonly pose: Lar
   // Reduced motion turned on mid-cue, the system's or Sotto's own: whatever was thrown goes, and he holds the cue's pose.
   useEffect(() => {
     if (!cue || cue.still) return
-    const preference = window.matchMedia?.('(prefers-reduced-motion: reduce)')
-    const hold = (): void => { if (motionHeld() && cueRef.current) begin({ kind: cue.kind, still: true }) }
-    const motion = new MutationObserver(hold)
-    motion.observe(document.documentElement, { attributes: true, attributeFilter: ['data-reduced-motion'] })
-    preference?.addEventListener('change', hold)
-    return () => { motion.disconnect(); preference?.removeEventListener('change', hold) }
+    return watchMotion(() => { if (motionHeld() && cueRef.current) begin({ kind: cue.kind, still: true }) })
   }, [cue, begin])
 
   // A turn that finished while he was up: each finish once, and only a fresh one, so a pose that comes later never flexes.
@@ -165,13 +153,10 @@ export function Lardo({ pose, agents = 1, playful = true }: { readonly pose: Lar
       x = reach
       frame = !still && Math.floor(time * 2) % 2 === 1 ? 'frontDoubleBicepsPump' : 'frontDoubleBiceps'
       // The small Lardos keep the other creatures' schedule: out from behind him, off the track's clipped left edge.
-      const start = Math.max(0, width - 96), span = start + MINI_WIDTH
-      const stride = Math.min(MINI_WIDTH + 12, Math.max(0, start - 12) / Math.max(1, count))
       minis.current.forEach((mini, index) => {
         if (!mini) return
-        const at = still ? Math.max(0, start - 12 - index * stride) : start - span * ((time * 0.09 + index * 0.17) % 1)
-        const stepping = !still && Math.floor(time * 6 + index) % 2 === 1
-        mini.style.transform = `translate(${Math.round(at / 2) * 2}px, ${stepping ? -1 : 0}px)`
+        const { transform, stepping } = miniFrame(time, still, width, index, count)
+        mini.style.transform = transform
         miniPaths.current[index]?.querySelectorAll('path').forEach(path => {
           const letter = path.dataset.letter as 'k' | 's' | 't'
           path.setAttribute('d', MINI_PATHS[stepping ? 1 : 0]![letter])

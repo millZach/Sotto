@@ -13,7 +13,7 @@ import { ClaudeBotMonitoring } from './ClaudeBotMonitoring'
 import { ClaudeBotWorking } from './ClaudeBotWorking'
 import { Lardo } from './Lardo'
 import { EMPTY_PATH, glassFrame, HOURGLASS_OUTLINE, HOURGLASS_VESSEL, sandPath, TOP_ROWS } from './hourglass'
-import { usePixelLoop, walkFrame } from './pixelLoop'
+import { miniFrame, usePixelLoop, walkFrame } from './pixelLoop'
 import { shownCount } from '../state/interfaceNumbers'
 import './threadMonitor.css'
 
@@ -137,7 +137,6 @@ function BabysittingCreature(): ReactNode {
 /** A small agent: the creature's silhouette at a third of the size, on a 12 × 10 grid. */
 const MINI = 'M3 2h2v2H3z M7 1h2v3H7z M2 4h8v5H2z M1 6h10v2H1z M3 9h2v1H3z M7 9h2v1H7z'
 const MINI_EYES = 'M4 5h1v1H4z M7 5h1v1H7z'
-const MINI_WIDTH = 24
 /** No more small agents than the track can show without crowding it; the readout carries the real count. */
 const MAX_WORKING_MINIS = 6
 
@@ -156,15 +155,8 @@ function WorkingCreature({ agents }: { readonly agents: number }): ReactNode {
   usePixelLoop(actor, ({ time, still, width }) => {
     const reach = Math.max(0, width - 80)
     if (actor.current) actor.current.style.transform = `translateX(${Math.round(reach / 2) * 2}px)`
-    // A mini leaves from under the raised arm and walks until it is past the track's clipped left edge.
-    const start = Math.max(0, width - 96), span = start + MINI_WIDTH
-    // Held still, they stand in a line a step apart: a stride clear of each other where the track allows,
-    // closing up on the narrowest track so the last never falls off the end.
-    const stride = Math.min(MINI_WIDTH + 12, Math.max(0, start - 12) / count)
     minis.current.forEach((mini, index) => {
-      if (!mini) return
-      const x = still ? Math.max(0, start - 12 - index * stride) : start - span * ((time * 0.09 + index * 0.17) % 1)
-      mini.style.transform = `translate(${Math.round(x / 2) * 2}px, ${!still && Math.floor(time * 6 + index) % 2 ? -1 : 0}px)`
+      if (mini) mini.style.transform = miniFrame(time, still, width, index, count).transform
     })
     arm.current?.setAttribute('transform', !still && Math.floor(time * 2) % 2 ? 'translate(0 -1)' : '')
     eyes.current?.setAttribute('d', !still && time % 5 > 4.86 ? SHUT_EYES : OPEN_EYES)
