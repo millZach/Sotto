@@ -1,0 +1,411 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Drake's pick on October 28, 2026 from docs/prototypes/composer-redesign-20.html (tag
+  prototype/composer-redesign-20): "6 and now refine it." Direction 6, the island that opens, is a floating one-line
+  composer with a disc that opens to the full options while pointed at or focused.
+
+  Four tightened takes of 6 and one live take with motion, at the composer's real 760px width in Sotto's dark (Ink) and
+  light (paper) halves, in five states: at rest, focused, typing, a turn running, and typing while a turn runs. Colour
+  comes only from theme roles copied from palettes.ts and the --tt-* formulas in tokens.css. Durations sit in the app's
+  120 to 240 ms range on its curves: cubic-bezier(.2, .8, .2, 1) for arrivals, cubic-bezier(.2, .9, .3, 1.3) for a press.
+
+  Built from template.html by build.py (inlines Figtree). ?mode=dark|light|both picks the halves; #6.2 jumps to a take.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Composer island: direction 6 refined - prototype</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; src: url(data:font/woff2;base64,__FIGTREE__) format('woff2'); }
+
+/* Theme roles, copied from src/shared/themes/palettes.ts (the default Ink and paper). */
+.t-dark {
+  color-scheme: dark;
+  --theme-canvas: oklch(0.115 0.008 265); --theme-surface-raised: oklch(0.185 0.008 265); --theme-text: oklch(0.985 0.005 280);
+  --theme-muted-foreground: oklch(0.72 0.014 265); --theme-placeholder: oklch(0.675 0.012 270); --theme-border: oklch(0.305 0.02 265);
+  --theme-input: oklch(0.375 0.024 265); --theme-accent: oklch(0.714403 0.104089 183.092); --theme-accent-foreground: oklch(0.16 0.012 190);
+  --theme-update-foreground: oklch(0.83 0.08 183); --theme-accent-surface: oklch(0.32 0.05 185);
+  --tt-card: var(--theme-surface-raised); --tt-provider-claude: #e3b58e; --shadow: oklch(0 0 0 / .6);
+}
+.t-light {
+  color-scheme: light;
+  --theme-canvas: oklch(0.978 0.004 85); --theme-surface-raised: oklch(0.955 0.006 85); --theme-text: oklch(0.235 0.014 75);
+  --theme-muted-foreground: oklch(0.5 0.014 75); --theme-placeholder: oklch(0.525 0.015 78); --theme-border: oklch(0.86 0.012 80);
+  --theme-input: oklch(0.8 0.016 80); --theme-accent: oklch(0.53 0.095 186); --theme-accent-foreground: oklch(0.99 0.003 85);
+  --theme-update-foreground: oklch(0.43 0.08 186); --theme-accent-surface: oklch(0.92 0.03 186);
+  --tt-card: color-mix(in oklab, var(--theme-text) 4%, var(--theme-canvas)); --tt-provider-claude: #c4793f; --shadow: oklch(0.3 0.02 75 / .22);
+}
+/* The --tt-* formulas, from src/renderer/src/styles/tokens.css. */
+.t-dark, .t-light {
+  --tt-canvas: var(--theme-canvas);
+  --tt-text: var(--theme-text);
+  --tt-text-2: color-mix(in oklab, var(--theme-text) 55%, var(--theme-muted-foreground));
+  --tt-text-muted: color-mix(in oklab, var(--theme-muted-foreground) 85%, var(--theme-text));
+  --tt-text-faint: var(--theme-placeholder);
+  --tt-hairline: var(--theme-border);
+  --tt-hover: color-mix(in srgb, var(--theme-accent-surface) 70%, transparent);
+  --tt-accent: var(--theme-accent);
+  --tt-accent-text: var(--theme-update-foreground);
+  --tt-activity: var(--tt-accent-text);
+  --tt-pill: var(--tt-text);
+  --tt-pill-ink: var(--theme-canvas);
+  --ph: color-mix(in srgb, var(--tt-text-muted) 55%, transparent);
+  background: var(--tt-canvas); color: var(--tt-text);
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; padding: 28px 32px 60px; background: #0b0b0c; color: #ecebe6; font: 13px/1.4 Figtree, system-ui, sans-serif; --k: 1; }
+body.slow { --k: 4; }
+h1 { margin: 0 0 8px; font-size: 20px; font-weight: 600; }
+.intro { max-width: 1180px; margin: 0 0 18px; color: #a7a6a0; font-size: 13.5px; }
+.intro p { margin: 0 0 8px; }
+.intro b { color: #ecebe6; font-weight: 600; }
+.intro ul { margin: 0 0 10px; padding-left: 18px; }
+.intro li { margin: 0 0 3px; }
+kbd.k0 { font: 600 11.5px Figtree, sans-serif; padding: 1px 5px; border-radius: 4px; background: #2a2a2d; color: #ecebe6; }
+.bar { position: sticky; top: 0; z-index: 5; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 0 -32px 22px; padding: 10px 32px; background: #0b0b0ce6; backdrop-filter: blur(8px); font-size: 12.5px; color: #a7a6a0; }
+.bar .seg { display: inline-flex; gap: 2px; padding: 2px; border-radius: 7px; background: #1d1d1f; margin-right: 12px; }
+.bar button { color: #c9c8c2; padding: 4px 10px; border: 0; border-radius: 5px; background: transparent; font: inherit; cursor: pointer; }
+.bar button[aria-pressed='true'] { background: #3a3a3d; color: #fff; }
+.bar a { color: #c9c8c2; text-decoration: none; padding: 3px 7px; border-radius: 5px; }
+.bar a:hover { background: #2a2a2d; color: #fff; }
+.bar label { display: inline-flex; gap: 6px; align-items: center; margin-left: 8px; }
+
+section.dir { margin: 0 0 26px; padding: 16px 20px 18px; border-radius: 14px; background: #131315; }
+section.dir h2 { margin: 0 0 4px; font-size: 16px; font-weight: 600; display: flex; gap: 10px; align-items: baseline; }
+section.dir h2 b { display: inline-grid; place-items: center; min-width: 30px; height: 22px; padding: 0 6px; border-radius: 6px; background: #ecebe6; color: #121211; font-size: 12.5px; }
+section.dir[data-id='6'] h2 b { background: #3a3a3d; color: #ecebe6; }
+.why { margin: 0 0 3px; color: #d6d5cf; font-size: 13.5px; max-width: 1540px; }
+.chg { margin: 0 0 3px; color: #b9b8b2; font-size: 13px; max-width: 1540px; }
+.chg::before { content: 'Changed from 6: '; color: #8f8e88; }
+.note { margin: 0 0 12px; color: #8f8e88; font-size: 12.5px; max-width: 1540px; }
+.grid { display: grid; grid-template-columns: 784px 784px; gap: 10px 14px; }
+body.m-dark .grid, body.m-light .grid { grid-template-columns: 784px; }
+body.m-dark .t-light, body.m-light .t-dark, body.m-dark .th.l, body.m-light .th.d { display: none; }
+.th { font-size: 12px; color: #8f8e88; }
+.rl { font-size: 12px; color: #a7a6a0; padding-top: 14px; line-height: 1.35; }
+.rl small { display: block; color: #6f6e69; font-size: 11.5px; }
+.cell { position: relative; padding: 34px 12px 16px; border-radius: 10px; display: flex; flex-direction: column; justify-content: flex-end; min-height: 110px; }
+.cell::before { content: attr(data-label); position: absolute; top: 9px; left: 14px; font-size: 11.5px; color: var(--tt-text-muted); }
+.live .cell { padding-top: 18px; }
+.live .cell::before { content: none; }
+
+/* ================= parts ================= */
+svg.i { width: 15px; height: 15px; fill: none; stroke: currentcolor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+svg.i.s { width: 13px; height: 13px; }
+svg.i.xs { width: 11px; height: 11px; opacity: .7; }
+.mk { width: 14px; height: 14px; flex: none; color: var(--tt-provider-claude); }
+.ghost { color: var(--ph); }
+.tabkey { font-family: inherit; display: inline-grid; place-items: center; min-width: 18px; height: 18px; margin-left: 8px; padding: 0 5px; border: 1px solid var(--tt-hairline); border-radius: 5px; color: var(--tt-text-muted); font-size: 11px; font-weight: 600; line-height: 1; vertical-align: 1px; }
+.caret { display: inline-block; width: 1.5px; height: 18px; margin-left: 1px; vertical-align: -3px; background: var(--tt-text); }
+.tb { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 7px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.tb:hover { background: var(--tt-hover); color: var(--tt-text); }
+.tb.model { color: var(--tt-text-2); }
+.tb.ico { width: 28px; padding: 0; justify-content: center; }
+.eff { color: var(--tt-accent-text); }
+.dot { color: var(--tt-text-faint); padding: 0 1px; }
+.k { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 28px; padding: 0 4px 0 7px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; font-weight: 600; white-space: nowrap; cursor: pointer; flex: none; }
+.k.fill { background: var(--tt-pill); color: var(--tt-pill-ink); }
+.k.fill.off { background: color-mix(in oklab, var(--tt-pill) 16%, var(--tt-card)); color: var(--tt-text-muted); }
+.k.steer { color: var(--tt-accent-text); }
+.k.disc { width: 32px; height: 32px; padding: 0; border-radius: 50%; }
+.k.disc.flat { background: color-mix(in oklab, var(--tt-pill) 10%, var(--tt-card)); color: var(--tt-text); }
+.cap { font-family: inherit; display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 4px; background: color-mix(in oklab, currentcolor 14%, transparent); font-size: 11.5px; letter-spacing: .02em; }
+.trace { position: absolute; inset: -3px; overflow: hidden; padding: 1.5px; border-radius: 8px; pointer-events: none;
+  -webkit-mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0); }
+.k.disc .trace { border-radius: 50%; }
+.trace > i { position: absolute; top: 50%; left: 50%; width: 220%; aspect-ratio: 1; translate: -50% -50%; background: conic-gradient(from 0deg, transparent 0 62%, var(--tt-activity) 88%, transparent 100%); animation: spin 1.6s linear infinite; }
+@keyframes spin { to { transform: rotate(1turn); } }
+body.calm .trace > i { animation: none; transform: rotate(.15turn); }
+@media (prefers-reduced-motion: reduce) { .trace > i { animation: none; } }
+
+/* ================= the island ================= */
+.isl { width: 760px; position: relative; font-size: 13px; }
+.isl .card { position: relative; z-index: 1; border-radius: 22px; padding: 6px 6px 6px 18px; background: var(--tt-card);
+  box-shadow: 0 14px 34px -18px var(--shadow), 0 0 0 1px color-mix(in oklab, var(--tt-hairline) 60%, transparent); }
+.isl .line { display: flex; align-items: center; gap: 8px; min-height: 32px; }
+.isl .field { position: relative; flex: 1; min-width: 0; font-size: 15px; line-height: 1.5; color: var(--tt-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.isl .closed { display: flex; align-items: center; gap: 4px; }
+.isl .who { border: 0; background: transparent; font: inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border-radius: 14px; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.isl .who:hover { background: var(--tt-hover); color: var(--tt-text); }
+.isl .more, .isl .under { display: grid; grid-template-rows: 0fr; opacity: 0; }
+.isl .more > div, .isl .under > div { min-height: 0; overflow: hidden; }
+.isl .foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 6px; }
+.isl .meta { display: flex; flex: 1; align-items: center; gap: 2px 4px; min-width: 0; margin-left: -10px; }
+.isl .acts { display: flex; flex: none; align-items: center; gap: 6px; }
+.isl .branch { display: flex; align-items: center; gap: 0 2px; padding: 6px 4px 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.isl .branch .tb { height: 26px; font-size: 12.5px; gap: 5px; }
+.isl .queue { margin: 0 18px -14px; padding: 4px 12px 18px; border-radius: 12px 12px 0 0; background: color-mix(in oklab, var(--tt-card) 70%, var(--tt-canvas)); color: var(--tt-text-muted); font-size: 12.5px; }
+.isl .queue p { margin: 3px 0 2px; color: var(--tt-text-2); font-size: 13.5px; }
+/* Open. */
+.isl[data-open] .card { border-radius: 16px; padding: 12px 10px 8px 16px; }
+.isl[data-open] .line { align-items: flex-start; min-height: 36px; }
+.isl[data-open] .field { white-space: normal; }
+.isl[data-open] .closed { display: none; }
+.isl[data-open] .more, .isl[data-open] .under { grid-template-rows: 1fr; opacity: 1; }
+/* 6 as drawn: no queue tray, nothing from the closed line survives. */
+.v6 .who { display: none; }
+/* 6.2: who answers stays on the closed line. */
+.v61 .who, .v63 .who, .v64 .who { display: none; }
+/* 6.3: the options float under the island as their own bar, and the island never changes shape. */
+.v63[data-open] .card { border-radius: 22px; padding: 8px 6px 8px 18px; }
+.v63[data-open] .line { align-items: flex-end; }
+.v63 .open-acts { display: none; }
+.v63[data-open] .open-acts { display: flex; }
+.v63 .more { display: none; }
+.v63 .under > div > .tbar { display: flex; align-items: center; gap: 2px; margin: 6px 12px 0; padding: 3px 6px; border-radius: 12px; background: var(--tt-card);
+  box-shadow: 0 10px 24px -16px var(--shadow), 0 0 0 1px color-mix(in oklab, var(--tt-hairline) 60%, transparent); }
+.v63 .tbar .sp { flex: 1; }
+.v63 .tbar .vr { width: 1px; height: 16px; margin: 0 4px; background: var(--tt-hairline); }
+.v63 .under > div { padding-bottom: 14px; margin-bottom: -14px; }
+/* 6.4: while a turn runs, the light runs round the island itself. */
+.isl .card > .trace { inset: -1.5px; border-radius: inherit; background: color-mix(in srgb, var(--tt-activity) 22%, transparent); }
+.isl .card > .trace > i { width: 160%; aspect-ratio: 1; background: conic-gradient(from 0deg, transparent 0 72%, var(--tt-activity) 92%, transparent 100%); }
+
+/* Motion, used by the live take: the foot stays put and the island grows upward. */
+.motion .card { transition: border-radius calc(200ms * var(--k)) cubic-bezier(.2, .8, .2, 1), padding calc(200ms * var(--k)) cubic-bezier(.2, .8, .2, 1); }
+.motion .more, .motion .under { transition: grid-template-rows calc(200ms * var(--k)) cubic-bezier(.2, .8, .2, 1), opacity calc(140ms * var(--k)) ease-out calc(40ms * var(--k)); }
+.motion:not([data-open]) .more, .motion:not([data-open]) .under { transition-delay: 0s; transition-duration: calc(160ms * var(--k)), calc(80ms * var(--k)); }
+.motion .k { transition: background-color calc(160ms * var(--k)) cubic-bezier(.2, .8, .2, 1), color calc(160ms * var(--k)), transform calc(220ms * var(--k)) cubic-bezier(.2, .9, .3, 1.3); }
+.motion .k:active { transform: scale(.94); transition-duration: calc(80ms * var(--k)); }
+.motion .closed { animation: fadein calc(160ms * var(--k)) ease-out; }
+@keyframes fadein { from { opacity: 0; } }
+body.calm .motion *, body.calm .motion { transition-duration: 0s !important; animation: none !important; }
+.live .stage { position: relative; height: 330px; width: 784px; margin: -18px -12px -16px; border-radius: 10px; overflow: hidden; }
+.live .tx { padding: 20px 24px; color: var(--tt-text-2); font-size: 14px; line-height: 1.55; }
+.live .tx p { margin: 0 0 10px; max-width: 640px; }
+.live .tx .you { margin-left: auto; width: max-content; max-width: 460px; padding: 8px 12px; border-radius: 12px; background: var(--tt-card); color: var(--tt-text); }
+.live .tx .said { color: var(--tt-accent-text); }
+.live .isl { position: absolute; left: 12px; bottom: 14px; }
+.live textarea { display: block; width: 100%; margin: 0; padding: 0; border: 0; outline: 0; resize: none; background: transparent; color: var(--tt-text); caret-color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; height: 22.5px; overflow: hidden; }
+.live [data-open] textarea { height: auto; min-height: 36px; max-height: 120px; field-sizing: content; overflow-y: auto; }
+.live textarea::placeholder { color: var(--ph); }
+.live .field { overflow: visible; }
+.live .ghostlay { position: absolute; inset: 0 auto auto 0; pointer-events: none; white-space: nowrap; }
+.livebar { margin: 0 0 12px; position: static; padding: 0; background: none; }
+</style>
+</head>
+<body class="m-both">
+<h1>The island, refined</h1>
+<div class="intro">
+  <p><b>6 as drawn</b> is a floating one-line island with a disc, which opens to the options and the branch line while pointed at or focused. Below it, four tightened takes and a live one you can type in. Each frame is the Threads composer at its real 760px width, in five states.</p>
+  <p><b>What every take changes from 6:</b></p>
+  <ul>
+    <li><b>It opens on focus, not on hover.</b> A pointer passing over the island no longer moves anything. Clicking it, Tab into it, typing anywhere in the transcript, a paste, a drop or dictation opens it (the same list ADR-0125 already uses). It closes when focus leaves with nothing typed and nothing queued.</li>
+    <li><b>It grows upward.</b> The island's foot stays where it stands, so the disc becomes Send in the same corner, and the transcript keeps the full composer's room the whole time (ADR-0125 decision 3).</li>
+    <li><b>Closed, the disc says what Enter would do</b>: a dim arrow at rest, and Stop with its trace while a turn runs, so a turn can be stopped without opening anything. <b>Open, the keys come back</b>: Send <kbd class="k0">↵</kbd>, Steer <kbd class="k0">⌘↵</kbd>, Stop <kbd class="k0">⇧⌘S</kbd>, Queue <kbd class="k0">↵</kbd>, as ADR-0153 has them.</li>
+    <li><b>A draft or a queued prompt keeps it open</b>, so nothing you wrote is ever folded away.</li>
+  </ul>
+  <p>The keyboard loses nothing: every option is one Tab from the prompt, because the prompt opening is what shows them. Escape in an empty prompt closes it.</p>
+</div>
+<div class="bar">
+  <span class="seg" id="mode"><button data-v="both" aria-pressed="true">Both</button><button data-v="dark">Dark</button><button data-v="light">Light</button></span>
+  <a href="#6">6</a><a href="#6.1">6.1</a><a href="#6.2">6.2</a><a href="#6.3">6.3</a><a href="#6.4">6.4</a><a href="#L">6 ▸ live</a>
+</div>
+<main id="main"></main>
+<script>
+const P = d => `<svg class="i" viewBox="0 0 24 24">${d}</svg>`
+const I = {
+  clip: P('<path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>'),
+  chev: '<svg class="i xs" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></svg>',
+  zap: P('<path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/>'),
+  shield: P('<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>'),
+  eye: P('<path d="M2.06 12.35a1 1 0 0 1 0-.7 10.75 10.75 0 0 1 19.88 0 1 1 0 0 1 0 .7 10.75 10.75 0 0 1-19.88 0"/><circle cx="12" cy="12" r="3"/>'),
+  branch: '<svg class="i s" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></svg>',
+  folder: '<svg class="i s" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>',
+  laptop: '<svg class="i s" viewBox="0 0 24 24"><path d="M18 5a2 2 0 0 1 2 2v8.526a2 2 0 0 0 .212.897l1.068 2.127a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45l1.068-2.127A2 2 0 0 0 4 15.526V7a2 2 0 0 1 2-2z"/><path d="M20.054 15.987H3.946"/></svg>',
+  up: P('<path d="M12 19V5"/><path d="m5 12 7-7 7 7"/>'),
+  sq: '<svg viewBox="0 0 12 12" style="width:10px;height:10px;fill:currentcolor"><rect x=".5" y=".5" width="11" height="11" rx="2.5"/></svg>',
+}
+const MARK = '<svg class="mk" viewBox="0 0 24 24" fill="none" stroke="currentcolor" stroke-width="2.2" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg>'
+const GHOST = 'Run the composer e2e spec and fix what fails'
+const TYPED = 'Also update the release notes for the Windows path'
+const TRACE = '<span class="trace" aria-hidden="true"><i></i></span>'
+const cap = c => `<kbd class="cap">${c}</kbd>`
+const tb = (inner, cls = '', title = '') => `<button type="button" class="tb ${cls}" title="${title}">${inner}</button>`
+const META = [tb(I.clip, 'ico', 'Attach files'), tb(`${MARK}Opus 5.5${I.chev}`, 'model', 'Model'), tb(I.zap, 'ico', 'Fast mode: off'),
+  tb(`<span class="eff">High</span>${I.chev}`, '', 'Reasoning'), tb(`Full access${I.chev}`, '', 'Thread permissions'), tb(`${I.eye}Watch`, '', 'Watch this thread')].join('')
+const WHERE = [tb(`${I.laptop}This computer`, '', 'Run on'), tb(`${I.folder}Project folder`, '', 'Workspace'), tb(`${I.branch}sotto/c9c8e65b${I.chev}`, '', 'Branch')]
+const BRANCH = `<div class="branch">${WHERE.join('<span class="dot">·</span>')}</div>`
+
+/* What the island holds. s: { open, run, text, queued }; t: the take. */
+function closedActs(s, t) {
+  if (s.run) return `<button type="button" class="k disc ${t.islandLight ? 'flat' : 'fill'}" aria-label="Stop agent" title="Stop agent ⇧⌘S">${I.sq}${t.islandLight ? '' : TRACE}</button>`
+  return `<button type="button" class="k disc fill off" aria-label="Send prompt" title="Send prompt ↵" disabled>${I.up}</button>`
+}
+function openActs(s, t) {
+  if (!s.run) return `<button type="button" class="k fill ${s.text ? '' : 'off'}" aria-label="Send prompt" aria-keyshortcuts="Enter">Send${cap('↵')}</button>`
+  const stop = `<button type="button" class="k" aria-label="Stop agent">Stop${cap('⇧⌘S')}${t.islandLight ? '' : TRACE}</button>`
+  if (!s.text) return `<button type="button" class="k fill" aria-label="Stop agent">Stop${cap('⇧⌘S')}${t.islandLight ? '' : TRACE}</button>`
+  return `<button type="button" class="k steer" aria-label="Steer now">Steer${cap('⌘↵')}</button>${stop}<button type="button" class="k fill" aria-label="Queue prompt">Queue${cap('↵')}</button>`
+}
+const who = '<button type="button" class="who" title="Model: Opus 5.5, reasoning High">' + MARK + 'Opus 5.5<span class="dot">·</span><span class="eff">High</span></button>'
+function fieldHtml(s) {
+  if (s.text) return `${TYPED}${s.open ? '<span class="caret"></span>' : ''}`
+  if (s.run) return `<span class="ghost">Claude is working. Write a follow-up to queue it.</span>`
+  return `<span class="ghost">${GHOST}</span><kbd class="tabkey">Tab</kbd>`
+}
+function island(t, s) {
+  const tray = s.queued ? `<div class="queue">Queued 1 · sends when Claude Code finishes<p>Run the linter on the changed files too</p></div>` : ''
+  const under = t.toolbar
+    ? `<div class="under"><div><div class="tbar">${META}<span class="vr"></span>${WHERE.slice(2).join('')}<span class="sp"></span></div></div></div>`
+    : `<div class="under"><div>${BRANCH}</div></div>`
+  return `<div class="isl ${t.cls}" ${s.open ? 'data-open' : ''}>${tray}<div class="card">${t.islandLight && s.run ? TRACE : ''}
+    <div class="line"><div class="field">${fieldHtml(s)}</div><div class="closed">${who}${closedActs(s, t)}</div>${t.toolbar ? `<div class="acts open-acts">${openActs(s, t)}</div>` : ''}</div>
+    <div class="more"><div><div class="foot"><div class="meta">${META}</div><div class="acts">${openActs(s, t)}</div></div></div></div></div>${under}</div>`
+}
+
+const TAKES = [
+  { id: '6', cls: 'v6', name: '6 as drawn',
+    why: 'For reference, from the twenty: a floating one-line island with a disc; pointing at it or focusing it opens the options and the branch line.',
+    note: 'Drawn here in the states it had: it opened on hover too, kept a disc with no key while open, and had no Stop while closed.' },
+  { id: '6.1', cls: 'v61', name: 'The island, tightened',
+    why: 'The rules above and nothing else: one line and a disc at rest; open, the full composer of today, grown upward from the same foot.',
+    chg: 'opens on focus only; grows upward; the disc becomes Send ↵ in place; Stop with its trace on the closed disc while a turn runs; a draft or a queue keeps it open.',
+    note: 'The closest to 6 and to today: open, it is exactly the shipped composer, so every option, menu and key is as it is now.' },
+  { id: '6.2', cls: 'v62', name: 'Who answers stays in sight',
+    why: 'As 6.1, but the closed line keeps the model and its effort as one quiet button before the disc, so you can read who will answer without opening it.',
+    chg: 'as 6.1, plus "✳ Opus 5.5 · High" on the closed line; pressing it opens the model menu straight away.',
+    note: 'The one thing worth knowing before you write, kept in view at about 120px; permissions, Watch and the branch still wait for focus.' },
+  { id: '6.3', cls: 'v63', name: 'A bar under the island',
+    why: 'The island never changes shape: it only grows with what you write. Focus brings a second, smaller floating bar under it with the options and the branch.',
+    chg: 'as 6.1, but the options and branch arrive as their own bar beneath the island instead of opening it; the keyed buttons stay on the island\'s line.',
+    toolbar: true,
+    note: 'The most "floating" of the takes, close to Raycast\'s AI bar. Two shapes instead of one, and the bar sits where the branch line is today, so nothing moves above it.' },
+  { id: '6.4', cls: 'v64', name: 'The island is the light',
+    why: 'As 6.1, but while a turn runs the light runs round the whole island instead of round Stop, so the composer itself says the thread is working.',
+    chg: 'as 6.1, with the trace moved from the Stop button to the island\'s edge.', islandLight: true,
+    note: 'Amends ADR-0153 decision 4 (the light belongs to Stop). The status is visible even at the corner of your eye, where a 32px disc is not.' },
+]
+const STATES = [
+  { label: 'At rest', sub: 'a next prompt waiting', s: {} },
+  { label: 'Focused', sub: 'clicked or tabbed into', s: { open: true } },
+  { label: 'Typing', sub: 'Enter sends', s: { open: true, text: true } },
+  { label: 'Turn running', sub: 'not focused', s: { run: true } },
+  { label: 'Running, typing', sub: 'one already queued', s: { open: true, run: true, text: true, queued: true } },
+]
+
+const main = document.getElementById('main')
+for (const t of TAKES) {
+  const sec = document.createElement('section')
+  sec.className = 'dir'; sec.id = t.id; sec.dataset.id = t.id
+  let g = '<div class="grid">'
+  for (const st of STATES) {
+    const s = t.id === '6' ? { ...st.s, queued: false } : st.s
+    g += [['t-dark', 'Dark'], ['t-light', 'Light']].map(([c, n]) => `<div class="cell ${c}" data-label="${st.label}, ${st.sub} · ${n}">${island(t, s)}</div>`).join('')
+  }
+  sec.innerHTML = `<h2><b>${t.id}</b>${t.name}</h2><p class="why">${t.why}</p>${t.chg ? `<p class="chg">${t.chg}</p>` : ''}<p class="note">${t.note}</p>${g}</div>`
+  main.appendChild(sec)
+}
+/* 6 as drawn kept its disc open and had no Stop while closed. */
+for (const el of document.querySelectorAll('section[data-id="6"] .isl')) {
+  el.querySelectorAll('.more .acts').forEach(a => { a.innerHTML = '' })
+  if (el.hasAttribute('data-open')) el.querySelector('.closed').style.display = 'flex'
+  const d = el.querySelector('.closed .k'); if (d && d.getAttribute('aria-label') === 'Stop agent') d.outerHTML = `<button type="button" class="k disc fill off" disabled>${I.up}</button>`
+}
+
+/* ================= live ================= */
+const TURN = 6000
+const live = document.createElement('section')
+live.className = 'dir live'; live.id = 'L'; live.dataset.id = 'L'
+live.innerHTML = `<h2><b>6 ▸</b>The island, live</h2>
+  <p class="why">Click the island or press any letter while the page has focus to open it. Type and press <kbd class="k0">Enter</kbd> to send; a turn runs ${TURN / 1000} seconds. Type again during the turn and <kbd class="k0">Enter</kbd> queues, <kbd class="k0">⌘Enter</kbd> steers; Stop ends it. <kbd class="k0">Tab</kbd> takes the next prompt; <kbd class="k0">Esc</kbd> or a click outside closes it when it is empty.</p>
+  <p class="note">The island opens over 200 ms and closes over 160 ms, growing only upward; the options fade in 40 ms after it starts so they never show half-cut. Reduced motion opens and closes it at once.</p>
+  <div class="bar livebar"><label>Take <select id="take"><option value="v61">6.1 tightened</option><option value="v62">6.2 who stays in sight</option><option value="v63">6.3 bar under the island</option><option value="v64">6.4 the island is the light</option></select></label>
+    <label><input type="checkbox" id="calm"> Reduce motion</label><label><input type="checkbox" id="slow"> Slow ×4</label></div>
+  <div class="grid">
+    <div class="cell t-dark"></div><div class="cell t-light"></div></div>`
+main.appendChild(live)
+
+class Live {
+  constructor(cell) {
+    this.cell = cell; this.take = TAKES[1]; this.run = false; this.queue = []; this.open = false; this.ghost = true; this.timer = 0; this.log = []
+    cell.innerHTML = `<div class="stage"><div class="tx"><p class="you">The composer test is flaky on Windows</p><p>Found it: the spec waits on a fixed 300 ms sleep before the send key is ready. I replaced it with a wait on the button's enabled state and it passes ten runs in a row.</p><div class="log"></div></div><div class="slot"></div></div>`
+    this.slot = cell.querySelector('.slot'); this.logEl = cell.querySelector('.log')
+    this.mount()
+  }
+  mount() {
+    const t = this.take
+    this.slot.innerHTML = island(t, { open: this.open, run: this.run })
+    this.root = this.slot.firstElementChild; this.root.classList.add('motion')
+    const f = this.root.querySelector('.field')
+    f.innerHTML = '<textarea rows="1" aria-label="Prompt"></textarea><span class="ghostlay"></span>'
+    this.ta = f.querySelector('textarea'); this.gl = f.querySelector('.ghostlay')
+    this.ta.value = this.text ?? ''
+    this.ta.addEventListener('focus', () => this.setOpen(true))
+    this.ta.addEventListener('input', () => { this.text = this.ta.value; this.paint() })
+    this.ta.addEventListener('keydown', e => this.key(e))
+    this.root.addEventListener('focusout', e => { if (!this.root.contains(e.relatedTarget)) setTimeout(() => this.maybeClose(), 0) })
+    this.root.addEventListener('mousedown', e => { if (!e.target.closest('button')) { e.preventDefault(); this.ta.focus() } })
+    this.root.addEventListener('click', e => { const b = e.target.closest('button'); if (b) this.press(b.getAttribute('aria-label')) })
+    this.paint()
+  }
+  setTake(id) { this.take = TAKES.find(t => t.cls === id); this.mount() }
+  setOpen(v) { if (this.open === v) return; this.open = v; this.root.toggleAttribute('data-open', v) }
+  maybeClose() { if (!this.root.contains(document.activeElement) && !(this.text ?? '') && this.queue.length === 0) this.setOpen(false) }
+  key(e) {
+    if (e.key === 'Tab' && !e.shiftKey && !this.text && this.ghost && !this.run) { e.preventDefault(); this.ta.value = this.text = GHOST; this.paint(); return }
+    if (e.key === 'Escape') { e.preventDefault(); if (!this.text) this.ta.blur() ; return }
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.press(e.metaKey || e.ctrlKey ? 'Steer now' : this.run ? 'Queue prompt' : 'Send prompt') }
+  }
+  press(what) {
+    const text = (this.text ?? '').trim()
+    if (what === 'Stop agent') return this.end(true)
+    if (!text) return
+    this.ta.value = this.text = ''
+    if (what === 'Send prompt') { this.say(text); this.start() }
+    else if (what === 'Queue prompt') { this.queue.push(text) }
+    else if (what === 'Steer now' && this.run) { this.say(text, 'steered') }
+    else { this.say(text); this.start() }
+    this.paint()
+  }
+  say(text, how) { this.logEl.insertAdjacentHTML('beforeend', `<p class="you">${text.replace(/</g, '&lt;')}${how ? ` <span class="said">· ${how}</span>` : ''}</p>`); while (this.logEl.children.length > 2) this.logEl.firstElementChild.remove() }
+  start() { this.run = true; this.ghost = false; clearTimeout(this.timer); this.timer = setTimeout(() => this.end(false), TURN); this.paint() }
+  end(stopped) {
+    clearTimeout(this.timer); this.run = false
+    if (!stopped && this.queue.length) { this.say(this.queue.shift()); this.start(); return }
+    this.ghost = !stopped; this.paint(); this.maybeClose()
+  }
+  paint() {
+    const s = { open: this.open, run: this.run, text: Boolean(this.text), queued: false }
+    const t = this.take
+    this.root.querySelector('.closed').innerHTML = (t.cls === 'v62' ? who : '') + closedActs(s, t)
+    this.root.querySelectorAll('.acts').forEach(a => { a.innerHTML = openActs(s, t) })
+    let light = this.root.querySelector('.card > .trace')
+    if (t.islandLight && this.run && !light) this.root.querySelector('.card').insertAdjacentHTML('afterbegin', TRACE)
+    if (!(t.islandLight && this.run) && light) light.remove()
+    this.ta.placeholder = this.run ? 'Claude is working. Write a follow-up to queue it.' : this.ghost ? '' : 'What should Claude do next?'
+    this.gl.innerHTML = !this.text && this.ghost && !this.run ? `<span class="ghost">${GHOST}</span><kbd class="tabkey">Tab</kbd>` : ''
+    let tray = this.root.querySelector('.queue')
+    if (this.queue.length) {
+      const html = `Queued ${this.queue.length} · sends when Claude Code finishes<p>${this.queue[0].replace(/</g, '&lt;')}</p>`
+      if (!tray) { this.root.insertAdjacentHTML('afterbegin', `<div class="queue">${html}</div>`) } else tray.innerHTML = html
+      this.setOpen(true)
+    } else if (tray) tray.remove()
+  }
+}
+const lives = [...live.querySelectorAll('.cell')].map(c => new Live(c))
+document.getElementById('take').addEventListener('change', e => lives.forEach(l => l.setTake(e.target.value)))
+document.getElementById('calm').addEventListener('change', e => document.body.classList.toggle('calm', e.target.checked))
+document.getElementById('slow').addEventListener('change', e => document.body.classList.toggle('slow', e.target.checked))
+/* A printable key pressed outside a field opens the island, as ADR-0125 sends it to the composer. */
+document.addEventListener('keydown', e => {
+  if (e.metaKey || e.ctrlKey || e.altKey || e.key.length !== 1 || e.target.closest('input, textarea, select')) return
+  const l = document.body.classList.contains('m-light') ? lives[1] : lives[0]
+  l.ta.focus()
+})
+
+const mode0 = new URLSearchParams(location.search).get('mode') ?? 'both'
+const setMode = v => { document.body.classList.remove('m-both', 'm-dark', 'm-light'); document.body.classList.add('m-' + v) }
+setMode(mode0)
+const seg = document.getElementById('mode')
+const sync = v => seg.querySelectorAll('button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)))
+seg.addEventListener('click', e => { const v = e.target.dataset?.v; if (v) { setMode(v); sync(v) } })
+sync(mode0)
+if (location.hash) document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView()
+</script>
+</body>
+</html>
