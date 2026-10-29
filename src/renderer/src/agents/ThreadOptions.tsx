@@ -13,6 +13,8 @@ import { ModelPicker, type UnavailablePickerProvider } from './ModelPicker'
 import { useOwnServersBridge } from './OwnModelServers'
 import { localHostId } from '../features/onboarding/localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
+import { EffortDots, type DotsStop } from './EffortDots'
+import { suggestedEffortIndex } from './effortSuggestion'
 import { ultracodeLevel } from './ultracodeLevel'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { providerKey } from './threadFacts'
@@ -404,7 +406,7 @@ export function watcherPermissionFixedReason(state: AgentState, thread: AgentThr
  * send, Watch follows the permissions where Watcher is on (`WatchOnSendToggle`). New thread shows the same three
  * controls laid out in full.
  */
-export function ThreadOptions({ thread, state, command, turnNote = true, getDraftText, onDraftText, noticeSlot, watcher = false, continueOffer }: {
+export function ThreadOptions({ thread, state, command, turnNote = true, getDraftText, onDraftText, noticeSlot, watcher = false, continueOffer, quiet }: {
   readonly thread: AgentThread; readonly state: AgentState; readonly command: AgentConnection['command']
   /** Explain options locked by a running turn; off where the composer already says it cannot send. */
   readonly turnNote?: boolean
@@ -420,6 +422,11 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   readonly watcher?: boolean
   /** Another provider's models, under "Continue in a new thread on", for a started thread that may continue elsewhere. */
   readonly continueOffer?: ThreadContinueOffer | undefined
+  /**
+   * The quiet composer (ADR-0161, Owl): effort as dots that may ring a level the draft seems to want, and that hold Stop
+   * while a turn runs. Absent, the options are the chips of ADR-0113.
+   */
+  readonly quiet?: { readonly effortScore: number; readonly stop?: DotsStop | undefined } | undefined
 }): ReactNode {
   const { t } = useLingui()
   const settings = usePendingSettings(thread.id)
@@ -580,7 +587,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     })}
   </>
   const replacingName = replacing === null ? '' : PROVIDER_LABELS[replacing.provider]
-  return <div ref={bar} className="thread-options-bar" data-provider-locked={locked}>
+  const levels = efforts.filter(option => !option.disabled).map(option => option.id)
+  return <div ref={bar} className="thread-options-bar" data-provider-locked={locked} data-permission={quiet ? permission : undefined}>
     <div className="thread-options thread-options--chips">
       <ModelPicker models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
         disabled={pickerFixed || modelDisabled && continuations.length === 0 || replacing !== null && replacing.refusal === null} note={note}
@@ -598,7 +606,11 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       }} />
       {showFast && <FastModeToggle model={model} provider={fastProvider} on={fastOn} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={unconfirmedFastId}
         onChange={next => press('fast', next ? FAST_ON : FAST_OFF, { fastMode: next }, unpressed.fast)} />}
-      {efforts.length > 0 && <EffortPicker key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
+      {quiet ? (levels.length > 0 || quiet.stop) && <EffortDots levels={levels} value={reasoning} provider={model?.providerId ?? thread.providerId} disabled={fixed || modelDisabled}
+        pending={settings.pending.effort?.awaiting === 'unconfirmed'} describedBy={unconfirmedEffortId} stop={quiet.stop}
+        suggestion={thread.status === 'running' ? null : suggestedEffortIndex(quiet.effortScore, levels.length, levels.indexOf(reasoning))}
+        onChange={reasoningEffort => press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)} />
+      : efforts.length > 0 && <EffortPicker key={`${modelId}:${model?.reasoningEfforts?.join(',') ?? ''}`} value={reasoning} options={efforts}
         disabled={fixed || modelDisabled} pending={settings.pending.effort?.awaiting === 'unconfirmed'} describedBy={unconfirmedEffortId} onChange={reasoningEffort => {
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
           orchestrating?.(modelId, reasoningEffort, state.host.models)
@@ -612,7 +624,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         pending={pendingPermission !== null} describedBy={permissionUnconfirmed ? unconfirmedId : captionId}
         onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />}
       {/* Before the first send, Watch puts the new thread under a standing watch once it is sent (Watcher only). */}
-      {!watcher && thread.nativeSessionStarted === false ? <WatchOnSendToggle threadId={thread.id} /> : null}
+      {!watcher && !quiet && thread.nativeSessionStarted === false ? <WatchOnSendToggle threadId={thread.id} /> : null}
     </div>
     {/* Always present, so assistive technology hears the caption when it arrives. */}
     <span id={captionId} className="thread-options__caption" role="status">{replacing !== null && replacing.refusal === null ? t({ message: `Starting a new Watcher on ${replacingName}…`, comment: '{replacingName} is a provider\'s name.' }) : caption}</span>
