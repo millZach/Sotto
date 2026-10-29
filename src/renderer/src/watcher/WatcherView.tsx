@@ -36,8 +36,9 @@ import { watcherTakeovers, type WatcherRoomState } from '../../../shared/watcher
 import { joinedPlacements, joinedReceipts, joinedTakeovers, liveReceipts, recalledConversation } from './watcherConversationWork'
 import { rowStatus } from '../agents/threadFacts'
 import { threadAddressIndex, threadForTarget, useWatcherRoom, watchedRows, type WatcherRoom } from './watcherRoom'
-import { placeTakeovers, WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
+import { placeAfterTurns, placeTakeovers, WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
 import { WatcherStopAll } from './WatcherStopAll'
+import { useMoveCards, WatcherMoveThreads } from './MoveThreads'
 import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
 import { WatcherGlance } from './WatcherGlance'
@@ -285,8 +286,14 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   const receiptPlacements = room?.state?.receiptPlacements
   const placementsById = useMemo(() => !crossMachine ? undefined
     : joinedPlacements(new Map((receiptPlacements ?? []).map(item => [item.operationId, item.placement] as const)), recalled), [crossMachine, receiptPlacements, recalled])
-  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById }),
-    [byMessage, lines, describe, press, asks, placementsById])
+  // The moves Sotto ran (#1178), each after the turn it was confirmed in; a move from before this Watcher's first message
+  // is the last Watcher's, and is not shown here.
+  const moveCards = useMoveCards()
+  const firstAt = messages[0]?.createdAt
+  const movesPlaced = useMemo(() => !crossMachine || moveCards.length === 0 || firstAt === undefined ? undefined
+    : placeAfterTurns(messages, moveCards.filter(card => card.at >= firstAt)), [crossMachine, moveCards, messages, firstAt])
+  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, moves: movesPlaced }),
+    [byMessage, lines, describe, press, asks, placementsById, movesPlaced])
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the
   // system browser.
   return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>
@@ -542,7 +549,10 @@ export function WatcherView({ now: fixedNow, update = null }: {
   // The machines line (#1032) is part of the Owl feature Work across machines: Stable shows none of it.
   const crossMachine = useOwlFeature('cross-machine-work')
   const error = state?.error ?? agents.error ?? null
-  const stopAll = room === null ? null : <WatcherStopAll room={room} conversation={{ describe, press }} fallbackFocus={() => listButton.current?.focus()} />
+  const stopAll = room === null ? null : <>
+    {crossMachine ? <WatcherMoveThreads /> : null}
+    <WatcherStopAll room={room} conversation={{ describe, press }} fallbackFocus={() => listButton.current?.focus()} />
+  </>
   const header = <>
     <WatcherHeader room={room} count={overviewCount(groups)} listOpen={listOpen} listButton={listButton} onToggleList={() => toggleList(listButton.current)}
       stopAll={stopAll} update={update} />

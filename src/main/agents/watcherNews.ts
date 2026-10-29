@@ -48,7 +48,7 @@ export const requestRevision = (request: unknown): string => observationDigest(r
 /** What reaches a thread after a takeover fenced a request there (#1148), as its news and its refusals say it. */
 export const LATER_REQUEST_REACHES = 'A message the user sends Watcher after that starts a request that reaches the thread; while the user’s own turn there runs, it can only steer it.'
 /** Each kind's line; a closed card's depends on whose it was and whether Sotto saw the user answer it (`closedWords`). */
-const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-restarted'>, string> = {
+const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-restarted' | 'thread-moved'>, string> = {
   'turn-finished': 'The foreground turn finished. This is not review or merge approval.',
   'work-settled': 'The background work and monitoring this turn left running have ended, so the turn is done. This is not review or merge approval.',
   'turn-failed': 'The provider confirmed that this turn failed. Read the thread for its error.',
@@ -85,12 +85,25 @@ function closedWords(event: WatcherEvent): string {
 /** A provider by its own name, for Sotto's words; an ID this build does not know is named as it is. */
 const providerName = (provider: string | undefined): string => provider === undefined ? 'Its provider' : Object.hasOwn(PROVIDER_LABELS, provider)
   ? PROVIDER_LABELS[provider as keyof typeof PROVIDER_LABELS] : provider
-/** Whether a `threads-restarted` event's thread is one no request watches (ADR-0144). */
-const unwatched = (event: WatcherEvent): boolean => event.kind === 'threads-restarted' && event.requestId === WATCHER_UNWATCHED_REQUEST_ID
+/** Whether a `threads-restarted` or `thread-moved` event's thread is one no request watches (ADR-0144, #1178). */
+const unwatched = (event: WatcherEvent): boolean => (event.kind === 'threads-restarted' || event.kind === 'thread-moved') && event.requestId === WATCHER_UNWATCHED_REQUEST_ID
 /** A restarted thread's line (ADR-0144), in Sotto's words: which limit had stopped it, and whether Watcher watches it. */
 const restartedWords = (event: WatcherEvent): string => `${providerName(event.restartedBy)}’s usage limit had stopped this thread and has reset, so Sotto restarted it with a short note of its own, the same on every provider.${
   unwatched(event) ? ' No request of yours watches it: read it with read_thread if its work matters to yours.' : ''} This approves nothing.`
-const kindWords = (event: WatcherEvent): string => event.kind === 'threads-restarted' ? restartedWords(event) : event.kind === 'needs-user' && event.delegatedThreadId !== undefined
+/**
+ * A move's line (#1178): the user moved the thread, Sotto ran the move, and how it ended. Watcher's watch went with a
+ * thread that moved, so its news comes from the new thread from now on.
+ */
+function movedWords(event: WatcherEvent): string {
+  const machine = event.machine ?? 'another machine', there = event.movedTo ? JSON.stringify(event.movedTo) : 'a new thread'
+  const said = event.moveOutcome === 'moved'
+    ? `The user moved this thread to ${machine}, and Sotto moved it: it continues there as ${there}, whose first turn has ended, and this one is settled here.${unwatched(event) ? '' : ' Your watch on it went to the new thread, so its news comes from there now.'}`
+    : event.moveOutcome === 'stayed'
+      ? `The user moved this thread to ${machine}, but the new thread there, ${there}, failed or was stopped in its first turn, so this one stays here and takes sends again. The new thread is left there.`
+      : `The user moved this thread to ${machine}, but the move was given back before any thread was made there, so this one stays here and takes sends again.`
+  return `${said} This approves nothing.`
+}
+const kindWords = (event: WatcherEvent): string => event.kind === 'threads-restarted' ? restartedWords(event) : event.kind === 'thread-moved' ? movedWords(event) : event.kind === 'needs-user' && event.delegatedThreadId !== undefined
   ? `A thread this one delegated to, ${event.delegatedThreadId}, has a ${event.requestCardKind === 'permission' ? 'permission request' : 'question'} for the user. Open that thread to answer it. Only the user can answer.`
   : event.kind === 'request-closed' ? closedWords(event) : words[event.kind]
 /**

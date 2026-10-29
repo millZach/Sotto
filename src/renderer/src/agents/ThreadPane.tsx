@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useMark } from '../components/marks'
-import { Archive, ArchiveRestore, Columns2, CornerDownRight, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowRightLeft, Columns2, CornerDownRight, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
 import { capabilitiesForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed, isThreadTurnRunning, threadOrnamentAllowed } from '../../../shared/threadActivity'
 import { continueThreadRefusal } from '../../../shared/continueThread'
@@ -46,6 +46,7 @@ import { ContinueComposerNote, ContinueNow } from './ContinueThread'
 import { continueChoiceFor, continueModels, continueStore, providerDefaults, useContinueEnabled } from './continuations'
 import { useOwlFeature } from '../state/owlFeature'
 import { composerSlim, slimMoving, useSlimMotion } from './slimComposer'
+import { isPutAway, moveSheetStore, useMoveMachines, useThreadMovesBridge } from '../watcher/MoveThreads'
 
 type Command = AgentConnection['command']
 
@@ -344,6 +345,14 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const continuing: PaneMenuItem[] = continueTargets.length > 0 ? [{ id: 'continue', label: t`Continue on another provider…`, icon: <CornerDownRight size={15} aria-hidden="true" />,
     disabled: continueRefusal !== null, ...(continueRefusal !== null ? { hint: continueRefusal } : {}),
     run: () => { continueStore.set(thread.id, { ...continueChoiceFor(state, thread, continueTargets[0]!.id, continueStore.get(thread.id)), pick: true }) } }] : []
+  // Continue on another machine… (#1178, Zach, October 29, 2026; Owl Work across machines): This computer's threads, while
+  // another machine is connected. It opens Move threads' sheet for this one thread.
+  const moves = useThreadMovesBridge()
+  const moveOffered = moves !== undefined && !ownPane && thread.remoteHost !== true && !isPutAway(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history'
+  const moveMachines = useMoveMachines(moveOffered)
+  const moving: PaneMenuItem[] = moveOffered && moveMachines.some(machine => machine.connected)
+    ? [{ id: 'move', label: t`Continue on another machine…`, icon: <ArrowRightLeft size={15} aria-hidden="true" />,
+      run: () => { moveSheetStore.open({ kind: 'one', threadId: thread.id, title: thread.title }) } }] : []
   const recovery: PaneMenuItem[] = [
     ...(!rowConnected ? [{ id: 'reconnect', label: t`Reconnect`, icon: <Plug size={15} aria-hidden="true" />, disabled: state.connection === 'connecting', run: () => void command({ type: 'connect', ...reconnect }) }] : []),
   ]
@@ -382,7 +391,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
         {!closed ? <GitActionButton thread={thread} state={state} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {actions}
-        <PaneMenu groups={[naming, continuing, context, shelf, recovery, removal]} />
+        <PaneMenu groups={[naming, [...continuing, ...moving], context, shelf, recovery, removal]} />
       </div>
       {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={t({ message: `Close ${title} pane`, comment: '{title} is a thread\'s title.' })} title={t`Close pane`} onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>}

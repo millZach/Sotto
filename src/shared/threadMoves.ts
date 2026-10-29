@@ -45,7 +45,14 @@ export type ThreadMovePrepareRequest = z.infer<typeof threadMovePrepareRequestSc
  */
 export const threadMoveOutcomeSchema = z.enum(['moves', 'asks', 'stays'])
 export type ThreadMoveOutcome = z.infer<typeof threadMoveOutcomeSchema>
-const plannedSchema = z.object({ threadId: id, outcome: threadMoveOutcomeSchema, words: words.optional() }).strict()
+/**
+ * The model a move starts on there, by its name, and the source's own by its name when the machine lacks it, so the sheet
+ * and the card say which model it runs on (Zach, October 29, 2026).
+ */
+const moveModelSchema = z.object({ name: machineName, instead: machineName.optional() }).strict()
+export type ThreadMoveModel = z.infer<typeof moveModelSchema>
+/** `startsOn` names the permission a thread that asks first would start on there, for the press that moves it anyway. */
+const plannedSchema = z.object({ threadId: id, outcome: threadMoveOutcomeSchema, words: words.optional(), model: moveModelSchema.optional(), startsOn: machineName.optional() }).strict()
 export type ThreadMovePlanned = z.infer<typeof plannedSchema>
 export const threadMovePrepareSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('ok'), confirmationId: z.uuid(), expiresAt: z.iso.datetime(), machine: machineName,
@@ -69,9 +76,66 @@ export const threadMoveStartSchema = z.discriminatedUnion('status', [
   z.object({ status: z.literal('refused'), message: words }).strict(),
 ])
 export type ThreadMoveStart = z.infer<typeof threadMoveStartSchema>
+
+/** Every move's card for Watcher's conversation, as main holds them now. */
+export const THREAD_MOVES_READ = 'sotto:thread-move:read'
+/** The cards again, pushed whenever one changes. */
+export const THREAD_MOVES_CHANGED = 'sotto:thread-move:changed'
+/** The user's press on a card that asks first: move it anyway, or keep it here. */
+export const THREAD_MOVE_ANSWER = 'sotto:thread-move:answer'
+/** The most cards main holds for the window: the moves it keeps, and this run's cards that ask or say why a thread stayed. */
+export const THREAD_MOVE_CARDS_MAX = 700
+
+/**
+ * Where a move's card stands (Zach's pick B, October 29, 2026). A move's own record steps through the first five and ends
+ * in one of the next three. `asks` waits for the user's press because it would start narrower there, `kept` is a card the
+ * user kept here from that press, and `stays` is one the confirmation itself could not move; those three are this run's
+ * own and are not saved.
+ */
+export const THREAD_MOVE_CARD_STATES = ['fenced', 'branch-sent', 'thread-started', 'first-turn-ended', 'source-settled', 'given-back', 'stayed', 'asks', 'kept', 'stays'] as const
+export type ThreadMoveCardState = typeof THREAD_MOVE_CARD_STATES[number]
+const threadTargetSchema = z.object({ hostId: z.uuid(), threadId: id }).strict()
+export const threadMoveCardSchema = z.object({
+  /** The move's ID, or the card's own for one that asks, was kept here or stayed. */
+  id: z.uuid(),
+  state: z.enum(THREAD_MOVE_CARD_STATES),
+  /** The thread here, and the thread that continues it there once the machine has made one. */
+  source: threadTargetSchema,
+  moved: threadTargetSchema.optional(),
+  hostId: z.uuid(),
+  machine: machineName,
+  /** Why it asks, why it stayed or why it was given back, in its words. */
+  words: z.string().min(1).max(1_200).optional(),
+  model: moveModelSchema.optional(),
+  /** The permission one that asks first would start on there. */
+  startsOn: machineName.optional(),
+  /** The move waits on a machine that is not connected or has not answered. Part 4 reconciles it. */
+  waiting: z.literal(true).optional(),
+  /** Whether Watcher watches the new thread now. */
+  watched: z.literal(true).optional(),
+  /** When the user confirmed it, where the card goes in Watcher's conversation; and when it last changed. */
+  at: z.iso.datetime(),
+  updatedAt: z.iso.datetime(),
+}).strict()
+export type ThreadMoveCard = z.infer<typeof threadMoveCardSchema>
+export const threadMovesViewSchema = z.object({ cards: z.array(threadMoveCardSchema).max(THREAD_MOVE_CARDS_MAX) }).strict()
+export type ThreadMovesView = z.infer<typeof threadMovesViewSchema>
+
+export const threadMoveAnswerRequestSchema = z.object({ cardId: z.uuid(), answer: z.enum(['move', 'keep']) }).strict()
+export type ThreadMoveAnswerRequest = z.infer<typeof threadMoveAnswerRequestSchema>
+/** What came of the press: the card as it stands now, or why nothing changed. */
+export const threadMoveAnswerSchema = z.discriminatedUnion('status', [
+  z.object({ status: z.literal('ok') }).strict(),
+  z.object({ status: z.literal('refused'), message: words }).strict(),
+])
+export type ThreadMoveAnswer = z.infer<typeof threadMoveAnswerSchema>
+
 export interface ThreadMovesBridge {
   prepare(request: ThreadMovePrepareRequest): Promise<ThreadMovePrepare>
   start(request: ThreadMoveStartRequest): Promise<ThreadMoveStart>
+  read(): Promise<ThreadMovesView>
+  answer(request: ThreadMoveAnswerRequest): Promise<ThreadMoveAnswer>
+  onChanged(listener: (view: ThreadMovesView) => void): () => void
 }
 
 const capital = (name: string): string => name.charAt(0).toUpperCase() + name.slice(1)
@@ -121,6 +185,8 @@ export const THREAD_MOVE_WORDS = {
   /** A move whose new thread did not finish its first turn: the source stays, and the new thread is left there. */
   stayed: (machine: string, failed: boolean): string =>
     `The new thread on ${machine} ${failed ? 'failed' : 'was stopped'} in its first turn, so this thread stays on This computer and takes sends again. The new thread is still on ${machine}.`,
+  /** A card that asked first is no longer this run's: Sotto restarted, or the card was answered. */
+  noCard: 'That move isn’t waiting for an answer any more. Nothing was moved.',
 } as const
 
 /** What a thread's move eligibility reads beside the thread itself, each from the coordinator's own record. */
@@ -200,6 +266,8 @@ export function movePermission(source: Pick<AgentThread, 'runtimeMode' | 'provid
   const by = held.heldBack ? 'machine' as const : continued.narrowed?.by
   return { runtimeMode: held.runtimeMode, ...narrower && by ? { narrowed: { from: own.mode, to: held.runtimeMode, by } } : {} }
 }
+/** The name of the permission a move that asks first would start on there. */
+export const narrowedName = (narrowed: NonNullable<MovePermission['narrowed']>): string => narrowed.toName ?? RUNTIME_MODE_WORDS[narrowed.to]
 /** Why a move asks first, in words: what it would start on there, and what holds it back. */
 export function movePermissionWords(narrowed: NonNullable<MovePermission['narrowed']>, machine: string): string {
   const to = narrowed.toName ?? RUNTIME_MODE_WORDS[narrowed.to], from = RUNTIME_MODE_WORDS[narrowed.from]

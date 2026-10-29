@@ -2238,6 +2238,27 @@ it('tells Watcher of every thread a usage limit’s reset restarted, watched or 
   expect(f.wakes.due(told.find(event => event.target.threadId === 'unwatched')!)).toBe(false)
 })
 
+it('tells Watcher of each move the user made as it ends, watched or not, settled here or not (#1178)', async () => {
+  const f = fixture()
+  const forge = { hostId: randomUUID(), threadId: 'continued' }
+  f.wakes.threadMoved({ source: centerTarget, movedTo: forge, machine: 'forge', outcome: 'moved' })
+  f.wakes.threadMoved({ source: { hostId: centerTarget.hostId, threadId: 'unwatched' }, machine: 'forge', outcome: 'given-back' })
+  await f.advance(WATCHER_BATCH_MAX_MS)
+  const told = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'thread-moved')
+  expect(told).toHaveLength(2)
+  expect(told[0]).toMatchObject({ target: centerTarget, movedTo: forge, machine: 'forge', moveOutcome: 'moved' })
+  expect(told[0]!.requestId).not.toBe(WATCHER_UNWATCHED_REQUEST_ID)
+  expect(told[1]!.requestId).toBe(WATCHER_UNWATCHED_REQUEST_ID)
+  const text = watcherNewsText({ source: 'watcher', watcher: centerTarget, events: told, omitted: 0 })
+  expect(text).toContain(`The user moved this thread to forge, and Sotto moved it: it continues there as ${JSON.stringify(forge)}`)
+  expect(text).toContain('Your watch on it went to the new thread')
+  expect(text).toContain('the move was given back before any thread was made there, so this one stays here and takes sends again.')
+  expect(text.split('\n').find(line => line.includes('"unwatched"'))).not.toContain('Use requestId')
+  // A settled source's news is still due: Watcher hears of the move whatever became of the thread here.
+  f.snapshot.threads = []
+  expect(f.wakes.due(told[0]!)).toBe(true)
+})
+
 it('keeps telling the new Watcher of a thread the last one worked on for a request it inherited (#1735)', async () => {
   const f = fixture()
   // Watcher was replaced: the request that thread belongs to was made by the last conversation, which is history now.

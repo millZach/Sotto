@@ -30,10 +30,13 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * user answer that card. They carry none of the answer, and approve nothing. `threads-restarted` comes once for each thread
  * Sotto restarted when the usage limit that stopped it reset (ADR-0144), `restartedBy` naming that provider, watched or not:
  * a thread no request watches carries `WATCHER_UNWATCHED_REQUEST_ID`, which no request has. It approves nothing either.
+ * `thread-moved` comes once for each move the user made of a thread to another machine (#1178) as it ends, watched or not:
+ * `moveOutcome` says whether it moved (`movedTo` continues it on `machine` and this one is settled), stayed here after the
+ * new thread's first turn did not finish, or was given back before any thread was made there. Sotto runs moves, not Watcher.
  */
 export const watcherEventSchema = z.object({
   id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled', 'prototype-ready',
-    'request-closed', 'prototype-closed', 'threads-restarted']),
+    'request-closed', 'prototype-closed', 'threads-restarted', 'thread-moved']),
   requestId: z.uuid(), target: watcherThreadTargetSchema, generation: z.number().int().nonnegative(),
   observedAt: z.iso.datetime(), turnId: z.string().max(512).optional(), messageId: z.string().max(512).optional(),
   requestCardId: z.string().max(512).optional(), requestCardKind: z.enum(['question', 'permission']).optional(),
@@ -41,6 +44,7 @@ export const watcherEventSchema = z.object({
   backgroundWorkCount: z.number().int().nonnegative().optional(), evidenceIds: z.array(z.string().max(512)).max(100).optional(),
   delegatedThreadId: z.string().max(512).optional(), answeredByUser: z.literal(true).optional(),
   restartedBy: z.string().min(1).max(64).optional(),
+  movedTo: watcherThreadTargetSchema.optional(), moveOutcome: z.enum(['moved', 'stayed', 'given-back']).optional(), machine: z.string().min(1).max(200).optional(),
 }).strict()
 /** The request a `threads-restarted` event names for a thread no request watches: the nil UUID, which no request has. */
 export const WATCHER_UNWATCHED_REQUEST_ID = '00000000-0000-0000-0000-000000000000'

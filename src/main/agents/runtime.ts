@@ -496,7 +496,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // across machines is on and its Watcher runs, since moves reach machines and carry watches through Watcher. Every move
   // under way fences its source as its record is read, before any window or send can reach it.
   const threadMoves = crossMachine && options.runsAs !== 'headless-host' && watcher && branchMoves
-    ? new ThreadMoveService(directory, { control: agentControl, workspace: agentHost, branches: branchMoves, watch: watcher, ...delegation ? { delegations: delegation } : {} }) : undefined
+    ? new ThreadMoveService(directory, { control: agentControl, workspace: agentHost, branches: branchMoves, watch: watcher,
+      news: move => watcher.wakes.threadMoved(move), ...delegation ? { delegations: delegation } : {} }) : undefined
   await threadMoves?.load()
   // A run that does not move threads, stable among them, still reads the record and keeps every move not finished fenced,
   // and its worktree kept: that thread may already work on another machine. Nothing steps, and nothing is shown.

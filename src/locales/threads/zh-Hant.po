@@ -2685,6 +2685,10 @@ msgid "Continue on {name}, {modelName}"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadPane.tsx
+msgid "Continue on another machine…"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadPane.tsx
 msgid "Continue on another provider…"
 msgstr ""
 

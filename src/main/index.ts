@@ -2071,7 +2071,8 @@ const cleanupModelEnabled = owlFeatures['cleanup-model']
       const cleanupContinue = registerContinueIpc(ipcMain, continueService, () => windows.getTrustedRenderers())
       // Move threads (#1178): only where Watcher and Work across machines are both on and main built the service, so stable
       // registers nothing.
-      const cleanupThreadMoves = registerThreadMoveIpc(ipcMain, watcherEnabled && crossMachineEnabled ? threadMoves : undefined, () => windows.getTrustedRenderers())
+      const cleanupThreadMoves = registerThreadMoveIpc(ipcMain, watcherEnabled && crossMachineEnabled ? threadMoves : undefined, () => windows.getTrustedRenderers(),
+        (channel, payload) => { windows.sendToMain(channel, payload) })
       const cleanupNextPrompts = registerNextPromptIpc(ipcMain, localRuntime.nextPrompts, () => agentControl.hostId(), () => windows.getTrustedRenderers())
       const cleanupNotifications = registerNotificationIpc(ipcMain, desktopNotifier, () => windows.getTrustedRenderers())
       // A recording profiles the main window that asked, through its own debugger (ADR-0098).
