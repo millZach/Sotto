@@ -606,6 +606,31 @@ describe('part 2: the cards in Watcher’s conversation, the press on one that a
     expect(moves.list()).toEqual([]); expect(w.fences.size).toBe(0)
     moves.close()
   })
+  it('moves a pressed card only on the permission it named: one that would now start wider says so and moves nothing', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.remote.mayAnswer = false
+    await confirmed(w, moves, ['a'])
+    const [card] = moves.view().cards
+    expect(card).toMatchObject({ state: 'asks', startsOn: 'Ask for approval' })
+    // The machine now lets This computer answer there, so the thread would start on its own Allow edits, not Ask for approval.
+    w.remote.mayAnswer = true
+    expect(await moves.answer({ cardId: card!.id, answer: 'move' })).toEqual({ status: 'ok' })
+    expect(moves.view().cards).toEqual([expect.objectContaining({ id: card!.id, state: 'stays', words: THREAD_MOVE_WORDS.changed })])
+    expect(moves.list()).toEqual([]); expect(w.fences.size).toBe(0); expect(w.remote.requests).toEqual([])
+    moves.close()
+  })
+  it('pushes the cards when a machine change makes a move wait, and not for every update that changes nothing they say', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    const views: ThreadMovesView[] = []
+    moves.subscribe(view => { views.push(view) })
+    for (let index = 0; index < 20; index++) { w.connected(); w.changed() }
+    expect(views).toEqual([])
+    w.remote.connected = false; w.connected()
+    await vi.waitFor(() => expect(views.at(-1)?.cards[0]).toMatchObject({ id: moveId, waiting: true }))
+    moves.close()
+  })
   it('tells Watcher of each move as it ends: moved, stayed or given back', async () => {
     const w = world(), moves = w.service(); moves.useTargets(w.targets)
     const moved = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
@@ -613,7 +638,7 @@ describe('part 2: the cards in Watcher’s conversation, the press on one that a
     expect(w.news).toEqual([])
     w.endTurn(moved)
     await vi.waitFor(() => expect(stateOf(moves, moved)).toBe('source-settled'))
-    expect(w.news).toEqual([{ source: { hostId: HERE, threadId: 'a' }, movedTo: { hostId: FORGE, threadId: w.remote.made.get(moved) }, machine: 'forge', outcome: 'moved' }])
+    expect(w.news).toEqual([{ moveId: moved, source: { hostId: HERE, threadId: 'a' }, movedTo: { hostId: FORGE, threadId: w.remote.made.get(moved) }, machine: 'forge', outcome: 'moved' }])
     const stayed = (await confirmed(w, moves, ['b'])).moves[0]!.moveId!
     await vi.waitFor(() => expect(stateOf(moves, stayed)).toBe('thread-started'))
     w.endTurn(stayed, 'failed')
@@ -623,7 +648,7 @@ describe('part 2: the cards in Watcher’s conversation, the press on one that a
     w.branches.receipt = branchMoveRefusal('uncommitted', branchMoveWords.uncommitted)
     const back = (await confirmed(w, moves, ['back'])).moves[0]!.moveId!
     await vi.waitFor(() => expect(stateOf(moves, back)).toBe('given-back'))
-    expect(w.news[2]).toEqual({ source: { hostId: HERE, threadId: 'back' }, machine: 'forge', outcome: 'given-back' })
+    expect(w.news[2]).toEqual({ moveId: back, source: { hostId: HERE, threadId: 'back' }, machine: 'forge', outcome: 'given-back' })
     expect(w.news).toHaveLength(3)
     // Each card says how its move ended, and Watcher watches the one that moved.
     expect(moves.view().cards.map(card => card.state)).toEqual(['source-settled', 'stayed', 'given-back'])

@@ -701,7 +701,7 @@ export class WatcherWakeUp {
    * A move the user made of a thread to another machine ended (#1178). Sotto ran it, not Watcher, so Watcher hears of
    * each, watched or not: under the request that watched the thread here, and one no request watched under none.
    */
-  threadMoved(move: { readonly source: WatcherThreadTarget; readonly movedTo?: WatcherThreadTarget | undefined; readonly machine: string; readonly outcome: 'moved' | 'stayed' | 'given-back' }): void {
+  threadMoved(move: { readonly moveId: string; readonly source: WatcherThreadTarget; readonly movedTo?: WatcherThreadTarget | undefined; readonly machine: string; readonly outcome: 'moved' | 'stayed' | 'given-back' }): void {
     if (!this.started || this.closed) return
     const observedAt = new Date(this.now()).toISOString()
     const event = this.withPassReads((): WatcherEvent => {
@@ -712,8 +712,8 @@ export class WatcherWakeUp {
       }
       const one = watching(move.source) ?? (move.movedTo ? watching(move.movedTo) : undefined)
       return { kind: 'thread-moved', target: move.source, requestId: one?.request.id ?? WATCHER_UNWATCHED_REQUEST_ID, generation: one?.participant.generation ?? 0,
-        observedAt, moveOutcome: move.outcome, machine: move.machine.slice(0, 200), ...move.movedTo ? { movedTo: move.movedTo } : {},
-        id: observationDigest(['thread-moved', move.source, move.movedTo ?? null, observedAt]) }
+        observedAt, moveId: move.moveId, moveOutcome: move.outcome, machine: move.machine.slice(0, 200), ...move.movedTo ? { movedTo: move.movedTo } : {},
+        id: observationDigest(['thread-moved', move.moveId]) }
     })
     this.tell([event])
   }

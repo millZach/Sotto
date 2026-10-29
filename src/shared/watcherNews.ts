@@ -44,7 +44,7 @@ export const watcherEventSchema = z.object({
   backgroundWorkCount: z.number().int().nonnegative().optional(), evidenceIds: z.array(z.string().max(512)).max(100).optional(),
   delegatedThreadId: z.string().max(512).optional(), answeredByUser: z.literal(true).optional(),
   restartedBy: z.string().min(1).max(64).optional(),
-  movedTo: watcherThreadTargetSchema.optional(), moveOutcome: z.enum(['moved', 'stayed', 'given-back']).optional(), machine: z.string().min(1).max(200).optional(),
+  moveId: z.uuid().optional(), movedTo: watcherThreadTargetSchema.optional(), moveOutcome: z.enum(['moved', 'stayed', 'given-back']).optional(), machine: z.string().min(1).max(200).optional(),
 }).strict()
 /** The request a `threads-restarted` event names for a thread no request watches: the nil UUID, which no request has. */
 export const WATCHER_UNWATCHED_REQUEST_ID = '00000000-0000-0000-0000-000000000000'

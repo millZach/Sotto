@@ -2241,11 +2241,15 @@ it('tells Watcher of every thread a usage limit’s reset restarted, watched or 
 it('tells Watcher of each move the user made as it ends, watched or not, settled here or not (#1178)', async () => {
   const f = fixture()
   const forge = { hostId: randomUUID(), threadId: 'continued' }
-  f.wakes.threadMoved({ source: centerTarget, movedTo: forge, machine: 'forge', outcome: 'moved' })
-  f.wakes.threadMoved({ source: { hostId: centerTarget.hostId, threadId: 'unwatched' }, machine: 'forge', outcome: 'given-back' })
+  // Two moves of one thread before the news goes are two events: an earlier one given back, then the one that moved it.
+  f.wakes.threadMoved({ moveId: randomUUID(), source: centerTarget, machine: 'studio', outcome: 'given-back' })
+  f.wakes.threadMoved({ moveId: randomUUID(), source: centerTarget, movedTo: forge, machine: 'forge', outcome: 'moved' })
+  f.wakes.threadMoved({ moveId: randomUUID(), source: { hostId: centerTarget.hostId, threadId: 'unwatched' }, machine: 'forge', outcome: 'given-back' })
   await f.advance(WATCHER_BATCH_MAX_MS)
-  const told = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'thread-moved')
-  expect(told).toHaveLength(2)
+  const all = f.delivered.flatMap(news => news.events).filter(event => event.kind === 'thread-moved')
+  expect(all).toHaveLength(3)
+  expect(all[0]).toMatchObject({ target: centerTarget, machine: 'studio', moveOutcome: 'given-back' })
+  const told = all.slice(1)
   expect(told[0]).toMatchObject({ target: centerTarget, movedTo: forge, machine: 'forge', moveOutcome: 'moved' })
   expect(told[0]!.requestId).not.toBe(WATCHER_UNWATCHED_REQUEST_ID)
   expect(told[1]!.requestId).toBe(WATCHER_UNWATCHED_REQUEST_ID)

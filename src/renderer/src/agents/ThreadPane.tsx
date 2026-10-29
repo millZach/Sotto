@@ -46,7 +46,7 @@ import { ContinueComposerNote, ContinueNow } from './ContinueThread'
 import { continueChoiceFor, continueModels, continueStore, providerDefaults, useContinueEnabled } from './continuations'
 import { useOwlFeature } from '../state/owlFeature'
 import { composerSlim, slimMoving, useSlimMotion } from './slimComposer'
-import { isPutAway, moveSheetStore, useMoveMachines, useThreadMovesBridge } from '../watcher/MoveThreads'
+import { isPutAway, moveSheetStore, useMoveMachines, useMovesOffered } from '../watcher/MoveThreads'
 
 type Command = AgentConnection['command']
 
@@ -346,8 +346,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     disabled: continueRefusal !== null, ...(continueRefusal !== null ? { hint: continueRefusal } : {}),
     run: () => { continueStore.set(thread.id, { ...continueChoiceFor(state, thread, continueTargets[0]!.id, continueStore.get(thread.id)), pick: true }) } }] : []
   // Continue on another machine… (#1178, Zach, October 29, 2026; Owl Work across machines): This computer's threads, while
-  // another machine is connected. It opens Move threads' sheet for this one thread.
-  const moves = useThreadMovesBridge()
+  // Watcher runs and another machine is connected. It opens Move threads' sheet for this one thread.
+  const moves = useMovesOffered()
   const moveOffered = moves !== undefined && !ownPane && thread.remoteHost !== true && !isPutAway(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history'
   const moveMachines = useMoveMachines(moveOffered)
   const moving: PaneMenuItem[] = moveOffered && moveMachines.some(machine => machine.connected)

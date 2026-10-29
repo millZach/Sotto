@@ -7,7 +7,7 @@ import { parsePrototypeSource, replySource, requestSource } from './prototypeSou
 export function eventSlot(event: WatcherEvent): string {
   return JSON.stringify([event.requestId, targetKey(event.target), event.kind === 'turn-failed' ? 'turn-finished' : event.kind,
     event.kind === 'needs-user' || event.kind === 'request-closed' ? [event.delegatedThreadId ?? null, event.requestCardId] : event.kind === 'delivery-changed' ? event.operationId
-      : event.kind === 'prototype-ready' || event.kind === 'prototype-closed' ? watcherPrototypeSource(event) ?? null : event.turnId ?? null])
+      : event.kind === 'prototype-ready' || event.kind === 'prototype-closed' ? watcherPrototypeSource(event) ?? null : event.kind === 'thread-moved' ? event.moveId ?? null : event.turnId ?? null])
 }
 /**
  * The prototype a `prototype-ready` event is of (ADR-0108), as the thread's mark names its source: the question it waits

@@ -286,12 +286,12 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   const receiptPlacements = room?.state?.receiptPlacements
   const placementsById = useMemo(() => !crossMachine ? undefined
     : joinedPlacements(new Map((receiptPlacements ?? []).map(item => [item.operationId, item.placement] as const)), recalled), [crossMachine, receiptPlacements, recalled])
-  // The moves Sotto ran (#1178), each after the turn it was confirmed in; a move from before this Watcher's first message
-  // is the last Watcher's, and is not shown here.
+  // The moves Sotto ran (#1178), each after the turn it was confirmed in; a move from before this Watcher started is the
+  // last Watcher's, and is not shown here.
   const moveCards = useMoveCards()
-  const firstAt = messages[0]?.createdAt
-  const movesPlaced = useMemo(() => !crossMachine || moveCards.length === 0 || firstAt === undefined ? undefined
-    : placeAfterTurns(messages, moveCards.filter(card => card.at >= firstAt)), [crossMachine, moveCards, messages, firstAt])
+  const since = current?.createdAt
+  const movesPlaced = useMemo(() => !crossMachine || moveCards.length === 0 || since === undefined ? undefined
+    : placeAfterTurns(messages, moveCards.filter(card => Date.parse(card.at) >= Date.parse(since))), [crossMachine, moveCards, messages, since])
   const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, moves: movesPlaced }),
     [byMessage, lines, describe, press, asks, placementsById, movesPlaced])
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the

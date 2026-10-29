@@ -187,6 +187,8 @@ export const THREAD_MOVE_WORDS = {
     `The new thread on ${machine} ${failed ? 'failed' : 'was stopped'} in its first turn, so this thread stays on This computer and takes sends again. The new thread is still on ${machine}.`,
   /** A card that asked first is no longer this run's: Sotto restarted, or the card was answered. */
   noCard: 'That move isn’t waiting for an answer any more. Nothing was moved.',
+  /** A card's press found the thread would now start on another permission than the card named. */
+  changed: 'What this thread would start on there has changed since its card asked, so nothing was moved. Move it again from Move threads to see what it starts on now.',
 } as const
 
 /** What a thread's move eligibility reads beside the thread itself, each from the coordinator's own record. */

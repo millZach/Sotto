@@ -9,10 +9,12 @@ import type { ThreadMoveCard, ThreadMovePrepare, ThreadMovesBridge, ThreadMovesV
 import { machinesConnected, moveCardsStore, moveSheetStore, MoveThreadsSheetHost, WatcherMoveCards, WatcherMoveThreads, type MoveCardThreads } from '../../../src/renderer/src/watcher/MoveThreads'
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
+import { useWatcherRoom } from '../../../src/renderer/src/watcher/watcherRoom'
 import { hostsBridgeFixture, hostsState, hostStatus } from '../../fixtures/renderer/hostBridges'
 
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: vi.fn() }))
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: vi.fn() }))
+vi.mock('../../../src/renderer/src/watcher/watcherRoom', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/watcher/watcherRoom')>(), useWatcherRoom: vi.fn() }))
 
 const LOCAL = '7d1c8a52-5f0a-4d55-9a38-1f9b7a2a0c11', FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10', STUDIO = 'c5e2a1f8-9b3d-4e72-a6c1-3f8d2b5e9a07'
 const CONFIRMATION = '07b51f0b-ed75-4abb-aea3-a014fceef088', CARD = '5b3c9e1a-7d24-4f6b-8a90-2c1e4d7f6a35'
@@ -47,6 +49,7 @@ function bridges(options: { machines?: { hostId: string; name: string; phase: 'c
 beforeEach(() => {
   vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'cross-machine-work': true, watcher: true } } } as unknown as ReturnType<typeof useOptionalApp>)
   vi.mocked(useOptionalAgents).mockReturnValue({ state } as unknown as ReturnType<typeof useOptionalAgents>)
+  vi.mocked(useWatcherRoom).mockReturnValue({ state: { current: { createdAt: AT } } } as unknown as ReturnType<typeof useWatcherRoom>)
 })
 afterEach(() => {
   cleanup(); vi.clearAllMocks(); machinesConnected.clear(); moveCardsStore.clear(); moveSheetStore.close()
@@ -54,8 +57,14 @@ afterEach(() => {
 })
 
 describe('Move threads and its sheet', () => {
-  it('is hidden while no other machine is connected, and in stable', async () => {
+  it('is hidden while no other machine is connected, before Watcher starts, and in stable', async () => {
     bridges({ machines: [{ hostId: FORGE, name: 'forge', phase: 'disconnected' }] })
+    render(<WatcherMoveThreads />)
+    await act(async () => { await Promise.resolve() })
+    expect(screen.queryByRole('button', { name: 'Move threads to another machine' })).toBeNull()
+    cleanup(); machinesConnected.clear()
+    bridges()
+    vi.mocked(useWatcherRoom).mockReturnValueOnce({ state: { current: null } } as unknown as ReturnType<typeof useWatcherRoom>)
     render(<WatcherMoveThreads />)
     await act(async () => { await Promise.resolve() })
     expect(screen.queryByRole('button', { name: 'Move threads to another machine' })).toBeNull()
@@ -84,8 +93,9 @@ describe('Move threads and its sheet', () => {
     expect(body.getByText(/It waits on its card in Watcher’s conversation for your press before it moves\./u)).toBeTruthy()
     expect(body.getByText('A turn is running. Move it once the turn ends, or stop it.')).toBeTruthy()
     expect(body.getByText(/Watcher stays on This computer\./u)).toBeTruthy()
-    // The move is the focused press, and it sends what moves and what asks, with nothing pressed for narrower.
-    expect(document.activeElement).toBe(within(sheet).getByRole('button', { name: 'Move 2 threads' }))
+    // Cancel takes focus, as every confirmation's secondary action does; the move sends what moves and what asks, with
+    // nothing pressed for narrower.
+    expect(document.activeElement).toBe(within(sheet).getByRole('button', { name: 'Cancel' }))
     fireEvent.click(within(sheet).getByRole('button', { name: 'Move 2 threads' }))
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(moves.start).toHaveBeenCalledWith({ confirmationId: CONFIRMATION, threadIds: ['tray', 'menu'], allowNarrower: [] })

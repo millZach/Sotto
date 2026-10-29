@@ -13,8 +13,13 @@ import { openPaneMenu, paneMenuItems } from '../../fixtures/renderer/paneMenu'
 import { hostsBridgeFixture, hostsState, hostStatus } from '../../fixtures/renderer/hostBridges'
 import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import { machinesConnected, moveSheetStore } from '../../../src/renderer/src/watcher/MoveThreads'
+import { useWatcherRoom } from '../../../src/renderer/src/watcher/watcherRoom'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
+vi.mock('../../../src/renderer/src/watcher/watcherRoom', async importOriginal => {
+  const original = await importOriginal<typeof import('../../../src/renderer/src/watcher/watcherRoom')>()
+  return { ...original, useWatcherRoom: vi.fn(original.useWatcherRoom) }
+})
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => {
   const original = await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>()
   return { ...original, useOptionalApp: vi.fn(original.useOptionalApp) }
@@ -91,9 +96,10 @@ describe('the pane header’s More menu', () => {
 
 describe('Continue on another machine… (#1178 part 2, Owl Work across machines)', () => {
   const FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10'
-  afterEach(() => { machinesConnected.clear(); moveSheetStore.close(); delete (window as unknown as { sotto?: unknown }).sotto })
+  afterEach(() => { machinesConnected.clear(); moveSheetStore.close(); vi.mocked(useOptionalApp).mockReset(); vi.mocked(useWatcherRoom).mockReset(); delete (window as unknown as { sotto?: unknown }).sotto })
   const offer = (phase: 'connected' | 'disconnected') => {
     vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'cross-machine-work': true, watcher: true } } } as unknown as ReturnType<typeof useOptionalApp>)
+    vi.mocked(useWatcherRoom).mockReturnValue({ state: { current: { createdAt: '2026-10-29T14:00:00.000Z' } } } as unknown as ReturnType<typeof useWatcherRoom>)
     const hosts = hostsBridgeFixture({ initial: hostsState({ hosts: [hostStatus({ id: FORGE, hostId: FORGE, name: 'forge', phase })] }) }).bridge
     ;(window as unknown as { sotto: unknown }).sotto = { hosts, threadMoves: { prepare: vi.fn(), start: vi.fn(), read: vi.fn(async () => ({ cards: [] })), answer: vi.fn(), onChanged: vi.fn(() => () => undefined) } }
   }

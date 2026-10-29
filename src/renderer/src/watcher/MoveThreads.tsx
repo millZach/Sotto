@@ -16,6 +16,7 @@ import { ProviderMark } from '../agents/ProviderMark'
 import { useOptionalAgents } from '../agents/AgentContext'
 import { savedMachines, type SavedMachine } from '../state/hostsState'
 import { useOwlFeature } from '../state/owlFeature'
+import { useWatcherRoom } from './watcherRoom'
 
 /**
  * Moving threads to another machine, in the window (#1178 part 2, Zach's pick B on October 29, 2026). **Move threads**,
@@ -25,8 +26,12 @@ import { useOwlFeature } from '../state/owlFeature'
  * Both are hidden while no other machine is connected. Part of the Owl feature Work across machines: stable has no bridge.
  */
 
+/** An end-to-end run's moves and machines, in place of main's (`createE2EThreadMovesStandIn`). */
+let standIn: { readonly moves: ThreadMovesBridge; readonly hosts: HostsBridge } | undefined
+export function setThreadMovesStandIn(next: typeof standIn): void { standIn = next }
+
 /** The bridge, where main offers it: Owl, with Watcher and Work across machines on. */
-export function useThreadMovesBridge(bridge: ThreadMovesBridge | undefined = window.sotto?.threadMoves): ThreadMovesBridge | undefined {
+export function useThreadMovesBridge(bridge: ThreadMovesBridge | undefined = standIn?.moves ?? window.sotto?.threadMoves): ThreadMovesBridge | undefined {
   return useOwlFeature('cross-machine-work') ? bridge : undefined
 }
 
@@ -67,7 +72,7 @@ class MachinesConnected {
 export const machinesConnected = new MachinesConnected()
 
 /** The paired machines a move could go to, connected or not; empty while moving is not offered. */
-export function useMoveMachines(offered: boolean, bridge: HostsBridge | undefined = window.sotto?.hosts): readonly SavedMachine[] {
+export function useMoveMachines(offered: boolean, bridge: HostsBridge | undefined = standIn?.hosts ?? window.sotto?.hosts): readonly SavedMachine[] {
   const active = offered ? bridge : undefined
   useEffect(() => active ? machinesConnected.use(active) : undefined, [active])
   const state = useSyncExternalStore(machinesConnected.subscribe, machinesConnected.get)
@@ -102,10 +107,19 @@ export function movableThreadIds(state: AgentState): readonly string[] {
     .slice(0, THREAD_MOVE_THREADS_MAX).map(thread => thread.id)
 }
 
+/**
+ * Whether moving is offered now: Owl's bridge, with Watcher started, since each move is reported in its conversation. The
+ * machines a move could go to follow.
+ */
+export function useMovesOffered(): ThreadMovesBridge | undefined {
+  const bridge = useThreadMovesBridge()
+  return useWatcherRoom()?.state?.current != null ? bridge : undefined
+}
+
 /** Move threads, beside Stop all in Watcher's header: shown only while another machine is connected (Zach, October 29). */
 export function WatcherMoveThreads(): ReactNode {
   const { t } = useLingui()
-  const bridge = useThreadMovesBridge()
+  const bridge = useMovesOffered()
   const machines = useMoveMachines(bridge !== undefined)
   if (bridge === undefined || !machines.some(machine => machine.connected)) return null
   return <button type="button" className="watcher-move-threads tt-focusable" aria-haspopup="dialog" title={t`Move threads to another machine`}
@@ -150,7 +164,9 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
   const opener = useRef(moveSheetStore.opener)
   const fallback = useRef<HTMLElement | null>(null)
   fallback.current = opener.current?.isConnected ? opener.current : document.querySelector<HTMLElement>('.watcher-move-threads, #watcher-prompt')
-  const close = (): void => { if (phase.kind !== 'starting') moveSheetStore.close() }
+  // Escape, Cancel or Close put the sheet away at any step. Put away while the moves start, they go on, and their cards
+  // in Watcher's conversation say how each goes.
+  const close = (): void => { moveSheetStore.close() }
   const dialog = useDialogFocus({ onEscape: close, initialFocus: first, fallbackFocus: fallback })
   const threadIds = useMemo(() => request.kind === 'one' ? [request.threadId] : state === null ? [] : movableThreadIds(state), [request, state])
   const idsRef = useRef(threadIds)
@@ -171,7 +187,8 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
     started.current = true
     void prepare(only)
   })
-  // Each step's first control takes focus as it draws, so Escape and Tab stay in the sheet.
+  // Each step's first control takes focus as it draws, so Escape and Tab stay in the sheet: Cancel or Close, as every
+  // confirmation here starts on its secondary action.
   useEffect(() => { dialog.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus() }, [phase.kind, dialog])
   const start = async (machine: SavedMachine, preview: Extract<ThreadMovePrepare, { status: 'ok' }>, ids: readonly string[]): Promise<void> => {
     setPhase({ kind: 'starting', machine, preview })
@@ -183,8 +200,8 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
   }
 
   let title: string, body: ReactNode, actions: ReactNode
-  const cancel = (label: string = t`Cancel`, autofocus = true): ReactNode =>
-    <Button ref={first} variant="secondary" data-autofocus={autofocus || undefined} disabled={phase.kind === 'starting'} onClick={close}>{label}</Button>
+  const cancel = (label: string = t`Cancel`): ReactNode =>
+    <Button ref={first} variant="secondary" data-autofocus onClick={close}>{phase.kind === 'starting' ? t`Close` : label}</Button>
   if (phase.kind === 'choose') {
     title = request.kind === 'one' ? t`Move ${request.title} to which machine?` : t`Move threads to which machine?`
     body = <ul className="move-sheet__machines">{machines.map(machine => <li key={machine.hostId}>
@@ -243,8 +260,8 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
       {count ? <p className="move-sheet__note tt-paragraph"><Trans>Each thread here is settled once its new thread’s first turn ends, and its worktree is kept.</Trans></p> : null}
     </>
     actions = <>
-      {cancel(count ? t`Cancel` : t`Close`, count === 0)}
-      {count ? <Button variant="primary" data-autofocus disabled={phase.kind === 'starting'} onClick={() => void start(machine, preview, going)}>
+      {cancel(count ? t`Cancel` : t`Close`)}
+      {count ? <Button variant="primary" disabled={phase.kind === 'starting'} onClick={() => void start(machine, preview, going)}>
         {phase.kind === 'starting' ? t`Moving…` : one !== null ? t`Move it to ${named}` : plural(count, { one: 'Move # thread', other: 'Move # threads' })}
       </Button> : null}
     </>
@@ -371,7 +388,7 @@ function MoveCard({ card, threads, answer }: { readonly card: ThreadMoveCard; re
         {facts.providerId === undefined ? null : <span className="thread-nav__mark" data-provider={facts.providerId} aria-hidden="true"><ProviderMark provider={facts.providerId} name={facts.provider} /></span>}
         {facts.provider}</span>}
       <span className="receipt-card__machine" data-kind="remote"><Laptop size={12} aria-hidden="true" /><Trans>This computer</Trans>
-        <span aria-hidden="true">→</span><span className="vh"><Trans>to</Trans></span><Server size={12} aria-hidden="true" />{card.machine}</span>
+        <span aria-hidden="true">→</span><span className="tt-visually-hidden"><Trans>to</Trans></span><Server size={12} aria-hidden="true" />{card.machine}</span>
       {card.model ? <span>{t({ message: `${card.model.name} there`, comment: 'The model a moved thread runs on the other machine' })}</span> : null}
       {card.model?.instead ? <span>{t`${card.machine} doesn’t have ${card.model.instead}`}</span> : null}
       {facts.project === undefined ? null : <span className="receipt-card__project">{facts.project}</span>}
