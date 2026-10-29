@@ -31,7 +31,7 @@ import { heldOnHost } from '../shared/hostProviders'
 import { startedBySotto, type HostStartedBy } from '../shared/hostConnection'
 import { createHostSelfUpdate } from './selfUpdate'
 import { HostBranchMoves } from './branchMoves'
-import { HostThreadMoves } from '../main/agents/threadMovesHost'
+import { HostThreadMoves, HostThreadMoveSources } from '../main/agents/threadMovesHost'
 import { HostDelegationRelay } from '../main/agents/delegationRelayHost'
 import { HostRemoteCallers } from '../main/agents/delegationRemoteHost'
 import { BranchBundles } from '../main/agents/branchBundles'
@@ -266,9 +266,12 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           recordsPath: join(directory, 'branch-moves.json') }), foldersOf(() => runtime.hostService.view())) : undefined
         await branchMoves?.start().catch(() => options.log?.('branch-moves-staging-clear-failed'))
         // A thread moved here from another machine starts from the branch moved here for it (#1178), on the same Owl answer,
-        // held to what this host lets the asking desktop give a thread here.
+        // held to what this host lets the asking desktop give a thread here. This host's own threads move too (part 3): it
+        // holds one for the desktop, by its own record, and fences it until the move ends.
         threadMoves = branchMoves ? new HostThreadMoves(directory, { control: runtime.agentControl, workspace: runtime.agentHost,
-          mayAnswer: client => policy?.mayGrant(client).allowed ?? false }) : undefined
+          mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
+          sources: new HostThreadMoveSources(directory, { control: runtime.agentControl, workspace: runtime.agentHost,
+            ...runtime.delegation ? { delegations: runtime.delegation } : {} }) }) : undefined
         const moves = { ...branchMoves ? { branchMoves } : {}, ...threadMoves ? { threadMoves } : {}, ...delegationRelay && runtime.delegation ? { delegationRelay } : {}, ...delegationRemote && runtime.delegation ? { delegationRemote } : {} }
         // The host's own OpenCode signed in to model sources from a desktop (#1107), only where its OpenCode runs.
         const opencodeSignIn = runtime.opencodeSignIn ? { opencodeSignIn: runtime.opencodeSignIn } : {}

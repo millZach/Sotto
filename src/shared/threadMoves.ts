@@ -15,7 +15,9 @@ import { RUNTIME_MODE_WORDS } from './workerRoles'
  * thread's first turn has ended; its worktree is kept. Nothing is a moved session.
  *
  * Part of the Owl feature Work across machines (`cross-machine-work`, ADR-0072): stable builds no service, registers no
- * bridge and lists no host feature. This part moves This computer's threads to a paired host, with no window of its own.
+ * bridge and lists no host feature. A thread moves between any two machines the desktop is connected to (part 3): This
+ * computer's to a paired host, and a paired host's to This computer or to another host through the desktop, the host it
+ * is on holding it for the move (`thread-move-source`).
  */
 
 /** What the Move threads sheet would do now, and why a thread stays. */
@@ -104,6 +106,10 @@ export const threadMoveCardSchema = z.object({
   moved: threadTargetSchema.optional(),
   hostId: z.uuid(),
   machine: machineName,
+  /** The machine the thread is on, by its name, when that is a host and not This computer (part 3). */
+  from: machineName.optional(),
+  /** It moves to This computer, from a host. */
+  here: z.literal(true).optional(),
   /** Why it asks, why it stayed or why it was given back, in its words. */
   words: z.string().min(1).max(1_200).optional(),
   model: moveModelSchema.optional(),
@@ -154,7 +160,6 @@ export const THREAD_MOVE_WORDS = {
   unresolved: 'A message to this thread is still on its way or unconfirmed. Move it once it has gone.',
   uncommitted: 'This thread has uncommitted changes. Commit them first, then move it.',
   notOnBranch: 'This thread isn’t on a branch. Check out a branch first, then move it.',
-  remote: 'Only This computer’s threads move for now.',
   archived: 'This thread is archived. Restore it to move it.',
   empty: 'Nothing to hand over: this thread has no messages yet.',
   gone: 'This thread is no longer here.',
@@ -174,8 +179,8 @@ export const THREAD_MOVE_WORDS = {
   twice: 'This thread is already named in this preview.',
   unsaved: 'Sotto could not save this move, so nothing was moved. Try again.',
   unread: 'Sotto could not read that request. Nothing was moved.',
-  /** A move given back before any thread was made for it: why, in the step's own words, and that the source is open again. */
-  givenBack: (why: string): string => `${why} This thread stays on This computer and takes sends again.`,
+  /** A move given back before any thread was made for it: why, in the step's own words, and that the source is open again where it is. */
+  givenBack: (why: string, from = 'This computer'): string => `${why} This thread stays on ${from} and takes sends again.`,
   /** This computer's record of moves could not be read: no move starts, and the moves it named stay fenced. */
   unreadableRecord: 'Sotto could not read its record of thread moves, so no thread can move now. Nothing was moved. Restart Sotto to try again.',
   /** A thread a record Sotto cannot read names as moving. */
@@ -183,8 +188,14 @@ export const THREAD_MOVE_WORDS = {
   /** A thread moving when Sotto last ran with Work across machines on, which this run does not have. */
   paused: (machine: string): string => `This thread is moving to ${machine}, and this Sotto doesn’t move threads, so it takes no sends here. Nothing was lost. Open Sotto Owl to finish the move.`,
   /** A move whose new thread did not finish its first turn: the source stays, and the new thread is left there. */
-  stayed: (machine: string, failed: boolean): string =>
-    `The new thread on ${machine} ${failed ? 'failed' : 'was stopped'} in its first turn, so this thread stays on This computer and takes sends again. The new thread is still on ${machine}.`,
+  stayed: (machine: string, failed: boolean, from = 'This computer'): string =>
+    `The new thread on ${machine} ${failed ? 'failed' : 'was stopped'} in its first turn, so this thread stays on ${from} and takes sends again. The new thread is still on ${machine}.`,
+  /** The thread is on the machine it would move to already. */
+  already: (machine: string): string => `This thread is on ${machine} already.`,
+  /** The source's machine is not connected, so its thread can't be held or moved now. */
+  sourceAway: (machine: string): string => `${capital(machine)} isn’t connected, so its threads can’t move now. Connect it, then try again. Nothing was moved.`,
+  /** The source's machine runs a Sotto that cannot hold its threads for a move. */
+  olderSource: (machine: string): string => `${capital(machine)} needs a newer Sotto before its threads can move. Update it from the Threads page, then try again. Nothing was moved.`,
   /** A card that asked first is no longer this run's: Sotto restarted, or the card was answered. */
   noCard: 'That move isn’t waiting for an answer any more. Nothing was moved.',
   /** A card's press found the thread would now start on another permission than the card named. */
@@ -214,10 +225,9 @@ export interface MoveEligibility {
  * nothing to hand over stay too. Uncommitted work is read from the folder's last Git status here; the branch's own check
  * refuses it again as the move runs.
  */
-export function threadMoveRefusal(thread: Pick<AgentThread, 'kind' | 'remoteHost' | 'archivedAt' | 'status' | 'lastTurn' | 'requests' | 'delegatedBy' | 'worktree'
+export function threadMoveRefusal(thread: Pick<AgentThread, 'kind' | 'archivedAt' | 'status' | 'lastTurn' | 'requests' | 'delegatedBy' | 'worktree'
   | 'messages' | 'summary' | 'nativeSessionStarted'>, context: MoveEligibility): string | null {
   if (thread.kind === 'watcher' || thread.kind === 'watcher-history') return THREAD_MOVE_WORDS.watcher
-  if (thread.remoteHost === true) return THREAD_MOVE_WORDS.remote
   if (isThreadArchived(thread)) return THREAD_MOVE_WORDS.archived
   if (context.movingTo !== undefined) return THREAD_MOVE_WORDS.moving(context.movingTo)
   if (context.fenced === true) return THREAD_MOVE_WORDS.fenced
@@ -319,19 +329,35 @@ export function movePrompt(handover: string, facts: MoveFacts): string {
  * What a desktop asks of a host that lists `thread-move` (`thread-move` on the socket, #1178). `start` makes the moved
  * thread in a new worktree from the move's incoming ref, which the desktop landed in `projectId` first, and sends it its
  * first prompt; a second `start` with the same move answers the thread the first made. The host holds its permission to
- * what it lets that desktop give there. `from` names the source on the desktop's side, for the new thread's link back.
- * Later parts add an exact read and a fence for a move the desktop gives up on (ADR-0105 decision 7, "Reconciling").
+ * what it lets that desktop give there. `from` names the source on its own machine, for the new thread's link back.
+ *
+ * A host that lists `thread-move-source` also lets one of its own threads be a move's source (part 3): `hold` checks the
+ * thread can move, by this machine's own record, and fences it under the move's ID; `handover` gives the held thread's
+ * handover, for the first prompt the desktop builds; `settle` links it to the thread that continues it and settles it;
+ * `release` lets go of the fence, linking it first when a thread was made for the move. Each is answered the same when asked
+ * again with the same move, so a lost answer can be asked for again. Later parts add an exact read and a fence for a move
+ * the desktop gives up on (ADR-0105 decision 7, "Reconciling").
  */
-export const hostThreadMoveRequestSchema = z.discriminatedUnion('action', [
-  z.object({ action: z.literal('start'), moveId: branchMoveIdSchema, projectId: id,
-    title: id, titleSource: z.literal('user').optional(), modelId: z.string().min(1).max(6_144),
-    reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(),
-    from: z.object({ threadId: id, provider: providerIdSchema, hostId: z.uuid() }).strict(),
-    prompt: z.string().min(1).max(AGENT_TEXT_MAX),
-    /** The handover's length and digest within `prompt`, and what it carried, never its words: the new thread's link back keeps them. */
-    handover: z.object({ prefixLength: z.number().int().nonnegative().max(AGENT_TEXT_MAX), prefixDigest: z.string().regex(/^[a-f0-9]{64}$/u),
-      counts: handoverCountsSchema }).strict() }).strict(),
+const moveLinkSchema = z.object({ threadId: id, provider: providerIdSchema, hostId: z.uuid(), at: z.iso.datetime() }).strict()
+export type ThreadMoveLink = z.infer<typeof moveLinkSchema>
+export const hostThreadMoveStartSchema = z.object({ action: z.literal('start'), moveId: branchMoveIdSchema, projectId: id,
+  title: id, titleSource: z.literal('user').optional(), modelId: z.string().min(1).max(6_144),
+  reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(),
+  from: z.object({ threadId: id, provider: providerIdSchema, hostId: z.uuid() }).strict(),
+  prompt: z.string().min(1).max(AGENT_TEXT_MAX),
+  /** The handover's length and digest within `prompt`, and what it carried, never its words: the new thread's link back keeps them. */
+  handover: z.object({ prefixLength: z.number().int().nonnegative().max(AGENT_TEXT_MAX), prefixDigest: z.string().regex(/^[a-f0-9]{64}$/u),
+    counts: handoverCountsSchema }).strict() }).strict()
+export type HostThreadMoveStart = z.infer<typeof hostThreadMoveStartSchema>
+export const hostThreadMoveSourceSchema = z.discriminatedUnion('action', [
+  /** `machine` is where it goes, as the desktop names it, for the fence's sentence here. */
+  z.object({ action: z.literal('hold'), moveId: branchMoveIdSchema, threadId: id, machine: machineName }).strict(),
+  z.object({ action: z.literal('handover'), moveId: branchMoveIdSchema }).strict(),
+  z.object({ action: z.literal('settle'), moveId: branchMoveIdSchema, link: moveLinkSchema }).strict(),
+  z.object({ action: z.literal('release'), moveId: branchMoveIdSchema, link: moveLinkSchema.optional() }).strict(),
 ])
+export type HostThreadMoveSource = z.infer<typeof hostThreadMoveSourceSchema>
+export const hostThreadMoveRequestSchema = z.discriminatedUnion('action', [hostThreadMoveStartSchema, ...hostThreadMoveSourceSchema.options])
 export type HostThreadMoveRequest = z.infer<typeof hostThreadMoveRequestSchema>
 /**
  * Why a host refuses a start. Each is definite, the host holds no thread and no record for the move, except `move-differs`,
@@ -352,6 +378,26 @@ export const threadMoveStartAnswerSchema = z.union([
   threadMoveRefusalSchema,
 ])
 export type ThreadMoveStartAnswer = z.infer<typeof threadMoveStartAnswerSchema>
+/**
+ * Why a host refuses a step for one of its own threads. `not-movable` is definite and says why in the thread's own words:
+ * nothing is fenced. `unknown-move` answers a step for a move it does not hold, never held or let go of already;
+ * `move-differs` one another desktop or thread holds under that ID. `unreadable` and `unavailable` prove nothing, and the
+ * desktop asks again later.
+ */
+export const THREAD_MOVE_SOURCE_REFUSALS = ['not-movable', 'unknown-move', 'move-differs', 'unreadable', 'unavailable'] as const
+/**
+ * The host's answer to a step for its own thread: `held`, now fenced for the move; `handover`, the held thread's handover
+ * and what it carried; `done`, settled or let go of. Or a refusal.
+ */
+export const threadMoveSourceAnswerSchema = z.union([
+  z.object({ type: z.literal('held'), moveId: branchMoveIdSchema }).strict(),
+  z.object({ type: z.literal('handover'), moveId: branchMoveIdSchema, text: z.string().min(1).max(AGENT_TEXT_MAX), counts: handoverCountsSchema }).strict(),
+  z.object({ type: z.literal('done'), moveId: branchMoveIdSchema }).strict(),
+  z.object({ type: z.literal('refused'), reason: z.enum(THREAD_MOVE_SOURCE_REFUSALS), message: words }).strict(),
+])
+export type ThreadMoveSourceAnswer = z.infer<typeof threadMoveSourceAnswerSchema>
+/** The source refusals that prove nothing, so the desktop keeps the move as it is and asks again later. */
+export const THREAD_MOVE_SOURCE_UNDECIDED: ReadonlySet<string> = new Set(['unreadable', 'unavailable'])
 /** The host's words for a start it refused or could not send. */
 export const HOST_THREAD_MOVE_WORDS = {
   unknownProject: 'That project is not on this machine. Nothing was made.',
@@ -363,9 +409,17 @@ export const HOST_THREAD_MOVE_WORDS = {
   grantGone: 'This machine no longer lets that computer answer here, so it starts nothing that acts without asking. Nothing was sent.',
   full: 'This machine holds the records of 10,000 moves already, so it takes no more. Nothing was made. Move the thread to another machine.',
   unreadable: 'This machine could not read its record of moves, so it starts none until it can. Nothing was made. Restart Sotto on this machine, then try again.',
+  /** A step for a thread here that asks about a move this machine does not hold. */
+  unknownMove: 'This machine holds no thread for that move. Nothing changed.',
+  /** The thread here is held for another move, or another desktop holds that move. */
+  sourceDiffers: 'That move holds another thread on this machine. Nothing changed.',
+  /** A held thread whose handover could not be read here. */
+  noHandover: 'This machine could not read this thread’s history, so nothing was moved. Try again.',
 } as const
 /** The part of a connected host's socket a move uses (`SocketHostService`). */
 export interface ThreadMoveHost {
   readonly supportsThreadMove: boolean
+  /** The host lists `thread-move-source`: its own threads can be a move's source. */
+  readonly supportsThreadMoveSource?: boolean | undefined
   threadMove(request: HostThreadMoveRequest): Promise<unknown>
 }

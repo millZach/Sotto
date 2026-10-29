@@ -11,8 +11,10 @@ import { BranchBundles } from '../../src/main/agents/branchBundles'
 import { DesktopBranchMoves, foldersOfSnapshot } from '../../src/main/agents/branchMoves'
 import { hostMachineReport, HostFactsSource } from '../../src/main/agents/hostFacts'
 import { readProjectOrigins } from '../../src/main/agents/projectOrigins'
+import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import { moveTargetsOf, ThreadMoveService, type MoveRecord } from '../../src/main/agents/threadMoves'
+import { HostThreadMoves } from '../../src/main/agents/threadMovesHost'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { E2EAgentHost } from '../../src/main/e2e/agentEffects'
 import { DesktopHostRouter } from '../../src/main/hosts/desktopHostRouter'
@@ -83,11 +85,15 @@ async function machines() {
     workerMachine: () => 'this-computer', projectOrigins: () => readProjectOrigins(f.control.shell().host.projects), branchMoves })
   watcher.useRemoteHosts(router.watcherHosts())
   await watcher.recover()
-  const moves = new ThreadMoveService(f.root, { control: f.control, workspace: workspace.host, branches: branchMoves, watch: watcher, retryMs: 200 })
+  // This computer takes a host's thread as the desktop's runtime does: it makes the moved thread itself (#1178 part 3).
+  const movesHere = new HostThreadMoves(f.root, { control: f.control, workspace: workspace.host, mayAnswer: () => true, file: 'thread-moves-here.json' })
+  const thisComputer = desktopWindowClient()
+  const moves = new ThreadMoveService(f.root, { control: f.control, workspace: workspace.host, branches: branchMoves, watch: watcher, retryMs: 200,
+    here: { supportsThreadMove: true, threadMove: request => movesHere.handle(request, thisComputer) } })
   await moves.load()
   moves.useTargets(moveTargetsOf(router.watcherHosts(), watcher, listener => router.subscribeChanges(listener)))
   cleanups.push(async () => {
-    moves.close(); watcher.close(); router.dispose()
+    moves.close(); movesHere.close(); watcher.close(); router.dispose()
     f.control.dispose(); await f.control.closed(); await workspace.stop(); await workspace.remove()
   })
 
@@ -206,6 +212,40 @@ describe('moving a thread from This computer to a paired host (#1178)', () => {
     expect(m.socket.shell().host.threads).toHaveLength(threadsBefore)
     // The source takes sends again.
     expect((await m.control.commandShell({ type: 'manual-send', threadId: sourceId, draftId: randomUUID(), text: 'Commit it first.' })).error).toBeNull()
+  }, 120_000)
+})
+
+describe('a paired host’s own thread as a move’s source (#1178 part 3)', () => {
+  // The fixture host reads its threads' history from provider events, which these fakes do not send, so none of its threads
+  // has a confirmed send or a handover to give, and none can be held: holding, the handover, settling and letting go are
+  // covered over stand-ins (tests/unit/main/threadMovesHost.test.ts, tests/unit/main/threadMoves.test.ts). This is what the
+  // real socket and the host's real coordinator answer.
+  it('is offered to a recorded desktop, refuses a thread that cannot move in its own words, and fences nothing', async () => {
+    const m = await machines()
+    expect(m.hello.features).toContain('thread-move-source')
+    expect(m.socket.supportsThreadMoveSource).toBe(true)
+    const forgeThread = randomUUID()
+    const forgeModel = m.socket.shell().host.models.find(item => item.providerId === 'codex')!
+    expect((await m.socket.command({ type: 'create-thread', threadId: forgeThread, projectId: m.forgeProject.id, title: 'Tray icon at night', titleSource: 'user', modelId: forgeModel.id, workingCopy: 'shared' })).error).toBeNull()
+    await m.socket.command({ type: 'manual-send', threadId: forgeThread, draftId: randomUUID(), text: 'The tray icon goes dark at night. Find out why.' })
+    await vi.waitFor(() => expect(m.hostThread(forgeThread)?.status).toBe('running'), { timeout: 30_000 })
+    expect(await m.socket.threadMove({ action: 'hold', moveId: randomUUID(), threadId: forgeThread, machine: 'This computer' }))
+      .toEqual({ type: 'refused', reason: 'not-movable', message: THREAD_MOVE_WORDS.running })
+    const nativeId = (await remote.native.snapshot()).threads.find(item => item.title === 'Tray icon at night')!.id
+    remote.native.event({ type: 'ready', threadId: nativeId, text: 'The night palette reused the light icon.' })
+    await vi.waitFor(() => expect(m.hostThread(forgeThread)?.status).toBe('idle'), { timeout: 30_000 })
+    // A send forge has not confirmed holds the thread there too.
+    expect(await m.socket.threadMove({ action: 'hold', moveId: randomUUID(), threadId: forgeThread, machine: 'This computer' }))
+      .toEqual({ type: 'refused', reason: 'not-movable', message: THREAD_MOVE_WORDS.unresolved })
+    // Nothing was fenced: the thread takes sends as before.
+    expect((await m.socket.command({ type: 'manual-send', threadId: forgeThread, draftId: randomUUID(), text: 'One more thing.' })).error).not.toBe(THREAD_MOVE_WORDS.fence('This computer'))
+    // A step for a move forge does not hold changes nothing.
+    const link = { threadId: randomUUID(), provider: 'codex' as const, hostId: m.control.hostId()!, at: new Date().toISOString() }
+    expect(await m.socket.threadMove({ action: 'settle', moveId: randomUUID(), link })).toMatchObject({ type: 'refused', reason: 'unknown-move' })
+    expect(m.hostThread(forgeThread)?.workspaceSettledAt ?? null).toBeNull()
+    // The desktop's preview reads forge's thread as forge holds it, and says why it stays.
+    const prepared = m.moves.prepare({ threadIds: [hostEntityKey(m.hostId, forgeThread)], hostId: m.control.hostId() })
+    expect(prepared).toMatchObject({ status: 'ok', machine: 'This computer', threads: [{ outcome: 'stays' }] })
   }, 120_000)
 })
 

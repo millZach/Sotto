@@ -162,8 +162,9 @@ describe('remote command allow-list', () => {
       // A branch move with a recorded desktop: it writes only a new incoming ref and answers nothing (ADR-0105 decision 8).
       'branch-move',
       // A thread moved here from another machine, for a recorded desktop (#1178): the host makes it from the incoming ref a
-      // branch move wrote and sends its first prompt, once per move, held to what the host lets that desktop give. It answers
-      // nothing and grants nothing.
+      // branch move wrote and sends its first prompt, once per move, held to what the host lets that desktop give. Where the
+      // host lists thread-move-source it also holds one of its own threads for a move, by its own record, gives its handover,
+      // and settles or lets go of it (part 3). It answers nothing and grants nothing.
       'thread-move',
       // The desktop relay's answer to an ask the host pushed, and news of a relayed delegation's outcome (#1316): only on a
       // listener that offers delegation-relay, from a recorded desktop whose hello accepted it. Neither answers or grants anything.

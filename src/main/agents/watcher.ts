@@ -2378,7 +2378,10 @@ export class WatcherService implements WatcherControlHooks {
     try { await this.assignWatch(input, guard, 'user'); return this.get() }
     catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('HOST_DISCONNECTED', 'The watch could not be saved. Reconnect and try again.', true) }
   }
-  /** `replacing`, a watch on This computer that this one takes the place of, ends in the same record write (#1178). */
+  /**
+   * `replacing`, a watch this one takes the place of, ends in the same record write (#1178): on This computer, or on a host,
+   * which then hears it stopped as it hears every other watch of its threads.
+   */
   private async assignWatch(input: WatcherWatchThreadRequest, guard: (() => void) | undefined, by: 'user' | 'watcher', replacing?: WatcherThreadTarget): Promise<WatcherStandingWatch> {
     const parsed = watcherWatchThreadRequestSchema.safeParse(input)
     if (!parsed.success) refuse('INVALID_INPUT', 'Choose a thread to watch.')
@@ -2432,6 +2435,7 @@ export class WatcherService implements WatcherControlHooks {
     } finally {
       if (this.pendingWatchAssignments.get(key(target))?.id === created.id) this.pendingWatchAssignments.delete(key(target))
       if (target.hostId !== this.hostId()) this.scheduleRemote(target.hostId)
+      if (replacing && replacing.hostId !== this.hostId() && replacing.hostId !== target.hostId) this.scheduleRemote(replacing.hostId)
     }
     if (replaced.size) await this.options.control.cancelWatcherQueue(replaced)
     this.publish(); return created

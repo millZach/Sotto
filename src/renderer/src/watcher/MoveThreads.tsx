@@ -334,20 +334,26 @@ const STEPS: readonly ThreadMoveCard['state'][] = ['fenced', 'branch-sent', 'thr
 
 /** What a move's card says: its lead, the short word for where it stands and that word's tone, and its line. */
 export function moveCardWords(card: ThreadMoveCard): { readonly lead: string; readonly short: string; readonly tone: 'working' | 'needs' | 'ready' | 'quiet'; readonly line: string | null } {
-  const machine = card.machine
-  if (card.waiting && STEPS.includes(card.state) && card.state !== 'source-settled')
-    return { lead: i18n._(msg`Moving`), short: i18n._(msg`Waiting for ${machine}`), tone: 'needs', line: i18n._(msg`This thread is waiting for ${machine} to answer about its move. Nothing was lost.`) }
+  const machine = card.machine, from = card.from
+  const stays = from ? i18n._(msg`Stays on ${from}`) : i18n._(msg`Stays here`)
+  if (card.waiting && STEPS.includes(card.state) && card.state !== 'source-settled') {
+    // This computer always answers, so a move to it waits only on the host its thread is on.
+    const waitsOn = card.here && from ? from : machine
+    return { lead: i18n._(msg`Moving`), short: i18n._(msg`Waiting for ${waitsOn}`), tone: 'needs', line: i18n._(msg`This thread is waiting for ${waitsOn} to answer about its move. Nothing was lost.`) }
+  }
   switch (card.state) {
-    case 'fenced': return { lead: i18n._(msg`Moving`), short: i18n._(msg`Holding sends`), tone: 'working', line: i18n._(msg`It takes no sends here while it moves.`) }
+    case 'fenced': return { lead: i18n._(msg`Moving`), short: i18n._(msg`Holding sends`), tone: 'working', line: from ? i18n._(msg`It takes no sends on ${from} while it moves.`) : i18n._(msg`It takes no sends here while it moves.`) }
     case 'branch-sent': return { lead: i18n._(msg`Moving`), short: i18n._(msg`Branch sent`), tone: 'working', line: i18n._(msg`Its branch is on ${machine}. Starting the new thread there…`) }
     case 'thread-started': return { lead: i18n._(msg`Moving`), short: i18n._(msg`Started on ${machine}`), tone: 'working', line: i18n._(msg`The new thread on ${machine} is working from its handover. This one is settled once that first turn ends.`) }
-    case 'first-turn-ended': return { lead: i18n._(msg`Moving`), short: i18n._(msg`First turn ended`), tone: 'working', line: i18n._(msg`Its first turn on ${machine} ended. Settling the thread here…`) }
+    case 'first-turn-ended': return { lead: i18n._(msg`Moving`), short: i18n._(msg`First turn ended`), tone: 'working',
+      line: from ? i18n._(msg`Its first turn on ${machine} ended. Settling the thread on ${from}…`) : i18n._(msg`Its first turn on ${machine} ended. Settling the thread here…`) }
     case 'source-settled': return { lead: i18n._(msg`Moved`), short: i18n._(msg`Continued on ${machine}`), tone: 'ready', line: null }
-    case 'stayed': return { lead: i18n._(msg`Stayed here`), short: i18n._(msg`Stayed here`), tone: 'quiet', line: card.words ?? null }
-    case 'given-back': return { lead: i18n._(msg`Not moved`), short: i18n._(msg`Stays here`), tone: 'quiet', line: card.words ?? null }
+    case 'stayed': { const stayed = from ? i18n._(msg`Stayed on ${from}`) : i18n._(msg`Stayed here`); return { lead: stayed, short: stayed, tone: 'quiet', line: card.words ?? null } }
+    case 'given-back': return { lead: i18n._(msg`Not moved`), short: stays, tone: 'quiet', line: card.words ?? null }
     case 'asks': return { lead: i18n._(msg`Not moved yet`), short: i18n._(msg`Waits for you`), tone: 'needs', line: card.words ?? null }
-    case 'kept': return { lead: i18n._(msg`Kept here`), short: i18n._(msg`Kept here`), tone: 'quiet', line: i18n._(msg`Nothing was sent to ${machine}. You can send here as before.`) }
-    case 'stays': return { lead: i18n._(msg`Not moved`), short: i18n._(msg`Stays here`), tone: 'quiet', line: card.words ?? null }
+    case 'kept': { const kept = from ? i18n._(msg`Kept on ${from}`) : i18n._(msg`Kept here`)
+      return { lead: kept, short: kept, tone: 'quiet', line: from ? i18n._(msg`Nothing was sent to ${machine}. You can send to it on ${from} as before.`) : i18n._(msg`Nothing was sent to ${machine}. You can send here as before.`) } }
+    case 'stays': return { lead: i18n._(msg`Not moved`), short: stays, tone: 'quiet', line: card.words ?? null }
   }
 }
 
@@ -388,8 +394,10 @@ function MoveCard({ card, threads, answer }: { readonly card: ThreadMoveCard; re
       {facts.provider === undefined ? null : <span className="receipt-card__provider">
         {facts.providerId === undefined ? null : <span className="thread-nav__mark" data-provider={facts.providerId} aria-hidden="true"><ProviderMark provider={facts.providerId} name={facts.provider} /></span>}
         {facts.provider}</span>}
-      <span className="receipt-card__machine" data-kind="remote"><Laptop size={12} aria-hidden="true" /><Trans>This computer</Trans>
-        <span aria-hidden="true">→</span><span className="tt-visually-hidden"><Trans>to</Trans></span><Server size={12} aria-hidden="true" />{card.machine}</span>
+      <span className="receipt-card__machine" data-kind="remote">
+        {card.from === undefined ? <><Laptop size={12} aria-hidden="true" /><Trans>This computer</Trans></> : <><Server size={12} aria-hidden="true" />{card.from}</>}
+        <span aria-hidden="true">→</span><span className="tt-visually-hidden"><Trans>to</Trans></span>
+        {card.here ? <Laptop size={12} aria-hidden="true" /> : <Server size={12} aria-hidden="true" />}{card.machine}</span>
       {card.model ? <span>{t({ message: `${card.model.name} there`, comment: 'The model a moved thread runs on the other machine' })}</span> : null}
       {card.model?.instead ? <span>{t`${card.machine} doesn’t have ${card.model.instead}`}</span> : null}
       {facts.project === undefined ? null : <span className="receipt-card__project">{facts.project}</span>}
@@ -397,13 +405,13 @@ function MoveCard({ card, threads, answer }: { readonly card: ThreadMoveCard; re
     {step >= 0 && card.state !== 'source-settled' ? <ol className="move-card__steps" aria-hidden="true">{STEPS.map((item, index) => <li key={item} data-done={index <= step || undefined} />)}</ol> : null}
     {card.state === 'source-settled' ? <p className="receipt-card__placement tt-paragraph">
       {moved !== null ? <Trans>Continued in {link(moved, moved.title ?? title)} on {card.machine}.</Trans> : <Trans>Continued on {card.machine}.</Trans>}{' '}
-      <Trans>Settled here, and its worktree is kept.</Trans>{card.watched ? <> <Trans>Watcher watches it there now.</Trans></> : null}
+      {card.from === undefined ? <Trans>Settled here, and its worktree is kept.</Trans> : <Trans>Settled on {card.from}, and its worktree is kept there.</Trans>}{card.watched ? <> <Trans>Watcher watches it there now.</Trans></> : null}
     </p> : words.line !== null ? <p className="receipt-card__placement tt-paragraph" data-tone={words.tone}>{words.line}
       {card.state === 'stayed' && moved !== null ? <> {link(moved, t`Open the new thread`)}</> : null}</p> : null}
     {card.state === 'asks' ? <div className="move-card__actions">
       <Button variant="primary" disabled={pending || answer === undefined} onClick={() => void press('move')}>
         {card.startsOn ? t`Move it on ${card.startsOn}` : t`Move it anyway`}</Button>
-      <Button variant="secondary" disabled={pending || answer === undefined} onClick={() => void press('keep')}><Trans>Keep it here</Trans></Button>
+      <Button variant="secondary" disabled={pending || answer === undefined} onClick={() => void press('keep')}>{card.from === undefined ? <Trans>Keep it here</Trans> : <Trans>Keep it on {card.from}</Trans>}</Button>
     </div> : null}
     {refusal !== null ? <p className="receipt-card__placement move-card__refused tt-paragraph" role="alert">{refusal}</p> : null}
   </li>

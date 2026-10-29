@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { AGENT_TEXT_MAX, providerIdSchema, type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread,
+import { AGENT_TEXT_MAX, providerIdSchema, type AgentCommand, type HandoverCounts, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread,
   type ThreadContinuedIn } from '../../shared/agents'
 import { branchNameSchema, commitIdSchema } from '../../shared/branchMoves'
 import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
@@ -9,9 +9,10 @@ import { DELEGATION_LEVELS_MAX, delegatedThreadsBelow } from '../../shared/deleg
 import { resolveModel } from '../../shared/modelCatalog'
 import { isThreadTurnRunning } from '../../shared/threadActivity'
 import {
-  movePermission, movePermissionWords, movePrompt, narrowedName, THREAD_MOVE_CARDS_MAX, THREAD_MOVE_CONFIRMATION_MS, THREAD_MOVE_UNDECIDED, THREAD_MOVE_WORDS, threadMoveAnswerRequestSchema,
-  threadMovePrepareRequestSchema, threadMoveRefusal, threadMoveStartAnswerSchema, threadMoveStartRequestSchema, type MoveFacts, type ThreadMoveAnswer, type ThreadMoveCard,
-  type ThreadMoveHost, type ThreadMoveModel, type ThreadMovePlanned, type ThreadMovePrepare, type ThreadMoveStart, type ThreadMovesView,
+  movePermission, movePermissionWords, movePrompt, narrowedName, THREAD_MOVE_CARDS_MAX, THREAD_MOVE_CONFIRMATION_MS, THREAD_MOVE_SOURCE_UNDECIDED, THREAD_MOVE_UNDECIDED, THREAD_MOVE_WORDS,
+  threadMoveAnswerRequestSchema, threadMovePrepareRequestSchema, threadMoveRefusal, threadMoveSourceAnswerSchema, threadMoveStartAnswerSchema, threadMoveStartRequestSchema,
+  type HostThreadMoveSource, type MoveFacts, type ThreadMoveAnswer, type ThreadMoveCard, type ThreadMoveHost, type ThreadMoveLink, type ThreadMoveModel, type ThreadMovePlanned,
+  type ThreadMovePrepare, type ThreadMoveStart, type ThreadMovesView,
 } from '../../shared/threadMoves'
 import type { WatcherThreadTarget } from '../../shared/watcher'
 import type { WatcherRemoteHosts } from '../../shared/watcherHost'
@@ -25,10 +26,12 @@ import { watcherBackgroundWorkCount } from './watcherWakeUp'
 import type { WatcherService } from './watcher'
 
 /**
- * Moving This computer's threads to a paired host (#1178, part 1; ADR-0105 decision 7, Owl `cross-machine-work`). A move
- * is "continue on another machine" (ADR-0089): the host makes a new thread with its own Sotto thread ID from the source's
- * branch, and its first prompt, the source's handover and Sotto's facts, goes at once. The source is fenced while it moves
- * and settled once the new thread is listed and its first turn has ended; its worktree is kept.
+ * Moving threads between machines (#1178; ADR-0105 decision 7, Owl `cross-machine-work`). A move is "continue on another
+ * machine" (ADR-0089): the target makes a new thread with its own Sotto thread ID from the source's branch, and its first
+ * prompt, the source's handover and Sotto's facts, goes at once. The source is fenced while it moves and settled once the
+ * new thread is listed and its first turn has ended; its worktree is kept. This computer's threads move to a paired host;
+ * a paired host's move to This computer, which makes the thread itself (`here`), or to another host through this desktop
+ * (part 3). A host's thread is held, fenced, handed over, settled and let go of by that host (`thread-move-source`).
  *
  * Every move has a **move record** in `moves.json`, written before anything is sent, which steps through fenced, branch
  * sent, thread started, first turn ended and source settled, or is given back while no thread exists for it. Each step is
@@ -44,8 +47,8 @@ import type { WatcherService } from './watcher'
  * turn, and Watcher hears of each as it ends (`news`).
  *
  * Seams left for later parts: reconciling with a host whose answer was lost, by an exact read, and **Keep it here**, which
- * asks the host to fence the move (part 4, `stalled` below names what waits); a host's thread moving to This computer or
- * between hosts (part 3); starting babysitting on the target, which waits on reading the target's GitHub sign-in.
+ * asks the host to fence the move (part 4, `stalled` below names what waits); starting babysitting on the target, which
+ * waits on reading the target's GitHub sign-in.
  */
 
 /** What moving asks of main's coordinator. */
@@ -109,8 +112,17 @@ export const MOVE_STATES = ['fenced', 'branch-sent', 'thread-started', 'first-tu
 export type MoveState = typeof MOVE_STATES[number]
 const recordSchema = z.object({
   id: z.uuid(),
-  /** The thread moving, by this computer's own thread ID. */
+  /** The thread moving, by its own machine's thread ID: This computer's, or the host's that `sourceHostId` names. */
   sourceThreadId: id,
+  /** The machine the source is on, when that is not This computer (part 3). */
+  sourceHostId: z.uuid().optional(),
+  /** That machine's name when the move began, for the words of a move from it. */
+  from: z.string().min(1).max(200).optional(),
+  /** The source's machine held it for this move, fenced there by its own record. */
+  held: z.literal(true).optional(),
+  /** The move ends as given back or stayed once the source's machine has let go of it; until then it waits on that machine. */
+  ending: z.enum(['given-back', 'stayed']).optional(),
+  /** The machine it goes to: a paired host, or This computer for a host's thread. */
   targetHostId: z.uuid(),
   /** The machine's name when the move began, for its words while it is away. */
   machine: z.string().min(1).max(200),
@@ -158,10 +170,12 @@ const UNFINISHED = new Set<string>(MOVE_STATES.filter(state => state !== 'source
 function namedIn(raw: unknown): { readonly moving: readonly { readonly threadId: string; readonly machine?: string | undefined }[]; readonly kept: readonly string[] } {
   const file = raw !== null && typeof raw === 'object' ? raw as { moves?: unknown; kept?: unknown } : {}
   const moves = Array.isArray(file.moves) ? file.moves.filter((move): move is Record<string, unknown> => move !== null && typeof move === 'object') : []
-  const moving = moves.filter(move => typeof move.sourceThreadId === 'string' && !(typeof move.state === 'string' && !UNFINISHED.has(move.state)))
+  // A host's thread is fenced by that host's own record, never here.
+  const local = moves.filter(move => move.sourceHostId === undefined)
+  const moving = local.filter(move => typeof move.sourceThreadId === 'string' && !(typeof move.state === 'string' && !UNFINISHED.has(move.state)))
     .map(move => ({ threadId: move.sourceThreadId as string, machine: typeof move.machine === 'string' ? move.machine.slice(0, 200) : undefined }))
   const kept = [...Array.isArray(file.kept) ? file.kept.filter((item): item is string => typeof item === 'string') : [],
-    ...moves.flatMap(move => typeof move.sourceThreadId === 'string' && move.state !== 'given-back' && move.state !== 'stayed' ? [move.sourceThreadId] : [])]
+    ...local.flatMap(move => typeof move.sourceThreadId === 'string' && move.state !== 'given-back' && move.state !== 'stayed' ? [move.sourceThreadId] : [])]
   return { moving, kept }
 }
 /**
@@ -188,7 +202,7 @@ export async function holdUnfinishedMoves(directory: string, control: Pick<MoveC
     return { keepsWorktree: threadId => kept.has(threadId), settleFences: keep }
   }
   const unfinished = new Set<string>()
-  for (const record of read.value.moves) if (!terminal(record.state)) { unfinished.add(record.sourceThreadId); void control.fenceForMove(record.sourceThreadId, THREAD_MOVE_WORDS.paused(record.machine)) }
+  for (const record of read.value.moves) if (!terminal(record.state) && record.sourceHostId === undefined) { unfinished.add(record.sourceThreadId); void control.fenceForMove(record.sourceThreadId, THREAD_MOVE_WORDS.paused(record.machine)) }
   const kept = new Set([...read.value.kept ?? [], ...unfinished])
   return { keepsWorktree: threadId => kept.has(threadId),
     settleFences: () => { for (const threadId of control.fencedForMove?.() ?? []) if (!unfinished.has(threadId)) void Promise.resolve(control.liftMoveFence(threadId)).catch(() => undefined) } }
@@ -258,8 +272,10 @@ function firstTurnOver(index: SnapshotIndex, threadId: string): MoveRecord['firs
 }
 
 interface Plan extends ThreadMovePlanned {
-  /** The source by this computer's own thread ID. */
+  /** The source by its own machine's thread ID, and that machine and its name when it is a host's thread. */
   readonly sourceThreadId?: string
+  readonly sourceHostId?: string | undefined
+  readonly from?: string | undefined
   readonly start?: MoveRecord['start']
 }
 /**
@@ -273,6 +289,8 @@ interface RunCard {
   readonly source: WatcherThreadTarget
   readonly hostId: string
   readonly machine: string
+  /** The host the thread is on, by its name, when it is not This computer. */
+  readonly from?: string | undefined
   readonly words?: string | undefined
   readonly model?: ThreadMoveModel | undefined
   readonly startsOn?: string | undefined
@@ -334,6 +352,8 @@ export class ThreadMoveService {
     readonly delegations?: MoveDelegations | undefined
     /** Tells Watcher of each move as it ends. */
     readonly news?: ((move: MoveNews) => void) | undefined
+    /** This computer as a move's target, for a host's thread: it makes the moved thread here as a host does (`HostThreadMoves`). */
+    readonly here?: ThreadMoveHost | undefined
     readonly newMoveId?: () => string
     readonly retryMs?: number
   }) {
@@ -359,9 +379,11 @@ export class ThreadMoveService {
     this.records = new Map(file.moves.map(record => [record.id, record]))
     for (const threadId of file.kept ?? []) this.kept.add(threadId)
     for (const record of this.records.values()) {
-      if (!terminal(record.state)) this.kept.add(record.sourceThreadId)
+      // A host's thread is fenced and kept by that host's own record (`thread-move-source`).
+      const here = !terminal(record.state) && record.sourceHostId === undefined
+      if (here) this.kept.add(record.sourceThreadId)
       this.track(record)
-      if (!terminal(record.state)) void this.options.control.fenceForMove(record.sourceThreadId, THREAD_MOVE_WORDS.fence(record.machine))
+      if (here) void this.options.control.fenceForMove(record.sourceThreadId, THREAD_MOVE_WORDS.fence(record.machine))
     }
   }
   /**
@@ -374,6 +396,20 @@ export class ThreadMoveService {
     for (const threadId of this.options.control.fencedForMove?.() ?? []) if (!this.moving.has(threadId) && !this.reserved.has(threadId)) this.lift(threadId)
   }
   private lift(threadId: string): void { void Promise.resolve(this.options.control.liftMoveFence(threadId)).catch(() => undefined) }
+  /** A source in this run's indexes: This computer's thread by its own ID, a host's by the window's key for it. */
+  private sourceKey(record: { readonly sourceHostId?: string | undefined; readonly sourceThreadId: string }): string {
+    return record.sourceHostId ? hostEntityKey(record.sourceHostId, record.sourceThreadId) : record.sourceThreadId
+  }
+  /** A thread as delegation's record names it: This computer's by its own ID, another machine's by the window's key. */
+  private windowKey(hostId: string, threadId: string): string { return hostId === this.options.control.hostId() ? threadId : hostEntityKey(hostId, threadId) }
+  /** A machine's threads as a move reads them: This computer's own, or a connected host's. */
+  private snapshotOf(hostId: string): AgentHostSnapshot | undefined {
+    return hostId === this.options.control.hostId() ? this.options.control.watcherSnapshot() : this.targets?.snapshot(hostId)
+  }
+  /** Where a move's new thread is made: This computer's own side of a move, or a connected host's socket. */
+  private moveHost(hostId: string): ThreadMoveHost | undefined { return hostId === this.options.control.hostId() ? this.options.here : this.targets?.host(hostId) }
+  /** The machine a move's source is on, by its name. */
+  private fromName(record: Pick<MoveRecord, 'from'>): string { return record.from ?? 'This computer' }
   /** The machines moves go to. Every move under way is taken up again, and again whenever a machine changes. */
   useTargets(targets: MoveTargets): void {
     for (const unhook of this.unhook.splice(0)) unhook()
@@ -405,16 +441,17 @@ export class ThreadMoveService {
     const here = this.options.control.hostId()
     if (!here) return { cards: [] }
     const waiting = new Set(this.stalled().map(record => record.id))
-    const local = this.options.control.watcherSnapshot()
-    const sources = new Map(local.threads.map(thread => [thread.id, thread] as const))
     const moves = [...this.records.values()].map((record): ThreadMoveCard => {
-      const model = this.modelOf(record, local, sources.get(record.sourceThreadId))
-      return { id: record.id, state: record.state, source: { hostId: here, threadId: record.sourceThreadId },
+      const sources = this.snapshotOf(record.sourceHostId ?? here)
+      const model = this.modelOf(record, sources, sources ? this.indexOf(sources).threads.get(record.sourceThreadId) : undefined)
+      return { id: record.id, state: record.state, source: { hostId: record.sourceHostId ?? here, threadId: record.sourceThreadId },
         ...record.threadId ? { moved: { hostId: record.targetHostId, threadId: record.threadId } } : {}, hostId: record.targetHostId, machine: record.machine,
+        ...record.from ? { from: record.from } : {}, ...record.targetHostId === here ? { here: true as const } : {},
         ...record.givenBack ? { words: record.givenBack } : {}, model, ...waiting.has(record.id) ? { waiting: true as const } : {},
         ...record.watchMoved === true ? { watched: true as const } : {}, at: this.placedAt.get(record.id) ?? record.createdAt, updatedAt: record.updatedAt }
     })
     const run = [...this.runCards.values()].map((card): ThreadMoveCard => ({ id: card.id, state: card.state, source: card.source, hostId: card.hostId, machine: card.machine,
+      ...card.from ? { from: card.from } : {}, ...card.hostId === here ? { here: true as const } : {},
       ...card.words ? { words: card.words } : {}, ...card.model ? { model: card.model } : {}, ...card.state === 'asks' && card.startsOn ? { startsOn: card.startsOn } : {},
       at: card.at, updatedAt: card.updatedAt }))
     return { cards: [...moves, ...run].sort((a, b) => a.at.localeCompare(b.at)).slice(-THREAD_MOVE_CARDS_MAX) }
@@ -438,9 +475,9 @@ export class ThreadMoveService {
   private waitingNow(): string { return this.stalled().map(record => record.id).sort().join(',') }
   private waitingChanged(): void { if (this.listeners.size && this.waitingNow() !== this.waitingKey) this.changed() }
   /** The model a move's card names: its name there, and the source's when the machine lacked it (Zach, October 29, 2026). */
-  private modelOf(record: MoveRecord, local: AgentHostSnapshot, source: AgentThread | undefined): ThreadMoveModel {
-    const there = this.targets?.snapshot(record.targetHostId)?.models.find(model => model.id === record.start.modelId)
-    return movedModel(source, source ? resolveModel(local.models, source.modelId) : undefined, there ?? local.models.find(model => model.id === record.start.modelId), record.start.modelId)
+  private modelOf(record: MoveRecord, sources: AgentHostSnapshot | undefined, source: AgentThread | undefined): ThreadMoveModel {
+    const there = this.snapshotOf(record.targetHostId)?.models.find(model => model.id === record.start.modelId)
+    return movedModel(source, source && sources ? resolveModel(sources.models, source.modelId) : undefined, there ?? sources?.models.find(model => model.id === record.start.modelId), record.start.modelId)
   }
 
   /**
@@ -472,10 +509,14 @@ export class ThreadMoveService {
     const started = await this.move({ confirmationId: preview.confirmationId, threadIds: [card.threadId], allowNarrower: [card.threadId] }, card)
     return started.status === 'refused' ? started : { status: 'ok' }
   }
-  /** The moves under way that wait on a machine that is not connected, or on an answer it has not given (part 4's reconciling). */
+  /**
+   * The moves under way that wait on a machine that is not connected, the one they go to or the host their thread is on, or
+   * on an answer it has not given (part 4's reconciling).
+   */
   stalled(): readonly MoveRecord[] {
     return [...this.live].map(moveId => this.records.get(moveId)!).filter(record => this.stuck.has(record.id)
-      || !this.advancing.has(record.id) && (this.retryAt.has(record.id) || !this.targets?.snapshot(record.targetHostId)))
+      || !this.advancing.has(record.id) && (this.retryAt.has(record.id) || !this.snapshotOf(record.targetHostId)
+        || record.sourceHostId !== undefined && !this.targets?.snapshot(record.sourceHostId)))
   }
 
   /** What moving these threads to that machine would do now, under a confirmation that lasts a minute. */
@@ -523,14 +564,18 @@ export class ThreadMoveService {
     for (const plan of current.values()) {
       if (plan.outcome === 'stays' || !plan.sourceThreadId || !plan.start || !here) { moves.push({ threadId: plan.threadId, outcome: 'stays', ...plan.words ? { words: plan.words } : {} }); continue }
       if (plan.outcome === 'asks' && !allowed.has(plan.threadId)) { moves.push({ threadId: plan.threadId, outcome: 'asks', ...plan.words ? { words: plan.words } : {} }); continue }
-      if (this.reserved.has(plan.sourceThreadId)) { moves.push({ threadId: plan.threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.twice }); continue }
-      // Fenced in the same moment its plan was read, so nothing reaches it between the check and the record.
+      const key = this.sourceKey({ sourceHostId: plan.sourceHostId, sourceThreadId: plan.sourceThreadId })
+      if (this.reserved.has(key)) { moves.push({ threadId: plan.threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.twice }); continue }
+      // Fenced in the same moment its plan was read, so nothing reaches it between the check and the record. A host's
+      // thread is fenced there, by the host's own record, as the move's first step (`hold`).
       const at = now()
-      const record: MoveRecord = { id: this.options.newMoveId?.() ?? randomUUID(), sourceThreadId: plan.sourceThreadId, targetHostId: confirmation.hostId, machine: reach.name,
-        state: 'fenced', start: plan.start, watched: this.options.watch?.hasStandingWatch({ hostId: here, threadId: plan.sourceThreadId }) === true, createdAt: at, updatedAt: at }
+      const record: MoveRecord = { id: this.options.newMoveId?.() ?? randomUUID(), sourceThreadId: plan.sourceThreadId,
+        ...plan.sourceHostId ? { sourceHostId: plan.sourceHostId, ...plan.from ? { from: plan.from } : {} } : {}, targetHostId: confirmation.hostId, machine: reach.name,
+        state: 'fenced', start: plan.start, watched: this.options.watch?.hasStandingWatch({ hostId: plan.sourceHostId ?? here, threadId: plan.sourceThreadId }) === true, createdAt: at, updatedAt: at }
       // Reserved before anything awaits: a second confirmation of the same thread now reads it as moving.
-      this.reserved.set(record.sourceThreadId, record)
-      starting.push({ threadId: plan.threadId, record, fenced: this.options.control.fenceForMove(record.sourceThreadId, THREAD_MOVE_WORDS.fence(reach.name)) })
+      this.reserved.set(key, record)
+      starting.push({ threadId: plan.threadId, record,
+        fenced: plan.sourceHostId ? undefined : this.options.control.fenceForMove(record.sourceThreadId, THREAD_MOVE_WORDS.fence(reach.name)) })
     }
     // Every fence is in the coordinator's own record, then every move in this one, before anything is sent, and none of
     // them is a move anything steps until both writes have succeeded. One that cannot be written lifts every fence it set,
@@ -540,8 +585,8 @@ export class ThreadMoveService {
       try { await Promise.all(starting.map(item => item.fenced)); await this.save(starting.map(item => item.record)) } catch { saved = false }
     }
     for (const { threadId, record } of starting) {
-      this.reserved.delete(record.sourceThreadId)
-      if (!saved) this.lift(record.sourceThreadId)
+      this.reserved.delete(this.sourceKey(record))
+      if (!saved && record.sourceHostId === undefined) this.lift(record.sourceThreadId)
       moves.push(saved ? { threadId, outcome: 'moving', moveId: record.id } : { threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.unsaved })
     }
     if (saved) for (const { record } of starting) void this.advance(record.id)
@@ -569,9 +614,10 @@ export class ThreadMoveService {
       }
       if (result.outcome === 'moving') continue
       const plan = plans.get(result.threadId), key = parseHostEntityKey(result.threadId)
-      const source = plan?.sourceThreadId ? { hostId: here, threadId: plan.sourceThreadId } : key ? { hostId: key.hostId, threadId: key.id } : { hostId: here, threadId: result.threadId }
+      const source = plan?.sourceThreadId ? { hostId: plan.sourceHostId ?? here, threadId: plan.sourceThreadId } : key ? { hostId: key.hostId, threadId: key.id } : { hostId: here, threadId: result.threadId }
       const id = randomUUID()
-      this.runCards.set(id, { id, state: result.outcome, threadId: result.threadId, source, hostId, machine, ...result.words ? { words: result.words } : {},
+      const on = plan?.from ?? (key && key.hostId !== here ? this.targets?.name(key.hostId) : undefined)
+      this.runCards.set(id, { id, state: result.outcome, threadId: result.threadId, source, hostId, machine, ...on ? { from: on } : {}, ...result.words ? { words: result.words } : {},
         ...plan?.model ? { model: plan.model } : {}, ...plan?.startsOn ? { startsOn: plan.startsOn } : {}, at, updatedAt: at })
     }
     for (const card of this.runCards.values()) {
@@ -580,10 +626,11 @@ export class ThreadMoveService {
     }
     this.changed()
   }
-  /** A connected machine that takes moves, or why not. */
+  /** A connected machine that takes moves, or why not. This computer takes a host's threads. */
   private reach(hostId: string): { readonly name: string; readonly snapshot: AgentHostSnapshot } | { readonly refused: string } {
+    if (hostId === this.options.control.hostId()) return this.options.here ? { name: 'This computer', snapshot: this.options.control.watcherSnapshot() } : { refused: THREAD_MOVE_WORDS.unknownMachine }
     const name = this.targets?.name(hostId)
-    if (name === undefined || hostId === this.options.control.hostId()) return { refused: THREAD_MOVE_WORDS.unknownMachine }
+    if (name === undefined) return { refused: THREAD_MOVE_WORDS.unknownMachine }
     const snapshot = this.targets?.snapshot(hostId), host = this.targets?.host(hostId)
     if (!snapshot || !host) return { refused: THREAD_MOVE_WORDS.notConnected(name) }
     if (!host.supportsThreadMove) return { refused: THREAD_MOVE_WORDS.olderHost(name) }
@@ -598,7 +645,7 @@ export class ThreadMoveService {
     for (const threadId of threadIds) {
       if (plans.has(threadId)) continue
       const plan = this.plan(threadId, hostId, machine, target)
-      const source = plan.sourceThreadId ?? this.localId(threadId)
+      const source = plan.sourceThreadId !== undefined ? this.sourceKey({ sourceHostId: plan.sourceHostId, sourceThreadId: plan.sourceThreadId }) : this.localId(threadId)
       if (source !== undefined && sources.has(source)) { plans.set(threadId, { threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.twice }); continue }
       if (source !== undefined) sources.add(source)
       plans.set(threadId, plan)
@@ -613,26 +660,38 @@ export class ThreadMoveService {
   /** What one thread would do: move now, ask first, or stay and why. */
   private plan(threadId: string, hostId: string, machine: string, target: AgentHostSnapshot): Plan {
     const here = this.options.control.hostId(), key = parseHostEntityKey(threadId)
-    if (key && key.hostId !== here) return { threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.remote }
-    const snapshot = this.options.control.watcherSnapshot()
+    // A host's thread is read as that host holds it, and moves only where the host can hold it for the move (part 3).
+    const sourceHostId = key && key.hostId !== here ? key.hostId : undefined
+    if ((sourceHostId ?? here) === hostId) return { threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.already(machine) }
+    let snapshot = this.options.control.watcherSnapshot(), from: string | undefined
+    if (sourceHostId) {
+      from = this.targets?.name(sourceHostId) ?? 'That machine'
+      const there = this.targets?.snapshot(sourceHostId), host = this.targets?.host(sourceHostId)
+      if (!there || !host) return { threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.sourceAway(from) }
+      if (!host.supportsThreadMoveSource) return { threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.olderSource(from) }
+      snapshot = there
+    }
     const source = snapshot.threads.find(thread => thread.id === (key?.id ?? threadId))
     if (!source?.providerId) return { threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.gone }
-    const moving = this.movingRecord(source.id)
-    const refusal = threadMoveRefusal(source, { machine, movingTo: moving?.machine, fenced: !moving && this.options.control.moveFenceOf?.(source.id) !== undefined,
+    const moving = this.movingRecord(this.sourceKey({ sourceHostId, sourceThreadId: source.id }))
+    // What only the host's own record knows, its queue and its fences, it reads again as it holds the thread.
+    const refusal = threadMoveRefusal(source, { machine, movingTo: moving?.machine,
+      fenced: !moving && !sourceHostId && this.options.control.moveFenceOf?.(source.id) !== undefined,
       backgroundWork: watcherBackgroundWorkCount(source),
-      unresolved: this.options.control.moveHoldReason(source.id) !== null,
-      delegatedWorking: this.options.delegations?.hasOpen(source.id) === true
+      unresolved: !sourceHostId && this.options.control.moveHoldReason(source.id) !== null,
+      delegatedWorking: this.options.delegations?.hasOpen(this.windowKey(sourceHostId ?? here ?? '', source.id)) === true
         || delegatedThreadsBelow(snapshot.threads, source.id).some(child => { const thread = snapshot.threads.find(item => item.id === child); return thread !== undefined && isThreadTurnRunning(thread) }) })
     if (refusal) return { threadId, outcome: 'stays', words: refusal }
     const sourceModel = resolveModel(snapshot.models, source.modelId), model = targetModel(source, sourceModel, target.models)
     if (!model) return { threadId, outcome: 'stays', words: THREAD_MOVE_WORDS.noProvider(source.providerId, machine) }
-    const permission = movePermission(source, sourceModel, model, this.options.control.configuration().newThreadRuntimeMode, this.targets?.mayAnswer(hostId) === true)
+    // This computer answers for itself: a thread moving here starts on what the user lets a new thread start on here.
+    const permission = movePermission(source, sourceModel, model, this.options.control.configuration().newThreadRuntimeMode, hostId === here || this.targets?.mayAnswer(hostId) === true)
     // TODO(#1178): a thread babysitting a pull request also asks first when the machine has no GitHub sign-in (Zach, October 21),
     // once a host says whether it has one; no host does yet, so only the permission asks.
     const effort = source.reasoningEffort && model.reasoningEfforts?.includes(source.reasoningEffort) ? source.reasoningEffort : undefined
     const start: MoveRecord['start'] = { provider: source.providerId, modelId: model.id, title: source.title, ...effort ? { reasoningEffort: effort } : {},
       ...permission.runtimeMode ? { runtimeMode: permission.runtimeMode } : {}, ...source.titleSource === 'user' ? { titleSource: 'user' as const } : {} }
-    return { threadId, sourceThreadId: source.id, start, model: movedModel(source, sourceModel, model, model.id),
+    return { threadId, sourceThreadId: source.id, ...sourceHostId ? { sourceHostId, from } : {}, start, model: movedModel(source, sourceModel, model, model.id),
       ...permission.narrowed ? { outcome: 'asks', words: movePermissionWords(permission.narrowed, machine), startsOn: narrowedName(permission.narrowed).slice(0, 200) } : { outcome: 'moves' } }
   }
   /** What a confirmation holds to: each thread's outcome, its words and what it would start on there. */
@@ -648,23 +707,30 @@ export class ThreadMoveService {
   }
   /** Threads the new thread delegated to on another machine, This computer or a third, still open, as delegation's record names them. */
   private delegatesElsewhere(record: MoveRecord): boolean {
-    return record.threadId !== undefined && this.options.delegations?.hasOpen(hostEntityKey(record.targetHostId, record.threadId)) === true
+    return record.threadId !== undefined && this.options.delegations?.hasOpen(this.windowKey(record.targetHostId, record.threadId)) === true
   }
   /** Puts a saved move in the indexes its state calls for, or takes it out of all of them once it is finished. */
   private track(record: MoveRecord): void {
     const moveId = record.id
+    // A move waits on the machine it goes to, and on the host its thread is on.
+    const machines = record.sourceHostId ? [record.targetHostId, record.sourceHostId] : [record.targetHostId]
+    const key = this.sourceKey(record)
     if (terminal(record.state)) {
       this.live.delete(moveId); this.waitingTurn.delete(moveId); this.lastRead.delete(moveId); this.stuck.delete(moveId); this.watchTries.delete(moveId)
-      if (this.moving.get(record.sourceThreadId) === moveId) this.moving.delete(record.sourceThreadId)
-      const host = this.byHost.get(record.targetHostId)
-      host?.delete(moveId)
-      if (host?.size === 0) this.byHost.delete(record.targetHostId)
+      if (this.moving.get(key) === moveId) this.moving.delete(key)
+      for (const hostId of machines) {
+        const host = this.byHost.get(hostId)
+        host?.delete(moveId)
+        if (host?.size === 0) this.byHost.delete(hostId)
+      }
       return
     }
-    this.live.add(moveId); this.moving.set(record.sourceThreadId, moveId)
-    let host = this.byHost.get(record.targetHostId)
-    if (!host) { host = new Set(); this.byHost.set(record.targetHostId, host) }
-    host.add(moveId)
+    this.live.add(moveId); this.moving.set(key, moveId)
+    for (const hostId of machines) {
+      let host = this.byHost.get(hostId)
+      if (!host) { host = new Set(); this.byHost.set(hostId, host) }
+      host.add(moveId)
+    }
     if (record.state === 'thread-started' && record.sent !== false) this.waitingTurn.add(moveId)
     else { this.waitingTurn.delete(moveId); this.lastRead.delete(moveId) }
   }
@@ -690,7 +756,7 @@ export class ThreadMoveService {
       const record = this.records.get(moveId)
       // One already advancing takes this after its step (`again`), so a turn that ends meanwhile is not missed.
       if (!record?.threadId || this.retryAt.has(moveId)) continue
-      const snapshot = this.targets.snapshot(record.targetHostId)
+      const snapshot = this.snapshotOf(record.targetHostId)
       if (!snapshot || this.lastRead.get(moveId) === snapshot) continue
       // Not over there: nothing new until that machine's snapshot changes. Over there but for threads it delegated to on
       // another machine: read again on the next update, since those change elsewhere.
@@ -745,25 +811,36 @@ export class ThreadMoveService {
   private async step(record: MoveRecord): Promise<boolean> {
     const targets = this.targets, here = this.options.control.hostId()
     if (!targets || !here) return false
-    const target = record.targetHostId, name = targets.name(target) ?? record.machine
-    // Read only by the steps that need it, never while a move waits on its first turn.
-    const sourceOf = (): AgentThread | undefined => this.options.control.watcherSnapshot().threads.find(thread => thread.id === record.sourceThreadId)
+    // A move ending as given back or stayed waits only on the host its thread is on letting go of it.
+    if (record.ending) return this.end(record)
+    const target = record.targetHostId, name = target === here ? 'This computer' : targets.name(target) ?? record.machine
+    const sourceHost = record.sourceHostId ?? here
+    // Read only by the steps that need it, never while a move waits on its first turn. A host that is not connected has none.
+    const sourceSnapshot = (): AgentHostSnapshot | undefined => this.snapshotOf(sourceHost)
+    const sourceOf = (): AgentThread | undefined => sourceSnapshot()?.threads.find(thread => thread.id === record.sourceThreadId)
     switch (record.state) {
       case 'fenced': {
-        if (!targets.snapshot(target)) return false
-        const source = sourceOf()
+        if (!this.snapshotOf(target)) return false
+        if (record.sourceHostId && !record.held) {
+          const held = await this.hold(record)
+          if (typeof held === 'boolean') return held
+          record = held
+        }
+        const snapshot = sourceSnapshot()
+        if (!snapshot) return false
+        const source = snapshot.threads.find(thread => thread.id === record.sourceThreadId)
         if (!source) return this.giveBack(record, THREAD_MOVE_WORDS.gone)
         let projectId = record.projectId
         if (projectId === undefined) {
-          const placed = await targets.place({ hostId: here, projectId: source.projectId }, target)
+          const placed = await targets.place({ hostId: sourceHost, projectId: source.projectId }, target)
           if ('refused' in placed) { if (placed.retryable) { this.later(record.id); return false } return this.giveBack(record, placed.refused) }
           projectId = placed.projectId
           record = await this.update(record, { projectId })
         }
-        const receipt = await this.options.branches.forStart({ from: { hostId: here, threadId: source.id }, to: { hostId: target, projectId }, here, moveId: record.id, snapshot: false })
+        const receipt = await this.options.branches.forStart({ from: { hostId: sourceHost, threadId: source.id }, to: { hostId: target, projectId }, here, moveId: record.id, snapshot: false })
         if (receipt.type === 'refused') {
           // A connection that dropped, or a machine gone meanwhile, is tried again once it is back; anything else is the move's answer.
-          if (receipt.reason === 'cut-off' || receipt.reason === 'unsupported' && !targets.snapshot(target)) { this.later(record.id); return false }
+          if (receipt.reason === 'cut-off' || receipt.reason === 'unsupported' && (!this.snapshotOf(target) || !sourceSnapshot())) { this.later(record.id); return false }
           return this.giveBack(record, receipt.message)
         }
         await this.update(record, { state: 'branch-sent', branch: { name: receipt.branch, commit: receipt.commit } })
@@ -771,24 +848,27 @@ export class ThreadMoveService {
       }
       case 'branch-sent':
       case 'thread-started': {
-        if (record.state === 'thread-started' && record.sent !== false) return this.confirm(record, targets)
-        const host = targets.host(target)
+        if (record.state === 'thread-started' && record.sent !== false) return this.confirm(record)
+        const host = this.moveHost(target)
         if (!host) return false
         if (!host.supportsThreadMove) { if (record.startAsked) return false; return this.giveBack(record, THREAD_MOVE_WORDS.olderHost(name)) }
         const source = sourceOf()
-        const prompt = source ? this.prompt(record, source, name) : undefined
-        if (!prompt) {
+        if (!source) {
+          // A host that is not connected says nothing of its thread yet, so the move waits for it.
+          if (!sourceSnapshot()) return false
           // Nothing reached the machine yet, so the move is given back; once it has, only the machine's answer decides.
-          if (!record.startAsked) return this.giveBack(record, source ? THREAD_MOVE_WORDS.unreadable : THREAD_MOVE_WORDS.gone)
-          return false
+          return record.startAsked ? false : this.giveBack(record, THREAD_MOVE_WORDS.gone)
         }
+        const prompt = await this.prompt(record, source)
+        if (prompt === 'later') { this.later(record.id); return false }
+        if ('refused' in prompt) return record.startAsked ? false : this.giveBack(record, prompt.refused)
         if (!record.startAsked) record = await this.update(record, { startAsked: true })
         let raw: unknown
         try {
           raw = await host.threadMove({ action: 'start', moveId: record.id, projectId: record.projectId!, title: record.start.title,
             ...record.start.titleSource ? { titleSource: record.start.titleSource } : {}, modelId: record.start.modelId,
             ...record.start.reasoningEffort ? { reasoningEffort: record.start.reasoningEffort } : {}, ...record.start.runtimeMode ? { runtimeMode: record.start.runtimeMode } : {},
-            from: { threadId: record.sourceThreadId, provider: record.start.provider, hostId: here }, prompt: prompt.text, handover: prompt.proof })
+            from: { threadId: record.sourceThreadId, provider: record.start.provider, hostId: sourceHost }, prompt: prompt.text, handover: prompt.proof })
         } catch { this.later(record.id); return false }
         const answer = threadMoveStartAnswerSchema.safeParse(raw)
         if (!answer.success) { this.later(record.id); return false }
@@ -807,24 +887,76 @@ export class ThreadMoveService {
       default: return false
     }
   }
-  /** The first prompt and its proof: the handover, Sotto's facts, and the length and digest of the whole, all Sotto's. */
-  private prompt(record: MoveRecord, source: AgentThread, machine: string): { readonly text: string; readonly proof: { prefixLength: number; prefixDigest: string; counts: ReturnType<typeof handoverCounts> } } | undefined {
-    let handover: Handover | undefined
-    try { handover = this.options.workspace.threadHandover(source.id) } catch { handover = undefined }
-    if (!handover || handover.summary.total === 0 || !record.branch) return undefined
+  /**
+   * Asks the host a move's thread is on to hold it: it checks the thread can move by its own record and fences it there.
+   * Answers the move as held, or whether it moved on (given back) or waits.
+   */
+  private async hold(record: MoveRecord): Promise<MoveRecord | boolean> {
+    const sourceHost = record.sourceHostId!, from = this.fromName(record)
+    const host = this.targets?.host(sourceHost)
+    if (!host || !this.targets?.snapshot(sourceHost)) return false
+    if (!host.supportsThreadMoveSource) return this.giveBack(record, THREAD_MOVE_WORDS.olderSource(from))
+    let raw: unknown
+    try { raw = await host.threadMove({ action: 'hold', moveId: record.id, threadId: record.sourceThreadId, machine: record.machine }) } catch { this.later(record.id); return false }
+    const answer = threadMoveSourceAnswerSchema.safeParse(raw)
+    if (!answer.success || answer.data.type === 'refused' && THREAD_MOVE_SOURCE_UNDECIDED.has(answer.data.reason)) { this.later(record.id); return false }
+    // Refused, the host fenced nothing: the move is given back in the host's own words.
+    if (answer.data.type === 'refused') return this.giveBack(record, answer.data.message)
+    if (answer.data.type !== 'held') { this.later(record.id); return false }
+    return this.update(record, { held: true })
+  }
+  /**
+   * One step the host a move's thread is on takes for it: settle it, or let go of it. Answers whether it is done there; a
+   * host that holds nothing for the move has nothing left to do.
+   */
+  private async sourceStep(record: MoveRecord, request: Extract<HostThreadMoveSource, { action: 'settle' | 'release' }>): Promise<boolean> {
+    const host = this.targets?.host(record.sourceHostId!)
+    if (!host || !this.targets?.snapshot(record.sourceHostId!)) return false
+    let raw: unknown
+    try { raw = await host.threadMove(request) } catch { return false }
+    const answer = threadMoveSourceAnswerSchema.safeParse(raw)
+    return answer.success && (answer.data.type === 'done' || answer.data.type === 'refused' && answer.data.reason === 'unknown-move')
+  }
+  /** The source's link to the thread that continues it, as the host it is on keeps it. */
+  private linkOf(record: MoveRecord): ThreadMoveLink {
+    return { threadId: record.threadId!, provider: record.start.provider, hostId: record.targetHostId, at: record.updatedAt }
+  }
+  /**
+   * The first prompt and its proof: the handover, Sotto's facts, and the length and digest of the whole, all Sotto's. A
+   * host's thread's handover is the host's to give (`handover`); `later` while it cannot be asked.
+   */
+  private async prompt(record: MoveRecord, source: AgentThread): Promise<{ readonly text: string; readonly proof: { prefixLength: number; prefixDigest: string; counts: HandoverCounts } } | { readonly refused: string } | 'later'> {
+    let handover: { readonly text: string; readonly counts: HandoverCounts }
+    if (record.sourceHostId) {
+      const host = this.targets?.host(record.sourceHostId)
+      if (!host) return 'later'
+      let raw: unknown
+      try { raw = await host.threadMove({ action: 'handover', moveId: record.id }) } catch { return 'later' }
+      const answer = threadMoveSourceAnswerSchema.safeParse(raw)
+      if (!answer.success) return 'later'
+      if (answer.data.type === 'refused') return THREAD_MOVE_SOURCE_UNDECIDED.has(answer.data.reason) ? 'later' : { refused: answer.data.message }
+      if (answer.data.type !== 'handover') return 'later'
+      handover = { text: answer.data.text, counts: answer.data.counts }
+    } else {
+      let local: Handover | undefined
+      try { local = this.options.workspace.threadHandover(source.id) } catch { local = undefined }
+      if (!local || local.summary.total === 0) return { refused: THREAD_MOVE_WORDS.unreadable }
+      handover = { text: local.text, counts: handoverCounts(local.summary) }
+    }
+    if (!record.branch) return { refused: THREAD_MOVE_WORDS.unreadable }
     const linked = (source.pullRequests ?? []).filter(item => item.state === 'open')
     const own = source.worktree?.git?.pullRequest
     const pullRequests = [...linked, ...own && own.state === 'open' && !linked.some(item => item.number === own.number) ? [own] : []]
       .map(item => ({ number: item.number, title: item.title, draft: item.draft }))
-    const facts: MoveFacts = { title: source.title, from: 'This computer', to: machine, branch: record.branch.name, commit: record.branch.commit, pullRequests,
+    const facts: MoveFacts = { title: source.title, from: this.fromName(record), to: record.machine, branch: record.branch.name, commit: record.branch.commit, pullRequests,
       babysat: (source.babysitting ?? []).map(item => item.number), watched: record.watched }
     const text = movePrompt(handover.text, facts)
-    if (text.length > AGENT_TEXT_MAX) return undefined
-    return { text, proof: { ...handoverPrefixProof(text), counts: handoverCounts(handover.summary) } }
+    if (text.length > AGENT_TEXT_MAX) return { refused: THREAD_MOVE_WORDS.unreadable }
+    return { text, proof: { ...handoverPrefixProof(text), counts: handover.counts } }
   }
-  /** The move counts once the new thread is listed there and its first turn has ended. */
-  private async confirm(record: MoveRecord, targets: MoveTargets): Promise<boolean> {
-    const snapshot = targets.snapshot(record.targetHostId)
+  /** The move counts once the new thread is listed and its first turn has ended. */
+  private async confirm(record: MoveRecord): Promise<boolean> {
+    const snapshot = this.snapshotOf(record.targetHostId)
     const ended = snapshot && record.threadId ? firstTurnOver(this.indexOf(snapshot), record.threadId) : undefined
     if (!ended || this.delegatesElsewhere(record)) return false
     await this.update(record, { state: 'first-turn-ended', firstTurn: ended })
@@ -832,13 +964,14 @@ export class ThreadMoveService {
   }
   /**
    * The move is confirmed: Watcher's watch goes to the new thread first, since a settled thread's watch ends; the source
-   * links to the new thread; then the source is settled, its worktree kept, and takes sends again.
+   * links to the new thread; then the source is settled, its worktree kept, and takes sends again. A host's thread is
+   * linked and settled by that host (`settle`), which lets go of its fence.
    */
   private async settleSource(record: MoveRecord, here: string, source: AgentThread | undefined): Promise<boolean> {
     // The watch goes first, and the source settles only once it has: a watch on a settled thread ends, and would be lost.
     // One that will not go is tried again a few times, then the move waits, fenced and unsettled, for part 4 to show it.
     if (record.watched && record.watchMoved !== true && record.threadId && this.options.watch) {
-      const moved = await this.options.watch.moveWatch({ hostId: here, threadId: record.sourceThreadId }, { hostId: record.targetHostId, threadId: record.threadId }).catch(() => false)
+      const moved = await this.options.watch.moveWatch({ hostId: record.sourceHostId ?? here, threadId: record.sourceThreadId }, { hostId: record.targetHostId, threadId: record.threadId }).catch(() => false)
       if (!moved) {
         const tries = (this.watchTries.get(record.id) ?? 0) + 1
         this.watchTries.set(record.id, tries)
@@ -848,36 +981,62 @@ export class ThreadMoveService {
       }
       record = await this.update(record, { watchMoved: true })
     }
-    if (source) {
+    if (record.sourceHostId) {
+      if (record.threadId && !await this.sourceStep(record, { action: 'settle', moveId: record.id, link: this.linkOf(record) })) { this.later(record.id); return false }
+    } else if (source) {
       // The link is Sotto's record and must survive (ADR-0089): a write that fails fails the step, which is tried again.
       if (record.threadId) await this.options.workspace.addContinuedIn(source.id, { threadId: record.threadId, provider: record.start.provider, at: record.updatedAt, host: record.targetHostId })
       const settled = await this.options.control.commandFromMove({ type: 'settle-thread', threadId: source.id }, () => { if (this.closed) throw new Error('Sotto is stopping.') })
       if (settled.error && !this.options.control.watcherSnapshot().threads.find(thread => thread.id === source.id)?.workspaceSettledAt) throw new Error('The source did not settle.')
     }
     await this.update(record, { state: 'source-settled' })
-    this.lift(record.sourceThreadId)
+    if (!record.sourceHostId) this.lift(record.sourceThreadId)
     return true
   }
   /**
-   * The new thread's first turn failed or was stopped, so it did not pick up the work: the source stays here, unsettled,
-   * still watched where it was, and takes sends again. It links to the new thread, which is left there for the user.
+   * The new thread's first turn failed or was stopped, so it did not pick up the work: the source stays where it is,
+   * unsettled, still watched where it was, and takes sends again. It links to the new thread, which is left there for the user.
    */
   private async stay(record: MoveRecord, source: AgentThread | undefined): Promise<boolean> {
+    const words = THREAD_MOVE_WORDS.stayed(record.machine, record.firstTurn === 'failed', this.fromName(record)).slice(0, 1_200)
+    if (record.sourceHostId) return this.end(await this.update(record, { ending: 'stayed', givenBack: words }))
     if (source && record.threadId) await this.options.workspace.addContinuedIn(source.id, { threadId: record.threadId, provider: record.start.provider, at: record.updatedAt, host: record.targetHostId })
-    await this.update(record, { state: 'stayed', givenBack: THREAD_MOVE_WORDS.stayed(record.machine, record.firstTurn === 'failed').slice(0, 1_200) }, true)
+    await this.update(record, { state: 'stayed', givenBack: words }, true)
     this.lift(record.sourceThreadId)
     return true
   }
   /**
    * Gives a move back while no thread exists for it: the record says why, the source takes sends again, and the branch it
-   * landed there is let go of. A record that cannot be saved keeps the source fenced, and the step is tried again.
+   * landed there is let go of. A record that cannot be saved keeps the source fenced, and the step is tried again. A host's
+   * thread it held is let go of by that host first (`end`).
    */
   private async giveBack(record: MoveRecord, why: string): Promise<boolean> {
-    await this.update(record, { state: 'given-back', givenBack: THREAD_MOVE_WORDS.givenBack(why).slice(0, 1_200) }, true)
-    this.lift(record.sourceThreadId)
+    const words = THREAD_MOVE_WORDS.givenBack(why, this.fromName(record)).slice(0, 1_200)
+    if (record.sourceHostId && record.held) return this.end(await this.update(record, { ending: 'given-back', givenBack: words }))
+    await this.update(record, { state: 'given-back', givenBack: words }, true)
+    if (!record.sourceHostId) this.lift(record.sourceThreadId)
+    await this.forgetBranch(record)
+    return true
+  }
+  /**
+   * Ends a move whose thread is on a host, once that host has let go of it: linked first to the new thread for one that
+   * stayed. Until the host answers, the move waits on it, its thread still fenced there.
+   */
+  private async end(record: MoveRecord): Promise<boolean> {
+    const state = record.ending!
+    const link = state === 'stayed' && record.threadId ? this.linkOf(record) : undefined
+    if (!await this.sourceStep(record, { action: 'release', moveId: record.id, ...link ? { link } : {} })) { this.later(record.id); return false }
+    const { ending: _ending, ...rest } = record
+    void _ending
+    // A write that fails keeps the move ending, as its record still says, and the step is tried again.
+    try { await this.update(rest, { state }, true) } catch (error) { this.records.set(record.id, record); throw error }
+    if (state === 'given-back') await this.forgetBranch(record)
+    return true
+  }
+  /** Lets go of the branch a move given back landed on its target, so no ref there holds its commits. */
+  private async forgetBranch(record: MoveRecord): Promise<void> {
     const here = this.options.control.hostId()
     if (record.projectId && here) await this.options.branches.forget({ hostId: record.targetHostId, projectId: record.projectId, moveId: record.id, here }).catch(() => undefined)
-    return true
   }
 
   /**
@@ -886,9 +1045,10 @@ export class ThreadMoveService {
    */
   private async update(record: MoveRecord, patch: Partial<MoveRecord>, release = false): Promise<MoveRecord> {
     const next: MoveRecord = { ...record, ...patch, updatedAt: now() }
-    const keptBefore = this.kept.has(record.sourceThreadId)
+    const local = record.sourceHostId === undefined
+    const keptBefore = local && this.kept.has(record.sourceThreadId)
     this.records.set(record.id, next)
-    if (release) this.kept.delete(record.sourceThreadId)
+    if (release && local) this.kept.delete(record.sourceThreadId)
     try { await this.save() } catch (error) {
       this.records.set(record.id, record)
       if (keptBefore) this.kept.add(record.sourceThreadId)
@@ -904,7 +1064,7 @@ export class ThreadMoveService {
     const here = this.options.control.hostId()
     if (!here) return
     try {
-      this.options.news?.({ moveId: record.id, source: { hostId: here, threadId: record.sourceThreadId }, machine: record.machine,
+      this.options.news?.({ moveId: record.id, source: { hostId: record.sourceHostId ?? here, threadId: record.sourceThreadId }, machine: record.machine,
         ...record.threadId ? { movedTo: { hostId: record.targetHostId, threadId: record.threadId } } : {},
         outcome: record.state === 'source-settled' ? 'moved' : record.state === 'stayed' ? 'stayed' : 'given-back' })
     } catch { /* Watcher's news is Watcher's: a move never fails for it. */ }
@@ -919,8 +1079,9 @@ export class ThreadMoveService {
     const write = this.writes.catch(() => undefined).then(async () => {
       const finished = [...this.records.values()].filter(record => terminal(record.state))
       for (const old of finished.slice(0, Math.max(0, finished.length - FINISHED_KEPT))) this.records.delete(old.id)
-      await this.store.write({ version: 1, moves: [...this.records.values(), ...first], kept: [...this.kept, ...first.map(record => record.sourceThreadId).filter(threadId => !this.kept.has(threadId))] })
-      for (const record of first) { this.records.set(record.id, record); this.kept.add(record.sourceThreadId); this.track(record) }
+      const keeps = first.filter(record => record.sourceHostId === undefined).map(record => record.sourceThreadId)
+      await this.store.write({ version: 1, moves: [...this.records.values(), ...first], kept: [...this.kept, ...keeps.filter(threadId => !this.kept.has(threadId))] })
+      for (const record of first) { this.records.set(record.id, record); if (record.sourceHostId === undefined) this.kept.add(record.sourceThreadId); this.track(record) }
       if (first.length) this.changed()
     })
     this.writes = write

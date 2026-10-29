@@ -102,3 +102,19 @@ Left for later parts: the GitHub sign-in half of asking first (a host does not y
 - The preview and the cards name the model there (`movedModel`), and the permission a narrower move would start on (`startsOn`), for **Move it on …**.
 
 Left for later parts, as before: a move whose machine stopped answering says so on its card and that nothing was lost, with no **Keep it here** yet (part 4); the other directions (part 3).
+
+## Part 3a, as built (October 29, 2026)
+
+- `src/shared/threadMoves.ts`: `thread-move`'s source actions (`hold`, `handover`, `settle`, `release`) and their answers, under the new optional host feature `thread-move-source`; the words name the machine a thread stays on.
+- `src/main/agents/threadMovesHost.ts`: `HostThreadMoveSources`, the host's side for its own thread, with `thread-moves-held.json`. `HostThreadMoves` takes those actions where it holds sources, and takes a file name, so This computer keeps its own record of the threads it makes (`thread-moves-here.json`).
+- `src/main/agents/threadMoves.ts`: the move record names the source's machine (`sourceHostId`, `from`), whether that host holds it (`held`), and how a move ends while that host is away (`ending`). Planning reads a host's thread from its snapshot; This computer is a target through `here`; every step that touched This computer's source asks the source's host instead. The cards say where a thread came from (`from`) and when it moves to This computer (`here`).
+- `src/main/agents/watcher.ts`: a watch moved off a host's thread tells that host.
+- The window still offers only This computer's threads and the paired machines: part 3b draws Zach's picks.
+
+Decisions made while building:
+
+- A host's thread is checked twice: by the desktop's preview from what it sees, then by the host as it holds it, which alone knows its queue, its unconfirmed sends and its fences. A thread the host will not hold is given back in the host's words, with nothing fenced.
+- A move to This computer never asks first for want of an answers grant: This computer is where the user answers. Its permission is still capped by the new-thread default.
+- A move of a host's thread that must end, given back or stayed, waits for that host to let go of it before it counts as ended, so the thread is never left fenced there with the desktop's record saying it is free.
+- The fixture host in the integration suite reads history only from provider events, which its fakes do not send, so none of its threads can be held; the whole move from a host is covered over stand-ins, and the integration suite covers the host's refusals and the feature over the real socket.
+

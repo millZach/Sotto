@@ -97,10 +97,10 @@ const restartedWords = (event: WatcherEvent): string => `${providerName(event.re
 function movedWords(event: WatcherEvent): string {
   const machine = event.machine ?? 'another machine', there = event.movedTo ? JSON.stringify(event.movedTo) : 'a new thread'
   const said = event.moveOutcome === 'moved'
-    ? `The user moved this thread to ${machine}, and Sotto moved it: it continues there as ${there}, whose first turn has ended, and this one is settled here.${unwatched(event) ? '' : ' Your watch on it went to the new thread, so its news comes from there now.'}`
+    ? `The user moved this thread to ${machine}, and Sotto moved it: it continues there as ${there}, whose first turn has ended, and this one is settled where it ran.${unwatched(event) ? '' : ' Your watch on it went to the new thread, so its news comes from there now.'}`
     : event.moveOutcome === 'stayed'
-      ? `The user moved this thread to ${machine}, but the new thread there, ${there}, failed or was stopped in its first turn, so this one stays here and takes sends again. The new thread is left there.`
-      : `The user moved this thread to ${machine}, but the move was given back before any thread was made there, so this one stays here and takes sends again.`
+      ? `The user moved this thread to ${machine}, but the new thread there, ${there}, failed or was stopped in its first turn, so this one stays where it is and takes sends again. The new thread is left there.`
+      : `The user moved this thread to ${machine}, but the move was given back before any thread was made there, so this one stays where it is and takes sends again.`
   return `${said} This approves nothing.`
 }
 const kindWords = (event: WatcherEvent): string => event.kind === 'threads-restarted' ? restartedWords(event) : event.kind === 'thread-moved' ? movedWords(event) : event.kind === 'needs-user' && event.delegatedThreadId !== undefined

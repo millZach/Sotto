@@ -214,7 +214,7 @@ export interface SocketServerOptions {
    * Threads moved here from another machine (`thread-move`, #1178), present only where the host's Owl answer turns on
    * `cross-machine-work`. Offered on either listener, to a client the launch script recorded as a desktop, and to no other.
    */
-  threadMoves?: Pick<HostThreadMoves, 'handle'>
+  threadMoves?: Pick<HostThreadMoves, 'handle' | 'holdsSources'>
   /**
    * The desktop relay (`delegation-relay`, #1316), present only where the host runs delegation for its own threads and its
    * Owl answer turns on Work across machines. Offered on either listener, to a client the launch script recorded as a
@@ -356,6 +356,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     && (feature !== 'branch-moves' || options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     // Moves (#1178) on the same terms as branch moves, whose incoming ref each one starts from.
     && (feature !== 'thread-move' || options.threadMoves !== undefined && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
+    // Its own threads as a move's source (#1178 part 3) on the same terms, where it holds them.
+    && (feature !== 'thread-move-source' || options.threadMoves?.holdsSources === true && options.branchMoves !== undefined && options.watcherDesktops !== undefined)
     // The desktop relay (#1316) only where delegation runs here and the Owl answer turns on cross-machine work, for recorded desktops.
     && (feature !== 'delegation-relay' && feature !== 'delegation-relay-send' || options.delegationRelay !== undefined && service.supportsHostDelegation === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // A desktop's delegations here for threads on other machines (#1316 part 2), on the same terms.
@@ -390,7 +392,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   const featuresFor = (peer: Peer): string[] => (peer.desktop ? [...features] : features.filter(feature => !HOST_DESKTOP_FEATURES.includes(feature)))
     .filter(feature => !feature.startsWith('watcher-') || feature.startsWith('watcher-phone') || options.watcherDesktops?.has(peer.client.clientId))
     .filter(feature => feature !== 'host-update' || mayUpdate(peer))
-    .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
+    .filter(feature => feature !== 'branch-moves' && feature !== 'thread-move' && feature !== 'thread-move-source' || (options.watcherDesktops?.has(peer.client.clientId) ?? false))
     // Desktop defaults come only from a client the launch script recorded as a desktop (#1310).
     .filter(feature => feature !== 'host-delegation' && feature !== 'delegation-views' && feature !== 'delegation-relay' && feature !== 'delegation-relay-send' && feature !== 'delegation-remote' && feature !== 'delegation-branch-starts' && feature !== 'check-queue-views'
       || options.watcherDesktops?.has(peer.client.clientId) === true)
@@ -1497,6 +1499,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         await options.watcherDesktops?.refresh().catch(() => undefined)
         const { threadMoves } = options
         if (!threadMoves || !offers(peer, 'thread-move') || !peer.ready) throw new Refusal('invalid_request')
+        if (request.request.action !== 'start' && !offers(peer, 'thread-move-source')) throw new Refusal('invalid_request')
         try { return await threadMoves.handle(request.request, peer.client) } catch { throw new Refusal('unavailable') }
       }
       case 'usage-read':

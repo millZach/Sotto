@@ -28,12 +28,14 @@ describe('which threads move (Zach, October 21, 2026)', () => {
     ['an unresolved send', thread(), { ...clear, unresolved: true }, THREAD_MOVE_WORDS.unresolved],
     ['uncommitted work', thread(git({ dirty: true, changedFiles: 2 })), clear, THREAD_MOVE_WORDS.uncommitted],
     ['no branch checked out', thread(git({ branch: null })), clear, THREAD_MOVE_WORDS.notOnBranch],
-    ['a thread on another machine', thread({ remoteHost: true }), clear, THREAD_MOVE_WORDS.remote],
     ['an archived thread', thread({ archivedAt: '2026-10-28T10:00:00.000Z' }), clear, THREAD_MOVE_WORDS.archived],
     ['a thread with nothing to hand over', thread({ messages: [] }), clear, THREAD_MOVE_WORDS.empty],
     ['a thread already moving', thread(), { ...clear, movingTo: 'the Mac' }, THREAD_MOVE_WORDS.moving('the Mac')],
   ])('keeps %s here and says why', (_name, source, context, words) => {
     expect(threadMoveRefusal(source, context)).toBe(words)
+  })
+  it('moves a thread on another machine too, which its own host holds for the move (#1178 part 3)', () => {
+    expect(threadMoveRefusal(thread({ remoteHost: true }), clear)).toBeNull()
   })
   it('says one reason, the first that holds, for a thread several hold', () => {
     expect(threadMoveRefusal(thread({ delegatedBy: 'parent', status: 'running' }), { ...clear, unresolved: true })).toBe(THREAD_MOVE_WORDS.delegated)

@@ -1,13 +1,22 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { z } from 'zod'
-import type { AgentCommand, AgentHostSnapshot, AgentModel, AgentState, ThreadContinuedFrom } from '../../shared/agents'
+import { AGENT_TEXT_MAX, type AgentCommand, type AgentHostSnapshot, type AgentModel, type AgentState, type ThreadContinuedFrom, type ThreadContinuedIn } from '../../shared/agents'
+import { delegatedThreadsBelow } from '../../shared/delegation'
 import { resolveModel } from '../../shared/modelCatalog'
 import { hostNewThreadPermission } from '../../shared/newThreadDefaults'
-import { HOST_THREAD_MOVE_WORDS, hostThreadMoveRequestSchema, type HostThreadMoveRequest, type ThreadMoveStartAnswer } from '../../shared/threadMoves'
+import { isThreadTurnRunning } from '../../shared/threadActivity'
+import {
+  HOST_THREAD_MOVE_WORDS, hostThreadMoveRequestSchema, THREAD_MOVE_WORDS, threadMoveRefusal, type HostThreadMoveSource, type HostThreadMoveStart, type ThreadMoveLink,
+  type ThreadMoveSourceAnswer, type ThreadMoveStartAnswer,
+} from '../../shared/threadMoves'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { readStrictJson } from '../storage/strictJsonFile'
+import type { CheckoutPendingWork } from './checkoutMutations'
+import type { Handover } from './handover'
 import type { ClientIdentity } from './hostService'
+import { handoverCounts } from './watcherHandover'
+import { watcherBackgroundWorkCount } from './watcherWakeUp'
 
 /** What a move asks of this machine's coordinator: its threads as they are, and its own commands. */
 export interface HostThreadMovesControl {
@@ -17,6 +26,23 @@ export interface HostThreadMovesControl {
 /** The new thread's link back to the thread it continues, on its own record. */
 export interface HostThreadMovesWorkspace {
   setContinuedFrom(threadId: string, from: ThreadContinuedFrom): Promise<void>
+}
+/**
+ * What a move whose source is one of this machine's threads asks of it (#1178 part 3): the coordinator's fence and what
+ * holds a thread here, its settle, and the workspace's handover and link to the thread that continues it.
+ */
+export interface HostThreadMoveSourceControl {
+  watcherSnapshot(): AgentHostSnapshot
+  moveHoldReason(threadId: string): CheckoutPendingWork | null
+  /** Fences at once; the promise settles once the fence is in the coordinator's own record, and rejects when it could not be. */
+  fenceForMove(threadId: string, words: string): void | Promise<void>
+  liftMoveFence(threadId: string): void | Promise<void>
+  moveFenceOf(threadId: string): string | undefined
+  commandFromMove(command: Extract<AgentCommand, { type: 'settle-thread' }>, guard: () => void): Promise<AgentState>
+}
+export interface HostThreadMoveSourceWorkspace {
+  threadHandover(threadId: string): Handover | undefined
+  addContinuedIn(threadId: string, link: ThreadContinuedIn): Promise<void>
 }
 
 const id = z.string().min(1).max(512)
@@ -49,7 +75,7 @@ function actsWithoutAsking(permission: { readonly runtimeMode?: string | undefin
   if (permission.providerMode !== undefined) return model?.providerModes?.find(mode => mode.id === permission.providerMode)?.allows !== 'nothing'
   return permission.runtimeMode !== undefined && permission.runtimeMode !== 'approval-required'
 }
-const identity = (request: HostThreadMoveRequest): string =>
+const identity = (request: HostThreadMoveStart): string =>
   createHash('sha256').update(JSON.stringify([request.projectId, request.modelId, request.from.threadId, request.from.hostId])).digest('hex')
 
 /**
@@ -81,8 +107,12 @@ export class HostThreadMoves {
     readonly workspace: HostThreadMovesWorkspace
     /** Whether this client may answer here, and so give a thread a mode that acts without asking. Read at every start. */
     readonly mayAnswer: (client: ClientIdentity) => boolean
+    /** This machine's own threads as a move's source (`thread-move-source`), where it offers that. */
+    readonly sources?: HostThreadMoveSources | undefined
+    /** The record's file name: the desktop keeps the moves made on This computer apart from a host's (`thread-moves-here.json`). */
+    readonly file?: string | undefined
   }) {
-    this.path = join(directory, 'thread-moves.json')
+    this.path = join(directory, options.file ?? 'thread-moves.json')
     this.store = new AtomicJsonStore(this.path, input => fileSchema.parse(input), empty)
   }
   private readonly path: string
@@ -95,11 +125,17 @@ export class HostThreadMoves {
     })
     return this.loaded
   }
-  close(): void { this.closed = true }
+  close(): void { this.closed = true; this.options.sources?.close() }
+  /** Whether this machine's own threads can be a move's source here (`thread-move-source`). */
+  get holdsSources(): boolean { return this.options.sources !== undefined }
 
   /** One `thread-move` request from a recorded desktop. A step that cannot run at all rejects, and the desktop asks again. */
-  async handle(raw: unknown, client: ClientIdentity): Promise<ThreadMoveStartAnswer> {
+  async handle(raw: unknown, client: ClientIdentity): Promise<ThreadMoveStartAnswer | ThreadMoveSourceAnswer> {
     const request = hostThreadMoveRequestSchema.parse(raw)
+    if (request.action !== 'start') {
+      if (!this.options.sources) throw new Error('This machine does not hold its threads for moves.')
+      return this.options.sources.handle(request, client)
+    }
     // Not a definite refusal: this machine cannot say whether it made a thread for the move, so the desktop keeps it fenced.
     if (!await this.load()) return refused('unreadable', HOST_THREAD_MOVE_WORDS.unreadable)
     const before = this.running.get(request.moveId) ?? Promise.resolve()
@@ -108,7 +144,7 @@ export class HostThreadMoves {
     try { return await run } finally { if (this.running.get(request.moveId) === run) this.running.delete(request.moveId) }
   }
 
-  private async start(request: HostThreadMoveRequest, client: ClientIdentity): Promise<ThreadMoveStartAnswer> {
+  private async start(request: HostThreadMoveStart, client: ClientIdentity): Promise<ThreadMoveStartAnswer> {
     const stopping = (): void => { if (this.closed) throw new Error('Sotto is stopping.') }
     stopping()
     const digest = identity(request)
@@ -189,4 +225,163 @@ export class HostThreadMoves {
     }
   }
   private save(): Promise<void> { return this.store.write({ version: 1, moves: [...this.records.values()] }) }
+}
+
+const heldSchema = z.object({
+  moveId: z.uuid(),
+  /** The desktop that asked: only it may step this move. */
+  clientId: id,
+  /** The thread held here, by this machine's own thread ID. */
+  threadId: id,
+  /** Where it goes, as that desktop names it, for the words of a second move asked meanwhile. */
+  machine: z.string().min(1).max(200),
+  /** Held and fenced; settled once the thread that continues it took the work; released when it stays here. */
+  state: z.enum(['held', 'settled', 'released']),
+  createdAt: z.iso.datetime(), updatedAt: z.iso.datetime(),
+}).strict()
+type HeldRecord = z.infer<typeof heldSchema>
+/** The most held moves this machine keeps: every one still held, and the newest finished ones beside them. */
+const HELD_FINISHED_KEPT = 1_000
+const heldFileSchema = z.object({ version: z.literal(1), held: z.array(heldSchema).max(HOST_THREAD_MOVES_MAX + HELD_FINISHED_KEPT) }).strict()
+type HeldFile = z.infer<typeof heldFileSchema>
+const sourceRefused = (reason: Extract<ThreadMoveSourceAnswer, { type: 'refused' }>['reason'], message: string): ThreadMoveSourceAnswer => ({ type: 'refused', reason, message })
+const continuedIn = (link: ThreadMoveLink): ThreadContinuedIn => ({ threadId: link.threadId, provider: link.provider, at: link.at, host: link.hostId })
+
+/**
+ * This machine's own threads as a move's source (#1178 part 3, `thread-move-source`, Owl `cross-machine-work`): a desktop
+ * moves one of them to This computer, or to another machine through the desktop. This machine says whether the thread can
+ * move by its own record, as This computer does for its own (`threadMoveRefusal`), and fences it under the move's ID in the
+ * coordinator's own record, so it takes no sends here while it moves and stays fenced across a restart. It gives the held
+ * thread's handover for the first prompt the desktop builds, links it to the thread that continues it, and settles it, or
+ * lets go of it when the move ends without taking the work.
+ *
+ * Its record, `thread-moves-held.json`, is written before each step counts and names each move's desktop and thread, so
+ * only that desktop steps it and the same step asked again answers the same. A held move is never dropped; past 10,000
+ * held at once a new one is refused. A record that does not read is never taken for an empty one: every step is refused
+ * as `unreadable`, and nothing is fenced or let go of until it reads.
+ */
+export class HostThreadMoveSources {
+  private readonly store: AtomicJsonStore<HeldFile>
+  private records = new Map<string, HeldRecord>()
+  private loaded: Promise<boolean> | undefined
+  /** One step at a time, so two asks for one move, or two moves of one thread, never interleave. */
+  private queue: Promise<unknown> = Promise.resolve()
+  private closed = false
+  private readonly path: string
+
+  constructor(directory: string, private readonly options: {
+    readonly control: HostThreadMoveSourceControl
+    readonly workspace: HostThreadMoveSourceWorkspace
+    /** Delegation's record here, for a thread whose delegations are still open. */
+    readonly delegations?: { hasOpen(threadId: string): boolean } | undefined
+  }) {
+    this.path = join(directory, 'thread-moves-held.json')
+    this.store = new AtomicJsonStore(this.path, input => heldFileSchema.parse(input), () => ({ version: 1, held: [] }))
+  }
+  private load(): Promise<boolean> {
+    this.loaded ??= readStrictJson(this.path, input => heldFileSchema.parse(input)).then(read => {
+      if (read.status === 'unreadable') { this.loaded = undefined; return false }
+      this.records = new Map((read.status === 'valid' ? read.value.held : []).map(record => [record.moveId, record]))
+      return true
+    })
+    return this.loaded
+  }
+  close(): void { this.closed = true }
+
+  async handle(request: HostThreadMoveSource, client: ClientIdentity): Promise<ThreadMoveSourceAnswer> {
+    if (!await this.load()) return sourceRefused('unreadable', HOST_THREAD_MOVE_WORDS.unreadable)
+    const run = this.queue.catch(() => undefined).then(() => this.step(request, client))
+    this.queue = run
+    return run
+  }
+
+  private async step(request: HostThreadMoveSource, client: ClientIdentity): Promise<ThreadMoveSourceAnswer> {
+    if (this.closed) throw new Error('Sotto is stopping.')
+    const record = this.records.get(request.moveId)
+    if (record && record.clientId !== client.clientId) return sourceRefused('move-differs', HOST_THREAD_MOVE_WORDS.sourceDiffers)
+    if (request.action === 'hold') {
+      if (record) {
+        if (record.threadId !== request.threadId) return sourceRefused('move-differs', HOST_THREAD_MOVE_WORDS.sourceDiffers)
+        return record.state === 'held' ? { type: 'held', moveId: record.moveId } : sourceRefused('unknown-move', HOST_THREAD_MOVE_WORDS.unknownMove)
+      }
+      return this.hold(request.moveId, request.threadId, request.machine, client)
+    }
+    if (!record) return sourceRefused('unknown-move', HOST_THREAD_MOVE_WORDS.unknownMove)
+    switch (request.action) {
+      case 'handover': {
+        if (record.state !== 'held') return sourceRefused('unknown-move', HOST_THREAD_MOVE_WORDS.unknownMove)
+        let handover: Handover | undefined
+        try { handover = this.options.workspace.threadHandover(record.threadId) } catch { handover = undefined }
+        if (!handover || handover.summary.total === 0 || handover.text.length === 0 || handover.text.length > AGENT_TEXT_MAX)
+          return sourceRefused('not-movable', HOST_THREAD_MOVE_WORDS.noHandover)
+        return { type: 'handover', moveId: record.moveId, text: handover.text, counts: handoverCounts(handover.summary) }
+      }
+      case 'settle': {
+        if (record.state === 'settled') { await this.unfence(record.threadId); return { type: 'done', moveId: record.moveId } }
+        if (record.state !== 'held') return sourceRefused('unknown-move', HOST_THREAD_MOVE_WORDS.unknownMove)
+        // The link is Sotto's record and must survive (ADR-0089): one that cannot be saved fails the step, which is asked again.
+        await this.options.workspace.addContinuedIn(record.threadId, continuedIn(request.link))
+        const settled = await this.options.control.commandFromMove({ type: 'settle-thread', threadId: record.threadId }, () => { if (this.closed) throw new Error('Sotto is stopping.') })
+        if (settled.error && !this.options.control.watcherSnapshot().threads.find(thread => thread.id === record.threadId)?.workspaceSettledAt) throw new Error('The thread did not settle.')
+        await this.finish(record, 'settled')
+        return { type: 'done', moveId: record.moveId }
+      }
+      case 'release': {
+        if (record.state !== 'held') { await this.unfence(record.threadId); return { type: 'done', moveId: record.moveId } }
+        if (request.link) await this.options.workspace.addContinuedIn(record.threadId, continuedIn(request.link))
+        await this.finish(record, 'released')
+        return { type: 'done', moveId: record.moveId }
+      }
+    }
+  }
+
+  /** Says whether the thread can move by this machine's record, and fences it in the same turn, so nothing reaches it between. */
+  private async hold(moveId: string, threadId: string, machine: string, client: ClientIdentity): Promise<ThreadMoveSourceAnswer> {
+    const control = this.options.control
+    const snapshot = control.watcherSnapshot()
+    const thread = snapshot.threads.find(item => item.id === threadId)
+    if (!thread) return sourceRefused('not-movable', THREAD_MOVE_WORDS.gone)
+    const other = [...this.records.values()].find(item => item.threadId === threadId && item.state === 'held')
+    const refusal = threadMoveRefusal(thread, { machine, movingTo: other?.machine, fenced: !other && control.moveFenceOf(threadId) !== undefined,
+      backgroundWork: watcherBackgroundWorkCount(thread),
+      unresolved: control.moveHoldReason(threadId) !== null,
+      delegatedWorking: this.options.delegations?.hasOpen(threadId) === true
+        || delegatedThreadsBelow(snapshot.threads, threadId).some(child => { const item = snapshot.threads.find(each => each.id === child); return item !== undefined && isThreadTurnRunning(item) }) })
+    if (refusal) return sourceRefused('not-movable', refusal)
+    if ([...this.records.values()].filter(item => item.state === 'held').length >= HOST_THREAD_MOVES_MAX) return sourceRefused('not-movable', HOST_THREAD_MOVE_WORDS.full)
+    // Fenced before anything awaits, so no send admitted meanwhile reaches it; let go of again if the record cannot be saved.
+    const fenced = control.fenceForMove(threadId, THREAD_MOVE_WORDS.fence(machine))
+    const at = new Date().toISOString()
+    const record: HeldRecord = { moveId, clientId: client.clientId, threadId, machine, state: 'held', createdAt: at, updatedAt: at }
+    try {
+      await fenced
+      await this.put(record)
+    } catch (error) {
+      await Promise.resolve(control.liftMoveFence(threadId)).catch(() => undefined)
+      throw error
+    }
+    return { type: 'held', moveId }
+  }
+  /** Ends a held move: the record says so first, then the fence goes. A fence that will not lift is lifted when asked again. */
+  private async finish(record: HeldRecord, state: 'settled' | 'released'): Promise<void> {
+    await this.put({ ...record, state, updatedAt: new Date().toISOString() })
+    await this.unfence(record.threadId)
+  }
+  /** Lifts the thread's fence unless another move holds it now. */
+  private async unfence(threadId: string): Promise<void> {
+    if ([...this.records.values()].some(item => item.threadId === threadId && item.state === 'held')) return
+    await this.options.control.liftMoveFence(threadId)
+  }
+  private async put(record: HeldRecord): Promise<void> {
+    const previous = this.records.get(record.moveId)
+    this.records.delete(record.moveId); this.records.set(record.moveId, record)
+    const finished = [...this.records.values()].filter(item => item.state !== 'held')
+    const dropped = finished.slice(0, Math.max(0, finished.length - HELD_FINISHED_KEPT))
+    for (const item of dropped) this.records.delete(item.moveId)
+    try { await this.store.write({ version: 1, held: [...this.records.values()] }) } catch (error) {
+      for (const item of dropped) this.records.set(item.moveId, item)
+      if (previous) this.records.set(record.moveId, previous); else this.records.delete(record.moveId)
+      throw error
+    }
+  }
 }
