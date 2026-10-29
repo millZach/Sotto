@@ -20,7 +20,7 @@ import { gitActionProgressSchema, gitStackedActionSchema } from './gitActions'
 import { bringBackAwaySchema, bringBackSchema, worktreeMadeFromSchema } from './bringChangesBack'
 import type { GitRefsPage, GitRefsRequest } from './gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from './gitChangedFiles'
-import { GIT_PULL_REQUEST_LINKS_MAX, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
+import { GIT_PULL_REQUEST_LINKS_MAX, gitCommitIdSchema, gitPullRequestActionSchema, gitPullRequestLinkSchema, gitPullRequestMergeMethodSchema, gitPullRequestUrlSchema, type GitPullRequestRead, type GitPullRequestRequest } from './gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersResult } from './hostFolders'
 
 export const AGENT_GET = 'sotto:agents:get'
@@ -1411,7 +1411,23 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
    * close or reopen, update the branch (`method` rebase for Update with rebase), or turn auto-merge on or off. Only for a
    * pull request the thread knows: its branch's own or one linked to it. */
   z.object({ type: z.literal('git-pull-request-action'), threadId: id, url: gitPullRequestUrlSchema, action: gitPullRequestActionSchema,
-    method: gitPullRequestMergeMethodSchema.optional() }).strict(),
+    method: gitPullRequestMergeMethodSchema.optional(),
+    /**
+     * From a paired client, the confirmation receipt its host gave for this very press (#1691): a merge, a close or an
+     * auto-merge without one is refused. The desktop's router asks for one after the user confirms in the window, and a
+     * window never names one itself.
+     */
+    confirmation: z.uuid().optional(),
+    /**
+     * From the desktop's window only: the read ID of the reading of the pull request the window showed when the user
+     * pressed, which its router names when it asks a paired host for a confirmation receipt, and never sends on (#1691).
+     */
+    readId: z.uuid().optional(),
+    /**
+     * Set only by the host's own socket server, from a receipt: the head commit the pull request must still be on, which
+     * `gh pr merge --match-head-commit` holds GitHub to. A paired client that sends it is refused.
+     */
+    matchHeadCommit: gitCommitIdSchema.optional() }).strict(),
   /** Link a pull request to the thread by a GitHub URL or `#42`, or take the link away again. */
   z.object({ type: z.literal('git-link-pull-request'), threadId: id, reference: z.string().min(1).max(2_048) }).strict(),
   z.object({ type: z.literal('git-unlink-pull-request'), threadId: id, url: gitPullRequestUrlSchema }).strict(),

@@ -1581,6 +1581,7 @@ export class DesktopHosts {
       activityBody: (threadId, activityId) => socket.activityBody(threadId, activityId),
       stage: image => socket.stageAttachment(image), content: digest => socket.attachmentContent(digest),
       gitRefs: request => socket.gitRefs(request), gitChangedFiles: request => socket.gitChangedFiles(request), gitPullRequest: request => socket.gitPullRequest(request),
+      confirmPullRequestAction: request => socket.pullRequestConfirmation(request),
       hostFolders: request => socket.hostFolders(request), offersClientUpdates: () => socket.offersClientUpdates(), keepsClientOutcomes: () => socket.keepsClientOutcomes(), offersBabysitting: () => socket.supportsBabysitting,
       // A question's pages are served by the host's own listener, which this computer reaches where its socket does (ADR-0085).
       pageAddress: token => new URL(`/page/${token}/`, target.browserUrl ?? target.url).href,

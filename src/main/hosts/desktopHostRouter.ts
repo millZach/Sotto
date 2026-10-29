@@ -28,7 +28,7 @@ import { LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, type Host
 import { NEW_THREAD_DEFAULT_FIELDS } from '../../shared/newThreadDefaults'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
-import type { GitPullRequestRead, GitPullRequestRequest } from '../../shared/gitPullRequests'
+import { needsConfirmationReceipt, type GitPullRequestRead, type GitPullRequestRequest, type PullRequestConfirmationRequest } from '../../shared/gitPullRequests'
 import type { HostFoldersClientRequest, HostFoldersRequest, HostFoldersResult } from '../../shared/hostFolders'
 import type { FileListing, FileListRequest, FilePath, FilePreview, FileRequest, FilesResult } from '../../shared/files'
 import type { GitChangeListing, GitPathRequest, GitReview, GitReviewRequest } from '../../shared/gitChanges'
@@ -56,6 +56,11 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   gitRefs?(request: GitRefsRequest): Promise<GitRefsPage>
   gitChangedFiles?(request: GitChangedFilesRequest): Promise<GitChangedFiles>
   gitPullRequest?(request: GitPullRequestRequest): Promise<GitPullRequestRead>
+  /**
+   * The host's confirmation receipt for one merge, close or auto-merge, by the host's own IDs, or null from a host that
+   * takes the press without one (#1691). Absent on this computer, whose window's confirmation is the confirmation.
+   */
+  confirmPullRequestAction?(request: PullRequestConfirmationRequest): Promise<string | null>
   hostFolders?(request: HostFoldersRequest): Promise<HostFoldersResult>
   /** Whether this host lists `client-updates`: only then do its client updates reach the window (#480). */
   offersClientUpdates?(): boolean
@@ -1412,12 +1417,28 @@ export class DesktopHostRouter {
           request.questions?.length ? command.questionAnswers : { [request.id]: { optionIds: [command.answer] } })
         }
       }
+      // A merge, close or auto-merge on a paired host goes with that host's confirmation receipt (#1691). Only the window's
+      // press reaches this router, after the user's yes in its confirmation dialog, so this is the one place a receipt is
+      // asked for, and the command that follows spends it at once. The window names the reading it showed, which the host
+      // binds the receipt's head to; it never names a receipt, nor the head one holds, and the reading goes no further.
+      let sent: AgentCommand = command
+      if (command.type === 'git-pull-request-action') {
+        const { confirmation: _named, matchHeadCommit: _head, readId, ...press } = command
+        void _named; void _head
+        sent = press
+        const { action } = press
+        if (connection.kind === 'remote' && needsConfirmationReceipt(action) && connection.confirmPullRequestAction) {
+          const confirmation = await connection.confirmPullRequestAction({ threadId: press.threadId, url: press.url, action, ...(press.method ? { method: press.method } : {}),
+            ...(readId ? { readId } : {}) })
+          if (confirmation) sent = { ...press, confirmation }
+        }
+      }
       // A host from before continuing agents (#1028) would refuse the command as unknown; it is told why here instead.
       const result = startsThread(command) && connection.kind === 'remote' && connection.service.supportsThreadStarts !== true ? { error: THREAD_STARTS_UNSUPPORTED }
         // A host from before bringing changes back (#1030), or one whose Owl answer leaves it off, is told apart here too.
         : command.type === 'bring-changes-back' && connection.kind === 'remote' && connection.service.supportsBringBack !== true ? { error: BRING_BACK_INTERFACE_WORDS.unsupported() }
         : await (decisionId ? connection.service.command(command as AgentCommand, client, decisionId)
-          : connection.service.command(command as AgentCommand, client))
+          : connection.service.command(sent, client))
       // Bringing changes back's own refusals arrive in English from this computer's workspace or a host; they are said
       // in the interface language here, and Git's words stay as Git wrote them.
       if (result.error && command.type === 'bring-changes-back') result.error = bringBackInInterfaceLanguage(result.error)

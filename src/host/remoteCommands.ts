@@ -64,9 +64,12 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   // `away`, the second half for a child on another machine whose branch a desktop moved here, only from a recorded desktop.
   'bring-changes-back': ['threadId', 'actionId', 'mergeCommit', 'away'],
   'git-publish': ['threadId', 'repository', 'visibility'],
-  // The pull request presses are the user's own, through gh on the host's sign-in, and none answers a permission: merging,
-  // closing and turning on auto-merge each take the surface's confirmation first, and a checkout never forces (ADR-0027).
-  'git-pull-request-action': ['threadId', 'url', 'action', 'method'],
+  // The pull request presses are the user's own, through gh on the host's sign-in, and none answers a permission, and a
+  // checkout never forces (ADR-0027). The surface's confirmation is in the desktop's window, which the host cannot see, so
+  // the host holds merging, closing and turning on auto-merge to a confirmation receipt of its own, which `confirmation`
+  // carries and the socket server spends before the command runs (#1691, ADR-0027 October 28 amendment). `matchHeadCommit`
+  // is the socket server's to set from that receipt, never the client's.
+  'git-pull-request-action': ['threadId', 'url', 'action', 'method', 'confirmation'],
   'git-link-pull-request': ['threadId', 'reference'], 'git-unlink-pull-request': ['threadId', 'url'],
   'git-checkout-pull-request': ['threadId', 'reference', 'mode'],
   // Babysitting is the user's own request too, and grants nothing: a wake-up approves, merges and answers nothing

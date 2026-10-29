@@ -3410,7 +3410,9 @@ export class AgentControl {
         }
         case 'git-pull-request-action': {
           if (!host.runPullRequestAction) throw new Error('Pull requests are unavailable.')
-          const { snapshot, notice } = await host.runPullRequestAction({ threadId: command.threadId, url: command.url, action: command.action, method: command.method })
+          // A receipt's head comes from the socket server only (#1691); the window's own presses carry none.
+          const { snapshot, notice } = await host.runPullRequestAction({ threadId: command.threadId, url: command.url, action: command.action, method: command.method,
+            ...(command.matchHeadCommit ? { matchHeadCommit: command.matchHeadCommit } : {}) })
           this.acceptSnapshot(snapshot)
           this.state.notice = notice
           this.state.error = null
