@@ -1,0 +1,19 @@
+# Transcribe with OpenRouter, October 29, 2026
+
+Settings → Dictation's Speech model group gained **Transcribe with OpenRouter** and OpenRouter's ranked speech models, as the Owl feature `cloud-dictation` ([ADR-0160](../adr/0160-dictation-can-be-transcribed-by-an-openrouter-speech-model.md)). Checked on forge (Omarchy, Linux) in the built app on a nested desktop, in unit tests, and against OpenRouter's live public lists.
+
+## What was checked
+
+- **The group in the built app.** `tests/e2e/cloud-dictation.spec.ts`, run with `node scripts/verify-linux-window-minimum.mjs --exec … playwright test`, feature on: the switch leads the group, off; turned on it saves `cloudTranscription`, the line saying the saved key is used shows, and the model picker gives way to the ranked list with its top five and the first chosen. A click saves `cloudSpeechModel`, Arrow Down from a focused row saves the next and moves focus to it, **Show all 7 models** shows the rest, and the choice is there after a reload. With the feature off neither the switch nor the list shows. Both tests passed. The launcher's closing complaint about `~/.sotto` is the live host's own writes, not the run.
+- **Screenshots** with a row's tooltip showing: dark and light at 1280x800 (`artifacts/cloud-dictation/cloud-dictation-1280x800-dark.png`, `artifacts/cloud-dictation/cloud-dictation-1280x800-light.png`) and dark at the 820x560 minimum (`artifacts/cloud-dictation/cloud-dictation-820x560-dark.png`). At the minimum the speed column goes and the tooltip says the time instead; nothing clips. The E2E bridge's list has no speed for any model, so those rows read "Not tested yet".
+- **Two faults the run found, fixed.** A focused row's tooltip lay over **Show all** and took its click, so the tooltip now lets the pointer through. The saved-key line used the disclosure style, which stopped its divider short of the card's edge; it is a full row now.
+- **OpenRouter's lists, live.** `GET /api/v1/models?output_modalities=transcription` answered 29 speech models and `GET /api/v1/endpoints/zdr` named a zero-retention host for 22 of them, both without a key. The parser and the ranking were written against those answers.
+
+## Covered by unit tests
+
+`tests/unit/main/cloudTranscriptionService.test.ts`: the request body (model, base64 WAV, zero-retention routing, bounded spelling hints), the first-ranked model when none is chosen, no key, a model that refuses hints asked again without them and not offered them again, every HTTP answer's reason, one retry for a server error or a dropped connection, the rate-limit waits and their diagnostics with nothing said or secret in them, cancel and a reply without text. `tests/unit/main/openRouterSpeechModels.test.ts`: both lists read without a key, the ranking, prices only where plainly per second, the ten-minute reuse and the last good list kept. `tests/unit/renderer/features/dictation/cloudDictation.test.ts`: each OpenRouter reason kept with its own words, no recording without a key, the widget told the audio went out and history told `openrouter`, and Transcribe on this computer sending only the parts OpenRouter turned away, by the local route. `tests/unit/renderer/features/settings/settingsCloudTranscription.test.tsx`, `tests/unit/renderer/dictateRoomCloud.test.tsx` and `tests/unit/renderer/widget/widgetDictation.test.tsx`: the group on and off, the key field, keyboard picks, the list's failure and a model OpenRouter dropped; the Dictate room's buttons and their keyboard order; the widget's tooltip.
+
+## Not covered
+
+- A real dictation transcribed through OpenRouter, and Transcribe on this computer loading and letting go of a real model. Both wait for an OpenRouter key on forge, as does the measured ranking (`scripts/asr-bench/bench-openrouter-stt.mjs`).
+- Windows and macOS layouts.

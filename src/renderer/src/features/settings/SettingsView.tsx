@@ -691,7 +691,7 @@ export function SettingsView({
                         onUpdateSettings={onUpdateSettings} onCheckOpenRouterKey={onCheckOpenRouterKey}
                         description={t`Transcribing with OpenRouter needs a key. It is the same key AI cleanup uses, kept in your system’s credential store. Until one is saved, dictation says so and records nothing.`} />
                     ) : (
-                      <p className="settings-disclosure tt-paragraph">{t`Uses the OpenRouter key saved for AI cleanup. Change it in Settings → Cleanup.`}</p>
+                      <div className="cloud-models__saved-key"><p className="tt-paragraph">{t`Uses the OpenRouter key saved for AI cleanup. Change it in Settings → Cleanup.`}</p></div>
                     )}
                     <CloudSpeechModelList choice={settings.cloudSpeechModel} onChoose={(id) => void save({ cloudSpeechModel: id })} onList={onListCloudSpeechModels ?? NO_CLOUD_SPEECH_MODELS} />
                   </> : (

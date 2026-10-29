@@ -1,5 +1,7 @@
 /* Settings → Dictation's OpenRouter speech model list (Owl cloud-dictation, ADR-0160): a ranked list of radio rows,
    each with an accuracy bar and a speed bar, and a tooltip with the price and whether the host keeps audio. */
+/* The line saying the saved key is used: a full row, so its divider spans the card as every other row's does. */
+.cloud-models__saved-key > p { max-width: 68ch; margin: 0; color: var(--tt-text-muted); font-size: 13px; }
 .cloud-models { display: grid; gap: 10px; padding: 14px 0; min-width: 0; }
 .cloud-models__label { display: grid; gap: 2px; }
 .cloud-models__title { color: var(--tt-text); font-size: 14px; font-weight: 600; }
@@ -28,7 +30,7 @@
 .cloud-models__bar > i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--tt-primary); }
 .cloud-models__figure { overflow: hidden; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .cloud-models__row[data-checked] .cloud-models__figure { color: var(--tt-accent-surface-text); }
-.cloud-models__tip { display: none; position: absolute; z-index: 20; top: calc(100% - 2px); right: 12px; width: min(300px, 80%); padding: 9px 11px; border: 1px solid var(--tt-border); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); color: var(--tt-text); font-size: 12.5px; line-height: 1.45; cursor: default; }
+.cloud-models__tip { display: none; position: absolute; z-index: 20; top: calc(100% - 2px); right: 12px; width: min(300px, 80%); padding: 9px 11px; border: 1px solid var(--tt-border); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); color: var(--tt-text); font-size: 12.5px; line-height: 1.45; pointer-events: none; }
 .cloud-models__tip > strong { font-weight: 600; }
 .cloud-models__row:hover > .cloud-models__tip,
 .cloud-models__row:focus-visible > .cloud-models__tip { display: block; }
