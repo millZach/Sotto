@@ -1,13 +1,14 @@
 import React, { useId, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
 
-import { CREATURES, CREATURE_LABELS, type Creature } from '../../../../../shared/settings'
+import { CREATURE_LABELS, type Creature } from '../../../../../shared/settings'
+import { offeredCreatures, useLardoOffered } from '../../../state/creature'
 import { Toggle } from '../../../components/Toggle'
 
 /**
  * Settings → Appearance → Creature: the switch that shows it, where Owl offers one (ADR-0072), and a row choosing the
  * character. The preview beside the page shows the chosen one walking above its composer. A plain setting, not a
- * palette choice, so it is saved directly rather than previewed.
+ * palette choice, so it is saved directly rather than previewed. Lardo is offered only where his Owl feature is on.
  */
 export function CreatureChoice({ value, shown, onChoose, onShow }: {
   readonly value: Creature
@@ -18,6 +19,7 @@ export function CreatureChoice({ value, shown, onChoose, onShow }: {
 }): ReactNode {
   const { t } = useLingui()
   const headingId = useId()
+  const creatures = offeredCreatures(useLardoOffered())
   return (
     <>
       {onShow ? <Toggle setting="show-creature" label={t`Show the creature`} checked={shown} onCheckedChange={onShow} description={t`Off, nothing stands above the composer. The sidebar still says when a thread is working or waiting.`} /> : null}
@@ -28,7 +30,7 @@ export function CreatureChoice({ value, shown, onChoose, onShow }: {
             <p className="tt-field__description tt-paragraph"><Trans>The little character that stands above a thread’s composer while it watches, works or waits.</Trans></p>
           </div>
           <div className="creature-choice__grid" role="group" data-setting="creature" aria-labelledby={headingId}>
-            {CREATURES.map(id => {
+            {creatures.map(id => {
               const active = id === value
               const creature = CREATURE_LABELS[id]
               return (

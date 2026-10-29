@@ -374,7 +374,7 @@ describe('settings', () => {
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, watcherScene: 'moon-base' }).success).toBe(false)
   })
 
-  it('keeps either creature and recovers an unknown one as Sotto\'s own', () => {
+  it('keeps every creature and recovers an unknown one as Sotto\'s own', () => {
     expect(DEFAULT_SETTINGS.creature).toBe('sotto')
     for (const creature of CREATURES) expect(parseSettings({ creature }).creature).toBe(creature)
     expect(parseSettings({ creature: 'dragon' }).creature).toBe('sotto')

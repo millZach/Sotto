@@ -6,8 +6,8 @@ import type { HeldAction } from '../../../src/renderer/src/agents/threadActivity
 import type { Creature } from '../../../src/shared/settings'
 
 /**
- * Claude bot wears Sotto's creature's poses on Sotto's schedule: driven by the same clock on the same track, both stand
- * in the same place, face the same way, send their small agents along the same path and run the same sand.
+ * Claude bot and Lardo wear Sotto's creature's poses on Sotto's schedule: driven by the same clock on the same track, all
+ * three stand in the same place, face the same way, send their small agents along the same path and run the same sand.
  */
 const setting = vi.hoisted(() => ({ creature: 'sotto' as Creature }))
 vi.mock('../../../src/renderer/src/state/creature', () => ({ useCreatureShown: () => true, useCreature: () => setting.creature }))
@@ -43,9 +43,9 @@ function sample<T>(creature: Creature, element: ReactElement, seconds: readonly 
   return seen
 }
 
-/** Both creatures read at the same times; each side's own art differs, so `read` keeps only what the schedule decides. */
-function both<T>(element: ReactElement, seconds: readonly number[], read: (container: HTMLElement) => T): { sotto: T[]; claude: T[] } {
-  return { sotto: sample('sotto', element, seconds, read), claude: sample('claude', element, seconds, read) }
+/** Every creature read at the same times; each one's own art differs, so `read` keeps only what the schedule decides. */
+function both<T>(element: ReactElement, seconds: readonly number[], read: (container: HTMLElement) => T): { sotto: T[]; claude: T[]; lardo: T[] } {
+  return { sotto: sample('sotto', element, seconds, read), claude: sample('claude', element, seconds, read), lardo: sample('lardo', element, seconds, read) }
 }
 
 const reduce = { 'motion': () => undefined, 'reduced motion (app)': () => { document.documentElement.dataset.reducedMotion = 'on' }, 'reduced motion (system)': () => { systemReduce = true } }
@@ -55,8 +55,9 @@ const actorX = (container: HTMLElement) => container.querySelector<HTMLElement>(
 const mirrored = (container: HTMLElement) => /scale\(-1 1\)/u.test(container.querySelector('.thread-monitor__actor svg > g')?.getAttribute('transform') ?? '')
 
 /** Under motion the samples must vary (so equality means something); held still, they are one value throughout. */
-function expectSchedule<T>({ sotto, claude }: { sotto: T[]; claude: T[] }, motion: boolean): void {
+function expectSchedule<T>({ sotto, claude, lardo }: { sotto: T[]; claude: T[]; lardo: T[] }, motion: boolean): void {
   expect(claude).toEqual(sotto)
+  expect(lardo).toEqual(sotto)
   const distinct = new Set(sotto.map(value => JSON.stringify(value))).size
   if (motion) expect(distinct).toBeGreaterThan(1)
   else expect(distinct).toBe(1)
@@ -81,9 +82,11 @@ describe.each([600, 340])('on a %i px track', track => {
         minis: [...container.querySelectorAll<HTMLElement>('.thread-monitor__mini')].map(mini => mini.style.transform),
       }))
       expect(seen.claude[0]!.minis).toHaveLength(Math.min(6, agents))
+      expect(seen.lardo[0]!.minis).toHaveLength(Math.min(6, agents))
       expectSchedule(seen, motion)
-      // The bot stands at the readout end throughout, as Sotto's creature does.
+      // The bot and Lardo stand at the readout end throughout, as Sotto's creature does.
       expect(new Set(seen.claude.map(frame => frame.x)).size).toBe(1)
+      expect(new Set(seen.lardo.map(frame => frame.x)).size).toBe(1)
     })
 
     it('held runs the same sand and turns the glass at the same moments', () => {

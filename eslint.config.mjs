@@ -148,6 +148,7 @@ export default tseslint.config(
       'artifacts/held-action/**',
       'artifacts/working-creature/**',
       'artifacts/claude-bot-creature/**',
+      'artifacts/lardo-creature/**',
       'artifacts/background-command/**',
       'artifacts/terminal-loading/**',
       'artifacts/terminal-search-links-zoom/**',

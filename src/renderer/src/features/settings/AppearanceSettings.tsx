@@ -16,6 +16,7 @@ import { platformCopy } from '../../platformCopy'
 import { appearancePreview, glassPaints, resolveAppearance, useAppearancePreviewVersion, useSystemPrefersDark, type AppearanceChoice } from '../../state/appearance'
 import { messageIn, useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import { useOwlFeature } from '../../state/owlFeature'
+import { creatureShown, useLardoOffered } from '../../state/creature'
 import { LanguagePicker } from './LanguagePicker'
 import { shownWords, type LaterWords } from './laterWords'
 import { MenuBarOwlSettings } from './MenuBarOwlSettings'
@@ -78,6 +79,8 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, on
   const systemDark = useSystemPrefersDark()
   const menuBarOwl = useOwlFeature('menu-bar-owl') && platform === 'darwin'
   const creatureToggle = useOwlFeature('creature-toggle')
+  // A creature this build holds (Lardo, outside Owl) shows and is marked as Sotto's own; the saved choice stays as it was.
+  const creature = creatureShown(settings.creature, useLardoOffered())
   const interfaceLanguage = useOwlFeature('interface-language')
   const watcherOn = useOwlFeature('watcher')
   const nightFalls = useOwlFeature('night-falls') && watcherOn
@@ -144,7 +147,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, on
 
   // Where the page is narrow the preview stands above the cards, so it comes first; beside them, it comes after.
   const preview = <AppearancePreview key="preview" shown={shown} systemDark={systemDark} system={system} still={settings.reducedMotion === 'on'}
-    creature={settings.creature} showCreature={!creatureToggle || settings.showCreature} watcher={watcherOn} place={settings.watcherScene} />
+    creature={creature} showCreature={!creatureToggle || settings.showCreature} watcher={watcherOn} place={settings.watcherScene} />
 
   const cards = (
     <div className="appearance-studio__cards" key="cards">
@@ -167,7 +170,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, on
         <h3 id={detailsId}>{t({ message: 'Details', comment: 'A card on Settings > Appearance: effort color, creature, contrast and language' })}</h3>
         <div className="settings-rows">
           <EffortColorChoice value={shown.effortColor} onChoose={effortColor => void choose({ effortColor }, msg`Effort color saved.`)} />
-          <CreatureChoice value={settings.creature} shown={!creatureToggle || settings.showCreature} onShow={creatureToggle ? showCreature => void onSave({ showCreature }, showCreature ? msg`Creature shown.` : msg`Creature hidden.`).catch(() => false) : undefined} onChoose={creature => void onSave({ creature }, msg`Creature saved.`).catch(() => false)} />
+          <CreatureChoice value={creature} shown={!creatureToggle || settings.showCreature} onShow={creatureToggle ? showCreature => void onSave({ showCreature }, showCreature ? msg`Creature shown.` : msg`Creature hidden.`).catch(() => false) : undefined} onChoose={creature => void onSave({ creature }, msg`Creature saved.`).catch(() => false)} />
           <WatcherSceneChoice value={settings.watcherScene} onChoose={watcherScene => onSave({ watcherScene }, msg`Watcher scene saved.`).catch(() => false)} />
           <AppearanceSlider
             label={t`Contrast`}
