@@ -6,7 +6,8 @@ import { agentThread } from '../../fixtures/agentState'
 
 /**
  * Idle compaction (ADR-0127): a large Claude thread quiet for 54 minutes is compacted once, before its one-hour prompt
- * cache expires, and never while anything is running, waiting on the user or queued, or once the window has passed.
+ * cache expires, and never while a turn is running, anything waits on the user or is queued, or once the window has passed.
+ * Background work and watches do not count: they run in their own contexts while the thread's cache expires.
  */
 const NOW = Date.parse('2026-10-23T12:00:00.000Z')
 const ago = (ms: number): string => new Date(NOW - ms).toISOString()
@@ -41,15 +42,16 @@ describe('when a thread is due for idle compaction', () => {
       { status: 'running' }, { status: 'error' }, { lastTurn: { id: 'turn', status: 'running' } },
       { requests: [{ id: 'ask', kind: 'question', text: 'Which?', options: [] }] },
       { compaction: { commandId: 'c', status: 'running' } }, { compaction: { commandId: 'c', status: 'uncertain' } },
-      { backgroundWork: [{ id: 'build', label: 'Build', type: 'command' }] }, { monitoring: [{ id: '00000000-0000-4000-8000-000000000000', label: 'CI' }] },
       { settledAt: ago(0) }, { archivedAt: ago(0) }, { workspaceSettledAt: ago(0) },
       { kind: 'watcher-history' },
       { manualCompactionSupported: false }, { nativeSessionStarted: false },
     ]
     for (const patch of not) expect(idleCompactionDue(host([]), quiet(patch), NOW), JSON.stringify(patch)).toBe(false)
     expect(idleCompactionDue(host([]), quiet({ compaction: { commandId: 'c', status: 'completed' } }), NOW)).toBe(true)
-    // Empty lists are nothing running.
-    expect(idleCompactionDue(host([]), quiet({ backgroundWork: [], monitoring: [] }), NOW)).toBe(true)
+    // Background work and watches run in their own contexts while the thread's cache expires, so they do not keep it busy.
+    expect(idleCompactionDue(host([]), quiet({ backgroundWork: [{ id: 'agents', label: 'Review the diff', type: 'subagent' }],
+      monitoring: [{ id: '00000000-0000-4000-8000-000000000000', label: 'CI' }] }), NOW)).toBe(true)
+    expect(idleCompactionDue(host([]), quiet({ backgroundWork: [{ id: 'build', label: 'Build', type: 'command' }], status: 'running' }), NOW)).toBe(false)
     // Watcher's own conversation is due on the same terms; the sweep asks Watcher too.
     expect(idleCompactionDue(host([]), quiet({ kind: 'watcher' }), NOW)).toBe(true)
   })

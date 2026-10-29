@@ -49,7 +49,11 @@ export class ClaudeMonitoring {
       ? [{ id: task.id, label: task.label, type: task.work, startedAt: task.startedAt }] : [])
   }
 
-  apply(frame: ClaudeFrame): void {
+  /**
+   * Reads one frame. Returns whether it ended one of this thread's own watches or background work, which Claude Code
+   * answers with a report of its own once the thread is free.
+   */
+  apply(frame: ClaudeFrame): boolean {
     // Task starts can omit their parent. Keep bounded launch evidence for both root and nested tools;
     // an evicted or unseen linked tool stays unknown, while fresh root launches remain observable.
     const nestedFrame = !!frame.parent_tool_use_id || frame.isSidechain === true
@@ -65,13 +69,13 @@ export class ClaudeMonitoring {
         if (this.toolOwners.size > 4_096) this.toolOwners.delete(this.toolOwners.keys().next().value!)
       }
     }
-    if (frame.type !== 'system' || typeof frame.task_id !== 'string' || !frame.task_id || frame.task_id.length > 512) return
+    if (frame.type !== 'system' || typeof frame.task_id !== 'string' || !frame.task_id || frame.task_id.length > 512) return false
     const taskId = frame.task_id
     const patch = object(frame.patch)
     const status = frame.subtype === 'task_updated' ? patch?.status : frame.status
     if (frame.subtype === 'task_notification' || endedStatuses.has(String(status))
       || frame.subtype === 'task_updated' && typeof patch?.end_time === 'number' && Number.isFinite(patch.end_time)) {
-      this.tasks.delete(taskId); return
+      return this.tasks.delete(taskId)
     }
     if (frame.subtype === 'task_started') {
       const type = String(frame.task_type)
@@ -84,11 +88,11 @@ export class ClaudeMonitoring {
         || frame.tool_use_id !== undefined && frame.tool_use_id !== null
           && (typeof frame.tool_use_id !== 'string' || this.toolOwners.get(frame.tool_use_id) !== 'root')
       if (!monitorTypes.has(type) && !work || nestedOrUnknown || frame.ambient === true || frame.skip_transcript === true) {
-        this.tasks.delete(taskId); return
+        this.tasks.delete(taskId); return false
       }
       const previous = this.tasks.get(taskId)
       const kept = [...this.tasks.values()].filter(task => !task.work === !work).length
-      if (!previous && kept >= (work ? MAX_BACKGROUND_WORK : MAX_AGENT_MONITORS)) return
+      if (!previous && kept >= (work ? MAX_BACKGROUND_WORK : MAX_AGENT_MONITORS)) return false
       this.tasks.set(taskId, {
         id: previous?.id ?? randomUUID(), work,
         label: label(frame.description) ?? (work ? BACKGROUND_WORK_LABELS[work] : 'Background process'),
@@ -96,15 +100,16 @@ export class ClaudeMonitoring {
         foreground: frame.is_backgrounded === false,
         startedAt: previous?.startedAt ?? new Date().toISOString(),
       })
-      return
+      return false
     }
     const task = this.tasks.get(taskId)
-    if (!task || !['task_updated', 'task_progress'].includes(String(frame.subtype))) return
+    if (!task || !['task_updated', 'task_progress'].includes(String(frame.subtype))) return false
     // Metadata and progress cannot restart a paused or completed watch.
     if (status !== undefined) task.active = status === 'running'
     // Ctrl+B, or the SDK's own request, moves a blocking subagent to the background; nothing moves it back.
     if (frame.subtype === 'task_updated' && patch?.is_backgrounded === true) task.foreground = false
     const description = label(frame.subtype === 'task_updated' ? patch?.description : frame.description)
     if (description) task.label = description
+    return false
   }
 }

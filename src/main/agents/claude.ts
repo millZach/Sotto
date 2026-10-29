@@ -282,6 +282,14 @@ type Runtime = { protocol: ClaudeProtocol; requests: Map<string, ClaudePending>;
  * channel with the request note as the prompt's additional context, so the note never joins the user's words.
  */
 const WATCHER_REQUEST_HOOK = 'sotto_watcher_request'
+/**
+ * How long after a thread's own background work or watch ends Sotto's idle compaction leaves it alone. Claude Code answers
+ * the end with a report of its own as soon as the thread is free, and a /compact written before that report starts would
+ * run after it, with the report's result read as the compaction's (ADR-0127, amended October 29, 2026). The report starts
+ * within a second or two; a hold no report follows costs one quiet stretch at most.
+ */
+const REPORT_HOLD_MS = 30_000
+const REPORT_DUE = 'Claude is about to report on background work that just ended.'
 
 /** A read of a thread's transcript from its first byte into a seeded log (`ClaudeStreamJsonHost.replays`). */
 interface Replay {
@@ -482,6 +490,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   /** Per thread: the subagent transcripts still being read for a model the stream never named. */
   private readonly subagentModels = new Map<string, ClaudeSubagentModels>()
   private readonly monitoring = new Map<string, ClaudeMonitoring>()
+  /** When each thread's own background work or watch last ended, until its CLI ends: see {@link REPORT_HOLD_MS}. */
+  private readonly workEndedAt = new Map<string, number>()
   private readonly restoredHistory = new Map<string, RestoredThreadHistory>()
   /** This adapter's append path: every change to what a thread said leaves through it as an event. */
   private readonly messageLog = new ThreadMessageLog(id => this.threadChanges.mark(id))
@@ -496,6 +506,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private readonly streaming = new Map<string, string>()
   /** The CLI each thread's /compact was written to, until that CLI's result for it or its exit. */
   private readonly compacting = new Map<string, Runtime>()
+  /** Threads whose compaction is recorded but whose /compact is not yet written: Claude may still start a turn of its own. */
+  private readonly preparingCompaction = new Set<string>()
   private cursorTimer: ReturnType<typeof setTimeout> | undefined
   /** The transcript cursor each thread's saved record last carried, so a write can hold an advanced one back. */
   private readonly savedCursors = new Map<string, NonNullable<Alias['transcriptCursor']>>()
@@ -1014,14 +1026,25 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const runtime = await this.start(id)
         if (!thread.manualCompactionSupported) throw new Error('This Claude client does not expose native manual compaction.')
         if (this.threads.get(id)?.status === 'running' || thread.requests.length) throw new Error('Claude started working before compaction.')
+        if (command.idle && this.reportDue(id)) throw new Error(REPORT_DUE)
         // A machine compaction, such as Sotto's idle one (ADR-0127), asks its guard again once the CLI is up: starting it
         // can take long enough for the user to type, send or turn the setting off.
         watcherGuard?.()
         const inputId = randomUUID()
+        const before = { compaction: alias.compaction, compactStartedAt: alias.compactStartedAt, compactInputIds: alias.compactInputIds }
         alias.compaction = { commandId: command.commandId, status: 'running', ...(command.idle ? { idle: true } : {}) }
         alias.compactStartedAt = new Date().toISOString()
         alias.compactInputIds = [...(alias.compactInputIds ?? []), inputId]
-        try { await this.persist() } catch (error) { delete alias.compaction; throw error }
+        this.preparingCompaction.add(id)
+        try { await this.persist() } catch (error) { delete alias.compaction; throw error } finally { this.preparingCompaction.delete(id) }
+        // Frames read during that write may have started a turn of Claude's own, such as a report on work that ended, or
+        // ended work whose report is about to start: either would run before /compact. From here to the write nothing else runs.
+        const started = this.threads.get(id)?.status === 'running' || thread.requests.length > 0
+        if (started || command.idle && this.reportDue(id)) {
+          Object.assign(alias, before)
+          await this.persist().catch(() => undefined)
+          throw new Error(started ? 'Claude started working before compaction.' : REPORT_DUE)
+        }
         thread.compaction = alias.compaction; thread.status = 'running'; this.changed(id); this.compacting.set(id, runtime); this.emit()
         try { await runtime.protocol.write({ type: 'user', uuid: inputId, session_id: alias.sessionId, parent_tool_use_id: null, message: { role: 'user', content: '/compact' } }) }
         catch {
@@ -1735,7 +1758,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     let monitoring = this.monitoring.get(id)
     if (!monitoring) { monitoring = new ClaudeMonitoring(); this.monitoring.set(id, monitoring) }
-    monitoring.apply(frame); thread.monitoring = monitoring.current
+    if (monitoring.apply(frame)) this.workEndedAt.set(id, Date.now())
+    thread.monitoring = monitoring.current
     const working = monitoring.working
     if (working.length) thread.backgroundWork = working; else delete thread.backgroundWork
     if (frame.type === 'system' && frame.subtype === 'init') {
@@ -1811,7 +1835,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // not running; Sotto's own prompts set the thread running before they go out, and a prompt held behind such a
     // turn keeps it running (see the result below). Its result ends the turn the way it ends one Sotto sent, and a
     // stop ends it without reading as a failure. A prompt sent while it runs is refused rather than queued behind it.
-    if (frame.type === 'system' && frame.subtype === 'status' && frame.status === 'requesting' && this.queries.has(id) && thread.status !== 'running' && !compactionPending(alias.compaction)) {
+    if (frame.type === 'system' && frame.subtype === 'status' && frame.status === 'requesting' && this.queries.has(id) && thread.status !== 'running'
+      && (!compactionPending(alias.compaction) || this.preparingCompaction.has(id))) {
       thread.status = 'running'
       if (typeof frame.uuid === 'string' && frame.uuid) { thread.lastTurn = { id: frame.uuid, status: 'running' }; this.selfTurns.set(id, frame.uuid) }
     }
@@ -1852,6 +1877,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
       this.messageLog.dropEmpty(id); this.streaming.delete(id)
       const { origin, stopped, steered, status } = ending!
       const selfTurn = origin !== undefined && this.selfTurns.get(id) === origin
+      // Only the latest /compact can be answered: no compaction starts while one is pending, and a refused one is taken back.
+      const answersCompaction = origin !== undefined && alias.compactInputIds?.at(-1) === origin
       this.selfTurns.delete(id); this.queries.delete(id)
       this.interrupting.delete(id)
       const failure = frame.is_error === true && !stopped ? claudeTurnFailure(frame, this.assistantErrors.get(id)) : null
@@ -1859,7 +1886,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (origin) {
         this.completedOrigins.add(origin)
         const messageId = !selfTurn ? alias.origins.find(value => value.uuid === origin)?.messageId : undefined
-        thread.lastTurn = { id: origin, status, ...(messageId ? { messageId } : {}), ...(limitStop && status === 'failed' ? { limitStop } : {}) }
+        // A compaction is not a turn. A thread already resting on a completed turn keeps it, so news of the work that turn
+        // left running stays the turn's (ADR-0127); one with no turn read, as after a restart, rests on the compaction. What
+        // was queued behind a compaction that failed waits for review on the compaction's own record.
+        const compactedAfterTurn = answersCompaction && thread.lastTurn?.status === 'completed'
+        if (!compactedAfterTurn) thread.lastTurn = { id: origin, status, ...(messageId ? { messageId } : {}), ...(limitStop && status === 'failed' ? { limitStop } : {}) }
         // A turn Claude Code gave itself answers no message of Sotto's. The newest message may be a steer whose own
         // turn has not begun, so it has no record to settle here.
         if (!selfTurn) this.markTurn(id, status, messageId, failure ?? undefined, steered)
@@ -1871,8 +1902,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
       for (const steer of steers) steer.carried = true
       const held = steers.some(steer => !steer.unconfirmed) || alias.origins.some(value => this.acknowledgements.has(value.uuid))
       thread.status = failure !== null ? 'error' : held ? 'running' : 'idle'
-      // A cut for a steer drops only the step Claude was on, so background work goes on with the session.
-      if (frame.is_error === true && !steered) this.clearMonitoring(id)
+      // A cut for a steer drops only the step Claude was on, so background work goes on with the session, and so it does
+      // when a compaction fails.
+      if (frame.is_error === true && !steered && !answersCompaction) this.clearMonitoring(id)
       if (failure !== null) { this.turnFailures.set(id, failure); this.state.error = failure }
       else if (frame.is_error !== true) this.clearTurnFailure(id)
     }
@@ -1889,8 +1921,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
     this.turnFailures.delete(id)
     if (this.state.error === failure) this.state.error = [...this.turnFailures.values()].at(-1)
   }
+  /** Whether Claude Code still owes this thread a report on work of its own that just ended: see {@link REPORT_HOLD_MS}. */
+  private reportDue(id: string): boolean {
+    return Date.now() - (this.workEndedAt.get(id) ?? -Infinity) < REPORT_HOLD_MS
+  }
   private clearMonitoring(id: string): void {
-    this.monitoring.delete(id)
+    this.monitoring.delete(id); this.workEndedAt.delete(id)
     const thread = this.threads.get(id)
     if (thread) { delete thread.monitoring; delete thread.backgroundWork; this.changed(id) }
   }
