@@ -1,0 +1,50 @@
+# Checks once a week that the provider documentation each doc tip rests on still says what the tip says (ADR-0159).
+# scripts/check-tip-sources.mjs reads every page in src/renderer/src/agents/tipSources.json; when one has lost its
+# sentence or is gone, this opens an issue listing them, or adds a comment to the one already open. GitHub Actions may
+# not open pull requests in this repository, so a person or an agent rewrites the tip from the issue. Sotto never
+# fetches these pages itself; only this job does, on GitHub's runners.
+name: Tip sources
+
+on:
+  schedule:
+    - cron: '0 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: tip-sources
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Check tip sources
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+
+      - name: Read every tip's source
+        run: node scripts/check-tip-sources.mjs --report "$RUNNER_TEMP/tip-sources.md"
+
+      - name: Open or update the issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TITLE: Tips rest on provider documentation that changed
+        run: |
+          report="$RUNNER_TEMP/tip-sources.md"
+          [ -f "$report" ] || exit 0
+          open=$(gh issue list --state open --search "\"$TITLE\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --body-file "$report"
+          else
+            gh issue create --title "$TITLE" --body-file "$report" --label ready-for-agent
+          fi
