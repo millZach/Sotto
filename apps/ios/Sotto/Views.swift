@@ -328,7 +328,6 @@ struct ComputerBanner: View {
                     .accessibilityLabel("Reconnect to \(model.name(hostID))")
             }
             .padding(Space.s3)
-            .failedEdge(tint: 0.09)
             .background(Palette.surface, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .clipShape(RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: Radius.md, style: .continuous).strokeBorder(Palette.hairline, lineWidth: 1))

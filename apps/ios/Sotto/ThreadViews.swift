@@ -2229,6 +2229,7 @@ struct RequestSheet: View {
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom, spacing: 0) { footer }
         .presentationBackground { SheetBackdrop(wash: true) }
+        .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)
         .onChange(of: current == nil && !model.hasPending(at: place)) { _, gone in if gone { dismiss() } }
         .sheet(item: $opening) { row in SafariPage(url: row.url).ignoresSafeArea() }

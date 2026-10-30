@@ -47,6 +47,7 @@ struct PullRequestSheet: View {
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .presentationBackground { SheetBackdrop(wash: false) }
+        .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)
         .toast($toast)
         .task { await load() }

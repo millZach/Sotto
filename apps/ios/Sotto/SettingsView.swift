@@ -11,12 +11,22 @@ struct SettingsView: View {
             PageHeading(String(localized: "Settings"), subtitle: String(localized: "These are kept on this iPhone. They don’t change any computer’s settings."))
                 .padding(.top, Space.s1)
             SectionLabel(String(localized: "Look", comment: "Settings section heading for appearance, theme, text size and density."))
+            // Look is one group of rows on one card, as Notifications is, with the theme tiles on a card of their own
+            // under it (#1864).
             VStack(spacing: Space.s3) {
-                AppearancePanel()
+                VStack(spacing: 0) {
+                    AppearancePanel()
+                    RowDivider()
+                    TextSizePanel()
+                    RowDivider()
+                    GlowPanel()
+                    RowDivider()
+                    DensityPanel()
+                }
+                .padding(.horizontal, Space.s4)
+                .frame(maxWidth: .infinity)
+                .sottoCard(.plain)
                 ThemePanel { toast = $0 }
-                GlowPanel()
-                TextSizePanel()
-                DensityPanel()
             }
             SectionLabel(String(localized: "Notifications", comment: "Settings section heading for alerts."))
             NotificationsPanel()
@@ -43,7 +53,7 @@ private struct AppearancePanel: View {
             Segmented(name: String(localized: "Appearance"), choices: PhoneAppearance.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-\($0.rawValue)" }) { appearance = $0.rawValue }
         }
-        .card()
+        .lookRow()
     }
 }
 
@@ -174,7 +184,7 @@ private struct TextSizePanel: View {
             .accessibilityLabel("Text size")
             TextSample()
         }
-        .card()
+        .lookRow()
     }
 }
 
@@ -197,7 +207,7 @@ private struct TextSizeStep: View {
                 .frame(maxWidth: .infinity, minHeight: 52)
                 .background {
                     if selected {
-                        shape.fill(scheme == .dark ? Palette.raised : Palette.surface)
+                        shape.fill(scheme == .dark ? Palette.overlay : Palette.surface)
                             .overlay(shape.strokeBorder(theme.color(.accent).opacity(0.35), lineWidth: 1))
                             .glow(shape, color: theme.color(.accent), alpha: 0.4, radius: 8)
                     }
@@ -217,16 +227,12 @@ private struct TextSizeStep: View {
 /// A request card's words at the chosen size, so the size can be judged before leaving Settings.
 private struct TextSample: View {
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
         VStack(alignment: .leading, spacing: 2) {
             Text("Pick the drawer shortcut").font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
             Text("Asks: which shortcut should open the terminal drawer?").font(.sotto(.small)).foregroundStyle(Palette.muted)
         }
         .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Palette.canvas, in: shape)
-        .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
         .accessibilityHidden(true)
     }
 }
@@ -251,7 +257,7 @@ private struct GlowPanel: View {
             }
             .frame(minHeight: 44)
         }
-        .card()
+        .lookRow()
     }
 }
 
@@ -265,7 +271,7 @@ private struct DensityPanel: View {
                       title: { $0.title }, identifier: { "setting-density-\($0.rawValue)" }) { density = $0.rawValue }
             PanelHint(text: current == .compact ? String(localized: "Tighter spacing fits more of a thread on screen.") : String(localized: "Room between messages, lists and steps."))
         }
-        .card()
+        .lookRow()
     }
 }
 
@@ -640,7 +646,7 @@ private struct SegmentButton: View {
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .background {
                     if chosen {
-                        Capsule().fill(raised ? Palette.raised : Palette.surface)
+                        Capsule().fill(raised ? Palette.overlay : Palette.surface)
                             .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
                             .matchedGeometryEffect(id: "knob", in: knob)
                     }
@@ -671,6 +677,13 @@ private struct NoteLine: View {
             .padding(.horizontal, Space.s1).padding(.top, Space.s2)
             .frame(maxWidth: .infinity, alignment: .leading)
             .paragraphDirection()
+    }
+}
+
+extension View {
+    /// One row of Look's group: the padding a card gave it, without the card.
+    fileprivate func lookRow() -> some View {
+        padding(.vertical, Space.s4).frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 

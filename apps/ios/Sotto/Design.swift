@@ -193,6 +193,8 @@ enum Palette {
     static let canvas = ThemeRole(.canvas)
     static let surface = ThemeRole(.surface)
     static let raised = ThemeRole(.raised)
+    /// A step past `raised`, for what is drawn on a card, which is itself the raised surface.
+    static let overlay = ThemeRole(.overlay)
     static let ink = ThemeRole(.ink)
     static let muted = ThemeRole(.muted)
     static let border = ThemeRole(.border)
@@ -913,79 +915,46 @@ extension View {
 
 // MARK: - Cards and glows
 
-/// How a card is lit. Needs you carries a warm glow, working a breathing accent halo, answered an accent glow.
+/// How a card is lit. Only Needs you glows; the other tones say what the card holds and paint it the same (ADR-0051,
+/// amended October 30, 2026).
 enum CardTone { case plain, needsYou, answered, working, online }
 
-/// A card's surface: radius 20, a hairline, a highlight along the top edge, and the glow its tone carries. Under Glass
-/// the card is the raised tint over the room, its tone a tint over that, and its glow shines through it.
+/// Whether a view sits on a sheet. A sheet's ground is the raised surface in dark, so a card on it steps up to the overlay
+/// surface to stay a step off what is behind it.
+private struct OnSheetKey: EnvironmentKey { static let defaultValue = false }
+extension EnvironmentValues {
+    var sottoOnSheet: Bool {
+        get { self[OnSheetKey.self] }
+        set { self[OnSheetKey.self] = newValue }
+    }
+}
+
+/// A card's surface, the desktop's card (ADR-0110): one fill a step off the room, with no outline, no highlight along its
+/// top and no gradient. That fill is the theme's raised surface, a step darker than the room by day and lighter by night,
+/// and the overlay surface on a sheet. Only a card that needs the user glows (ADR-0051, amended October 30, 2026): with
+/// every card lit, the one asking for the user had to out-glow the rest. Under Glass the card is the raised tint over the
+/// room.
 struct CardSurface: ViewModifier {
     let tone: CardTone
     var radius: CGFloat = Radius.lg
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoGlass) private var glass
-    @Environment(\.colorScheme) private var scheme
+    @Environment(\.sottoOnSheet) private var onSheet
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return content
             .background {
-                if let glass {
-                    shape.fill(glass.raised.fill)
-                        .overlay(shape.fill(LinearGradient(stops: [
-                            Gradient.Stop(color: toneTint, location: 0),
-                            Gradient.Stop(color: toneTint.opacity(0), location: 0.72)
-                        ], startPoint: .top, endPoint: .bottom)))
-                } else {
-                    shape.fill(LinearGradient(stops: [
-                        Gradient.Stop(color: top, location: 0),
-                        Gradient.Stop(color: theme.color(.surface), location: 0.72)
-                    ], startPoint: .top, endPoint: .bottom))
-                }
+                if let glass { shape.fill(glass.raised.fill) } else { shape.fill(theme.color(fill)) }
             }
             .clipShape(shape)
-            .overlay(shape.strokeBorder(ring, lineWidth: 1))
-            .overlay(shape.strokeBorder(LinearGradient(colors: [highlight, highlight.opacity(0)], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.2)), lineWidth: 1))
             .background { glow }
     }
     @ViewBuilder private var glow: some View {
-        switch tone {
-        case .needsYou: GlowLayer(radius: radius, color: theme.rgb(.warning), alpha: 0.5, base: base, period: 6)
-        case .working: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.5, base: base, period: 4.4)
-        case .answered: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.6, base: base, period: nil)
-        case .plain, .online: EmptyView()
+        if tone == .needsYou {
+            GlowLayer(radius: radius, color: theme.rgb(.warning), alpha: 0.5, base: glass == nil ? theme.rgb(fill) : nil, period: 6)
         }
     }
-    /// What the glow fills the card's shape with: the surface, or nothing under Glass, where the card is see-through.
-    private var base: ThemeRGB? { glass == nil ? theme.rgb(.surface) : nil }
-    /// The tone's tint at the card's top, laid over the glass.
-    private var toneTint: Color {
-        switch tone {
-        case .plain: return .clear
-        case .needsYou: return theme.color(.warning).opacity(Tint.needsYou)
-        case .answered: return theme.color(.accent).opacity(Tint.answered)
-        case .working: return theme.color(.accent).opacity(Tint.working)
-        case .online: return theme.color(.accent).opacity(Tint.online)
-        }
-    }
-    private var top: Color {
-        switch tone {
-        case .plain: return theme.color(.surface)
-        case .needsYou: return theme.tinted(.surface, with: .warning, Tint.needsYou)
-        case .answered: return theme.tinted(.surface, with: .accent, Tint.answered)
-        case .working: return theme.tinted(.surface, with: .accent, Tint.working)
-        case .online: return theme.tinted(.surface, with: .accent, Tint.online)
-        }
-    }
-    private var ring: Color {
-        switch tone {
-        case .plain, .online: return theme.color(.hairline)
-        case .needsYou: return theme.color(.warning).opacity(0.3)
-        case .answered: return theme.color(.accent).opacity(0.45)
-        case .working: return theme.color(.accent).opacity(0.26)
-        }
-    }
-    private var highlight: Color {
-        scheme == .dark ? theme.color(.ink).opacity(0.1) : theme.color(.surface).opacity(0.95)
-    }
+    private var fill: ThemeRoleName { onSheet ? .overlay : .raised }
 }
 
 /// The switch the UI journeys use to measure what the looping animations cost: `--ui-still` stops every one of them.
