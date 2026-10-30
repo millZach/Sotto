@@ -4717,6 +4717,10 @@ msgstr ""
 msgid "Sotto could not check Omarchy setup. Your files were left alone. Try again."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "Sotto could not check whether {title} can move. Nothing was moved. Try again."
+msgstr ""
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Sotto could not check which threads can move. Nothing was moved. Try again."
 msgstr ""

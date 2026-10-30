@@ -4717,6 +4717,10 @@ msgstr "Sotto copies your text, then pastes into the focused window on Hyprland,
 msgid "Sotto could not check Omarchy setup. Your files were left alone. Try again."
 msgstr "Sotto could not check Omarchy setup. Your files were left alone. Try again."
 
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "Sotto could not check whether {title} can move. Nothing was moved. Try again."
+msgstr "Sotto could not check whether {title} can move. Nothing was moved. Try again."
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Sotto could not check which threads can move. Nothing was moved. Try again."
 msgstr "Sotto could not check which threads can move. Nothing was moved. Try again."

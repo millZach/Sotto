@@ -123,13 +123,16 @@ describe('Move threads and its sheet', () => {
     expect(moves.start).not.toHaveBeenCalled()
   })
 
-  it('goes straight to the machine a move suggestion named for Choose threads…, nothing ticked (#1309)', async () => {
+  it('goes straight to the machine a move suggestion named, for Choose threads… with nothing ticked and for one thread (#1309)', async () => {
     const { moves } = bridges({ machines: [{ hostId: FORGE, name: 'forge', phase: 'connected' }, { hostId: STUDIO, name: 'studio', phase: 'connected' }] })
     render(<MoveThreadsSheetHost />)
-    act(() => { moveSheetStore.open({ kind: 'all', hostId: STUDIO }) })
+    act(() => { moveSheetStore.open({ kind: 'all', targetHostId: STUDIO }) })
     await waitFor(() => expect(moves.prepare).toHaveBeenCalledWith({ threadIds: ['tray', 'menu', 'wav'], hostId: STUDIO }))
     const sheet = await screen.findByRole('dialog', { name: 'Choose threads to move to forge' })
     expect(within(sheet).getAllByRole('checkbox').every(box => !(box as HTMLInputElement).checked)).toBe(true)
+    // A suggested thread that would start narrower opens the sheet at the same machine, for that thread.
+    act(() => { moveSheetStore.open({ kind: 'one', threadId: 'menu', title: 'Linux tray menu spacing', targetHostId: STUDIO }) })
+    await waitFor(() => expect(moves.prepare).toHaveBeenLastCalledWith({ threadIds: ['menu'], hostId: STUDIO }))
   })
 
   it('leaves a sheet opened again alone when an earlier one’s moves finish starting', async () => {
