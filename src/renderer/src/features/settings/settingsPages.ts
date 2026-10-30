@@ -150,7 +150,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'reply-streaming', label: msg`Replies in threads`, section: 'settings-agents', words: 'streaming as written' },
     { id: 'thread-titles', label: msg`Generated thread titles`, section: 'settings-agents', words: 'names branch' },
     { id: 'next-prompt', label: msg`Suggest a next prompt after each turn`, section: 'settings-agents', words: 'suggestions ghost tab next', gate: 'next-prompt' },
-    { id: 'thread-tips', label: msg`Show tips while threads work`, section: 'settings-agents', words: 'tips hints shortcuts skills hidden again', gate: 'thread-tips' },
+    { id: 'thread-tips', label: msg`Show tips`, section: 'settings-agents', words: 'tips hints shortcuts skills hidden again', gate: 'thread-tips' },
     { id: 'resume-after-restart', label: msg`Resume threads after a restart`, section: 'settings-agents', gate: 'resume-after-restart' },
     { id: 'restart-stopped-threads', label: msg`Restart stopped threads`, section: 'settings-agents', words: 'usage limit resets resume continue carry on after a restart', gate: 'restart-stopped-threads' },
     { id: 'web-links', label: msg`Web links in threads`, section: 'settings-browser', words: 'open links browser' },

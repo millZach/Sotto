@@ -23,6 +23,8 @@ describe('Watcher\'s start_thread', () => {
   it('offers a role and leaves the model to it with worker roles on', () => {
     const start = tool(watcherToolDefinitions(true), 'start_thread')
     expect(start.schema.properties).toHaveProperty('role')
+    expect(start.schema.properties['speed']!.description).toContain('null means standard speed')
+    expect(start.description).toContain('model, effort, speed and permission')
     expect(start.schema.required).not.toContain('modelId')
     expect(start.description).toContain(WORKER_KIND_LIST)
     expect(start.description).toContain('never wider than the new-thread default')
@@ -39,6 +41,7 @@ describe('Watcher\'s system prompt', () => {
     expect(watcherSystemPrompt(true).startsWith(WATCHER_SYSTEM_PROMPT)).toBe(true)
     expect(watcherSystemPrompt(true)).toContain(WATCHER_ROLES_PROMPT)
     expect(WATCHER_ROLES_PROMPT).toContain('Orchestrating')
+    expect(WATCHER_ROLES_PROMPT).toContain('model, effort, speed or permission')
   })
 })
 
@@ -52,7 +55,7 @@ describe('delegate', () => {
   it('names the kind of work and leaves the rest to the role with worker roles on', () => {
     const delegate = tool(delegationToolDefinitions(true), 'delegate')
     expect(delegate.description).toContain('worker role')
-    for (const field of ['provider', 'model', 'effort', 'permission']) expect(delegate.schema.properties[field]!.description).toContain('Leave it out to use the role.')
+    for (const field of ['provider', 'model', 'effort', 'speed', 'permission']) expect(delegate.schema.properties[field]!.description).toContain('Leave it out to use the role.')
     expect(delegate.schema.required).toEqual(tool(delegationToolDefinitions(false), 'delegate').schema.required)
   })
 })

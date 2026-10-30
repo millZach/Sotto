@@ -37,3 +37,23 @@ The sidebar was also inspected open in [dark](../../artifacts/worker-swarms/side
 Muse review led to separate stopped and synthesized states, independent sidebar rows for delegated leads, bounded request allocation, and durable synthesis recovery through the same machine queue. Final review also caught unqualified paired-host lead IDs and a five-attempt delivery limit that prevented later synthesis; both now have regression coverage. The original retry can fill only angles that were never admitted. An uncertain start remains Unknown rather than being repeated.
 
 No live multi-machine swarm or provider completion was exercised locally. Those paths have focused coordinator tests; the full CI gates remain required before merge.
+
+
+## PR #1814 CI follow-up
+
+Read the failed Windows and Linux test jobs in [run 40992305570](https://github.com/millZach/Sotto/actions/runs/40992305570), for `fb45edb74`. The failures had four causes:
+
+- The swarm field was serialized even on ordinary threads, changing their progress fingerprints and adding serialization on every observation. Ordinary threads now use the original fingerprint bytes and cost. The existing fingerprint unit file pins both that cost and changes to swarm progress; no performance budget was raised.
+- Cancelling a queued check lost the established machine-specific receipt. Checks keep that wording; queued workers use their own receipt.
+- The machine-ceiling Settings test edited before initial host loading finished. It now flushes that initial update before editing.
+- The move test read fence cleanup before the terminal-state save finished. It now waits for cleanup. A targeted rerun also exposed the same ordering assumption in its Watcher-news test, which now waits for the news it asserts.
+
+Main did not carry these fixes. #1812 then merged as `07604b760`; its changes conflicted with this branch, so main was merged in. Speed and Workers remain independent saved choices and survive changes or resets to the other field. Swarm leads and angles carry the resolved speed, including queued and remote receipts. A separate read-only check found no remaining speed propagation gap.
+
+After the merge, `npm run typecheck` and `npm run lint` passed. The nine existing unit files below passed 110 tests in total; `threadMoves` and `workerRolesSettings` were rerun after their final corrections. The last test edits also passed focused lint. `npm run i18n:extract` completed without changing the merged catalogs, and the catalog unit file passed.
+
+- `shared/workerRoles`, `shared/interfaceCatalogs`
+- `main/watcherProgressFingerprint`, `main/watcherToolsInFlight`, `main/delegationEnds`, `main/threadMoves`
+- `renderer/workerRolesSettings`, `renderer/workerRolesOrchestrating`, `renderer/workerMachineSettings`
+
+The six Workers captures above were refreshed and inspected after bringing in #1812's Speed controls. Dark and light passed at 1600 × 1000, 1280 × 800 and 820 × 560, with no content extending beyond the Watcher card. The capacity captures were unchanged byte for byte. The headless component render also passed; no Electron app, integration suite, performance suite, e2e spec or local CI gate was launched. GitHub will verify the full combination on the next push.

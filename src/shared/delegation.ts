@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, providerIdSchema, type AgentState, type AgentThread } from './agents'
+import { agentRuntimeModeSchema, agentSpeedSchema, providerIdSchema, type AgentState, type AgentThread } from './agents'
 import { WATCHER_OUTCOMES, WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema } from './watcher'
 import { workerKindSchema } from './workerRoles'
 import { workerSystemSchema } from './workerMachine'
@@ -46,6 +46,7 @@ export const delegateInputSchema = z.object({
   provider: providerIdSchema.optional().describe('For a new thread: claude, codex, grok, muse or devin. Call read_delegation with no delegation to see what is ready.'),
   model: z.string().min(1).max(512).optional().describe('For a new thread: a ready model ID of that provider, as read_delegation lists it.'),
   effort: z.string().min(1).max(64).optional().describe('For a new thread: a reasoning effort the model offers, required when it offers any.'),
+  speed: agentSpeedSchema.nullable().optional().describe('For a new thread: fast or ultrafast, one the model offers; null means standard speed.'),
   permission: agentRuntimeModeSchema.optional().describe('For a new thread, required: approval-required, auto-accept-edits, auto or full-access, one the model offers. Never wider than this thread\'s own or the user\'s new-thread default.'),
   working_copy: z.enum(['shared', 'independent']).optional().describe('For a new thread: share this project\'s checkout (the default) or start its own worktree.'),
   machine: z.uuid().optional().describe(`For a new thread: the machine it starts on, a host ID from ${LIST_MACHINES_TOOL}.`),

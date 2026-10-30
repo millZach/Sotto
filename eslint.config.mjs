@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/agent-speed/**',
       'native/coreml-asr/.build/**',
       'artifacts/watcher-room-state/**',
       'artifacts/worker-swarms/**',

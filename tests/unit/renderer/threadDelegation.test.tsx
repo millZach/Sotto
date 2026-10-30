@@ -25,9 +25,9 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: vi.fn() }))
 
 /** Delegation between threads (#1029, design A) as the window shows it, only where the Owl list turns it on. */
-function owl(on: boolean): void {
+function owl(on: boolean, quiet = false): void {
   vi.mocked(useOptionalApp).mockReturnValue({ update: { currentVersion: '0.1.37-owl.20261012.1', phase: { phase: 'up-to-date' }, checkedAt: null,
-    owlFeatures: { watcher: false, 'thread-delegation': on } } } as unknown as AppContextValue)
+    owlFeatures: { watcher: false, 'thread-delegation': on, 'quiet-composer': quiet } } } as unknown as AppContextValue)
 }
 
 const NOW = E2E_THREADS_NOW
@@ -631,13 +631,13 @@ describe('the delegating and the delegated thread\'s panes', () => {
     return state
   }
 
-  it('Stop names the delegated threads it also stops, and the line under the composer says so', async () => {
-    owl(true)
+  it.each([false, true])('Stop still names and stops delegated work; only the full composer explains it (quiet: %s)', async quiet => {
+    owl(true, quiet)
     const reads = bridge({ [PARENT]: [view({ rootUserMessageId: 'visual-gate-1', wait: { seconds: 300, startedAt: at(4) }, waiting: true })] })
     vi.stubGlobal('sotto', { delegations: reads.fake })
     const live = mount(stateWith(PARENT))
     const stop = screen.getByRole('button', { name: 'Stop agent and the 2 threads it delegated that are working' })
-    expect(screen.getByText('Stop also stops the 2 threads it delegated that are working.')).toBeInTheDocument()
+    expect(screen.queryByText('Stop also stops the 2 threads it delegated that are working.') !== null).toBe(!quiet)
     fireEvent.click(stop)
     expect(live.command).toHaveBeenCalledWith({ type: 'interrupt', threadId: PARENT })
     // The pane read its delegations once, and draws the row in the turn it answers.
@@ -647,8 +647,8 @@ describe('the delegating and the delegated thread\'s panes', () => {
     await waitFor(() => expect(document.querySelector('.delegated-work__state')).toHaveTextContent('Returned'))
   })
 
-  it('a delegated thread says Delegated by its parent, a link back, and shows the brief as the parent\'s', async () => {
-    owl(true)
+  it.each([false, true])('a delegated thread keeps its parent link and send warning (quiet: %s)', async quiet => {
+    owl(true, quiet)
     // The delegated thread reads the briefs it was sent with its own delegations, not its parent's list.
     const reads = bridge({}, { [CHILD]: [view({ outcome: 'working' })] })
     vi.stubGlobal('sotto', { delegations: reads.fake })

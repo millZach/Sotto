@@ -12,7 +12,8 @@ afterEach(async () => { for (const f of fixtures.splice(0)) await f.cleanup() })
 const efforts = { defaultReasoningEffort: 'low', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'high' }] }
 const models = [
   { id: 'fast', model: 'fixture-model', displayName: 'Fixture Codex', isDefault: true, ...efforts,
-    serviceTiers: [{ id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' }] },
+    serviceTiers: [{ id: 'priority', name: 'Fast', description: '1.5x speed, increased usage' },
+      { id: 'ultrafast', name: 'Ultrafast', description: 'The fastest available responses for latency-sensitive work.' }] },
   { id: 'plain', model: 'fixture-plain', displayName: 'Fixture Codex Plain', ...efforts },
 ]
 
@@ -37,6 +38,10 @@ it('reads which models offer fast mode from their service tiers, with Codex\'s o
   const f = await fixture()
   const snapshot = await f.host.snapshot()
   expect(snapshot.models.find(model => model.id === 'fixture-model')?.fastMode).toEqual({ description: '1.5x speed, increased usage' })
+  expect(snapshot.models.find(model => model.id === 'fixture-model')?.speeds).toEqual([
+    { id: 'fast', name: 'Fast', description: '1.5x speed, increased usage' },
+    { id: 'ultrafast', name: 'Ultrafast', description: 'The fastest available responses for latency-sensitive work.' },
+  ])
   expect(snapshot.models.find(model => model.id === 'fixture-plain')?.fastMode).toBeUndefined()
 })
 
@@ -155,4 +160,43 @@ it('starts and forks a thread on a model without Fast whatever tier Codex report
   expect((await thread(f, id)).fastMode).toBeUndefined()
   expect(await f.adapter.forkThread({ commandId: randomUUID(), threadId: 'fork', title: 'Fork', modelId: 'fixture-plain', source: { threadId: id, messageId: reply } })).toEqual({ accepted: true })
   expect((await params(f, 'thread/fork')).at(-1)).not.toHaveProperty('serviceTier')
+})
+
+
+it('starts, updates and resumes on Ultrafast, clears it explicitly, and forks at Standard', async () => {
+  const f = await fixture()
+  const { id, reply } = await withReply(f, { speed: 'ultrafast', fastMode: true })
+  expect((await params(f, 'thread/start')).at(-1)).toMatchObject({ serviceTier: 'ultrafast' })
+  expect(await thread(f, id)).toMatchObject({ speed: 'ultrafast' })
+  expect((await thread(f, id)).fastMode).toBeUndefined()
+  expect((await configure(f, id, { speed: 'fast' })).accepted).toBe(true)
+  expect((await params(f, 'thread/settings/update')).at(-1)).toMatchObject({ serviceTier: 'priority' })
+  expect((await configure(f, id, { speed: 'ultrafast' })).accepted).toBe(true)
+  expect((await params(f, 'thread/settings/update')).at(-1)).toMatchObject({ serviceTier: 'ultrafast' })
+
+  const next = await f.driver.restart() as Fixture
+  fixtures.splice(fixtures.indexOf(f), 1, next)
+  await next.host.connect()
+  expect((await thread(next, id)).speed).toBe('ultrafast')
+  await next.adapter.refreshThread(id)
+  expect((await params(next, 'thread/resume')).at(-1)).toMatchObject({ serviceTier: 'ultrafast' })
+  expect(await next.adapter.forkThread({ commandId: randomUUID(), threadId: 'ultra-fork', title: 'Fork', modelId: 'fixture-model', source: { threadId: id, messageId: reply } })).toEqual({ accepted: true })
+  expect((await params(next, 'thread/fork')).at(-1)).toMatchObject({ serviceTier: 'default' })
+  expect((await thread(next, 'ultra-fork')).speed).toBeUndefined()
+  expect((await configure(next, id, { speed: null })).accepted).toBe(true)
+  expect((await params(next, 'thread/settings/update')).at(-1)).toMatchObject({ serviceTier: 'default' })
+  expect((await thread(next, id)).speed).toBeUndefined()
+})
+
+it('does not accept Fast as confirmation of Ultrafast', async () => {
+  const f = await codexFixture(undefined, false, 600)
+  fixtures.push(f)
+  await f.script({ models })
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Speed', path: f.root })
+  const id = await created(f)
+  await f.script({ models, serviceTierReported: 'priority' })
+  expect(await configure(f, id, { speed: 'ultrafast' })).toEqual({ accepted: false, uncertain: true })
+  await f.adapter.refreshThread(id)
+  expect((await thread(f, id)).speed).toBeUndefined()
 })

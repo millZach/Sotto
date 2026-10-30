@@ -17,7 +17,7 @@ const POLICY = (mode: AgentRuntimeMode): CodexPolicy => mode === 'approval-requi
 /** An adapter's own catalog: native IDs, as each client lists them. */
 const native = (id: string, efforts: readonly string[], ready = true): AgentModel => ({ id, provider: 'Fixture', name: id, ready, reasoningEfforts: [...efforts] })
 function role(kind: WorkerKind, provider: ProviderId, model: string, reasoningEffort: string | null, runtimeMode: AgentRuntimeMode | undefined): SubagentRole {
-  return { kind, name: kind === 'ui' ? 'UI' : kind.charAt(0).toUpperCase() + kind.slice(1).replace('-', ' '), what: 'Synthetic work.', provider, model, modelName: model, reasoningEffort, runtimeMode }
+  return { kind, name: kind === 'ui' ? 'UI' : kind.charAt(0).toUpperCase() + kind.slice(1).replace('-', ' '), what: 'Synthetic work.', provider, model, modelName: model, reasoningEffort, speed: null, runtimeMode }
 }
 const TABLE = [role('building', 'claude', 'opus', 'xhigh', 'auto-accept-edits'), role('ui', 'claude', 'opus[1m]', 'xhigh', 'auto-accept-edits'),
   role('code-review', 'codex', 'gpt-6.1-sol', 'xhigh', 'approval-required'), role('research', 'claude', 'haiku', null, 'approval-required'),
@@ -59,6 +59,8 @@ describe('Claude Code role agents', () => {
     expect(claudeSubagents(TABLE, 'auto', [native('opus', ['high'], false), native('haiku', [], false)], MODES)).toBeUndefined()
     expect(Object.keys(claudeSubagents([role('building', 'claude', 'opus', 'ultra', undefined)], 'auto', [native('opus', ['ultra'])], MODES)?.agents ?? {})).toEqual([])
     expect(claudeSubagents([], 'auto', claude, MODES)).toBeUndefined()
+    // Claude's native definition cannot set a speed independently; these roles use delegate, even at Standard.
+    expect(claudeSubagents([TABLE[0]!], 'auto', [{ ...claude[0]!, speeds: [{ id: 'fast', name: 'Fast' }] }], MODES)).toBeUndefined()
   })
 })
 
@@ -108,6 +110,14 @@ describe('Codex role files', () => {
     expect(log).toHaveBeenCalledWith('codex-role-file-failed')
     expect(log.mock.calls.flat().join(' ')).not.toContain(root)
     expect(await store.write(TABLE, 'auto', codex)).toBeDefined()
+  })
+
+  it('names the role speed explicitly so a parent speed never becomes the role default', () => {
+    const chosen = TABLE[2]!
+    expect(codexRoleFile({ ...chosen, speed: null }, 'high', POLICY('auto'))).not.toContain('service_tier')
+    expect(codexRoleFile({ ...chosen, speed: null }, 'high', POLICY('auto'), true)).toContain('service_tier = "default"')
+    expect(codexRoleFile({ ...chosen, speed: 'fast' }, 'high', POLICY('auto'))).toContain('service_tier = "priority"')
+    expect(codexRoleFile({ ...chosen, speed: 'ultrafast' }, 'high', POLICY('auto'))).toContain('service_tier = "ultrafast"')
   })
 
   it('writes strings TOML reads back as written', () => {

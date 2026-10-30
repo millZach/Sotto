@@ -1259,6 +1259,7 @@ it.each([['a pull request wake-up', 'a standing watch'], ['a pull request wake-u
       await f.control.deliverWakeUp(target.threadId, { pullRequest: { url: 'https://github.com/o/r/pull/1', number: 1, title: 'Synthetic pull request' },
         startedBy: 'agent', head: 'head-1', changes: [{ kind: 'checks-failed', checks: [{ name: 'build', status: 'failure', url: null }] }], ended: null }, { tool: false })
       await expect.poll(() => f.native(target.threadId).messages.findLast(item => item.role === 'user')?.text).not.toBe('Synthetic worker turn')
+      await expect.poll(() => f.control.hasPendingThreadWork(target.threadId)).toBe(false)
     } else {
       // A delegation's brief is known by the message ID delegation gave it, which its hook on the coordinator answers.
       const brief = randomUUID()

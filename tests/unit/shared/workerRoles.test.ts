@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { publicProviderEntityId, type AgentModel, type AgentRuntimeMode, type ProviderId } from '../../../src/shared/agents'
-import { capRuntimeMode, fitEffort, isRoleDefault, parseWorkerRoleChoices, roleCanUse, roleInForce, roleStartNote, startFromRole, watcherProvidersInWords, withRoleRow, workerCounts, WORKER_COUNTS, WORKER_ROLE_IDS,
+import { capRuntimeMode, fitEffort, fitSpeed, isRoleDefault, parseWorkerRoleChoices, roleCanUse, roleInForce, roleStartNote, startFromRole, watcherProvidersInWords, withRoleRow, workerCounts, WORKER_COUNTS, WORKER_ROLE_IDS,
   type WorkerRoleChoices, type WorkerRoleId } from '../../../src/shared/workerRoles'
 
 const ALL: readonly AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
@@ -176,15 +176,45 @@ describe('worker roles', () => {
     expect(capRuntimeMode('approval-required', 'full-access')).toBe('approval-required')
   })
 
+  it('keeps saved speeds while fitting starts to the model, and resets them to Standard', () => {
+    const fast = { ...CODEX[0]!, speeds: [{ id: 'fast' as const, name: 'Fast' }, { id: 'ultrafast' as const, name: 'Ultrafast' }] }
+    const choices: WorkerRoleChoices = { building: { modelId: fast.id, reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits', speed: 'ultrafast' } }
+    expect(parseWorkerRoleChoices(choices)).toEqual(choices)
+    expect(roleInForce('building', choices, [fast]).start?.speed).toBe('ultrafast')
+    expect(roleInForce('building', choices, CODEX)).toMatchObject({ choice: choices.building, start: { speed: null } })
+    expect(roleInForce('building', choices, [fast]).start?.speed).toBe('ultrafast')
+    expect(roleInForce('building', {}, [fast]).start?.speed).toBeNull()
+    expect(startFromRole('building', choices, [fast])).toMatchObject({ speed: 'ultrafast', named: [] })
+    expect(roleStartNote(startFromRole('building', choices, [fast]), [fast])).toContain('Its speed is Ultrafast.')
+    const otherModel = { building: { ...choices.building!, modelId: CODEX[1]!.id } }
+    expect(startFromRole('building', otherModel, [fast, CODEX[1]!], { modelId: fast.id })).toMatchObject({ speed: 'ultrafast', named: ['model'] })
+    const standard = startFromRole('building', choices, [fast], { speed: null })
+    expect(standard).toMatchObject({ speed: null, named: ['speed'] })
+    expect(roleStartNote(standard, [fast])).toContain('This request named its speed')
+    expect(roleStartNote(standard, [fast])).toContain('Its speed is Standard.')
+    expect(withRoleRow({}, 'building', choices.building!, [fast])).toEqual(choices)
+    expect(withRoleRow(choices, 'building', { ...choices.building!, speed: null }, [fast])).toEqual({})
+    const counted = { ...choices.building!, workers: { usual: 2, upTo: 4 } }
+    expect(withRoleRow({}, 'building', { ...counted, speed: null }, [fast])).toEqual({ building: { ...counted, speed: null } })
+    expect(withRoleRow({}, 'building', { ...counted, workers: WORKER_COUNTS.building }, [fast])).toEqual({ building: { ...counted, workers: WORKER_COUNTS.building } })
+    expect(withRoleRow({}, 'building', { ...counted, speed: null, workers: WORKER_COUNTS.building }, [fast])).toEqual({})
+    const orchestrating = { modelId: fast.id, reasoningEffort: 'high', speed: 'fast' as const }
+    expect(withRoleRow({}, 'orchestrating', orchestrating, [fast])).toEqual({ orchestrating })
+    expect(withRoleRow({ orchestrating }, 'orchestrating', { ...orchestrating, speed: null }, [fast])).toEqual({})
+    expect(fitSpeed('fast', { ...fast, speeds: undefined, fastMode: {} })).toBe('fast')
+    expect(fitSpeed('fast', { ...fast, speeds: [], fastMode: {} })).toBeNull()
+    expect(fitSpeed('ultrafast', { ...fast, speeds: undefined, fastMode: {} })).toBeNull()
+  })
+
   it('starts by role, with what a request named in the role’s place, and says so', () => {
     const models = [...CLAUDE, ...CODEX]
     const plain = startFromRole('building', {}, models)
-    expect(plain).toEqual({ role: 'building', modelId: id('claude', 'opus'), reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits', named: [], roleModelId: id('claude', 'opus') })
-    expect(roleStartNote(plain, models)).toBe('Started as Building, a worker role in the user\'s Settings. Its model, Opus 5.5, its effort and its permission came from that role.')
+    expect(plain).toEqual({ role: 'building', modelId: id('claude', 'opus'), reasoningEffort: 'xhigh', speed: null, runtimeMode: 'auto-accept-edits', named: [], roleModelId: id('claude', 'opus') })
+    expect(roleStartNote(plain, models)).toBe('Started as Building, a worker role in the user\'s Settings. Its model, Opus 5.5, its effort, speed and permission came from that role. Its speed is Standard.')
     // A named model takes the role's effort and permission as near as it offers them.
     const named = startFromRole('building', {}, models, { modelId: id('codex', 'gpt-6-luna') })
     expect(named).toMatchObject({ modelId: id('codex', 'gpt-6-luna'), reasoningEffort: 'high', runtimeMode: 'auto-accept-edits', named: ['model'] })
-    expect(roleStartNote(named, models)).toBe('Started as Building, a worker role in the user\'s Settings. This request named its model (GPT-6 Luna, where Building uses Opus 5.5), which overrides Building for this start only. Its effort and permission came from the role.')
+    expect(roleStartNote(named, models)).toBe('Started as Building, a worker role in the user\'s Settings. This request named its model (GPT-6 Luna, where Building uses Opus 5.5), which overrides Building for this start only. Its effort, speed and permission came from the role. Its speed is Standard.')
     const held = startFromRole('computer-use', {}, models)
     expect(held.runtimeMode).toBe('full-access')
     expect(roleStartNote(held, models, { wanted: 'full-access', startedOn: 'approval-required' })).toContain('Its permission, Full access, was held to the user\'s new-thread default, Ask for approval.')

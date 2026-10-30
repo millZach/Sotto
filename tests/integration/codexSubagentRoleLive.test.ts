@@ -39,7 +39,7 @@ describe('requires SOTTO_CODEX_LIVE=1', () => {
     if (dirname(resolve(directory)) !== resolve(tmpdir()) || !directory.includes('sotto-codex-role-probe-')) throw new Error('Unexpected probe directory')
     const host = new CodexAppServerHost({ userDataPath: directory })
     host.useWorkerRoles(new WorkerRoles(() => [{ kind: 'research', name: 'Research', what: 'Reading code, docs and the web, and reporting back.',
-      provider: 'codex', model: 'gpt-6-luna', modelName: 'GPT-6 Luna', reasoningEffort: 'medium', runtimeMode: 'approval-required' }]))
+      provider: 'codex', model: 'gpt-6-luna', modelName: 'GPT-6 Luna', reasoningEffort: 'medium', speed: null, runtimeMode: 'approval-required' }]))
     const since = Date.now()
     try {
       const snapshot = await host.connect()

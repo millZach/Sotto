@@ -2,10 +2,10 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf, PROVIDER_LABELS,
-  type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentThread, type HandoverCounts } from '../../shared/agents'
+  type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
-import { capRuntimeMode, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
+import { capRuntimeMode, fitSpeed, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type WorkerKind, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { nearestReasoningEffort, RUNTIME_MODE_ORDER, resolveNewThreadPermission } from '../../shared/newThreadDefaults'
 import { isThreadClosed, isThreadTurnRunning, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { countMachineWorkingThreads, countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning, THIS_COMPUTER } from '../../shared/workingThreads'
@@ -267,7 +267,7 @@ function watcherCardWords(request: AgentThread['requests'][number]): string {
 const REPLACED_ON_OLDER_HOST = 'An earlier Watcher started this there, and that computer runs an older Sotto, so this Watcher cannot direct it. Update Sotto on that computer. Nothing was sent.'
 const HOST_WITHOUT_OUTCOMES = 'This host does not report outcomes, so Sotto cannot say how this ended. Update Sotto on that host, or read the thread.'
 /** A start's worker role as its receipt says it (#1041). */
-type RoleReceipt = { readonly id: WorkerKind; readonly named: RoleField[]; readonly note: string }
+type RoleReceipt = { readonly id: WorkerKind; readonly named: RoleField[]; readonly speed: AgentSpeed | null; readonly note: string }
 /**
  * A start placed before admission (#1032): the call as Watcher made it, which its retries are matched by, the start as it
  * goes, and where its receipt says it went.
@@ -1536,7 +1536,7 @@ export class WatcherService implements WatcherControlHooks {
     const ahead = this.options.checks?.ahead(this.checkOf.get(operation.id)?.ticket ?? operation.id) ?? 0
     return { status: 'ok', receipt: this.receipt(operation), limits: this.limits(operation), target: operation.target,
       creationReceiptId: operation.creationReceiptId!, firstPromptReceiptId: operation.firstPromptReceiptId!,
-      effectiveChoices: { modelId: create.modelId!, reasoningEffort: create.reasoningEffort ?? null, permission: create.permission ?? { kind: 'runtime', mode: 'approval-required' },
+      effectiveChoices: { modelId: create.modelId!, reasoningEffort: create.reasoningEffort ?? null, speed: create.speed ?? null, permission: create.permission ?? { kind: 'runtime', mode: 'approval-required' },
         workingCopy: create.workingCopy, ...(create.baseRefChoiceId ? { baseRefChoiceId: create.baseRefChoiceId } : {}) },
       ...this.roleBlock(operation.id), ...this.placementBlock(operation.id), ...this.branchStartBlock(operation.id, true),
       check: { ahead, note: this.checkNote(operation.id) } }
@@ -1918,6 +1918,7 @@ export class WatcherService implements WatcherControlHooks {
       return found
     }
     const room: WatcherRoomState = { current: record.current, currentOptions: current ? { modelId: current.modelId, reasoningEffort: current.reasoningEffort ?? null,
+      speed: current.speed !== undefined ? current.speed : current.fastMode ? 'fast' : null,
       runtimeMode: current.runtimeMode ?? 'approval-required', status: current.status, connected: this.connected(current) } : null,
       runtimeMode: record.lastRuntimeMode ?? current?.runtimeMode ?? 'approval-required', standingWatches: watches,
       ownChanges: current ? watcherOwnChanges(current) : [], history: record.history, requests: record.requests,
@@ -2675,7 +2676,7 @@ export class WatcherService implements WatcherControlHooks {
       // A paired desktop's work an archive saved before history went off goes back to the record first (#1759).
       await this.options.control.returnArchivedRemoteWork()
       const record = this.view()
-      if (record.creation && !this.options.workerHost) await this.finishCreation(record.creation.identity, record.creation.modelId ? { provider: record.creation.identity.provider, modelId: record.creation.modelId, ...(record.creation.reasoningEffort ? { reasoningEffort: record.creation.reasoningEffort } : {}) } : undefined)
+      if (record.creation && !this.options.workerHost) await this.finishCreation(record.creation.identity, record.creation.modelId ? { provider: record.creation.identity.provider, modelId: record.creation.modelId, speed: record.creation.speed ?? null, ...(record.creation.reasoningEffort ? { reasoningEffort: record.creation.reasoningEffort } : {}) } : undefined)
       const current = this.view().current
       if (current && !this.options.workerHost && (this.thread(current.target).kind !== 'watcher' || this.thread(current.target).providerId !== current.provider)) {
         refuse('NOT_CURRENT_WATCHER', 'Watcher’s saved thread does not match its identity. Nothing was started. Restore its saved records before continuing.')
@@ -2750,31 +2751,39 @@ export class WatcherService implements WatcherControlHooks {
     try {
       if (this.options.workerHost) refuse('HOST_FEATURE_UNAVAILABLE', 'Open Watcher on the desktop that coordinates this host.')
       const parsed = watcherOpenRequestSchema.safeParse(input)
-      if (!parsed.success) refuse('INVALID_INPUT', 'Choose a supported Watcher provider, model and effort.')
+      if (!parsed.success) refuse('INVALID_INPUT', 'Choose supported Watcher settings.')
       input = parsed.data
       if (this.closed) refuse('NOT_CURRENT_WATCHER', this.recoveryNotice ?? 'Watcher is stopping. Reopen Sotto.')
-      const model = resolveModel(this.options.control.watcherSnapshot().models, input.modelId)
+      const models = this.options.control.watcherSnapshot().models
+      const model = resolveModel(models, input.modelId)
       if (!model?.ready || model.providerId !== input.provider) refuse('PROVIDER_UNAVAILABLE', 'Connect the chosen provider and choose one of its ready models.', true)
       if (input.reasoningEffort && !model.reasoningEfforts?.includes(input.reasoningEffort)) refuse('INVALID_INPUT', 'Choose an effort this model offers.')
       const record = this.view(), previous = record.current
+      const speedSource = input.speedSourceModelId === undefined ? undefined : resolveModel(models, input.speedSourceModelId)
+      if (input.speedSourceModelId !== undefined && (!input.speed || !speedSource?.ready || fitSpeed(input.speed, speedSource) !== input.speed
+        || previous && !record.creation)) refuse('INVALID_INPUT', 'Choose a speed this model offers.')
+      if (input.speed && fitSpeed(input.speed, model) !== input.speed && input.speedSourceModelId === undefined) refuse('INVALID_INPUT', 'Choose a speed this model offers.')
       if (record.creation) {
         if (record.creation.identity.provider !== input.provider || record.creation.modelId !== input.modelId
-          || record.creation.reasoningEffort !== input.reasoningEffort) refuse('TARGET_CHANGED', 'Watcher creation is pending with another choice. Reopen that choice before changing it.')
+          || record.creation.reasoningEffort !== input.reasoningEffort || (record.creation.speed ?? null) !== (input.speed ?? null)) refuse('TARGET_CHANGED', 'Watcher creation is pending with another choice. Reopen that choice before changing it.')
         return await this.finishPending(record, input)
       }
       if (!previous || previous.provider !== input.provider) this.creationPermission(model)
       if (previous) {
         const thread = this.currentThread(previous)
         if (previous.provider === input.provider && thread.modelId === input.modelId
-          && (!input.reasoningEffort || thread.reasoningEffort === input.reasoningEffort)) return this.get()
+          && (!input.reasoningEffort || thread.reasoningEffort === input.reasoningEffort)
+          && (input.speed === undefined || (thread.speed !== undefined ? thread.speed : thread.fastMode ? 'fast' : null) === input.speed)) return this.get()
         const held = this.changeHeld(record, thread, previous.provider === input.provider ? 'model' : 'provider')
         if (held) refuse('THREAD_BUSY', held, true)
         this.changing = true
         if (previous.provider === input.provider) {
-          if (thread.modelId !== input.modelId || input.reasoningEffort && thread.reasoningEffort !== input.reasoningEffort) {
+          if (thread.modelId !== input.modelId || input.reasoningEffort && thread.reasoningEffort !== input.reasoningEffort
+            || input.speed !== undefined && (thread.speed !== undefined ? thread.speed : thread.fastMode ? 'fast' : null) !== input.speed) {
             const result = await this.options.control.commandForWatcherRoom({ type: 'configure-thread', threadId: thread.id,
-              modelId: input.modelId, ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}) })
-            if (result.error) refuse('PROVIDER_UNAVAILABLE', 'Watcher’s model or effort could not be changed. Check its provider and reopen Watcher.', true)
+              modelId: input.modelId, ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}),
+              ...(input.speed !== undefined ? { speed: input.speed } : {}) })
+            if (result.error) refuse('PROVIDER_UNAVAILABLE', 'Watcher’s settings could not be changed. Check its provider and reopen Watcher.', true)
           }
           return this.get()
         }
@@ -2785,7 +2794,7 @@ export class WatcherService implements WatcherControlHooks {
     finally { this.changing = false }
   }
   /**
-   * New Watcher (ADR-0073): a new Watcher on the current one's own provider, model, effort and permission mode, all read
+   * New Watcher (ADR-0073): a new Watcher on the current one's own provider, model, effort, speed and permission mode, all read
    * from the current Watcher's thread, through the same replacement a provider change makes. The last conversation goes
    * to Watcher history with its tools revoked, workers, receipts and standing watches carry on, and its handover is
    * offered. Refused, nothing is sent and nothing changes. A creation left pending is finished, as open finishes it.
@@ -2801,9 +2810,9 @@ export class WatcherService implements WatcherControlHooks {
       if (this.closed) refuse('NOT_CURRENT_WATCHER', this.recoveryNotice ?? 'Watcher is stopping. Reopen Sotto.')
       const record = this.view(), previous = record.current
       if (record.creation) {
-        const { identity, modelId, reasoningEffort } = record.creation
+        const { identity, modelId, reasoningEffort, speed } = record.creation
         if (modelId === undefined) refuse('PROVIDER_UNAVAILABLE', 'Watcher creation stopped before its model was saved. Reopen Watcher with the same choice.')
-        return await this.finishPending(record, { provider: identity.provider, modelId, ...(reasoningEffort ? { reasoningEffort } : {}) })
+        return await this.finishPending(record, { provider: identity.provider, modelId, speed: speed ?? null, ...(reasoningEffort ? { reasoningEffort } : {}) })
       }
       if (!previous) refuse('NOT_CURRENT_WATCHER', 'There is no Watcher yet. Send Watcher your first message to start it.')
       const thread = this.currentThread(previous)
@@ -2821,7 +2830,7 @@ export class WatcherService implements WatcherControlHooks {
       const reasoningEffort = thread.reasoningEffort && model.reasoningEfforts?.includes(thread.reasoningEffort) ? thread.reasoningEffort : undefined
       this.changing = true
       const prepared = await this.prepareReplacement(thread)
-      return await this.replace(previous, { provider: previous.provider, modelId: model.id, ...(reasoningEffort ? { reasoningEffort } : {}) }, prepared)
+      return await this.replace(previous, { provider: previous.provider, modelId: model.id, speed: thread.speed !== undefined ? thread.speed : thread.fastMode ? 'fast' : null, ...(reasoningEffort ? { reasoningEffort } : {}) }, prepared)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start a new Watcher. Nothing was sent. Check its provider and try again.', true) }
     finally { this.changing = false }
   }
@@ -2938,7 +2947,7 @@ export class WatcherService implements WatcherControlHooks {
     const identity: WatcherIdentity = { target: this.target(randomUUID()), projectId: project.id, provider: input.provider,
       creationOperationId: randomUUID(), createdAt: new Date(Math.max(Date.now(), previous ? Date.parse(previous.createdAt) + 1 : 0)).toISOString() }
     await this.options.control.updateWatcher(next => {
-      next.creation = { identity, modelId: input.modelId, ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}), phase: 'intent', replaces: previous?.target ?? null }
+      next.creation = { identity, modelId: input.modelId, speed: input.speed ?? null, ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}), phase: 'intent', replaces: previous?.target ?? null }
       // The old native conversation keeps its binding. New profile admission follows the durable reference.
       if (previous) next.history.push(previous)
       next.current = identity
@@ -3040,8 +3049,8 @@ export class WatcherService implements WatcherControlHooks {
       if (!input || !model) refuse('PROVIDER_UNAVAILABLE', 'Watcher creation stopped before its model was saved. Reopen Watcher with the same choice.')
       const runtimeMode = this.creationPermission(model)
       const result = await this.options.control.commandForWatcherRoom({ type: 'create-thread', threadId: identity.target.threadId,
-        projectId: identity.projectId, title: 'Watcher', modelId: model.id, runtimeMode, workingCopy: 'shared',
-        ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}) })
+        projectId: identity.projectId, title: 'Watcher', modelId: model.id, speed: input.speed ?? null, runtimeMode, workingCopy: 'shared',
+        ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}) }, undefined, true)
       // The provider's own refusal says what to do, as a Muse that cannot take Watcher's tools does (ADR-0079).
       if (result.error) refuse('PROVIDER_UNAVAILABLE', result.error.length <= 2_000 ? result.error : 'Watcher’s thread could not be created. Check its provider and reopen Watcher.', true)
       thread = result.host.threads.find(item => item.id === identity.target.threadId)
@@ -4130,13 +4139,14 @@ export class WatcherService implements WatcherControlHooks {
         // A start by worker role reads the user's Settings here, once, and only when a start is asked (#1041). What the
         // request named wins; a retry of a recorded start returned above and never resolves the role again.
         const byRole = !imported && create.role && this.options.roles ? startFromRole(create.role, this.options.roles(), snapshot.models, { modelId: create.modelId,
-          reasoningEffort: create.reasoningEffort, runtimeMode: create.permission?.kind === 'runtime' ? create.permission.mode : undefined }) : undefined
+          reasoningEffort: create.reasoningEffort, speed: create.speed, runtimeMode: create.permission?.kind === 'runtime' ? create.permission.mode : undefined }) : undefined
         const modelId = byRole ? byRole.modelId : create.modelId
         if (!modelId) refuse(byRole ? 'PROVIDER_UNAVAILABLE' : 'INVALID_INPUT', byRole
           ? 'No ready model can do that kind of work. Connect a provider in Settings, under Providers. Nothing was started.'
           : 'Name the worker model for this start. Nothing was started.')
         const model = resolveModel(snapshot.models, modelId)
         if (!model?.ready) refuse('PROVIDER_UNAVAILABLE', 'Choose a ready worker model. Sotto will not switch accounts.')
+        if (create.speed && fitSpeed(create.speed, model) !== create.speed) refuse('INVALID_INPUT', 'Choose a speed this worker model offers.')
         if (create.reasoningEffort && !workerEfforts(model).includes(create.reasoningEffort)) refuse('INVALID_INPUT', 'Choose an effort this worker model offers.')
         const roleEffort = byRole?.reasoningEffort && !byRole.named.includes('effort') && workerEfforts(model).includes(byRole.reasoningEffort) ? byRole.reasoningEffort : undefined
         // A permission the request named keeps its refusal. One the role gave is held to the ceiling instead.
@@ -4157,13 +4167,14 @@ export class WatcherService implements WatcherControlHooks {
           const effort = create.reasoningEffort ?? roleEffort ?? (configuration.newThreadReasoningEffort
             ? nearestReasoningEffort(configuration.newThreadReasoningEffort, reference, workerEfforts(model)) : undefined)
           // A single start keeps its original packet; a swarm also carries the role for its lead’s angle plan.
-          const { role: _role, ...concrete } = create; void _role
+          const { role: _role, speed: _speed, ...concrete } = create; void _role; void _speed
           if ((create.count ?? 1) > 1) Object.assign(concrete, { role: create.role })
-          input = watcherToolSchemas.start_thread.input.parse({ ...concrete, modelId, ...(effort !== undefined ? { reasoningEffort: effort } : {}), permission })
+          const speed = byRole ? byRole.speed : create.speed
+          input = watcherToolSchemas.start_thread.input.parse({ ...concrete, modelId, ...(speed ? { speed } : {}), ...(effort !== undefined ? { reasoningEffort: effort } : {}), permission })
         }
         if (byRole) {
           const named = create.permission?.kind === 'provider' && !byRole.named.includes('permission') ? [...byRole.named, 'permission' as const] : byRole.named
-          roleResult = { id: byRole.role, named: [...named], note: roleStartNote({ ...byRole, named }, snapshot.models, held) }
+          roleResult = { id: byRole.role, named: [...named], speed: byRole.speed, note: roleStartNote({ ...byRole, named }, snapshot.models, held) }
         }
         this.checkRemoteCeiling(request.id, permission.kind === 'runtime' ? permission.mode : undefined)
         this.prunePages()
@@ -4397,7 +4408,7 @@ export class WatcherService implements WatcherControlHooks {
             this.checkRemoteCeiling(operation.requestId, permission.kind === 'runtime' ? permission.mode : undefined)
           } }
           created = await this.options.control.commandFromWatcher({ type: 'create-thread', threadId: operation.target.threadId,
-            projectId: create.project.projectId, title: create.title, titleSource: 'user', modelId,
+            projectId: create.project.projectId, title: create.title, titleSource: 'user', modelId, ...(create.speed ? { speed: create.speed } : {}),
             ...(create.reasoningEffort ? { reasoningEffort: create.reasoningEffort } : {}),
             ...(permission.kind === 'runtime' ? { runtimeMode: permission.mode } : { providerMode: permission.choiceId }), ...choices }, createOrigin)
         } catch (error) {
@@ -4417,7 +4428,7 @@ export class WatcherService implements WatcherControlHooks {
           const request = this.view().requests.find(item => item.id === operation.requestId)!
           await service.startSwarmForLead(operation.target.threadId, {
             work: create.role, brief: create.firstPrompt, count: create.count!, ...(create.prompts ? { prompts: create.prompts } : {}),
-            retry_key: create.retryKey, model: modelId, ...(create.reasoningEffort ? { effort: create.reasoningEffort } : {}),
+            retry_key: create.retryKey, model: modelId, speed: create.speed ?? null, ...(create.reasoningEffort ? { effort: create.reasoningEffort } : {}),
             ...(create.permission?.kind === 'runtime' ? { permission: create.permission.mode } : {}), working_copy: 'independent',
           }, { id: operation.id, ownerThreadId: request.watcher.threadId, retryKey: create.retryKey,
             rootUserMessageId: request.rootUserMessageId ?? request.id })
@@ -4654,8 +4665,10 @@ ${operation.draftId}`)
     const waiting = this.workerStarts.get(operation.id), place = this.options.swarms.admission.view(operation.id)
     const thread = this.localThread(operation.target.threadId)
     const effectiveChoices = thread ? { modelId: thread.modelId, reasoningEffort: thread.reasoningEffort ?? null,
+      speed: thread.speed !== undefined ? thread.speed : thread.fastMode ? 'fast' : null,
       permission: thread.providerMode ? { kind: 'provider' as const, choiceId: thread.providerMode } : { kind: 'runtime' as const, mode: thread.runtimeMode ?? 'approval-required' } }
       : waiting ? { modelId: waiting.input.modelId!, reasoningEffort: waiting.input.reasoningEffort ?? null,
+        speed: waiting.input.speed ?? null,
         permission: waiting.input.permission ?? { kind: 'runtime' as const, mode: 'approval-required' as const } } : undefined
     return { ...swarm ? { swarm } : {}, ...effectiveChoices ? { effectiveChoices } : {},
       ...place?.state === 'queued' ? { queue: { ahead: place.ahead, waiting: place.waiting,
@@ -4688,6 +4701,7 @@ ${operation.draftId}`)
       return { status: 'ok', ...base, target: operation.target, creationReceiptId: operation.creationReceiptId!, firstPromptReceiptId: operation.firstPromptReceiptId!,
         ...worker,
         effectiveChoices: { ...worker.effectiveChoices ?? { modelId: thread!.modelId, reasoningEffort: thread!.reasoningEffort ?? null,
+          speed: thread!.speed !== undefined ? thread!.speed : thread!.fastMode ? 'fast' : null,
           permission: thread!.providerMode ? { kind: 'provider', choiceId: thread!.providerMode } : { kind: 'runtime', mode: thread!.runtimeMode ?? 'approval-required' } },
           workingCopy: create.workingCopy, ...(create.baseRefChoiceId ? { baseRefChoiceId: create.baseRefChoiceId } : {}) }, ...this.roleBlock(operation.id), ...this.placementBlock(operation.id),
         ...this.branchStartBlock(operation.id),
@@ -5570,7 +5584,8 @@ ${operation.draftId}`)
       workers: snapshot.models.filter(model => model.ready).slice(0, 100).map(model => {
         let defaultPermission: ReturnType<WatcherService['permission']> | null = null
         try { defaultPermission = this.permission(model, undefined, limits.get(snapshot)) } catch { /* Explicitly incomparable. */ }
-        return { provider: model.providerId, modelId: model.id, reasoningEfforts: workerEfforts(model), defaultPermission, permissionComparable: defaultPermission !== null }
+        return { provider: model.providerId, modelId: model.id, reasoningEfforts: workerEfforts(model),
+          speeds: model.speeds ?? (model.fastMode ? [{ id: 'fast', name: 'Fast', ...model.fastMode }] : []), defaultPermission, permissionComparable: defaultPermission !== null }
       }), controlAvailable: snapshot.hostId === this.hostId() || Boolean(this.takingHost(snapshot.hostId)?.control),
       readsAvailable: snapshot.hostId === this.hostId() || Boolean(this.takingHost(snapshot.hostId)?.reads),
       readOnlyProfileAvailable: true, freshness: snapshot.connected ? 'fresh' : 'stale' })))

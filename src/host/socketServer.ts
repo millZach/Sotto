@@ -1642,7 +1642,11 @@ export async function startSocketServer(options: SocketServerOptions) {
         } else if (request.op === 'shell' || request.op === 'command') { carried = wireShell(peer, result as HostClientShell); result = carried.state }
         response = { v: 1, id: request.id, ok: true, result }
       }
-      catch (error) { const code = error instanceof Refusal ? error.code : 'unavailable'; response = { v: 1, id: request.id, ok: false, error: { code, message: error instanceof Refusal ? error.message : errors[code], ...error instanceof Refusal && error.reason ? { reason: error.reason } : {} } } }
+      catch (error) {
+        // Keep stack frames for diagnosis; error messages can contain provider bodies or received values.
+        if (!(error instanceof Refusal)) console.error('socket-dispatch-failed', request.op, error instanceof Error ? error.stack?.split('\n').filter(line => /^\s+at /.test(line)).join('\n') : 'Non-Error exception')
+        const code = error instanceof Refusal ? error.code : 'unavailable'; response = { v: 1, id: request.id, ok: false, error: { code, message: error instanceof Refusal ? error.message : errors[code], ...error instanceof Refusal && error.reason ? { reason: error.reason } : {} } }
+      }
       // An answer that carries a shell gives the client a picture of its own, so the next shell push goes whatever it repeats.
       // So does one that carries Watcher's page: a phone shows the page it was answered with until a shell replaces it.
       if (carried || request.op.startsWith('watcher-phone-')) peer.shellSent = null

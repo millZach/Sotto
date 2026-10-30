@@ -291,10 +291,16 @@ export function attachmentReferences(attachments: readonly (Pick<AgentAttachment
 export const agentProviderModeSchema = z.object({ id: providerEntityId, name: id, description: text.optional(), asks: text.optional(),
   allows: z.enum(['nothing', 'edits', 'everything']).optional() }).strict()
 export type AgentProviderMode = z.infer<typeof agentProviderModeSchema>
+export const agentSpeedSchema = z.enum(['fast', 'ultrafast'])
+export type AgentSpeed = z.infer<typeof agentSpeedSchema>
+export const agentModelSpeedSchema = z.object({ id: agentSpeedSchema, name: z.string().min(1).max(100), description: z.string().max(300).optional() })
+export type AgentModelSpeed = z.infer<typeof agentModelSpeedSchema>
 export const agentThreadOptionsSchema = z.object({ modelId: providerEntityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
   runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional(),
-  /** Fast mode on or off for this thread (ADR-0143): the user's choice, kept when the thread moves to a model without it. */
-  fastMode: z.boolean().optional() })
+  /** Compatibility alias for speed fast; an explicit speed takes precedence (ADR-0143). */
+  fastMode: z.boolean().optional(),
+  /** Null selects standard speed; fastMode is the compatibility alias for fast (ADR-0143). */
+  speed: agentSpeedSchema.nullable().optional() })
 export type AgentThreadOptions = z.infer<typeof agentThreadOptionsSchema>
 /**
  * A model's fast mode (ADR-0143): faster output at a higher price. Present only on a model whose provider offers it,
@@ -318,8 +324,10 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
   providerModes: z.array(agentProviderModeSchema).max(20).optional(),
   /** The provider names one of its own models as the one to reach for; the picker keeps it at the top. */
   recommended: z.boolean().optional(),
-  /** Present only when the model offers fast mode (ADR-0143); the composer draws its toggle only then. */
+  /** Compatibility metadata for Fast, retained for older clients (ADR-0143). */
   fastMode: agentModelFastModeSchema.optional(),
+  /** The offered speeds, in the provider's own names and descriptions; Standard is always available. */
+  speeds: z.array(agentModelSpeedSchema).max(2).optional(),
   /**
    * Where the model runs, for a provider that offers models from several companies under one sign-in: OpenCode's
    * **model source**, such as OpenCode Zen or Anthropic (ADR-0087). The picker may group by it; `provider` stays the
@@ -599,10 +607,10 @@ export const agentThreadSchema = z.object({
   /** The provider's own permission mode this thread is set to, where the provider names its own. */
   providerMode: providerEntityId.optional(),
   /**
-   * The user turned fast mode on for this thread (ADR-0143). It is the choice, not what runs: on a model without fast
-   * mode the thread runs at normal speed and keeps the choice for a model that has it. Absent when off, and from older hosts.
+   * Compatibility alias for speed fast (ADR-0143). A named speed takes precedence; absent on older hosts and at Standard.
    */
   fastMode: z.boolean().optional(),
+  speed: agentSpeedSchema.nullable().optional(),
   status: z.enum(['idle', 'running', 'error']),
   workingDirectory: z.string().optional(), worktree: agentWorktreeSchema.optional(),
   /** The last stacked Git action run on this thread's folder, as it runs and once it is over (ADR-0027). */
@@ -881,6 +889,7 @@ export const subscriptionAccountSchema = z.object({
     defaultReasoningEffort: z.string().optional(),
     /** As on `agentModelSchema.fastMode`: present only when the model offers fast mode. */
     fastMode: agentModelFastModeSchema.optional(),
+    speeds: z.array(agentModelSpeedSchema).max(2).optional(),
   })),
   defaultModelId: z.string().optional(), allowCustomModel: z.boolean().optional(),
 })
@@ -1363,7 +1372,8 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
     /** A check its machine's queue started (#1312): a new worktree it gets is the machine's one check worktree for the
      * repository, moved to the check's commit. Watcher's and delegation's own starts only; a person's create-thread is refused. */
     check: z.literal(true).optional(),
-    reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional() }).strict(),
+    reasoningEffort: z.string().min(1).max(64).optional(), runtimeMode: agentRuntimeModeSchema.optional(), providerMode: providerEntityId.optional(),
+    speed: agentSpeedSchema.nullable().optional(), fastMode: z.boolean().optional() }).strict(),
   /**
    * One of a thread's agents continued as a thread of its own (#1028). `threadId` is the agent's thread, so the command goes
    * to that thread's host, and `newThreadId` the thread to make, which the window mints. A Codex agent is forked by Codex
@@ -1451,7 +1461,7 @@ export const agentCommandSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('git-checkout-pull-request'), threadId: id, reference: z.string().min(1).max(2_048), mode: z.enum(['local', 'worktree']) }).strict(),
   agentThreadOptionsSchema.extend({ type: z.literal('configure-thread'), threadId: id }).strict()
     .refine(value => value.modelId !== undefined || value.reasoningEffort !== undefined || value.runtimeMode !== undefined || value.providerMode !== undefined
-      || value.fastMode !== undefined, 'Choose a thread setting to change.'),
+      || value.fastMode !== undefined || value.speed !== undefined, 'Choose a thread setting to change.'),
   z.object({ type: z.literal('select-thread'), threadId: id }).strict(),
   /** `shownThreadIds`: which of them the client shows now, where that is fewer; the socket server says so for the paired
    * desktops whose windows are behind another app (ADR-0092). Absent, every observed thread is shown. A paired client

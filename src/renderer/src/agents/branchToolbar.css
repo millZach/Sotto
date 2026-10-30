@@ -79,6 +79,15 @@
 .branch-toolbar__notice { flex-basis: 100%; margin: 0; padding: 0 6px; font-size: 12px; line-height: 1.4; }
 .branch-toolbar__notice[data-tone='error'] { color: var(--threads-warning-text); }
 
+/* The quiet composer keeps these same choices beside the folder in the pane header. */
+.branch-toolbar[data-header] { flex-wrap: nowrap; margin: 0; }
+.branch-toolbar[data-header] :is(.branch-toolbar__end, .branch-toolbar__picker) { flex: 0 1 auto; }
+.branch-toolbar[data-header] :is(.branch-toolbar__chip, .branch-toolbar__branch) { max-width: min(160px, 100%); }
+.branch-toolbar[data-header] :is(.branch-toolbar__list, .branch-toolbar__panel) { top: calc(100% + 6px); bottom: auto; }
+.branch-toolbar[data-header] .branch-toolbar__panel { display: flex; flex-direction: column; overflow: hidden; }
+.branch-toolbar[data-header] .branch-toolbar__panel > :not(.branch-toolbar__refs) { flex: none; }
+.branch-toolbar[data-header] .branch-toolbar__refs { min-height: 0; }
+
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) :is(.branch-toolbar__list, .branch-toolbar__panel) { animation: thread-chip-rise 140ms cubic-bezier(.2, .8, .2, 1); }
 }
