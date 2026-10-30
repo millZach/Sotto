@@ -157,8 +157,8 @@ async function columnContrast(page: Page, extra: readonly string[] = []): Promis
     const formEl = pane.querySelector<HTMLElement>(':scope > .thread-workspace__compose > .thread-prompt')!
     const cardColour = rgba(getComputedStyle(formEl).backgroundColor)
     const inCard = new Map<string, number[]>()
-    // The placeholder is suggestion ink, muted ink at 55%, and stands outside the 4.5:1 words here as on every solid
-    // field (threads.css, paintedTextPairs.ts): its meaning speech takes from the field's label (#1646).
+    // The placeholder is drawn by a pseudo-element, so it is not read here; it is solid muted ink, a tier the glass
+    // counts, and paintedTextPairs.ts holds it to 4.5:1 on the solid card (#1819).
     for (const element of formEl.querySelectorAll('*')) {
       // A decorative mark, such as the faint dot between New Watcher and the model, is not a word.
       if (element.closest('.tt-visually-hidden, [aria-hidden="true"]') !== null || ![...element.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.nodeValue!.trim())) continue
