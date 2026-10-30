@@ -5532,9 +5532,7 @@ msgid "Open {threadTitle}"
 msgstr ""
 
 #. {title} is the title of the thread that holds this folder. Opens that thread.
-#. {title} is the title of the thread that holds this folder. Opens that thread.
-#: src/renderer/src/agents/BranchToolbar.tsx
-#: src/renderer/src/agents/GitActionButton.tsx
+#: src/renderer/src/agents/checkoutHold.ts
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "Open {title}"
 msgstr ""

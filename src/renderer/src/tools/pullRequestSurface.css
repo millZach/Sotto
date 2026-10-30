@@ -132,3 +132,5 @@
   .pr-surface__body { padding-inline: 12px; }
   .pr-surface__dock { margin-inline: -12px; padding-inline: 12px; }
 }
+/* Open <title> after a checkout refused because another thread holds the folder (#1823): a word in the line, underlined as a link is. */
+.pull-request-dialog__open { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-align: start; text-decoration: underline; text-underline-offset: 2px; white-space: normal; overflow-wrap: anywhere; }

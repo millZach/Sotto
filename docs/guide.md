@@ -312,7 +312,7 @@ A Git action, branch restore or checkpoint revert refuses sends from other threa
 
 Git actions are refused while a thread in the folder is working or has pending work. The notice reads **On hold**, says nothing was changed, names the thread and its reason, and offers **Open** with the thread's title, which opens that thread: answer a waiting request, retry failed history or archive the thread, or resume or remove failed follow-ups. A branch switch refused the same way offers the same **Open**. Loading history and setting up a working copy ask you to try again in a moment. During Automatically pull it says: **Sotto is pulling this folder. Nothing was changed. Try again in a moment.** Separate worktrees remain independent.
 
-Saving a post-turn checkpoint briefly holds the folder for reading. A Git press during that read says: **Sotto is saving a checkpoint in this folder. Try again in a moment.**
+Saving a post-turn checkpoint briefly holds the folder for reading. A Git press during that read says: **Sotto is saving a checkpoint in this folder. Nothing was changed. Try again in a moment.**
 
 A refused Git press leaves the previous Git result and its **View PR** link available. The refusal appears as the thread's error; progress replaces the previous result only after the new action is admitted.
 

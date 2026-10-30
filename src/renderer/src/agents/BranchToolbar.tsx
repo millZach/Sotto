@@ -11,7 +11,8 @@ import { parsePullRequestReference } from '../../../shared/gitPullRequests'
 import { CheckoutPullRequestDialog } from '../tools/PullRequestDialogs'
 import { toolsPanelStore } from '../tools/toolsPanelStore'
 import { useOptionalApp } from '../state/AppContext'
-import { Isolated, own } from '../components/isolated'
+import { Isolated } from '../components/isolated'
+import { holdingThread, openHolderWords } from './checkoutHold'
 import type { AgentConnection } from './AgentContext'
 import { moveListboxFocus } from './listboxKeys'
 import { writeClipboard } from './richActions'
@@ -164,10 +165,10 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   const hostName = threadHostName(state, row.thread)
   const draftWorktree = newWorktreeDraft(thread)
   const workspace = workspaceLabel(thread)
-  const holder = notice?.holder !== undefined && notice.holder !== row.thread.id ? state.host.threads.find(item => item.id === notice.holder) : undefined
+  const holder = holdingThread(state.host.threads, notice?.holder, row.thread.id)
   const noticeLine = notice ? <p className="branch-toolbar__notice tt-paragraph" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{shownWords(notice.text)}
     {holder ? <> <button type="button" className="branch-toolbar__open tt-focusable" onClick={() => { void command({ type: 'select-thread', threadId: holder.id }) }}>
-      <Isolated text={t({ message: `Open ${ph({ title: own(holder.title) })}`, comment: '{title} is the title of the thread that holds this folder. Opens that thread.' })} /></button></> : null}</p> : null
+      <Isolated text={shownWords(openHolderWords(holder.title))} /></button></> : null}</p> : null
   return <div className="branch-toolbar" role="group" aria-label={t`Branch toolbar`} data-busy={busy ?? undefined} data-header={header || undefined}>
     {!header ? <><LabelPill icon={thread.remoteHost ? Server : Laptop} label={t`Run on`} value={hostName}
       title={thread.remoteHost ? t`The thread runs on this host; it was chosen when the thread was made.` : t`The thread runs on this computer.`} /><Separator /></> : null}
@@ -184,7 +185,7 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
         onPick={pick} onCreate={create} onCopy={copyName} onStartFromOrigin={value => void setStartFromOrigin(value)} onCheckoutPullRequest={reference => setCheckout(reference)} />
     </span>
     {noticeSlot ? createPortal(noticeLine, noticeSlot) : noticeLine}
-    {checkout !== null ? <CheckoutPullRequestDialog threadId={thread.id} initialReference={checkout} command={command} worktreeAllowed={!locked} localMovesToCheckout={!locked && thread.worktree?.mode !== 'shared'}
+    {checkout !== null ? <CheckoutPullRequestDialog threadId={thread.id} threads={state.host.threads} initialReference={checkout} command={command} worktreeAllowed={!locked} localMovesToCheckout={!locked && thread.worktree?.mode !== 'shared'}
       onClose={() => { setCheckout(null); branchTrigger.current?.focus() }} onDone={text => { setCheckout(null); setNotice({ text, tone: 'status' }); branchTrigger.current?.focus() }} /> : null}
   </div>
 }

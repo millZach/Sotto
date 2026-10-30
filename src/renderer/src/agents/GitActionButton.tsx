@@ -8,7 +8,7 @@ import type { GitStackedAction } from '../../../shared/gitActions'
 import type { GitChangedFile, GitChangedFiles } from '../../../shared/gitChangedFiles'
 import type { GitStatus } from '../../../shared/gitStatus'
 import { Button } from '../components/Button'
-import { Isolated, own, plainText } from '../components/isolated'
+import { Isolated, plainText } from '../components/isolated'
 import { useDialogFocus } from '../components/useDialogFocus'
 import { useOptionalApp } from '../state/AppContext'
 import { useOwlFeature } from '../state/owlFeature'
@@ -21,6 +21,7 @@ import type { AgentConnection } from './AgentContext'
 import { PaneMenu, type PaneMenuItem } from './PaneMenu'
 import { commitLabel, commits, defaultBranchQuestion, fileCount, lineCounts, menuEntries, needsDefaultBranchConfirmation, noticeFor, quickAction, stackedFor, STATUS_LETTER, type GitNotice, type GitQuickKind } from './gitActionButton.logic'
 import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
+import { holdingThread, openHolderWords } from './checkoutHold'
 import { shownCount } from '../state/interfaceNumbers'
 import './gitActionButton.css'
 
@@ -165,7 +166,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
   const menuGroups = [bringMenu, menu].filter(group => group.length > 0)
 
   // The thread holding the folder, when another thread does: its notice offers to open it (#1823).
-  const holder = local?.holder !== undefined && local.holder !== thread.id ? allThreads.find(item => item.id === local.holder) : undefined
+  const holder = holdingThread(allThreads, local?.holder, thread.id)
   const notice = shown ? <GitActionNotice notice={shown} running={running}
     holder={holder ? { title: holder.title, open: () => { void command({ type: 'select-thread', threadId: holder.id }) } } : undefined}
     onDismiss={() => { if (local) setLocal(null); else if (progress) setDismissed(progress.actionId) }}
@@ -232,7 +233,7 @@ function GitActionNotice({ notice, running, holder, onDismiss, onRun }: {
     <p className="tt-paragraph"><strong>{notice.title}</strong>{notice.detail ? <> {notice.detail}</> : null}</p>
     {cta?.kind === 'open_pr' ? <Button variant="secondary" onClick={() => void window.sotto?.openExternalLink?.(cta.url)}>{cta.label}</Button> : null}
     {cta?.kind === 'run_action' ? <Button variant="secondary" disabled={running} onClick={() => onRun(cta.action)}>{cta.label}</Button> : null}
-    {holder ? <Button variant="secondary" onClick={holder.open}><Isolated text={t({ message: `Open ${ph({ title: own(holder.title) })}`, comment: '{title} is the title of the thread that holds this folder. Opens that thread.' })} /></Button> : null}
+    {holder ? <Button variant="secondary" className="git-action-notice__open" onClick={holder.open}><Isolated text={shownWords(openHolderWords(holder.title))} /></Button> : null}
     {notice.tone !== 'progress' ? <button type="button" className="git-action-notice__dismiss tt-focusable" aria-label={t`Dismiss the Git notice`} title={t`Dismiss the Git notice`} onClick={onDismiss}><X size={14} aria-hidden="true" /></button> : null}
   </div>
 }
