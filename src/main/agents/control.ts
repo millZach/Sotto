@@ -911,13 +911,13 @@ export class AgentControl {
     return this.commandShell(parsed, client, decisionId)
   }
   /** User-requested setup only, never exposed as a tool. */
-  commandForWatcherRoom(command: Extract<AgentCommand, { type: 'create-project' | 'create-thread' | 'configure-thread' }>, connectionGuard?: () => void): Promise<AgentState> {
+  commandForWatcherRoom(command: Extract<AgentCommand, { type: 'create-project' | 'create-thread' | 'configure-thread' }>, connectionGuard?: () => void, keptSpeed?: true): Promise<AgentState> {
     if (!this.watcherHooks) throw new Error('Watcher is unavailable.')
     // `userSetup` lets a command pass a prompt set aside, so only setup may carry it, whatever a caller's type allows.
     if (!['create-project', 'create-thread', 'configure-thread'].includes(command.type)) throw new Error('Watcher\'s room only sets up Watcher. Nothing was sent.')
     const parsed = agentCommandSchema.parse(command)
     const guard = () => { connectionGuard?.(); if (this.disposed) throw new Error('Sotto is stopping.') }
-    guard(); this.watcherOrigins.set(parsed, { guard, userSetup: true })
+    guard(); this.watcherOrigins.set(parsed, { guard, userSetup: true, ...(parsed.type === 'create-thread' && keptSpeed ? { keptSpeed: true as const } : {}) })
     return this.admitCommandShell(parsed)
   }
   /**
@@ -5188,7 +5188,7 @@ export class AgentControl {
         // A create-thread that leaves an option unset takes Settings → Threads' new-thread defaults instead,
         // a caller's explicit choice still wins.
         const defaults = this.newThreadOptionDefaults(command, model)
-        validateThreadOptions(this.state.host, { modelId: command.modelId, ...defaults })
+        validateThreadOptions(this.state.host, { modelId: command.modelId, ...defaults }, undefined, origin?.keptSpeed)
         const validatePermission = (): void => { origin?.guard(); if (!origin?.operationId) this.guardThreadPermission(client, defaults, model) }
         validatePermission()
         // The window may already be showing this thread under an ID it minted; main adopts it so nothing has to move.
@@ -5213,6 +5213,7 @@ export class AgentControl {
           ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}),
           ...(command.existingWorktreePath ? { existingWorktreePath: command.existingWorktreePath } : {}),
           ...(command.check ? { check: true as const } : {}),
+          ...(origin?.keptSpeed ? { keptSpeed: true as const } : {}),
           ...defaults }, turn, validatePermission, undefined, client, undefined, origin)
         if (!origin && selectionRevision === this.selectionRevision) {
           this.state.activeThreadId = threadId; this.state.activeProjectId = command.projectId

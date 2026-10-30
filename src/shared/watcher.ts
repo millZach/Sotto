@@ -488,6 +488,7 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   localTakeovers: z.array(z.object({ target: watcherThreadTargetSchema, at: time, lastRequestId: z.uuid().nullable(),
     userDrafts: z.array(z.object({ draftId: z.uuid(), digest: z.string().regex(/^[a-f0-9]{64}$/u), messageId: id.optional() }).strict()).optional() }).strict()).optional(),
   remoteMasters: z.array(z.object({ clientId: id, masterHostId: z.uuid(), creationOperationId: z.uuid(), createdAt: time }).strict()).max(1_000).optional(),
+  // The speed is the validated choice, kept even when the creation model runs at Standard (ADR-0143).
   creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), speed: agentSpeedSchema.nullable().optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
     replaces: watcherThreadTargetSchema.nullable() }).strict().nullable(),
   history: z.array(watcherIdentitySchema).max(1_000), requests: z.array(watcherRequestSchema).max(10_000),

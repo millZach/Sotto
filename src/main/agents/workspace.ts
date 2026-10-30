@@ -5314,7 +5314,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (command.type === 'create-thread') {
       if (this.threadById(command.threadId) !== undefined) throw new Error('This thread already exists. Select it instead of creating it again.')
       if (!this.state.snapshot.projects.some(project => project.id === command.projectId)) throw new Error('Choose an available project.')
-      validateThreadOptions(this.state.snapshot, command)
+      validateThreadOptions(this.state.snapshot, command, undefined, command.keptSpeed)
       const model = resolveModel(this.state.snapshot.models, command.modelId)!
       if (commandProfile) {
         await this.launchProfiles.assertCreationBinding(command.threadId, command.projectId, model.providerId)

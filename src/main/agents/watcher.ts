@@ -2739,11 +2739,15 @@ export class WatcherService implements WatcherControlHooks {
       if (!parsed.success) refuse('INVALID_INPUT', 'Choose supported Watcher settings.')
       input = parsed.data
       if (this.closed) refuse('NOT_CURRENT_WATCHER', this.recoveryNotice ?? 'Watcher is stopping. Reopen Sotto.')
-      const model = resolveModel(this.options.control.watcherSnapshot().models, input.modelId)
+      const models = this.options.control.watcherSnapshot().models
+      const model = resolveModel(models, input.modelId)
       if (!model?.ready || model.providerId !== input.provider) refuse('PROVIDER_UNAVAILABLE', 'Connect the chosen provider and choose one of its ready models.', true)
       if (input.reasoningEffort && !model.reasoningEfforts?.includes(input.reasoningEffort)) refuse('INVALID_INPUT', 'Choose an effort this model offers.')
-      if (input.speed && fitSpeed(input.speed, model) !== input.speed) refuse('INVALID_INPUT', 'Choose a speed this model offers.')
       const record = this.view(), previous = record.current
+      const speedSource = input.speedSourceModelId === undefined ? undefined : resolveModel(models, input.speedSourceModelId)
+      if (input.speedSourceModelId !== undefined && (!input.speed || !speedSource?.ready || fitSpeed(input.speed, speedSource) !== input.speed
+        || previous && !record.creation)) refuse('INVALID_INPUT', 'Choose a speed this model offers.')
+      if (input.speed && fitSpeed(input.speed, model) !== input.speed && input.speedSourceModelId === undefined) refuse('INVALID_INPUT', 'Choose a speed this model offers.')
       if (record.creation) {
         if (record.creation.identity.provider !== input.provider || record.creation.modelId !== input.modelId
           || record.creation.reasoningEffort !== input.reasoningEffort || (record.creation.speed ?? null) !== (input.speed ?? null)) refuse('TARGET_CHANGED', 'Watcher creation is pending with another choice. Reopen that choice before changing it.')
@@ -3031,7 +3035,7 @@ export class WatcherService implements WatcherControlHooks {
       const runtimeMode = this.creationPermission(model)
       const result = await this.options.control.commandForWatcherRoom({ type: 'create-thread', threadId: identity.target.threadId,
         projectId: identity.projectId, title: 'Watcher', modelId: model.id, speed: input.speed ?? null, runtimeMode, workingCopy: 'shared',
-        ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}) })
+        ...(input.reasoningEffort ? { reasoningEffort: input.reasoningEffort } : {}) }, undefined, true)
       // The provider's own refusal says what to do, as a Muse that cannot take Watcher's tools does (ADR-0079).
       if (result.error) refuse('PROVIDER_UNAVAILABLE', result.error.length <= 2_000 ? result.error : 'Watcher’s thread could not be created. Check its provider and reopen Watcher.', true)
       thread = result.host.threads.find(item => item.id === identity.target.threadId)

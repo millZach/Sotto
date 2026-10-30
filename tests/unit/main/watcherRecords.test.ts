@@ -8,11 +8,49 @@ import { emptyWatcherRecord, watcherRecordSchema } from '../../../src/shared/wat
 import { watcherRecordFixture } from '../../fixtures/watcher'
 import { agentControlFixture } from '../../fixtures/agentControlFixture'
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
+import { WatcherService } from '../../../src/main/agents/watcher'
+import { WatcherToolServer } from '../../../src/main/agents/watcherTools'
+import { speedRuns } from '../../../src/main/agents/threadOptions'
 
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => { for (const close of cleanup.splice(0).reverse()) await close() })
 
 describe('watcher records and workspace migration', () => {
+  it('keeps a first-entry speed from its source model without allowing unsupported explicit selections', async () => {
+    const workspace = await workspaceFixture(undefined, { history: false })
+    const source = workspace.adapters.codex.state.models[0]!
+    source.speeds = [{ id: 'ultrafast', name: 'Ultrafast' }]
+    workspace.adapters.codex.state.models.push({ ...source, id: 'plain', name: 'Plain', speeds: [] })
+    const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' },
+      control: { historyEnabled: () => false, watcherEnabled: true } })
+    const watcher = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false })
+    const tools = new WatcherToolServer(watcher)
+    workspace.host.useWatcherTools(tools)
+    cleanup.push(async () => { watcher.close(); await tools.close(); await f.dispose(); await workspace.stop(); await workspace.remove() })
+    await f.control.start()
+    await f.control.commandShell({ type: 'connect', provider: 'codex' })
+    const models = f.control.watcherSnapshot().models
+    const fast = models.find(model => model.providerId === 'codex' && model.speeds?.length)!.id
+    const plain = models.find(model => model.providerId === 'codex' && model.speeds?.length === 0)!.id
+    const choice = { provider: 'codex' as const, modelId: plain, speed: 'ultrafast' as const }
+    for (const input of [choice, { ...choice, speedSourceModelId: plain }, { ...choice, speedSourceModelId: 'missing' }]) {
+      expect(await watcher.open(input)).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+      expect(f.control.watcherRecord().current).toBeNull()
+    }
+    const opened = await watcher.open({ ...choice, speedSourceModelId: fast })
+    expect(opened, JSON.stringify(opened)).toMatchObject({ status: 'ok' })
+    const threadId = watcher.state().current!.target.threadId
+    expect(watcher.state().currentOptions).toMatchObject({ modelId: plain, speed: 'ultrafast' })
+    expect(speedRuns(f.control.watcherSnapshot(), plain, 'ultrafast')).toBeNull()
+    expect(f.control.watcherRecord().creation).toBeNull()
+    // Source metadata cannot turn an explicit reconfiguration into a saved choice.
+    expect(await watcher.open({ ...choice, speedSourceModelId: fast })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+    expect(await f.control.commandShell({ type: 'configure-thread', threadId, speed: 'ultrafast' })).toMatchObject({ error: 'This model does not offer ultrafast speed.' })
+    expect(await watcher.open({ provider: 'codex', modelId: fast })).toMatchObject({ status: 'ok' })
+    expect(watcher.state().currentOptions).toMatchObject({ modelId: fast, speed: 'ultrafast' })
+    expect(speedRuns(f.control.watcherSnapshot(), fast, 'ultrafast')).toBe('ultrafast')
+  })
+
   it('defaults only a missing record and never repairs conflicting identities or unknown prose silently', () => {
     expect(migrateWatcherRecord(undefined)).toEqual(emptyWatcherRecord())
     expect(migrateWatcherRecord(watcherRecordFixture())).toEqual(watcherRecordFixture())

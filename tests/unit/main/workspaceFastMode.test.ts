@@ -2,7 +2,8 @@
 // Fast mode on a thread that has not sent yet (ADR-0143): the composer's toggle saves the choice on Sotto's own record,
 // a change of model keeps it, it outlives a restart, and the first send creates the provider's thread with it.
 import { describe, expect, it } from 'vitest'
-import type { AgentSpeed } from '../../../src/shared/agents'
+import { agentCommandSchema, type AgentSpeed } from '../../../src/shared/agents'
+import { speedRuns } from '../../../src/main/agents/threadOptions'
 
 import { workspaceFixture } from '../../fixtures/workspaceFixture'
 import { cleanup, fixture, send } from '../../fixtures/workspaceTestFixture'
@@ -27,6 +28,22 @@ async function draft(f: Fixture, speed?: AgentSpeed): Promise<{ fast: string; pl
 const shown = (f: { host: Fixture['host'] }) => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'local')!
 
 describe('fast mode before the first send', () => {
+  it('keeps a validated Watcher speed on creation without allowing an unsupported public selection', async () => {
+    const f = await fixture()
+    const { fast, plain } = await draft(f)
+    const projectId = shown(f).projectId
+    const command = { type: 'create-thread' as const, commandId: 'create-kept', threadId: 'kept', projectId, title: 'Watcher', modelId: plain, speed: 'ultrafast' as const }
+    await expect(f.host.execute(command)).rejects.toThrow('This model does not offer ultrafast speed.')
+    expect(agentCommandSchema.safeParse({ type: 'create-thread', projectId, title: 'Watcher', modelId: plain, speed: 'ultrafast', keptSpeed: true }).success).toBe(false)
+    await f.host.execute({ ...command, keptSpeed: true })
+    const kept = () => f.host.workspaceSnapshot().threads.find(thread => thread.id === 'kept')!
+    expect(kept()).toMatchObject({ modelId: plain, speed: 'ultrafast', nativeSessionStarted: false })
+    expect(speedRuns(f.host.workspaceSnapshot(), plain, kept().speed)).toBeNull()
+    await f.host.execute({ type: 'configure-thread', commandId: 'restore-kept', threadId: 'kept', modelId: fast })
+    expect(kept()).toMatchObject({ modelId: fast, speed: 'ultrafast' })
+    expect(speedRuns(f.host.workspaceSnapshot(), fast, kept().speed)).toBe('ultrafast')
+  })
+
   it('persists ultra fast before first send and clears it through the legacy toggle', async () => {
     const f = await fixture()
     await draft(f, 'ultrafast')

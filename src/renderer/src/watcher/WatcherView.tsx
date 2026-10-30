@@ -143,6 +143,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const roleSpeed = roleStart !== null && model !== undefined && model.id === roleStart.modelId
     ? savedRoleSpeed !== undefined ? savedRoleSpeed : roleStart.speed : null
   const [pickedSpeed, setPickedSpeed] = useState<AgentSpeed | null | undefined>(undefined)
+  const [speedSourceModelId, setSpeedSourceModelId] = useState<string | undefined>(undefined)
   const selectedSpeed = pickedSpeed === undefined ? roleSpeed : pickedSpeed
   const speed = fitSpeed(selectedSpeed, model)
   const reasoning = effort ?? roleEffort ?? model?.defaultReasoningEffort ?? ''
@@ -163,6 +164,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const changeSpeed = (value: string): void => {
     const chosen = value === SPEED_STANDARD ? null : value as AgentSpeed
     setPickedSpeed(chosen)
+    setSpeedSourceModelId(chosen ? model?.id : undefined)
     if (model !== undefined) saveOrchestrating?.(model.id, reasoning || null, models, chosen)
   }
   const start = async (): Promise<void> => {
@@ -170,7 +172,9 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
     firstMessage.update({ phase: 'starting', error: null })
     // Main's answer is kept by the window, not here: the room may be gone by the time it comes.
     try {
-      const refusal = room.settle(await room.open({ provider, modelId: model.id, ...(reasoning ? { reasoningEffort: reasoning } : {}), ...(speed || pickedSpeed !== undefined ? { speed } : {}) }))
+      const keptSpeed = selectedSpeed && selectedSpeed !== speed && speedSourceModelId !== undefined
+      const refusal = room.settle(await room.open({ provider, modelId: model.id, ...(reasoning ? { reasoningEffort: reasoning } : {}),
+        ...(speed || pickedSpeed !== undefined ? { speed: keptSpeed ? selectedSpeed : speed } : {}), ...(keptSpeed ? { speedSourceModelId } : {}) }))
       firstMessage.update(refusal === null ? { phase: 'started' } : { phase: 'writing', error: refusal })
     } catch {
       firstMessage.update({ phase: 'writing', error: t`Sotto could not start Watcher. Nothing was started, and your message is still here. Try again.` })
@@ -216,6 +220,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
                 <ModelPicker models={models} modelId={model.id} disabled={starting} onChange={id => {
                   firstMessage.update({ modelId: id, effort: null })
                   setPickedSpeed(selectedSpeed)
+                  setSpeedSourceModelId(source => source ?? (speed ? model.id : undefined))
                   saveOrchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, models, selectedSpeed)
                 }} />
                 {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={provider ?? undefined} value={speedValue} disabled={starting} pending={false} onChange={changeSpeed} />}

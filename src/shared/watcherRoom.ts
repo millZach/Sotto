@@ -130,7 +130,9 @@ export const watcherRoomStateSchema = z.object({
     requests: z.array(watcherRequestSchema), receiptPlacements: z.array(z.object({ operationId: z.uuid(), placement: workerPlacementReceiptSchema }).strict()).optional() }).strict().optional(),
 }).strict()
 export const watcherOpenRequestSchema = z.object({ provider: watcherProviderSchema,
-  modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).optional(), speed: agentSpeedSchema.nullable().optional() }).strict()
+  modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).optional(), speed: agentSpeedSchema.nullable().optional(),
+  // First entry may keep a speed chosen before switching models. Main checks that the source model offered it.
+  speedSourceModelId: z.string().min(1).max(512).optional() }).strict()
 export const watcherRoomResultSchema = z.union([
   z.object({ status: z.literal('ok'), state: watcherRoomStateSchema }).strict(), watcherRefusalSchema,
 ])
