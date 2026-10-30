@@ -124,18 +124,17 @@ const emit = message => process.stdout.write(JSON.stringify(message) + '\n')
 const notify = (method, params) => emit({ method, params })
 const record = message => appendFileSync(file('requests.jsonl'), JSON.stringify(message) + '\n')
 /** The keys a role file may hold in Sotto's use, and the sandbox values Codex 0.162.1 knows (codex-roles check). */
-const ROLE_KEYS = new Set(['model', 'model_reasoning_effort', 'sandbox_mode', 'approval_policy', 'approvals_reviewer', 'developer_instructions'])
+const ROLE_KEYS = new Set(['model', 'service_tier', 'model_reasoning_effort', 'sandbox_mode', 'approval_policy', 'approvals_reviewer', 'developer_instructions'])
 const SANDBOXES = new Set(['read-only', 'workspace-write', 'danger-full-access'])
 /**
  * The service tier a request leaves a thread on, as codex-cli 0.164.0 answered it: a named tier, `default` for null, and
- * `fallback` when none is named. `priority` (Fast) is taken only for a model `model/list` lists it for, and only the two
- * tiers are known; anything else is a violation.
+ * `fallback` when none is named. A faster tier is taken only for a model `model/list` lists it for.
  */
 function serviceTierFrom(method, model, requested, fallback) {
   if (requested === undefined) return fallback
   if (requested === null || requested === 'default') return 'default'
   const listed = (read('script.json', {}).models ?? []).find(entry => entry.model === model)
-  if (requested !== 'priority' || !listed?.serviceTiers?.some(tier => tier.id === 'priority')) {
+  if (!listed?.serviceTiers?.some(tier => tier.id === requested)) {
     appendFileSync(file('violations.jsonl'), JSON.stringify({ method, reason: `Service tier ${requested} is not offered for ${model}.` }) + '\n')
   }
   return requested

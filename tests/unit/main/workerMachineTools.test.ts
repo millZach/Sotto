@@ -5,6 +5,7 @@ import { DELEGATION_TOOL_DEFINITIONS, delegationToolDefinitions } from '../../..
 import { WATCHER_MACHINES_PROMPT, WATCHER_ROLES_PROMPT, WATCHER_SYSTEM_PROMPT, watcherSystemPrompt } from '../../../src/main/agents/watcherPrompt'
 import { WATCHER_TOOL_DEFINITIONS, watcherToolDefinitions } from '../../../src/main/agents/watcherTools'
 import { LIST_MACHINES_TOOL } from '../../../src/shared/delegation'
+import { WorkerAdmission } from '../../../src/main/agents/workerAdmission'
 
 type Schema = { properties: Record<string, { description?: string; enum?: string[] }>; required?: string[] }
 const tool = (definitions: readonly { name: string; description?: string; inputSchema: unknown }[], name: string) => {
@@ -13,6 +14,47 @@ const tool = (definitions: readonly { name: string; description?: string; inputS
 }
 
 describe('Watcher with Work across machines', () => {
+  it('reserves machine slots atomically, counts running reservations once and queues excess starts in order', async () => {
+    const running = new Set<string>(), started: string[] = []
+    const admission = new WorkerAdmission({ ceiling: () => 2, working: () => running })
+    expect(admission.join('one', 'here', () => started.push('one'))).toBe('working')
+    admission.bind('one', 'thread-one'); running.add('thread-one')
+    expect(admission.join('two', 'here', () => started.push('two'))).toBe('working')
+    expect(admission.join('three', 'here', () => started.push('three'))).toBe('queued')
+    expect(admission.join('four', 'here', () => started.push('four'))).toBe('queued')
+    expect(admission.view('four')).toEqual({ state: 'queued', ahead: 1, waiting: 2 })
+    expect(admission.join('three', 'here', () => started.push('duplicate'))).toBe('queued')
+    running.delete('thread-one'); admission.leave('one')
+    await Promise.resolve()
+    expect(started).toEqual(['three'])
+    expect(admission.reserved('here')).toBe(2)
+    expect(admission.waiting('here')).toBe(1)
+    admission.leave('two'); await Promise.resolve()
+    expect(started).toEqual(['three', 'four'])
+    admission.close()
+  })
+
+  it('cancels queued angles, admits independently on another machine and never interrupts work when the ceiling falls', async () => {
+    let ceiling = 1
+    const running = new Set(['outside']), started: string[] = []
+    const admission = new WorkerAdmission({ ceiling: () => ceiling, working: machine => machine === 'here' ? running : new Set() })
+    expect(admission.join('cancelled', 'here', () => started.push('cancelled'))).toBe('queued')
+    expect(admission.join('next', 'here', () => started.push('next'))).toBe('queued')
+    expect(admission.join('remote', 'away', () => started.push('remote'))).toBe('working')
+    admission.leave('cancelled')
+    running.clear(); admission.refresh('here'); await Promise.resolve()
+    expect(started).toEqual(['next'])
+    ceiling = 2
+    expect(admission.join('more', 'here', () => started.push('more'))).toBe('working')
+    ceiling = 1; admission.refresh()
+    expect(admission.reserved('here')).toBe(2)
+    expect(admission.join('waiting', 'here', () => started.push('waiting'))).toBe('queued')
+    admission.leave('more'); await Promise.resolve()
+    expect(started).toEqual(['next'])
+    admission.leave('next'); admission.close(); await Promise.resolve()
+    expect(started).toEqual(['next'])
+  })
+
   it('offers no machine or system while it is off, as before', () => {
     for (const roles of [false, true]) {
       const start = tool(watcherToolDefinitions(roles), 'start_thread')!

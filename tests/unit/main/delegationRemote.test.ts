@@ -158,6 +158,25 @@ describe('a desktop\'s own authority on the host (review)', () => {
 })
 
 describe('a delegation on a paired host, on the desktop', () => {
+  it('keeps a remote swarm receipt and qualifies every angle while mapping its lead to the local delegation', async () => {
+    const swarm = { swarmId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', lead: { thread: 'lead', delegation: THERE },
+      receipts: [{ index: 0, state: 'working', thread: 'angle-1', delegation: RETRY }, { index: 1, state: 'queued', thread: 'angle-2' }],
+      queued: 1, done: 0, failed: 0, role: { usual: 1, upTo: 4 }, costShape: { angles: 2, lead: 1, effort: 'high' }, note: 'One angle waits.' }
+    const mac = host(ask => ({ status: 'ok', delegation: { id: THERE, thread: 'lead', outcome: 'background' },
+      ...swarm, ...(ask.type === 'read' ? { queued: 0, done: 2 } : {}) }))
+    const remote = new DesktopRemoteDelegations(await folder(), { machineName: () => 'the Mac' })
+    remote.useHosts(hosts([mac.connection]).source)
+    const answer = await remote.start('parent-1', 'code-review', macPlacement, { ...askOf, input: { ...askOf.input, count: 2, prompts: ['One', 'Two'] } })
+    const localId = (answer.delegation as { id: string }).id
+    expect(answer).toMatchObject({ swarmId: swarm.swarmId, queued: 1, lead: { thread: `host:${MAC}:lead`, delegation: localId },
+      receipts: [{ thread: `host:${MAC}:angle-1`, delegation: RETRY }, { thread: `host:${MAC}:angle-2`, state: 'queued' }] })
+    expect(mac.asked[0]).toMatchObject({ input: { count: 2, prompts: ['One', 'Two'] } })
+    expect(remote.holds('parent-2', swarm.swarmId)).toBe(false)
+    expect(await remote.read('parent-1', swarm.swarmId)).toMatchObject({ queued: 0, done: 2, lead: { delegation: localId },
+      receipts: [{ thread: `host:${MAC}:angle-1` }, { thread: `host:${MAC}:angle-2` }] })
+    remote.close()
+  })
+
   it('starts it there, names it by its own ID and the thread by the host\'s key, and tells the thread what moved', async () => {
     const mac = host(ask => ask.type === 'delegate' ? { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'working' }, warning: 'Busy there.' }
       : { status: 'ok', delegation: { id: THERE, thread: 'child-mac', outcome: 'answered', reply: { from: 'delegated-thread', thread: 'child-mac', messageId: 'r1', text: 'Done.', truncated: false } } })

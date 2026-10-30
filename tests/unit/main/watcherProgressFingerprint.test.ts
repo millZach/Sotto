@@ -71,6 +71,30 @@ describe('Watcher progress fingerprint (#1331)', () => {
     expect(hashed(() => expect(watcherProgressFingerprint(copy)).toBe(first))).toBe(0)
   })
 
+  it('observes swarm changes without an extra serialization or a changed digest for ordinary threads', () => {
+    const item = thread(immutableActivities(history(2)))
+    const ordinary = reference(item)
+    watcherProgressFingerprint(item)
+    const stringify = vi.spyOn(JSON, 'stringify')
+    expect(watcherProgressFingerprint(item)).toBe(ordinary)
+    expect(stringify).toHaveBeenCalledTimes(7)
+
+    item.swarm = { id: 'swarm', leadThreadId: item.id, count: 2, done: 0, failed: 0, queued: 1 }
+    stringify.mockClear()
+    let withSwarm = ''
+    expect(hashed(() => { withSwarm = watcherProgressFingerprint(item) })).toBe(1)
+    expect(withSwarm).not.toBe(ordinary)
+    expect(stringify.mock.calls.filter(([value]) => value === item.swarm)).toHaveLength(1)
+    expect(hashed(() => watcherProgressFingerprint(item))).toBe(0)
+    item.swarm.done = 1
+    expect(hashed(() => expect(watcherProgressFingerprint(item)).not.toBe(withSwarm))).toBe(1)
+
+    delete item.swarm
+    stringify.mockClear()
+    expect(watcherProgressFingerprint(item)).toBe(ordinary)
+    expect(stringify).toHaveBeenCalledTimes(7)
+  })
+
   it('is worked out again, and differs, exactly when something that counts changed', () => {
     const records = history(500), item = thread(immutableActivities(records))
     let last = watcherProgressFingerprint(item)

@@ -1,5 +1,5 @@
-import React, { useId, useMemo, type ReactNode } from 'react'
-import { Laptop, MapPin, Server } from 'lucide-react'
+import React, { useEffect, useId, useMemo, useState, type ReactNode } from 'react'
+import { Gauge, Laptop, MapPin, Server } from 'lucide-react'
 import type { HostsBridge } from '../../../../shared/hosts'
 import { savedMachines, useHostsState } from '../../state/hostsState'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
@@ -7,6 +7,8 @@ import type { WatcherMachine } from '../../../../shared/watcherRoom'
 import { workerMachineHostId, type WorkerMachineSetting } from '../../../../shared/workerMachine'
 import { THIS_COMPUTER, WORKING_THREADS_QUIET_MAX, workingThreadsByMachine } from '../../../../shared/workingThreads'
 import { useOptionalAgents } from '../../agents/AgentContext'
+import { Field } from '../../components/Field'
+import { useOwlFeature } from '../../state/owlFeature'
 import { loadUnknown, systemWords } from '../../../../shared/machineLine'
 import { listWords, memoryWords, percentWords } from '../../watcher/machineWords'
 import { plural, t } from '@lingui/core/macro'
@@ -19,9 +21,10 @@ import './workerMachine.css'
 
 /** The settings section the room's panels open: this group, on the Watcher page. */
 export const WORKER_MACHINE_SECTION = 'settings-new-workers'
-/** The group's note, in the interface language. */
-export function workerMachineNote(): string {
-  return t`Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request. Nothing is refused for how many are working; above ten on a machine, Sotto warns.`
+/** The group's note, in the interface language. With Worker swarms on, a machine's ceiling holds new workers back instead of a warning. */
+export function workerMachineNote(swarms = false): string {
+  return swarms ? t`Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request.`
+    : t`Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request. Nothing is refused for how many are working; above ten on a machine, Sotto warns.`
 }
 
 interface Choice {
@@ -86,6 +89,7 @@ export function WorkerMachineSettings({ settings, onUpdateSettings, onOpenHosts,
 }): ReactNode {
   const { t } = useLingui()
   const name = useId()
+  const swarms = useOwlFeature('worker-swarms')
   const hostsState = useHostsState(bridge)
   const room = useWatcherRoom()
   // Opening this group is asking for the machines' numbers, so they are read once now, and never on a timer.
@@ -120,7 +124,7 @@ export function WorkerMachineSettings({ settings, onUpdateSettings, onOpenHosts,
     ...remotes,
   ]
   const isChosen = (choice: Choice): boolean => choice.value === chosen || (choice.kind === 'local' && chosenHost !== undefined && chosenHost === localId)
-  return <SettingsGroup id={WORKER_MACHINE_SECTION} setting="new-workers" title={t`Where new workers start`} icon={MapPin} note={workerMachineNote()} rows={false}>
+  return <SettingsGroup id={WORKER_MACHINE_SECTION} setting="new-workers" title={t`Where new workers start`} icon={MapPin} note={workerMachineNote(swarms)} rows={false}>
     {remotes.length === 0 ? <p className="worker-machine__alone tt-paragraph"><Trans>Only this computer is connected, so new workers start here. Add a machine in{' '}
       <button type="button" className="worker-machine__link tt-focusable" onClick={onOpenHosts}>Hosts & phones</button>.</Trans></p> : null}
     <fieldset className="worker-machine__choices">
@@ -148,5 +152,71 @@ export function WorkerMachineSettings({ settings, onUpdateSettings, onOpenHosts,
         </label>
       })}
     </fieldset>
+  </SettingsGroup>
+}
+
+/**
+ * One machine's ceiling as a whole number, saved when it is left or Enter is pressed. Empty clears a machine's own
+ * number, which shows the page's as its placeholder; anything but a whole number from 1 says so and changes nothing.
+ */
+function CeilingField({ label, description, value, placeholder, onSave }: {
+  readonly label: string; readonly description: string
+  /** The number saved, or null where the machine follows the page's own. */
+  readonly value: number | null
+  /** Shown while empty: the number in force instead. Only an override has one, and only it may be left empty. */
+  readonly placeholder?: string
+  readonly onSave: (value: number | null) => Promise<boolean>
+}): ReactNode {
+  const { t } = useLingui()
+  const shown = value === null ? '' : String(value)
+  const [draft, setDraft] = useState(shown)
+  const [error, setError] = useState(false)
+  useEffect(() => setDraft(shown), [shown])
+  const commit = (): void => {
+    const text = draft.trim()
+    const next = text === '' && placeholder !== undefined ? null : /^\d+$/u.test(text) && Number.isSafeInteger(Number(text)) && Number(text) >= 1 ? Number(text) : undefined
+    setError(next === undefined)
+    if (next === undefined || next === value) return
+    void onSave(next).then(saved => { if (!saved) setDraft(shown) })
+  }
+  return <Field label={label} description={description}
+    {...error ? { error: placeholder === undefined ? t`Enter a whole number, 1 or more. Nothing was changed.` : t`Enter a whole number, 1 or more, or leave it empty. Nothing was changed.` } : {}}>
+    <input className="tt-input" inputMode="numeric" value={draft} placeholder={placeholder} autoComplete="off"
+      onChange={event => { setDraft(event.currentTarget.value); setError(false) }} onBlur={commit} onKeyDown={event => { if (event.key === 'Enter') commit() }} />
+  </Field>
+}
+
+/**
+ * Settings, under Watcher: how many threads may work at once on a machine before new workers wait their turn (the
+ * **ceiling**, part of the Owl feature Worker swarms; SettingsView asks before it exists). One number, ten by default,
+ * holds on every machine; with Work across machines on, each paired machine may ask for its own, which that machine
+ * holds to its own ceiling too. Your own sends always start, and lowering it stops nothing already running.
+ */
+export function WorkerCapacitySettings({ settings, onUpdateSettings, hosts: bridge = window.sotto?.hosts }: {
+  readonly settings: AppSettings
+  readonly onUpdateSettings: (patch: SettingsPatch) => Promise<boolean>
+  readonly hosts?: HostsBridge | undefined
+}): ReactNode {
+  const { t } = useLingui()
+  const crossMachine = useOwlFeature('cross-machine-work')
+  const hostsState = useHostsState(crossMachine ? bridge : undefined)
+  const machines = crossMachine ? savedMachines(hostsState) ?? [] : []
+  const ceiling = settings.workerCeiling
+  const overrides = settings.workerMachineCeilings
+  const saveOverride = (hostId: string, value: number | null): Promise<boolean> => {
+    const next = { ...overrides }
+    if (value === null) delete next[hostId]
+    else next[hostId] = value
+    return onUpdateSettings({ workerMachineCeilings: next })
+  }
+  // The group stands for the setting in Find a setting, so a machine's own number is found with it.
+  return <SettingsGroup title={t`Worker capacity`} icon={Gauge} setting="worker-ceiling"
+    note={t`Past this many threads working on a machine, new workers and delegated threads wait their turn and start in order. Your own threads count toward it and always start. Lowering it stops nothing that is running.`}>
+    <CeilingField label={t`Most working at once`}
+      description={machines.length ? t`Threads with a turn running on each machine, unless you set its own number below.` : t`Threads with a turn running here, on this computer.`}
+      value={ceiling} onSave={value => value === null ? Promise.resolve(false) : onUpdateSettings({ workerCeiling: value })} />
+    {machines.map(machine => <CeilingField key={machine.hostId} label={machine.name} placeholder={String(ceiling)}
+      description={t`Leave it empty to use ${ceiling}. The machine keeps to its own number when that is lower.`}
+      value={overrides[machine.hostId] ?? null} onSave={value => saveOverride(machine.hostId, value)} />)}
   </SettingsGroup>
 }

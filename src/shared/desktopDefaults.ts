@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, type AgentRuntimeMode } from './agents'
 import { parseWorkerRoleChoices, WORKER_ROLE_IDS, type WorkerRoleChoices } from './workerRoles'
+import { workerCeilingSchema } from './workerMachine'
 
 /**
  * Desktop defaults (CONTEXT.md, #1310, Owl `cross-machine-work`): the user's new-thread default and worker roles as the
@@ -16,15 +17,19 @@ import { parseWorkerRoleChoices, WORKER_ROLE_IDS, type WorkerRoleChoices } from 
 export const desktopDefaultsSchema = z.object({
   newThreadRuntimeMode: agentRuntimeModeSchema.nullable(),
   workerRoles: z.record(z.string().max(64), z.unknown()).refine(rows => Object.keys(rows).length <= WORKER_ROLE_IDS.length * 4).optional(),
+  /** Sent only when both sides have worker-swarms, after resolving this host's override. */
+  workerCeiling: workerCeilingSchema.optional(),
 }).strict()
 export type DesktopDefaultsInput = z.infer<typeof desktopDefaultsSchema>
 export interface DesktopDefaults {
   readonly newThreadRuntimeMode: AgentRuntimeMode | null
   readonly workerRoles?: WorkerRoleChoices
+  readonly workerCeiling?: number
 }
 /** The defaults as a host keeps them: lenient roles, and only what it knows. */
 export function readDesktopDefaults(input: DesktopDefaultsInput): DesktopDefaults {
-  return { newThreadRuntimeMode: input.newThreadRuntimeMode, ...(input.workerRoles ? { workerRoles: parseWorkerRoleChoices(input.workerRoles) } : {}) }
+  return { newThreadRuntimeMode: input.newThreadRuntimeMode, ...(input.workerRoles ? { workerRoles: parseWorkerRoleChoices(input.workerRoles) } : {}),
+    ...input.workerCeiling === undefined ? {} : { workerCeiling: input.workerCeiling } }
 }
 /** What a host answers when it has kept a desktop's defaults: when it took them. */
 export const desktopDefaultsReceiptSchema = z.object({ receivedAt: z.iso.datetime() })

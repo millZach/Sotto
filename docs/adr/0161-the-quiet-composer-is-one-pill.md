@@ -4,7 +4,7 @@
 
 Accepted October 29, 2026, by Drake Morey's choices. An Owl feature (`quiet-composer`, ADR-0072); Drake chose Owl. **Number provisional until merge** (docs/agents/domain.md).
 
-Amends, in a thread's composer and only while the feature is on: [ADR-0110](0110-containers-are-filled-cards-and-no-control-is-a-pill.md) (the composer is a pill, and its send is a round disc where decision 2 keeps round for status), [ADR-0125](0125-the-composer-slims-while-the-user-reads-back.md) (the slim line's Stop, decision 1), [ADR-0113](0113-the-composer-controls-are-text-buttons.md) decisions 1 to 3 (its options and actions), and [ADR-0153](0153-the-composers-buttons-are-its-keys.md) decisions 1, 2, 4 and 5 (its buttons, their key caps and the light round Stop). Answers, continuations, Watcher's composer and every composer with the feature off keep those decisions as they are.
+Amends, in a thread's composer and only while the feature is on: [ADR-0110](0110-containers-are-filled-cards-and-no-control-is-a-pill.md) (the composer is a pill, and its send is a round disc where decision 2 keeps round for status), [ADR-0125](0125-the-composer-slims-while-the-user-reads-back.md) (the slim line's Stop, decision 1), [ADR-0113](0113-the-composer-controls-are-text-buttons.md) decisions 1 to 3 (its options and actions), and [ADR-0153](0153-the-composers-buttons-are-its-keys.md) decisions 1, 2, 4 and 5 (its buttons, their key caps and the light round Stop). Answers, continuations, Watcher's handover and every composer with the feature off keep those decisions as they are. Amended October 29 after Drake tried Owl `.5`: Watcher shares the pill, speed moves into still effort dots, and the branch controls move to the pane header.
 
 ## Context
 
@@ -21,31 +21,31 @@ His notes along the way set the brief: the composer was "still too crowded"; eff
 
 ## Decision
 
-**1. One pill.** With the feature on, a thread's composer is one rounded line: attach, the prompt, the provider's mark and the model's name, the effort dots, the permissions shield and one round disc. It grows with the prompt. Review comments, quotes and attachments keep their rows above and below the line.
+**1. One pill.** With the feature on, a thread's or Watcher's composer is one rounded line: attach, the prompt, the model and effort, the permissions shield and one round disc. The provider's mark and model's name sit above the effort dots, whose left edge aligns with the name rather than the mark. This block is vertically centred without making the pill taller; the shield, New Watcher, Stop and Send stay on the pill's axis. Dot size and spacing are unchanged. It grows with the prompt. Review comments, quotes and attachments keep their rows above and below the line.
 
-**2. Effort is dots.** One dot per level the model offers, lit up to the level set, in the provider's colour drawn toward the text so it reads on either theme. The dots are one slider: a press on a dot or an arrow key sets that level through the same save as the effort card, with the same refusals and notices. The effort card, with its Ultrathink button and its note about ultracode, is not reached from the pill.
+**2. Effort is dots.** One dot per level the model offers, lit up to the level set, in the provider's colour drawn toward the text so it reads on either theme. The dots are one slider, 20% larger and closer together than the first pill. A press on another dot or an arrow key sets that level through the same save as the effort card, with the same refusals and notices. Each dot's tooltip names its effort level and current speed; the slider announces both. A press on the selected dot cycles the speeds the model offers, as do Option+Up and Option+Down with the dots focused (Alt on Windows and Linux). Standard uses the provider's colour, Fast uses purple, and Ultra fast uses a brighter purple with a soft glow. A model without speed tiers stays in its provider's colour. Orchestrating and Watcher's own effort and speed remain one choice in two places (ADR-0091 decision 5). The effort card, with its Ultrathink button and its note about ultracode, is not reached from the pill.
 
 **3. The draft may suggest more effort; only a press changes it.** The window reads the draft's own words: a long draft, a draft of more than one line, and words such as refactor, debug, why or investigate. When they suggest a level above the one set (or, on the provider's default, above the model's own default), those dots ring and a short note says so for a moment ("Suggests High. Press a ringed dot to use it."). Nothing leaves the computer for it, and nothing changes until the user presses a dot (ADR-0004). Nothing is suggested while a turn runs.
 
-**4. Permissions are their shield.** The permissions control shows only its shield at every width, the words kept for assistive technology and its tooltip, as ADR-0113 decision 2 already does in a narrow pane. Full access, the one mode that asks about nothing, fills the shield in the warning colour.
+**4. Permissions are their shield.** The permissions control shows only its shield at every width, the words kept for assistive technology and its tooltip, as ADR-0113 decision 2 already does in a narrow pane. Ask first is a muted outline, Automatic and Allow edits use the accent outline, and Full access, the one mode that asks about nothing, is gold with a slow moving sheen. Its tooltip names the selected mode. The sheen stops with reduced motion.
 
 **5. One disc.** It is Send. While a turn runs and something is typed it is Queue, with a glyph of an arrow into a tray. While Steer's modifier is held (Cmd on a Mac, Ctrl elsewhere) it is Steer, in the accent. Enter, Cmd+Enter (Ctrl+Enter) and Cmd+Shift+S (Ctrl+Shift+S) do what they did; the keys live in each control's name, tooltip and `aria-keyshortcuts` instead of key caps.
 
-**6. The dots stop the turn.** While a turn runs, the lit dots bounce, one after another, and that is the sign that it runs, in place of the light round Stop. The dots then hold Stop: pointing at them or reaching them with Tab shows a Stop button over them, named as Stop is named today. Where a provider cannot change a started thread and so draws no dots, and in the slim composer, which hides them, Stop keeps a small button of its own in the pill.
+**6. Stop stays small and visible.** The dots stay still while a turn runs. A small Stop sits after the permissions shield and before Send, named as Stop is named today, leaving the effort tooltips reachable. Watcher's New Watcher control sits between the shield and Stop: shield, New Watcher, Stop when shown, then Send. It keeps its name and tooltip as a glyph in the quiet pill. Stop stays reachable where a provider cannot change a started thread and in the slim composer, which hides the dots.
 
-**7. Less in the line.** Fast mode keeps its bolt. Watch on send is not drawn; Watch stays in the pane header. The model's chevron and the key caps go. The branch toolbar and the queue stay where they are, under and over the pill.
+**7. Less in the line.** Speed lives in the effort dots, with no bolt (ADR-0143). The provider's descriptions stay in their tooltips. Watch on send is not drawn; Watch stays in the pane header. The model's chevron and the key caps go. The delegation Stop note and the machine/workspace/branch line under the pill go. The existing workspace and branch controls stay reachable in the pane header beside the folder (ADR-0027); their behavior and shortcuts are unchanged. The queue stays above the pill.
 
-**8. Motion.** The suggested rings pulse and the dots bounce on `transform` alone, pause while the window is hidden, and stop with reduced motion, the system's or Sotto's own.
+**8. Motion.** Dots and their suggestion rings have no animation at rest or while running. Only the Full access shield's slow gold sheen moves; it stops with reduced motion, the system's or Sotto's own.
 
 ## Consequences
 
-- Stable is unchanged; on Owl the Threads composer is the pill.
+- Stable is unchanged; on Owl the Threads and Watcher composers use the same pill, with controls each can change.
 - The effort card's Ultrathink button and ultracode note are not offered from the pill. Typing "ultrathink" still asks Claude Code for it.
-- Stop has no visible button while a turn runs until the dots are pointed at or reached; Cmd+Shift+S and the queue's own controls are unchanged.
+- Stop stays visible while a turn runs; Cmd+Shift+S and the queue's own controls are unchanged.
 - The suggestion is a guess read from words. It never changes a setting, and it never asks for less than the user chose.
 
 ## Considered options
 
 - **Every other prototype round.** Drake turned down the twenty structural directions, the island, and the twenty minimal directions as too alike and too crowded. Within the final rounds he chose C over the still, ghosted, reasoned and on-Send suggestions, and P4 over a disc with Steer and Stop stepping out, a Next/Now switch, words while a turn runs, and one disc with a key card.
-- **Moving the branch toolbar into the pane header.** Left for its own change: it is ADR-0027's, and it carries the run target, the workspace and the pull request as well as the branch.
+- **Keeping the branch toolbar under the pill.** The first build kept it; after trying Owl `.5`, Drake asked to remove that line and keep its workspace and branch choices in the pane header.
 - **Hiding attach.** Drake's pick drew no attach. It stays, as the first thing in the pill, so attaching any file (ADR-0131) keeps a control a keyboard and a pointer can reach.

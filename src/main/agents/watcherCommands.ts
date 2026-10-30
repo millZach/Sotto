@@ -5,8 +5,6 @@ import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
 import type { HostThreadsChange } from './control'
-import type { WatcherRecord } from '../../shared/watcher'
-import type { WatcherArchived } from './watcherArchive'
 
 /** Main-owned capability. This object never crosses IPC or a socket. */
 export interface WatcherCommandOrigin {
@@ -16,6 +14,8 @@ export interface WatcherCommandOrigin {
   readonly userAnswer?: true
   /** Setup the user asked for in Watcher's room, such as its model or permissions; it is not automation either. */
   readonly userSetup?: true
+  /** Watcher creation keeps a speed already validated or saved by its room. */
+  readonly keptSpeed?: true
   readonly guard: () => void
 }
 export type WatcherCommand = Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'queue-followup' | 'steer' | 'interrupt' | 'settle-thread' }>
@@ -62,8 +62,6 @@ export interface WatcherControlHooks {
   stateNote?(): string | undefined
   /** Keep local history changed: Watcher's kept words follow it at once (#1189). */
   privacyChanged?(): Promise<void>
-  /** Puts archived work back in a record being changed, each paired desktop's request as the Watcher that owns it now has it (#1759). */
-  returnArchived?(record: WatcherRecord, work: WatcherArchived): void
   restoreCheckpoint?(read: CheckpointObservation): void
   checkpointObserved?(read: CheckpointObservation): void
 }

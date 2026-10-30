@@ -7,7 +7,8 @@ import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './in
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { DEFAULT_WATCHER_SCENE, WATCHER_SCENES, type WatcherScene } from './watcherScene'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
-import { DEFAULT_WORKER_MACHINE, workerMachineSettingSchema, type WorkerMachineSetting } from './workerMachine'
+import { DEFAULT_WORKER_CEILING, DEFAULT_WORKER_MACHINE, workerCeilingSchema, workerMachineCeilingsSchema, workerMachineSettingSchema,
+  type WorkerMachineCeilings, type WorkerMachineSetting } from './workerMachine'
 import { parseThreadShortcutChoices, threadShortcutChoicesSchema, type ThreadShortcutChoices } from './threadShortcuts'
 import { ownCleanupChoiceSchema, type OwnCleanupChoice } from './ownServerCleanup'
 import {
@@ -186,6 +187,9 @@ export interface AppSettings {
    * its defaults over the providers connected now (`workerRoles.ts`), so nothing here changes when a provider comes or goes.
    */
   workerRoles: WorkerRoleChoices
+  /** Concurrent worker starts per machine while worker-swarms is on; saved whole on stable. */
+  workerCeiling: number
+  workerMachineCeilings: WorkerMachineCeilings
   /**
    * Settle finished threads, under Settings, Watcher: on by default, part of Watcher's Owl feature. On, Watcher settles a
    * thread it watches once its work is done and Watcher has heard so, then stops watching it. Read live.
@@ -448,6 +452,8 @@ const fieldSchemas = {
   resumeThreadsAfterRestart: z.boolean(),
   restartStoppedThreads: z.boolean(),
   workerRoles: workerRoleChoicesSchema,
+  workerCeiling: workerCeilingSchema,
+  workerMachineCeilings: workerMachineCeilingsSchema,
   watcherSettlesFinishedThreads: z.boolean(),
   newWorkerMachine: workerMachineSettingSchema,
   watcherCompactAtTokens: z.number().int().min(WATCHER_COMPACT_AT.min).max(WATCHER_COMPACT_AT.max).multipleOf(WATCHER_COMPACT_AT.step),
@@ -562,6 +568,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   resumeThreadsAfterRestart: true,
   restartStoppedThreads: true,
   workerRoles: {},
+  workerCeiling: DEFAULT_WORKER_CEILING,
+  workerMachineCeilings: {},
   watcherSettlesFinishedThreads: true,
   newWorkerMachine: DEFAULT_WORKER_MACHINE,
   watcherCompactAtTokens: WATCHER_COMPACT_AT.default,
@@ -744,6 +752,8 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     restartStoppedThreads: parseField(persisted, 'restartStoppedThreads', defaults),
     // Row by row, so one damaged row costs only that row.
     workerRoles: persisted.workerRoles === undefined ? { ...defaults.workerRoles } : parseWorkerRoleChoices(persisted.workerRoles),
+    workerCeiling: parseField(persisted, 'workerCeiling', defaults),
+    workerMachineCeilings: parseField(persisted, 'workerMachineCeilings', defaults),
     watcherSettlesFinishedThreads: parseField(persisted, 'watcherSettlesFinishedThreads', defaults),
     newWorkerMachine: parseField(persisted, 'newWorkerMachine', defaults),
     watcherCompactAtTokens: parseField(persisted, 'watcherCompactAtTokens', defaults),

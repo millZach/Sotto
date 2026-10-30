@@ -1,11 +1,12 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, handoverCountsSchema, providerIdSchema } from './agents'
+import { agentModelSpeedSchema, agentRuntimeModeSchema, agentSpeedSchema, handoverCountsSchema, providerIdSchema } from './agents'
 import { worktreeMadeFromSchema } from './bringChangesBack'
 import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
 import { hostFactsSchema, hostLoadSchema, hostOsSchema } from './hostFacts'
 import { workerKindSchema } from './workerRoles'
 import { newWorkersStartSchema, workerPlacementReceiptSchema, workerSystemSchema } from './workerMachine'
 import { branchStartReceiptSchema } from './branchMoves'
+import { swarmCountSchema, swarmReceiptSchema, SWARM_ANGLES_MAX } from './workerSwarms'
 export { watcherOwnChangeSchema, type WatcherOwnChange } from './watcherChanges'
 
 export const WATCHER_PROMPT_BYTES_MAX = 32 * 1_024
@@ -48,7 +49,9 @@ const workingCopy = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('new-worktree') }).strict(),
   z.object({ kind: z.literal('existing-worktree'), choiceId: id }).strict(),
 ])
-const choices = z.object({ modelId: entityId, reasoningEffort: z.string().min(1).max(64).nullable(), permission, workingCopy, baseRefChoiceId: id.optional() }).strict()
+const choices = z.object({ modelId: entityId, reasoningEffort: z.string().min(1).max(64).nullable(), speed: agentSpeedSchema.nullable().optional(), permission, workingCopy, baseRefChoiceId: id.optional() }).strict()
+const workerQueue = z.object({ ahead: counter, waiting: counter, note: shortText.min(1) }).strict()
+const workerChoices = choices.pick({ modelId: true, reasoningEffort: true, speed: true, permission: true })
 
 export const WATCHER_REFUSAL_CODES = [
   'NOT_CURRENT_WATCHER', 'REQUEST_NOT_ACTIVE', 'UNKNOWN_TARGET', 'HOST_DISCONNECTED', 'HOST_FEATURE_UNAVAILABLE',
@@ -273,14 +276,15 @@ export type WatcherStaleNote = z.infer<typeof watcherStaleNoteSchema>
 const machineFacts = hostFactsSchema.extend({ os: hostOsSchema.strict() }).strict()
 const machineShape = { hostId: id, name: z.string().min(1).max(200), thisComputer: z.boolean(), connected: z.boolean(),
   factsState: z.enum(['reported', 'unknown', 'not-connected']), facts: machineFacts.nullable(), note: shortText.min(1).optional(),
-  runningThreads: counter.nullable() }
+  runningThreads: counter.nullable(), workerCeiling: counter.positive().nullable().optional(), workerQueued: counter.nullable().optional() }
 // Live load (#1311) is part of the Owl feature Work across machines: present on every machine while it is on, on none while off.
 // Headroom (#1694) goes with it: about how many more workers the machine can take now (`machineHeadroom`).
+export const watcherWorkerCountsSchema = z.array(z.object({ work: workerKindSchema, usual: counter.positive(), upTo: counter.positive() }).strict())
 const machine = z.object({ ...machineShape, load: hostLoadSchema.strict().nullable().optional(), placedNotStarted: counter.nullable().optional(),
   memoryState: z.enum(['short', 'enough', 'unknown']).optional(), cpuState: z.enum(['busy', 'not-busy', 'unknown']).optional(),
   headroom: counter.nullable().optional() }).strict()
 /** list_machines as Watcher is offered it with Work across machines off: no live load, as before #1311. */
-export const watcherMachinesWithoutLoadOutput = result({ machines: z.array(z.object(machineShape).strict()).max(WATCHER_MACHINES_MAX), observedAt: time })
+export const watcherMachinesWithoutLoadOutput = result({ machines: z.array(z.object(machineShape).strict()).max(WATCHER_MACHINES_MAX), observedAt: time, workers: watcherWorkerCountsSchema.optional() })
 
 /** Only these named operations can cross the future sotto_threads boundary. None serve tools yet. */
 export const watcherToolSchemas = {
@@ -326,6 +330,8 @@ export const watcherToolSchemas = {
     // goes too as a snapshot (#1033, #1312): main takes both off before admission and puts `fromMove` in their place, the
     // move it makes just before the start, which is all a paired host is sent. Watcher never names a move itself.
     input: z.object({ ...mutation, project: watcherProjectTargetSchema, machine: z.uuid().optional(), os: workerSystemSchema.optional(), role: workerKindSchema.optional(), modelId: entityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
+      count: swarmCountSchema.optional(), prompts: z.array(prompt).max(SWARM_ANGLES_MAX).optional(),
+      speed: agentSpeedSchema.nullable().optional().describe('Fast or ultrafast, one the worker model offers; null means standard speed.'),
       permission: permission.optional(), workingCopy, baseRefChoiceId: id.optional(), title: z.string().min(1).max(WATCHER_TITLE_MAX), firstPrompt: prompt,
       fromThread: watcherThreadTargetSchema.optional(), testRun: z.boolean().optional(), fromMove: z.uuid().optional(),
       // With `fromMove`, the thread whose branch it was, which the worker's worktree keeps so its commits can be brought back
@@ -339,11 +345,13 @@ export const watcherToolSchemas = {
       // checkout behind (#1690). Sotto's, like the move: main sets it when it places the start, and Watcher never names it.
       fromOrigin: z.string().min(1).max(255).optional() }).strict(),
     output: result({ ...receiptResult, target: watcherThreadTargetSchema, effectiveChoices: choices, creationReceiptId: id, firstPromptReceiptId: id,
+      swarm: swarmReceiptSchema.optional(),
+      queue: workerQueue.optional(),
       // Where a start from a thread's branch began and from which branch, with what a test run's snapshot carried (#1033).
       // In memory only, as `placement` is.
       startedFrom: branchStartReceiptSchema.optional(),
       // What the start's worker role gave it and what the request named in its place. In memory only: a retry after a restart has none.
-      role: z.object({ id: workerKindSchema, named: z.array(z.enum(['model', 'effort', 'permission'])).max(3), note: shortText.min(1) }).strict().optional(),
+      role: z.object({ id: workerKindSchema, named: z.array(z.enum(['model', 'effort', 'speed', 'permission'])).max(4), speed: agentSpeedSchema.nullable().optional(), note: shortText.min(1) }).strict().optional(),
       // Where the start was placed (#1032): the machine, whether it is somewhere other than where new workers start, and
       // why when Sotto placed it itself. In memory only, as `role` is; never from a paired host, which places nothing.
       placement: workerPlacementReceiptSchema.optional(),
@@ -382,6 +390,7 @@ export const watcherToolSchemas = {
     output: result({ projects: z.array(z.object({ target: watcherProjectTargetSchema, title: z.string().max(512), displayRoot: z.string().max(4_096),
       // Left out unless includeModels: every project on a computer offers the same models.
       workers: z.array(z.object({ provider: providerIdSchema, modelId: entityId, reasoningEfforts: z.array(z.string().max(64)).max(20),
+        speeds: z.array(agentModelSpeedSchema).max(2).optional(),
         defaultPermission: permission.nullable(), permissionComparable: z.boolean() }).strict()).max(100).optional(),
       controlAvailable: z.boolean(), readsAvailable: z.boolean(), readOnlyProfileAvailable: z.boolean(), freshness }).strict()).max(100), ...page }),
   },
@@ -404,7 +413,7 @@ export const watcherToolSchemas = {
   list_machines: {
     input: z.object({}).strict(),
     // `newWorkersStart` says where a start that names no machine goes (#1032), only while Work across machines is on.
-    output: result({ machines: z.array(machine).max(WATCHER_MACHINES_MAX), observedAt: time, newWorkersStart: newWorkersStartSchema.optional() }),
+    output: result({ machines: z.array(machine).max(WATCHER_MACHINES_MAX), observedAt: time, newWorkersStart: newWorkersStartSchema.optional(), workers: watcherWorkerCountsSchema.optional() }),
   },
   list_working_copies: {
     input: z.object({ project: watcherProjectTargetSchema, ...paging }).strict(),
@@ -416,6 +425,7 @@ export const watcherToolSchemas = {
     input: z.object({ operationId: z.uuid() }).strict(),
     // The outcome fields are optional: stop and settle carry none, and an older owning host sends none.
     output: boundedRead(result({ ...receiptResult, action: z.enum(['start', 'send', 'stop', 'settle']), state: operationState,
+      swarm: swarmReceiptSchema.optional(), queue: workerQueue.optional(), effectiveChoices: workerChoices.optional(),
       outcome: watcherOutcomeSchema.optional(), reference: watcherOutcomeReferenceSchema.optional(), outcomeNote: shortText.min(1).optional(),
       // The worker's own words for the turn that answered, never Sotto's evidence.
       reply: z.object({ from: z.literal('worker'), messageId: id, text: utf8(WATCHER_REPLY_BYTES_MAX), createdAt: time, truncated: z.boolean() }).strict().optional(),
@@ -486,7 +496,8 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   localTakeovers: z.array(z.object({ target: watcherThreadTargetSchema, at: time, lastRequestId: z.uuid().nullable(),
     userDrafts: z.array(z.object({ draftId: z.uuid(), digest: z.string().regex(/^[a-f0-9]{64}$/u), messageId: id.optional() }).strict()).optional() }).strict()).optional(),
   remoteMasters: z.array(z.object({ clientId: id, masterHostId: z.uuid(), creationOperationId: z.uuid(), createdAt: time }).strict()).max(1_000).optional(),
-  creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
+  // The speed is the validated choice, kept even when the creation model runs at Standard (ADR-0143).
+  creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), speed: agentSpeedSchema.nullable().optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
     replaces: watcherThreadTargetSchema.nullable() }).strict().nullable(),
   history: z.array(watcherIdentitySchema).max(1_000), requests: z.array(watcherRequestSchema).max(10_000),
   operations: z.array(watcherOperationSchema).max(40_000),

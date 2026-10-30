@@ -9,7 +9,7 @@ import { DesktopDefaultsStore, hostDelegationMachines, KEPT_DESKTOP_DEFAULTS, TH
 import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsTarget } from '../../../src/main/hosts/desktopDefaults'
 import { delegationToolDefinitions } from '../../../src/main/agents/delegationTools'
 import { HostFactsSource } from '../../../src/main/agents/hostFacts'
-import { createAgentRuntime } from '../../../src/main/agents/runtime'
+import { createAgentRuntime, type AgentRuntimeOptions } from '../../../src/main/agents/runtime'
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { roleStartNote } from '../../../src/shared/workerRoles'
 import { desktopDefaultsSchema } from '../../../src/shared/desktopDefaults'
@@ -27,6 +27,21 @@ afterEach(async () => {
 const folder = async () => { const root = await mkdtemp(join(tmpdir(), 'sotto-host-delegation-unit-')); roots.push(root); return root }
 
 describe('the desktop defaults a host keeps', () => {
+  it('keeps the last eligible desktop’s machine ceiling across restart and while stable sends no swarm fields', async () => {
+    const root = await folder(), store = new DesktopDefaultsStore(root)
+    await store.load()
+    expect(store.workerCeiling(() => true)).toBe(10)
+    await store.record('desktop-a', { newThreadRuntimeMode: 'auto', workerCeiling: 3 })
+    await store.record('desktop-b', { newThreadRuntimeMode: 'auto', workerCeiling: 6 })
+    expect(store.workerCeiling(() => true)).toBe(6)
+    expect(store.workerCeiling(clientId => clientId === 'desktop-a')).toBe(3)
+    expect(store.workerCeiling(() => false)).toBe(10)
+    await store.record('desktop-a', { newThreadRuntimeMode: 'approval-required' })
+    const again = new DesktopDefaultsStore(root); await again.load()
+    expect(again.workerCeiling(() => true)).toBe(3)
+    expect(again.ceiling(() => true)).toEqual({ mode: 'approval-required' })
+  })
+
   it('holds every start to Ask for approval until a desktop tells it, and then only as far as that desktop may answer', async () => {
     const root = await folder(), store = new DesktopDefaultsStore(root)
     await store.load()
@@ -174,6 +189,21 @@ describe('where a thread on a host may delegate', () => {
 })
 
 describe('the desktop\'s push of its defaults', () => {
+  it('sends each capable host its own ceiling and keeps the older wire shape for other hosts', async () => {
+    const forgeId = '22222222-2222-4222-8222-222222222222'
+    const sent: DesktopDefaultsInput[][] = [[], []]
+    const connections: DesktopDefaultsTarget[] = sent.map((items, index) => ({ hostId: index ? 'older' : forgeId, kind: 'remote',
+      service: { supportsHostDelegation: true, supportsWorkerSwarms: index === 0, desktopDefaults: async defaults => {
+        items.push(defaults); return { receivedAt: new Date().toISOString() }
+      } } }))
+    const push = new DesktopDefaultsPush({ connections: () => connections })
+    push.update('auto', undefined, { workerCeiling: 5, workerMachineCeilings: { [forgeId]: 2 } })
+    await push.settled()
+    expect(sent[0]).toEqual([{ newThreadRuntimeMode: 'auto', workerCeiling: 2 }])
+    expect(sent[1]).toEqual([{ newThreadRuntimeMode: 'auto' }])
+    push.close()
+  })
+
   const target = (hostId: string, supports: boolean, sent: DesktopDefaultsInput[], fail = false): DesktopDefaultsTarget => ({ hostId, kind: 'remote',
     service: { supportsHostDelegation: supports, desktopDefaults: async defaults => {
       await new Promise(resolve => setTimeout(resolve, 5)); sent.push(defaults)
@@ -291,23 +321,55 @@ describe('the desktop\'s push of its defaults', () => {
 })
 
 describe('the Owl answer', () => {
-  async function runtime(crossMachineEnabled: boolean) {
+  async function runtime(crossMachineEnabled: boolean, workerSwarmsEnabled = false,
+    hostDelegation: NonNullable<AgentRuntimeOptions['hostDelegation']> = { roles: true, counts: () => true }) {
     const root = await folder()
     const credentials = await testCredentials(root, { encryption: { isEncryptionAvailable: () => false, encryptString: () => { throw new Error('No test key') }, decryptString: () => '' } })
     return createAgentRuntime({ directory: root, credentials, settings: () => DEFAULT_SETTINGS, writingSettings: async () => DEFAULT_SETTINGS,
       historyEnabled: () => true, openExternal: async () => undefined, host: new E2EAgentHost(), reasoner: e2eAgentReasoner, watcherEnabled: true, delegationEnabled: true,
-      runsAs: 'headless-host', crossMachineEnabled, hostDelegation: { roles: true, counts: () => false } })
+      runsAs: 'headless-host', crossMachineEnabled, workerSwarmsEnabled, hostDelegation })
   }
   it('builds delegation and keeps desktop defaults on a host only where Work across machines is on', async () => {
     const stable = await runtime(false)
     try {
       expect(stable.delegation).toBeUndefined()
       expect(stable.hostService.supportsHostDelegation).toBe(false)
+      expect(stable.hostService.supportsWorkerSwarms).toBe(false)
+      expect(await stable.hostService.hostFacts!()).not.toHaveProperty('workerCeiling')
     } finally { await stable.close() }
     const owl = await runtime(true)
     try {
       expect(owl.delegation).toBeDefined()
       expect(owl.hostService.supportsHostDelegation).toBe(true)
+    } finally { await owl.close() }
+  })
+
+  it('shares the host admission ceiling with Watcher and delegation and applies a desktop limit below its own', async () => {
+    const owl = await runtime(true, true)
+    try {
+      expect(owl.hostService.supportsWorkerSwarms).toBe(true)
+      expect(await owl.hostService.hostFacts!()).toMatchObject({ workerCeiling: 10, workerQueued: 0 })
+      const client = { clientId: 'desktop-a', user: 'Paired desktop', transport: 'socket' as const }
+      await owl.hostService.desktopDefaults!({ newThreadRuntimeMode: 'auto', workerCeiling: 4 }, client)
+      expect(owl.workerAdmission?.ceiling('this-computer')).toBe(4)
+      expect(await owl.hostService.hostFacts!()).toMatchObject({ workerCeiling: 4, workerQueued: 0 })
+      await owl.hostService.desktopDefaults!({ newThreadRuntimeMode: 'auto', workerCeiling: 20 }, client)
+      expect(await owl.hostService.hostFacts!()).toMatchObject({ workerCeiling: 10 })
+    } finally { await owl.close() }
+  })
+
+  it('applies a paired recorded desktop’s capacity limit without an answers grant, before any worker starts', async () => {
+    let paired = true, recorded = true
+    const owl = await runtime(true, true, { roles: true, counts: () => false, capacityEligible: () => paired && recorded })
+    try {
+      await owl.hostService.desktopDefaults!({ newThreadRuntimeMode: 'full-access', workerCeiling: 2 },
+        { clientId: 'desktop-a', user: 'Paired desktop', transport: 'socket' })
+      expect(owl.workerAdmission?.ceiling('this-computer')).toBe(2)
+      expect(await owl.hostService.hostFacts!()).toMatchObject({ workerCeiling: 2, workerQueued: 0 })
+      recorded = false
+      expect(owl.workerAdmission?.ceiling('this-computer')).toBe(10)
+      recorded = true; paired = false
+      expect(owl.workerAdmission?.ceiling('this-computer')).toBe(10)
     } finally { await owl.close() }
   })
 })

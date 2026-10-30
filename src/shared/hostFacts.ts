@@ -178,6 +178,9 @@ export const hostMachineReportSchema = z.object({
    * it the desktop adds every start it has on its way there.
    */
   placedThreadIds: z.array(z.string().min(1).max(200)).max(HOST_RUNNING_THREADS_MAX).optional().catch(undefined),
+  /** Authoritative admission limits from a host advertising worker-swarms; absent on stable and older hosts. */
+  workerCeiling: z.number().int().positive().max(Number.MAX_SAFE_INTEGER).optional().catch(undefined),
+  workerQueued: threadCount.optional().catch(undefined),
 })
 export type HostMachineReport = z.infer<typeof hostMachineReportSchema>
 

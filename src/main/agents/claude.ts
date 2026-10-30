@@ -20,7 +20,7 @@ import { homedir } from 'node:os'
 import { isAbsolute, join, resolve } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { z } from 'zod'
-import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, agentSpeedSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ClaudeOriginJournal } from './claudeOriginJournal'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadForkRequest, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
@@ -48,7 +48,7 @@ import { authoredClaudeUser, claudeDigest, claudeReadBack, ClaudeSessionLog, cla
 import { carriesAttachedFiles, deliverAttachments } from './attachedFiles'
 import { claudeAnswer, claudeDenial, claudePending, type ClaudePending } from './claudeRequests'
 import { unreadableRequest } from './nativeRequests'
-import { effortAfterChange, fastModeRuns, validatePromptAttachments, validateThreadOptions } from './threadOptions'
+import { effortAfterChange, speedAfterChange, speedRuns, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { ClaudeActivity } from './claudeActivity'
 import { ClaudeSubagentModels } from './claudeSubagentModels'
 import { ClaudeMonitoring } from './claudeMonitoring'
@@ -85,8 +85,8 @@ const aliasSchema = z.object({ sessionId: z.string().uuid(), historyEpoch: z.str
   compaction: compactionSchema.optional(), compactStartedAt: z.string().datetime().optional(), compactInputIds: z.array(z.string().uuid()).optional(), resumeCompactionDismissed: z.boolean().optional(),
   forkMessageIds: z.record(z.string(), z.string()).optional(), lineage: z.array(z.object({ sessionId: z.string().uuid(), boundary: z.string().uuid().optional() })).optional(), rollbackPending: z.object({ sourceSessionId: z.string().uuid(), sourceDigest: z.string(), boundary: z.string().uuid().optional(), targetSessionId: z.string().uuid().optional() }).optional(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), transcriptCursor: cursorSchema.optional(), origins: z.array(originSchema).default([]), answeredRequestIds: z.array(z.string()).default([]),
-  /** The user turned fast mode on for this thread (ADR-0143); kept on a model without it, which then runs at normal speed. */
-  fastMode: z.boolean().optional(),
+  /** The user's speed choice (ADR-0143), kept on a model without it; fastMode is the legacy alias for fast alone. */
+  speed: agentSpeedSchema.nullable().optional(), fastMode: z.boolean().optional(),
   /** The journal generation of the whole write that wrote this record; see `ClaudeOriginJournal`. A record written before there was one has none. */
   journalGeneration: z.number().int().nonnegative().optional() }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A personal chat cannot have a project; a project thread requires one.')
 type Alias = z.infer<typeof aliasSchema>
@@ -145,8 +145,8 @@ export type ClaudeAdapterEvent = 'claude-mcp-config-cleanup-failed' | 'claude-or
  * What an alias, or the thread that shows it, says the settings are; one saved without a mode runs approval-required.
  * Fast mode runs only where the user chose it and `models`, the catalog, says the model offers it.
  */
-const settingsOf = (value: Pick<Alias, 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'fastMode'>, models: AgentHostSnapshot['models']): ClaudeSettings =>
-  ({ modelId: value.modelId, reasoningEffort: value.reasoningEffort, runtimeMode: value.runtimeMode ?? 'approval-required', fastMode: fastModeRuns({ models }, value.modelId, value.fastMode) })
+const settingsOf = (value: Pick<Alias, 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'speed' | 'fastMode'>, models: AgentHostSnapshot['models']): ClaudeSettings =>
+  ({ modelId: value.modelId, reasoningEffort: value.reasoningEffort, runtimeMode: value.runtimeMode ?? 'approval-required', fastMode: speedRuns({ models }, value.modelId, speedAfterChange(value)) === 'fast' })
 const sameSettings = (first: ClaudeSettings, second: ClaudeSettings): boolean =>
   first.modelId === second.modelId && first.reasoningEffort === second.reasoningEffort && first.runtimeMode === second.runtimeMode && first.fastMode === second.fastMode
 /**
@@ -767,7 +767,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const generation = this.generation
     const profile = await this.watcherProfile(id)
     this.checkProfileContinuation(id, generation)
-    if (profile || this.aliases[id]?.kind === 'personal') return null
+    if ((profile && prompt.purpose !== 'next-prompt') || this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
     if (!this.state.connected || !alias || !this.executable) return null
     const effort = sideWritingEffort(this.state.models, alias.modelId)
@@ -990,7 +990,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     if (command.type === 'create-thread') {
       if (this.aliases[command.threadId]) return { accepted: true }
-      validateThreadOptions(this.state, command)
+      validateThreadOptions(this.state, command, undefined, /* keptSpeed */ true)
       const project = this.state.projects.find(candidate => candidate.id === command.projectId)
       if (!project) throw new Error('Choose an existing project.')
       const cwd = await existingWorkingDirectory(command.workingDirectory ?? project.path)
@@ -998,8 +998,10 @@ export class ClaudeStreamJsonHost implements AgentHost {
       // A spare started for exactly this thread hands it the session ID its CLI already runs (#769); any other spare goes.
       const spare = this.spareFor(command.threadId, cwd, settingsOf(command, this.state.models))
       if (!spare) void this.discardSpare(command.threadId)
+      const speed = speedAfterChange(command)
       const alias: Alias = { sessionId: spare?.sessionId ?? randomUUID(), projectId: project.id, cwd, title: command.title, modelId: command.modelId,
-        reasoningEffort: command.reasoningEffort, ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}), ...(command.fastMode ? { fastMode: true } : {}),
+        reasoningEffort: command.reasoningEffort, ...(command.runtimeMode ? { runtimeMode: command.runtimeMode } : {}),
+        ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}),
         createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [] }
       this.aliases[command.threadId] = alias
       try { await this.persist() } catch (error) { delete this.aliases[command.threadId]; throw error }
@@ -1212,7 +1214,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const before = settingsOf(alias, this.state.models)
     const modelId = command.modelId ?? before.modelId
     const after: ClaudeSettings = { modelId, reasoningEffort: effortAfterChange(this.state, command, before.reasoningEffort),
-      runtimeMode: command.runtimeMode ?? before.runtimeMode, fastMode: fastModeRuns(this.state, modelId, command.fastMode ?? alias.fastMode) }
+      runtimeMode: command.runtimeMode ?? before.runtimeMode, fastMode: speedRuns(this.state, modelId, speedAfterChange(command, speedAfterChange(alias))) === 'fast' }
     watcherGuard?.()
     this.dispatching.add(id); this.configuring.add(id)
     if (watcherGuard) this.configurationGuards.set(id, () => { watcherGuard(); this.configurationLaunches.add(id) })
@@ -1232,8 +1234,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
         const fastRefused = live.stopped === 'fastMode'
         // A model change that carried the kept choice onto a model with fast mode, refused only that last step, goes
         // through: the thread is on the new model at normal speed, and its choice is off, as after a refused toggle.
-        if (fastRefused && after.fastMode && command.fastMode === undefined && command.runtimeMode === undefined) {
-          return await this.settleSettings(id, { ...command, fastMode: false }, live.reached)
+        if (fastRefused && after.fastMode && command.speed === undefined && command.fastMode === undefined && command.runtimeMode === undefined) {
+          return await this.settleSettings(id, { ...command, speed: null, fastMode: false }, live.reached)
         }
         // A restart would end the background work, so the refusal below stands. Whatever the CLI already took
         // is put back first, because the refusal says nothing was changed. When the CLI will not take it back
@@ -1287,14 +1289,20 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private recordSettings(alias: Alias, command: ConfigureCommand, settings: ClaudeSettings): void {
     alias.modelId = settings.modelId; alias.reasoningEffort = settings.reasoningEffort
     if (command.runtimeMode) alias.runtimeMode = settings.runtimeMode
-    // The choice, not what runs: a model without fast mode keeps it for the next model that has it.
-    if (command.fastMode === true) alias.fastMode = true
-    else if (command.fastMode === false) delete alias.fastMode
+    // The choice, not what runs: a model without this speed keeps it for the next model that has it.
+    const speed = speedAfterChange(command, speedAfterChange(alias))
+    if (speed) alias.speed = speed
+    else delete alias.speed
+    if (speed === 'fast') alias.fastMode = true
+    else delete alias.fastMode
   }
   private showSettings(id: string): void {
     const alias = this.aliases[id]!, shown = settingsOf(alias, this.state.models), thread = this.threads.get(id)!
     thread.modelId = shown.modelId; thread.reasoningEffort = shown.reasoningEffort; thread.runtimeMode = shown.runtimeMode
-    if (alias.fastMode) thread.fastMode = true
+    const speed = speedAfterChange(alias)
+    if (speed) thread.speed = speed
+    else delete thread.speed
+    if (speed === 'fast') thread.fastMode = true
     else delete thread.fastMode
     this.changed(id)
   }
@@ -1338,7 +1346,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     // window watching it, a read) starts a CLI once the old one has exited, and that CLI must launch with these
     // settings: the start below joins it rather than launching another, and accepted has to mean the CLI runs them.
     watcherGuard?.()
-    const before = { modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode, fastMode: alias.fastMode }
+    const before = { modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode, speed: alias.speed, fastMode: alias.fastMode }
     try {
       this.recordSettings(alias, command, settings)
       if (runtime) await this.stopRuntime(id, runtime)
@@ -1485,7 +1493,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * starts, so what it says while starting is applied as it comes. A spare's is held, with what it said, until the
    * thread's first send adopts it (`adoptSpare`); until then it is nobody's, and its exit only lets it go.
    */
-  private async spawn(id: string, alias: Pick<Alias, 'sessionId' | 'cwd' | 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'fastMode'>, resume: boolean, spare?: Spare): Promise<{ runtime: Runtime; initialized: ClaudeFrame }> {
+  private async spawn(id: string, alias: Pick<Alias, 'sessionId' | 'cwd' | 'modelId' | 'reasoningEffort' | 'runtimeMode' | 'speed' | 'fastMode'>, resume: boolean, spare?: Spare): Promise<{ runtime: Runtime; initialized: ClaudeFrame }> {
     const generation = this.generation
     const profile = await this.watcherProfile(id, alias.modelId)
     this.checkProfileContinuation(id, generation)
@@ -1518,7 +1526,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       '--include-partial-messages', '--replay-user-messages', ...THINKING_DISPLAY, ...permissionArguments(alias.runtimeMode),
       '--append-system-prompt', profile ? `${CLAUDE_QUESTIONS}\n\n${profile.instructions ?? WATCHER_SYSTEM_PROMPT}` : roles?.instructions ? `${CLAUDE_QUESTIONS}\n\n${roles.instructions}` : CLAUDE_QUESTIONS,
       resume ? '--resume' : '--session-id', alias.sessionId, '--model', alias.modelId, ...(effort.effortLevel ? ['--effort', effort.effortLevel] : []),
-      ...flagSettingsArguments(fastModeRuns(this.state, alias.modelId, alias.fastMode), effort.ultracode)]
+      ...flagSettingsArguments(speedRuns(this.state, alias.modelId, speedAfterChange(alias)) === 'fast', effort.ultracode)]
     let runtime: Runtime
     try {
       this.configurationGuards.get(id)?.()
@@ -1584,7 +1592,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
       }
       // A change left unconfirmed is shown from the launch that carries it (see `unconfirmedSettings`).
       const thread = this.threads.get(id)!
-      if (!sameSettings(settingsOf(thread, this.state.models), settingsOf(alias, this.state.models)) || (thread.fastMode === true) !== (alias.fastMode === true)) { this.showSettings(id); this.emit() }
+      if (!sameSettings(settingsOf(thread, this.state.models), settingsOf(alias, this.state.models)) || speedAfterChange(thread) !== speedAfterChange(alias)) { this.showSettings(id); this.emit() }
     } catch (error) { void this.stopRuntime(id, runtime); throw error }
   }
   /**
@@ -2104,7 +2112,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   private ensureThread(id: string, alias: Alias): void {
     this.activityHistoryPending.delete(id)
-    this.threads.set(id, { id, projectId: alias.projectId!, ...(alias.historyEpoch ? { historyEpoch: alias.historyEpoch } : {}), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required', ...(alias.fastMode ? { fastMode: true } : {}), status: 'idle', messages: [], requests: [], activities: [] })
+    const speed = speedAfterChange(alias)
+    this.threads.set(id, { id, projectId: alias.projectId!, ...(alias.historyEpoch ? { historyEpoch: alias.historyEpoch } : {}), workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId, reasoningEffort: alias.reasoningEffort, runtimeMode: alias.runtimeMode ?? 'approval-required', ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}), status: 'idle', messages: [], requests: [], activities: [] })
     this.threads.get(id)!.usage = this.usage.get(id)
     this.threads.get(id)!.compaction = alias.compaction
     this.threads.get(id)!.resumeCompactionDismissed = Object.values(this.aliases).some(value => value.kind !== 'personal' && value.resumeCompactionDismissed)

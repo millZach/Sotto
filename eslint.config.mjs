@@ -4,8 +4,11 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/agent-speed/**',
       'native/coreml-asr/.build/**',
       'artifacts/watcher-room-state/**',
+      'artifacts/worker-swarms/**',
+      'artifacts/next-prompt-quiet-composer/**',
       'artifacts/watcher-picture-owls/**',
       'artifacts/certified-detail/**',
       'artifacts/watcher-phone-wire/**',
@@ -180,6 +183,7 @@ export default tseslint.config(
       'artifacts/cursor-provider/**',
       'artifacts/starting-screen/**',
       'artifacts/unconfirmed-send/**',
+      'artifacts/watcher-card-queue/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',

@@ -27,9 +27,11 @@
 .thread-prompt .thread-chip:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-prompt .thread-chip.watch-on-send[aria-pressed='true'], .thread-prompt .thread-chip.watch-on-send[aria-pressed='true']:hover:not(:disabled) { border-color: var(--tt-accent-border); background: color-mix(in srgb, var(--tt-accent) 14%, transparent); color: var(--tt-accent-text); }
 
-/* Fast mode (ADR-0143, pick A of the prototype/composer-fast-mode tag): a square text button after the model chip. Off, a
-   muted outline bolt; on, the bolt filled in the theme's accent. It keeps the chips' 28px and their hover wash. */
-.thread-chip.thread-fast { justify-content: center; width: 28px; min-width: 28px; padding: 0; }
+/* Speed (ADR-0143, pick A of the prototype/composer-fast-mode tag): a square text button after the model chip. Standard, a
+   muted outline bolt; Fast, the bolt filled in the theme's accent; Ultra fast, that bolt with a small 2 at its foot. It
+   keeps the chips' 28px and their hover wash. */
+.thread-chip.thread-fast { position: relative; justify-content: center; width: 28px; min-width: 28px; padding: 0; }
+.thread-chip.thread-fast > .thread-fast__two { position: absolute; right: 4px; bottom: 3px; font-size: 9.5px; font-weight: 700; line-height: 1; }
 .thread-prompt .thread-chip.thread-fast { padding: 0; }
 .thread-chip.thread-fast[aria-pressed='false'] > svg { opacity: .75; }
 .thread-chip.thread-fast[aria-pressed='true'], .thread-chip.thread-fast[aria-pressed='true']:hover:not(:disabled) { color: var(--tt-accent-text); }

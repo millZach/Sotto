@@ -953,9 +953,9 @@ it('archives a paired desktop\'s closed work on the owning host and answers its 
   expect(hosted().remoteAbsences ?? []).toEqual([])
   // From then on the replaced Watcher cannot read it, as it could not read a request of the record's that moved.
   expect(await read()).toMatchObject({ status: 'refused', code: 'UNKNOWN_OPERATION' })
-  // Handed back to the record, as when Keep local history goes off, it is the newer Watcher's too.
+  // Put back in the record, it is the newer Watcher's too.
   const archivedWork = await worker.control.archivedWatcherWork()!.read({ requests: [request.id] }), handedBack = emptyWatcherRecord()
-  ;(worker.control as unknown as { returnArchived(record: WatcherRecord, work: typeof archivedWork): void }).returnArchived(handedBack, archivedWork)
+  ;(worker.service as unknown as { returnArchived(record: WatcherRecord, work: typeof archivedWork): void }).returnArchived(handedBack, archivedWork)
   expect(handedBack.requests.find(item => item.id === request.id)?.watcher).toEqual(newer.target)
   // The replaced Watcher's retry is refused; the newer one's brings the request back as the newer Watcher's, its prompt
   // turn too, as adoption leaves the record's, and gives the first receipt.
@@ -1259,6 +1259,7 @@ it.each([['a pull request wake-up', 'a standing watch'], ['a pull request wake-u
       await f.control.deliverWakeUp(target.threadId, { pullRequest: { url: 'https://github.com/o/r/pull/1', number: 1, title: 'Synthetic pull request' },
         startedBy: 'agent', head: 'head-1', changes: [{ kind: 'checks-failed', checks: [{ name: 'build', status: 'failure', url: null }] }], ended: null }, { tool: false })
       await expect.poll(() => f.native(target.threadId).messages.findLast(item => item.role === 'user')?.text).not.toBe('Synthetic worker turn')
+      await expect.poll(() => f.control.hasPendingThreadWork(target.threadId)).toBe(false)
     } else {
       // A delegation's brief is known by the message ID delegation gave it, which its hook on the coordinator answers.
       const brief = randomUUID()

@@ -205,7 +205,8 @@ async function stack(threads = 7, observation: 'held' | 'led' = 'held') {
       record.current = { target: { hostId, threadId: sotto('w') }, projectId: control.watcherSnapshot().threads.find(item => item.id === sotto('w'))!.projectId,
         provider: 'claude', creationOperationId: uuid(1), createdAt: AT }
     })
-    const watcher = new WatcherService({ directory: join(root, side.name), control, host: workspace, historyEnabled: () => false, streamingPublishCost: true })
+    // End settled watches while the workspace drains, before the harness advances its observation clock.
+    const watcher = new WatcherService({ directory: join(root, side.name), control, host: workspace, historyEnabled: () => false, streamingPublishCost: true, settleFinishedAfterMs: 0 })
     cleanup.push(() => watcher.close())
     // The wake-up pass's timers run on the fake clock; the whole side's pass is given no look-ups, so it reads every thread.
     const wakes = watcher.wakes as unknown as { schedule: Timers['schedule']; options: { hosts?: unknown } }

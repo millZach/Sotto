@@ -305,13 +305,13 @@ export function DelegatedBy({ thread, state, command }: { readonly thread: Agent
  * stops the threads it delegated that are working. In a delegated thread, only while something holds a send back: the
  * user's own turn there, which the thread that delegated waits out, or that thread's brief still being worked on.
  */
-export function DelegationComposerNote({ thread, state }: { readonly thread: AgentThread; readonly state: AgentState }): ReactNode {
+export function DelegationComposerNote({ thread, state, hideStop = false }: { readonly thread: AgentThread; readonly state: AgentState; readonly hideStop?: boolean }): ReactNode {
   const { t } = useLingui()
   const enabled = useDelegationsEnabled()
   const received = useDelegations(thread.delegatedBy === undefined ? undefined : thread.id).received
   const parentId = enabled ? thread.delegatedBy : undefined
   // Stop shows while the thread works, as the composer decides it; what it also stops is main's rule, a turn still running.
-  const working = enabled && thread.status === 'running' && !isThreadClosed(thread) ? workingDelegatedThreads(state.host.threads, thread.id) : 0
+  const working = !hideStop && enabled && thread.status === 'running' && !isThreadClosed(thread) ? workingDelegatedThreads(state.host.threads, thread.id) : 0
   if (!enabled) return null
   if (working) return <p className="delegation-note tt-paragraph"><GitFork size={13} aria-hidden="true" /><span>{stopLine(working)}</span></p>
   if (parentId === undefined) return null

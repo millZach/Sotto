@@ -85,7 +85,7 @@ describe('ThreadWorkingCopy', () => {
     render(<ThreadWorkingCopy thread={{ id: 'empty', projectId: 'project', nativeSessionStarted: false, worktree: { mode: 'independent', status: 'pending' } }} project={project} command={vi.fn()} />)
     fireEvent.click(screen.getByRole('button', { name: 'Working copy: New worktree' }))
     const details = screen.getByRole('group', { name: 'Working copy details' })
-    expect(details).toHaveTextContent('Created on first send. Choose the workspace and branch under the composer.')
+    expect(details).toHaveTextContent('Created on first send. Choose the workspace and branch before sending.')
     expect(screen.queryByRole('radio')).toBeNull()
     expect(screen.queryByRole('button', { name: 'Apply working copy' })).toBeNull()
   })

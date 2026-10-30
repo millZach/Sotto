@@ -794,7 +794,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     Date.now,
     platformDefaults,
     logOperational,
-    { workerRolesEnabled, dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
+    { workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], dictationHoldShortcutsEnabled: owlFeatures['dictation-hold-shortcuts'], interfaceLanguageEnabled, ...(platform === 'linux' ? { omarchyTheme: () => omarchyTheme.get(), shellPillInUse: () => shellPillInUse } : {}) },
   )
   await initializeOmarchySelection(platform, omarchyTheme.get(), plainSettings)
   await history.initialize()
@@ -998,7 +998,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const windowShowing = (): boolean => BrowserWindow.getAllWindows().some(showing)
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
-    delegationEnabled, workerRolesEnabled, continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
+    delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
     attachAnyFile: owlFeatures['attach-any-file'],
@@ -1121,7 +1121,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // The new-thread default is the one Settings applies, read from each state the router publishes, in place: this
   // computer's while its host runs, the selected host's while it is off (ADR-0074). The roles are compared by identity.
   const desktopDefaultsFollow = desktopDefaultsPush
-    ? followDesktopDefaults(desktopDefaultsPush, hostRouter, () => workerRolesEnabled ? workingCopySettings.workerRoles : undefined) : undefined
+    ? followDesktopDefaults(desktopDefaultsPush, hostRouter, () => workerRolesEnabled ? workingCopySettings.workerRoles : undefined,
+      () => owlFeatures['worker-swarms'] ? { workerCeiling: workingCopySettings.workerCeiling, workerMachineCeilings: workingCopySettings.workerMachineCeilings } : undefined) : undefined
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
     detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
@@ -1194,7 +1195,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
   // Continue a thread on another provider (ADR-0089): an Owl feature, so stable builds no service and registers no bridge.
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
-  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled }) : undefined
+  const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled, swarms: owlFeatures['worker-swarms'] }) : undefined
   if (delegationTools) quitHandles.delegationTools = delegationTools
   agentHost.useThreadTools([hostSetupTools, visualTools, ...(pullRequestTools ? [pullRequestTools] : []), ...(delegationTools ? [delegationTools] : [])])
   // An interactive visual runs in a sealed page (ADR-0060): main serves it from this store, once per address. The session
@@ -1884,10 +1885,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // threads' next loads. Only while that Owl feature is on does the runtime hold the table.
       if (workerRolesChanged && 'workerRoles' in localRuntime) localRuntime.workerRoles?.changed()
       // Hosts whose own threads delegate are told the new worker roles (#1310).
-      if (workerRolesChanged) desktopDefaultsFollow?.rolesChanged()
+      if (workerRolesChanged || settings.workerCeiling !== previous.workerCeiling || settings.workerMachineCeilings !== previous.workerMachineCeilings) desktopDefaultsFollow?.rolesChanged()
       worktreeCleanup?.settingsChanged()
       if (settings.keepMainCurrent !== previous.keepMainCurrent || JSON.stringify(settings.projectKeepMainCurrent) !== JSON.stringify(previous.projectKeepMainCurrent)) localRuntime.mainCheckout?.settingsChanged()
       localRuntime.watcher?.settingsChanged()
+      localRuntime.workerAdmission?.refresh()
       phoneAccess.settingsChanged()
       if (grantDefaultChanged) browserService?.settingChanged()
       if (babysittingChanged) void pullRequestTools?.settingChanged().catch(() => undefined)

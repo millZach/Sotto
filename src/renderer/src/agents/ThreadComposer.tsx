@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import { ArrowDownToLine, ArrowUp, ArrowUpRight, Laptop, MessageSquare, Quote, Server, Square, X } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -90,7 +91,7 @@ function deliveryOnItsWay(status: SubmissionStatus): boolean {
  * behind anything already queued so the order the user typed is the order the provider receives.
  */
 function queuesByDefault(row: ThreadRow, state: AgentState, localAdmissions: boolean): boolean {
-  return row.thread.status === 'running' || localAdmissions || followupsFor(state, row.thread.id).length > 0
+  return row.thread.status === 'running' || row.thread.requests.length > 0 || localAdmissions || followupsFor(state, row.thread.id).length > 0
 }
 
 /**
@@ -127,24 +128,10 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
   }
 }
 
-const permissionInstruction = (): string => t`Allow or deny the request above to continue.`
-
-/** Every pending permission offers no choice Sotto can send (`permissionChoices: []`): only the provider's app can answer. */
-function permissionsOnlyInProvider(row: ThreadRow): boolean {
-  const permissions = row.thread.requests.filter(request => request.kind === 'permission')
-  return permissions.length > 0 && permissions.every(request => request.permissionChoices?.length === 0)
-}
-
 /** Why the primary action is off, in one sentence; null when a prompt can go. */
 function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, inFlight: boolean): string | null {
   const provider = row.provider
   if (row.thread.archivedAt) return t`This thread is archived.`
-  const permission = row.request?.kind === 'permission' || row.thread.requests.some(request => request.kind === 'permission')
-  if (permission && permissionsOnlyInProvider(row)) return t`Sending returns once the request above is answered in ${provider}’s app.`
-  if (permission) return permissionInstruction()
-  // Choices shown in the transcript are answered there; only a plain question takes its answer from the composer.
-  const inline = row.thread.requests.find(request => requestMode(request) !== 'legacy-text')
-  if (inline && !answering) return inline.kind === 'permission' ? t`Answer the request above to continue.` : t`Answer the question above to continue.`
   if (!row.connected) return row.reconnecting ? t`Its host is restarting after an update. Your draft stays here.` : t`Reconnect to send. Your draft stays here.`
   if (!capabilitiesForThread(state.host, row.thread).submit) return t`${provider} cannot take prompts from Sotto.`
   // The notice above the composer says why setup stopped and offers the one recovery; this only says when sending returns.
@@ -162,7 +149,7 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
  * separate, explicit way into the running turn, and Stop takes the send button's place until there is something to queue.
  * Each button says what it does and the key that does it (ADR-0153).
  */
-export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore, replyQuotes = replyQuoteStore, watcher = false }: {
+export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore, replyQuotes = replyQuoteStore, watcher = false, toolbarSlot, children }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -183,6 +170,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly replyQuotes?: ReplyQuoteStore
   /** Watcher's own composer: its permissions are Watcher's own choice, and it offers no skills or branch toolbar (ADR-0073). */
   readonly watcher?: boolean
+  /** The quiet composer's existing branch controls live beside the folder in the pane header. */
+  readonly toolbarSlot?: HTMLElement | null
+  /** The pane's metadata follows the composer and knows which composer is drawn. */
+  readonly children?: (quiet: boolean) => ReactNode
 }): ReactNode {
   const { t } = useLingui()
   const threadId = row.thread.id
@@ -201,13 +192,14 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const readingImages = useScreenshotReads(store, threadId).pending > 0
   // The row under the footer where the option chips say what happened to a refused or unconfirmed change.
   const [settingsNotices, setSettingsNotices] = useState<HTMLDivElement | null>(null)
+  const [toolbarNotices, setToolbarNotices] = useState<HTMLDivElement | null>(null)
   const field = useRef<PromptEditorElement>(null)
   const caretAfterInsert = useRef<number | null>(null)
   const pendingRequest = row.request?.requestId === undefined ? undefined : row.thread.requests.find(request => request.id === row.request!.requestId)
   const question = row.request?.kind === 'question' && row.request.requestId && (pendingRequest === undefined || requestMode(pendingRequest) === 'legacy-text') ? row.request : undefined
-  const permission = row.request?.kind === 'permission' || row.thread.requests.some(request => request.kind === 'permission')
   const staleAnswer = draft.requestId !== null && draft.requestId !== question?.requestId
   const answering = question !== undefined
+  const cardWaits = row.thread.requests.length > 0 && !answering
   const capabilities = capabilitiesForThread(state.host, row.thread)
   const direct = submissions.filter(item => item.threadId === threadId && item.mode !== 'queue'
     && !deliveryFor(state, threadId, item.draftId)?.setAside).map(item => submissionStatus(item, state).status)
@@ -244,12 +236,12 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     ?? (continueModel?.providerId ? continueProviderRefusal(continueHost, continueModel.providerId) : t`Choose a model to continue on.`)
   const reason = continuing !== undefined ? continueReason
     : blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? t`This answer’s question is no longer pending.` : null)
-  const editable = !row.thread.archivedAt && !permission
+  const editable = !row.thread.archivedAt
   const working = row.thread.status === 'running' && !isThreadClosed(row.thread)
   // A thread that began from another asks what its agent should do next, before anything of the user's is in it (#1028).
   const started = useThreadStarts() && row.thread.startedFrom !== undefined && !row.thread.lastUserMessageId && (row.thread.summary?.lastUser === undefined)
   const agent = watcher ? 'Watcher' : provider
-  const placeholder = continuing !== undefined ? t`What should ${continueTarget} do next? It goes after the handover.` : row.thread.archivedAt ? t`This thread is archived.` : permission ? permissionsOnlyInProvider(row) ? t`Waiting on the request above.` : permissionInstruction() : answering ? t`Write your answer…` : working ? (row.thread.compaction?.status === 'running' ? t`Compacting the context. Write a follow-up to queue it.` : t`${agent} is working. Write a follow-up to queue it.`) : watcher ? t`Ask about your threads, or say what to start or send` : started ? t`What should ${provider} do next?` : t`What would you like to do next?`
+  const placeholder = continuing !== undefined ? t`What should ${continueTarget} do next? It goes after the handover.` : row.thread.archivedAt ? t`This thread is archived.` : cardWaits ? t`Queued until you answer the card` : answering ? t`Write your answer…` : working ? (row.thread.compaction?.status === 'running' ? t`Compacting the context. Write a follow-up to queue it.` : t`${agent} is working. Write a follow-up to queue it.`) : watcher ? t`Ask about your threads, or say what to start or send` : started ? t`What should ${provider} do next?` : t`What would you like to do next?`
   // Review comments and reply quotes ride with the next prompt, not with an answer to a question.
   const carried = answering ? [] : comments
   const carriedQuotes = answering ? NO_QUOTES : quotes
@@ -257,7 +249,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const canSend = reason === null && content && !readingImages && !answerState.sending
   const running = row.thread.status === 'running' && !answering
   // Steering is a direct delivery: it waits for any prompt still on its way, the queue's included.
-  const canSteer = running && capabilities.steer === true && canSend && !sendInFlight
+  const canSteer = running && !cardWaits && capabilities.steer === true && canSend && !sendInFlight
   const canStop = working && capabilities.interrupt === true && row.connected && !isThreadBusy(state, threadId)
   // The row's motion (ADR-0153): which button is the plate, remembered with its thread so opening another moves nothing.
   const actionsRow = useRef<HTMLDivElement>(null)
@@ -416,7 +408,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const nextEntry = useNextPrompt(nextOn ? threadId : null)
   const nextAnchor = lastUserMessageIdOf(row.thread) ?? ''
   const next: NextPrompt | null = nextEntry?.prompt && nextEntry.afterUserMessageId === nextAnchor && !working && !answering
-    && !permission && row.thread.requests.length === 0 && editable && continuing === undefined && handover === null && row.connected && !sendInFlight && !localAdmissions
+    && row.thread.requests.length === 0 && editable && continuing === undefined && handover === null && row.connected && !sendInFlight && !localAdmissions
     && followupsFor(state, threadId).length === 0 && !isThreadClosed(row.thread) ? nextEntry.prompt : null
   const dictating = DICTATING.has(app?.dictation?.status ?? 'idle')
   // Tab, Up and the digits answer only where the dictation hotkey does not already mean them.
@@ -442,7 +434,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const stopKeys = !watcher && stopChord ? stopChord : null
   // The quiet composer (ADR-0161, Owl): one pill. Answers, continuations and Watcher's handover keep the full footer,
   // since each has a primary action of its own that the pill's disc does not draw.
-  const quiet = quietComposer && !watcher && !answering && continuing === undefined && handover === null
+  const quiet = quietComposer && !answering && continuing === undefined && handover === null
   // The pill's disc turns into Steer while Steer's modifier is held, so it always shows what the key pressed will do.
   const [steerHeld, setSteerHeld] = useState(false)
   useEffect(() => {
@@ -452,9 +444,6 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     window.addEventListener('keydown', read); window.addEventListener('keyup', read); window.addEventListener('blur', release)
     return () => { window.removeEventListener('keydown', read); window.removeEventListener('keyup', read); window.removeEventListener('blur', release); setSteerHeld(false) }
   }, [quiet, platform])
-  // While a turn runs, the effort dots hold Stop; where the options draw no dots (a provider that cannot change a started
-  // thread), Stop keeps a button of its own in the pill.
-  const stopOnDots = quiet && capabilities.configureThread === true
   const stopTitle = stopKeys ? `${stopName} ${threadChordLabel(stopKeys, platform).suffix}` : stopName
   const interrupt = (): void => { void command({ type: 'interrupt', threadId }) }
   // Queue's glyph follows what Enter does, as the disc's name does, so a provider that sends during a turn shows Send.
@@ -509,6 +498,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     if (event.key === 'ArrowUp' && !event.shiftKey && !hasContent && nextKeysFree.up) { event.preventDefault(); setNextList({ index: 0 }); return true }
     return false
   }
+  const toolbar = watcher ? null : <BranchToolbar row={row} state={state} command={command} focused={focused} onExplainedError={onExplainedError}
+    header={quiet} noticeSlot={quiet ? toolbarNotices : undefined} />
+  const metadata = useMemo(() => children?.(quiet), [children, quiet])
 
   return <>
     <ThreadFollowups row={row} state={state} command={command} store={store}
@@ -526,7 +518,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span><Trans>This answer was for a question that is no longer pending.</Trans></span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}><Trans>Discard answer</Trans></Button></div> : null}
       <ThreadComposerEditor key={threadId} row={row} state={state} command={command} store={store} composerId={composerId}
-        editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering && !permission} attachable={!answering && !permission} watcher={watcher}
+        editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering} attachable={!answering} watcher={watcher}
         field={field} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
         next={next} nextOpen={nextOpen} nextListId={nextListId} nextActiveId={nextOpen ? nextOptionId(nextListId, nextList.index) : undefined}
         dictating={dictating || ghostAway} nextKey={nextKey}
@@ -560,15 +552,15 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       <div className="thread-prompt__footer">
         <div className="thread-prompt__meta" id={statusId}>
           {/* Every composer belongs to a thread that already exists on its host, so the host is shown here, not chosen.
-              Watcher always runs on this computer, so its composer has New Watcher in that place instead. */}
-          {watcher ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} />
-            : threadHost ? <span className="thread-host-chip" title={hostTitle}>
+              Watcher's full composer has New Watcher in that place; the quiet pill keeps it beside Send. */}
+          {watcher && !quiet ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} />
+            : !quiet && threadHost ? <span className="thread-host-chip" title={hostTitle}>
             {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}{hostLabel}</span> : null}
           {continuing !== undefined ? <ContinueOptions thread={row.thread} state={state} choice={continuing} />
             : row.thread.nativeSessionStarted === false || capabilities.configureThread || continueOffer !== undefined
             ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher} continueOffer={continueOffer}
-              quiet={quiet ? { effortScore, stop: stopOnDots && working ? { label: stopName, keys: stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined, title: stopTitle, disabled: !canStop, onStop: interrupt } : undefined } : undefined}
-              {...(editable && !answering && !permission ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
+              quiet={quiet ? { effortScore } : undefined}
+              {...(editable && !answering ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? t`Answer this question` : t`Manual prompt`}</small></span>
               {watcher ? <WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
                 disabled={watcherPermissionFixedReason(state, row.thread) !== undefined} fixedReason={watcherPermissionFixedReason(state, row.thread)} /> : null}</>}
@@ -576,8 +568,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         </div>
         <div ref={actionsRow} className="thread-prompt__actions">
           {quiet ? <>
-            {/* Shown where the dots cannot hold Stop: a thread that draws none, or the slim composer, which hides them. */}
-            {working ? <Button variant="ghost" className="thread-prompt__stop thread-prompt__disc" data-beside-dots={stopOnDots || undefined} aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
+            {watcher ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} /> : null}
+            {working ? <Button variant="ghost" className="thread-prompt__stop" data-beside aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
               title={stopTitle} disabled={!canStop} onClick={interrupt}><Square size={10} fill="currentColor" aria-hidden="true" /></Button> : null}
             {/* One disc: Send, Queue while a turn runs, Steer while Steer's modifier is held. Its glyph says which. */}
             {discFace === 'steer'
@@ -611,9 +603,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       </div>
       <div ref={setSettingsNotices} className="thread-options-notices" />
     </form>
-    {/* T3's branch toolbar: where the thread runs and works, its pull request and its branch, for a Git repository (ADR-0027).
-        Its own row of buttons under the card, not a strip inside it (#325). */}
-    {watcher ? null : <BranchToolbar row={row} state={state} command={command} focused={focused} onExplainedError={onExplainedError} />}
+    {/* One toolbar owns its menus and shortcuts; the full composer keeps its original row. */}
+    {quiet ? toolbarSlot ? createPortal(toolbar, toolbarSlot) : null : toolbar}
+    {quiet && !watcher ? <div ref={setToolbarNotices} className="branch-toolbar-notices" /> : null}
+    {metadata}
   </>
 }
 

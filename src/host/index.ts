@@ -134,6 +134,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
   // (#1311), and lists `branch-moves` and takes `branch-move` (ADR-0105 decision 8);
   // otherwise its facts are what they were and it moves no branch.
   const crossMachineEnabled = owlFeatures['cross-machine-work']
+  const workerSwarmsEnabled = owlFeatures['worker-swarms']
   // Attached files (ADR-0131): the host keeps them and lists `file-staging` only on its own Owl answer.
   const attachAnyFile = owlFeatures['attach-any-file']
   const repositories = createStorageRepositories(directory, recovery, Date.now)
@@ -156,6 +157,11 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
     const pairing = new PairedClients(directory)
+    const desktops = new DesktopClients(directory, options.log)
+    // Saved capacity limits apply before recovery can resume any queued starts, even before a desktop reconnects.
+    await pairing.load()
+    await desktops.refresh()
+    const recordedDesktop = (clientId: string): boolean => desktops.has(clientId)
     // The desktop relay (#1316): a thread here delegates to other machines through a desktop that relays, only where the
     // Owl answer turns on Work across machines. Its record of relayed delegations is read before the threads start.
     // The start goes through the desktop connected last that is still paired here with an answers grant (Zach, October 27, 2026).
@@ -165,18 +171,18 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // A desktop's delegations here for threads on other machines (#1316 part 2), on the same Owl answer. Its callers are
     // read before the threads start, so news of what they made can find them.
     // A desktop's callers are held to its own standing here: still recorded, and Ask for approval without an answers grant.
-    let recordedDesktop: (clientId: string) => boolean = () => false
     const delegationRemote = crossMachineEnabled ? new HostRemoteCallers(directory, { recorded: clientId => recordedDesktop(clientId), mayAnswer: desktopCounts,
       ...options.log ? { log: (event: 'delegation-remote-news-failed') => options.log?.(event) } : {} }) : undefined
     await delegationRemote?.load()
     const runtime = await createAgentRuntime({
-      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, attachAnyFile, clearThreadsEnabled,
+      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, clearThreadsEnabled,
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
       // This host's own threads delegate on this machine (#1310) where its Owl answer turns on Work across machines, held to
       // the desktop defaults the last desktop still paired here with an answers grant sent, read at every start, so a desktop
       // forgotten or revoked stops counting at once and after a restart (ADR-0074 decision 3).
       hostDelegation: { roles: owlFeatures['worker-roles'],
-        counts: clientId => pairing.isPaired(clientId) && (policy?.mayGrant({ clientId, user: 'Paired desktop', transport: 'socket' }).allowed ?? false),
+        counts: desktopCounts,
+        capacityEligible: clientId => pairing.isPaired(clientId) && recordedDesktop(clientId),
         // A grant taken away, as `--deny-answers` does, is said as such, since setting the desktop up again does not restore it.
         // An expired grant or one held behind an always-confirm boundary is not revoked: it says the answers grant is missing.
         revoked: clientId => policy?.remoteAnswersRevoked(clientId) ?? false,
@@ -206,7 +212,7 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     // `sotto_delegate` so far; `sotto_visual` and `sotto_pull_requests` join this list, each as its own change. The browser
     // stays the desktop's.
     const threadTools: (ScopedThreadTools & { close(): Promise<void> })[] = runtime.delegation && crossMachineEnabled
-      ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine', relay: delegationRelay !== undefined })] : []
+      ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine', relay: delegationRelay !== undefined, swarms: workerSwarmsEnabled })] : []
     if (threadTools.length) runtime.agentHost.useThreadTools(threadTools)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
     const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),
@@ -242,7 +248,6 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     }
     const about = () => ({ tailnetAddress: phones?.address(), startedBy: options.startedBy })
     try {
-      await pairing.load()
       if (options.port !== undefined) {
         // The host's two listeners keep one set of command receipts, so a desktop that moves between them never runs a
         // retried command twice (ADR-0053).
@@ -252,8 +257,6 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         // Phone access opens its own loopback listener, on a port it remembers, for Tailscale Serve to carry: the tailnet
         // listener, which carries desktops the launch script recorded as well as phones (ADR-0053). This one, with the
         // administrative routes, stays reachable only from this machine and through the desktop's SSH (ADR-0050).
-        const desktops = new DesktopClients(directory, options.log)
-        recordedDesktop = clientId => desktops.has(clientId)
         // One for both listeners, so an update one desktop runs over either is the only one running (ADR-0088).
         const selfUpdate = options.entryPath ? createHostSelfUpdate({ entry: options.entryPath, dataDirectory: directory, port: options.port,
           hostId, sottoVersion: options.sottoVersion ?? packageVersion, startedBy: options.startedBy,

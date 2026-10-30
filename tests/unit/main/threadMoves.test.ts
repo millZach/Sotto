@@ -189,7 +189,10 @@ describe('confirm, then the move record’s states', () => {
     // Still fenced and unsettled while the first turn runs there.
     expect(w.settled).toEqual([]); expect(w.fences.has('a')).toBe(true)
     w.endTurn(moveId)
-    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('source-settled'))
+    await vi.waitFor(() => {
+      expect(stateOf(moves, moveId)).toBe('source-settled')
+      expect(w.fences.has('a')).toBe(false)
+    })
     const threadId = w.remote.made.get(moveId)!
     expect(w.watch.moved).toEqual([`a->${FORGE}:${threadId}`])
     expect(w.links).toEqual([{ threadId: 'a', link: { threadId, provider: 'codex', at: expect.any(String), host: FORGE } }])
@@ -637,18 +640,24 @@ describe('part 2: the cards in Watcher’s conversation, the press on one that a
     await vi.waitFor(() => expect(stateOf(moves, moved)).toBe('thread-started'))
     expect(w.news).toEqual([])
     w.endTurn(moved)
-    await vi.waitFor(() => expect(stateOf(moves, moved)).toBe('source-settled'))
-    expect(w.news).toEqual([{ moveId: moved, source: { hostId: HERE, threadId: 'a' }, movedTo: { hostId: FORGE, threadId: w.remote.made.get(moved) }, machine: 'forge', outcome: 'moved' }])
+    await vi.waitFor(() => {
+      expect(stateOf(moves, moved)).toBe('source-settled')
+      expect(w.news).toEqual([{ moveId: moved, source: { hostId: HERE, threadId: 'a' }, movedTo: { hostId: FORGE, threadId: w.remote.made.get(moved) }, machine: 'forge', outcome: 'moved' }])
+    })
     const stayed = (await confirmed(w, moves, ['b'])).moves[0]!.moveId!
     await vi.waitFor(() => expect(stateOf(moves, stayed)).toBe('thread-started'))
     w.endTurn(stayed, 'failed')
-    await vi.waitFor(() => expect(stateOf(moves, stayed)).toBe('stayed'))
-    expect(w.news[1]).toMatchObject({ source: { threadId: 'b' }, outcome: 'stayed' })
+    await vi.waitFor(() => {
+      expect(stateOf(moves, stayed)).toBe('stayed')
+      expect(w.news[1]).toMatchObject({ source: { threadId: 'b' }, outcome: 'stayed' })
+    })
     w.threads.push(source('back'))
     w.branches.receipt = branchMoveRefusal('uncommitted', branchMoveWords.uncommitted)
     const back = (await confirmed(w, moves, ['back'])).moves[0]!.moveId!
-    await vi.waitFor(() => expect(stateOf(moves, back)).toBe('given-back'))
-    expect(w.news[2]).toEqual({ moveId: back, source: { hostId: HERE, threadId: 'back' }, machine: 'forge', outcome: 'given-back' })
+    await vi.waitFor(() => {
+      expect(stateOf(moves, back)).toBe('given-back')
+      expect(w.news[2]).toEqual({ moveId: back, source: { hostId: HERE, threadId: 'back' }, machine: 'forge', outcome: 'given-back' })
+    })
     expect(w.news).toHaveLength(3)
     // Each card says how its move ended, and Watcher watches the one that moved.
     expect(moves.view().cards.map(card => card.state)).toEqual(['source-settled', 'stayed', 'given-back'])

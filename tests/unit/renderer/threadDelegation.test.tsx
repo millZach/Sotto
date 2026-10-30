@@ -3,6 +3,7 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentMessage, AgentState, AgentThread } from '../../../src/shared/agents'
+import { clientAgentState, hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { DelegatedView, DelegationsBridge, DelegationsChanged, DelegationView, RefusedView } from '../../../src/shared/delegation'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
@@ -15,6 +16,7 @@ import { MessageList, type ActivityContext } from '../../../src/renderer/src/age
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 import { describeThreads, organizeWorkspace, type ThreadRow } from '../../../src/renderer/src/agents/threadFacts'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
+import { swarmAnglesByLead } from '../../../src/renderer/src/agents/SwarmAngles'
 import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
 import { useOptionalApp, type AppContextValue } from '../../../src/renderer/src/state/AppContext'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
@@ -23,9 +25,9 @@ vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(), useOptionalApp: vi.fn() }))
 
 /** Delegation between threads (#1029, design A) as the window shows it, only where the Owl list turns it on. */
-function owl(on: boolean): void {
+function owl(on: boolean, quiet = false): void {
   vi.mocked(useOptionalApp).mockReturnValue({ update: { currentVersion: '0.1.37-owl.20261012.1', phase: { phase: 'up-to-date' }, checkedAt: null,
-    owlFeatures: { watcher: false, 'thread-delegation': on } } } as unknown as AppContextValue)
+    owlFeatures: { watcher: false, 'thread-delegation': on, 'quiet-composer': quiet } } } as unknown as AppContextValue)
 }
 
 const NOW = E2E_THREADS_NOW
@@ -190,6 +192,23 @@ describe('delegated threads in the sidebar', () => {
     // With the Owl switch off nothing changes: they list as ordinary rows, in activity order, with no nesting.
     expect(ids(state, '', false)).toEqual(expect.arrayContaining([PARENT, CHILD, GRANDCHILD]))
     expect(folderOf(state, '', false).listedAs).toBeUndefined()
+  })
+
+  it.each([undefined, '33333333-3333-4333-8333-333333333333'])('lists a delegated swarm lead and its angles for host %s only with swarms on', hostId => {
+    const source = delegatingState()
+    const swarm = { id: 'swarm', leadThreadId: CHILD, count: 1, done: 0, failed: 0, queued: 0 }
+    source.host.threads.find(thread => thread.id === CHILD)!.swarm = swarm
+    source.host.threads.find(thread => thread.id === GRANDCHILD)!.swarm = { ...swarm, index: 0, state: 'working' }
+    source.hostId = hostId
+    const state = clientAgentState(source)
+    const parent = hostEntityKey(hostId, PARENT), lead = hostEntityKey(hostId, CHILD), angle = hostEntityKey(hostId, GRANDCHILD)
+    const organized = organizeWorkspace(state, describeThreads(state, NOW), '', null, true, NOW, true)
+    const rows = [...organized.open, ...organized.settled].flatMap(folder => folder.rows)
+    expect(rows.map(row => row.thread.id)).toEqual(expect.arrayContaining([parent, lead]))
+    expect(rows.map(row => row.thread.id)).not.toContain(angle)
+    expect(organized.listedAs).toEqual(new Map([[angle, lead]]))
+    expect(swarmAnglesByLead(state.host.threads, organized.listedAs).get(lead)?.map(thread => thread.id)).toEqual([angle])
+    expect(ids(state)).not.toContain(lead)
   })
 
   it('keeps a delegated thread whose delegating thread is gone, and hides the one it delegated in turn', () => {
@@ -612,13 +631,13 @@ describe('the delegating and the delegated thread\'s panes', () => {
     return state
   }
 
-  it('Stop names the delegated threads it also stops, and the line under the composer says so', async () => {
-    owl(true)
+  it.each([false, true])('Stop still names and stops delegated work; only the full composer explains it (quiet: %s)', async quiet => {
+    owl(true, quiet)
     const reads = bridge({ [PARENT]: [view({ rootUserMessageId: 'visual-gate-1', wait: { seconds: 300, startedAt: at(4) }, waiting: true })] })
     vi.stubGlobal('sotto', { delegations: reads.fake })
     const live = mount(stateWith(PARENT))
     const stop = screen.getByRole('button', { name: 'Stop agent and the 2 threads it delegated that are working' })
-    expect(screen.getByText('Stop also stops the 2 threads it delegated that are working.')).toBeInTheDocument()
+    expect(screen.queryByText('Stop also stops the 2 threads it delegated that are working.') !== null).toBe(!quiet)
     fireEvent.click(stop)
     expect(live.command).toHaveBeenCalledWith({ type: 'interrupt', threadId: PARENT })
     // The pane read its delegations once, and draws the row in the turn it answers.
@@ -628,8 +647,8 @@ describe('the delegating and the delegated thread\'s panes', () => {
     await waitFor(() => expect(document.querySelector('.delegated-work__state')).toHaveTextContent('Returned'))
   })
 
-  it('a delegated thread says Delegated by its parent, a link back, and shows the brief as the parent\'s', async () => {
-    owl(true)
+  it.each([false, true])('a delegated thread keeps its parent link and send warning (quiet: %s)', async quiet => {
+    owl(true, quiet)
     // The delegated thread reads the briefs it was sent with its own delegations, not its parent's list.
     const reads = bridge({}, { [CHILD]: [view({ outcome: 'working' })] })
     vi.stubGlobal('sotto', { delegations: reads.fake })
