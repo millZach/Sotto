@@ -102,11 +102,13 @@ export function immutableUpdates<T>(records: readonly T[], previous: readonly (T
  * thread's records, which the workspace then merged again record by record and the thread store's worker was sent whole.
  */
 export function cloneSnapshotSharingActivities(snapshot: AgentHostSnapshot): AgentHostSnapshot {
-  const { threads, models, ...rest } = snapshot
+  const { threads, models } = snapshot
   const sharedModels = isImmutableModels(models)
   const shared = threads.map(thread => isImmutableActivities(thread.activities) ? thread.activities : undefined)
-  const copied = cloneHostSnapshot({ ...rest, models: sharedModels ? [] : models,
-    threads: threads.map((thread, index) => shared[index] ? { ...thread, activities: [] } : thread) } as AgentHostSnapshot)
+  // Spread first, so every key keeps its place: a snapshot's text, which a socket compares to the last shell it sent, is
+  // the same whether it came from a read or a publication.
+  const copied = cloneHostSnapshot({ ...snapshot, models: sharedModels ? [] : models,
+    threads: threads.map((thread, index) => shared[index] ? { ...thread, activities: [] } : thread) })
   return { ...copied, models: sharedModels ? models : copied.models,
     threads: copied.threads.map((thread, index) => shared[index] ? { ...thread, activities: shared[index] } : thread) }
 }
