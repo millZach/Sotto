@@ -290,7 +290,7 @@ export const ThreadTip = memo(function ThreadTip({ turnKey, facts, onTry, drafts
 
 /**
  * The tip a thread's working line shows, or undefined when tips are off: held to Owl (ADR-0072) and to Settings ›
- * Threads › Show tips while threads work. Reads only state the transcript already has; a tip never loads a catalog.
+ * Threads › Show tips. Reads only state the transcript already has; a tip never loads a catalog.
  */
 export function useTipLine({ row, state, store, watcher, onFocusPrompt }: {
   readonly row: ThreadRow
