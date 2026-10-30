@@ -2476,10 +2476,6 @@ msgstr "For a machine without the host yet. The agent installs it, fixes what is
 msgid "For settled threads on this computer. A cleared thread can’t be brought back."
 msgstr "For settled threads on this computer. A cleared thread can’t be brought back."
 
-#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
-msgid "Force reload the window"
-msgstr "Force reload the window"
-
 #. An example SSH host: forge and server are machine names, user an account name.
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "forge or user@server"
@@ -3746,6 +3742,10 @@ msgstr "OpenRouter speech model"
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "OpenRouter’s speech models could not be read. Nothing was changed."
 msgstr "OpenRouter’s speech models could not be read. Nothing was changed."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Opens Settings from any page."
+msgstr "Opens Settings from any page."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Opens the browser or test iPhone over the thread when an agent uses it. Off, the work still shows in Tools."

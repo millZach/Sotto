@@ -6,12 +6,12 @@
 .worker-roles__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 16px; padding-bottom: 6px; border-bottom: 1px solid var(--tt-hairline); }
 .worker-roles__head h3 { display: flex; align-items: center; gap: 8px; margin: 0; color: var(--tt-text-2); font-size: 14px; font-weight: 600; line-height: 1.35; }
 .worker-roles__head h3 > svg { flex: none; color: var(--tt-text-muted); }
-.worker-roles__reset-all { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; border: 0; border-radius: 4px; background: none; color: var(--tt-accent-text); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; }
+.worker-roles__reset-all { display: inline-flex; align-items: center; gap: 6px; padding: 2px 0; border: 0; border-radius: 4px; background: none; color: var(--tt-accent-text); font: inherit; font-size: 13px; font-weight: 500; }
 .worker-roles__reset-all:hover:not(:disabled) { text-decoration: underline; text-underline-offset: 3px; }
 .worker-roles__reset-all:disabled { color: var(--tt-text-muted); cursor: default; }
 .worker-roles__lead { max-width: 68ch; margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.55; }
 .worker-roles__said { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 12px; margin: 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
-.worker-roles__said > button, .worker-roles__open { height: 28px; min-height: 28px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.worker-roles__said > button, .worker-roles__open { height: 28px; min-height: 28px; padding: 0 12px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .worker-roles__said > button:hover, .worker-roles__open:hover { background: var(--tt-hover); }
 .worker-roles__said > button:active, .worker-roles__open:active { background: var(--tt-hover-strong); }
 .worker-roles__summary { margin: 0; padding: 8px 12px; border-left: 2px solid var(--tt-warning); background: var(--tt-surface); color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
@@ -53,7 +53,7 @@ p.worker-role__none { margin: 0; }
 
 .worker-role__note { margin: 0; padding: 6px 10px; border-left: 2px solid var(--tt-field-border); color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
 .worker-role__note[data-kind='moved'] { border-left-color: var(--tt-warning); background: var(--tt-canvas); }
-.worker-role__link { display: inline; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-accent-text); font: inherit; font-size: 12.5px; font-weight: 500; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; cursor: pointer; }
+.worker-role__link { display: inline; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-accent-text); font: inherit; font-size: 12.5px; font-weight: 500; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; }
 .worker-role__link:hover:not(:disabled) { text-decoration-color: currentColor; }
 .worker-role__link:disabled { color: var(--tt-text-muted); text-decoration: none; cursor: default; }
 .worker-role__foot { display: flex; justify-content: flex-end; }

@@ -51,7 +51,7 @@
 /* The effort chip: the level in words, then the speed's bolt. Its menu opens above it, like the shield's. */
 .split-chip-effort { position: relative; display: inline-flex; align-items: center; height: 28px; flex: none; }
 .split-chip-effort::before { content: ''; width: 1px; height: 14px; background: var(--tt-hairline); }
-.split-chip-effort__trigger { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; border: 0; border-radius: 0 8px 8px 0; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.split-chip-effort__trigger { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; border: 0; border-radius: 0 8px 8px 0; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; }
 .split-chip-effort__trigger:hover:not([aria-disabled='true']), .split-chip-effort__trigger[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .split-chip-effort__trigger[aria-disabled='true'] { cursor: default; }
 .split-chip-effort[data-pending] .split-chip-effort__trigger { opacity: .7; }
@@ -60,7 +60,7 @@
 .split-chip-effort__bolts > svg[data-off] { opacity: .55; }
 .split-chip-effort__menu { right: 0; left: auto; }
 .split-chip-effort__speeds { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; margin: 6px 2px 0; padding: 2px; border-radius: 8px; background: color-mix(in oklab, var(--tt-text) 6%, transparent); }
-.split-chip-effort__speeds > button { height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.split-chip-effort__speeds > button { height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; white-space: nowrap; }
 .split-chip-effort__speeds > button:hover { color: var(--tt-text); }
 .split-chip-effort__speeds > button[aria-checked='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); font-weight: 600; box-shadow: 0 0 0 1px var(--tt-hairline); }
 /* The note a new suggestion brings for a moment. */

@@ -8,7 +8,7 @@
    one line; below 600 pixels the status and version go under the name. */
 .provider-row__head { display: grid; grid-template-columns: minmax(0, 1fr) 150px auto; align-items: center; column-gap: 10px; padding-right: 16px; transition: background 160ms ease; }
 .provider-row__head:has(.provider-row__trigger:hover) { background: color-mix(in srgb, var(--tt-accent-surface) 30%, var(--tt-card)); }
-.provider-row__trigger { display: grid; grid-template-columns: 16px 28px minmax(0, 1fr) 132px 64px; align-items: center; column-gap: 12px; min-width: 0; min-height: 62px; padding: 12px 8px 12px 14px; border: 0; border-radius: 0; background: transparent; color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; }
+.provider-row__trigger { display: grid; grid-template-columns: 16px 28px minmax(0, 1fr) 132px 64px; align-items: center; column-gap: 12px; min-width: 0; min-height: 62px; padding: 12px 8px 12px 14px; border: 0; border-radius: 0; background: transparent; color: var(--tt-text); font: inherit; text-align: left; }
 .provider-row__trigger:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; border-radius: var(--tt-radius-lg); }
 .provider-row__chevron { color: var(--tt-text-muted); transition: transform 160ms ease; }
 .provider-row[data-open='true'] .provider-row__chevron { transform: rotate(90deg); }
@@ -34,7 +34,7 @@
 .provider-badge[data-provider='deepseek'] { --provider-badge: var(--tt-provider-deepseek-badge); }
 
 /* Update to <version>: a filled chip in the selected card's colour, beside the switch while an update is offered. */
-.provider-row__update { justify-self: end; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 0 10px; border: 0; border-radius: 5px; background: var(--tt-card-selected); color: var(--tt-accent-text); font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer; transition: box-shadow 120ms ease, opacity 120ms ease; }
+.provider-row__update { justify-self: end; display: inline-flex; align-items: center; gap: 6px; max-width: 100%; min-height: 28px; padding: 0 10px; border: 0; border-radius: 5px; background: var(--tt-card-selected); color: var(--tt-accent-text); font: inherit; font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: box-shadow 120ms ease, opacity 120ms ease; }
 .provider-row__update > svg { flex: none; }
 .provider-row__update:hover:not(:disabled) { box-shadow: inset 0 0 0 1px var(--tt-accent-border); }
 .provider-row__update:disabled { cursor: default; opacity: .7; }
@@ -69,7 +69,7 @@
 .provider-login code { color: var(--tt-text); font: 13px/1.6 var(--tt-font-mono); user-select: text; }
 .provider-login .tt-button { min-height: 32px; padding: 5px 8px; font-size: 13px; }
 .provider-support, .provider-client__steps { color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; }
-.provider-support summary, .provider-client__steps summary { width: fit-content; max-width: 100%; color: var(--tt-text); cursor: pointer; }
+.provider-support summary, .provider-client__steps summary { width: fit-content; max-width: 100%; color: var(--tt-text); }
 .provider-support summary:focus-visible, .provider-client__steps summary:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 3px; }
 .provider-row__column :is(.provider-support, .provider-client__steps) p { margin: 10px 0 0; }
 .provider-client__steps code { display: block; padding: 8px 10px; margin-top: 8px; border: 1px solid var(--tt-code-border); border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); color: var(--tt-code-text); font: 12px/1.6 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
@@ -77,7 +77,7 @@
 .provider-row__column .oc-sources { margin-top: 0; padding: 16px 0; border-color: var(--tt-card-inset); border-width: 2px 0; }
 /* A provider's models: a small field naming how many, which opens a searchable list over it (ProviderModelList). */
 .provider-model-list { flex: none; }
-.provider-model-list__trigger { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 6px 10px 6px 12px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.provider-model-list__trigger { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 6px 10px 6px 12px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .provider-model-list__trigger:hover { background: var(--tt-hover); }
 .provider-model-list__trigger:active:not(:disabled) { background: var(--tt-hover-strong); }
 .provider-model-list__trigger[aria-expanded='true'] { border-color: var(--tt-accent); }

@@ -2476,10 +2476,6 @@ msgstr ""
 msgid "For settled threads on this computer. A cleared thread can’t be brought back."
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
-msgid "Force reload the window"
-msgstr ""
-
 #. An example SSH host: forge and server are machine names, user an account name.
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "forge or user@server"
@@ -3745,6 +3741,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "OpenRouter’s speech models could not be read. Nothing was changed."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Opens Settings from any page."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx

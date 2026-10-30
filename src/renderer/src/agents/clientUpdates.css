@@ -125,7 +125,6 @@
   padding: 8px 14px;
   color: var(--tt-text-muted);
   font-size: 11.5px;
-  cursor: pointer;
 }
 
 .client-updates__details summary:focus-visible {

@@ -3,7 +3,7 @@
 .provider-recovery label { display: grid; gap: 6px; color: var(--tt-text); }
 .provider-recovery textarea { width: 100%; resize: vertical; min-height: 72px; max-height: 160px; padding: 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface-elevated); color: var(--tt-text); font: inherit; }
 .provider-recovery details { min-width: 0; }
-.provider-recovery summary { padding: 3px 0; cursor: pointer; color: var(--tt-text); }
+.provider-recovery summary { padding: 3px 0; color: var(--tt-text); }
 .provider-recovery details p, .provider-recovery code { margin-top: 10px; }
 .provider-recovery code { display: block; white-space: normal; overflow-wrap: anywhere; font-size: 12px; }
 .account-rows > .provider-recovery { padding: 0 0 16px; max-height: none; }
