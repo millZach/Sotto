@@ -205,8 +205,6 @@ artifacts/ultracode-effort/
 artifacts/question-choices/
 # Floating composer verification captures; the cited ones are committed
 artifacts/composer-float/
-# Plain cards and sentence-case labels (#1830, #1829); the cited captures are committed
-artifacts/plain-cards-sentence-case/
 # Slim composer and Watcher column verification captures; the cited ones are committed
 artifacts/composer-shrink/
 artifacts/needs-you-queue/
@@ -241,6 +239,8 @@ artifacts/git-settings/
 artifacts/question-message-links/
 artifacts/question-prototype-pages/
 artifacts/prototype-ready/
+# Plain cards and sentence-case labels (#1830, #1829); the cited captures are committed
+artifacts/plain-cards-sentence-case/
 artifacts/phase-three-themes/
 artifacts/thread-browser-player/
 artifacts/new-thread-defaults/

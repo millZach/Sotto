@@ -116,7 +116,7 @@ const openInBrowser = async (url: string): Promise<boolean> => {
   return result?.ok === true
 }
 
-/** A step's heading and one-line lead. The bar above the card already names the step, so only the welcome has an eyebrow. */
+/** A step's heading and one-line lead, which names the step; the bar above the card says which step it is and its group. */
 function StepHeading({ title, lead, headingRef }: {
   readonly title: string
   readonly lead: ReactNode
