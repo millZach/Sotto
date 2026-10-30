@@ -179,6 +179,15 @@ async function confirmed(w: World, moves: ThreadMoveService, threadIds: readonly
 }
 const stateOf = (moves: ThreadMoveService, moveId: string): MoveRecord['state'] | undefined => moves.list().find(record => record.id === moveId)?.state
 const saved = async (): Promise<MoveRecord[]> => (JSON.parse(await readFile(join(directory, 'moves.json'), 'utf8')) as { moves: MoveRecord[] }).moves
+/** The service's own sets: the moves whose new thread runs its first turn, and the moves mid-step. */
+const stepsOf = (moves: ThreadMoveService) => moves as unknown as { readonly waitingTurn: ReadonlySet<string>; readonly advancing: ReadonlySet<string> }
+/**
+ * Waits until a move's start is saved and no step of it runs: it waits on its first turn there. From then each update from
+ * the machine is read as it arrives, so whether it stepped the move is known when the update returns, with no sleep (#1886).
+ */
+async function waitingOnFirstTurn(moves: ThreadMoveService, moveId: string): Promise<void> {
+  await vi.waitFor(() => { expect(stepsOf(moves).waitingTurn.has(moveId)).toBe(true); expect(stepsOf(moves).advancing.has(moveId)).toBe(false) })
+}
 
 describe('prepare: what moves now, what asks first, and what stays and why', () => {
   it('names each thread’s outcome under one confirmation, and moves nothing', () => {
@@ -255,10 +264,12 @@ describe('confirm, then the move record’s states', () => {
     const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
     await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
     w.endTurn(moveId, 'failed')
-    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('stayed'))
+    // A thread that fails to transfer stays where it is and takes sends again. The record says stayed as its write begins,
+    // and the fence lifts once that write is saved: wait for both (#1886).
+    await vi.waitFor(() => { expect(stateOf(moves, moveId)).toBe('stayed'); expect(w.fences.has('a')).toBe(false) })
     const threadId = w.remote.made.get(moveId)!
-    // A thread that fails to transfer stays where it is: not settled, its watch not moved, and it takes sends again.
-    expect(w.settled).toEqual([]); expect(w.watch.moved).toEqual([]); expect(w.fences.has('a')).toBe(false)
+    // Not settled, and its watch not moved.
+    expect(w.settled).toEqual([]); expect(w.watch.moved).toEqual([])
     // The new thread is left there, and the source links to it.
     expect(w.links).toEqual([{ threadId: 'a', link: { threadId, provider: 'codex', at: expect.any(String), host: FORGE } }])
     expect(moves.list().find(record => record.id === moveId)?.givenBack)
@@ -485,20 +496,22 @@ describe('the first turn is over only once the thread is quiet there (Sol’s sp
   it('keeps the source fenced while a failed first turn leaves background work or a delegated thread working there', async () => {
     const w = world(), moves = w.service(); moves.useTargets(w.targets)
     const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
-    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    await waitingOnFirstTurn(moves, moveId)
     const threadId = w.remote.made.get(moveId)!
     w.remote.threads.push({ id: 'child-there', projectId: 'forge-project', title: 'Child', modelId: model.id, status: 'running', requests: [], messages: [], delegatedBy: threadId })
+    // Each update is read as it arrives: one that leaves the turn unfinished there starts no step.
     w.endTurn(moveId, 'failed', { backgroundWork: [{ id: 'tests' }] as never })
-    await new Promise(done => setTimeout(done, 50))
+    expect(stepsOf(moves).advancing.has(moveId)).toBe(false)
     expect(stateOf(moves, moveId)).toBe('thread-started'); expect(w.fences.has('a')).toBe(true)
     // Its own background work ends; the thread it delegated to still works.
     w.endTurn(moveId, 'failed', { backgroundWork: [] })
-    await new Promise(done => setTimeout(done, 50))
+    expect(stepsOf(moves).advancing.has(moveId)).toBe(false)
     expect(stateOf(moves, moveId)).toBe('thread-started')
     w.remote.threads.find(thread => thread.id === 'child-there')!.status = 'idle'
     w.changed()
-    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('stayed'))
-    expect(w.fences.has('a')).toBe(false); expect(w.settled).toEqual([])
+    // Stayed, and only once that is saved is the fence lifted: wait for both (#1886).
+    await vi.waitFor(() => { expect(stateOf(moves, moveId)).toBe('stayed'); expect(w.fences.has('a')).toBe(false) })
+    expect(w.settled).toEqual([])
     moves.close()
   })
 })
@@ -784,11 +797,14 @@ describe('a host’s thread moves too (#1178 part 3)', () => {
     await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
     w.lab.connected = false
     w.endTurn(moveId, 'failed')
-    await vi.waitFor(() => expect(moves.list()[0]).toMatchObject({ state: 'first-turn-ended', ending: 'stayed' }))
-    expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true, waitingOn: 'lab', from: 'lab' })
+    // The record says it ends as stayed as that write begins; the move waits on lab only once the write is saved and its
+    // step has found lab away. Wait for the waiting card, not the record (#1886).
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true, waitingOn: 'lab', from: 'lab' }))
+    expect(moves.list()[0]).toMatchObject({ state: 'first-turn-ended', ending: 'stayed' })
     expect(w.lab.fences.has('lab-1')).toBe(true)
     w.lab.connected = true; w.reconnected(LAB)
-    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('stayed'))
+    // Watcher hears it stayed once that record is saved: wait for both.
+    await vi.waitFor(() => { expect(stateOf(moves, moveId)).toBe('stayed'); expect(w.news.at(-1)).toMatchObject({ moveId, outcome: 'stayed' }) })
     const threadId = w.remote.made.get(moveId)!
     expect(w.lab.asked.at(-1)).toEqual({ action: 'release', moveId, link: { threadId, provider: 'codex', hostId: FORGE, at: expect.any(String) } })
     expect(moves.list()[0]!.givenBack).toBe(THREAD_MOVE_WORDS.stayed('forge', true, 'lab'))
