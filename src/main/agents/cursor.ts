@@ -1245,7 +1245,7 @@ export class CursorAcpHost implements AgentHost {
    */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     const generation = this.generation
-    if (await this.launchProfiles?.profileFor(id).catch(() => undefined)) return null
+    if (await this.checkLaunchProfile(id) && prompt.purpose !== 'next-prompt') return null
     const alias = this.aliases[id], program = this.program
     if (!this.state.connected || !program || !alias?.cursorSessionId) return null
     const cwd = await existingWorkingDirectory(alias.cwd)
