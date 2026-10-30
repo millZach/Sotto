@@ -1660,8 +1660,9 @@ test.describe("Watcher's room on the built app", () => {
         await captureInto(movesEvidence, launched, `moves-choose-${appearance}-1280x800.png`)
         await choose.getByRole('button', { name: 'forge', exact: true }).click()
         // Nothing starts ticked (Zach's pick, October 29): the sheet asks which threads, and Move waits for one.
-        const sheet = page.getByRole('dialog', { name: 'Choose threads to move to forge' })
-        await expect(sheet).toBeVisible()
+        await expect(page.getByRole('dialog', { name: 'Choose threads to move to forge' })).toBeVisible()
+        // Its title follows the ticks, so the sheet is found by its role from here on.
+        const sheet = page.getByRole('dialog')
         await expect(sheet.getByRole('button', { name: 'Cancel' })).toBeFocused()
         await expect(sheet.getByRole('button', { name: 'Move threads' })).toBeDisabled()
         await expect(sheet).toContainText('Moves now 2')
@@ -1699,8 +1700,8 @@ test.describe("Watcher's room on the built app", () => {
         await resizeContentWindow(launched, 1280, 800)
         await button.click()
         await page.getByRole('dialog', { name: 'Move threads to which machine?' }).getByRole('button', { name: 'forge', exact: true }).click()
-        const again = page.getByRole('dialog', { name: 'Choose threads to move to forge' })
-        for (const name of ['Grok voice previews', 'Thread routing', 'Benchmark rerun']) await again.getByRole('checkbox', { name }).check()
+        await expect(page.getByRole('dialog', { name: 'Choose threads to move to forge' })).toBeVisible()
+        for (const name of ['Grok voice previews', 'Thread routing', 'Benchmark rerun']) await page.getByRole('dialog').getByRole('checkbox', { name }).check()
         await page.getByRole('dialog', { name: 'Move 3 threads to forge?' }).getByRole('button', { name: 'Move 3 threads' }).click()
         await expect(page.getByRole('dialog')).toHaveCount(0)
         await expect(page.getByText('You asked to move 3 threads to forge. Sotto reports each move here.')).toBeVisible()
