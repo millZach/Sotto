@@ -77,6 +77,25 @@ public struct FocusThreads {
 
     /// A permission holds an agent still until it is answered, so it outranks a question.
     private static func rank(_ row: HostedThread) -> Int { ThreadState(row.thread) == .needsAnswer ? 2 : 1 }
+
+    /// The agent's last words, for a working card that holds its thread's detail: the last block of the agent's message
+    /// while nothing the user sent has come after it, as one line of plain text. Nothing when the user wrote last, or
+    /// when the message ends in code, a rule or a table, which a line can't show.
+    public static func lastWords(_ messages: [Message]) -> String? {
+        guard let message = messages.last, message.role == "assistant",
+              let block = Markdown.cachedBlocks(message.text).last else { return nil }
+        let inline: MarkdownInline?
+        switch block {
+        case .heading(_, let text): inline = text
+        case .paragraph(let text): inline = text
+        case .quote(let text): inline = text
+        case .list(let items): inline = items.last?.text
+        case .code, .rule, .table: inline = nil
+        }
+        guard let inline else { return nil }
+        let words = String(inline.cachedAttributed().characters).split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        return words.isEmpty ? nil : words
+    }
 }
 
 /// The request a Needs you card shows: the thread that asks and the request's ID there. A request ID is only unique in

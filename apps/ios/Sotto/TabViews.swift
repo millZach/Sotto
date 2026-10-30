@@ -36,8 +36,9 @@ private final class FrameBox {
 }
 
 /// Threads: questions and permissions first, answerable in place, then working threads, recent ones and the
-/// settled shelf (ADR-0039, ADR-0051). The heading, the computer menu, the summary and search scroll with the
-/// list as one sheet. Focus reads only host list summaries; opening a thread subscribes to its detail.
+/// settled shelf (ADR-0039, ADR-0051). The heading, and the computer menu with search beside it, scroll with the
+/// list as one sheet; the section headings count what is in them. Focus reads only host list summaries; opening a
+/// thread subscribes to its detail.
 struct ThreadsView: View {
     @EnvironmentObject var model: AppModel
     var openCreated: (ThreadRef) -> Void = { _ in }
@@ -60,18 +61,7 @@ struct ThreadsView: View {
         let unsearched = query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected)
         SheetPage(warm: unsearched.requestCount > 0) {
             heading
-            if inColumns {
-                HStack(spacing: Space.s3) {
-                    ComputerMenu()
-                    searchPill.frame(maxWidth: 420)
-                    Spacer(minLength: Space.s2)
-                    ThreadCounts(working: unsearched.working.count, needs: unsearched.questions.count)
-                }
-                .padding(.top, Space.s3)
-            } else {
-                controls(unsearched)
-                searchPill.padding(.top, Space.s3)
-            }
+            searchRow.padding(.top, Space.s3)
             notices
             sections(groups)
         }
@@ -111,19 +101,26 @@ struct ThreadsView: View {
         .padding(.top, Space.s1)
     }
 
-    private func controls(_ all: FocusThreads) -> some View {
-        ViewThatFits(in: .horizontal) {
+    /// The computer menu, then search, on one row, so the first card sits higher. At the accessibility text sizes the
+    /// menu's name and search's words can't share a line, so the menu sits above search.
+    @ViewBuilder private var searchRow: some View {
+        if typeSize.isAccessibilitySize {
+            VStack(alignment: .leading, spacing: Space.s3) {
+                ComputerMenu()
+                searchPill
+            }
+        } else if inColumns {
             HStack(spacing: Space.s3) {
                 ComputerMenu()
-                Spacer(minLength: Space.s2)
-                ThreadCounts(working: all.working.count, needs: all.questions.count)
+                searchPill.frame(maxWidth: 420)
+                Spacer(minLength: 0)
             }
-            VStack(alignment: .leading, spacing: Space.s2) {
+        } else {
+            HStack(spacing: Space.s3) {
                 ComputerMenu()
-                ThreadCounts(working: all.working.count, needs: all.questions.count)
+                searchPill
             }
         }
-        .padding(.top, Space.s3)
     }
 
     private var searchPill: some View {
@@ -168,16 +165,15 @@ struct ThreadsView: View {
         }
     }
 
-    /// What just went wrong, creations waiting on a computer, and computers that can't be reached.
+    /// What just went wrong, creations waiting on a computer, and the computers that can't be reached, in one line.
     @ViewBuilder private var notices: some View {
         if model.feedback != nil { FeedbackBanner().padding(.top, Space.s4) }
         ForEach(model.pendingCreations.filter { model.show.admits($0.hostID) }) { operation in
             CreationPendingRow(operation: operation).padding(.top, Space.s3)
         }
         if query.isEmpty {
-            ForEach(model.lists.filter { model.show.admits($0.hostID) && $0.status != .online }, id: \.hostID) { computer in
-                ConnectionNote(computer: computer, trying: computer.status == .connecting)
-            }
+            let away = model.lists.filter { model.show.admits($0.hostID) && $0.status != .online }
+            if !away.isEmpty { ConnectionNote(computers: away) }
         }
     }
 
@@ -326,52 +322,75 @@ struct ThreadsView: View {
     }
 }
 
-// MARK: - The computer menu and the summary
+// MARK: - The computer menu and computers that can't be reached
 
-/// One unreachable computer's note. Try again is its own view so one press gives one press's feedback, however many
-/// computers are offline.
+/// The computers that can't be reached, as one line with no box of its own: a light, what is wrong, and Try again. One
+/// computer is named, with a word that its last shared threads still show. Two or more fold into the first one's name
+/// and how many more, and their Try again tries every one of them. Try again is its own view so one press gives one
+/// press's feedback, however many computers are offline.
 private struct ConnectionNote: View {
-    let computer: ComputerThreads
-    let trying: Bool
+    /// In the order they were added; at least one.
+    let computers: [ComputerThreads]
     @EnvironmentObject var model: AppModel
-    @Environment(\.sottoTheme) private var theme
     @State private var retries = 0
 
+    /// Sotto is trying every one of them already.
+    private var trying: Bool { computers.allSatisfy { $0.status == .connecting } }
+    /// Every computer's name, for VoiceOver: "Studio Mac", or "Studio Mac and Mini".
+    private var names: String { ListFormatter.localizedString(byJoining: computers.map(\.name)) }
+
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
-        HStack(spacing: Space.s3) {
-            Image(systemName: "desktopcomputer").foregroundStyle(Palette.muted).accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                (trying ? Text("Checking \(computer.name)…") : Text(String(localized: "computer-row.cant-reach", defaultValue: "Can’t reach \(computer.name).", comment: "Over a computer's last shared threads when it can't be reached. %@ is the computer's name")))
-                    .font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                if !trying {
-                    Text("Showing its last shared threads.").font(.sotto(.small)).foregroundStyle(Palette.muted)
-                        .paragraphDirection()
+        HStack(spacing: Space.s2) {
+            HStack(alignment: .top, spacing: Space.s2) {
+                Light(tone: trying ? .off : .danger).padding(.top, 5)
+                VStack(alignment: .leading, spacing: 2) {
+                    words.font(.sotto(.small)).foregroundStyle(Palette.ink)
+                        .accessibilityIdentifier("unreachable-computers")
+                    if computers.count == 1 && !trying {
+                        Text("Showing its last shared threads.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                            .paragraphDirection()
+                    }
                 }
+                .fixedSize(horizontal: false, vertical: true)
             }
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: Space.s2)
-            Button { retries += 1; Task { await model.connect(computer.hostID) } } label: {
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button {
+                retries += 1
+                for computer in computers { Task { await model.connect(computer.hostID) } }
+            } label: {
                 if trying {
                     HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Trying", comment: "On the button while Sotto tries to reach a computer again.") }
                 } else {
                     Text("Try again")
                 }
             }
-            .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+            .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
             .sensoryFeedback(.impact(flexibility: .soft), trigger: retries)
             .disabled(trying)
-            .accessibilityLabel(trying ? String(localized: "Trying to reach \(computer.name)", comment: "%@ is the computer's name.")
-                                : String(localized: "Try reaching \(computer.name) again", comment: "%@ is the computer's name."))
+            .accessibilityLabel(trying ? String(localized: "Trying to reach \(names)", comment: "%@ is the computer's name.")
+                                : String(localized: "Try reaching \(names) again", comment: "%@ is the computer's name."))
         }
-        .padding(.vertical, Space.s3).padding(.leading, Space.s4).padding(.trailing, Space.s3)
-        .background {
-            LinearGradient(colors: [trying ? theme.color(.surface) : theme.tinted(.surface, with: .danger, 0.09), theme.color(.surface)],
-                           startPoint: .leading, endPoint: UnitPoint(x: 0.7, y: 0.5))
+        .frame(minHeight: 44)
+        .padding(.top, Space.s3)
+    }
+
+    /// "Can’t reach Studio Mac.", or for several "Can’t reach Studio Mac and 1 more.", and while Sotto tries them all,
+    /// "Checking Studio Mac…" or "Checking Studio Mac and 1 more…".
+    private var words: Text {
+        let first = computers[0].name
+        let more = computers.count - 1
+        if more == 0 {
+            return trying ? Text("Checking \(first)…")
+                : Text(String(localized: "computer-row.cant-reach", defaultValue: "Can’t reach \(first).", comment: "Over a computer's last shared threads when it can't be reached. %@ is the computer's name"))
         }
-        .clipShape(shape)
-        .overlay(shape.strokeBorder(Palette.hairline, lineWidth: 1))
-        .padding(.top, Space.s4)
+        let others = more == 1
+            ? String(localized: "computer-fold.one-more", defaultValue: "1 more",
+                     comment: "After a computer's name when one other computer can't be reached either, as in Can’t reach Studio Mac and 1 more.")
+            : String(localized: "computer-fold.more", defaultValue: "\(more) more",
+                     comment: "After a computer's name: how many other computers can't be reached either, as in Can’t reach Studio Mac and 2 more.")
+        return trying
+            ? Text("Checking \(first) and \(others)…", comment: "First %@ is a computer's name; second is how many other computers Sotto is checking, such as 1 more.")
+            : Text("Can’t reach \(first) and \(others).", comment: "First %@ is a computer's name; second is how many other computers can't be reached, such as 1 more.")
     }
 }
 
@@ -406,44 +425,6 @@ private struct ComputerMenu: View {
     private var title: String {
         if case .only(let id) = model.show { return model.name(id) }
         return String(localized: "All computers")
-    }
-}
-
-/// How many threads are working and how many requests need the user, beside the computer menu.
-private struct ThreadCounts: View {
-    let working: Int
-    let needs: Int
-    var body: some View {
-        HStack(spacing: Space.s4) {
-            HStack(spacing: Space.s2) {
-                Light(tone: working > 0 ? .accent : .off, breathing: working > 0)
-                HStack(spacing: 4) {
-                    Text("\(working)").font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                    Text(String(localized: "thread-count.working", defaultValue: "working", comment: "After the number of threads at work, such as 3 working."))
-                }
-            }
-            HStack(spacing: Space.s2) {
-                Light(tone: needs > 0 ? .warning : .off)
-                HStack(spacing: 4) {
-                    Text("\(needs)").font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                    (needs == 1 ? Text(String(localized: "request-count.needs-you", defaultValue: "needs you", comment: "After the number 1: one request waits on the user."))
-                        : Text("need you", comment: "After a number other than 1: that many requests wait on the user."))
-                }
-            }
-        }
-        .font(.sotto(.small))
-        .foregroundStyle(Palette.muted)
-        .lineLimit(1)
-        .minimumScaleFactor(0.85)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String(localized: "\(workingWords), \(needsWords)", comment: "First %@ is how many threads are working, such as 3 working; second is how many requests need the user, such as 1 needs you."))
-        .accessibilityIdentifier("thread-counts")
-    }
-    private var workingWords: String {
-        working == 1 ? String(localized: "1 working") : String(localized: "\(working) working")
-    }
-    private var needsWords: String {
-        needs == 1 ? String(localized: "1 needs you") : String(localized: "\(needs) need you")
     }
 }
 
@@ -506,13 +487,14 @@ private struct RequestCard: View {
     private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
     /// The delegated thread the request waits in, when it is not the row's own.
     private var delegated: Bool { asking.ref != row.ref }
+    /// The agent, the project and the computer, as on every card and row, and the delegated thread the request waits in.
     private var place: String {
-        let provider = Words.provider(row.thread.providerId)
+        let line = Words.place(row)
         if delegated {
-            return String(localized: "\(provider) on \(row.computer) · Waiting in \(asking.thread.title)",
-                          comment: "First %@ is the agent's name, such as Codex; second is the computer's name; third is the title of the delegated thread the request waits in.")
+            return String(localized: "\(line) · Waiting in \(asking.thread.title)",
+                          comment: "First %@ is where the thread runs: its agent, project and computer, such as Codex · Sotto · Laptop; second is the title of the delegated thread the request waits in.")
         }
-        return String(localized: "\(provider) on \(row.computer)", comment: "First %@ is the agent's name, such as Codex; second is the computer's name.")
+        return line
     }
     private var openLabel: String {
         let provider = Words.provider(row.thread.providerId)
@@ -748,7 +730,8 @@ struct CardPermissionButtons: View {
 
 // MARK: - Working now
 
-/// A thread at work: a breathing accent halo, how long it has been at it, and what it is doing.
+/// A thread at work: a breathing accent halo, how long it has been at it, where it runs, and a last line only when
+/// that says something the lines above don't.
 private struct WorkingCard: View {
     @EnvironmentObject var model: AppModel
     /// Watched for the step the open thread is running, which the thread's history carries.
@@ -769,6 +752,8 @@ private struct WorkingCard: View {
             }
         }
         .accessibilityLabel(spokenLabel)
+        // The last line, when there is one, is read after the card's name.
+        .accessibilityValue(liveLine ?? String())
         .accessibilityHint("Opens the thread")
         .accessibilityIdentifier("thread-\(row.id)")
     }
@@ -791,9 +776,11 @@ private struct WorkingCard: View {
                     .padding(.top, Space.s2)
                 PlaceLine(providerID: row.thread.providerId, watched: model.watchedByWatcher(row.ref), text: place)
                     .padding(.top, Space.s1)
-                Text(liveLine).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, Space.s3)
+                if let liveLine {
+                    Text(verbatim: liveLine).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, Space.s3)
+                }
             }
             .padding(Space.s4)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -803,14 +790,8 @@ private struct WorkingCard: View {
         }
         .buttonStyle(PressStyle())
     }
-    private var place: String {
-        let provider = Words.provider(row.thread.providerId)
-        guard let project = row.project else {
-            return String(localized: "\(provider) on \(row.computer)", comment: "First %@ is the agent's name, such as Codex; second is the computer's name.")
-        }
-        return String(localized: "\(provider) on \(row.computer) · \(project)",
-                      comment: "First %@ is the agent's name, such as Codex; second is the computer's name; third is the project's name.")
-    }
+    /// The agent, the project and the computer, as on every card and row.
+    private var place: String { Words.place(row) }
     /// The card as VoiceOver reads it.
     private var spokenLabel: String {
         let label = "\(row.thread.title), \(state.words), \(place)"
@@ -818,17 +799,17 @@ private struct WorkingCard: View {
             ? String(localized: "\(label), watched by Watcher", comment: "%@ is what VoiceOver reads of the thread before this: its title and where it runs.")
             : label
     }
-    /// The step running now when this iPhone holds the thread's detail; otherwise what the state says. The list
-    /// a computer shares carries no steps.
-    private var liveLine: String {
-        if let detail = model.detail(for: row.ref), let step = detail.activities?.last(where: { $0.status == "running" }) {
+    /// What the two lines above don't say: the step running now, where this iPhone holds the thread's detail; the
+    /// background work that keeps it going once its turn has ended; or the agent's last words, from that detail too.
+    /// Otherwise nothing, and the card is three lines. The list a computer shares carries no steps and no words.
+    private var liveLine: String? {
+        let detail = model.detail(for: row.ref)
+        if let step = detail?.activities?.last(where: { $0.status == "running" }) {
             return [step.title, step.subject].compactMap { $0 }.joined(separator: " ")
         }
-        if state == .compacting { return String(localized: "Making room in the thread’s context.") }
         if state == .waiting { return String(localized: "A background command is still running.") }
         if row.thread.status != "running", !(row.thread.backgroundWork ?? []).isEmpty { return String(localized: "Background agents are still working.") }
-        let provider = Words.provider(row.thread.providerId)
-        return String(localized: "\(provider) is working on \(row.computer).", comment: "First %@ is the agent's name, such as Codex; second is the computer's name.")
+        return detail.flatMap { FocusThreads.lastWords($0.messages) }
     }
 }
 
@@ -852,9 +833,10 @@ private struct ThreadRowList: View {
     }
 }
 
-/// A finished, failed or settled thread. One that finished while nothing showed it (ADR-0046) has an accent
-/// light, a bold title and Just finished until it is opened here or on the desktop. A settled thread says neither
-/// that nor Turn failed.
+/// A finished, failed or settled thread: its title, then where it runs, as on every card, and at the trailing edge its
+/// time, or a state that matters more. One that finished while nothing showed it (ADR-0046) has an accent light, a
+/// bold title and Just finished until it is opened here or on the desktop. A settled thread says neither that nor
+/// Turn failed.
 private struct ThreadRow: View {
     let row: HostedThread
     let unread: Bool
@@ -888,28 +870,37 @@ private struct ThreadRow: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold)).foregroundStyle(Palette.ink)
                         .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                    PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
-                              tone: failed ? Palette.dangerText : Palette.muted)
+                    PlaceLine(providerID: row.thread.providerId, watched: watched, text: Words.place(row))
                 }
                 Spacer(minLength: Space.s2)
-                if let ago = Words.ago(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt) {
-                    Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).padding(.top, 3)
+                if let trailing {
+                    Text(verbatim: trailing.words).font(.sotto(.caption)).foregroundStyle(trailing.tone).lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
+                        .padding(.top, 3)
                 }
             }
             .padding(.horizontal, Space.s4)
             .padding(.vertical, Space.dense(Space.s3, density) + 2)
             .frame(maxWidth: .infinity, minHeight: 60, alignment: .leading)
-            .failedEdge(failed)
             .contentShape(Rectangle())
         }
         .buttonStyle(PressStyle())
     }
-    /// What the row says under its title: just finished, can't be reached, failed, or where it lives.
-    private var line: String {
-        if unread { return String(localized: "Just finished · \(row.computer)", comment: "%@ is the computer's name.") }
-        if !row.reachable { return "\(row.status.words) · \(row.computer)" }
-        if failed { return "\(state.words) · \(row.computer)" }
-        return Words.place(row)
+    /// What the row says at its trailing edge: Just finished, that its computer can't be reached, Turn failed, or else
+    /// when it last moved. A state takes the time's place, so the line under the title always reads the same way.
+    private var trailing: Trailing? {
+        if unread {
+            return Trailing(words: String(localized: "Just finished", comment: "Where a row's time would be: the thread finished while nothing showed it."),
+                            tone: Palette.accentText)
+        }
+        if !row.reachable { return Trailing(words: row.status.words, tone: Palette.muted) }
+        if failed { return Trailing(words: state.words, tone: Palette.dangerText) }
+        guard let ago = Words.ago(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt) else { return nil }
+        return Trailing(words: ago, tone: Palette.muted)
+    }
+    struct Trailing {
+        let words: String
+        let tone: ThemeRole
     }
     /// The row as VoiceOver reads it; a thread that finished out of sight says so right after its name.
     private var label: String {

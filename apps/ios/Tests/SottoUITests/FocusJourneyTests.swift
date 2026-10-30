@@ -391,16 +391,16 @@ import UIKit
         reveal(settled)
         XCTAssertTrue(!search.exists || search.frame.minY < restingTop - 40, "Search scrolls away with the list, as one sheet")
 
-        // Search's keyboard closes on a tap outside the field, and on scrolling the list. The summary above search is
-        // somewhere to tap that does nothing else.
-        let counts = byID("thread-counts")
-        reveal(counts, swipingDown: true)
-        reveal(search)
+        // Search's keyboard closes on a tap outside the field, and on scrolling the list. The line under search saying
+        // Studio Mac can't be reached is somewhere to tap that does nothing else.
+        let note = byID("unreachable-computers")
+        reveal(note, swipingDown: true)
+        reveal(search, swipingDown: true)
         let keyboard = app.keyboards.firstMatch
         search.tap()
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "Search opens the keyboard")
-        XCTAssertTrue(counts.isHittable)
-        counts.tap()
+        XCTAssertTrue(note.isHittable)
+        note.tap()
         XCTAssertTrue(waitUntilGone(keyboard), "A tap outside search closes its keyboard")
         search.tap()
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "Search opens the keyboard again")
@@ -486,6 +486,36 @@ import UIKit
         computers.tap()
         XCTAssertTrue(app.buttons["Try reaching Studio Mac again"].waitForExistence(timeout: 5))
         capture("computers")
+    }
+
+    /// A working card's last line says only what its other lines don't (#1854): a card with nothing more to say is three
+    /// lines, and one whose turn ended while background agents work says so. VoiceOver reads the line after the name.
+    func testAWorkingCardsLastLineSaysOnlyWhatItsOtherLinesDont() {
+        launch(Self.fixture)
+        let iphone = row("iphone")
+        let wiring = row("wiring")
+        reveal(iphone)
+        reveal(wiring)
+        XCTAssertEqual(iphone.value as? String ?? "", "", "Codex is working on Laptop. repeated the lines above it")
+        XCTAssertEqual(wiring.value as? String, "Background agents are still working.")
+        capture("working-cards-last-line")
+    }
+
+    /// Every card and row reads provider · project · computer, in that order (#1861); a state such as Just finished or
+    /// Can't reach it takes the time's place rather than the line's.
+    func testEveryCardAndRowNamesProviderProjectThenComputer() {
+        launch(Self.fixture)
+        let iphone = row("iphone")
+        reveal(iphone)
+        XCTAssertEqual(iphone.label, "Refine the iPhone thread view, Working, Codex · Sotto · Laptop")
+        reveal(row("shortcuts"))
+        XCTAssertEqual(row("shortcuts").label, "Add keyboard shortcuts, just finished, not opened yet, Codex · Sotto · Laptop")
+        reveal(row("drives"))
+        XCTAssertEqual(row("drives").label, "Compare motor drive options, Codex · Panel tools · Laptop")
+        let lighting = app.buttons["thread-22222222-2222-4222-8222-222222222222/lighting"]
+        reveal(lighting)
+        XCTAssertEqual(lighting.label, "Update the lighting plan, Can’t reach it, Codex · House · Studio Mac")
+        capture("recent-meta-line")
     }
 
     /// A long thread whose messages arrive a moment after it opens shows its end at once. On the phone a thread sometimes
@@ -1918,7 +1948,7 @@ import UIKit
         if openThread {
             openWorkingThread()
         } else {
-            XCTAssertTrue(byID("thread-counts").waitForExistence(timeout: 5))
+            XCTAssertTrue(app.buttons["computer-filter"].waitForExistence(timeout: 5))
         }
         measureCPUForThreeSeconds()
     }
@@ -1959,9 +1989,6 @@ import UIKit
     /// Threads and Computers at the top in the Glow look, dark then light.
     func testThreadsAndComputersInTheGlowLook() {
         launch(Self.fixture)
-        let counts = byID("thread-counts")
-        XCTAssertTrue(counts.exists)
-        XCTAssertTrue(counts.label.contains("2 working"), "The summary counts the threads at work")
         XCTAssertTrue(app.buttons["Try reaching Studio Mac again"].exists, "A computer that can't be reached offers Try again")
         XCTAssertFalse(app.tab("Watcher").exists, "A computer that doesn't run Watcher gives it no tab")
         capture("threads-glow-dark")
@@ -2122,6 +2149,27 @@ import UIKit
         XCTAssertTrue(docs.waitForExistence(timeout: 10), "Back from the delegated thread comes back to the sheet")
         app.buttons["agents-done"].tap()
         XCTAssertTrue(waitUntilGone(docs), "Done closes the sheet")
+    }
+
+    /// The computer menu leads the search row, as it does at regular width, and no counts line repeats the section
+    /// headings (#1849). At the accessibility text sizes the menu sits above search instead. With a banner showing on an
+    /// SE at the default size, the first Needs you card starts in the top half of the screen.
+    func testTheComputerMenuLeadsTheSearchRow() {
+        launch(Self.fixture + ["--ui-feedback-request-gone"])
+        let filter = app.buttons["computer-filter"]
+        let search = app.textFields["thread-search"]
+        XCTAssertTrue(filter.exists)
+        XCTAssertFalse(byID("thread-counts").exists, "The section headings count; no line above them repeats it")
+        let oneRow = abs(filter.frame.midY - search.frame.midY) < 12
+        if oneRow {
+            XCTAssertLessThanOrEqual(filter.frame.maxX, search.frame.minX, "The menu comes before search")
+            XCTAssertLessThan(row("release").frame.minY, app.windows.firstMatch.frame.midY, "The first card starts in the top half")
+        } else {
+            XCTAssertLessThanOrEqual(filter.frame.maxY, search.frame.minY, "At the larger text sizes the menu sits above search")
+        }
+        XCTAssertEqual(byID("unreachable-computers").label, "Can’t reach Studio Mac.", "One computer keeps its own words")
+        XCTAssertTrue(app.buttons["Try reaching Studio Mac again"].exists)
+        capture("threads-header")
     }
 
     func testComputerScopePreservesSearchAndLandscape() {

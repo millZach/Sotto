@@ -114,6 +114,18 @@ final class FocusThreadsTests: XCTestCase {
         XCTAssertEqual(rows.working.count, 2)
         XCTAssertEqual(rows.recent.map(\.id), ["h/failed"])
     }
+    func testAWorkingCardReadsTheAgentsLastWordsOnlyWhileTheyAreTheNewest() throws {
+        func messages(_ json: String) throws -> [Message] { try JSONDecoder().decode([Message].self, from: Data(json.utf8)) }
+        let replying = try messages(#"[{"id":"p","role":"user","text":"Fix the tooltips."},{"id":"r","role":"assistant","text":"I read the drawer.\n\nNow **checking** the `tooltip` tests\nin the drawer."}]"#)
+        XCTAssertEqual(FocusThreads.lastWords(replying), "Now checking the tooltip tests in the drawer.", "The last block, as one line of plain text")
+        let listed = try messages(#"[{"id":"r","role":"assistant","text":"Next:\n\n- Run the tests\n- Open the pull request"}]"#)
+        XCTAssertEqual(FocusThreads.lastWords(listed), "Open the pull request")
+        let asked = try messages(#"[{"id":"r","role":"assistant","text":"Done."},{"id":"p","role":"user","text":"Now the tests."}]"#)
+        XCTAssertNil(FocusThreads.lastWords(asked), "The user wrote last, so the agent has said nothing since")
+        let code = try messages(#"[{"id":"r","role":"assistant","text":"Running:\n\n```sh\nnpm test\n```"}]"#)
+        XCTAssertNil(FocusThreads.lastWords(code), "A line can't show code")
+        XCTAssertNil(FocusThreads.lastWords([]))
+    }
     // MARK: Delegated threads (ADR-0081)
 
     private func ask(_ kind: String, _ id: String = "r") -> String {
