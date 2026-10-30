@@ -29,9 +29,6 @@ export interface ThreadShortcutsSettingsProps {
 
 /** What the application menu calls each chord it owns (`menuOwnedChords`), for naming it in a refusal. */
 const MENU_OWNER_NAMES: Readonly<Record<string, MessageDescriptor>> = {
-  'ctrl+r': msg`Reload the window`,
-  'ctrl+shift+r': msg`Force reload the window`,
-  'ctrl+shift+i': msg`Toggle developer tools`,
   'ctrl+w': msg`Close the window`,
   'mod+w': msg`Close the window`,
   'ctrl+0': msg`Actual size`,
@@ -328,7 +325,9 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
     fixedRow(t`Commit, use folder`, <Trans>Inside its dialog only.</Trans>, acceleratorOf('mod+enter'), 'commit'),
     fixedRow(t`Search transcripts`, <Trans>Opens the Dictate room on its search, from any page.</Trans>, acceleratorOf('mod+k'), 'search'),
     fixedRow(t`Terminal search & text size`, <Trans>The terminal’s own keys, while a terminal holds them.</Trans>, acceleratorOf('mod+f'), 'terminal'),
-    ...(platform === 'darwin' ? [fixedRow(t`Settings`, <Trans>macOS’s own Settings chord, from the app menu.</Trans>, 'CommandOrControl+,', 'settings')] : []),
+    fixedRow(t`Settings`, platform === 'darwin'
+      ? <Trans>macOS’s own Settings chord, from the app menu.</Trans>
+      : <Trans>Opens Settings from any page.</Trans>, 'CommandOrControl+,', 'settings'),
   ]
   const fixedMatches = query === '' || 'fixed dictation send steer search terminal settings'.includes(query)
   const changedCount = GROUPS.flatMap(groupRows).filter(row => changed(row.id)).length

@@ -2476,10 +2476,6 @@ msgstr ""
 msgid "For settled threads on this computer. A cleared thread can’t be brought back."
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
-msgid "Force reload the window"
-msgstr ""
-
 #. An example SSH host: forge and server are machine names, user an account name.
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "forge or user@server"
@@ -3747,6 +3743,10 @@ msgstr ""
 msgid "OpenRouter’s speech models could not be read. Nothing was changed."
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Opens Settings from any page."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Opens the browser or test iPhone over the thread when an agent uses it. Off, the work still shows in Tools."
 msgstr ""
@@ -4178,10 +4178,6 @@ msgstr ""
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Reduced motion"
-msgstr ""
-
-#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
-msgid "Reload the window"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -6084,10 +6080,6 @@ msgstr ""
 #. Read between two version numbers: from one version to another.
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "to"
-msgstr ""
-
-#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
-msgid "Toggle developer tools"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/themeLibrary.ts

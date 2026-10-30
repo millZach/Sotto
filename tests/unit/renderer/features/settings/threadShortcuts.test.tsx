@@ -79,13 +79,28 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     expect(onUpdateSettings).not.toHaveBeenCalled()
   })
 
-  it('refuses keys the application menu takes before the window, such as Force Reload’s', async () => {
+  it('refuses keys the application menu takes before the window, such as Close’s', async () => {
+    const { onUpdateSettings, user } = setup()
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Alt R' }))
+    press('ControlLeft', 'KeyW')
+    release('KeyW')
+    expect(await within(row('Restore settled thread')).findByRole('alert')).toHaveTextContent('Close the window already uses Ctrl + W. Pick other keys.')
+    expect(onUpdateSettings).not.toHaveBeenCalled()
+  })
+
+  it('lets a shortcut take the browser keys a shipped build no longer answers (#1825)', async () => {
     const { onUpdateSettings, user } = setup()
     await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Alt R' }))
     press('ControlLeft', 'ShiftLeft', 'KeyR')
     release('KeyR')
-    expect(await within(row('Restore settled thread')).findByRole('alert')).toHaveTextContent('Force reload the window already uses Ctrl + Shift + R. Pick other keys.')
-    expect(onUpdateSettings).not.toHaveBeenCalled()
+    await waitFor(() => expect(onUpdateSettings).toHaveBeenCalledWith({ threadShortcuts: { restore: 'mod+shift+r' } }))
+  })
+
+  it('lists Ctrl+, for Settings among the fixed keys off a Mac, as Cmd+, is on one (#1825)', () => {
+    setup()
+    const settings = screen.getByText('Opens Settings from any page.').closest<HTMLElement>('.dictation-shortcuts__row')!
+    expect(within(settings).getByText('Settings')).toBeVisible()
+    expect(within(settings).getByLabelText('Ctrl+,')).toBeVisible()
   })
 
   it('names Changes for the fallback keys it answers to while dictation holds its plain ones', async () => {

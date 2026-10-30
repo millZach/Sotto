@@ -199,6 +199,7 @@ import {
   RECOVERY_NOTICE,
   SETTINGS_CHANGED,
   UPDATE_CHECK_REQUESTED,
+  SETTINGS_OPEN_REQUESTED,
   UPDATE_STATUS,
   SPEECH_MODEL_STATUS,
 } from '../shared/channels'
@@ -1371,18 +1372,19 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       platform,
       appName: APP_NAME,
       includeDeveloperTools: !app.isPackaged,
+      // Settings… (Cmd+, on a Mac, Ctrl+, elsewhere) brings the main window forward on Settings.
       onShowSettings: () => {
-        void windows.showMain().catch(() => logOperational('native-main-show-failed'))
+        void windows.showMain()
+          .then(() => { windows.sendToMain(SETTINGS_OPEN_REQUESTED, null) })
+          .catch(() => logOperational('native-main-show-failed'))
       },
       // Stable on a Mac cannot update itself, so its app menu leaves the command out; Owl's carries it.
       ...(inAppUpdates ? { onCheckForUpdates: requestUpdateCheck } : {}),
       onShowTurnRecords: showTurnRecords,
     })
-    if (applicationMenuTemplate !== null) {
-      // Windows and Linux keep Electron's default menu: installing null would also drop the
-      // reload/devtools accelerators the app ships with today.
-      Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
-    }
+    // Every platform installs Sotto's own menu, so Electron's default one, with its reload and developer-tool keys,
+    // never reaches a shipped build (#1825). The window on Windows and Linux never shows it; it is there for its keys.
+    Menu.setApplicationMenu(Menu.buildFromTemplate(applicationMenuTemplate))
   }
   installApplicationMenu()
   const e2eState = e2eConfiguration === null ? null : createE2ENativeState()
@@ -1961,7 +1963,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       void windows.showMain().catch(() => logOperational('native-main-show-failed'))
     },
     // Only where a check can answer, and only where the tray is the one menu: a Mac's app menu carries it instead.
-    ...(updatesSupported && profile.applicationMenu === 'none' ? { checkForUpdates: requestUpdateCheck } : {}),
+    ...(updatesSupported && profile.applicationMenu === 'hidden' ? { checkForUpdates: requestUpdateCheck } : {}),
     quit(): void {
       app.quit()
     },
