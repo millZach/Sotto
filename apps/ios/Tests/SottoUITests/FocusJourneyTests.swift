@@ -543,6 +543,7 @@ import UIKit
         let title = byID("thread-title")
         XCTAssertTrue(title.waitForExistence(timeout: 5))
         XCTAssertEqual(title.label, "Refine the iPhone thread view")
+        XCTAssertTrue(threadText("Codex · Sotto · Laptop").exists, "The line under the title reads provider · project · computer (#1861)")
         let reply = byID("thread-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
         let running = byID("steps-run-drawer-test")
@@ -646,7 +647,11 @@ import UIKit
         stop.tap()
         XCTAssertTrue(babysit.waitForExistence(timeout: 5), "Stopping offers Babysit pull request again")
 
-        app.buttons["pull-request-close"].tap()
+        // Done closes it, trailing, as every sheet that only shows things closes (#1860).
+        let done = app.buttons["pull-request-done"]
+        XCTAssertEqual(done.label, "Done")
+        XCTAssertTrue(app.buttons["pull-request-github"].exists, "Open on GitHub stays beside Done")
+        done.tap()
         XCTAssertTrue(chip.waitForExistence(timeout: 5))
         let read = NSPredicate(format: "label == %@", "Show pull request 721, draft. Checks: 1 failing, 1 running, 2 passed")
         XCTAssertEqual(XCTWaiter.wait(for: [expectation(for: read, evaluatedWith: chip)], timeout: 5), .completed, "Once read, the chip says its checks")
@@ -694,6 +699,26 @@ import UIKit
         XCTAssertTrue(waitUntilGone(typecheck), "Pressing the line again folds the steps")
         XCTAssertEqual(finished.label, "Show 3 steps")
         XCTAssertTrue(working.exists, "Folding a run leaves the working run's line in place")
+    }
+
+    /// A request sheet leads with what it asks, under one quiet line that says who asks and in which thread, the same on
+    /// a question and a permission (#1855).
+    func testARequestSheetLeadsWithWhatItAsks() {
+        launch(Self.fixture)
+        let release = row("release")
+        reveal(release)
+        release.tap()
+        XCTAssertTrue(app.staticTexts["Which release should I prepare?"].waitForExistence(timeout: 5), "A waiting question opens with its thread")
+        let line = labelled("Claude Code · Choose the release target")
+        XCTAssertTrue(line.exists, "Who asks and where is one short line over the question")
+        reveal(app.buttons["Not now"])
+        app.buttons["Not now"].tap()
+        let permission = "Allow reading the release checklist?"
+        let headline = app.staticTexts.matching(NSPredicate(format: "identifier == %@ AND label == %@", "request-headline", permission)).firstMatch
+        XCTAssertTrue(headline.waitForExistence(timeout: 5), "The permission's headline is what it asks")
+        XCTAssertTrue(line.exists, "Under the same short line as the question")
+        XCTAssertFalse(labelled("Claude Code is asking permission").exists, "The headline never only says who asks")
+        capture("request-permission-headline")
     }
 
     /// A question answered from its sheet leaves the conversation where the user was reading: at its end.
@@ -1294,11 +1319,12 @@ import UIKit
             let row = app.buttons["watcher-receipt-\(laptop)/notes845"]
             revealInWatcher(row)
             XCTAssertTrue(row.label.contains("watched by Watcher"), "The row says Watcher works with the thread")
+            XCTAssertTrue(row.label.contains("Codex · Sotto · Laptop"), "and where it runs, as every thread's line does (#1861)")
             row.tap()
             let title = byID("thread-title")
             XCTAssertTrue(title.waitForExistence(timeout: 10), "The row opens its thread")
             XCTAssertEqual(title.label, "Babysit #845 release notes")
-            XCTAssertTrue(text("Codex on Laptop · Sotto, watched by Watcher").exists, "The owl follows the provider's logo")
+            XCTAssertTrue(text("Codex · Sotto · Laptop, watched by Watcher").exists, "The owl follows the provider's logo")
             let watched = byID("watched-takeover")
             XCTAssertTrue(watched.waitForExistence(timeout: 5))
             XCTAssertEqual(watched.label, "Watched by Watcher. It keeps this thread going and brings you its questions and permissions.",
@@ -1662,6 +1688,14 @@ import UIKit
         picked.tap()
         XCTAssertTrue(waitUntilGone(picked))
         XCTAssertEqual(permissions.value as? String, "Allow edits")
+        // Done closes it too: a sheet that can be dragged away has a button that closes it (#1860).
+        permissions.tap()
+        let done = app.buttons["watcher-permissions-done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 5), "The list closes with Done")
+        XCTAssertEqual(done.label, "Done")
+        done.tap()
+        XCTAssertTrue(waitUntilGone(done), "Done closes the list")
+        XCTAssertEqual(permissions.value as? String, "Allow edits", "and changes nothing")
     }
 
     /// A reply in which Watcher changed files itself carries one quiet line under it (mark B): how many, its reason or that
@@ -1723,7 +1757,7 @@ import UIKit
         XCTAssertTrue(toast.waitForExistence(timeout: 5), "What the press did is said at once")
         XCTAssertTrue(text("Watcher is watching Add keyboard shortcuts.").exists)
         XCTAssertEqual(watchReads("On"), .completed, "Watch is on")
-        XCTAssertTrue(text("Codex on Laptop · Sotto, watched by Watcher").exists, "The owl follows the provider's logo")
+        XCTAssertTrue(text("Codex · Sotto · Laptop, watched by Watcher").exists, "The owl follows the provider's logo")
         capture("watch-thread-page-dark")
         // Undo takes it back.
         let undo = app.buttons["watch-undo"]
@@ -1745,6 +1779,7 @@ import UIKit
         let card = app.buttons["watched-\(laptop)/shortcuts"]
         XCTAssertTrue(card.waitForExistence(timeout: 5), "The thread has a card on Watched")
         XCTAssertTrue(card.label.contains("Watching since"), "With how long Watcher has watched it with nothing sent")
+        XCTAssertTrue(card.label.contains("Codex · Sotto · Laptop"), "And where it runs, as every thread's line does (#1861)")
         let stop = app.buttons["watched-stop-\(laptop)/shortcuts"]
         revealInWatcher(stop)
         XCTAssertEqual(stop.label, "Stop watching Add keyboard shortcuts")

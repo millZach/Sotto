@@ -62,7 +62,9 @@ final class AgentsRosterTests: XCTestCase {
             SubagentRow(id: "child", parentId: "suite", title: "Count failures", status: "failed", startedAt: at(0.5)),
         ]
         let models = [try JSONDecoder().decode(ThreadModel.self, from: Data(#"{"id":"sol","name":"GPT-6.1 Sol","provider":"Codex","providerId":"codex","ready":true}"#.utf8))]
-        let rows = AgentsRoster.rows(owner: owner, threads: [owner, review, docs, check, quick], delegations: records, agents: agents, models: models)
+        let project = try JSONDecoder().decode(Project.self, from: Data(#"{"id":"p","title":"Sotto"}"#.utf8))
+        let rows = AgentsRoster.rows(owner: owner, threads: [owner, review, docs, check, quick], delegations: records, agents: agents, models: models,
+                                     projects: [project], computer: "Laptop")
         // Newest start first: the running agent with its child, then the review with its own (newest first), the docs, the
         // finished agent. A delegated thread the computer said nothing of goes last in its family, worded Unknown or
         // Working as the list says.
@@ -73,7 +75,8 @@ final class AgentsRosterTests: XCTestCase {
         XCTAssertEqual(byID["thread:review"]?.tone, .needs)
         XCTAssertEqual(byID["thread:review"]?.waitingFor, "approval")
         XCTAssertEqual(byID["thread:review"]?.preview, "Review the login fix.")
-        XCTAssertEqual(byID["thread:review"]?.meta(clock: { _ in "10:51" }), "Codex · Code review · GPT-6.1 Sol · 10:51")
+        // Where it runs reads as every thread's line does, provider · project · computer (#1861), then what it was delegated for.
+        XCTAssertEqual(byID["thread:review"]?.meta(clock: { _ in "10:51" }), "Codex · Sotto · Laptop · Code review · GPT-6.1 Sol · 10:51")
         XCTAssertEqual(byID["thread:review"]?.spokenLabel, "review title, delegated thread on Codex, Needs your approval. Opens it to answer")
         XCTAssertEqual(byID["thread:check"]?.delegatedBy, "review title")
         XCTAssertEqual(byID["thread:check"]?.status, "Stopped")
