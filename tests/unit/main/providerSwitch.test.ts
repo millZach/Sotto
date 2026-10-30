@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ConfiguredProviderHost, providerEntityId } from '../../../src/main/agents/providerSwitch'
 import { SottoThreadHost, ThreadRegistry } from '../../../src/main/agents/threads'
+import { isImmutableActivity } from '../../../src/main/agents/activitySnapshots'
 
 import { agentCommandSchema, agentConfigurationSchema, capabilitiesForThread, defaultAgentConfiguration, enabledThreadProviders, isThreadProviderConnected, selectInstalledProviders, type AgentConfiguration, type ProviderId, } from '../../../src/shared/agents'
 import { MemoryStore } from '../../../src/main/memory/store'
@@ -220,6 +221,22 @@ await pending1.promise; return connect() })
     f.host.disconnect('grok'); release(); await pending
     expect((await f.host.snapshot('codex')).providers?.find(provider => provider.id === 'grok')?.connection).toBe('disconnected')
     expect(f.adapters.grok.state.connected).toBe(false)
+  })
+  // A read before every send handed back a deep copy of every thread's activity records, which the workspace merged again
+  // record by record and the thread store's worker was sent again whole (October 30, 2026).
+  it('hands a thread read the activity records it holds certified, and a caller its own copy of the rest', async () => {
+    const f = await fixture()
+    const native = f.adapters.codex.state.threads[0]!
+    native.activities = Array.from({ length: 3 }, (_, position) => ({ id: `record-${position}`, turnId: 'turn', sequence: position, kind: 'command' as const, status: 'completed' as const, title: `Command ${position}` }))
+    const connected = await f.host.connect('codex')
+    const thread = connected.threads.find(item => item.providerId === 'codex')!
+    const first = (await f.host.refreshThread(thread.id)).threads.find(item => item.id === thread.id)!
+    const second = (await f.host.refreshThread(thread.id)).threads.find(item => item.id === thread.id)!
+    expect(first.activities).toHaveLength(3)
+    expect(first.activities!.every((record, index) => isImmutableActivity(record) && record === second.activities![index])).toBe(true)
+    // Everything else is the caller's: changing it changes nothing the switch hands out next.
+    first.title = 'Changed by the caller'
+    expect((await f.host.refreshThread(thread.id)).threads.find(item => item.id === thread.id)!.title).not.toBe('Changed by the caller')
   })
   it('does not promote a capability supported only by another provider into thread authority', async () => {
     const f = await fixture(); f.adapters.claude.state.capabilities.interrupt = false
