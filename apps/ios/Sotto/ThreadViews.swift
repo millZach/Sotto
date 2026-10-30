@@ -81,12 +81,9 @@ struct ThreadView: View {
                         reachable: model.status(ref.hostID) != .unreachable)
     }
 
-    /// Opens the thread's waiting request once, where this iPhone can answer it; after "Not now" it waits in the reply
-    /// box. One this iPhone can't answer waits there from the start, behind the button that opens it: rising on its own
-    /// it only said so, and every such thread first asked for a press to clear it away (#1846).
+    /// Opens the thread's waiting request once; after "Not now" it waits in the reply box.
     private func offer() {
-        guard open == nil, !agentsOpen, !agentsCovered,
-              let request = thread?.requests.first(where: { !setAside.contains($0.id) && model.canAnswer($0, in: ref) }) else { return }
+        guard open == nil, !agentsOpen, !agentsCovered, let request = thread?.requests.first(where: { !setAside.contains($0.id) }) else { return }
         shown = request.id
         open = request
     }
@@ -2306,7 +2303,8 @@ struct RequestSheet: View {
             note(String(localized: "This request can’t be answered here. Check the thread, or answer it on \(computer).", comment: "%@ is the computer's name"))
             Button("Not now") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true)).padding(.top, Space.s5)
         } else if !model.mayAnswer(at: place) {
-            note(String(localized: "This iPhone can’t answer on \(computer) yet. Turn on Can answer for it in Sotto on \(computer), or answer there.", comment: "Both %@ are the computer's name; Can answer is a setting's name in Sotto on the computer"))
+            // Pairing lets this iPhone answer (ADR-0033, October 30 amendment), so only a computer from before that says no.
+            note(String(localized: "This request can’t be answered here. Check the thread, or answer it on \(computer).", comment: "%@ is the computer's name"))
             Button("Not now") { dismiss() }.buttonStyle(PillButtonStyle(kind: .soft, wide: true)).padding(.top, Space.s5)
         } else if permission {
             permissionChoices(current)

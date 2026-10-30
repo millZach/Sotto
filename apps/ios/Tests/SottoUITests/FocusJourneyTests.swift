@@ -460,25 +460,27 @@ import UIKit
         let release = row("release")
         reveal(release)
         release.tap()
-        // This iPhone can't answer on the laptop, so the thread's requests wait in the reply box's place rather than
-        // rising over the conversation on their own (#1846).
-        let requests = app.buttons["thread-requests"]
-        XCTAssertTrue(requests.waitForExistence(timeout: 5))
-        XCTAssertFalse(app.buttons["Not now"].waitForExistence(timeout: 2), "A request this iPhone can't answer doesn't open on its own")
-        capture("thread-requests-waiting")
-        requests.tap()
-        app.buttons["Which release should I prepare?"].tap()
-        XCTAssertTrue(app.staticTexts["Which release should I prepare?"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["Not now"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Which release should I prepare?"].exists)
         capture("thread-question")
         reveal(app.buttons["Not now"])
         app.buttons["Not now"].tap()
         let permission = "Allow reading the release checklist?"
-        XCTAssertFalse(app.staticTexts[permission].waitForExistence(timeout: 2), "Not now doesn't raise the next request either")
+        XCTAssertTrue(app.staticTexts[permission].waitForExistence(timeout: 5), "Deferring the first request exposes the second")
+        capture("thread-second-request")
+        reveal(app.buttons["Not now"])
+        app.buttons["Not now"].tap()
+        let requests = app.buttons["thread-requests"]
+        XCTAssertTrue(requests.waitForExistence(timeout: 5))
+        requests.tap()
+        app.buttons["Which release should I prepare?"].tap()
+        XCTAssertTrue(app.staticTexts["Which release should I prepare?"].waitForExistence(timeout: 5))
+        reveal(app.buttons["Not now"])
+        app.buttons["Not now"].tap()
         XCTAssertTrue(requests.waitForExistence(timeout: 5))
         requests.tap()
         app.buttons[permission].tap()
         XCTAssertTrue(app.staticTexts[permission].waitForExistence(timeout: 5), "Both unanswered requests remain reachable from the composer")
-        capture("thread-second-request")
         reveal(app.buttons["Not now"])
         app.buttons["Not now"].tap()
         back()
@@ -1494,48 +1496,9 @@ import UIKit
         XCTAssertEqual(result, .completed, "\(what) stays whole above the box while Watcher writes (\(seen))")
     }
 
-    /// A phone without Can answer on the computer that runs Watcher reads the cards in its page and answers none of them,
-    /// and says so, as it does on Threads. Watcher's own request badges its tab.
-    func testAPhoneWithoutCanAnswerSaysSoInWatchersPage() {
-        launch(Self.watcher + ["--ui-watcher-asks"])
-        let tab = openWatcher()
-        XCTAssertEqual(byID("watcher-state").label, "Watcher, Needs you")
-        let note = text("This iPhone can’t answer on Laptop yet.")
-        revealInWatcher(note)
-        XCTAssertFalse(app.buttons["watcher-card-send"].exists, "Nothing can be sent from a card")
-        XCTAssertFalse(app.buttons["Allow once"].exists)
-        let own = byID("watcher-own-card")
-        revealInWatcher(own)
-        XCTAssertTrue(own.label.contains("Watcher asks each time. It can’t be given lasting permission."))
-        XCTAssertTrue(byID("watcher-send-held").exists, "Watcher waits for its own request before it takes more")
-        capture("watcher-cannot-answer-dark")
-        // While Watcher's own request waits on the user, its permissions are fixed, as on the desktop, and the chip says so.
-        let permissions = app.buttons["watcher-permissions"]
-        XCTAssertTrue(permissions.waitForExistence(timeout: 5))
-        XCTAssertEqual(permissions.value as? String, "Ask before actions")
-        XCTAssertFalse(permissions.isEnabled, "Fixed while Watcher waits on the user")
-        XCTAssertEqual(byID("watcher-permissions-fixed").label, "Fixed while Watcher works.")
-        let review = app.buttons["watcher-card-review"].firstMatch
-        revealInWatcher(review)
-        review.tap()
-        XCTAssertTrue(text("This iPhone can’t answer on Laptop yet. Turn on Can answer for it in Sotto on Laptop").waitForExistence(timeout: 5),
-                      "Review opens the card's own sheet, which says why it can't be answered here")
-        capture("watcher-cannot-answer-sheet-dark")
-        let notNow = app.buttons["Not now"]
-        reveal(notNow)
-        notNow.tap()
-        XCTAssertTrue(waitUntilGone(notNow))
-        watcherInLight()
-        revealInWatcher(byID("watcher-own-card"))
-        capture("watcher-cannot-answer-light")
-        // Last, so the rest of the journey reports first if the tab bar doesn't carry it.
-        let badged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "1 needs you"), object: tab)
-        XCTAssertEqual(XCTWaiter.wait(for: [badged], timeout: 10), .completed, "VoiceOver hears Watcher's own request on its tab")
-    }
-
     /// Watcher's permissions can only stay asking first from a phone that can't answer on Watcher's computer, and the list
     /// says why.
-    func testAPhoneWithoutCanAnswerCanOnlyKeepWatcherAskingFirst() {
+    func testAPhoneThatCantAnswerCanOnlyKeepWatcherAskingFirst() {
         launch(Self.watcher)
         openWatcher()
         let permissions = toWatcherHero()
@@ -1629,7 +1592,7 @@ import UIKit
                       "Each mode says what Watcher does under it")
         let edits = app.buttons["watcher-permission-auto-accept-edits"]
         reveal(edits)
-        XCTAssertTrue(edits.isEnabled, "With Can answer, a wider mode can be chosen")
+        XCTAssertTrue(edits.isEnabled, "Where this iPhone can answer, a wider mode can be chosen")
         XCTAssertFalse(byID("watcher-permissions-asks-only").exists)
         capture("watcher-permissions-sheet-dark")
         edits.tap()

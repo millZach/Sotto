@@ -23,7 +23,8 @@ import { servePortOwner, TailscaleAccessDenied, type ServeConfig, type ServeResu
  *
  * Pairing codes are issued here, from the Phones page, and nowhere else. The listener's administrative
  * routes are off: the desktop administers it in-process, so no admin token exists on disk or on the wire.
- * A phone's answers count only after the owner turns on Can answer for it, which writes the policy record.
+ * Pairing a phone by a code the owner showed writes the policy record that lets its answers count, and each start writes
+ * it again for any paired phone without one; Remove revokes it (ADR-0004).
  *
  * A headless host runs the same phone access over its own host service (ADR-0050). It shares the host's pairing
  * store, so a phone and a desktop pair with one set of clients, and the desktop it is connected to administers it
@@ -39,7 +40,7 @@ export type PhoneAccessEvent =
   | 'phone-access-on' | 'phone-access-failed' | 'phone-access-start-failed' | 'phone-access-close-failed'
   | 'phone-access-record-unreadable' | 'phone-access-record-write-failed' | 'phone-access-pairing-unreadable'
   | 'phone-access-phones-unreadable' | 'phone-access-phones-write-failed'
-  | 'phone-access-listener-failed' | 'phone-access-listener-close-failed' | 'phone-access-policy-revoke-failed'
+  | 'phone-access-listener-failed' | 'phone-access-listener-close-failed' | 'phone-access-policy-grant-failed' | 'phone-access-policy-revoke-failed'
   | 'phone-access-serve-status-failed' | 'phone-access-serve-not-enabled' | 'phone-access-serve-denied' | 'phone-access-serve-failed' | 'phone-access-serve-remove-failed'
 
 export interface PhoneAccessTailscale {
@@ -51,6 +52,7 @@ export interface PhoneAccessTailscale {
 
 export interface PhoneAccessPolicy {
   mayGrant(client: ClientIdentity): { readonly allowed: boolean }
+  ensureRemoteAnswers(clientId: string, note: string): boolean
   setRemoteAnswers(clientId: string, allowed: boolean, note: string): void
 }
 
@@ -117,7 +119,7 @@ const servePortOf = (record: PhoneAccessRecord): PhoneAccessServePort => record.
 const onPort = (record: Omit<PhoneAccessRecord, 'servePort'>, servePort: PhoneAccessServePort): PhoneAccessRecord =>
   servePort === 8443 ? record : { ...record, servePort }
 
-const ANSWERS_NOTE = 'The user turned on Can answer for this paired phone on the Phones page.'
+const ANSWERS_NOTE = 'The user paired this phone with a code from the Phones page, which lets it answer.'
 const WAITING = { status: 'waiting' } as const
 
 export class PhoneAccess {
@@ -178,6 +180,7 @@ export class PhoneAccess {
       try { this.phoneIds = new Set(await this.phoneStore.read()) }
       catch { this.phoneIds = new Set(); this.options.log?.('phone-access-phones-unreadable') }
     }
+    this.answerPairedPhones()
     this.settingsChanged()
     await this.queue
   }
@@ -185,6 +188,28 @@ export class PhoneAccess {
   /** The paired clients that are phones (see `phoneIds`). */
   private paired() {
     return this.pairing.list().filter(client => !this.phoneIds || this.phoneIds.has(client.clientId))
+  }
+
+  /** Whether this client paired through phone access: a phone, and not a desktop paired with the same host. */
+  isPhone(clientId: string): boolean {
+    // Until the phones' record is read, `paired()` counts every client, desktops too, so nothing is known to be a phone.
+    if (!this.pairingReady || (this.phoneStore && !this.phoneIds)) return false
+    return this.paired().some(client => client.clientId === clientId)
+  }
+
+  /**
+   * Gives every paired phone the record that lets it answer, where it has none: a phone paired before pairing granted
+   * answers, or one whose record was revoked when Can answer was a switch. Pairing is the grant now, and Remove the only
+   * revocation (ADR-0033), so this runs at every start and writes nothing for a phone already answering.
+   */
+  private answerPairedPhones(): void {
+    const policy = this.options.policy
+    if (!policy || !this.pairingReady || (this.phoneStore && !this.phoneIds)) return
+    for (const client of this.paired()) this.grantAnswers(policy, client.clientId)
+  }
+
+  private grantAnswers(policy: PhoneAccessPolicy, clientId: string): void {
+    try { policy.ensureRemoteAnswers(clientId, ANSWERS_NOTE) } catch { this.options.log?.('phone-access-policy-grant-failed') }
   }
 
   private async rememberPhones(): Promise<void> {
@@ -255,14 +280,6 @@ export class PhoneAccess {
       case 'cancel-code':
         this.cancelCode()
         break
-      case 'set-can-answer': {
-        const policy = this.options.policy
-        if (!policy) throw new Error('Permission policies are unavailable on this computer, so a phone cannot be allowed to answer. Nothing was changed.')
-        if (!this.paired().some(client => client.clientId === command.clientId)) throw new Error('That phone is no longer paired. Nothing was changed.')
-        policy.setRemoteAnswers(command.clientId, command.allowed, ANSWERS_NOTE)
-        this.listener?.refreshCapabilities()
-        break
-      }
       case 'remove':
         if (!this.pairingReady) throw new Error('Paired phones could not be read. Nothing was changed. Restart Sotto and try again.')
         // Only a phone: a desktop paired with the same host is removed from that desktop, by Forget.
@@ -320,6 +337,7 @@ export class PhoneAccess {
   private async loadPairing(): Promise<boolean> {
     if (this.pairingReady) return true
     try { await this.pairing.load(); this.pairingReady = true } catch { this.options.log?.('phone-access-pairing-unreadable') }
+    this.answerPairedPhones()
     return this.pairingReady
   }
 
@@ -555,6 +573,8 @@ export class PhoneAccess {
       name: () => this.computerName(),
       mayAnswer: (client: ClientIdentity) => this.options.policy?.mayGrant(client).allowed ?? false,
       onPaired: (clientId: string) => {
+        // In the same turn the pairing answer is written in, so the hello the phone opens with already says it may answer.
+        if (this.options.policy) this.grantAnswers(this.options.policy, clientId)
         this.cancelCode()
         if (this.phoneIds) { this.phoneIds.add(clientId); void this.rememberPhones() }
         this.publish()

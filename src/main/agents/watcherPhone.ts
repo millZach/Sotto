@@ -335,7 +335,7 @@ export class WatcherPhoneService {
     if (client.transport !== 'socket') return watcherRefusal('INVALID_INPUT', 'Watcher phone controls need a paired phone connection.')
     const permissionGrant = action === 'permission' && (request as WatcherSetPermissionRequest).runtimeMode !== 'approval-required'
     guard()
-    if (permissionGrant && !mayAnswer()) return watcherRefusal('PERMISSION_TOO_WIDE', 'This phone needs Can answer to let Watcher act without asking. Nothing changed.')
+    if (permissionGrant && !mayAnswer()) return watcherRefusal('PERMISSION_TOO_WIDE', 'This phone can’t answer on this computer, so Watcher keeps asking first. Nothing changed. Change Watcher’s permissions in Sotto on this computer.')
     const check = () => {
       guard()
       if (permissionGrant && !mayAnswer()) throw new Error('This phone no longer has permission to change what Watcher may do without asking.')

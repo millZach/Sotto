@@ -209,7 +209,7 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
           <li><Trans>Enter <b className="phones-mono">{machine}</b>.</Trans></li>
           <li><Trans>Enter the code shown here.</Trans></li>
         </ol>
-        <p className="phones-note tt-paragraph"><Trans>A paired phone reads threads and replies. It answers questions and permissions only after you turn on Can answer for it.</Trans></p>
+        <p className="phones-note tt-paragraph"><Trans>A paired phone reads threads, replies, and answers questions and permissions. Remove a phone to take that away.</Trans></p>
       </div>
       {codeCard}
     </section>
@@ -218,8 +218,7 @@ export function PhonesSettings({ phoneAccess, phoneAccessName, onUpdateSettings,
     {state?.phones.length ? <section aria-labelledby={`${pairHeading}-phones`}>
       <h3 id={`${pairHeading}-phones`}>{t`Paired phones`}</h3>
       <div className="hosts-list hosts-card phones-list">
-        {state.phones.map(phone => <PhoneRow key={phone.clientId} phone={phone} answersAvailable={state.answersAvailable}
-          onCanAnswer={allowed => void run({ type: 'set-can-answer', clientId: phone.clientId, allowed })} onRemove={() => setRemoveId(phone.clientId)} />)}
+        {state.phones.map(phone => <PhoneRow key={phone.clientId} phone={phone} onRemove={() => setRemoveId(phone.clientId)} />)}
       </div>
     </section> : null}
     {state ? <div className="settings-rows phones-name">

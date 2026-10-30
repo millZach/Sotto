@@ -943,7 +943,7 @@ it('sends to a full-access thread on a paired host where this computer may not a
   const writes = vi.spyOn(f.socket, 'watcherControl')
   expect(await startFullAccess()).toMatchObject(held)
   expect(writes).not.toHaveBeenCalled()
-  // A send gives the thread nothing it did not have, so the host takes it: a paired desktop may send there without Can answer.
+  // A send gives the thread nothing it did not have, so the host takes it: a paired desktop may send there without an answers grant.
   const sent = await send('Synthetic send where this computer may not answer')
   expect(sent, JSON.stringify(sent)).toMatchObject({ status: 'ok' })
   expect(writes).toHaveBeenCalledOnce()

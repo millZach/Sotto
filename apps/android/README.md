@@ -6,7 +6,7 @@ This directory is independent of the Electron/npm package and of `apps/ios`. It 
 
 ## What it does
 
-Pair with a computer by its machine name on the tailnet and the eight-character code from Settings › Phones there. Threads puts questions and permissions first, working threads next, then recent threads, across every paired computer. A thread shows its messages or its activity, takes replies and stops a working turn. A waiting question or permission opens as a sheet, and it can be answered only after that computer turns on Can answer for this phone. New thread (+) chooses a computer, a project or a folder on it, then a model, effort and permission mode.
+Pair with a computer by its machine name on the tailnet and the eight-character code from Settings › Phones there. Threads puts questions and permissions first, working threads next, then recent threads, across every paired computer. A thread shows its messages or its activity, takes replies and stops a working turn. A waiting question or permission opens as a sheet, and pairing lets this phone answer it, as on the iPhone (ADR-0033, October 30 amendment). New thread (+) chooses a computer, a project or a folder on it, then a model, effort and permission mode.
 
 ## Where things are
 
