@@ -4,8 +4,9 @@ Part of #992. Measured with `tests/perf/claudeTranscriptPoll.perf.test.ts`. It c
 CLI with 132 and with 264 saved threads, each with a transcript of 40 entries, and one thread on screen. The 132 are the
 owner's count in #992. Over three seconds with nothing happening, it counts the transcripts each tick reads, the time
 inside those reads and the process's CPU per tick, at a 100 ms tick so the window holds about thirty. Then it opens five
-untouched threads, and five whose transcripts gained twenty entries typed in Claude Code outside Sotto before the window.
-It times each open end to end, the transcript read inside it and the bytes that read took.
+untouched threads, and five whose transcripts gained twenty entries typed in Claude Code outside Sotto before the window,
+as a pane opens one: the window observes it. It times each from then until the thread shows all its transcript holds,
+and counts the bytes its transcript read took.
 
 ```sh
 SOTTO_PERF_BENCH=1 NODE_OPTIONS=--max-old-space-size=3072 npx vitest run tests/perf/claudeTranscriptPoll.perf.test.ts --maxWorkers=1 --disable-console-intercept
@@ -23,44 +24,51 @@ Zach's call, October 29: check every second only threads open in a pane, working
 thread, settled or not, catches up when it is opened or sent to, with no slower sweep. A thread he comes back to must not
 open slower.
 
-- The timer reads the transcripts of the threads the coordinator observes and of the threads that are working
-  (`pollActiveSessionLogs`). It reads a thread that leaves both once more, so its turn's last lines land.
-- Every other thread's transcript is read from its cursor when the thread is opened or sent to (`sync`), and at connect,
-  which still reads every saved thread once. That keeps each cursor current, so an open reads only what was written since.
+- The timer reads the transcripts of the threads the coordinator observes, of the threads that are working, and of the
+  threads whose CLI did anything since the last tick, so a turn begun and ended between two ticks is read too
+  (`pollActiveSessionLogs`). It reads a thread that leaves those once more, so its turn's last lines land, and tries a
+  read that failed again on the next tick.
+- Every other thread's transcript is read from its cursor as soon as the thread comes into view (`observeThreads`) or is
+  sent to (`sync`), and at connect, which still reads every saved thread once. That keeps each cursor current, so an open
+  reads only what was written since.
+- A transcript nothing was written to since its last read is not opened: one stat says so.
 
 ## Before and after
 
-Three runs each on forge, the same benchmark before and after. Ranges are the three runs.
+Three runs each on forge, the same benchmark before and after. Ranges are the three runs; an open is the median of five.
 
 | | Before | After |
 | --- | ---: | ---: |
-| Transcripts read per tick, 132 saved | 130.6-132 | 1 |
-| Transcripts read per tick, 264 saved | 259.1-263.2 | 1 |
-| Time in those reads per tick, 132 saved | 2.93-3.19 ms | 0.15-0.18 ms |
-| Time in those reads per tick, 264 saved | 5.45-5.94 ms | 0.16-0.21 ms |
-| CPU per tick, 132 saved | 3.43-3.84 ms | 0.19-0.20 ms |
-| CPU per tick, 264 saved | 7.11-7.55 ms | 0.24-0.29 ms |
-| Opening an untouched thread, median of five | 29.1-31.6 ms | 29.1-32.3 ms |
-| of it, reading its transcript | 0.12-0.20 ms, 0 bytes | 0.14-0.21 ms, 0 bytes |
-| Opening a thread with outside work, median of five | 28.8-31.1 ms | 29.8-33.7 ms |
-| of it, reading its transcript | 0.12-0.17 ms, 0 bytes | 0.52-0.75 ms, 11,620 bytes |
+| Transcripts read per tick, 132 saved | 128.4-132 | 1 |
+| Transcripts read per tick, 264 saved | 257-262.6 | 1 |
+| Time in those reads per tick, 132 saved | 3.00-3.72 ms | 0.11-0.14 ms |
+| Time in those reads per tick, 264 saved | 5.51-5.97 ms | 0.09-0.13 ms |
+| CPU per tick, 132 saved | 3.49-3.95 ms | 0.15-0.16 ms |
+| CPU per tick, 264 saved | 7.25-7.56 ms | 0.19-0.21 ms |
+| An untouched thread opened, until it shows everything | 0.03-0.06 ms, 0 bytes read | 0.03-0.08 ms, 0 bytes read |
+| A thread with outside work opened, until it shows everything | 0.03-0.08 ms, 0 bytes read | 2.19-3.65 ms, 11,620 bytes read |
 
-The idle poll no longer grows with the threads saved. Opening an untouched thread reads nothing, as before. A thread
-with work done outside Sotto now reads that work when it opens rather than in the poll before: half a millisecond more
-for twenty entries, within the open's run-to-run spread. The open is mostly the fake CLI starting. The idle CPU includes
-the test runner's own small share.
+The idle poll no longer grows with the threads saved. An untouched thread opens showing everything at once, as before.
+A thread with work done outside Sotto read that work in the poll before; it now reads it the moment it comes into view,
+and shows it 2 to 4 ms later, inside one frame. Before the review's fix, that waited for the poll's next tick, up to a
+second. With only the threads in use read, the one stat in place of opening a quiet transcript took the time in the
+reads per tick from 0.15-0.21 ms to the range above. The idle CPU includes the test runner's own small share.
 
 ## The guard
 
 `tests/integration/claudeTranscriptCatchUp.test.ts`, "reads each tick only the threads looked at or working, once more
 after, and the rest when opened from their cursor", in the default suite. Six saved threads, one on screen:
 
-- each tick reads that one;
-- a thread that starts working is read while it works and on the tick after;
-- a thread with work typed outside Sotto is read by no tick, and when opened it reads the one entry added since its
-  cursor, not its transcript from the first byte, and shows it.
+- each tick of the poll's own timer reads that one;
+- a thread that starts working is read while it works and on the tick after, and a read of it that fails is tried
+  again on the next tick;
+- a thread sent a turn that begins and ends between two ticks is read on the next tick;
+- a thread with work typed outside Sotto is read by no tick, and when a pane opens it, it reads at once the one entry
+  added since its cursor, not its transcript from the first byte, and shows it.
 
-With the timer reading every transcript, as before, its first tick reads all six and it fails.
+Each of these fails without its part of the change: with the timer reading every transcript, as before, its first tick
+reads all six. `claudeSessionLog.test.ts` counts the opens of a transcript nothing was written to: none, and one once it
+grows.
 
 ## What it leaves
 

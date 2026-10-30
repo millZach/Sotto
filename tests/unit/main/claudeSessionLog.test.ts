@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, open, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -58,6 +58,27 @@ describe('Claude session log cursor', () => {
     resumed.resume(cursor)
     await resumed.poll()
     expect(second.map(frame => (frame.message as { content: string }).content)).toEqual(['Third'])
+  })
+
+  it('reads a transcript nothing was written to without opening it, and opens it again once it grows', async () => {
+    const { home, cwd, session, path } = await transcript()
+    await appendFile(path, entry(session, 'First'))
+    const frames: ClaudeFrame[] = []
+    const reader = new ClaudeSessionLog(home, cwd, session, frame => frames.push(frame))
+    await reader.poll()
+    // Every open is followed by a stat of the handle opened, so counting those counts the opens.
+    const probe = await open(path, 'r')
+    const handles = Object.getPrototypeOf(probe) as { stat(): Promise<unknown> }
+    await probe.close()
+    const opened = vi.spyOn(handles, 'stat')
+    await reader.poll()
+    await reader.poll()
+    expect(opened).not.toHaveBeenCalled()
+    await appendFile(path, entry(session, 'Second'))
+    await reader.poll()
+    expect(opened).toHaveBeenCalledTimes(1)
+    expect(frames.map(frame => (frame.message as { content: string }).content)).toEqual(['First', 'Second'])
+    expect(reader.cursor()!.offset).toBe(reader.cursor()!.size)
   })
 
   it('stores the offset after the last complete line, so a half-written entry is read whole next time', async () => {

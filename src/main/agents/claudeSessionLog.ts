@@ -114,9 +114,14 @@ export function authoredClaudeUser(frame: ClaudeFrame): boolean {
  */
 export interface ClaudeTranscriptCursor { readonly offset: number; readonly size: number; readonly ino?: string | undefined; readonly birthtimeMs?: number | undefined }
 
-function sameFile(cursor: ClaudeTranscriptCursor, identity: { ino?: string | undefined; birthtimeMs?: number | undefined }): boolean {
+type FileIdentity = { readonly ino?: string | undefined; readonly birthtimeMs?: number | undefined }
+function sameFile(cursor: FileIdentity, identity: FileIdentity): boolean {
   if (cursor.ino || identity.ino) return Boolean(cursor.ino && identity.ino && cursor.ino === identity.ino)
   return cursor.birthtimeMs !== undefined && identity.birthtimeMs !== undefined && Math.abs(cursor.birthtimeMs - identity.birthtimeMs) < 1
+}
+/** A transcript's length and identity. Some Windows filesystems report no inode; the creation time is then the only identity on offer. */
+function identityOf(stats: { readonly size: number; readonly ino: number | bigint; readonly birthtimeMs: number }): { size: number } & FileIdentity {
+  return { size: stats.size, ...(stats.ino ? { ino: String(stats.ino) } : {}), ...(Number.isFinite(stats.birthtimeMs) ? { birthtimeMs: stats.birthtimeMs } : {}) }
 }
 
 /** Reads only a Sotto-created UUID in its known project; never discovers foreign history. */
@@ -177,13 +182,18 @@ export class ClaudeSessionLog {
   }
   private async read(): Promise<void> {
     const path = await this.resolve(); if (!path) return
+    // Nothing written since the last read, which ran to the end: the same file at the same length. It is not opened, so
+    // reading a quiet transcript costs one stat (#992).
+    if (this.identity && !this.resumeFrom && this.offset === this.identity.size) {
+      const now = await stat(path).catch(() => undefined)
+      if (now?.isFile() && now.size === this.offset && sameFile(this.identity, identityOf(now))) return
+    }
     const handle = await open(path, 'r').catch(() => undefined); if (!handle) return
     let delivered = false
     try {
       const stats = await handle.stat()
       const size = stats.size
-      // Some Windows filesystems report no inode; the creation time is then the only identity on offer.
-      this.identity = { size, ...(stats.ino ? { ino: String(stats.ino) } : {}), ...(Number.isFinite(stats.birthtimeMs) ? { birthtimeMs: stats.birthtimeMs } : {}) }
+      this.identity = identityOf(stats)
       const resume = this.resumeFrom; this.resumeFrom = undefined
       if (resume && resume.offset <= size && size >= resume.size && sameFile(resume, this.identity)) { this.offset = resume.offset; this.line = resume.offset }
       if (size < this.offset) { this.offset = 0; this.line = 0; this.parts = []; this.partsLength = 0 }

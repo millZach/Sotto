@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { ClaudeSessionLog } from '../../src/main/agents/claudeSessionLog'
 import type { AgentThread } from '../../src/shared/agents'
-import { claudeFixture } from '../fixtures/claudeFixture'
+import { claudeFixture, savedClaudeThreads } from '../fixtures/claudeFixture'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
@@ -393,50 +393,57 @@ describe('Claude transcript poll', () => {
 
   it('reads each tick only the threads looked at or working, once more after, and the rest when opened from their cursor', async () => {
     const root = await mkdtemp(join(tmpdir(), 'sotto-claude-poll-'))
-    const folder = join(root, 'home', 'projects', root.replace(/[^a-zA-Z0-9]/gu, '-'))
-    await mkdir(folder, { recursive: true })
     const entry = (session: string, text: string): string => JSON.stringify({ type: 'user', uuid: randomUUID(), sessionId: session, timestamp: new Date().toISOString(), message: { role: 'user', content: text } })
     // Six saved threads, as an earlier run left them.
-    const aliases: Record<string, unknown> = {}, sessions = new Map<string, string>()
-    for (let index = 0; index < 6; index++) {
-      const id = randomUUID(), session = randomUUID()
-      sessions.set(id, session)
-      aliases[id] = { sessionId: session, projectId: 'project', cwd: root, title: `Saved ${index}`, modelId: 'fixture-model', createdAt: new Date().toISOString(), origins: [], answeredRequestIds: [] }
-      await writeFile(join(folder, `${session}.jsonl`), `${[0, 1, 2, 3].map(line => entry(session, `Saved ${index} line ${line}`)).join('\n')}\n`)
-    }
-    await writeFile(join(root, 'claude-threads.json'), JSON.stringify(aliases))
-    await writeFile(join(root, 'claude-projects.json'), JSON.stringify([{ id: 'project', title: 'Project', path: root }]))
-    // The test ticks the poll itself.
+    const { folder, sessions } = await savedClaudeThreads(root, 6, (session, index) => `${[0, 1, 2, 3].map(line => entry(session, `Saved ${index} line ${line}`)).join('\n')}\n`)
+    // The poll's own timer, held here so the test says when it ticks.
+    const intervals = vi.spyOn(globalThis, 'setInterval')
     f = await claudeFixture(root, 2000, undefined, { pollIntervalMs: 3_600_000 })
     await f.host.connect()
-    const adapter = f.adapter as unknown as { logs: Map<string, ClaudeSessionLog>; threads: Map<string, AgentThread>; pollActiveSessionLogs(): Promise<void>
+    const timer = intervals.mock.calls.find(([, ms]) => ms === 3_600_000)![0] as () => void
+    intervals.mockRestore()
+    const adapter = f.adapter as unknown as { logs: Map<string, ClaudeSessionLog>; threads: Map<string, AgentThread>; polling: Promise<void> | undefined
       messageLog: { summary(id: string): { messageCount: number } }; observeCompaction(id: string, ...rest: unknown[]): void }
-    const [shown, working, outside] = [...sessions.keys()] as [string, string, string]
+    const [shown, working, sent, outside] = [...sessions.keys()] as [string, string, string, string]
     const read: string[] = []
+    let failNext: string | undefined
     const nativePoll = ClaudeSessionLog.prototype.poll
     vi.spyOn(ClaudeSessionLog.prototype, 'poll').mockImplementation(function (this: ClaudeSessionLog) {
-      read.push([...adapter.logs].find(([, log]) => log === this)![0])
+      const id = [...adapter.logs].find(([, log]) => log === this)![0]
+      read.push(id)
+      if (failNext === id) { failNext = undefined; return Promise.reject(new Error('Synthetic unreadable transcript')) }
       return nativePoll.call(this)
     })
-    const tick = async (): Promise<string[]> => { read.length = 0; await adapter.pollActiveSessionLogs(); return [...read].sort() }
+    const tick = async (): Promise<string[]> => { read.length = 0; timer(); await adapter.polling?.catch(() => undefined); return [...read].sort() }
+    const count = (id: string): number => adapter.messageLog.summary(id).messageCount
     f.adapter.observeThreads([shown])
     expect(await tick()).toEqual([shown])
-    // A thread working out of view is read while it works, and once more after, so its turn's last lines land.
+    // A thread working out of view is read while it works, and once more after, so its turn's last lines land; a read
+    // that fails is tried again on the next tick.
     adapter.threads.get(working)!.status = 'running'
     expect(await tick()).toEqual([shown, working].sort())
     adapter.threads.get(working)!.status = 'idle'
+    failNext = working
+    expect(await tick()).toEqual([shown, working].sort())
     expect(await tick()).toEqual([shown, working].sort())
     expect(await tick()).toEqual([shown])
-    // Work typed in Claude Code outside Sotto on a thread nobody looks at waits for the thread to be opened.
+    // A turn begun and ended between two ticks is read on the next.
+    expect(await f.host.execute({ type: 'send', threadId: sent, commandId: randomUUID(), messageId: randomUUID(), text: 'Plan the trip' })).toMatchObject({ accepted: true })
+    await f.driver.completeTurn(sent, 'Here is the plan.')
+    await vi.waitFor(() => { expect(adapter.threads.get(sent)!.status).toBe('idle') })
+    expect(await tick()).toEqual([sent, shown].sort())
+    expect(await tick()).toEqual([sent, shown].sort())
+    expect(await tick()).toEqual([shown])
+    // Work typed in Claude Code outside Sotto on a thread nobody looks at waits for the thread to come into view.
     await appendFile(join(folder, `${sessions.get(outside)}.jsonl`), `${entry(sessions.get(outside)!, 'Typed in Claude while away')}\n`)
     expect(await tick()).toEqual([shown])
     expect(await tick()).toEqual([shown])
-    expect(adapter.messageLog.summary(outside).messageCount).toBe(4)
-    // Opened, it reads the one entry added since its cursor, not its transcript from the first byte, and nothing is lost.
+    expect(count(outside)).toBe(4)
+    // A pane opening it reads the one entry added since its cursor at once, before any tick, not its transcript from the
+    // first byte, and nothing is lost. Each entry read from the transcript passes here once, marked as from it.
     const entries = vi.spyOn(adapter, 'observeCompaction')
-    await f.adapter.refreshThread(outside)
-    // Each transcript entry it reads passes here once, marked as read from the transcript rather than the CLI's stream.
+    f.adapter.observeThreads([shown, outside])
+    await vi.waitFor(() => { expect(count(outside)).toBe(5) })
     expect(entries.mock.calls.filter(([id, , fromLog]) => id === outside && fromLog === true)).toHaveLength(1)
-    expect(adapter.messageLog.summary(outside).messageCount).toBe(5)
   })
 })
