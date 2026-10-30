@@ -6,7 +6,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import { PROVIDER_LABELS, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { HostsBridge, HostsState } from '../../../shared/hosts'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
-import { THREAD_MOVE_THREADS_MAX, type ThreadMoveCard, type ThreadMovePlanned, type ThreadMovePrepare, type ThreadMovesBridge, type ThreadMovesView } from '../../../shared/threadMoves'
+import { THREAD_MOVE_THREADS_MAX, type ThreadMoveCard, type ThreadMovePlanned, type ThreadMovePrepare, type ThreadMoveProposal, type ThreadMovesBridge, type ThreadMovesView } from '../../../shared/threadMoves'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
@@ -79,10 +79,13 @@ export function useMoveMachines(offered: boolean, bridge: HostsBridge | undefine
   return useMemo(() => active ? savedMachines(state) ?? [] : [], [active, state])
 }
 
-/** What the sheet was opened for: every thread on This computer from Watcher's header, or one thread from its More menu. */
+/**
+ * What the sheet was opened for: threads on every machine from Watcher's header, or one thread from its More menu, with
+ * the machine it is on when that is not This computer.
+ */
 export type MoveSheetRequest =
   | { readonly kind: 'all' }
-  | { readonly kind: 'one'; readonly threadId: string; readonly title: string }
+  | { readonly kind: 'one'; readonly threadId: string; readonly title: string; readonly hostId?: string | undefined }
 class MoveSheetStore {
   private request: MoveSheetRequest | null = null
   /** Where focus goes once the sheet closes, when the control that opened it is gone. */
@@ -101,10 +104,20 @@ export const moveSheetStore = new MoveSheetStore()
 
 /** A thread put away: settled on the shelf, settled by its lifecycle, or archived. Nothing moves it. */
 export const isPutAway = (thread: AgentThread): boolean => isThreadClosed(thread) || isWorkspaceThreadSettled(thread)
-/** This computer's open threads, as Move threads offers them: everything but Watcher's own and what is settled or archived. */
-export function movableThreadIds(state: AgentState): readonly string[] {
-  return state.host.threads.filter(thread => thread.remoteHost !== true && !isPutAway(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history')
-    .slice(0, THREAD_MOVE_THREADS_MAX).map(thread => thread.id)
+/** This computer's host ID as the window knows it. */
+export function thisComputerId(state: AgentState | null): string | undefined {
+  return state?.connections?.find(item => item.kind === 'local')?.hostId ?? state?.hostId
+}
+/** The machine a thread is on, by its host ID: a host's, or This computer's. */
+const machineOf = (thread: AgentThread, here: string | undefined): string | undefined => thread.remoteHost === true ? thread.hostId : here
+/**
+ * The open threads Move threads offers for a machine (#1178 part 3, Zach's pick A): every connected machine's but that
+ * one's, Watcher's own and what is settled or archived left out, up to the hundred a preview takes.
+ */
+export function movableThreadIds(state: AgentState, target: string | undefined): readonly string[] {
+  const here = thisComputerId(state)
+  return state.host.threads.filter(thread => !isPutAway(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && thread.clientConnected !== false
+    && machineOf(thread, here) !== target).slice(0, THREAD_MOVE_THREADS_MAX).map(thread => thread.id)
 }
 
 /**
@@ -128,20 +141,87 @@ export function WatcherMoveThreads(): ReactNode {
   </button>
 }
 
-/** A thread as the sheet names it: its title, its provider and its project, from the window's own record. */
-interface SheetThread { readonly title: string; readonly thread: AgentThread | undefined; readonly provider: string | undefined; readonly project: string | undefined }
-function sheetThread(state: AgentState | null, threadId: string, fallback: string): SheetThread {
-  const thread = state?.host.threads.find(item => item.id === threadId)
-  const provider = thread?.providerId ? PROVIDER_LABELS[thread.providerId] : undefined
-  const project = thread ? state?.host.projects.find(item => item.id === thread.projectId)?.title : undefined
-  return { title: thread?.title ?? fallback, thread, provider, project }
+/** A thread as a move's row names it: its title, provider and project, and the machine it is on now. */
+interface RowFacts {
+  readonly title: string
+  readonly providerId: AgentThread['providerId']
+  readonly provider: string | undefined
+  readonly project: string | undefined
+  /** Its machine's name, or undefined for This computer. */
+  readonly from: string | undefined
 }
+function sheetThread(state: AgentState | null, threadId: string, fallback: string, names: ReadonlyMap<string, string>): RowFacts {
+  const thread = state?.host.threads.find(item => item.id === threadId)
+  const from = thread?.remoteHost === true ? (thread.hostId ? names.get(thread.hostId) : undefined) ?? thread.hostLabel ?? i18n._(msg`Paired machine`) : undefined
+  return { title: thread?.title ?? fallback, providerId: thread?.providerId, provider: thread?.providerId ? PROVIDER_LABELS[thread.providerId] : undefined,
+    project: thread ? state?.host.projects.find(item => item.id === thread.projectId)?.title : undefined, from }
+}
+
+/**
+ * One thread in a move's preview, in the sheet and on Watcher's proposal: where it is now, what it runs on there and why
+ * it asks or stays, with a box to tick when `box` is given (Zach's pick, October 29: nothing starts ticked but what the
+ * user pointed at).
+ */
+function MoveRow({ planned, facts, machine, box }: { readonly planned: ThreadMovePlanned; readonly facts: RowFacts; readonly machine: string
+  readonly box?: { readonly checked: boolean; readonly onChange: (checked: boolean) => void; readonly disabled?: boolean } | undefined }): ReactNode {
+  const { t } = useLingui()
+  const boxId = useId(), lineId = useId()
+  const line = planned.outcome === 'asks' ? t`${planned.words ?? ''} It waits on its card in Watcher’s conversation for your press before it moves.` : planned.words
+  const tone = planned.outcome === 'asks' ? 'needs' : undefined
+  const where = <span className="move-sheet__where">{facts.from === undefined ? <><Laptop size={12} aria-hidden="true" /><Trans>This computer</Trans></>
+    : <><Server size={12} aria-hidden="true" />{facts.from}</>}</span>
+  return <li className="move-sheet__row" data-box={box === undefined ? undefined : 'true'}>
+    {box === undefined ? null : <input id={boxId} type="checkbox" className="move-sheet__box" checked={box.checked} disabled={box.disabled}
+      aria-describedby={line ? lineId : undefined} onChange={event => box.onChange(event.currentTarget.checked)} />}
+    {facts.providerId === undefined ? <span aria-hidden="true" /> : <span className="thread-nav__mark" data-provider={facts.providerId} aria-hidden="true">
+      <ProviderMark provider={facts.providerId} name={facts.provider ?? facts.providerId} /></span>}
+    {box === undefined ? <span className="move-sheet__name">{facts.title}</span> : <label htmlFor={boxId} className="move-sheet__name">{facts.title}</label>}
+    <p className="move-sheet__meta">
+      {where}
+      {planned.outcome === 'stays' || facts.provider === undefined ? null : <span>{facts.provider}</span>}
+      {planned.outcome !== 'stays' && planned.model ? <span>{t({ message: `${planned.model.name} on ${machine}`, comment: 'The model a moved thread runs on there, and the machine' })}</span> : null}
+      {planned.outcome !== 'stays' && planned.model?.instead ? <span className="move-sheet__instead">{t`${machine} doesn’t have ${planned.model.instead}`}</span> : null}
+      {planned.outcome === 'stays' || facts.project === undefined ? null : <span>{facts.project}</span>}
+    </p>
+    {line ? <p id={lineId} className="move-sheet__line tt-paragraph" data-tone={tone}>{line}</p> : null}
+  </li>
+}
+
+/** The ticked threads with one ticked or unticked. */
+const toggled = (ticked: ReadonlySet<string>, threadId: string, checked: boolean): ReadonlySet<string> => {
+  const next = new Set(ticked)
+  if (checked) next.add(threadId); else next.delete(threadId)
+  return next
+}
+
+/** The preview's three groups, each thread with its box: what moves now, what asks first, and what stays and why. */
+function MoveGroups({ threads, machine, facts, box, watcher }: { readonly threads: readonly ThreadMovePlanned[]; readonly machine: string
+  readonly facts: (planned: ThreadMovePlanned) => RowFacts
+  readonly box?: ((planned: ThreadMovePlanned) => { readonly checked: boolean; readonly onChange: (checked: boolean) => void; readonly disabled?: boolean }) | undefined
+  readonly watcher: boolean }): ReactNode {
+  const moves = threads.filter(item => item.outcome === 'moves'), asks = threads.filter(item => item.outcome === 'asks'), stays = threads.filter(item => item.outcome === 'stays')
+  const row = (planned: ThreadMovePlanned): ReactNode => <MoveRow key={planned.threadId} planned={planned} facts={facts(planned)} machine={machine}
+    box={box !== undefined && planned.outcome !== 'stays' ? box(planned) : undefined} />
+  const boxed = box === undefined ? undefined : 'true'
+  return <>
+    {moves.length ? <><h3><Trans>Moves now</Trans> <span>{moves.length}</span></h3><ul className="move-sheet__list" data-box={boxed}>{moves.map(row)}</ul></> : null}
+    {asks.length ? <><h3 data-tone="needs"><Trans>Asks you first</Trans> <span>{asks.length}</span></h3><ul className="move-sheet__list" data-box={boxed}>{asks.map(row)}</ul></> : null}
+    {stays.length || watcher ? <><h3><Trans>Stays where it is</Trans> <span>{stays.length + (watcher ? 1 : 0)}</span></h3>
+      <ul className="move-sheet__list" data-box={boxed}>{stays.map(row)}
+        {watcher ? <li className="move-sheet__row" data-box={boxed}>{boxed ? <span aria-hidden="true" /> : null}<Laptop size={14} aria-hidden="true" /><span className="move-sheet__name">Watcher</span>
+          <p className="move-sheet__line tt-paragraph"><Trans>Watcher stays on This computer. It watches your threads from here, wherever they run.</Trans></p></li> : null}
+      </ul></> : null}
+  </>
+}
+
+/** A machine the sheet offers: This computer, or one paired with it. */
+interface MoveMachine { readonly hostId: string; readonly name: string; readonly connected: boolean; readonly here: boolean }
 
 type Phase =
   | { readonly kind: 'choose' }
-  | { readonly kind: 'preparing'; readonly machine: SavedMachine }
-  | { readonly kind: 'confirm'; readonly machine: SavedMachine; readonly preview: Extract<ThreadMovePrepare, { status: 'ok' }> }
-  | { readonly kind: 'starting'; readonly machine: SavedMachine; readonly preview: Extract<ThreadMovePrepare, { status: 'ok' }> }
+  | { readonly kind: 'preparing'; readonly machine: MoveMachine }
+  | { readonly kind: 'confirm'; readonly machine: MoveMachine; readonly preview: Extract<ThreadMovePrepare, { status: 'ok' }> }
+  | { readonly kind: 'starting'; readonly machine: MoveMachine; readonly preview: Extract<ThreadMovePrepare, { status: 'ok' }> }
   | { readonly kind: 'refused'; readonly message: string }
 
 /** The sheet, wherever it was opened from. Mounted once in the main window while Watcher is on. */
@@ -156,9 +236,20 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
   const { t } = useLingui()
   const agents = useOptionalAgents()
   const state = agents?.state ?? null
-  const machines = useMoveMachines(true)
+  const saved = useMoveMachines(true)
+  const hosts = useSyncExternalStore(machinesConnected.subscribe, machinesConnected.get)
+  const here = hosts?.localHostId ?? thisComputerId(state)
+  // This computer is among the machines (Zach's pick A, October 29) while another machine has a thread to bring here; the
+  // one the thread is on is not.
+  const own = request.kind === 'one' ? request.hostId ?? here : undefined
+  const comes = request.kind === 'one' || state !== null && here !== undefined && movableThreadIds(state, here).length > 0
+  const machines = useMemo<readonly MoveMachine[]>(() => [...here === undefined || !comes ? [] : [{ hostId: here, name: t`This computer`, connected: true, here: true }],
+    ...saved.map(machine => ({ ...machine, here: false }))].filter(machine => machine.hostId !== own), [here, comes, saved, own, t])
+  const names = useMemo(() => new Map(saved.map(machine => [machine.hostId, machine.name] as const)), [saved])
   const connected = machines.filter(machine => machine.connected)
   const [phase, setPhase] = useState<Phase>({ kind: 'choose' })
+  // Nothing starts ticked but the thread the sheet was opened for (Zach's pick, October 29).
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(() => new Set())
   const titleId = useId(), leadId = useId()
   const first = useRef<HTMLButtonElement>(null)
   const opener = useRef(moveSheetStore.opener)
@@ -168,19 +259,21 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
   // in Watcher's conversation say how each goes.
   const close = (): void => { moveSheetStore.close() }
   const dialog = useDialogFocus({ onEscape: close, initialFocus: first, fallbackFocus: fallback })
-  const threadIds = useMemo(() => request.kind === 'one' ? [request.threadId] : state === null ? [] : movableThreadIds(state), [request, state])
-  const idsRef = useRef(threadIds)
-  idsRef.current = threadIds
-  const prepare = async (machine: SavedMachine): Promise<void> => {
-    if (idsRef.current.length === 0) { setPhase({ kind: 'refused', message: t`This computer has no open threads to move.` }); return }
+  const stateRef = useRef(state)
+  stateRef.current = state
+  const prepare = async (machine: MoveMachine): Promise<void> => {
+    const ids = request.kind === 'one' ? [request.threadId] : stateRef.current === null ? [] : movableThreadIds(stateRef.current, machine.hostId)
+    if (ids.length === 0) { setPhase({ kind: 'refused', message: t`No open thread on another machine can move to ${machine.name}.` }); return }
     setPhase({ kind: 'preparing', machine })
     try {
-      const preview = await bridge.prepare({ threadIds: [...idsRef.current], hostId: machine.hostId })
-      setPhase(preview.status === 'ok' ? { kind: 'confirm', machine, preview } : { kind: 'refused', message: preview.message })
+      const preview = await bridge.prepare({ threadIds: [...ids], hostId: machine.hostId })
+      if (preview.status !== 'ok') { setPhase({ kind: 'refused', message: preview.message }); return }
+      setTicked(new Set(request.kind === 'one' ? preview.threads.filter(item => item.threadId === request.threadId && item.outcome !== 'stays').map(item => item.threadId) : []))
+      setPhase({ kind: 'confirm', machine, preview })
     } catch { setPhase({ kind: 'refused', message: t`Sotto could not check which threads can move. Nothing was moved. Try again.` }) }
   }
-  // One machine connected: the sheet goes straight to it, as there is nothing to choose.
-  const only = connected.length === 1 ? connected[0]! : null
+  // One machine to choose, once the paired machines are known: the sheet goes straight to it, as there is nothing to choose.
+  const only = hosts !== null && connected.length === 1 ? connected[0]! : null
   const started = useRef(false)
   useEffect(() => {
     if (started.current || phase.kind !== 'choose' || only === null) return
@@ -190,7 +283,7 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
   // Each step's first control takes focus as it draws, so Escape and Tab stay in the sheet: Cancel or Close, as every
   // confirmation here starts on its secondary action.
   useEffect(() => { dialog.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus() }, [phase.kind, dialog])
-  const start = async (machine: SavedMachine, preview: Extract<ThreadMovePrepare, { status: 'ok' }>, ids: readonly string[]): Promise<void> => {
+  const start = async (machine: MoveMachine, preview: Extract<ThreadMovePrepare, { status: 'ok' }>, ids: readonly string[]): Promise<void> => {
     setPhase({ kind: 'starting', machine, preview })
     try {
       const result = await bridge.start({ confirmationId: preview.confirmationId, threadIds: [...ids], allowNarrower: [] })
@@ -208,7 +301,7 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
     body = <ul className="move-sheet__machines">{machines.map(machine => <li key={machine.hostId}>
       <button type="button" className="move-sheet__machine tt-focusable" disabled={!machine.connected} aria-describedby={machine.connected ? undefined : `${machine.hostId}-why`}
         onClick={() => void prepare(machine)}>
-        <Server size={15} aria-hidden="true" /><span className="move-sheet__machine-name">{machine.name}</span>
+        {machine.here ? <Laptop size={15} aria-hidden="true" /> : <Server size={15} aria-hidden="true" />}<span className="move-sheet__machine-name">{machine.name}</span>
         {machine.connected ? null : <span id={`${machine.hostId}-why`} className="move-sheet__machine-why"><Trans>Not connected</Trans></span>}
       </button></li>)}</ul>
     actions = cancel()
@@ -223,47 +316,29 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
   } else {
     const { machine, preview } = phase
     const named = preview.machine
-    const moves = preview.threads.filter(item => item.outcome === 'moves'), asks = preview.threads.filter(item => item.outcome === 'asks')
-    const stays = preview.threads.filter(item => item.outcome === 'stays')
-    const going = [...moves, ...asks].map(item => item.threadId)
-    const count = going.length
-    const one = request.kind === 'one' ? sheetThread(state, request.threadId, request.title).title : null
-    title = count === 0 ? (one !== null ? t`${one} can’t move to ${named} now` : t`No thread can move to ${named} now`)
-      : one !== null ? t`Move ${one} to ${named}?` : plural(count, { one: `Move # thread to ${named}?`, other: `Move # threads to ${named}?` })
-    const row = (planned: ThreadMovePlanned, tone?: 'needs'): ReactNode => {
-      const facts = sheetThread(state, planned.threadId, t`A thread no longer here`)
-      const line = planned.outcome === 'asks' ? t`${planned.words ?? ''} It waits on its card in Watcher’s conversation for your press before it moves.` : planned.words
-      return <li key={planned.threadId} className="move-sheet__row">
-        {facts.thread?.providerId === undefined ? <span aria-hidden="true" /> : <span className="thread-nav__mark" data-provider={facts.thread.providerId} aria-hidden="true">
-          <ProviderMark provider={facts.thread.providerId} name={facts.provider ?? facts.thread.providerId} /></span>}
-        <span className="move-sheet__name">{facts.title}</span>
-        {planned.outcome === 'stays' ? null : <p className="move-sheet__meta">
-          {facts.provider === undefined ? null : <span>{facts.provider}</span>}
-          {planned.model ? <span>{t({ message: `${planned.model.name} on ${named}`, comment: 'The model a moved thread runs on there, and the machine' })}</span> : null}
-          {planned.model?.instead ? <span className="move-sheet__instead">{t`${named} doesn’t have ${planned.model.instead}`}</span> : null}
-          {facts.project === undefined ? null : <span>{facts.project}</span>}
-        </p>}
-        {line ? <p className="move-sheet__line tt-paragraph" data-tone={tone}>{line}</p> : null}
-      </li>
-    }
+    const going = preview.threads.filter(item => item.outcome !== 'stays')
+    const chosen = going.filter(item => ticked.has(item.threadId)).map(item => item.threadId)
+    const count = chosen.length
+    const one = request.kind === 'one' ? sheetThread(state, request.threadId, request.title, names).title : null
+    title = going.length === 0 ? (one !== null ? t`${one} can’t move to ${named} now` : t`No thread can move to ${named} now`)
+      : one !== null ? t`Move ${one} to ${named}?` : count === 0 ? t`Choose threads to move to ${named}`
+        : plural(count, { one: `Move # thread to ${named}?`, other: `Move # threads to ${named}?` })
+    const box = (planned: ThreadMovePlanned) => ({ checked: ticked.has(planned.threadId), disabled: phase.kind === 'starting',
+      onChange: (checked: boolean) => { setTicked(previous => toggled(previous, planned.threadId, checked)) } })
     body = <>
-      <p id={leadId} className="move-sheet__lead tt-paragraph">{count === 0 ? <Trans>Nothing moves: each thread says why it stays.</Trans>
-        : <Trans>Each continues on {named} as a new thread, in the same project, on the same provider, with a handover of the thread here. Its first turn starts at once. Watcher’s conversation reports each move.</Trans>}</p>
+      <p id={leadId} className="move-sheet__lead tt-paragraph">{going.length === 0 ? <Trans>Nothing moves: each thread says why it stays.</Trans>
+        : one !== null ? <Trans>It continues on {named} as a new thread, in the same project, on the same provider, with a handover of the thread where it is. Its first turn starts at once. Watcher’s conversation reports the move.</Trans>
+          : <Trans>Tick each thread to move. Each continues on {named} as a new thread, in the same project, on the same provider, with a handover of the thread where it is. Its first turn starts at once. Watcher’s conversation reports each move.</Trans>}</p>
       <div className="move-sheet__body" tabIndex={0} role="region" aria-label={t`What moves and what stays`}>
-        {moves.length ? <><h3><Trans>Moves now</Trans> <span>{moves.length}</span></h3><ul className="move-sheet__list">{moves.map(item => row(item))}</ul></> : null}
-        {asks.length ? <><h3 data-tone="needs"><Trans>Asks you first</Trans> <span>{asks.length}</span></h3><ul className="move-sheet__list">{asks.map(item => row(item, 'needs'))}</ul></> : null}
-        {stays.length || request.kind === 'all' ? <><h3><Trans>Stays here</Trans> <span>{stays.length + (request.kind === 'all' ? 1 : 0)}</span></h3>
-          <ul className="move-sheet__list">{stays.map(item => row(item))}
-            {request.kind === 'all' ? <li className="move-sheet__row"><Laptop size={14} aria-hidden="true" /><span className="move-sheet__name">Watcher</span>
-              <p className="move-sheet__line tt-paragraph"><Trans>Watcher stays on This computer. It watches your threads from here, wherever they run.</Trans></p></li> : null}
-          </ul></> : null}
+        <MoveGroups threads={preview.threads} machine={named} facts={planned => sheetThread(state, planned.threadId, t`A thread no longer here`, names)}
+          box={box} watcher={request.kind === 'all' && !machine.here} />
       </div>
-      {count ? <p className="move-sheet__note tt-paragraph"><Trans>Each thread here is settled once its new thread’s first turn ends, and its worktree is kept.</Trans></p> : null}
+      {going.length ? <p className="move-sheet__note tt-paragraph"><Trans>Each thread is settled where it is once its new thread’s first turn ends, and its worktree is kept there.</Trans></p> : null}
     </>
     actions = <>
-      {cancel(count ? t`Cancel` : t`Close`)}
-      {count ? <Button variant="primary" disabled={phase.kind === 'starting'} onClick={() => void start(machine, preview, going)}>
-        {phase.kind === 'starting' ? t`Moving…` : one !== null ? t`Move it to ${named}` : plural(count, { one: 'Move # thread', other: 'Move # threads' })}
+      {cancel(going.length ? t`Cancel` : t`Close`)}
+      {going.length ? <Button variant="primary" disabled={phase.kind === 'starting' || count === 0} onClick={() => void start(machine, preview, chosen)}>
+        {phase.kind === 'starting' ? t`Moving…` : one !== null ? t`Move it to ${named}` : count === 0 ? t`Move threads` : plural(count, { one: 'Move # thread', other: 'Move # threads' })}
       </Button> : null}
     </>
   }
@@ -321,6 +396,14 @@ export function useMoveCards(bridge?: ThreadMovesBridge): readonly ThreadMoveCar
   useEffect(() => active ? moveCardsStore.use(active) : undefined, [active])
   const view = useSyncExternalStore(moveCardsStore.subscribe, moveCardsStore.get)
   return active ? view?.cards ?? NO_CARDS : NO_CARDS
+}
+const NO_PROPOSALS: readonly ThreadMoveProposal[] = []
+/** Watcher's proposals from the user's words, as main last sent them, or none where moving is not offered. */
+export function useMoveProposals(bridge?: ThreadMovesBridge): readonly ThreadMoveProposal[] {
+  const active = useThreadMovesBridge(bridge)
+  useEffect(() => active ? moveCardsStore.use(active) : undefined, [active])
+  const view = useSyncExternalStore(moveCardsStore.subscribe, moveCardsStore.get)
+  return active ? view?.proposals ?? NO_PROPOSALS : NO_PROPOSALS
 }
 
 /** A thread as a move's card names it, and what a press on its name does: what Watcher's conversation provides. */
@@ -443,3 +526,74 @@ export function WatcherMoveCards({ cards, threads }: { readonly cards: readonly 
     </section>
   })}</>
 }
+
+/**
+ * Watcher's proposal from the user's words (#1178 part 3, Zach's pick A, October 29, 2026): Sotto's card in Watcher's
+ * conversation with the preview, a box for each thread that can move, ticked as Watcher named them, and Move and Not now.
+ * Nothing moves until the press, which asks for a fresh preview first; one that changed moves nothing and shows it again.
+ */
+function MoveProposalCard({ proposal, threads, answer }: { readonly proposal: ThreadMoveProposal; readonly threads: MoveCardThreads; readonly answer: ThreadMovesBridge['answer'] | undefined }): ReactNode {
+  const { t } = useLingui()
+  const [ticked, setTicked] = useState<ReadonlySet<string>>(() => new Set(proposal.threads.filter(item => item.ticked).map(item => item.threadId)))
+  // Shown again as it is now, the boxes start from what main sent, in the same card, so focus stays where it was.
+  const shownAt = useRef(proposal.updatedAt)
+  useEffect(() => {
+    if (shownAt.current === proposal.updatedAt) return
+    shownAt.current = proposal.updatedAt
+    setTicked(new Set(proposal.threads.filter(item => item.ticked).map(item => item.threadId)))
+  }, [proposal])
+  const [pending, setPending] = useState(false)
+  const [refusal, setRefusal] = useState<string | null>(null)
+  const open = proposal.state === 'open'
+  const going = proposal.threads.filter(item => item.outcome !== 'stays')
+  const chosen = going.filter(item => ticked.has(item.threadId)).map(item => item.threadId)
+  const byId = new Map(proposal.threads.map(item => [item.threadId, item] as const))
+  const facts = (planned: ThreadMovePlanned): RowFacts => {
+    const item = byId.get(planned.threadId)
+    const described = item ? threads.describe(item.source) : undefined
+    return { title: described?.title ?? t`A thread no longer here`, providerId: described?.providerId, provider: described?.provider, project: described?.project, from: item?.from }
+  }
+  const box = (planned: ThreadMovePlanned) => ({ checked: ticked.has(planned.threadId), disabled: !open || pending,
+    onChange: (checked: boolean) => { setTicked(previous => toggled(previous, planned.threadId, checked)) } })
+  const press = async (request: Parameters<ThreadMovesBridge['answer']>[0]): Promise<void> => {
+    if (answer === undefined || pending) return
+    setPending(true); setRefusal(null)
+    try {
+      const result = await answer(request)
+      if (result.status === 'refused') setRefusal(result.message)
+    } catch { setRefusal(t`Sotto could not reach the move. Nothing changed. Try again.`) }
+    setPending(false)
+  }
+  const machine = proposal.machine
+  const said = proposal.state === 'moved' ? plural(proposal.threads.filter(item => item.ticked).length, { one: `You asked to move # thread to ${machine}. Sotto reports its move here.`, other: `You asked to move # threads to ${machine}. Sotto reports each move here.` })
+    : proposal.state === 'dismissed' ? t`You chose not to move these threads to ${machine}. Nothing was moved.`
+      : going.length === 0 ? t`Watcher proposed moving threads to ${machine}, but none can move now. Each says why.`
+        : plural(going.length, { one: `Watcher proposes moving # thread to ${machine}. Nothing moves until you press Move.`, other: `Watcher proposes moving # threads to ${machine}. Nothing moves until you press Move.` })
+  return <section className="move-proposal" data-move-proposal={proposal.id} data-state={proposal.state} aria-label={t`Proposed moves to ${machine}`}>
+    <div className="sotto-line">
+      <span className="sotto-line__mark" role="img" aria-label="Sotto"><SottoMark className="sotto-line__glyph" /></span>
+      <p className="tt-paragraph">{said}</p>
+      <time dateTime={proposal.at}>{clockLabel(Date.parse(proposal.at))}</time>
+    </div>
+    {open ? <div className="move-proposal__card">
+      <MoveGroups threads={proposal.threads} machine={machine} facts={facts} box={box} watcher={false} />
+      {proposal.words !== undefined ? <p className="move-proposal__changed tt-paragraph">{proposal.words}</p> : null}
+      {going.length ? <div className="move-card__actions">
+        <Button variant="primary" disabled={pending || answer === undefined || chosen.length === 0}
+          onClick={() => void press({ proposalId: proposal.id, answer: 'move', threadIds: chosen })}>
+          {chosen.length === 0 ? t`Move threads` : plural(chosen.length, { one: 'Move # thread', other: 'Move # threads' })}</Button>
+        <Button variant="secondary" disabled={pending || answer === undefined} onClick={() => void press({ proposalId: proposal.id, answer: 'dismiss' })}><Trans>Not now</Trans></Button>
+      </div> : <div className="move-card__actions">
+        <Button variant="secondary" disabled={pending || answer === undefined} onClick={() => void press({ proposalId: proposal.id, answer: 'dismiss' })}><Trans>Close</Trans></Button>
+      </div>}
+      {refusal !== null ? <p className="receipt-card__placement move-card__refused tt-paragraph" role="alert">{refusal}</p> : null}
+    </div> : null}
+  </section>
+}
+
+/** Watcher's proposals after one message of its conversation, each a card of Sotto's. */
+export function WatcherMoveProposals({ proposals, threads }: { readonly proposals: readonly ThreadMoveProposal[]; readonly threads: MoveCardThreads }): ReactNode {
+  const answer = useThreadMovesBridge()?.answer
+  return <>{proposals.map(proposal => <MoveProposalCard key={proposal.id} proposal={proposal} threads={threads} answer={answer} />)}</>
+}
+

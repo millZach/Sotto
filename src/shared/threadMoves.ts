@@ -126,10 +126,41 @@ export const threadMoveCardSchema = z.object({
   updatedAt: z.iso.datetime(),
 }).strict()
 export type ThreadMoveCard = z.infer<typeof threadMoveCardSchema>
-export const threadMovesViewSchema = z.object({ cards: z.array(threadMoveCardSchema).max(THREAD_MOVE_CARDS_MAX) }).strict()
+/** The most proposals of Watcher's main holds for the window, this run's newest. */
+export const THREAD_MOVE_PROPOSALS_MAX = 50
+/**
+ * One thread in a proposal of Watcher's: what the preview says of it, the thread on its own machine and that machine's
+ * name when it is a host, and whether it starts ticked: each that can move, since Watcher named it from the user's words.
+ */
+const proposedThreadSchema = plannedSchema.extend({ source: threadTargetSchema, from: machineName.optional(), ticked: z.boolean() }).strict()
+export type ThreadMoveProposedThread = z.infer<typeof proposedThreadSchema>
+/**
+ * A preview Watcher proposed from the user's words (#1178 part 3, Zach's pick A): Sotto's card in Watcher's conversation
+ * with a box per thread, **Move** and **Not now**. Nothing moves until the user presses Move. `open` waits for the press;
+ * `moved` and `dismissed` say how it ended. `words` says why a press moved nothing, when the preview had changed. This
+ * run's own, never saved.
+ */
+export const threadMoveProposalSchema = z.object({
+  id: z.uuid(), state: z.enum(['open', 'moved', 'dismissed']),
+  hostId: z.uuid(), machine: machineName, here: z.literal(true).optional(),
+  threads: z.array(proposedThreadSchema).max(THREAD_MOVE_THREADS_MAX),
+  words: z.string().min(1).max(1_200).optional(),
+  at: z.iso.datetime(), updatedAt: z.iso.datetime(),
+}).strict()
+export type ThreadMoveProposal = z.infer<typeof threadMoveProposalSchema>
+export const threadMovesViewSchema = z.object({ cards: z.array(threadMoveCardSchema).max(THREAD_MOVE_CARDS_MAX),
+  proposals: z.array(threadMoveProposalSchema).max(THREAD_MOVE_PROPOSALS_MAX).optional() }).strict()
 export type ThreadMovesView = z.infer<typeof threadMovesViewSchema>
 
-export const threadMoveAnswerRequestSchema = z.object({ cardId: z.uuid(), answer: z.enum(['move', 'keep']) }).strict()
+/**
+ * The user's press: on a card that asks first, move it or keep it; on Watcher's proposal, move the threads ticked, or
+ * Not now.
+ */
+export const threadMoveAnswerRequestSchema = z.union([
+  z.object({ cardId: z.uuid(), answer: z.enum(['move', 'keep']) }).strict(),
+  z.object({ proposalId: z.uuid(), answer: z.literal('move'), threadIds: z.array(id).min(1).max(THREAD_MOVE_THREADS_MAX) }).strict(),
+  z.object({ proposalId: z.uuid(), answer: z.literal('dismiss') }).strict(),
+])
 export type ThreadMoveAnswerRequest = z.infer<typeof threadMoveAnswerRequestSchema>
 /** What came of the press: the card as it stands now, or why nothing changed. */
 export const threadMoveAnswerSchema = z.discriminatedUnion('status', [
@@ -200,6 +231,12 @@ export const THREAD_MOVE_WORDS = {
   olderSource: (machine: string): string => `${capital(machine)} needs a newer Sotto before its threads can move. Update it from the Threads page, then try again. Nothing was moved.`,
   /** A card that asked first is no longer this run's: Sotto restarted, or the card was answered. */
   noCard: 'That move isn’t waiting for an answer any more. Nothing was moved.',
+  /** A press on Watcher's proposal that is no longer open. */
+  noProposal: 'That proposal isn’t waiting for an answer any more. Nothing was moved.',
+  /** A press on Watcher's proposal named a thread it does not offer to move. */
+  notProposed: 'That thread isn’t one this proposal can move. Nothing was moved.',
+  /** What the threads ticked would do changed since Watcher's proposal showed it: the card shows it again. */
+  proposalChanged: 'What these threads would do has changed since this card showed it, so nothing was moved. The card shows it as it is now: check it, then press Move again.',
   /** A card's press found the thread would now start on another permission than the card named. */
   changed: 'What this thread would start on there has changed since its card asked, so nothing was moved. Move it again from Move threads to see what it starts on now.',
 } as const
@@ -425,3 +462,25 @@ export interface ThreadMoveHost {
   readonly supportsThreadMoveSource?: boolean | undefined
   threadMove(request: HostThreadMoveRequest): Promise<unknown>
 }
+
+/**
+ * Watcher's tool for the user's words (#1178 part 3, Zach's pick A, October 29, 2026): Watcher names the threads the user
+ * means and the machine, and Sotto puts the preview in Watcher's conversation as its own card, with Move and Not now. It
+ * moves nothing and approves nothing: only the user's press moves a thread, and each move is then reported on its own card.
+ * Offered only where Work across machines and moving threads run.
+ */
+export const THREAD_MOVE_PROPOSE_TOOL = 'propose_moves'
+export const threadMoveProposeInputSchema = z.object({
+  /** The threads to move, by their machine and their own thread ID there. */
+  threads: z.array(threadTargetSchema).min(1).max(THREAD_MOVE_THREADS_MAX),
+  /** The machine they go to, by its host ID from list_machines: This computer's or a connected machine's. */
+  machine: z.uuid(),
+}).strict()
+export type ThreadMoveProposeInput = z.infer<typeof threadMoveProposeInputSchema>
+export const threadMoveProposeOutputSchema = z.object({ status: z.literal('ok'), proposalId: z.uuid(), machine: machineName,
+  threads: z.array(z.object({ hostId: z.uuid(), threadId: id, outcome: threadMoveOutcomeSchema, words: words.optional() }).strict()).max(THREAD_MOVE_THREADS_MAX),
+  note: words }).strict()
+export type ThreadMoveProposeOutput = z.infer<typeof threadMoveProposeOutputSchema>
+/** What Watcher is told the card does, with every proposal. */
+export const THREAD_MOVE_PROPOSE_NOTE = 'Sotto showed the user this preview as a card in your conversation, with Move and Not now. Nothing moves until the user presses Move; you hear of each move as it ends.'
+

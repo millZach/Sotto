@@ -346,14 +346,16 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const continuing: PaneMenuItem[] = continueTargets.length > 0 ? [{ id: 'continue', label: t`Continue on another provider…`, icon: <CornerDownRight size={15} aria-hidden="true" />,
     disabled: continueRefusal !== null, ...(continueRefusal !== null ? { hint: continueRefusal } : {}),
     run: () => { continueStore.set(thread.id, { ...continueChoiceFor(state, thread, continueTargets[0]!.id, continueStore.get(thread.id)), pick: true }) } }] : []
-  // Continue on another machine… (#1178, Zach, October 29, 2026; Owl Work across machines): This computer's threads, while
-  // Watcher runs and another machine is connected. It opens Move threads' sheet for this one thread.
+  // Continue on another machine… (#1178, Zach, October 29, 2026; Owl Work across machines), while Watcher runs: This
+  // computer's threads while another machine is connected, and a connected host's, which can always come here (part 3).
+  // It opens Move threads' sheet for this one thread.
   const moves = useMovesOffered()
-  const moveOffered = moves !== undefined && !ownPane && thread.remoteHost !== true && !isPutAway(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history'
+  const remote = thread.remoteHost === true
+  const moveOffered = moves !== undefined && !ownPane && !isPutAway(thread) && thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && (!remote || thread.clientConnected !== false)
   const moveMachines = useMoveMachines(moveOffered)
-  const moving: PaneMenuItem[] = moveOffered && moveMachines.some(machine => machine.connected)
+  const moving: PaneMenuItem[] = moveOffered && (remote || moveMachines.some(machine => machine.connected))
     ? [{ id: 'move', label: t`Continue on another machine…`, icon: <ArrowRightLeft size={15} aria-hidden="true" />,
-      run: () => { moveSheetStore.open({ kind: 'one', threadId: thread.id, title: thread.title }) } }] : []
+      run: () => { moveSheetStore.open({ kind: 'one', threadId: thread.id, title: thread.title, ...remote && thread.hostId ? { hostId: thread.hostId } : {} }) } }] : []
   const recovery: PaneMenuItem[] = [
     ...(!rowConnected ? [{ id: 'reconnect', label: t`Reconnect`, icon: <Plug size={15} aria-hidden="true" />, disabled: state.connection === 'connecting', run: () => void command({ type: 'connect', ...reconnect }) }] : []),
   ]

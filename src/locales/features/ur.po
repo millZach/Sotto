@@ -31,9 +31,24 @@ msgstr ""
 msgid "{0, plural, one {It is in the queue below, paused.} other {They are in the queue below, paused.}}"
 msgstr ""
 
+#. placeholder {0}: chosen.length
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "{0, plural, one {Move # thread} other {Move # threads}}"
+msgstr ""
+
 #. placeholder {0}: carried.moved
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "{0, plural, one {One message you wrote had not sent.} other {# messages you wrote had not sent.}}"
+msgstr ""
+
+#. placeholder {0}: going.length
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "{0, plural, one {Watcher proposes moving # thread to {machine}. Nothing moves until you press Move.} other {Watcher proposes moving # threads to {machine}. Nothing moves until you press Move.}}"
+msgstr ""
+
+#. placeholder {0}: proposal.threads.filter(item => item.ticked).length
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "{0, plural, one {You asked to move # thread to {machine}. Sotto reports its move here.} other {You asked to move # threads to {machine}. Sotto reports each move here.}}"
 msgstr ""
 
 #. placeholder {0}: card.machine
@@ -50,7 +65,7 @@ msgstr ""
 #. The model a moved thread runs on there, and the machine
 #. placeholder {0}: planned.model.name
 #: src/renderer/src/watcher/MoveThreads.tsx
-msgid "{0} on {named}"
+msgid "{0} on {machine}"
 msgstr ""
 
 #. The model a moved thread runs on the other machine
@@ -369,6 +384,11 @@ msgstr ""
 msgid "{lower} window"
 msgstr ""
 
+#. placeholder {0}: planned.model.instead
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "{machine} doesn’t have {0}"
+msgstr ""
+
 #: src/renderer/src/watcher/checkQueueWords.ts
 msgid "{machine} runs one check at a time. The rest wait here in the order they were asked for, whoever asked."
 msgstr ""
@@ -526,11 +546,6 @@ msgstr ""
 
 #: src/renderer/src/watcher/machineWords.ts
 msgid "{name}’s memory changed during the reading, so Watcher treats it as unknown until the next one."
-msgstr ""
-
-#. placeholder {0}: planned.model.instead
-#: src/renderer/src/watcher/MoveThreads.tsx
-msgid "{named} doesn’t have {0}"
 msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
@@ -1360,6 +1375,10 @@ msgstr ""
 msgid "Choose one in Settings → Dictation, under Speech model."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Choose threads to move to {named}"
+msgstr ""
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Claude Code subscription"
 msgstr ""
@@ -1934,10 +1953,6 @@ msgstr ""
 msgid "Each bar is one second of the last minute; taller means main was blocked longer."
 msgstr ""
 
-#: src/renderer/src/watcher/MoveThreads.tsx
-msgid "Each continues on {named} as a new thread, in the same project, on the same provider, with a handover of the thread here. Its first turn starts at once. Watcher’s conversation reports each move."
-msgstr ""
-
 #: src/renderer/src/features/usage/UsagePerDay.tsx
 msgid "Each model, {valuesWhen}"
 msgstr ""
@@ -1967,7 +1982,7 @@ msgid "Each stops its current turn and keeps the work it has done. Threads you s
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
-msgid "Each thread here is settled once its new thread’s first turn ends, and its worktree is kept."
+msgid "Each thread is settled where it is once its new thread’s first turn ends, and its worktree is kept there."
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
@@ -2385,6 +2400,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "It carries {carried}."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "It continues on {named} as a new thread, in the same project, on the same provider, with a handover of the thread where it is. Its first turn starts at once. Watcher’s conversation reports the move."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOwnChange.tsx
@@ -3056,6 +3075,11 @@ msgstr ""
 msgid "No models yet."
 msgstr ""
 
+#. placeholder {0}: machine.name
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "No open thread on another machine can move to {0}."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherOverview.tsx
 msgid "No other threads yet. Threads you or Watcher start show here."
 msgstr ""
@@ -3229,6 +3253,7 @@ msgstr ""
 #: src/renderer/src/features/memory/Questionnaire.tsx
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
+#: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Not now"
 msgstr ""
 
@@ -3611,6 +3636,10 @@ msgstr ""
 msgid "Paired computer"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Paired machine"
+msgstr ""
+
 #: src/renderer/src/features/onboarding/PhoneStep.tsx
 msgid "Paired phones, and the name they show for this computer, are in Settings › Hosts & phones."
 msgstr ""
@@ -3835,6 +3864,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "Prompts you sent, by weekday and hour. Use the arrow keys to read one hour."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Proposed moves to {machine}"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherGlance.tsx
@@ -5048,6 +5081,10 @@ msgstr ""
 msgid "Stays on {from}"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stays where it is"
+msgstr ""
+
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "Step {number} of 4 · {title}"
 msgstr ""
@@ -5443,10 +5480,6 @@ msgstr ""
 msgid "This computer does not report the memory a new process could have, so Watcher treats its memory as unknown, not plentiful."
 msgstr ""
 
-#: src/renderer/src/watcher/MoveThreads.tsx
-msgid "This computer has no open threads to move."
-msgstr ""
-
 #: src/renderer/src/watcher/machineWords.ts
 msgid "This computer runs an older Sotto host that does not report its load. Watcher treats it as unknown, never idle. Update it in Settings, under Hosts & phones."
 msgstr ""
@@ -5525,6 +5558,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Through {through}"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Tick each thread to move. Each continues on {named} as a new thread, in the same project, on the same provider, with a handover of the thread where it is. Its first turn starts at once. Watcher’s conversation reports each move."
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
@@ -6040,6 +6077,10 @@ msgid "Watcher message"
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Watcher proposed moving threads to {machine}, but none can move now. Each says why."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Watcher stays on This computer. It watches your threads from here, wherever they run."
 msgstr ""
 
@@ -6259,6 +6300,10 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "You can continue while it downloads. Dictation works as soon as it finishes. AI cleanup is optional; turn it on in Settings → Cleanup."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "You chose not to move these threads to {machine}. Nothing was moved."
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx

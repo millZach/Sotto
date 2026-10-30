@@ -6,7 +6,8 @@ import type { WatcherProfileTools } from './host'
 import { watcherSystemPrompt } from './watcherPrompt'
 import { WORKER_KIND_LIST } from '../../shared/workerRoles'
 import { WORKING_THREADS_QUIET_MAX } from '../../shared/workingThreads'
-import { WATCHER_KEPT_ITEMS_MAX } from '../../shared/watcher'
+import { WATCHER_KEPT_ITEMS_MAX, watcherRefusalSchema } from '../../shared/watcher'
+import { THREAD_MOVE_PROPOSE_TOOL, threadMoveProposeInputSchema, threadMoveProposeOutputSchema } from '../../shared/threadMoves'
 
 /** Nothing limits how many threads start (#1183); past ten working on this computer the start's result says so. */
 const WORKING_WARNING = `When more than ${WORKING_THREADS_QUIET_MAX} threads are working on this computer after a start, the result carries a warning: tell the user what it says.`
@@ -94,6 +95,18 @@ export function watcherToolDefinitions(roles: boolean, machines = false, swarms 
 }
 export const WATCHER_TOOL_DEFINITIONS: readonly ThreadToolDefinition[] = watcherToolDefinitions(false)
 
+/**
+ * Moving threads at the user's word (#1178 part 3, Zach's pick A): Watcher proposes, and the user's press on Sotto's card
+ * moves. Offered only where the move service runs, Owl with Work across machines on.
+ */
+const proposeOutput = z.union([threadMoveProposeOutputSchema, watcherRefusalSchema])
+export const PROPOSE_MOVES_DEFINITION: ThreadToolDefinition = Object.freeze({ name: THREAD_MOVE_PROPOSE_TOOL,
+  description: 'When the user asks you to move threads to another machine, name the threads, by hostId and threadId, and the machine they go to, a host ID from list_machines (This computer’s too). Sotto shows the user the preview as a card in your conversation: what would move now, what asks first and what stays and why, with a box for each thread that can move, ticked, and Move and Not now. It moves nothing: only the user’s press moves a thread, and Sotto then runs each move and reports it on its own card; you hear of each as it ends. Propose only what the user asked for, and do not propose the same threads again while the card waits for the user.',
+  inputSchema: z.toJSONSchema(threadMoveProposeInputSchema), outputSchema: z.toJSONSchema(proposeOutput),
+  annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false } })
+/** What proposing a move asks of Sotto (`ThreadMoveService`). */
+export interface WatcherMoveProposals { propose(input: unknown): unknown }
+
 /** Tokens attach only to main's one current identity. Admission is repeated for every invocation. */
 export class WatcherToolServer implements WatcherProfileTools {
   readonly name = 'sotto_threads'
@@ -102,13 +115,16 @@ export class WatcherToolServer implements WatcherProfileTools {
   readonly instructions: string | undefined
   private readonly transport: ThreadToolServer
   private running = 0
+  private readonly moves: WatcherMoveProposals | undefined
   /**
    * `machines` is the Owl answer for Work across machines (ADR-0082), as `roles` is for worker roles; `pullRequestNews`
    * says Watcher's pull request news runs (ADR-0144).
    */
-  constructor(private readonly service: WatcherService, options: { roles?: boolean; machines?: boolean; pullRequestNews?: boolean; swarms?: boolean } = {}) {
+  constructor(private readonly service: WatcherService, options: { roles?: boolean; machines?: boolean; pullRequestNews?: boolean; swarms?: boolean; moves?: WatcherMoveProposals | undefined } = {}) {
     const roles = options.roles === true, machines = options.machines === true, pullRequestNews = options.pullRequestNews === true
-    this.definitions = roles || machines || options.swarms ? watcherToolDefinitions(roles, machines, options.swarms) : WATCHER_TOOL_DEFINITIONS
+    this.moves = machines ? options.moves : undefined
+    const offered = roles || machines || options.swarms ? watcherToolDefinitions(roles, machines, options.swarms) : WATCHER_TOOL_DEFINITIONS
+    this.definitions = this.moves ? Object.freeze([...offered, PROPOSE_MOVES_DEFINITION]) : offered
     this.instructions = roles || machines || pullRequestNews || options.swarms ? watcherSystemPrompt(roles, machines, pullRequestNews, options.swarms) : undefined
     this.transport = new ThreadToolServer({ name: this.name, serverName: 'Sotto threads',
       instructions: 'Use explicit Sotto host and thread IDs. Use the requestId supplied with the user’s Watcher instruction. Native project reads use your own tools. No tool answers a request, approves a permission or changes policy. A send steers unless you name now or queue, and its result says when a steer went now or queued instead; queue only a prompt that must wait for the turn to end. Read receipts instead of replaying uncertain delivery.',
@@ -125,7 +141,10 @@ export class WatcherToolServer implements WatcherProfileTools {
   async call(threadId: string, name: string, args: unknown, context: ThreadToolCallContext = {}): Promise<ThreadToolResult> {
     let result: unknown
     if (!this.service.isCurrent(threadId)) result = watcherRefusal('NOT_CURRENT_WATCHER', 'Only the current Watcher can use these tools.')
-    else if (!Object.hasOwn(watcherToolSchemas, name)) result = watcherRefusal('INVALID_INPUT', 'That tool is unavailable. Watcher cannot answer requests or change permissions.')
+    else if (name === THREAD_MOVE_PROPOSE_TOOL && this.moves) {
+      // A proposal moves nothing: it puts a card before the user, whose press alone moves a thread.
+      try { result = proposeOutput.parse(this.moves.propose(args)) } catch { result = watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not show this proposal. Nothing was moved.', true) }
+    } else if (!Object.hasOwn(watcherToolSchemas, name)) result = watcherRefusal('INVALID_INPUT', 'That tool is unavailable. Watcher cannot answer requests or change permissions.')
     else if (this.running >= 8) result = watcherRefusal('IN_FLIGHT_LIMIT', 'Watcher already has eight tool calls in progress. Wait for one to finish.', true)
     else {
       // A call answered inside its client's wait keeps its place until its work ends, so calls answered early cannot pile up.
