@@ -1768,11 +1768,65 @@ test.describe("Watcher's room on the built app", () => {
         await page.keyboard.press('Tab')
         await expect(card.getByRole('button', { name: 'Move 1 thread' })).toBeFocused()
         await page.keyboard.press('Enter')
-        await expect(page.getByText('You asked to move 1 thread to forge. Sotto reports its move here.')).toBeVisible()
+        await expect(card.getByText('You chose 1 of the threads Watcher proposed moving to forge.')).toBeVisible()
+        await expect(page.getByText('You asked to move 1 thread to forge. Sotto reports its move here.')).toHaveCount(1)
         await expect(card.getByRole('checkbox')).toHaveCount(0)
         await expect(page.locator('.move-card')).toHaveCount(1)
         await settle(page)
         await captureInto(movesEvidence, launched, `moves-proposal-moved-${appearance}-1280x800.png`)
+      })
+    })
+  })
+
+  test('Keep it here on a move waiting on its machine asks first on the card, then waits to call the move off (#1178 part 4)', async () => {
+    const FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10'
+    const now = new Date().toISOString()
+    const moves = (hostId: string): NonNullable<WatcherStandInSeed['moves']> => ({
+      machines: [{ hostId: FORGE, name: 'forge', connected: false }],
+      cards: [{ id: randomUUID(), state: 'thread-started', source: { hostId, threadId: 'grok-previews' }, moved: { hostId: FORGE, threadId: 'previews-there' }, hostId: FORGE,
+        machine: 'forge', model: { name: 'Claude Sonnet 4.6' }, waiting: true, waitingOn: 'forge', keepable: true, at: now, updatedAt: now }],
+    })
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance, 'reduced'), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, moves })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        const card = page.locator('.move-card')
+        await expect(card).toContainText('Waiting for forge')
+        await expect(card).toContainText('This thread is waiting for forge to answer about its move. Nothing was lost.')
+        // Forge made the new thread, so Keep it here asks first, on the card; Cancel takes focus and gives it back.
+        const keep = card.getByRole('button', { name: 'Keep it here' })
+        await keep.focus()
+        await page.keyboard.press('Enter')
+        const question = card.getByRole('group', { name: /Stop the new thread on forge and keep this one here\?/u })
+        await expect(question.getByRole('button', { name: 'Cancel' })).toBeFocused()
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await card.scrollIntoViewIfNeeded()
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `Keep it here's question at ${width}x${height}` }).toEqual([])
+          await captureInto(movesEvidence, launched, `moves-keep-question-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `moves-keep-question-${appearance}-${width}x${height}`)
+        }
+        await resizeContentWindow(launched, 1280, 800)
+        await question.getByRole('button', { name: 'Cancel' }).focus()
+        await page.keyboard.press('Escape')
+        await expect(question).toHaveCount(0)
+        await expect(keep).toBeFocused()
+        await page.keyboard.press('Enter')
+        await page.keyboard.press('Shift+Tab')
+        await expect(question.getByRole('button', { name: 'Stop it there and keep this one' })).toBeFocused()
+        await page.keyboard.press('Enter')
+        // Pressed while forge can't be reached: remembered, and the thread waits, fenced, for forge to call the move off.
+        await expect(card).toContainText('Keeping it here')
+        await expect(card).toContainText('You chose to keep this thread here. Sotto asks forge to call the move off')
+        await expect(card.getByRole('button')).toHaveCount(1)
+        await settle(page)
+        await captureInto(movesEvidence, launched, `moves-keeping-${appearance}-1280x800.png`)
+        await contrastHolds(page, `moves-keeping-${appearance}-1280x800`)
       })
     })
   })

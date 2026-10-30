@@ -698,7 +698,7 @@ export class WatcherWakeUp {
    * A move the user made of a thread to another machine ended (#1178). Sotto ran it, not Watcher, so Watcher hears of
    * each, watched or not: under the request that watched the thread here, and one no request watched under none.
    */
-  threadMoved(move: { readonly moveId: string; readonly source: WatcherThreadTarget; readonly movedTo?: WatcherThreadTarget | undefined; readonly machine: string; readonly outcome: 'moved' | 'stayed' | 'given-back' }): void {
+  threadMoved(move: { readonly moveId: string; readonly source: WatcherThreadTarget; readonly movedTo?: WatcherThreadTarget | undefined; readonly machine: string; readonly outcome: 'moved' | 'stayed' | 'given-back' | 'kept' }): void {
     if (!this.started || this.closed) return
     const observedAt = new Date(this.now()).toISOString()
     const event = this.withPassReads((): WatcherEvent => {

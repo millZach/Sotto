@@ -664,6 +664,12 @@ label.move-sheet__name { cursor: default; }
 .move-card__steps > li[data-done] { background: var(--tt-activity); }
 .move-card[data-tone='needs'] .move-card__steps > li[data-done] { background: var(--watcher-needs-ink); }
 .move-card__actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; padding-left: 23px; }
+/* Keep it here's question on the card (part 4, Zach's pick of October 30): what stops and what stays, before it does. */
+.move-card__confirm { margin: 8px 0 0 23px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--watcher-needs-ink) 45%, var(--tt-hairline)); border-radius: var(--tt-radius-sm);
+  color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.move-card__confirm p { margin: 0; }
+.move-card__confirm strong { color: var(--tt-text); font-weight: 600; }
+.move-card__confirm .move-card__actions { padding-left: 0; margin-top: 8px; }
 .move-card__actions .tt-button { min-height: 32px; padding: 0 12px; font-size: 13px; }
 .move-card__refused { color: var(--tt-error-text); }
 
