@@ -19,7 +19,7 @@ import { stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
-import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, type AgentModel, type AgentRuntimeMode, type AgentHostSnapshot, type AgentMessage, type AgentThread, type ProviderId } from '../../shared/agents'
+import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, agentSpeedSchema, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentHostSnapshot, type AgentMessage, type AgentThread, type ProviderId } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -38,7 +38,7 @@ import { CodexSessionLogWatcher, promptDigest, textOf, wordsOf } from './codexSe
 import { carriesAttachedFiles, deliverAttachments } from './attachedFiles'
 import { answerRequest, declineRequest, pendingRequest, type CodexPendingRequest } from './codexRequests'
 import { needsPerson, unreadableRequest } from './nativeRequests'
-import { effortAfterChange, fastModeRuns, validatePromptAttachments, validateThreadOptions } from './threadOptions'
+import { effortAfterChange, speedAfterChange, speedRuns, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { CodexActivityProjection, codexItemSchema } from './codexActivity'
 import { ProviderUnavailable } from './providerProblem'
 import { SessionReaper } from './sessionReaper'
@@ -97,12 +97,14 @@ const aliasSchema = z.object({ codexThreadId: z.string(), projectId: z.string().
   rewoundMessageIds: z.array(z.string()).default([]), rewoundTurnIds: z.array(z.string()).default([]),
   pendingRollback: z.object({ removedTurnIds: z.array(z.string()), removedMessageIds: z.array(z.string()), retainedUsers: z.array(z.string()) }).optional(),
   pendingSettings: z.object({ modelId: z.string(), reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema,
-    /** The fast mode choice the change sets; absent from a change saved before Sotto had fast mode, which keeps the thread's. */
+    /** The speed choice the change sets; null clears it, and old changes retain the boolean alias. */
+    speed: agentSpeedSchema.nullable().optional(),
     fastMode: z.boolean().optional(),
     /** The service tier the change named, where it named one (ADR-0143); Codex's answer is checked against it only then. */
     serviceTier: z.string().optional() }).optional(),
   reasoningEffort: z.string().optional(), runtimeMode: agentRuntimeModeSchema.optional(), createdAt: z.string(), origins: z.array(originSchema).default([]),
-  /** The user turned fast mode on for this thread (ADR-0143); kept on a model without it, which then runs at the standard tier. */
+  /** The user's speed choice (ADR-0143), kept on a model without it, which runs at the standard tier. */
+  speed: agentSpeedSchema.nullable().optional(),
   fastMode: z.boolean().optional(),
   messageIdentities: z.array(codexTurnIdentitySchema).default([]) }).refine(alias => alias.kind === 'personal' ? alias.projectId === undefined : !!alias.projectId, 'A project thread requires its project; a personal chat cannot have one.')
 const aliasesSchema = z.record(z.string(), aliasSchema)
@@ -133,7 +135,7 @@ const threadSchema = z.object({ id: z.string(), historyMode: z.enum(['legacy', '
 const threadResponse = z.object({ thread: threadSchema })
 const settingsResponse = threadResponse.extend({ model: z.string(), reasoningEffort: z.string().nullish(),
   approvalPolicy: z.string(), approvalsReviewer: z.string(), sandbox: z.object({ type: z.string() }),
-  /** The thread's service tier: `priority` is Codex's Fast. Absent from a Codex that does not report it. */
+  /** The thread's service tier: `priority` is Fast and `ultrafast` is Ultrafast. Older Codex may not report it. */
   serviceTier: z.string().nullish() })
 const settingsObservation = settingsResponse.extend({ thread: threadSchema.optional() })
 const settingsNotification = z.object({ threadId: z.string(), threadSettings: z.object({
@@ -146,8 +148,8 @@ const methodNotFoundError = z.object({ code: z.literal(-32601) })
 const initializeResponse = z.object({ userAgent: z.string().optional(), version: z.string().optional() })
 const modelListResponse = z.object({ data: z.array(z.object({ model: z.string(), displayName: z.string(), hidden: z.boolean().optional(),
   supportedReasoningEfforts: z.array(z.object({ reasoningEffort: z.string() })).optional(), defaultReasoningEffort: z.string().optional(), inputModalities: z.array(z.string()).default(['text', 'image']),
-  // The tiers a model offers (codex-cli 0.164.0). `additionalSpeedTiers` is deprecated and not read.
-  serviceTiers: z.array(z.object({ id: z.string(), description: z.string().optional() })).optional().catch(undefined),
+  // The tiers a model offers. `additionalSpeedTiers` is deprecated and not read.
+  serviceTiers: z.array(z.object({ id: z.string(), name: z.string().optional(), description: z.string().optional() })).optional().catch(undefined),
 })), nextCursor: z.string().nullish() })
 const accountResponse = z.object({ account: z.object({ type: z.string() }).passthrough().nullable(), requiresOpenaiAuth: z.boolean().optional() })
 const configResponse = z.object({ config: z.object({ developer_instructions: z.string().nullish() }) })
@@ -168,14 +170,21 @@ const FAST_SERVICE_TIER = 'priority'
 /**
  * Whether Codex's answer agrees with the tier Sotto `sent`. Where Sotto named none the thread's tier is Codex's own
  * business (a user's `service_tier`, say), so nothing is compared. A Codex that reports no tier cannot say, so it is
- * taken at its word on the rest; one that reports a tier runs fast only on `priority`.
+ * taken at its word on the rest. Standard can be reported as null or `default`; paid tiers must match exactly.
  */
 const tierAgrees = (serviceTier: string | null | undefined, sent: string | undefined): boolean =>
-  sent === undefined || serviceTier === undefined || (serviceTier === FAST_SERVICE_TIER) === (sent === FAST_SERVICE_TIER)
-/** A model offers fast mode when `model/list` lists the `priority` tier for it; its description is Codex's line about the cost. */
-function fastModeOf(tiers: readonly { readonly id: string; readonly description?: string | undefined }[] | undefined): Pick<AgentModel, 'fastMode'> {
-  const tier = tiers?.find(candidate => candidate.id === FAST_SERVICE_TIER)
-  return tier ? { fastMode: tier.description?.trim() ? { description: tier.description.trim().slice(0, 300) } : {} } : {}
+  sent === undefined || serviceTier === undefined || (sent === 'default' ? serviceTier === null || serviceTier === 'default' : serviceTier === sent)
+/** A model's advertised speeds, retaining Codex's names and cost descriptions and the legacy Fast metadata. */
+function speedsOf(tiers: readonly { readonly id: string; readonly name?: string | undefined; readonly description?: string | undefined }[] | undefined): Pick<AgentModel, 'speeds' | 'fastMode'> {
+  const speeds = tiers?.flatMap(tier => {
+    const id: AgentSpeed | undefined = tier.id === FAST_SERVICE_TIER ? 'fast' : tier.id === 'ultrafast' ? 'ultrafast' : undefined
+    if (!id) return []
+    return [{ id, name: tier.name?.trim().slice(0, 100) || (id === 'fast' ? 'Fast' : 'Ultrafast'),
+      ...(tier.description?.trim() ? { description: tier.description.trim().slice(0, 300) } : {}) }]
+  })
+  if (!speeds?.length) return {}
+  const fast = speeds.find(speed => speed.id === 'fast')
+  return { speeds, ...(fast ? { fastMode: fast.description ? { description: fast.description } : {} } : {}) }
 }
 const notificationSchema = z.object({ threadId: z.string(), turnId: z.string().optional(), turn: turnSchema.optional(), item: itemSchema.optional(), itemId: z.string().optional(), delta: z.string().optional(), requestId: z.union([z.string(), z.number()]).optional(),
   startedAtMs: z.number().optional(), completedAtMs: z.number().optional(), summaryIndex: z.number().optional(), message: z.string().optional(),
@@ -306,13 +315,14 @@ export class CodexAppServerHost implements AgentHost {
     }
   }
   /**
-   * The service tier a thread starts, resumes or is copied on (ADR-0143): `priority` where fast mode runs, and `default`
-   * where the model offers fast mode and the thread has it off, so a model whose own default is Fast, or a `service_tier`
-   * in the user's Codex config, does not run fast unasked. A model without fast mode is left to Codex.
+   * The thread's selected tier, or `default` where the model offers speeds but the selection cannot run (ADR-0143).
+   * Naming standard prevents a model's or user's configured paid tier from running unasked.
    */
-  private serviceTier(modelId: string, fastMode: boolean | undefined): { serviceTier?: string } {
-    if (fastModeRuns(this.state, modelId, fastMode)) return { serviceTier: FAST_SERVICE_TIER }
-    return resolveModel(this.state.models, modelId)?.fastMode ? { serviceTier: 'default' } : {}
+  private serviceTier(modelId: string, speed: AgentSpeed | null): { serviceTier?: string } {
+    const runs = speedRuns(this.state, modelId, speed)
+    if (runs) return { serviceTier: runs === 'fast' ? FAST_SERVICE_TIER : runs }
+    const model = resolveModel(this.state.models, modelId)
+    return model?.speeds?.length || model?.fastMode ? { serviceTier: 'default' } : {}
   }
   private async threadConfiguration(id: string, effort?: string) {
     const generation = this.generation
@@ -655,7 +665,7 @@ export class CodexAppServerHost implements AgentHost {
             reasoningEfforts: orderReasoningEfforts(m.supportedReasoningEfforts?.map(option => option.reasoningEffort) ?? []),
             ...(m.defaultReasoningEffort ? { defaultReasoningEffort: m.defaultReasoningEffort } : {}),
             runtimeModes: [...agentRuntimeModeSchema.options], supportsImages: m.inputModalities.includes('image'),
-            ...fastModeOf(m.serviceTiers),
+            ...speedsOf(m.serviceTiers),
           })))
           cursor = result.nextCursor ?? undefined
         }, undefined, server)
@@ -1015,8 +1025,9 @@ export class CodexAppServerHost implements AgentHost {
   }
   private ensureThread(id: string): AgentThread {
     const alias = this.aliases[id]!
+    const speed = speedAfterChange(alias)
     if (!this.threads.has(id)) this.threads.set(id, { id, projectId: alias.projectId!, workingDirectory: alias.cwd, title: alias.title, modelId: alias.modelId,
-      runtimeMode: alias.runtimeMode ?? 'auto-accept-edits', ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}), ...(alias.fastMode ? { fastMode: true } : {}),
+      runtimeMode: alias.runtimeMode ?? 'auto-accept-edits', ...(alias.reasoningEffort ? { reasoningEffort: alias.reasoningEffort } : {}), ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}),
       status: 'idle', messages: [], requests: [] })
     const thread = this.threads.get(id)!
     thread.compaction = alias.compaction
@@ -1325,11 +1336,14 @@ export class CodexAppServerHost implements AgentHost {
       const developerInstructions = [await this.projectInstructions(alias.cwd, id), roles.instructions].filter(Boolean).join('\n\n')
       // Resume restores the conversation, never its transcript: turns are read when the
       // thread is opened, so resuming costs the same for a long thread and a short one.
+      const tier = this.serviceTier(alias.modelId, speedAfterChange(alias))
       await this.rpc('thread/resume', { threadId: alias.codexThreadId, cwd: alias.cwd, excludeTurns: true,
-        ...(!alias.pendingSettings ? { model: alias.modelId, modelProvider: 'openai', ...runtimePolicy(alias.runtimeMode), ...this.serviceTier(alias.modelId, alias.fastMode) } : {}),
+        ...(!alias.pendingSettings ? { model: alias.modelId, modelProvider: 'openai', ...runtimePolicy(alias.runtimeMode), ...tier } : {}),
         ...configuration, developerInstructions }, async value => {
         if (alias.pendingSettings) return this.applySettings(id, value)
-        this.applyThread(id, threadResponse.parse(value).thread); await this.persist(); this.live.add(id); this.log.pin(id)
+        const response = settingsResponse.parse(value)
+        if (!tierAgrees(response.serviceTier, tier.serviceTier)) throw new Error('Codex did not confirm the requested thread options.')
+        this.applyThread(id, response.thread); await this.persist(); this.live.add(id); this.log.pin(id)
         // Resume carries no transcript, so a loading thread stays loading until its turns arrive.
         this.emit()
       })
@@ -1596,12 +1610,17 @@ export class CodexAppServerHost implements AgentHost {
       return
     }
     alias.modelId = response.model; alias.runtimeMode = desired.runtimeMode; alias.reasoningEffort = response.reasoningEffort ?? undefined
-    if (desired.fastMode === true) alias.fastMode = true
-    else if (desired.fastMode === false) delete alias.fastMode
+    const speed = speedAfterChange(desired, speedAfterChange(alias))
+    if (speed) alias.speed = speed
+    else delete alias.speed
+    if (speed === 'fast') alias.fastMode = true
+    else delete alias.fastMode
     delete alias.pendingSettings
     const thread = this.ensureThread(id)
     thread.modelId = alias.modelId; thread.runtimeMode = alias.runtimeMode; thread.reasoningEffort = alias.reasoningEffort
-    if (alias.fastMode) thread.fastMode = true
+    if (speed) thread.speed = speed
+    else delete thread.speed
+    if (speed === 'fast') thread.fastMode = true
     else delete thread.fastMode
     if (thread.historyError === new SettingsUnconfirmed().message) { delete thread.historyStatus; delete thread.historyError }
     if (response.thread) this.applyThread(id, response.thread)
@@ -1701,8 +1720,8 @@ export class CodexAppServerHost implements AgentHost {
     // A fork is a load like any other, so it carries the role files and table its own permission allows (#1042).
     const { configuration, roles } = await this.newThreadSetup(request.threadId, request.reasoningEffort, request.runtimeMode ?? 'auto-accept-edits')
     try {
-      // A copy is a new thread, so it starts with fast mode off whatever its source ran (ADR-0143).
-      const tier = this.serviceTier(request.modelId, false)
+      // A copy is a new thread, so it starts at standard speed whatever its source ran (ADR-0143).
+      const tier = this.serviceTier(request.modelId, null)
       await this.rpc('thread/fork', { threadId: nativeSource, ...(lastTurnId ? { lastTurnId } : {}), cwd, model: request.modelId, modelProvider: 'openai',
         developerInstructions: [developerInstructions, roles.instructions].filter(Boolean).join('\n\n'), ...runtimePolicy(request.runtimeMode), ...configuration,
         ...tier,
@@ -1792,7 +1811,7 @@ export class CodexAppServerHost implements AgentHost {
         const project = this.state.projects.find(p => p.id === command.projectId)
         if (!project) throw new Error('Choose a known Codex project.')
         if (!this.state.models.some(m => m.id === command.modelId && m.ready)) throw new Error('Choose an available Codex model.')
-        validateThreadOptions(this.state, command)
+        validateThreadOptions(this.state, command, undefined, /* keptSpeed */ true)
         const cwd = await existingWorkingDirectory(command.workingDirectory ?? project.path)
         this.creating.add(command.threadId)
         let developerInstructions: string
@@ -1804,7 +1823,8 @@ export class CodexAppServerHost implements AgentHost {
         catch (error) { this.creating.delete(command.threadId); throw error }
         this.reaper.touch(command.threadId)
         const { configuration, roles } = await this.newThreadSetup(command.threadId, command.reasoningEffort, command.runtimeMode ?? 'auto-accept-edits')
-        const tier = this.serviceTier(command.modelId, command.fastMode)
+        const speed = speedAfterChange(command)
+        const tier = this.serviceTier(command.modelId, speed)
         await this.rpc('thread/start', { cwd, model: command.modelId, modelProvider: 'openai', allowProviderModelFallback: false,
           developerInstructions: [developerInstructions, roles.instructions].filter(Boolean).join('\n\n'),
           ...runtimePolicy(command.runtimeMode), ...configuration, ...tier, ephemeral: false, historyMode: 'legacy' }, async value => {
@@ -1817,7 +1837,7 @@ export class CodexAppServerHost implements AgentHost {
           this.aliases[command.threadId] = { codexThreadId: response.thread.id, projectId: command.projectId, cwd,
             title: command.title, modelId: command.modelId,
             runtimeMode: command.runtimeMode ?? 'auto-accept-edits', ...(response.reasoningEffort ? { reasoningEffort: response.reasoningEffort } : {}),
-            ...(command.fastMode ? { fastMode: true } : {}),
+            ...(speed ? { speed } : {}), ...(speed === 'fast' ? { fastMode: true } : {}),
             createdAt: new Date().toISOString(), origins: [], messageIdentities: [], rewoundMessageIds: [], rewoundTurnIds: [] }
           this.providerSessionIds.set(response.thread.id, command.threadId); this.recordLoadedRoles(command.threadId, roles.widest)
           await this.persist(); this.creating.delete(command.threadId); this.ensureThread(command.threadId); this.live.add(command.threadId); this.histories.add(command.threadId); delete this.ensureThread(command.threadId).historyStatus
@@ -1866,12 +1886,11 @@ export class CodexAppServerHost implements AgentHost {
           const mode = command.runtimeMode ?? alias.runtimeMode ?? 'auto-accept-edits'
           const policy = runtimePolicy(mode)
           const previousPendingSettings = alias.pendingSettings
-          const fastMode = command.fastMode ?? alias.fastMode === true
-          // The tier is named only where it matters (ADR-0143): on a model that offers Fast, or leaving one where fast
-          // mode ran, so the move ends it. Any other change leaves the tier to Codex, as before fast mode.
-          const namesTier = resolveModel(this.state.models, modelId)?.fastMode !== undefined || fastModeRuns(this.state, alias.modelId, alias.fastMode)
-          const serviceTier = namesTier ? fastModeRuns(this.state, modelId, fastMode) ? FAST_SERVICE_TIER : 'default' : undefined
-          const desired = { modelId, reasoningEffort, runtimeMode: mode, fastMode, ...(serviceTier ? { serviceTier } : {}) }
+          const speed = speedAfterChange(command, speedAfterChange(alias))
+          // Leaving a model where a selected speed ran explicitly resets the provider to standard too.
+          const serviceTier = this.serviceTier(modelId, speed).serviceTier
+            ?? (speedRuns(this.state, alias.modelId, speedAfterChange(alias)) ? 'default' : undefined)
+          const desired = { modelId, reasoningEffort, runtimeMode: mode, speed, fastMode: speed === 'fast', ...(serviceTier ? { serviceTier } : {}) }
           const generation = this.generation
           watcherGuard?.()
           alias.pendingSettings = desired

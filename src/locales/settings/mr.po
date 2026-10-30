@@ -1471,6 +1471,10 @@ msgstr ""
 msgid "Choose {roleName}’s reasoning effort. Now the model’s default"
 msgstr ""
 
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Choose {roleName}’s speed. Now {speedNow}"
+msgstr ""
+
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "Choose a device"
 msgstr ""
@@ -1509,6 +1513,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Choose Watcher’s reasoning effort. Now the model’s default"
+msgstr ""
+
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Choose Watcher’s speed. Now {speedNow}"
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -3381,10 +3389,6 @@ msgstr ""
 msgid "No tips are hidden."
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "No tips under a working thread or Watcher."
-msgstr ""
-
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "None of them can go yet."
 msgstr ""
@@ -3587,10 +3591,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "One restart, now"
-msgstr ""
-
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "One short tip under a working thread, and under Watcher while it works, about Sotto and the thread’s provider. A tip you hide or use does not come back."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -4718,7 +4718,7 @@ msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "Show tips while threads work"
+msgid "Show tips"
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -5053,7 +5053,9 @@ msgstr ""
 msgid "Speech recognition by {maker}, on this computer. {languages}."
 msgstr ""
 
+#. A worker role field: how fast its model answers, and at what price
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Speed"
 msgstr ""
 
@@ -5147,6 +5149,11 @@ msgstr ""
 #. A diff layout: removed lines above added ones
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Stacked"
+msgstr ""
+
+#. The model offers no faster speed
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Standard only"
 msgstr ""
 
 #. A look for night falls: a line of stars sweeps across the window
@@ -6614,7 +6621,7 @@ msgid "Watcher settles a thread it watches once its work is done: nothing runnin
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
-msgid "Watcher’s composer shows these three. A change in either place changes both."
+msgid "Watcher’s composer shows the same choices. A change in either place changes both."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx

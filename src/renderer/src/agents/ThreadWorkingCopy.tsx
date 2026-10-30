@@ -151,8 +151,8 @@ export function ThreadWorkingCopy({ thread, project, command }: ThreadWorkingCop
         {facts.repositoryRoot && facts.status === 'ready' && facts.mode === 'independent' ? <div><dt><Trans>Repository</Trans></dt><dd className="working-copy__path">{facts.repositoryRoot}</dd></div> : null}
         {facts.status === 'ready' && facts.reclaimed ? <div><dt><Trans>Status</Trans></dt><dd>{branch === undefined ? t`Folder removed. Sending to this thread puts it back on its branch.` : t({ message: `Folder removed. Sending to this thread puts it back on ${ph({ branch: leftToRight(branch) })}.`, comment: '{branch} is a Git branch name.' })}</dd></div> : null}
         {facts.status === 'ready' && !facts.reclaimed && facts.dirty !== undefined ? <div><dt><Trans>Changes</Trans></dt><dd>{facts.dirty ? t`Uncommitted changes` : t`No uncommitted changes`}</dd></div> : null}
-        {/* A draft's worktree is not being prepared: it is made on first send, and the composer's toolbar chooses it (ADR-0027). */}
-        {facts.status === 'pending' ? <div><dt><Trans>Status</Trans></dt><dd>{thread.nativeSessionStarted === false ? t`Created on first send. Choose the workspace and branch under the composer.` : t`Preparing the working copy.`}</dd></div> : null}
+        {/* A draft's worktree is not being prepared: it is made on first send (ADR-0027). */}
+        {facts.status === 'pending' ? <div><dt><Trans>Status</Trans></dt><dd>{thread.nativeSessionStarted === false ? t`Created on first send. Choose the workspace and branch before sending.` : t`Preparing the working copy.`}</dd></div> : null}
         {facts.status === 'error' ? <div><dt><Trans>Status</Trans></dt><dd>{facts.error ?? t`Setup did not finish.`}</dd></div> : null}
       </dl>
       {thread.remoteHost ? <p className="tt-paragraph"><Trans>This folder is on the host machine. Open it there.</Trans></p> : null}

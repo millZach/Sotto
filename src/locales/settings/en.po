@@ -1471,6 +1471,10 @@ msgstr "Choose {roleName}’s reasoning effort. Now {effortNow}"
 msgid "Choose {roleName}’s reasoning effort. Now the model’s default"
 msgstr "Choose {roleName}’s reasoning effort. Now the model’s default"
 
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Choose {roleName}’s speed. Now {speedNow}"
+msgstr "Choose {roleName}’s speed. Now {speedNow}"
+
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "Choose a device"
 msgstr "Choose a device"
@@ -1510,6 +1514,10 @@ msgstr "Choose Watcher’s reasoning effort. Now {effortNow}"
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Choose Watcher’s reasoning effort. Now the model’s default"
 msgstr "Choose Watcher’s reasoning effort. Now the model’s default"
+
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Choose Watcher’s speed. Now {speedNow}"
+msgstr "Choose Watcher’s speed. Now {speedNow}"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Choose what {roleName} workers may do without asking. Now {permissionName}"
@@ -3381,10 +3389,6 @@ msgstr "No supported open-source themes found. Try a broader search."
 msgid "No tips are hidden."
 msgstr "No tips are hidden."
 
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "No tips under a working thread or Watcher."
-msgstr "No tips under a working thread or Watcher."
-
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "None of them can go yet."
 msgstr "None of them can go yet."
@@ -3588,10 +3592,6 @@ msgstr "One client updates at a time. Your threads keep working, and move to the
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "One restart, now"
 msgstr "One restart, now"
-
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "One short tip under a working thread, and under Watcher while it works, about Sotto and the thread’s provider. A tip you hide or use does not come back."
-msgstr "One short tip under a working thread, and under Watcher while it works, about Sotto and the thread’s provider. A tip you hide or use does not come back."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "One word or name per line, so AI cleanup spells them your way."
@@ -4718,8 +4718,8 @@ msgstr "Show thread {thread}"
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "Show tips while threads work"
-msgstr "Show tips while threads work"
+msgid "Show tips"
+msgstr "Show tips"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Show Watcher’s room"
@@ -5053,7 +5053,9 @@ msgstr "Speech model"
 msgid "Speech recognition by {maker}, on this computer. {languages}."
 msgstr "Speech recognition by {maker}, on this computer. {languages}."
 
+#. A worker role field: how fast its model answers, and at what price
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Speed"
 msgstr "Speed"
 
@@ -5148,6 +5150,11 @@ msgstr "SSH password"
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Stacked"
 msgstr "Stacked"
+
+#. The model offers no faster speed
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Standard only"
+msgstr "Standard only"
 
 #. A look for night falls: a line of stars sweeps across the window
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
@@ -6614,8 +6621,8 @@ msgid "Watcher settles a thread it watches once its work is done: nothing runnin
 msgstr "Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it."
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
-msgid "Watcher’s composer shows these three. A change in either place changes both."
-msgstr "Watcher’s composer shows these three. A change in either place changes both."
+msgid "Watcher’s composer shows the same choices. A change in either place changes both."
+msgstr "Watcher’s composer shows the same choices. A change in either place changes both."
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Watcher’s model: the same choice as the model chip under its composer. Another provider’s model starts a new Watcher, and this conversation stays in Watcher history."

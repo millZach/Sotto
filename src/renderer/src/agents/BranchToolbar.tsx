@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { i18n } from '@lingui/core'
 import { msg, ph } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -52,7 +53,7 @@ export const PullRequestOpenerContext = createContext<PullRequestOpener>(IN_TOOL
  * text once the thread has a message or a session; the picker keeps working for as long as the folder does.
  * Every change goes to the host as a command and the record it publishes is what the toolbar shows next.
  */
-export function BranchToolbar({ row, state, command, focused = true, onExplainedError }: {
+export function BranchToolbar({ row, state, command, focused = true, onExplainedError, header = false, noticeSlot }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -60,6 +61,10 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   readonly focused?: boolean
   /** The refusal this row is showing under itself, so the pane's own error line does not say it twice; null when none. */
   readonly onExplainedError?: ((error: string | null) => void) | undefined
+  /** The quiet composer's choices sit beside the folder, without the static host and workspace labels. */
+  readonly header?: boolean
+  /** Header choices leave their notices in the composer's flow. */
+  readonly noticeSlot?: HTMLElement | null | undefined
 }): ReactNode {
   const thread: ToolbarThread = row.thread
   const { t } = useLingui()
@@ -155,23 +160,23 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   const hostName = threadHostName(state, row.thread)
   const draftWorktree = newWorktreeDraft(thread)
   const workspace = workspaceLabel(thread)
-  return <div className="branch-toolbar" role="group" aria-label={t`Branch toolbar`} data-busy={busy ?? undefined}>
-    <LabelPill icon={thread.remoteHost ? Server : Laptop} label={t`Run on`} value={hostName}
-      title={thread.remoteHost ? t`The thread runs on this host; it was chosen when the thread was made.` : t`The thread runs on this computer.`} />
-    <Separator />
+  const noticeLine = notice ? <p className="branch-toolbar__notice tt-paragraph" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{shownWords(notice.text)}</p> : null
+  return <div className="branch-toolbar" role="group" aria-label={t`Branch toolbar`} data-busy={busy ?? undefined} data-header={header || undefined}>
+    {!header ? <><LabelPill icon={thread.remoteHost ? Server : Laptop} label={t`Run on`} value={hostName}
+      title={thread.remoteHost ? t`The thread runs on this host; it was chosen when the thread was made.` : t`The thread runs on this computer.`} /><Separator /></> : null}
     {locked
-      ? <LabelPill icon={Folder} label={t({ message: 'Workspace', comment: 'Where the thread works: its checkout or a worktree.' })} value={workspace} title={t`Workspace: ${workspace}`} />
-      : <WorkspaceMenu triggerRef={workspaceTrigger} open={workspaceOpen} onOpenChange={setWorkspaceOpen} label={workspace} value={workspaceOptionId(workspaceChoice(thread))}
+      ? !header && <LabelPill icon={Folder} label={t({ message: 'Workspace', comment: 'Where the thread works: its checkout or a worktree.' })} value={workspace} title={t`Workspace: ${workspace}`} />
+      : <WorkspaceMenu header={header} triggerRef={workspaceTrigger} open={workspaceOpen} onOpenChange={setWorkspaceOpen} label={workspace} value={workspaceOptionId(workspaceChoice(thread))}
         options={options} disabled={busy !== null} onChoose={choice => void chooseWorkspace(choice)} />}
     {/* The badge and the picker wrap as one onto the next line when the line has no room for them. */}
     <span className="branch-toolbar__end">
-      <Separator />
+      {!header || !locked ? <Separator /> : null}
       {pullRequest ? <><PullRequestBadge pullRequest={pullRequest} where={opener.where} onOpen={() => opener.open(thread.id)} /><Separator /></> : null}
-      <BranchPicker threadId={thread.id} triggerRef={branchTrigger} open={branchOpen} onOpenChange={setBranchOpen} label={branchLabel(thread)} copyable={branchLabelIsRef(thread)} busy={busy === 'branch'} disabled={busy !== null}
+      <BranchPicker header={header} threadId={thread.id} triggerRef={branchTrigger} open={branchOpen} onOpenChange={setBranchOpen} label={branchLabel(thread)} copyable={branchLabelIsRef(thread)} busy={busy === 'branch'} disabled={busy !== null}
         draftWorktree={draftWorktree} startFromOrigin={thread.worktree?.startFromOrigin !== false}
         onPick={pick} onCreate={create} onCopy={copyName} onStartFromOrigin={value => void setStartFromOrigin(value)} onCheckoutPullRequest={reference => setCheckout(reference)} />
     </span>
-    {notice ? <p className="branch-toolbar__notice tt-paragraph" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{shownWords(notice.text)}</p> : null}
+    {noticeSlot ? createPortal(noticeLine, noticeSlot) : noticeLine}
     {checkout !== null ? <CheckoutPullRequestDialog threadId={thread.id} initialReference={checkout} command={command} worktreeAllowed={!locked} localMovesToCheckout={!locked && thread.worktree?.mode !== 'shared'}
       onClose={() => { setCheckout(null); branchTrigger.current?.focus() }} onDone={text => { setCheckout(null); setNotice({ text, tone: 'status' }); branchTrigger.current?.focus() }} /> : null}
   </div>
@@ -213,13 +218,14 @@ function PullRequestBadge({ pullRequest, where, onOpen }: { readonly pullRequest
 }
 
 /** The Workspace chip: fixed starting choices, five recent worktrees, and search across the project's worktrees. */
-function WorkspaceMenu({ triggerRef, open, onOpenChange, label, value, options, disabled, onChoose }: {
+function WorkspaceMenu({ triggerRef, open, onOpenChange, label, value, options, disabled, onChoose, header }: {
   readonly triggerRef: React.RefObject<HTMLButtonElement | null>
   readonly open: boolean; readonly onOpenChange: (open: boolean) => void
   readonly label: string; readonly value: string
   readonly options: ReturnType<typeof workspaceOptions>
   readonly disabled: boolean
   readonly onChoose: (choice: WorkspaceChoice) => void
+  readonly header: boolean
 }): ReactNode {
   const { t } = useLingui()
   const panel = useRef<HTMLDivElement>(null)
@@ -268,7 +274,7 @@ function WorkspaceMenu({ triggerRef, open, onOpenChange, label, value, options, 
       const bottomEdge = Math.min(window.innerHeight, pane?.bottom ?? window.innerHeight) - 8
       const above = anchor.top - topEdge - 6
       const below = bottomEdge - anchor.bottom - 6
-      const opensBelow = above < 280 && below > above
+      const opensBelow = header || above < 280 && below > above
       const maxHeight = Math.min(380, Math.max(0, opensBelow ? below : above))
       setPosition(previous => previous?.left === left && previous.width === width && previous.maxHeight === maxHeight && previous.below === opensBelow ? previous : { left, width, maxHeight, below: opensBelow })
     }
@@ -280,7 +286,7 @@ function WorkspaceMenu({ triggerRef, open, onOpenChange, label, value, options, 
     window.addEventListener('resize', update)
     window.addEventListener('scroll', update, true)
     return () => { observer?.disconnect(); window.removeEventListener('resize', update); window.removeEventListener('scroll', update, true) }
-  }, [open, triggerRef])
+  }, [open, triggerRef, header])
   const optionButton = (option: ReturnType<typeof workspaceOptions>[number]): ReactNode => {
     const Icon = option.choice.kind === 'current' ? Folder : option.choice.kind === 'new' ? Plus : GitBranch
     return <button type="button" role="option" key={option.id} aria-label={option.label} aria-selected={option.id === value}
@@ -317,7 +323,7 @@ function WorkspaceMenu({ triggerRef, open, onOpenChange, label, value, options, 
  * with T3's badges and pages them, offers Create new ref for a name nothing matches, and for a worktree not
  * made yet carries the Start from origin switch. Right-click on a ref copies its name.
  */
-function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyable, busy, disabled, draftWorktree, startFromOrigin, onPick, onCreate, onCopy, onStartFromOrigin, onCheckoutPullRequest }: {
+function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyable, busy, disabled, draftWorktree, startFromOrigin, onPick, onCreate, onCopy, onStartFromOrigin, onCheckoutPullRequest, header }: {
   readonly threadId: string
   readonly triggerRef: React.RefObject<HTMLButtonElement | null>
   readonly open: boolean; readonly onOpenChange: (open: boolean) => void
@@ -331,6 +337,7 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyabl
   readonly onStartFromOrigin: (value: boolean) => void
   /** A pull request URL, `#42` or a `gh pr checkout` line typed into the search opens Checkout pull request, as in T3. */
   readonly onCheckoutPullRequest: (reference: string) => void
+  readonly header: boolean
 }): ReactNode {
   const { t } = useLingui()
   const [query, setQuery] = useState('')
@@ -343,7 +350,7 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyabl
   const enterPending = useRef(false)
   const searchEdited = useRef(false)
   const panel = useRef<HTMLDivElement>(null)
-  const [position, setPosition] = useState<{ left: number; width: number } | null>(null)
+  const [position, setPosition] = useState<{ left: number; width: number; maxHeight?: number | undefined } | null>(null)
   const search = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const generation = useRef(0)
@@ -398,7 +405,8 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyabl
       const rightEdge = Math.min(document.documentElement.clientWidth, bounds?.right ?? document.documentElement.clientWidth) - 8
       const width = Math.min(340, Math.max(0, rightEdge - leftEdge))
       const left = Math.max(leftEdge, Math.min(anchor.right - width, rightEdge - width)) - anchor.left
-      setPosition(previous => previous?.left === left && previous.width === width ? previous : { left, width })
+      const maxHeight = header ? Math.max(0, Math.min(window.innerHeight, bounds?.bottom ?? window.innerHeight) - anchor.bottom - 14) : undefined
+      setPosition(previous => previous?.left === left && previous.width === width && previous.maxHeight === maxHeight ? previous : { left, width, maxHeight })
     }
     update()
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(update)
@@ -406,7 +414,7 @@ function BranchPicker({ threadId, triggerRef, open, onOpenChange, label, copyabl
     if (pane) observer?.observe(pane)
     window.addEventListener('resize', update)
     return () => { observer?.disconnect(); window.removeEventListener('resize', update) }
-  }, [open, triggerRef])
+  }, [open, triggerRef, header])
   const close = useCallback((refocus: boolean): void => { enterPending.current = false; onOpenChange(false); if (refocus) triggerRef.current?.focus() }, [onOpenChange, triggerRef])
   const choose = useCallback(async (ref: GitRef): Promise<void> => { close(true); await onPick(ref) }, [close, onPick])
   const createName = createRefName(query)

@@ -7,7 +7,7 @@ import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentS
 import type { AgentFileReference } from '../../shared/agentFiles'
 import type { AnswerGivenEvent } from '../../shared/threadEvents'
 import type { WatcherAsk } from '../../shared/watcherAsks'
-import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentRuntimeMode, AgentThreadOptions, HandoverCounts, ProviderId } from '../../shared/agents'
+import type { WorktreeReclaimPreview, AgentWorkingCopyOptions, AgentWorkingCopySelection, AgentAttachmentHandle, AgentHostSnapshot, AgentMessage, AgentProject, AgentQuestionAnswers, AgentRuntimeMode, AgentSpeed, AgentThreadOptions, HandoverCounts, ProviderId } from '../../shared/agents'
 import type { GitPullResult, GitStackedAction } from '../../shared/gitActions'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -54,7 +54,9 @@ export interface WatcherProfileTools extends ScopedThreadTools {
 
 export type AgentHostCommand =
   | { readonly type: 'create-project'; readonly provider?: ProviderId; readonly commandId: string; readonly projectId: string; readonly title: string; readonly path: string }
-  | ({ readonly type: 'create-thread'; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly titleSource?: 'user' | 'default'; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly baseBranch?: string; readonly startFromOrigin?: boolean; readonly existingWorktreePath?: string; readonly workingDirectory?: string; readonly startFromMove?: string; readonly madeFrom?: WorktreeMadeFrom; readonly check?: true } & AgentThreadOptions)
+  | ({ readonly type: 'create-thread'; readonly commandId: string; readonly threadId: string; readonly projectId: string; readonly title: string; readonly modelId: string; readonly titleSource?: 'user' | 'default'; readonly project?: AgentProject; readonly workingCopy?: 'independent' | 'shared'; readonly baseBranch?: string; readonly startFromOrigin?: boolean; readonly existingWorktreePath?: string; readonly workingDirectory?: string; readonly startFromMove?: string; readonly madeFrom?: WorktreeMadeFrom; readonly check?: true
+    /** Main-only Watcher creation metadata, never accepted by the public command schema. */
+    readonly keptSpeed?: true } & AgentThreadOptions)
   | ({ readonly type: 'configure-thread'; readonly commandId: string; readonly threadId: string
     /** The caller keeps history from the host's events, so the result's snapshot may leave every thread's messages out (`ThreadReadPurpose`, #368). */
     readonly historyFromEvents?: boolean } & AgentThreadOptions)
@@ -248,7 +250,8 @@ export interface ThreadSessionDraft {
   readonly workingDirectory?: string | undefined
   readonly reasoningEffort?: string | undefined
   readonly runtimeMode?: AgentRuntimeMode | undefined
-  /** The thread's fast mode choice (ADR-0143), so an early client starts as the first send's would. */
+  /** The thread's speed choice (ADR-0143), so an early client starts as the first send's would. */
+  readonly speed?: AgentSpeed | null | undefined
   readonly fastMode?: boolean | undefined
 }
 /** What an activity subscriber asks of the host it subscribes to. */

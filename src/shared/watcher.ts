@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { agentRuntimeModeSchema, handoverCountsSchema, providerIdSchema } from './agents'
+import { agentModelSpeedSchema, agentRuntimeModeSchema, agentSpeedSchema, handoverCountsSchema, providerIdSchema } from './agents'
 import { worktreeMadeFromSchema } from './bringChangesBack'
 import { watcherGroupSchema, WATCHER_GROUPS } from './watcherOverview'
 import { hostFactsSchema, hostLoadSchema, hostOsSchema } from './hostFacts'
@@ -48,7 +48,7 @@ const workingCopy = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('new-worktree') }).strict(),
   z.object({ kind: z.literal('existing-worktree'), choiceId: id }).strict(),
 ])
-const choices = z.object({ modelId: entityId, reasoningEffort: z.string().min(1).max(64).nullable(), permission, workingCopy, baseRefChoiceId: id.optional() }).strict()
+const choices = z.object({ modelId: entityId, reasoningEffort: z.string().min(1).max(64).nullable(), speed: agentSpeedSchema.nullable().optional(), permission, workingCopy, baseRefChoiceId: id.optional() }).strict()
 
 export const WATCHER_REFUSAL_CODES = [
   'NOT_CURRENT_WATCHER', 'REQUEST_NOT_ACTIVE', 'UNKNOWN_TARGET', 'HOST_DISCONNECTED', 'HOST_FEATURE_UNAVAILABLE',
@@ -326,6 +326,7 @@ export const watcherToolSchemas = {
     // goes too as a snapshot (#1033, #1312): main takes both off before admission and puts `fromMove` in their place, the
     // move it makes just before the start, which is all a paired host is sent. Watcher never names a move itself.
     input: z.object({ ...mutation, project: watcherProjectTargetSchema, machine: z.uuid().optional(), os: workerSystemSchema.optional(), role: workerKindSchema.optional(), modelId: entityId.optional(), reasoningEffort: z.string().min(1).max(64).optional(),
+      speed: agentSpeedSchema.nullable().optional().describe('Fast or ultrafast, one the worker model offers; null means standard speed.'),
       permission: permission.optional(), workingCopy, baseRefChoiceId: id.optional(), title: z.string().min(1).max(WATCHER_TITLE_MAX), firstPrompt: prompt,
       fromThread: watcherThreadTargetSchema.optional(), testRun: z.boolean().optional(), fromMove: z.uuid().optional(),
       // With `fromMove`, the thread whose branch it was, which the worker's worktree keeps so its commits can be brought back
@@ -343,7 +344,7 @@ export const watcherToolSchemas = {
       // In memory only, as `placement` is.
       startedFrom: branchStartReceiptSchema.optional(),
       // What the start's worker role gave it and what the request named in its place. In memory only: a retry after a restart has none.
-      role: z.object({ id: workerKindSchema, named: z.array(z.enum(['model', 'effort', 'permission'])).max(3), note: shortText.min(1) }).strict().optional(),
+      role: z.object({ id: workerKindSchema, named: z.array(z.enum(['model', 'effort', 'speed', 'permission'])).max(4), speed: agentSpeedSchema.nullable().optional(), note: shortText.min(1) }).strict().optional(),
       // Where the start was placed (#1032): the machine, whether it is somewhere other than where new workers start, and
       // why when Sotto placed it itself. In memory only, as `role` is; never from a paired host, which places nothing.
       placement: workerPlacementReceiptSchema.optional(),
@@ -382,6 +383,7 @@ export const watcherToolSchemas = {
     output: result({ projects: z.array(z.object({ target: watcherProjectTargetSchema, title: z.string().max(512), displayRoot: z.string().max(4_096),
       // Left out unless includeModels: every project on a computer offers the same models.
       workers: z.array(z.object({ provider: providerIdSchema, modelId: entityId, reasoningEfforts: z.array(z.string().max(64)).max(20),
+        speeds: z.array(agentModelSpeedSchema).max(2).optional(),
         defaultPermission: permission.nullable(), permissionComparable: z.boolean() }).strict()).max(100).optional(),
       controlAvailable: z.boolean(), readsAvailable: z.boolean(), readOnlyProfileAvailable: z.boolean(), freshness }).strict()).max(100), ...page }),
   },
@@ -486,7 +488,8 @@ export const watcherRecordSchema = z.object({ version: z.literal(1), current: wa
   localTakeovers: z.array(z.object({ target: watcherThreadTargetSchema, at: time, lastRequestId: z.uuid().nullable(),
     userDrafts: z.array(z.object({ draftId: z.uuid(), digest: z.string().regex(/^[a-f0-9]{64}$/u), messageId: id.optional() }).strict()).optional() }).strict()).optional(),
   remoteMasters: z.array(z.object({ clientId: id, masterHostId: z.uuid(), creationOperationId: z.uuid(), createdAt: time }).strict()).max(1_000).optional(),
-  creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
+  // The speed is the validated choice, kept even when the creation model runs at Standard (ADR-0143).
+  creation: z.object({ identity: watcherIdentitySchema, modelId: entityId.optional(), reasoningEffort: z.string().max(64).optional(), speed: agentSpeedSchema.nullable().optional(), phase: z.enum(['intent', 'created', 'bound', 'ready']),
     replaces: watcherThreadTargetSchema.nullable() }).strict().nullable(),
   history: z.array(watcherIdentitySchema).max(1_000), requests: z.array(watcherRequestSchema).max(10_000),
   operations: z.array(watcherOperationSchema).max(40_000),

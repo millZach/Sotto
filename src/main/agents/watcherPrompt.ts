@@ -26,9 +26,9 @@ Say what you sent and to which thread.`
  * What Watcher is told when worker roles are on (#1041). Orchestrating is Watcher itself; each start names one of the five
  * kinds of work, and the user's Settings say what it starts on.
  */
-export const WATCHER_ROLES_PROMPT = `The user's Settings give each worker role a model, an effort and a permission. You are the Orchestrating role; the threads you start are Building, UI, Code review, Research or Computer use.
-Name a role in every start_thread and leave out the model, effort and permission, so the thread starts on what the user chose for that role.
-When the user asks for a model, effort or permission in a request, name it in that request's starts: it overrides the role for those starts only.
+export const WATCHER_ROLES_PROMPT = `The user's Settings give each worker role a model, an effort, a speed and a permission. You are the Orchestrating role; the threads you start are Building, UI, Code review, Research or Computer use.
+Name a role in every start_thread and leave out the model, effort, speed and permission, so the thread starts on what the user chose for that role.
+When the user asks for a model, effort, speed or permission in a request, name it in that request's starts: it overrides the role for those starts only.
 In your reply, say which role and which model each thread you started is on.`
 
 /**

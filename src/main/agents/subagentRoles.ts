@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { AgentModel, AgentRuntimeMode } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
 import { RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
-import { capRuntimeMode, roleWork, subagentName, type SubagentRole, type WorkerKind } from '../../shared/workerRoles'
+import { capRuntimeMode, fitSpeed, roleWork, subagentName, type SubagentRole, type WorkerKind } from '../../shared/workerRoles'
 import { compareClientVersions } from './clientVersions'
 import type { WorkerRoleSource } from './host'
 
@@ -89,7 +89,8 @@ export function claudeSubagents(table: readonly SubagentRole[], threadMode: Agen
     if (role.provider !== 'claude') continue
     const model = ready(models, role)
     const effort = model ? offered(model, role.reasoningEffort) : undefined
-    if (!model || effort === undefined || effort !== null && !CLAUDE_EFFORTS.has(effort)) continue
+    // AgentDefinition has no per-agent speed setting; delegate these models so the role gets its own flag layer.
+    if (!model || role.speed || model.speeds?.length || model.fastMode || effort === undefined || effort !== null && !CLAUDE_EFFORTS.has(effort)) continue
     const mode = subagentMode(role, threadMode)
     if (narrowerMode(widest, mode)) widest = mode
     const { description, tools, rule, maxTurns } = CLAUDE_ROLE_USE[role.kind]
@@ -117,8 +118,8 @@ export interface CodexRoleEntry { readonly description: string; readonly config_
 export type CodexRoleFilesEvent = 'codex-role-file-failed'
 const toml = (value: string): string => JSON.stringify(value)
 /** A role file's text: a config layer Codex applies to the sub-agent (codex-roles check, October 14). */
-export function codexRoleFile(role: SubagentRole, effort: string | null, policy: CodexPolicy): string {
-  return [`model = ${toml(role.model)}`, ...(effort ? [`model_reasoning_effort = ${toml(effort)}`] : []),
+export function codexRoleFile(role: SubagentRole, effort: string | null, policy: CodexPolicy, hasSpeeds = false): string {
+  return [`model = ${toml(role.model)}`, ...(role.speed || hasSpeeds ? [`service_tier = ${toml(role.speed === 'fast' ? 'priority' : role.speed ?? 'default')}`] : []), ...(effort ? [`model_reasoning_effort = ${toml(effort)}`] : []),
     `sandbox_mode = ${toml(policy.sandbox)}`, `approval_policy = ${toml(policy.approvalPolicy)}`, `approvals_reviewer = ${toml(policy.approvalsReviewer)}`,
     `developer_instructions = ${toml(roleBrief(role))}`, ''].join('\n')
 }
@@ -155,10 +156,10 @@ export class CodexRoleFiles {
       if (role.provider !== 'codex') continue
       const model = ready(models, role)
       const effort = model ? offered(model, role.reasoningEffort) : undefined
-      if (!model || effort === undefined) continue
+      if (!model || effort === undefined || role.speed && fitSpeed(role.speed, model) !== role.speed) continue
       const mode = subagentMode(role, threadMode)
       const name = subagentName(role.kind), file = join(folder, `${name}.toml`)
-      try { await this.place(folder, file, codexRoleFile(role, effort, this.policy(mode))) }
+      try { await this.place(folder, file, codexRoleFile(role, effort, this.policy(mode), !!(model.speeds?.length || model.fastMode))) }
       catch { this.log?.('codex-role-file-failed'); continue }
       if (narrowerMode(widest, mode)) widest = mode
       agents[name] = { description: `${role.name} work: ${roleWork(role)}.`, config_file: file }

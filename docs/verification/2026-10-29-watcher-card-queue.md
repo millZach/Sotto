@@ -9,7 +9,7 @@ same desktop composer and admission rules serve ordinary threads.
 
 ## Focused checks
 
-Using Node 24.22.1 after `npm ci --ignore-scripts`:
+Initial checks used Node 24.22.1 after `npm ci --ignore-scripts`:
 
 - `npm run typecheck`: passed.
 - `npm run lint`: passed.
@@ -42,6 +42,13 @@ blocked or paused. The catalog now includes both labels in every language;
 now assert queue admission while preserving cards and delivery order. The
 permission-layout e2e expectations were updated too; execution stays on GitHub.
 
+After merging main at `07604b760` (PR #1812), typecheck, lint and all ten targeted
+unit files passed again: 179 tests, including the new Watcher speed and strict
+phone-projection cases from main. The native String Catalog check also passed.
+The conflict resolution keeps the new effort/speed controls and allows draft
+editing while a card waits. A separate source audit confirmed that the queue
+holds, phone origins and strict phone projection all survived the merge.
+
 The native iPhone model test and existing phone integration test were updated.
 Those suites, the rest of CI, and native iPhone compilation are left to GitHub.
 No Electron app, provider process, local e2e test or full suite was launched.
@@ -65,16 +72,12 @@ in dark and light. All twelve cases kept the card visible, accepted Queue,
 issued only `queue-followup`, and had no horizontal overflow. The captures at
 1280 and 820 were visually inspected.
 
-The checkout at `617392e844afc4ec91561d51406691699ef0add5` still excludes Watcher
-from the quiet pill. To check the incoming pill without changing another
-thread's work, the harness extracted PR #1812's
-`fd5de5c45c0a06208c5bfb9dcc71694ba6b0ae07` source to a temporary directory and
-merged this change's `ThreadComposer` and `ThreadFollowups` edits into it. The
-one overlap retained #1812's quiet options and removed this fix's permission
-editing restriction. The full composer used the same fixture with the switch
-off. These captures prove that combined desktop source, not a running Owl or
-native iPhone screen. A 393px exploratory desktop render is below Sotto's
-820px desktop minimum and does not represent the native iPhone composer.
+The final captures were regenerated from this checkout after merging main at
+`07604b760`. The harness now imports the merged source directly, including the
+Watcher pill and effort dots beneath the model name. All twelve checks passed
+again, and the refreshed dark/light pill and full-composer captures were
+visually inspected at the 820px minimum. These captures prove the merged desktop
+source, not a running Owl or native iPhone screen. No app was launched.
 
 | Layout | Dark | Light |
 | --- | --- | --- |

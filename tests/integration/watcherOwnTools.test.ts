@@ -253,6 +253,8 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) des
     await f.clientUpdate!.install()
     await seedModels(f.root, provider, true)
     await f.host.clientUpdated!(provider)
+    // Muse's fake host saves its shared native sessions on exit, before the replacement resumes them.
+    if (provider === 'muse') await f.adapter.closed()
     await f.host.startThreadSession!(id)
     assertRuntimeConfiguration(provider, (await f.driver.requests()).slice(beforeReplacement), 'full-access')
     await f.driver.raisePermission(id, 'Synthetic edit or writing command')

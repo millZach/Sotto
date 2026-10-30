@@ -66,10 +66,10 @@ function roomState(current: string, patch: Partial<WatcherRoomState> = {}): Watc
   }
 }
 
-function renderRoom(room: WatcherRoomState, state: AgentState, startNew: () => Promise<WatcherRoomResult>) {
+function renderRoom(room: WatcherRoomState, state: AgentState, startNew: () => Promise<WatcherRoomResult>, quiet = false) {
   vi.mocked(useOptionalApp).mockReturnValue({
     navigation: 'watcher', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: { watcherEnabled: true }, actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
+    update: { watcherEnabled: true, owlFeatures: { watcher: true, 'quiet-composer': quiet } }, actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
   } as unknown as AppContextValue)
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)
   const connection = agentContextFixture(state, command, { threadDrafts: new ThreadDraftStore(command) })
@@ -99,33 +99,50 @@ beforeEach(() => {
 afterEach(() => { cleanup(); localStorage.clear() })
 
 describe('New Watcher in Watcher’s composer', () => {
-  it('stands first in the footer, where an ordinary thread says where it runs, and never says where Watcher runs', async () => {
-    renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a', { messages: said })), vi.fn())
+  it.each([false, true])('keeps a named and titled New Watcher control in the footer, quiet %s', async quiet => {
+    renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a', { messages: said })), vi.fn(), quiet)
     const button = await newButton()
     expect(button).toHaveAccessibleName('New Watcher')
     expect(button).toHaveAttribute('title', NEW_WATCHER_TITLE)
+    expect(button).toHaveAttribute('aria-label', 'New Watcher')
+    expect(button.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    expect(button.closest('form')?.getAttribute('data-quiet')).toBe(quiet ? 'true' : null)
     expect(button).not.toHaveAttribute('aria-disabled')
     const pane = await watcherPane()
     expect(pane.querySelector('.thread-host-chip')).toBeNull()
     expect(pane).not.toHaveTextContent('Runs on this computer')
-    // First in the footer's row, after the paperclip and before the model, in the order Tab takes.
-    expect(pane.querySelector('.thread-prompt__meta')!.firstElementChild).toBe(button)
     const model = within(pane).getByRole('combobox', { name: 'Thread model' })
-    expect(button.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    if (quiet) {
+      const shield = within(pane).getByRole('combobox', { name: 'Watcher’s permissions' })
+      const send = within(pane).getByRole('button', { name: 'Send prompt' })
+      expect(shield.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(button.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+      expect(pane.querySelector('.thread-prompt__actions')!.firstElementChild).toBe(button)
+    } else {
+      expect(pane.querySelector('.thread-prompt__meta')!.firstElementChild).toBe(button)
+      expect(button.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    }
     const attach = within(pane).getByRole('button', { name: 'Attach screenshots' })
     expect(attach.compareDocumentPosition(button) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
   })
 
-  it('is unavailable with its reason only while Watcher’s own turn runs, and a press does nothing (#1735)', async () => {
+  it.each([false, true])('is unavailable with its reason while Watcher’s turn runs, and a press does nothing, quiet %s (#1735)', async quiet => {
     const user = userEvent.setup()
     const startNew = vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: roomState('watcher-b') }))
-    const { bridge } = renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a', { messages: said, status: 'running' })), startNew)
+    const { bridge } = renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a', { messages: said, status: 'running' })), startNew, quiet)
     const button = await newButton()
     expect(button).toHaveAttribute('aria-disabled', 'true')
     expect(button).toHaveAttribute('title', NEW_WATCHER_BUSY)
     expect(button).toHaveAccessibleDescription(NEW_WATCHER_BUSY)
     // Still in the Tab order, so its reason can be heard.
     expect(button).not.toBeDisabled()
+    if (quiet) {
+      const pane = await watcherPane()
+      const controls = pane.querySelector('.thread-prompt__actions')!
+      expect([...controls.querySelectorAll('button')].map(control => control.getAttribute('aria-label'))).toEqual(['New Watcher', 'Stop agent', 'Queue prompt'])
+      expect(pane.querySelector('.effort-dots__stop')).toBeNull()
+      expect(controls.querySelector('.thread-prompt__send')).toHaveClass('thread-prompt__disc')
+    }
     await user.click(button)
     expect(bridge.startNew).not.toHaveBeenCalled()
     expect(NEW_WATCHER_BUSY).toBe('Watcher is working. Stop its turn to start a new one.')

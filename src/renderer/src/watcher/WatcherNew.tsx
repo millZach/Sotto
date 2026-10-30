@@ -13,8 +13,8 @@ import { WatcherOwl } from './WatcherOwl'
 import { watchedRows, useWatcherRoom, type WatcherRoom } from './watcherRoom'
 
 /**
- * New Watcher (Zach's pick on October 21, 2026, variant A of `prototype/new-watcher-button`): a quiet chip first in
- * Watcher's composer footer, where an ordinary thread says where it runs. A press starts a new Watcher at once on the
+ * New Watcher (Zach's pick on October 21, 2026, variant A of `prototype/new-watcher-button`): a chip in Watcher's footer,
+ * beside Send in the quiet pill. A press starts a new Watcher at once on the
  * current one's provider, model, effort and permissions, through the same replacement a provider change makes (ADR-0073).
  * The last conversation goes to Watcher history, workers and standing watches carry on, and the handover offer stands
  * over the new composer. Unavailable, it stays in the Tab order and says why, as the Comment button in Changes does.
@@ -73,8 +73,8 @@ export function WatcherNewButton({ state, thread, noticeSlot }: {
   const notice = refusal === null ? null : <p className="thread-options__notice tt-paragraph" role="alert"><span>{shownWords(refusal)}</span></p>
   return <>
     <button type="button" className="thread-chip watcher-new tt-focusable" title={why ?? t`Start a new Watcher with a handover of this one`}
-      aria-disabled={why !== null || undefined} aria-describedby={why !== null ? reasonId : undefined} onClick={() => void press()}>
-      <SquarePen size={14} aria-hidden="true" /><span><Trans>New Watcher</Trans></span></button>
+      aria-label={t`New Watcher`} aria-disabled={why !== null || undefined} aria-describedby={why !== null ? reasonId : undefined} onClick={() => void press()}>
+      <SquarePen size={14} aria-hidden="true" /><span className="watcher-new__label"><Trans>New Watcher</Trans></span></button>
     <span className="watcher-new__separator" aria-hidden="true">·</span>
     {why !== null ? <span id={reasonId} className="tt-visually-hidden">{why}</span> : null}
     {noticeSlot !== null && notice !== null ? createPortal(notice, noticeSlot) : notice}

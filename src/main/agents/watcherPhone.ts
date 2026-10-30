@@ -173,7 +173,9 @@ export class WatcherPhoneService {
         connected, mayAnswer: mayAnswer && connected && target.hostId === snapshot.hostId }))
     })
     return watcherPhoneStateSchema.parse({ hostId: this.control.hostId()!, current: room.current && room.currentOptions ? {
-      target: room.current.target, provider: room.current.provider, ...room.currentOptions,
+      target: room.current.target, provider: room.current.provider, modelId: room.currentOptions.modelId,
+      reasoningEffort: room.currentOptions.reasoningEffort, runtimeMode: room.currentOptions.runtimeMode,
+      status: room.currentOptions.status, connected: room.currentOptions.connected,
       ...(steer ? { steers: current ? this.control.watcherPhoneTurn(current.id).steers : false } : {}) } : null,
     conversation: { messages, revision: detail?.revision ?? 0, earlierAvailable: Boolean(detail?.earlierAvailable || (detail?.messages.length ?? 0) > messages.length) },
     // The deliveries alone, read without copying every thread: this runs for each phone on every update.

@@ -58,6 +58,7 @@
       }
     ],
     "commands": [
+      "save-thread-draft",
       "queue-followup"
     ]
   },
@@ -89,6 +90,7 @@
       }
     ],
     "commands": [
+      "save-thread-draft",
       "queue-followup"
     ]
   },
@@ -120,6 +122,7 @@
       }
     ],
     "commands": [
+      "save-thread-draft",
       "queue-followup"
     ]
   },
@@ -151,6 +154,7 @@
       }
     ],
     "commands": [
+      "save-thread-draft",
       "queue-followup"
     ]
   },
@@ -188,123 +192,6 @@
   {
     "full": true,
     "theme": "dark",
-    "width": 1600,
-    "height": 1000,
-    "quiet": false,
-    "overflow": false,
-    "card": true,
-    "queued": "Queued 1· Queued until you answer the cardAfter this, check the release notes.",
-    "buttons": [
-      {
-        "name": "Attach screenshots",
-        "disabled": true
-      },
-      {
-        "name": "Thread model",
-        "disabled": true
-      },
-      {
-        "name": "Thread speed: Standard",
-        "disabled": true
-      },
-      {
-        "name": "Thread reasoning",
-        "disabled": true
-      },
-      {
-        "name": "Stop agent",
-        "disabled": false
-      },
-      {
-        "name": "Queue prompt",
-        "disabled": false
-      }
-    ],
-    "commands": [
-      "queue-followup"
-    ]
-  },
-  {
-    "full": true,
-    "theme": "dark",
-    "width": 1280,
-    "height": 800,
-    "quiet": false,
-    "overflow": false,
-    "card": true,
-    "queued": "Queued 1· Queued until you answer the cardAfter this, check the release notes.",
-    "buttons": [
-      {
-        "name": "Attach screenshots",
-        "disabled": true
-      },
-      {
-        "name": "Thread model",
-        "disabled": true
-      },
-      {
-        "name": "Thread speed: Standard",
-        "disabled": true
-      },
-      {
-        "name": "Thread reasoning",
-        "disabled": true
-      },
-      {
-        "name": "Stop agent",
-        "disabled": false
-      },
-      {
-        "name": "Queue prompt",
-        "disabled": false
-      }
-    ],
-    "commands": [
-      "queue-followup"
-    ]
-  },
-  {
-    "full": true,
-    "theme": "dark",
-    "width": 820,
-    "height": 560,
-    "quiet": false,
-    "overflow": false,
-    "card": true,
-    "queued": "Queued 1NextAfter this, check the release notes.",
-    "buttons": [
-      {
-        "name": "Attach screenshots",
-        "disabled": true
-      },
-      {
-        "name": "Thread model",
-        "disabled": true
-      },
-      {
-        "name": "Thread speed: Standard",
-        "disabled": true
-      },
-      {
-        "name": "Thread reasoning",
-        "disabled": true
-      },
-      {
-        "name": "Stop agent",
-        "disabled": false
-      },
-      {
-        "name": "Queue prompt",
-        "disabled": false
-      }
-    ],
-    "commands": [
-      "queue-followup"
-    ]
-  },
-  {
-    "full": true,
-    "theme": "light",
     "width": 1600,
     "height": 1000,
     "quiet": false,
@@ -343,6 +230,123 @@
   },
   {
     "full": true,
+    "theme": "dark",
+    "width": 1280,
+    "height": 800,
+    "quiet": false,
+    "overflow": false,
+    "card": true,
+    "queued": "Queued 1· Queued until you answer the cardAfter this, check the release notes.",
+    "buttons": [
+      {
+        "name": "Attach screenshots",
+        "disabled": true
+      },
+      {
+        "name": "Thread model",
+        "disabled": true
+      },
+      {
+        "name": "Thread speed: Standard",
+        "disabled": true
+      },
+      {
+        "name": "Thread reasoning",
+        "disabled": true
+      },
+      {
+        "name": "Stop agent",
+        "disabled": false
+      },
+      {
+        "name": "Queue prompt",
+        "disabled": false
+      }
+    ],
+    "commands": [
+      "queue-followup"
+    ]
+  },
+  {
+    "full": true,
+    "theme": "dark",
+    "width": 820,
+    "height": 560,
+    "quiet": false,
+    "overflow": false,
+    "card": true,
+    "queued": "Queued 1NextAfter this, check the release notes.",
+    "buttons": [
+      {
+        "name": "Attach screenshots",
+        "disabled": true
+      },
+      {
+        "name": "Thread model",
+        "disabled": true
+      },
+      {
+        "name": "Thread speed: Standard",
+        "disabled": true
+      },
+      {
+        "name": "Thread reasoning",
+        "disabled": true
+      },
+      {
+        "name": "Stop agent",
+        "disabled": false
+      },
+      {
+        "name": "Queue prompt",
+        "disabled": false
+      }
+    ],
+    "commands": [
+      "queue-followup"
+    ]
+  },
+  {
+    "full": true,
+    "theme": "light",
+    "width": 1600,
+    "height": 1000,
+    "quiet": false,
+    "overflow": false,
+    "card": true,
+    "queued": "Queued 1· Queued until you answer the cardAfter this, check the release notes.",
+    "buttons": [
+      {
+        "name": "Attach screenshots",
+        "disabled": true
+      },
+      {
+        "name": "Thread model",
+        "disabled": true
+      },
+      {
+        "name": "Thread speed: Standard",
+        "disabled": true
+      },
+      {
+        "name": "Thread reasoning",
+        "disabled": true
+      },
+      {
+        "name": "Stop agent",
+        "disabled": false
+      },
+      {
+        "name": "Queue prompt",
+        "disabled": false
+      }
+    ],
+    "commands": [
+      "queue-followup"
+    ]
+  },
+  {
+    "full": true,
     "theme": "light",
     "width": 1280,
     "height": 800,
@@ -377,6 +381,7 @@
       }
     ],
     "commands": [
+      "save-thread-draft",
       "queue-followup"
     ]
   },
@@ -416,6 +421,7 @@
       }
     ],
     "commands": [
+      "save-thread-draft",
       "queue-followup"
     ]
   }

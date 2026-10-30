@@ -16,6 +16,8 @@ export interface WatcherCommandOrigin {
   readonly userAnswer?: true
   /** Setup the user asked for in Watcher's room, such as its model or permissions; it is not automation either. */
   readonly userSetup?: true
+  /** Watcher creation keeps a speed already validated or saved by its room. */
+  readonly keptSpeed?: true
   readonly guard: () => void
 }
 export type WatcherCommand = Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'queue-followup' | 'steer' | 'interrupt' | 'settle-thread' }>
