@@ -189,7 +189,10 @@ describe('confirm, then the move record’s states', () => {
     // Still fenced and unsettled while the first turn runs there.
     expect(w.settled).toEqual([]); expect(w.fences.has('a')).toBe(true)
     w.endTurn(moveId)
-    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('source-settled'))
+    await vi.waitFor(() => {
+      expect(stateOf(moves, moveId)).toBe('source-settled')
+      expect(w.fences.has('a')).toBe(false)
+    })
     const threadId = w.remote.made.get(moveId)!
     expect(w.watch.moved).toEqual([`a->${FORGE}:${threadId}`])
     expect(w.links).toEqual([{ threadId: 'a', link: { threadId, provider: 'codex', at: expect.any(String), host: FORGE } }])

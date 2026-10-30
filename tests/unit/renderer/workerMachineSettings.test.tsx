@@ -140,6 +140,7 @@ describe('Settings, under Watcher: Worker capacity (worker swarms, ADR-0162)', (
 
   it('with Work across machines on, lets each paired machine ask for its own by its host ID, and empty puts it back on the page’s', async () => {
     const { update } = capacity({ crossMachine: true, ceilings: { [FORGE]: 16 } })
+    await act(async () => undefined)
     const forgeField = await screen.findByRole('textbox', { name: 'forge' })
     expect(forgeField).toHaveValue('16')
     expect(screen.queryByRole('textbox', { name: 'This PC' })).toBeNull()

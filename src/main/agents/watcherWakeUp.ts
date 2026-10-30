@@ -43,7 +43,8 @@ export function watcherProgressFingerprint(thread: AgentThread): string {
   // The digest of JSON of [status, lastTurn, messages, activities, subagentSummary, backgroundWork, monitoring, requests],
   // put together from each part's JSON so a long history's records are not turned into JSON again on every pass (#1331).
   const head = `${json(thread.status)},${json(thread.lastTurn)},${json(thread.messages.map(message => [message.id, message.text.length]))}`
-  const tail = `${json(thread.subagentSummary)},${json(thread.backgroundWork?.map(work => [work.id, work.type]))},${json(thread.monitoring?.map(work => work.id))},${json(thread.requests.map(card => [card.id, card.kind]))},${json(thread.swarm)}`
+  // Keep the existing digest and serialization cost for ordinary threads, including every thread on stable.
+  const tail = `${json(thread.subagentSummary)},${json(thread.backgroundWork?.map(work => [work.id, work.type]))},${json(thread.monitoring?.map(work => work.id))},${json(thread.requests.map(card => [card.id, card.kind]))}${thread.swarm === undefined ? '' : `,${json(thread.swarm)}`}`
   const activities = thread.activities, rest = `[${head},${tail}]`
   // A certified array is frozen to its last record and only ever replaced, so the same array with the same other facts
   // is the same fingerprint. Messages and the rest are read every time: they may change in place.

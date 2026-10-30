@@ -1347,7 +1347,8 @@ export class DelegationService {
       const record = this.owned(caller.id, parsed.data.delegation)
       if (!this.open(record)) return { ...(await this.result(record)), note: 'This delegation had already ended. Nothing was stopped.' }
       // A stop it asked for is not news to it, however it lands. A check still waiting its turn leaves the queue.
-      const queued = this.waitingChecks.has(record.id) || this.waitingWorkers.has(record.id)
+      const queuedCheck = this.waitingChecks.has(record.id)
+      const queued = queuedCheck || this.waitingWorkers.has(record.id)
       this.update(record.id, saved => { saved.told = 'stopped' })
       // A brief on its way is fenced as a Stop fences it: the writer refuses it, or it landed and its turn is stopped below.
       if (record.deliveryState === 'queued' || record.deliveryState === 'dispatching') this.fenced.add(record.id)
@@ -1360,7 +1361,9 @@ export class DelegationService {
         if (thread && isThreadTurnRunning(thread) && this.answering(current, thread)) { await this.stopThreads([current.delegatedThreadId], new Set([caller.id])); stopping = true }
       }
       const answer = await this.result(this.record(record.id)!)
-      if (queued) return { ...answer, note: 'It was waiting for its turn, and Sotto took it out of the queue. Nothing was started.' }
+      if (queued) return { ...answer, note: queuedCheck
+        ? `It was waiting for its turn among ${this.options.checks!.machine}'s checks, and Sotto took it out of the queue. Nothing was started.`
+        : 'It was waiting for its turn, and Sotto took it out of the queue. Nothing was started.' }
       if (!stopping || !this.open(current)) return answer
       this.update(current.id, saved => { saved.told = 'stopped' })
       await this.persist()
