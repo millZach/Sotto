@@ -45,32 +45,62 @@ describe('the instructions a thread carries', () => {
   it('tells a Claude Code thread which of its agents to use, and to delegate the rest', () => {
     const text = lines({ provider: 'claude', agents: new Set(['building', 'ui', 'research']), agentTool: 'claude', canDelegate: true })
     expect(text).toEqual([
-      'The user\'s Settings give each kind of work a worker role and the model it runs on. When you hand part of your work to a sub-agent or another thread, follow them:',
-      '- Building (writing and changing code): use the Agent tool with subagent_type "sotto_building" (Opus 5.5 at xhigh effort).',
-      '- UI (screens, styles and how they look): use the Agent tool with subagent_type "sotto_ui" (Opus 5.5 at xhigh effort).',
-      '- Code review (reading a change and saying what is wrong with it): Muse Wonder Full at xhigh effort on Muse, another provider: call delegate with work "code-review".',
-      '- Research (reading code, docs and the web, and reporting back): use the Agent tool with subagent_type "sotto_research" (Haiku 5.5).',
-      '- Computer use (clicking and typing in apps and the browser): GPT-6 Astra at medium effort on Codex, another provider: call delegate with work "computer-use".',
-      'A model, effort or permission the user names for a request wins over the role. Work you do yourself needs no role.',
+      'The user\'s Settings give each kind of work a worker role and the model, effort and speed it runs on. When you hand part of your work to a sub-agent or another thread, follow them:',
+      '- Building (writing and changing code): use the Agent tool with subagent_type "sotto_building" (Opus 5.5 at xhigh effort, Standard speed).',
+      '- UI (screens, styles and how they look): use the Agent tool with subagent_type "sotto_ui" (Opus 5.5 at xhigh effort, Standard speed).',
+      '- Code review (reading a change and saying what is wrong with it): Muse Wonder Full at xhigh effort, Standard speed on Muse, another provider: call delegate with work "code-review".',
+      '- Research (reading code, docs and the web, and reporting back): use the Agent tool with subagent_type "sotto_research" (Haiku 5.5, Standard speed).',
+      '- Computer use (clicking and typing in apps and the browser): GPT-6 Astra at medium effort, Standard speed on Codex, another provider: call delegate with work "computer-use".',
+      'A model, effort, speed or permission the user names for a request wins over the role. Work you do yourself needs no role.',
     ])
   })
 
   it('tells a Codex thread to name its role in spawn_agent', () => {
-    expect(lines({ provider: 'codex', agents: new Set(['computer-use']), agentTool: 'codex', canDelegate: true })[5])
-      .toBe('- Computer use (clicking and typing in apps and the browser): call spawn_agent with agent_type "sotto_computer_use" (GPT-6 Astra at medium effort).')
+    for (const canDelegate of [true, false]) {
+      expect(lines({ provider: 'codex', agents: new Set(['computer-use']), agentTool: 'codex', canDelegate })[5])
+        .toBe('- Computer use (clicking and typing in apps and the browser): call spawn_agent with agent_type "sotto_computer_use" (GPT-6 Astra at medium effort, Standard speed).')
+    }
+    expect(lines({ provider: 'codex', agents: new Set(), agentTool: 'codex', canDelegate: false })[5])
+      .toBe('- Computer use (clicking and typing in apps and the browser): call spawn_agent with model "gpt-6-astra" and reasoning_effort "medium" (Standard speed).')
   })
 
   it('gives a provider without role agents the model to ask for, and a thread that cannot delegate its own work back', () => {
     const grok = subagentRoleTable({ research: { modelId: publicProviderEntityId('grok', 'model', 'grok-4.6-build'), reasoningEffort: 'medium' } }, EVERYONE)
     const text = subagentRoleInstructions(grok, { provider: 'grok', agents: new Set(), canDelegate: false })!.split('\n')
-    expect(text[4]).toBe('- Research (reading code, docs and the web, and reporting back): start your sub-agent on grok-4.6-build at medium effort when you can choose its model.')
-    expect(text[1]).toBe('- Building (writing and changing code): Opus 5.5 at xhigh effort on Claude Code, which this thread cannot start: do that work yourself.')
+    expect(text[4]).toBe('- Research (reading code, docs and the web, and reporting back): start your sub-agent on grok-4.6-build at medium effort, Standard speed when you can choose its model.')
+    expect(text[1]).toBe('- Building (writing and changing code): Opus 5.5 at xhigh effort, Standard speed on Claude Code, which this thread cannot start: do that work yourself.')
     expect(text.join('\n')).not.toContain('delegate')
   })
 
+  it('exposes the role speed and delegates when the native fallback cannot select it', () => {
+    const fast = { ...CODEX[0]!, speeds: [{ id: 'ultrafast' as const, name: 'Ultrafast' }] }
+    const selected = subagentRoleTable({ building: { modelId: fast.id, reasoningEffort: 'high', speed: 'ultrafast' } }, [fast])
+    expect(selected.find(role => role.kind === 'building')?.speed).toBe('ultrafast')
+    expect(subagentRoleInstructions(selected, { provider: 'codex', agents: new Set(['building']), agentTool: 'codex', canDelegate: false }))
+      .toContain('sotto_building" (GPT-6.1 Sol at high effort, Ultrafast speed)')
+    expect(subagentRoleInstructions(selected, { provider: 'codex', agents: new Set(), agentTool: 'codex', canDelegate: true }))
+      .toContain('Ultrafast speed: call delegate with work "building"')
+    for (const speed of ['fast', 'ultrafast'] as const) {
+      const role = { ...selected.find(item => item.kind === 'building')!, speed, speedName: speed === 'fast' ? 'Fast' : 'Ultrafast' }
+      expect(subagentRoleInstructions([role], { provider: 'codex', agents: new Set(), agentTool: 'codex', canDelegate: false })!.split('\n')[1])
+        .toBe(`- Building (writing and changing code): GPT-6.1 Sol at high effort, ${role.speedName} speed, which this thread cannot start: do that work yourself.`)
+    }
+    const opus = { ...CLAUDE[0]!, speeds: [{ id: 'fast' as const, name: 'Fast' }] }
+    for (const speed of [null, 'fast'] as const) {
+      const claude = subagentRoleTable({ building: { modelId: opus.id, reasoningEffort: 'high', speed } }, [opus])
+      const on = `Opus 5.5 at high effort, ${speed ? 'Fast' : 'Standard'} speed`
+      expect(subagentRoleInstructions(claude, { provider: 'claude', agents: new Set(), agentTool: 'claude', canDelegate: true }))
+        .toContain(`${on}: call delegate with work "building" so it starts at the role's speed.`)
+      expect(subagentRoleInstructions(claude, { provider: 'claude', agents: new Set(), agentTool: 'claude', canDelegate: false })!.split('\n')[1])
+        .toBe(`- Building (writing and changing code): ${on}, which this thread cannot start: do that work yourself.`)
+    }
+  })
+
   it('names no agent the launch did not get', () => {
-    // A Claude model that is not ready to this adapter gets no agent, so its line falls back to the model to ask for.
+    // A role without a native definition uses delegate, which can apply its speed independently.
     expect(lines({ provider: 'claude', agents: new Set(), agentTool: 'claude', canDelegate: true })[1])
-      .toBe('- Building (writing and changing code): start your sub-agent on opus at xhigh effort when you can choose its model.')
+      .toBe('- Building (writing and changing code): Opus 5.5 at xhigh effort, Standard speed: call delegate with work "building" so it starts at the role\'s speed.')
+    expect(lines({ provider: 'claude', agents: new Set(['research']), agentTool: 'claude', canDelegate: false })[4])
+      .toBe('- Research (reading code, docs and the web, and reporting back): use the Agent tool with subagent_type "sotto_research" (Haiku 5.5, Standard speed).')
   })
 })

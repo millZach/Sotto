@@ -1471,6 +1471,10 @@ msgstr "Choose {roleName}’s reasoning effort. Now {effortNow}"
 msgid "Choose {roleName}’s reasoning effort. Now the model’s default"
 msgstr "Choose {roleName}’s reasoning effort. Now the model’s default"
 
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Choose {roleName}’s speed. Now {speedNow}"
+msgstr "Choose {roleName}’s speed. Now {speedNow}"
+
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "Choose a device"
 msgstr "Choose a device"
@@ -1510,6 +1514,10 @@ msgstr "Choose Watcher’s reasoning effort. Now {effortNow}"
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Choose Watcher’s reasoning effort. Now the model’s default"
 msgstr "Choose Watcher’s reasoning effort. Now the model’s default"
+
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Choose Watcher’s speed. Now {speedNow}"
+msgstr "Choose Watcher’s speed. Now {speedNow}"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Choose what {roleName} workers may do without asking. Now {permissionName}"
@@ -5045,7 +5053,9 @@ msgstr "Speech model"
 msgid "Speech recognition by {maker}, on this computer. {languages}."
 msgstr "Speech recognition by {maker}, on this computer. {languages}."
 
+#. A worker role field: how fast its model answers, and at what price
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Speed"
 msgstr "Speed"
 
@@ -5140,6 +5150,11 @@ msgstr "SSH password"
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Stacked"
 msgstr "Stacked"
+
+#. The model offers no faster speed
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Standard only"
+msgstr "Standard only"
 
 #. A look for night falls: a line of stars sweeps across the window
 #: src/renderer/src/features/settings/NightFallsSettings.tsx
@@ -6606,8 +6621,8 @@ msgid "Watcher settles a thread it watches once its work is done: nothing runnin
 msgstr "Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it."
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
-msgid "Watcher’s composer shows these three. A change in either place changes both."
-msgstr "Watcher’s composer shows these three. A change in either place changes both."
+msgid "Watcher’s composer shows the same choices. A change in either place changes both."
+msgstr "Watcher’s composer shows the same choices. A change in either place changes both."
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Watcher’s model: the same choice as the model chip under its composer. Another provider’s model starts a new Watcher, and this conversation stays in Watcher history."

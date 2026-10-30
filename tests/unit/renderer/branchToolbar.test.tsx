@@ -29,13 +29,13 @@ function state(threads: AgentThread[]): AgentState {
     topLevel: { activeProjectId: null, activeThreadId: threads[0]?.id ?? null } })
 }
 function row(current: AgentThread): ThreadRow { return { thread: current, project, provider: 'Codex', providerId: 'codex', connected: true } as unknown as ThreadRow }
-function mount(current: AgentThread, options: { refs?: (request: { query?: string; cursor?: number }) => GitRefsPage | Promise<GitRefsPage>; others?: AgentThread[]; command?: (request: AgentCommand) => Promise<AgentState | null>; focused?: boolean; openExternalLink?: ReturnType<typeof vi.fn> } = {}) {
+function mount(current: AgentThread, options: { refs?: (request: { query?: string; cursor?: number }) => GitRefsPage | Promise<GitRefsPage>; others?: AgentThread[]; command?: (request: AgentCommand) => Promise<AgentState | null>; focused?: boolean; openExternalLink?: ReturnType<typeof vi.fn>; header?: boolean; noticeSlot?: HTMLElement } = {}) {
   const gitRefs = vi.fn(async (request: { threadId: string; query?: string; cursor?: number; limit?: number; refresh?: boolean }) => options.refs ? options.refs(request) : page([ref('main', { current: true, isDefault: true }), ref('feature'), ref('origin/remote-only', { remote: 'origin' })]))
   vi.stubGlobal('sotto', { agents: { gitRefs }, ...(options.openExternalLink ? { openExternalLink: options.openExternalLink } : {}) })
   const command = vi.fn(options.command ?? (async () => state([current])))
   const all = [current, ...(options.others ?? [])]
-  const view = render(<BranchToolbar row={row(current)} state={state(all)} command={command} focused={options.focused ?? true} />)
-  return { ...view, command, gitRefs, rerender: (next: AgentThread) => view.rerender(<BranchToolbar row={row(next)} state={state([next, ...(options.others ?? [])])} command={command} focused={options.focused ?? true} />) }
+  const view = render(<BranchToolbar row={row(current)} state={state(all)} command={command} focused={options.focused ?? true} header={options.header ?? false} noticeSlot={options.noticeSlot} />)
+  return { ...view, command, gitRefs, rerender: (next: AgentThread) => view.rerender(<BranchToolbar row={row(next)} state={state([next, ...(options.others ?? [])])} command={command} focused={options.focused ?? true} header={options.header ?? false} noticeSlot={options.noticeSlot} />) }
 }
 async function openPicker() {
   fireEvent.click(screen.getByRole('combobox', { name: 'Choose branch' }))
@@ -163,6 +163,39 @@ describe('branch toolbar logic', () => {
 })
 
 describe('BranchToolbar', () => {
+  it('keeps branch switching and the pull request in the header without the static host and workspace', async () => {
+    const noticeSlot = document.createElement('div')
+    document.body.append(noticeSlot)
+    const current = thread({ nativeSessionStarted: true, worktree: { mode: 'independent', status: 'ready', path: 'C:/wt/task', branch: 'feature', git: { ...git, branch: 'feature', pullRequest: { number: 12, title: 'Ship it', url: 'https://github.com/o/r/pull/12', state: 'open', draft: false } } } })
+    const { command } = mount(current, { header: true, noticeSlot, command: async () => ({ ...state([current]), error: 'Commit your changes first.' }) })
+    const toolbar = screen.getByRole('group', { name: 'Branch toolbar' })
+    expect(toolbar).toHaveAttribute('data-header')
+    expect(toolbar).not.toHaveTextContent('This computer')
+    expect(toolbar).not.toHaveTextContent('Current worktree')
+    expect(within(toolbar).getByRole('button', { name: 'Open PR #12 - Open: Ship it in Tools' })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: 'Choose workspace' })).toBeNull()
+    await openPicker()
+    fireEvent.click(screen.getByRole('option', { name: 'feature' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'git-switch-branch', threadId: 'thread-1', ref: 'feature' }))
+    expect(await within(noticeSlot).findByRole('alert')).toHaveTextContent('Commit your changes first.')
+    expect(within(toolbar).queryByRole('alert')).toBeNull()
+    expect(screen.getByRole('combobox', { name: 'Choose branch' })).toHaveFocus()
+    noticeSlot.remove()
+  })
+
+  it('keeps workspace choices in the header and opens the branch list within the remaining window height', async () => {
+    const { command } = mount(thread(), { header: true })
+    fireEvent.click(screen.getByRole('combobox', { name: 'Choose workspace' }))
+    fireEvent.click(screen.getByRole('option', { name: 'New worktree' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread-working-copy', threadId: 'thread-1', workingCopy: 'independent', startFromOrigin: true }))
+    const trigger = screen.getByRole('combobox', { name: 'Choose branch' })
+    vi.spyOn(trigger, 'getBoundingClientRect').mockReturnValue({ left: 300, right: 440, top: 20, bottom: 46, width: 140, height: 26, x: 300, y: 20, toJSON: () => ({}) })
+    await openPicker()
+    expect(screen.getByRole('group', { name: 'Branches' })).toHaveStyle({ maxHeight: `${window.innerHeight - 60}px` })
+    fireEvent.keyDown(screen.getByLabelText('Search refs'), { key: 'Escape' })
+    expect(trigger).toHaveFocus()
+  })
+
   it('reloads all refs after clearing a search', async () => {
     const { gitRefs } = mount(thread(), { refs: request => page(request.query ? [ref('feature')] : [ref('main'), ref('release')]) })
     await openPicker()
@@ -430,9 +463,9 @@ describe('BranchToolbar', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(screen.getByRole('combobox', { name: 'Choose branch' })).toHaveFocus()
   })
-  it('answers its shortcuts only for the focused pane', async () => {
+  it.each([false, true])('answers its shortcuts only for the focused pane (header: %s)', async header => {
     const other = thread({ id: 'other', nativeSessionStarted: true, worktree: { mode: 'independent', status: 'ready', path: 'C:/wt/other', branch: 'feat/other' } })
-    const { command, rerender } = mount(thread(), { others: [other], focused: true })
+    const { command, rerender } = mount(thread(), { others: [other], focused: true, header })
     fireEvent.keyDown(window, { key: 'g', ctrlKey: true, shiftKey: true })
     await screen.findByRole('listbox', { name: 'Refs' })
     fireEvent.keyDown(screen.getByLabelText('Search refs'), { key: 'Escape' })
@@ -443,7 +476,7 @@ describe('BranchToolbar', () => {
     fireEvent.keyDown(window, { key: 'l', ctrlKey: true, shiftKey: true })
     await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure-thread-working-copy', threadId: 'thread-1', workingCopy: 'independent', existingWorktreePath: 'C:/wt/other' }))
     cleanup()
-    const unfocused = mount(thread(), { others: [other], focused: false })
+    const unfocused = mount(thread(), { others: [other], focused: false, header })
     fireEvent.keyDown(window, { key: 'g', ctrlKey: true, shiftKey: true })
     expect(screen.queryByRole('listbox', { name: 'Refs' })).toBeNull()
     expect(unfocused.command).not.toHaveBeenCalled()

@@ -1,4 +1,5 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
+import { createPortal } from 'react-dom'
 import { ArrowDownToLine, ArrowUp, ArrowUpRight, Laptop, MessageSquare, Quote, Server, Square, X } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -162,7 +163,7 @@ function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, in
  * separate, explicit way into the running turn, and Stop takes the send button's place until there is something to queue.
  * Each button says what it does and the key that does it (ADR-0153).
  */
-export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore, replyQuotes = replyQuoteStore, watcher = false }: {
+export function ThreadComposer({ row, state, command, store, onSend, composerId = THREAD_PROMPT_ID, ornament, focused = true, onExplainedError, reviewComments = reviewCommentStore, replyQuotes = replyQuoteStore, watcher = false, toolbarSlot, children }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -183,6 +184,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   readonly replyQuotes?: ReplyQuoteStore
   /** Watcher's own composer: its permissions are Watcher's own choice, and it offers no skills or branch toolbar (ADR-0073). */
   readonly watcher?: boolean
+  /** The quiet composer's existing branch controls live beside the folder in the pane header. */
+  readonly toolbarSlot?: HTMLElement | null
+  /** The pane's metadata follows the composer and knows which composer is drawn. */
+  readonly children?: (quiet: boolean) => ReactNode
 }): ReactNode {
   const { t } = useLingui()
   const threadId = row.thread.id
@@ -201,6 +206,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const readingImages = useScreenshotReads(store, threadId).pending > 0
   // The row under the footer where the option chips say what happened to a refused or unconfirmed change.
   const [settingsNotices, setSettingsNotices] = useState<HTMLDivElement | null>(null)
+  const [toolbarNotices, setToolbarNotices] = useState<HTMLDivElement | null>(null)
   const field = useRef<PromptEditorElement>(null)
   const caretAfterInsert = useRef<number | null>(null)
   const pendingRequest = row.request?.requestId === undefined ? undefined : row.thread.requests.find(request => request.id === row.request!.requestId)
@@ -442,7 +448,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const stopKeys = !watcher && stopChord ? stopChord : null
   // The quiet composer (ADR-0161, Owl): one pill. Answers, continuations and Watcher's handover keep the full footer,
   // since each has a primary action of its own that the pill's disc does not draw.
-  const quiet = quietComposer && !watcher && !answering && continuing === undefined && handover === null
+  const quiet = quietComposer && !answering && continuing === undefined && handover === null
   // The pill's disc turns into Steer while Steer's modifier is held, so it always shows what the key pressed will do.
   const [steerHeld, setSteerHeld] = useState(false)
   useEffect(() => {
@@ -452,9 +458,6 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     window.addEventListener('keydown', read); window.addEventListener('keyup', read); window.addEventListener('blur', release)
     return () => { window.removeEventListener('keydown', read); window.removeEventListener('keyup', read); window.removeEventListener('blur', release); setSteerHeld(false) }
   }, [quiet, platform])
-  // While a turn runs, the effort dots hold Stop; where the options draw no dots (a provider that cannot change a started
-  // thread), Stop keeps a button of its own in the pill.
-  const stopOnDots = quiet && capabilities.configureThread === true
   const stopTitle = stopKeys ? `${stopName} ${threadChordLabel(stopKeys, platform).suffix}` : stopName
   const interrupt = (): void => { void command({ type: 'interrupt', threadId }) }
   // Queue's glyph follows what Enter does, as the disc's name does, so a provider that sends during a turn shows Send.
@@ -509,6 +512,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     if (event.key === 'ArrowUp' && !event.shiftKey && !hasContent && nextKeysFree.up) { event.preventDefault(); setNextList({ index: 0 }); return true }
     return false
   }
+  const toolbar = watcher ? null : <BranchToolbar row={row} state={state} command={command} focused={focused} onExplainedError={onExplainedError}
+    header={quiet} noticeSlot={quiet ? toolbarNotices : undefined} />
+  const metadata = useMemo(() => children?.(quiet), [children, quiet])
 
   return <>
     <ThreadFollowups row={row} state={state} command={command} store={store}
@@ -560,14 +566,14 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       <div className="thread-prompt__footer">
         <div className="thread-prompt__meta" id={statusId}>
           {/* Every composer belongs to a thread that already exists on its host, so the host is shown here, not chosen.
-              Watcher always runs on this computer, so its composer has New Watcher in that place instead. */}
-          {watcher ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} />
-            : threadHost ? <span className="thread-host-chip" title={hostTitle}>
+              Watcher's full composer has New Watcher in that place; the quiet pill keeps it beside Send. */}
+          {watcher && !quiet ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} />
+            : !quiet && threadHost ? <span className="thread-host-chip" title={hostTitle}>
             {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}{hostLabel}</span> : null}
           {continuing !== undefined ? <ContinueOptions thread={row.thread} state={state} choice={continuing} />
             : row.thread.nativeSessionStarted === false || capabilities.configureThread || continueOffer !== undefined
             ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher} continueOffer={continueOffer}
-              quiet={quiet ? { effortScore, stop: stopOnDots && working ? { label: stopName, keys: stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined, title: stopTitle, disabled: !canStop, onStop: interrupt } : undefined } : undefined}
+              quiet={quiet ? { effortScore } : undefined}
               {...(editable && !answering && !permission ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? t`Answer this question` : t`Manual prompt`}</small></span>
               {watcher ? <WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
@@ -576,8 +582,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         </div>
         <div ref={actionsRow} className="thread-prompt__actions">
           {quiet ? <>
-            {/* Shown where the dots cannot hold Stop: a thread that draws none, or the slim composer, which hides them. */}
-            {working ? <Button variant="ghost" className="thread-prompt__stop thread-prompt__disc" data-beside-dots={stopOnDots || undefined} aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
+            {watcher ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} /> : null}
+            {working ? <Button variant="ghost" className="thread-prompt__stop" data-beside aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
               title={stopTitle} disabled={!canStop} onClick={interrupt}><Square size={10} fill="currentColor" aria-hidden="true" /></Button> : null}
             {/* One disc: Send, Queue while a turn runs, Steer while Steer's modifier is held. Its glyph says which. */}
             {discFace === 'steer'
@@ -611,9 +617,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       </div>
       <div ref={setSettingsNotices} className="thread-options-notices" />
     </form>
-    {/* T3's branch toolbar: where the thread runs and works, its pull request and its branch, for a Git repository (ADR-0027).
-        Its own row of buttons under the card, not a strip inside it (#325). */}
-    {watcher ? null : <BranchToolbar row={row} state={state} command={command} focused={focused} onExplainedError={onExplainedError} />}
+    {/* One toolbar owns its menus and shortcuts; the full composer keeps its original row. */}
+    {quiet ? toolbarSlot ? createPortal(toolbar, toolbarSlot) : null : toolbar}
+    {quiet && !watcher ? <div ref={setToolbarNotices} className="branch-toolbar-notices" /> : null}
+    {metadata}
   </>
 }
 

@@ -27,10 +27,7 @@ vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => {
 const THREAD = 'grok-previews'
 
 /** One idle thread of the fixture, on its own, with a provider that can compact and a place to open beside. */
-function mount({ beside = true }: { readonly beside?: boolean } = {}) {
-  const state: AgentState = threadsStateFixture()
-
-
+function mount({ beside = true, state = threadsStateFixture() }: { readonly beside?: boolean; readonly state?: AgentState } = {}) {
   state.activeThreadId = THREAD
   state.host.capabilities = { ...state.host.capabilities, compact: true }
   const live = liveAgentState(state)
@@ -43,7 +40,7 @@ function mount({ beside = true }: { readonly beside?: boolean } = {}) {
   return { command, onOpenBeside, head, requests: (): AgentCommand[] => command.mock.calls.map(([request]) => request) }
 }
 
-beforeEach(() => { vi.mocked(useAgents).mockReset() })
+beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalApp).mockReset() })
 afterEach(cleanup)
 
 describe('the pane header’s More menu', () => {
@@ -132,5 +129,59 @@ describe('the manual composer', () => {
     render(<ThreadPane row={row} state={live.state} command={live.command} store={new ThreadDraftStore(live.command)} focused promptId="manual" error={null} />)
     expect(screen.getByRole('textbox', { name: 'Prompt' })).toHaveAttribute('id', 'manual')
     expect(screen.queryByRole('button', { name: 'Write here' })).toBeNull()
+  })
+
+  it.each([false, true])('keeps one branch toolbar in the right place with quiet composer %s', quiet => {
+    vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': quiet } } } as unknown as ReturnType<typeof useOptionalApp>)
+    const state = threadsStateFixture()
+    const thread = state.host.threads.find(item => item.id === THREAD)!
+    thread.nativeSessionStarted = false
+    thread.messages = []
+    thread.worktree = { mode: 'independent', status: 'pending', baseBranch: 'main' }
+    const view = mount({ state })
+    const toolbar = screen.getByRole('group', { name: 'Branch toolbar' })
+    const compose = document.querySelector('.thread-workspace__compose')!
+    expect(view.head().contains(toolbar)).toBe(quiet)
+    expect(compose.contains(toolbar)).toBe(!quiet)
+    expect(document.querySelector('.thread-prompt')?.hasAttribute('data-quiet')).toBe(quiet)
+    expect(document.querySelectorAll('.branch-toolbar')).toHaveLength(1)
+    expect(toolbar).toContainElement(screen.getByRole('combobox', { name: 'Choose branch' }))
+    fireEvent.click(within(toolbar).getByRole('combobox', { name: 'Choose workspace' }))
+    fireEvent.click(screen.getByRole('option', { name: 'Current checkout' }))
+    expect(view.requests()).toContainEqual({ type: 'configure-thread-working-copy', threadId: THREAD, workingCopy: 'shared' })
+  })
+
+  it('keeps the full toolbar under an answer even when the quiet pill is enabled', () => {
+    vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
+    const state = threadsStateFixture()
+    const thread = state.host.threads.find(item => item.id === THREAD)!
+    thread.nativeSessionStarted = false
+    thread.worktree = { mode: 'independent', status: 'pending', baseBranch: 'main' }
+    thread.requests = [{ id: 'question', kind: 'question', text: 'Which folder should I use?', options: [] }]
+    thread.status = 'running'
+    const view = mount({ state })
+    const toolbar = screen.getByRole('group', { name: 'Branch toolbar' })
+    expect(document.querySelector('.thread-prompt')).not.toHaveAttribute('data-quiet')
+    expect(view.head()).not.toContainElement(toolbar)
+    expect(document.querySelector('.thread-workspace__compose')).toContainElement(toolbar)
+  })
+
+  it('keeps quiet Stop after the shield and before the round Send, leaving the effort dots free', () => {
+    vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
+    const state = threadsStateFixture()
+    state.host.capabilities.configureThread = true
+    const thread = state.host.threads.find(item => item.id === THREAD)!
+    thread.status = 'running'
+    thread.requests = []
+    state.host.models.find(model => model.id === thread.modelId)!.runtimeModes = ['approval-required', 'full-access']
+    mount({ state })
+    const shield = screen.getByRole('combobox', { name: 'Thread permissions' })
+    const stop = screen.getByRole('button', { name: 'Stop agent' })
+    const send = screen.getByRole('button', { name: 'Queue prompt' })
+    expect(shield.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(stop.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(stop.parentElement).toHaveClass('thread-prompt__actions')
+    expect(send).toHaveClass('thread-prompt__disc')
+    expect(document.querySelector('.effort-dots__stop')).toBeNull()
   })
 })

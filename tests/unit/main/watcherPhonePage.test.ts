@@ -10,22 +10,29 @@ import { expect, it } from 'vitest'
 import { WatcherPhoneService } from '../../../src/main/agents/watcherPhone'
 import type { AgentControl } from '../../../src/main/agents/control'
 import type { WatcherService } from '../../../src/main/agents/watcher'
+import type { AgentSpeed } from '../../../src/shared/agents'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
-import { WATCHER_PHONE_LEGACY_LIMIT } from '../../../src/shared/watcherPhone'
+import { WATCHER_PHONE_LEGACY_LIMIT, watcherPhoneStateSchema } from '../../../src/shared/watcherPhone'
 import type { WatcherRoomState } from '../../../src/shared/watcherRoom'
 
 const HOST = '11111111-1111-4111-8111-111111111111'
 const AT = '2026-10-20T10:00:00.000Z'
 
 /** The page for Watcher's own thread in `status`, with `starts` threads it started still working, as the newest phone sees it. */
-function page(starts: number, status: 'idle' | 'running' | 'error' = 'idle') {
+function page(starts: number, status: 'idle' | 'running' | 'error' = 'idle', speed?: AgentSpeed | null) {
   const room: WatcherRoomState = { current: { target: { hostId: HOST, threadId: 'watcher' }, projectId: 'project', provider: 'codex', creationOperationId: '33333333-3333-4333-8333-333333333333', createdAt: AT },
-    currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, status, connected: true }, history: [], requests: [], watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: AT }
+    currentOptions: { modelId: 'codex:gpt', reasoningEffort: null, runtimeMode: 'auto', status, connected: true, ...(speed !== undefined ? { speed } : {}) }, history: [], requests: [], watchedThreads: [], receipts: [], recoveryNotice: null, observedAt: AT }
   const service = new WatcherPhoneService({ hostId: () => HOST, threadDetail: () => null, watcherSendRecords: () => ({ deliveries: [], followups: [] }),
     watcherPhoneTurn: () => ({ steers: false, running: status === 'running' }), watcherFollowups: () => [] } as unknown as AgentControl,
     { state: () => room, phoneSnapshot: () => emptyDesktopState(HOST).host, startsInFlight: () => starts } as unknown as WatcherService)
   return service.state(false, true, true)
 }
+
+it.each(['fast', 'ultrafast', null] as const)('projects only the phone contract when desktop speed is %s', speed => {
+  const state = watcherPhoneStateSchema.parse(page(0, 'idle', speed))
+  expect(state.current).toEqual({ target: { hostId: HOST, threadId: 'watcher' }, provider: 'codex', modelId: 'codex:gpt',
+    reasoningEffort: null, runtimeMode: 'auto', status: 'idle', connected: true, steers: false })
+})
 
 it.each([0, 3, 7])('sends the true count of %i, below the limit an older iPhone reads', starts => {
   expect(page(starts)).toMatchObject({ inFlight: starts, inFlightLimit: WATCHER_PHONE_LEGACY_LIMIT })

@@ -28,6 +28,8 @@
 .thread-workspace__head :is(.thread-workspace__title, .thread-workspace__actions, button, input, a) { -webkit-app-region: no-drag; }
 .thread-workspace__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
 .thread-workspace__title > svg, .thread-workspace__title > .provider-mark { flex: none; }
+.thread-workspace__branches { min-width: 0; }
+.thread-workspace__branches:empty { display: none; }
 .thread-workspace__head h2 { flex: 0 1 auto; min-width: 3em; margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The name keeps the row; the project crumb is what gives way as the pane narrows. */
 .thread-workspace__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: 12.5px; }

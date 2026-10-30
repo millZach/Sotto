@@ -216,4 +216,23 @@ describe('thread settings light path', () => {
     await f.control.command({ type: 'refresh' })
     await vi.waitFor(async () => expect((await f.saved()).outbox).toEqual([]))
   })
+
+  it('keeps an older client’s Fast-off change unconfirmed while the thread still reports Ultrafast', async () => {
+    const f = await fixture()
+    const snapshot = f.host.snapshot.bind(f.host)
+    let ultrafast = true
+    vi.spyOn(f.host, 'snapshot').mockImplementation(async () => {
+      const shown = await snapshot()
+      if (ultrafast) shown.threads.find(item => item.id === 'workshop')!.speed = 'ultrafast'
+      return shown
+    })
+    await f.control.command({ type: 'refresh' })
+    f.host.unknown = true
+    await f.control.command({ type: 'configure-thread', threadId: 'workshop', fastMode: false })
+    await f.control.command({ type: 'refresh' })
+    expect(f.control.shell().unconfirmedSettings).toEqual([{ threadId: 'workshop', fastMode: false }])
+    ultrafast = false
+    await f.control.command({ type: 'refresh' })
+    expect(f.control.shell().unconfirmedSettings ?? []).toEqual([])
+  })
 })

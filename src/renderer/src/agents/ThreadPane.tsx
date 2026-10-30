@@ -229,6 +229,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const [gitExplained, setGitExplained] = useState<string | null>(null)
   /** Where the Git action draws its notice: above the composer, in the pane's own flow. */
   const [gitNoticeSlot, setGitNoticeSlot] = useState<HTMLElement | null>(null)
+  const [branchSlot, setBranchSlot] = useState<HTMLSpanElement | null>(null)
   /** Where a new thread's greeting stands, directly above the composer. */
   const [greetingSlot, setGreetingSlot] = useState<HTMLElement | null>(null)
   const compose = useRef<HTMLDivElement>(null)
@@ -384,6 +385,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
           {row.settledBy === 'thread' || row.settledBy === 'project' ? <span className="thread-workspace__tag"><Trans>Settled</Trans></span> : null}
           {!rowConnected ? <span className="thread-workspace__tag" data-tone="warning">{t({ message: `${provider} disconnected`, comment: '{provider} is the provider\'s name, such as Codex.' })}</span> : null}
         </span>
+        <span className="thread-workspace__branches" ref={setBranchSlot} />
       </div>
       <div className="thread-workspace__actions">
         {/* Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
@@ -429,17 +431,16 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
       {ownPane ? null : <PrototypeReady thread={thread} />}
       <ThreadRequests kind="question" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
       <ThreadComposer key={thread.id} ornament={ornament} row={row} state={state} command={command} store={store} composerId={promptId} focused={focused} onExplainedError={setToolbarExplained} onSend={() => { liftComposer(); setFollowSignal(signal => signal + 1) }}
-        watcher={ownPane} />
-      {/* The row under the composer is compaction's alone. Side by side it keeps one line even when compaction has
-          nothing to say, so panes keep their composers at the same height whether or not one has been compacted. */}
-      <div className="thread-pane__meta">
-        {/* What Stop also stops, or what a turn here does to the thread that delegated (ADR-0081; Owl only). */}
-        {ownPane ? null : <DelegationComposerNote thread={thread} state={state} />}
-        {/* Just continued elsewhere: this thread can still be sent to (ADR-0089; Owl only). */}
-        {ownPane ? null : <ContinueComposerNote thread={thread} />}
-        <ThreadCompaction thread={thread} supported={compactionOffered(capabilities, thread)}
-          connected={rowConnected && !closed} blocked={threadBusy} command={command} />
-      </div>
+        watcher={ownPane} toolbarSlot={branchSlot}>
+        {quiet => <div className="thread-pane__meta">
+          {/* What Stop also stops, or what a turn here does to the thread that delegated (ADR-0081; Owl only). */}
+          {ownPane ? null : <DelegationComposerNote thread={thread} state={state} hideStop={quiet} />}
+          {/* Just continued elsewhere: this thread can still be sent to (ADR-0089; Owl only). */}
+          {ownPane ? null : <ContinueComposerNote thread={thread} />}
+          <ThreadCompaction thread={thread} supported={compactionOffered(capabilities, thread)}
+            connected={rowConnected && !closed} blocked={threadBusy} command={command} />
+        </div>}
+      </ThreadComposer>
     </div>
     {/* Under a greeting, the room below the composer matches the room above, so the two sit in the middle. */}
     <div className="thread-pane__balance" data-room-backdrop="" aria-hidden="true" />
