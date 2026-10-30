@@ -562,6 +562,7 @@ enum WatcherWords {
     static func followupNote(_ status: String, page: WatcherPage, computer: String) -> String? {
         switch status {
         case "queued":
+            if page.needsYou.contains(where: { page.isOwn($0) }) { return nil }
             guard let current = page.current, current.steers == false else { return nil }
             return String(localized: "\(AgentNames.name(current.provider)) can’t take a steer.", comment: "%@ is the provider's name, such as Claude Code")
         case "uncertain": return String(localized: "Check the conversation before you send it again.")

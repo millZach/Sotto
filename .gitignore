@@ -845,3 +845,9 @@ artifacts/next-prompt-quiet-composer/*
 !artifacts/next-prompt-quiet-composer/speed-thread.png
 !artifacts/next-prompt-quiet-composer/speed-watcher.png
 !artifacts/next-prompt-quiet-composer/checks.json
+
+# Watcher pending-card queue evidence.
+artifacts/watcher-card-queue/*
+!artifacts/watcher-card-queue/*-1280.png
+!artifacts/watcher-card-queue/*-820.png
+!artifacts/watcher-card-queue/checks.json

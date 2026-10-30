@@ -4223,10 +4223,19 @@ export class AgentControl {
     // A create-thread carries the ID the window minted, which no lane can be keyed on until the thread exists.
     const actionThreadId = 'threadId' in command && command.type !== 'create-thread' ? command.threadId ?? '' : ''
     const actionDraftId = 'draftId' in command ? command.draftId : undefined
-    const reconcilingDraft = command.type === 'manual-send' && this.outbox.some(item => item.threadId === actionThreadId && item.draftId === actionDraftId)
+    const reconcilingDraft = (command.type === 'manual-send' || command.type === 'steer') && this.outbox.some(item => item.threadId === actionThreadId && item.draftId === actionDraftId)
+    const promptThread = command.type === 'manual-send' || command.type === 'steer'
+      ? this.state.host.threads.find(thread => thread.id === actionThreadId) : undefined
+    const waitingOnCard = promptThread !== undefined && this.waitsOnRequest(promptThread)
     // A Send joins the follow-ups the user already queued; a waiting wake-up is not one of them, so it changes nothing here.
-    if (!origin && command.type === 'manual-send' && !reconcilingDraft && (this.threadPrompts.has(actionThreadId) || this.pumping.has(actionThreadId) || this.state.host.threads.find(t => t.id === actionThreadId)?.status === 'running' || this.followupStore.peek().items.some(item => item.threadId === actionThreadId && !isWaitingWakeUp(item)))) {
-      return this.followupCommand({ ...command, type: 'queue-followup', draftId: command.draftId ?? randomUUID() })
+    // A user's message may wait behind a card, but only the card can answer it. A phone carries its user origin with it.
+    if ((!origin || origin.phoneOrigin) && !reconcilingDraft
+      && (command.type === 'manual-send' && (waitingOnCard || this.threadPrompts.has(actionThreadId) || this.pumping.has(actionThreadId)
+        || promptThread?.status === 'running' || this.followupStore.peek().items.some(item => item.threadId === actionThreadId && !isWaitingWakeUp(item)))
+        || command.type === 'steer' && waitingOnCard)) {
+      const queued = { ...command, type: 'queue-followup' as const, draftId: command.draftId ?? randomUUID() }
+      if (origin) this.watcherOrigins.set(queued, origin)
+      return this.followupCommand(queued)
     }
     if (command.type === 'interrupt') return this.interruptThread(command)
     const receivedAt = performance.now()
@@ -4520,7 +4529,7 @@ export class AgentControl {
       // Native idle status can precede turn/completed. A still-running outcome is
       // neither permission to dispatch nor a terminal failure requiring review. A compaction that failed is one, though the
       // thread still rests on the completed turn before it (ADR-0127).
-      const unreviewed = (item: Readonly<QueuedFollowup>): boolean => !!thread && !isThreadTurnRunning(thread)
+      const unreviewed = (item: Readonly<QueuedFollowup>): boolean => !!thread && !this.waitsOnRequest(thread) && !isThreadTurnRunning(thread)
         && (thread.lastTurn ? (thread.lastTurn.status !== 'completed' || thread.status === 'error' && thread.compaction?.status === 'failed')
           && item.resumeAfterTurnId !== thread.lastTurn.id : item.resumeAfterTurnId !== UNKNOWN_TURN)
       // A delegation's hidden news goes past whatever of the user's waits without going, leaving it in place and in order:

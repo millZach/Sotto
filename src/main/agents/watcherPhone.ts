@@ -219,22 +219,21 @@ export class WatcherPhoneService {
       if (!current || current.target.hostId !== request.target.hostId || current.target.threadId !== threadId
         || !this.watcher.isCurrent(threadId)) throw new Error('Watcher changed. Nothing was sent. Refresh Watcher before sending again.')
       this.watcher.guardPhoneSend(threadId)
-      const thread = this.control.watcherSnapshot().threads.find(row => row.id === threadId)
-      if (thread?.requests.length) throw new Error('Watcher needs your answer on its request card. Nothing was sent.')
     }
     const origin: WatcherCommandOrigin = { phoneOrigin: request.origin, guard: check }
     const phone = { ...client, selectedThreadId: threadId }
     const sent = (): WatcherPhoneSendResult => ({ status: 'ok', draftId: request.draftId, state: this.state(mayAnswer(), standing, steer) })
     // A phone that negotiated steering steers into Watcher's running turn, or queues the message to go next (#1229).
     const steers = request.delivery === 'steer'
+    const waitingOnCard = () => Boolean(this.control.watcherSnapshot().threads.find(row => row.id === threadId)?.requests.length)
     try {
       check()
-      if (steers && this.control.watcherPhoneTurn(threadId).running) return await this.whileWorking(request, origin, phone, sent)
+      if (waitingOnCard() || (steers && this.control.watcherPhoneTurn(threadId).running)) return await this.whileWorking(request, origin, phone, sent)
       const result = await this.control.commandFromWatcherPhone({ type: 'send', draft: { threadId,
         draftId: request.draftId, text: request.text, attachments: request.images ?? [], binding: { requestId: null, questionsDigest: null } } }, origin, phone)
       if (!result.error) return sent()
-      // Watcher began a turn between the check and the send, which sent nothing: steered or queued instead.
-      if (steers && this.control.watcherPhoneTurn(threadId).running && this.control.watcherPhoneDraftUnsent(threadId, request.draftId)) {
+      // Watcher began a turn or asked a question between the check and the send, which sent nothing: steer or queue.
+      if ((waitingOnCard() || (steers && this.control.watcherPhoneTurn(threadId).running)) && this.control.watcherPhoneDraftUnsent(threadId, request.draftId)) {
         return await this.whileWorking(request, origin, phone, sent)
       }
       return this.refused(result.error, threadId, request.draftId)
@@ -243,7 +242,8 @@ export class WatcherPhoneService {
   /**
    * The user's message from the phone while Watcher works (#1229, Zach's pick B). It steers into Watcher's running turn,
    * under the desktop's rules (#1188): Watcher's own dispatch joins it to the request that turn answers, or opens one of its
-   * own. When Watcher's provider takes no steer, or the steer surely did not go, as when the turn ended first, it goes
+   * own. While a card waits it only queues: a message never answers the card. When Watcher's provider takes no steer,
+   * or the steer surely did not go, as when the turn ended first, it goes
    * next as its own turn, from Watcher's queue, and takes a request of its own when it is delivered, as an idle Send
    * would. A steer that may have gone is never queued too: it is refused, unconfirmed, and the page says where it stands.
    */
@@ -252,7 +252,8 @@ export class WatcherPhoneService {
     const { draftId, text } = request, threadId = request.target.threadId
     // The photos go with the words however they go.
     const photos = request.images ? { attachments: request.images } : {}
-    if (this.control.watcherPhoneTurn(threadId).steers) {
+    const waitingOnCard = this.control.watcherSnapshot().threads.find(row => row.id === threadId)?.requests.length
+    if (!waitingOnCard && this.control.watcherPhoneTurn(threadId).steers) {
       const steered = await this.control.commandFromWatcherPhone({ type: 'steer', threadId, draftId, text, ...photos }, origin, client)
       if (!steered.error) return sent()
       if (!this.control.watcherPhoneDraftUnsent(threadId, draftId)) return this.refused(steered.error, threadId, draftId)

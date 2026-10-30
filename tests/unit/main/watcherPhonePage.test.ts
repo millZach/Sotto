@@ -6,13 +6,14 @@
  * a watched thread included, as the desktop shows it (#1436): counting the threads it started kept the iPhone's pill,
  * tab dot and "Watcher is working" line on while Watcher was idle and a few of its workers ran for hours.
  */
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { WatcherPhoneService } from '../../../src/main/agents/watcherPhone'
 import type { AgentControl } from '../../../src/main/agents/control'
 import type { WatcherService } from '../../../src/main/agents/watcher'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { WATCHER_PHONE_LEGACY_LIMIT } from '../../../src/shared/watcherPhone'
 import type { WatcherRoomState } from '../../../src/shared/watcherRoom'
+import type { AgentCommand } from '../../../src/shared/agents'
 
 const HOST = '11111111-1111-4111-8111-111111111111'
 const AT = '2026-10-20T10:00:00.000Z'
@@ -48,4 +49,29 @@ it('says Watcher works while its own turn runs, a news turn the conversation lea
   // The phone's conversation never shows Sotto's news, so the turn's only sign is Watcher's own thread running.
   expect(page(0, 'running').working).toBe(true)
   expect(page(3, 'running').working).toBe(true)
+})
+
+it.each([['question', true], ['permission', true], ['question', false], ['permission', false]] as const)(
+  'queues a phone message behind a %s card with running=%s without steering or answering it', async (kind, running) => {
+  const target = { hostId: HOST, threadId: 'watcher' }
+  const requests = [{ id: 'card', kind, text: 'Waiting for you', options: [] }]
+  const command = vi.fn(async (_command: AgentCommand, origin: { guard: () => void }) => {
+    origin.guard()
+    return { error: null }
+  })
+  const service = new WatcherPhoneService({ hostId: () => HOST,
+    watcherSnapshot: () => ({ threads: [{ id: 'watcher', requests }] }),
+    watcherPhoneTurn: () => ({ running, steers: true }), commandFromWatcherPhone: command } as unknown as AgentControl,
+  { state: () => ({ current: { target } }), isCurrent: () => true, guardPhoneSend: vi.fn() } as unknown as WatcherService)
+  vi.spyOn(service, 'state').mockReturnValue(page(0))
+  const draftId = '44444444-4444-4444-8444-444444444444'
+  const origin = { kind: 'phone' as const, hostId: HOST, clientId: 'phone' }
+  for (const delivery of [undefined, 'steer'] as const) {
+    const result = await service.send({ target, origin, draftId, text: 'Check the footer next', ...(delivery ? { delivery } : {}) },
+      { clientId: 'phone', user: 'Phone', transport: 'socket' }, () => {}, () => false, true, delivery !== undefined)
+    expect(result.status).toBe('ok')
+    expect(command.mock.lastCall?.[0]).toEqual({ type: 'queue-followup', threadId: 'watcher', draftId, text: 'Check the footer next' })
+  }
+  expect(command).toHaveBeenCalledTimes(2)
+  expect(requests).toEqual([{ id: 'card', kind, text: 'Waiting for you', options: [] }])
 })

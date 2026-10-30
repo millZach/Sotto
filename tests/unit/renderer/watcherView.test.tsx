@@ -80,11 +80,11 @@ function fakeBridge(state: WatcherRoomState) {
   return { bridge: bridge as unknown as WatcherBridge & typeof bridge, publish: (next: WatcherRoomState) => { for (const listener of listeners) listener(next) } }
 }
 
-function mockApp(navigation: AppNavigation, watcherEnabled = true, museEnabled = false) {
+function mockApp(navigation: AppNavigation, watcherEnabled = true, museEnabled = false, quietComposer = false) {
   const navigate = vi.fn()
   vi.mocked(useOptionalApp).mockReturnValue({
     navigation, platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: museEnabled ? { watcherEnabled, owlFeatures: { watcher: watcherEnabled, muse: true } } : { watcherEnabled }, actions: { navigate, minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
+    update: { watcherEnabled, owlFeatures: { watcher: watcherEnabled, muse: museEnabled, 'quiet-composer': quietComposer } }, actions: { navigate, minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
   } as unknown as AppContextValue)
   return navigate
 }
@@ -97,8 +97,8 @@ function mockAgents(state: AgentState) {
   return command
 }
 
-function renderRoom(state: AgentState, room: WatcherRoomState, watcherEnabled = true) {
-  const navigate = mockApp('watcher', watcherEnabled)
+function renderRoom(state: AgentState, room: WatcherRoomState, watcherEnabled = true, quietComposer = false) {
+  const navigate = mockApp('watcher', watcherEnabled, false, quietComposer)
   const command = mockAgents(state)
   const { bridge, publish } = fakeBridge(room)
   const view = render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
@@ -152,6 +152,30 @@ describe("Watcher's room", () => {
       expect(within(within(pane).getByRole('log', { name: 'Thread transcript' })).queryByText(text)).not.toBeInTheDocument()
     }
     expect(within(pane).queryByLabelText('Queued message')).not.toBeInTheDocument()
+  })
+
+  it.each([['question', false], ['question', true], ['permission', false], ['permission', true]] as const)('queues a follow-up while Watcher waits on a %s card (quiet: %s) without answering it', async (kind, quiet) => {
+    const state = stateWithWatcher()
+    const thread = state.host.threads.find(item => item.id === 'watcher')!
+    const request: AgentThread['requests'][number] = kind === 'question'
+      ? { id: 'card', kind, text: 'Which branch?', options: [{ id: 'main', label: 'Main' }, { id: 'release', label: 'Release' }], skippable: true }
+      : { id: 'card', kind, text: 'Allow the command?', options: [], permissionChoices: [{ id: 'allow', label: 'Allow', kind: 'allow-once' as const }] }
+    thread.requests = [request]
+    // Providers may report idle while waiting on a card; the card still holds delivery.
+    thread.status = 'idle'
+    const { command } = renderRoom(state, roomState(), true, quiet)
+    await paneReady()
+    const prompt = screen.getByRole('textbox', { name: 'Watcher message' })
+    expect(prompt).toHaveAttribute('contenteditable', 'true')
+    setPromptText(prompt, 'After this, check the release notes.')
+    const queue = screen.getByRole('button', { name: 'Queue prompt' })
+    expect(queue).toBeEnabled()
+    fireEvent.click(queue)
+    await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'queue-followup', threadId: 'watcher', text: 'After this, check the release notes.' })))
+    expect(command.mock.calls.some(([item]) => item.type === 'answer' || item.type === 'steer' || item.type === 'manual-send')).toBe(false)
+    expect(thread.requests).toEqual([request])
+    expect(screen.getByRole('region', { name: 'Queued messages' })).toHaveTextContent('After this, check the release notes.')
+    expect(promptText(prompt)).toBe('')
   })
 
   it('says main’s refusal in its own words and keeps the message in the composer', async () => {

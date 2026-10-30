@@ -1522,6 +1522,10 @@ private struct WatcherDock: View {
                     .padding(.horizontal, Space.s4).padding(.vertical, Space.s2)
                     .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     .accessibilityIdentifier("watcher-send-held")
+            } else if let page = model.watcherPage(hostID), page.needsYou.contains(where: { page.isOwn($0) }) {
+                Text("Queued until you answer the card").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.s4)
             }
             field
         }
@@ -1578,9 +1582,11 @@ private struct WatcherDock: View {
             || !photos.isEmpty || !files.isEmpty
         // While Watcher's turn runs on a computer that takes it, Send steers into that turn, or queues when its provider
         // takes no steer (#1229, pick B); otherwise it sends as before.
-        let current = model.watcherPage(hostID)?.current
-        let steering = model.offersWatcherSteer(hostID) && current?.status == "running"
-        let queueing = steering && current?.steers == false
+        let page = model.watcherPage(hostID)
+        let current = page?.current
+        let waitingOnCard = page.map { page in page.needsYou.contains(where: { page.isOwn($0) }) } ?? false
+        let steering = !waitingOnCard && model.offersWatcherSteer(hostID) && current?.status == "running"
+        let queueing = waitingOnCard || (steering && current?.steers == false)
         let symbol = queueing ? "text.badge.plus" : steering ? "arrow.turn.up.right" : "arrow.up"
         let label = queueing ? String(localized: "Queue for after this turn") : steering ? String(localized: "Steer into Watcher’s turn") : String(localized: "Send to Watcher")
         // The + on its own beside a slim box, as in a thread's reply box: photos and files above the words, Send inside

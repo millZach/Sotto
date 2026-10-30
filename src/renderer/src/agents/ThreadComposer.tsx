@@ -90,7 +90,7 @@ function deliveryOnItsWay(status: SubmissionStatus): boolean {
  * behind anything already queued so the order the user typed is the order the provider receives.
  */
 function queuesByDefault(row: ThreadRow, state: AgentState, localAdmissions: boolean): boolean {
-  return row.thread.status === 'running' || localAdmissions || followupsFor(state, row.thread.id).length > 0
+  return row.thread.status === 'running' || row.thread.requests.length > 0 || localAdmissions || followupsFor(state, row.thread.id).length > 0
 }
 
 /**
@@ -127,24 +127,10 @@ export async function sendThreadRevision(store: ThreadDraftStore, row: ThreadRow
   }
 }
 
-const permissionInstruction = (): string => t`Allow or deny the request above to continue.`
-
-/** Every pending permission offers no choice Sotto can send (`permissionChoices: []`): only the provider's app can answer. */
-function permissionsOnlyInProvider(row: ThreadRow): boolean {
-  const permissions = row.thread.requests.filter(request => request.kind === 'permission')
-  return permissions.length > 0 && permissions.every(request => request.permissionChoices?.length === 0)
-}
-
 /** Why the primary action is off, in one sentence; null when a prompt can go. */
 function blockedReason(row: ThreadRow, state: AgentState, answering: boolean, inFlight: boolean): string | null {
   const provider = row.provider
   if (row.thread.archivedAt) return t`This thread is archived.`
-  const permission = row.request?.kind === 'permission' || row.thread.requests.some(request => request.kind === 'permission')
-  if (permission && permissionsOnlyInProvider(row)) return t`Sending returns once the request above is answered in ${provider}’s app.`
-  if (permission) return permissionInstruction()
-  // Choices shown in the transcript are answered there; only a plain question takes its answer from the composer.
-  const inline = row.thread.requests.find(request => requestMode(request) !== 'legacy-text')
-  if (inline && !answering) return inline.kind === 'permission' ? t`Answer the request above to continue.` : t`Answer the question above to continue.`
   if (!row.connected) return row.reconnecting ? t`Its host is restarting after an update. Your draft stays here.` : t`Reconnect to send. Your draft stays here.`
   if (!capabilitiesForThread(state.host, row.thread).submit) return t`${provider} cannot take prompts from Sotto.`
   // The notice above the composer says why setup stopped and offers the one recovery; this only says when sending returns.
@@ -205,9 +191,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const caretAfterInsert = useRef<number | null>(null)
   const pendingRequest = row.request?.requestId === undefined ? undefined : row.thread.requests.find(request => request.id === row.request!.requestId)
   const question = row.request?.kind === 'question' && row.request.requestId && (pendingRequest === undefined || requestMode(pendingRequest) === 'legacy-text') ? row.request : undefined
-  const permission = row.request?.kind === 'permission' || row.thread.requests.some(request => request.kind === 'permission')
   const staleAnswer = draft.requestId !== null && draft.requestId !== question?.requestId
   const answering = question !== undefined
+  const cardWaits = row.thread.requests.length > 0 && !answering
   const capabilities = capabilitiesForThread(state.host, row.thread)
   const direct = submissions.filter(item => item.threadId === threadId && item.mode !== 'queue'
     && !deliveryFor(state, threadId, item.draftId)?.setAside).map(item => submissionStatus(item, state).status)
@@ -244,12 +230,12 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     ?? (continueModel?.providerId ? continueProviderRefusal(continueHost, continueModel.providerId) : t`Choose a model to continue on.`)
   const reason = continuing !== undefined ? continueReason
     : blockedReason(row, state, answering, queueing ? queueBlocked : sendInFlight) ?? (staleAnswer ? t`This answer’s question is no longer pending.` : null)
-  const editable = !row.thread.archivedAt && !permission
+  const editable = !row.thread.archivedAt
   const working = row.thread.status === 'running' && !isThreadClosed(row.thread)
   // A thread that began from another asks what its agent should do next, before anything of the user's is in it (#1028).
   const started = useThreadStarts() && row.thread.startedFrom !== undefined && !row.thread.lastUserMessageId && (row.thread.summary?.lastUser === undefined)
   const agent = watcher ? 'Watcher' : provider
-  const placeholder = continuing !== undefined ? t`What should ${continueTarget} do next? It goes after the handover.` : row.thread.archivedAt ? t`This thread is archived.` : permission ? permissionsOnlyInProvider(row) ? t`Waiting on the request above.` : permissionInstruction() : answering ? t`Write your answer…` : working ? (row.thread.compaction?.status === 'running' ? t`Compacting the context. Write a follow-up to queue it.` : t`${agent} is working. Write a follow-up to queue it.`) : watcher ? t`Ask about your threads, or say what to start or send` : started ? t`What should ${provider} do next?` : t`What would you like to do next?`
+  const placeholder = continuing !== undefined ? t`What should ${continueTarget} do next? It goes after the handover.` : row.thread.archivedAt ? t`This thread is archived.` : cardWaits ? t`Queued until you answer the card` : answering ? t`Write your answer…` : working ? (row.thread.compaction?.status === 'running' ? t`Compacting the context. Write a follow-up to queue it.` : t`${agent} is working. Write a follow-up to queue it.`) : watcher ? t`Ask about your threads, or say what to start or send` : started ? t`What should ${provider} do next?` : t`What would you like to do next?`
   // Review comments and reply quotes ride with the next prompt, not with an answer to a question.
   const carried = answering ? [] : comments
   const carriedQuotes = answering ? NO_QUOTES : quotes
@@ -257,7 +243,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const canSend = reason === null && content && !readingImages && !answerState.sending
   const running = row.thread.status === 'running' && !answering
   // Steering is a direct delivery: it waits for any prompt still on its way, the queue's included.
-  const canSteer = running && capabilities.steer === true && canSend && !sendInFlight
+  const canSteer = running && !cardWaits && capabilities.steer === true && canSend && !sendInFlight
   const canStop = working && capabilities.interrupt === true && row.connected && !isThreadBusy(state, threadId)
   // The row's motion (ADR-0153): which button is the plate, remembered with its thread so opening another moves nothing.
   const actionsRow = useRef<HTMLDivElement>(null)
@@ -416,7 +402,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const nextEntry = useNextPrompt(nextOn ? threadId : null)
   const nextAnchor = lastUserMessageIdOf(row.thread) ?? ''
   const next: NextPrompt | null = nextEntry?.prompt && nextEntry.afterUserMessageId === nextAnchor && !working && !answering
-    && !permission && row.thread.requests.length === 0 && editable && continuing === undefined && handover === null && row.connected && !sendInFlight && !localAdmissions
+    && row.thread.requests.length === 0 && editable && continuing === undefined && handover === null && row.connected && !sendInFlight && !localAdmissions
     && followupsFor(state, threadId).length === 0 && !isThreadClosed(row.thread) ? nextEntry.prompt : null
   const dictating = DICTATING.has(app?.dictation?.status ?? 'idle')
   // Tab, Up and the digits answer only where the dictation hotkey does not already mean them.
@@ -526,7 +512,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span><Trans>This answer was for a question that is no longer pending.</Trans></span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}><Trans>Discard answer</Trans></Button></div> : null}
       <ThreadComposerEditor key={threadId} row={row} state={state} command={command} store={store} composerId={composerId}
-        editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering && !permission} attachable={!answering && !permission} watcher={watcher}
+        editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering} attachable={!answering} watcher={watcher}
         field={field} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
         next={next} nextOpen={nextOpen} nextListId={nextListId} nextActiveId={nextOpen ? nextOptionId(nextListId, nextList.index) : undefined}
         dictating={dictating || ghostAway} nextKey={nextKey}
@@ -568,7 +554,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
             : row.thread.nativeSessionStarted === false || capabilities.configureThread || continueOffer !== undefined
             ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher} continueOffer={continueOffer}
               quiet={quiet ? { effortScore, stop: stopOnDots && working ? { label: stopName, keys: stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined, title: stopTitle, disabled: !canStop, onStop: interrupt } : undefined } : undefined}
-              {...(editable && !answering && !permission ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
+              {...(editable && !answering ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? t`Answer this question` : t`Manual prompt`}</small></span>
               {watcher ? <WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
                 disabled={watcherPermissionFixedReason(state, row.thread) !== undefined} fixedReason={watcherPermissionFixedReason(state, row.thread)} /> : null}</>}
