@@ -898,15 +898,21 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     else if (arrived) setUnseen(true)
   }, [lastMessageId, pendingKey, hidden, followSignal, thread.historyStatus, toEnd])
 
-  // Late layout (wrapped text, images, rich blocks) keeps a following reader at the end.
+  // Late layout (wrapped text, images, rich blocks) keeps a following reader at the end, and so does the transcript's own
+  // box changing: the floating composer's room is its bottom padding, so a draft of several lines, a restored draft or
+  // a notice growing the composer, or a shorter window, would otherwise leave the end, a waiting card's choices included,
+  // under the composer (#1820).
   useEffect(() => {
     const element = content.current
+    const box = scroller.current
     if (element === null || typeof ResizeObserver === 'undefined') return
     const observer = new ResizeObserver(() => {
       if (following.current && anchor.current === null && scroller.current) { scroller.current.scrollTop = scroller.current.scrollHeight; lastTop.current = scroller.current.scrollTop }
       if (scroller.current) { setRequestUnderJump(reachesJumpBand(scroller.current)); noteReading(scroller.current) }
     })
     observer.observe(element)
+    // The content box, which the padding comes off: it changes with the composer's room as well as the window.
+    if (box !== null) observer.observe(box)
     return () => observer.disconnect()
   }, [noteReading])
 
@@ -917,10 +923,17 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     // the update that brings the room back, and a reader who did not scroll is not following the end they were pulled to.
     const held = reading.current
     if (held?.held === true && held.threadId === thread.id && Math.abs(element.scrollTop - held.top) < 1) return
-    const distance = element.scrollHeight - element.scrollTop - element.clientHeight
+    let distance = element.scrollHeight - element.scrollTop - element.clientHeight
     // Any move up that is not the end being cut short lets go of the end, however near it: a reply being written grows the
     // end faster than a reader scrolls out of the slack, and following would pull them back down with every word.
     const movedUp = element.scrollTop < lastTop.current - 1 && distance > 1
+    // The transcript's own move to the end, heard only after the end moved on (the composer's room grew with a restored
+    // draft, or a waiting card was laid out), is not the reader leaving it: the end is followed there, so a thread opened
+    // on a request shows its choices clear of the composer (#1820).
+    if (following.current && distance > 1 && Math.abs(element.scrollTop - lastTop.current) < 1) {
+      element.scrollTop = element.scrollHeight
+      distance = element.scrollHeight - element.scrollTop - element.clientHeight
+    }
     lastTop.current = element.scrollTop
     following.current = !movedUp && distance <= FOLLOW_SLACK_PX
     const isAway = distance > Math.max(FOLLOW_SLACK_PX, element.clientHeight / 2)
