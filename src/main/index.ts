@@ -104,6 +104,7 @@ import {
   type SessionPermissionAdapter,
 } from './app/bootstrap'
 import { buildApplicationMenuTemplate } from './app/applicationMenu'
+import { editContextMenuTemplate } from './app/editContextMenu'
 import { installGuiPath } from './app/guiPath'
 import { NativeMessageDelivery } from './app/nativeMessageDelivery'
 import { NativeDictationLifecycle } from './app/nativeDictationLifecycle'
@@ -919,6 +920,12 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         window.webContents.setIgnoreMenuShortcuts(terminalTakesMenuShortcut(input, terminalFocus.has(window.webContents), platform))
       })
       window.webContents.on('did-start-loading', () => terminalFocus.delete(window.webContents))
+      // Right-click in a text field or on selected words opens the edit menu a desktop app has (#1821). The window's own
+      // menus cancel the page's event, and Electron then reports nothing here, so they stay as they are.
+      window.webContents.on('context-menu', (_event, params) => {
+        const template = editContextMenuTemplate(params)
+        if (template !== null) Menu.buildFromTemplate(template).popup({ window })
+      })
       return new ElectronBrowserWindowAdapter(window)
     },
     display: screen,
