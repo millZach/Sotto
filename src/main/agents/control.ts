@@ -2919,7 +2919,8 @@ export class AgentControl {
         // The pane's own records, when they are certified and in the order the delta reached: frozen, never edited, and the
         // records the next publish hands over, so its diff meets them by identity rather than by signature (#1248).
         if (this.dependencies.streamingPublishCost === true && advanced.activities && advanced.activities !== pane) advanced.activities = pane !== undefined
-          && isImmutableActivities(pane) && pane.length === advanced.activities.length && pane.every((record, index) => record.id === advanced.activities![index]!.id)
+          && isImmutableActivities(pane) && pane.length === advanced.activities.length
+          && pane.every((record, index) => record === advanced.activities![index] || record.id === advanced.activities![index]!.id)
           ? pane as AgentActivity[] : immutableActivities(advanced.activities)
         this.detailSnapshots.set(thread.id, advanced)
         this.publishedDetail.set(thread.id, revision)

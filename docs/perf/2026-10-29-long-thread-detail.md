@@ -23,23 +23,35 @@ the same content, as a read of the thread store gives them back, two things stop
   safe, and they are what the next publish hands over. Messages are still copied, because the adapters append to a
   message in place.
 - A diff whose activity list is the very list the detail holds walks no record, and a delta with no record in it keeps
-  the held list.
+  the held list when that list is frozen.
+- When a record does change, as a tool's output grows, the diff skips the opening run of records the two lists hold as
+  the very same objects, and a delta of a few records is applied by finding each from the end. Neither reads every record
+  of the thread into maps any more.
 
-What the window is sent is the same, byte for byte: 60 detail updates, 13,195 bytes.
+What the window is sent is the same, byte for byte: 60 detail updates of 13,195 bytes while words stream, and 750,380
+bytes while a command's output streams.
 
-| One thread streaming, 60 chunks | Before | After |
+| 60 chunks, profiled `broadcastDetail` | Before | After |
 | --- | ---: | ---: |
-| `broadcastDetail`, profiled | 141.2 ms | 23.6 ms |
-| per chunk | 2.35 ms | 0.39 ms |
-| Signatures worked out | 1,208,000 | 4,000 |
-| Benchmark process CPU, whole scenario | 533 ms | 324 ms |
+| Words streaming | 149.2 ms (2.49 ms a chunk) | 20.3 ms (0.34 ms a chunk) |
+| Command output streaming into one record | 62.4 ms | 24.0 ms |
+| of it, the diff | 26.4 ms | 1.8 ms |
+| Signatures worked out while words stream | 1,208,000 | 4,000 |
 
-## The guard
+## The guards
 
 `tests/perf/longThreadDetailWork.perf.test.ts` counts the signatures the detail stream works out per streamed chunk. It
 runs with 200 and with 2,000 records on each of three observed threads, after their records were replaced by equal
 copies. It fails if a chunk works one out for a record that did not change, or if the record added halfway does not
-reach the window. On `main` before the change, each chunk worked out 2,000 or more.
+reach the window. On `main` before the change, each chunk worked out 2,000 or more. `agentThreadDetailDelta.test.ts`
+counts the records a diff and its apply read for a change to the last record: the same few with 200 records as with
+2,000, against 1,596 and 15,996 before.
+
+## What it leaves
+
+The messages a detail holds are still versioned and compared in full on each chunk. That is the loaded window, ten turns
+unless the user reads further back (`FIRST_WINDOW_TURNS`), so it grows with how far back the pane is read, not with the
+thread's history.
 
 Stable runs the same certified path, since `streaming-publish-cost` went to stable. The owner-scale fixture's stable
 track still runs with it off, so it measures an older path; that is a follow-up for the fixture.
