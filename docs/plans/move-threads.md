@@ -28,11 +28,19 @@ Zach, October 29, 2026, on the question card for part 2:
 - **A model the target lacks:** the thread moves to that provider's first ready model there, and the sheet and the card name the model it runs on and the one the machine doesn't have.
 - **Anything queued** (the user's or Sotto's own news) keeps the thread here, as part 1 built it.
 
+Zach, October 29, 2026, on the question card for part 3 (tag `prototype/move-threads-directions`):
+
+- **Move threads picks where threads go, and gathers them from every other machine.** This computer is among the machines. The sheet takes threads from every other connected machine, keeps Moves now, Asks you first and Stays where it is, and each row says where its thread is now.
+- **Asking Watcher in words** puts the same preview in Watcher's conversation as Sotto's own card, with Move and Not now. Nothing moves until the press; the move cards then follow as before.
+- **Nothing in the sheet starts ticked.** Zach ticks each thread to move, and Move stays off until one is. This changes part 2's sheet, which moved every thread that could. Read here, and said on #1178: threads already pointed at start ticked, the one a thread's More menu opened the sheet for and those Watcher named from his words.
+
 ## Build order
 
 1. **Core, This computer to a paired host.** The move record (`moves.json`, states fenced, branch sent, thread started, first turn ended, source settled, or given back, written before anything is sent, every step idempotent by the move's ID); the fence (the source refuses sends while it moves); eligibility with its plain words; the branch over the host socket (`DesktopBranchMoves`); the handover and facts block built here; an optional host-v1 feature that makes the new thread from the incoming ref and sends its first prompt, idempotent by move ID; confirmation, settling the source, and re-pointing Watcher's watch. Driven over IPC as a prepare/move pair modelled on Stop all. No UI yet.
 2. **The UI (B).** Move threads and its sheet, the cards in Watcher's conversation, the narrower card's press, and the More menu entry.
-3. **The other directions.** A host's thread to This computer, and between two hosts through the desktop; asking Watcher in words.
+3. **The other directions.** A host's thread to This computer, and between two hosts through the desktop; asking Watcher in words. Two pull requests:
+   - **3a, the core.** A move's source may be on a host: the record names the source's machine, the host fences, refuses in its own words, gives the handover, links and settles its own thread through new `thread-move` actions under a new host feature, and the branch goes by the desktop's existing host-to-host and host-to-desktop branch moves. This computer is a target: the desktop makes the moved thread itself with the same code the host runs (`HostThreadMoves`), answering for itself. No window change beyond what the cards need to name a source on another machine.
+   - **3b, the window and words.** The sheet gathers from every machine with a box per thread, none ticked but those pointed at; This computer among the machines; a new Watcher tool asks for a preview that Sotto puts in its conversation as a card with Move and Not now.
 4. **Lost contact.** Reconciling with the target after a restart or a dropped connection, and **Keep it here** (ADR-0105 decision 7).
 
 Then #1309, suggesting a move to a machine with room, on top of this flow.
@@ -94,3 +102,34 @@ Left for later parts: the GitHub sign-in half of asking first (a host does not y
 - The preview and the cards name the model there (`movedModel`), and the permission a narrower move would start on (`startsOn`), for **Move it on …**.
 
 Left for later parts, as before: a move whose machine stopped answering says so on its card and that nothing was lost, with no **Keep it here** yet (part 4); the other directions (part 3).
+
+## Part 3a, as built (October 29, 2026)
+
+- `src/shared/threadMoves.ts`: `thread-move`'s source actions (`hold`, `handover`, `settle`, `release`) and their answers, under the new optional host feature `thread-move-source`; the words name the machine a thread stays on.
+- `src/main/agents/threadMovesHost.ts`: `HostThreadMoveSources`, the host's side for its own thread, with `thread-moves-held.json`. `HostThreadMoves` takes those actions where it holds sources, and takes a file name, so This computer keeps its own record of the threads it makes (`thread-moves-here.json`).
+- `src/main/agents/threadMoves.ts`: the move record names the source's machine (`sourceHostId`, `from`), whether that host holds it (`held`), and how a move ends while that host is away (`ending`). Planning reads a host's thread from its snapshot; This computer is a target through `here`; every step that touched This computer's source asks the source's host instead. The cards say where a thread came from (`from`) and when it moves to This computer (`here`).
+- `src/main/agents/watcher.ts`: a watch moved off a host's thread tells that host.
+- The window still offers only This computer's threads and the paired machines: part 3b draws Zach's picks.
+
+Decisions made while building:
+
+- A host's thread is checked twice: by the desktop's preview from what it sees, then by the host as it holds it, which alone knows its queue, its unconfirmed sends and its fences. A thread the host will not hold is given back in the host's words, with nothing fenced.
+- A move to This computer never asks first for want of an answers grant: This computer is where the user answers. Its permission is still capped by the new-thread default.
+- A move of a host's thread that must end, given back or stayed, waits for that host to let go of it before it counts as ended, so the thread is never left fenced there with the desktop's record saying it is free.
+- The fixture host in the integration suite reads history only from provider events, which its fakes do not send, so none of its threads can be held; the whole move from a host is covered over stand-ins, and the integration suite covers the host's refusals and the feature over the real socket.
+
+After Sol's standards and spec reviews (October 29):
+
+- A host keeps the worktree of each thread held or moved away from its cleanup sweep, as This computer does for its own (`kept` in `thread-moves-held.json`, the runtime's `keepsWorktree`); every worktree is kept until that record reads.
+- A stop between a hold's fence and its record no longer strands the thread: the record is written before the fence is known saved, and at start the host fences every thread it holds and lifts any fence no held move names.
+- The host indexes its threads once for a hold, and the desktop's preview reads each thread by its snapshot's index, so neither grows faster than the threads.
+- A waiting card names the machine the move waits on (`waitingOn`): the host its thread is on, while that host is away or for the steps only it takes, or the machine it goes to.
+- This computer's settling of a moved source and a host's share one routine (`settleMovedSource`).
+
+After Sol's confirmation pass (October 29):
+
+- A host whose Owl answer turns Work across machines off still keeps the worktrees its record of held moves names, reading it without stepping any move (`heldMoveWorktrees`), and every worktree while that record does not read.
+- A hold whose fence cannot be saved is this step's error, never an unhandled rejection that would stop the host, and holds nothing.
+- A move not yet held waits for the machine it goes to before it asks the host its thread is on, and its card says so.
+- Left as it was: `delegatedThreadsBelow` copies a growing list as it walks a thread's delegated threads, which part 1's preview already did; not this part's to change.
+

@@ -2276,7 +2276,7 @@ it('tells Watcher of each move the user made as it ends, watched or not, settled
   const text = watcherNewsText({ source: 'watcher', watcher: centerTarget, events: told, omitted: 0 })
   expect(text).toContain(`The user moved this thread to forge, and Sotto moved it: it continues there as ${JSON.stringify(forge)}`)
   expect(text).toContain('Your watch on it went to the new thread')
-  expect(text).toContain('the move was given back before any thread was made there, so this one stays here and takes sends again.')
+  expect(text).toContain('the move was given back before any thread was made there, so this one stays where it is and takes sends again.')
   expect(text.split('\n').find(line => line.includes('"unwatched"'))).not.toContain('Use requestId')
   // A settled source's news is still due: Watcher hears of the move whatever became of the thread here.
   f.snapshot.threads = []

@@ -11,9 +11,9 @@ import { firstTurnEnded, holdUnfinishedMoves, ThreadMoveService, type MoveContro
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentModel, type AgentState, type AgentThread, type ThreadContinuedIn } from '../../../src/shared/agents'
 import { branchMoveRefusal, branchMoveWords, type BranchMoveReceipt } from '../../../src/shared/branchMoves'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
-import { MOVE_HANDOVER_CLOSE, THREAD_MOVE_WORDS, type HostThreadMoveRequest, type ThreadMovePrepare, type ThreadMovesView, type ThreadMoveStart } from '../../../src/shared/threadMoves'
+import { MOVE_HANDOVER_CLOSE, THREAD_MOVE_WORDS, type HostThreadMoveRequest, type HostThreadMoveSource, type HostThreadMoveStart, type ThreadMoveHost, type ThreadMovePrepare, type ThreadMovesView, type ThreadMoveStart } from '../../../src/shared/threadMoves'
 
-const HERE = randomUUID(), FORGE = randomUUID(), COMMIT = 'c'.repeat(40)
+const HERE = randomUUID(), FORGE = randomUUID(), LAB = randomUUID(), COMMIT = 'c'.repeat(40)
 const model: AgentModel = { id: 'codex:gpt', provider: 'Codex', providerId: 'codex', name: 'GPT', ready: true, reasoningEfforts: ['low', 'high'],
   runtimeModes: ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] }
 let directory: string
@@ -65,7 +65,7 @@ function world() {
     forget: vi.fn(async (input: { readonly moveId: string }) => { forgotten.push(input.moveId) }),
   }
   // The machine: it makes one thread per move, and answers the same one when asked again.
-  const remote = { connected: true, mayAnswer: true, supports: true, threads: [] as AgentThread[], made: new Map<string, string>(), requests: [] as HostThreadMoveRequest[],
+  const remote = { connected: true, mayAnswer: true, supports: true, threads: [] as AgentThread[], made: new Map<string, string>(), requests: [] as HostThreadMoveStart[],
     fail: undefined as Error | undefined, answer: undefined as unknown, listeners: new Set<(hostId?: string) => void>(), updates: new Set<() => void>(),
     /** Each push makes a new snapshot, as the router does; between pushes the same one is read. */
     version: 0, snapshot: undefined as { version: number; snapshot: AgentHostSnapshot } | undefined,
@@ -73,7 +73,9 @@ function world() {
     visits: 0, snapshots: 0 }
   const host = {
     get supportsThreadMove() { return remote.supports },
-    threadMove: vi.fn(async (request: HostThreadMoveRequest) => {
+    threadMove: vi.fn(async (asked: HostThreadMoveRequest) => {
+      if (asked.action !== 'start') throw new Error('Forge holds none of its own threads here.')
+      const request = asked
       remote.requests.push(request)
       if (remote.fail) throw remote.fail
       if (remote.answer !== undefined) return remote.answer
@@ -87,6 +89,34 @@ function world() {
       return { type: 'started', moveId: request.moveId, threadId, ...request.runtimeMode ? { runtimeMode: request.runtimeMode } : {}, sent: true }
     }),
   }
+  // A second paired host, lab, whose own threads move (part 3): it holds one for a move, gives its handover, and settles
+  // or lets go of it, each answered the same when asked again.
+  const lab = { connected: true, supportsSource: true, threads: [source('lab-1')] as AgentThread[], asked: [] as HostThreadMoveSource[], fences: new Set<string>(),
+    holdAnswer: undefined as unknown }
+  const labHost: ThreadMoveHost = {
+    supportsThreadMove: true, get supportsThreadMoveSource() { return lab.supportsSource },
+    threadMove: vi.fn(async (asked: HostThreadMoveRequest) => {
+      if (asked.action === 'start') throw new Error('Nothing moves to lab here.')
+      lab.asked.push(asked)
+      switch (asked.action) {
+        case 'hold': if (lab.holdAnswer !== undefined) return lab.holdAnswer; lab.fences.add(asked.threadId); return { type: 'held', moveId: asked.moveId }
+        case 'handover': return { type: 'handover', moveId: asked.moveId, text: 'The handover of lab-1.', counts: { total: 2, carried: 2, tooLong: 0, notCarried: 0, images: 0, files: 0, visuals: 0, toolRecords: 0, historyKept: true, answered: false } }
+        default: lab.fences.clear(); return { type: 'done', moveId: asked.moveId }
+      }
+    }),
+  }
+  // This computer as a target: it makes the moved thread among its own, as a host does.
+  const local = { requests: [] as HostThreadMoveStart[], made: new Map<string, string>() }
+  const here: ThreadMoveHost = { supportsThreadMove: true, threadMove: vi.fn(async (asked: HostThreadMoveRequest) => {
+    if (asked.action !== 'start') throw new Error('This computer holds its threads itself.')
+    local.requests.push(asked)
+    let threadId = local.made.get(asked.moveId)
+    if (!threadId) {
+      threadId = randomUUID(); local.made.set(asked.moveId, threadId)
+      threads.push({ ...source(threadId), title: asked.title, status: 'running', messages: [], lastUserMessageId: randomUUID(), pullRequests: [] })
+    }
+    return { type: 'started', moveId: asked.moveId, threadId, sent: true }
+  }) }
   /** The machine pushed an update: a new snapshot, and every update listener hears it. */
   const changed = (): void => { remote.version++; for (const listener of remote.updates) listener() }
   /** The machine connected or changed what it offers. */
@@ -95,14 +125,15 @@ function world() {
     if (typeof property === 'string' && /^\d+$/u.test(property)) remote.visits++
     return Reflect.get(target, property, receiver) as unknown } })
   const targets: MoveTargets = {
-    name: hostId => hostId === FORGE ? 'forge' : undefined,
+    name: hostId => hostId === FORGE ? 'forge' : hostId === LAB ? 'lab' : undefined,
     snapshot: hostId => {
+      if (hostId === LAB) return lab.connected ? { ...EMPTY_AGENT_HOST, hostId: LAB, models: [model], threads: lab.threads } : undefined
       if (hostId !== FORGE || !remote.connected) return undefined
       remote.snapshots++
       if (remote.snapshot?.version !== remote.version) remote.snapshot = { version: remote.version, snapshot: { ...EMPTY_AGENT_HOST, hostId: FORGE, models: [model], threads: counted([...remote.threads]) } }
       return remote.snapshot.snapshot
     },
-    mayAnswer: () => remote.mayAnswer, host: hostId => hostId === FORGE && remote.connected ? host : undefined,
+    mayAnswer: () => remote.mayAnswer, host: hostId => hostId === FORGE && remote.connected ? host : hostId === LAB && lab.connected ? labHost : undefined,
     place: async () => ({ projectId: 'forge-project' }),
     subscribe: listener => { remote.listeners.add(listener); return () => { remote.listeners.delete(listener) } },
     subscribeUpdates: listener => { remote.updates.add(listener); return () => { remote.updates.delete(listener) } },
@@ -114,14 +145,17 @@ function world() {
       if (watch.refuses) return false
       watch.moved.push(`${from.threadId}->${to.hostId}:${to.threadId}`); return true
     } }
-  const service = (retryMs = 20) => new ThreadMoveService(directory, { control, workspace, branches, watch, delegations, retryMs, news: move => { news.push(move) } })
+  const service = (retryMs = 20) => new ThreadMoveService(directory, { control, workspace, branches, watch, delegations, retryMs, news: move => { news.push(move) }, here })
   /** The machine's thread for a move ends its first turn, and the machine says so. */
   const endTurn = (moveId: string, status: 'completed' | 'failed' = 'completed', patch: Partial<AgentThread> = {}) => {
     const thread = remote.threads.find(item => item.id === remote.made.get(moveId))!
     Object.assign(thread, { status: 'idle', lastTurn: { id: 'turn', status } }, patch)
     changed()
   }
-  return { threads, localModels, news, fences, settled, links, forgotten, control, workspace, delegations, branches, remote, host, targets, watch, service, endTurn, changed, connected }
+  /** A machine connected again, by its host ID. */
+  const reconnected = (hostId: string): void => { for (const listener of remote.listeners) listener(hostId) }
+  return { threads, localModels, news, fences, settled, links, forgotten, control, workspace, delegations, branches, remote, host, targets, watch, service, endTurn, changed, connected,
+    lab, local, reconnected }
 }
 type World = ReturnType<typeof world>
 const key = (threadId: string): string => hostEntityKey(HERE, threadId)
@@ -147,7 +181,7 @@ describe('prepare: what moves now, what asks first, and what stays and why', () 
       { threadId: key('busy'), outcome: 'stays', words: THREAD_MOVE_WORDS.running },
       { threadId: key('child'), outcome: 'stays', words: THREAD_MOVE_WORDS.delegated },
       { threadId: key('wide'), outcome: 'asks', words: expect.stringContaining('not this thread’s Full access'), model: { name: 'GPT' }, startsOn: 'Ask for approval' },
-      { threadId: hostEntityKey(FORGE, 'x'), outcome: 'stays', words: THREAD_MOVE_WORDS.remote },
+      { threadId: hostEntityKey(FORGE, 'x'), outcome: 'stays', words: THREAD_MOVE_WORDS.already('forge') },
     ])
     expect(w.fences.size).toBe(0); expect(w.branches.forStart).not.toHaveBeenCalled()
   })
@@ -661,6 +695,135 @@ describe('part 2: the cards in Watcher’s conversation, the press on one that a
     expect(w.news).toHaveLength(3)
     // Each card says how its move ended, and Watcher watches the one that moved.
     expect(moves.view().cards.map(card => card.state)).toEqual(['source-settled', 'stayed', 'given-back'])
+    moves.close()
+  })
+})
+
+describe('a host’s thread moves too (#1178 part 3)', () => {
+  const labKey = hostEntityKey(LAB, 'lab-1')
+  it('moves a host’s thread to another host through this desktop: held there, its handover from there, then settled there', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.watch.watched.add('lab-1')
+    const prepared = moves.prepare({ threadIds: [labKey], hostId: FORGE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
+    expect(prepared.threads).toEqual([{ threadId: labKey, outcome: 'moves', model: { name: 'GPT' } }])
+    const started = await moves.move({ confirmationId: prepared.confirmationId, threadIds: [labKey], allowNarrower: [] }) as Extract<ThreadMoveStart, { status: 'ok' }>
+    const moveId = started.moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    // Fenced on lab by lab's own record, never here; its branch goes from lab, through this desktop, to forge.
+    expect(w.lab.asked[0]).toEqual({ action: 'hold', moveId, threadId: 'lab-1', machine: 'forge' })
+    expect(w.fences.size).toBe(0); expect(w.lab.fences.has('lab-1')).toBe(true)
+    expect(w.branches.forStart).toHaveBeenCalledWith(expect.objectContaining({ from: { hostId: LAB, threadId: 'lab-1' }, to: { hostId: FORGE, projectId: 'forge-project' }, moveId }))
+    const request = w.remote.requests[0]!
+    expect(request.from).toEqual({ threadId: 'lab-1', provider: 'codex', hostId: LAB })
+    expect(request.prompt.startsWith('The handover of lab-1.')).toBe(true)
+    expect(request.prompt).toContain('which ran on lab until the user moved it here, to forge.')
+    expect(request.prompt).toContain('- Watcher watched it on lab, and watches this thread now.')
+    expect(request.handover.counts.total).toBe(2)
+    w.endTurn(moveId)
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('source-settled'))
+    const threadId = w.remote.made.get(moveId)!
+    expect(w.lab.asked.at(-1)).toEqual({ action: 'settle', moveId, link: { threadId, provider: 'codex', hostId: FORGE, at: expect.any(String) } })
+    expect(w.lab.fences.size).toBe(0); expect(w.settled).toEqual([]); expect(w.links).toEqual([])
+    expect(w.watch.moved).toEqual([`lab-1->${FORGE}:${threadId}`])
+    expect(w.news).toEqual([{ moveId, source: { hostId: LAB, threadId: 'lab-1' }, movedTo: { hostId: FORGE, threadId }, machine: 'forge', outcome: 'moved' }])
+    expect(moves.view().cards).toEqual([expect.objectContaining({ id: moveId, source: { hostId: LAB, threadId: 'lab-1' }, from: 'lab', machine: 'forge', state: 'source-settled' })])
+    // This computer keeps no worktree for a thread that ran on lab.
+    expect(moves.keepsWorktree('lab-1')).toBe(false)
+    moves.close()
+  })
+  it('moves a host’s thread to This computer, which makes the thread itself and answers for itself', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.lab.threads[0]!.runtimeMode = 'full-access'
+    w.remote.mayAnswer = false
+    const prepared = moves.prepare({ threadIds: [labKey], hostId: HERE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
+    expect(prepared).toMatchObject({ status: 'ok', machine: 'This computer' })
+    // Full access here still: This computer lets the user answer, so nothing asks first.
+    expect(prepared.threads).toEqual([{ threadId: labKey, outcome: 'moves', model: { name: 'GPT' } }])
+    const started = await moves.move({ confirmationId: prepared.confirmationId, threadIds: [labKey], allowNarrower: [] }) as Extract<ThreadMoveStart, { status: 'ok' }>
+    const moveId = started.moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    expect(w.local.requests[0]).toMatchObject({ action: 'start', moveId, runtimeMode: 'full-access', from: { threadId: 'lab-1', provider: 'codex', hostId: LAB } })
+    expect(w.local.requests[0]!.prompt).toContain('which ran on lab until the user moved it here, to This computer.')
+    expect(w.remote.requests).toEqual([])
+    const threadId = w.local.made.get(moveId)!
+    Object.assign(w.threads.find(thread => thread.id === threadId)!, { status: 'idle', lastTurn: { id: 'turn', status: 'completed' } })
+    w.changed()
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('source-settled'))
+    expect(w.lab.asked.at(-1)).toMatchObject({ action: 'settle', moveId, link: { threadId, hostId: HERE } })
+    expect(moves.view().cards).toEqual([expect.objectContaining({ id: moveId, from: 'lab', here: true, machine: 'This computer' })])
+    moves.close()
+  })
+  it('gives a move back in the host’s own words when it will not hold the thread, and asks it to let go of nothing', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.lab.holdAnswer = { type: 'refused', reason: 'not-movable', message: THREAD_MOVE_WORDS.unresolved }
+    const prepared = moves.prepare({ threadIds: [labKey], hostId: FORGE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
+    const started = await moves.move({ confirmationId: prepared.confirmationId, threadIds: [labKey], allowNarrower: [] }) as Extract<ThreadMoveStart, { status: 'ok' }>
+    const moveId = started.moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('given-back'))
+    expect(moves.list()[0]!.givenBack).toBe(THREAD_MOVE_WORDS.givenBack(THREAD_MOVE_WORDS.unresolved, 'lab'))
+    expect(w.lab.asked.map(item => item.action)).toEqual(['hold'])
+    expect(w.branches.forStart).not.toHaveBeenCalled(); expect(w.remote.requests).toEqual([])
+    moves.close()
+  })
+  it('keeps a thread whose new thread failed on its host, linked, once that host lets go of it, and waits while the host is away', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    const prepared = moves.prepare({ threadIds: [labKey], hostId: FORGE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
+    const started = await moves.move({ confirmationId: prepared.confirmationId, threadIds: [labKey], allowNarrower: [] }) as Extract<ThreadMoveStart, { status: 'ok' }>
+    const moveId = started.moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    w.lab.connected = false
+    w.endTurn(moveId, 'failed')
+    await vi.waitFor(() => expect(moves.list()[0]).toMatchObject({ state: 'first-turn-ended', ending: 'stayed' }))
+    expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true, waitingOn: 'lab', from: 'lab' })
+    expect(w.lab.fences.has('lab-1')).toBe(true)
+    w.lab.connected = true; w.reconnected(LAB)
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('stayed'))
+    const threadId = w.remote.made.get(moveId)!
+    expect(w.lab.asked.at(-1)).toEqual({ action: 'release', moveId, link: { threadId, provider: 'codex', hostId: FORGE, at: expect.any(String) } })
+    expect(moves.list()[0]!.givenBack).toBe(THREAD_MOVE_WORDS.stayed('forge', true, 'lab'))
+    expect(moves.list()[0]!.ending).toBeUndefined()
+    expect(w.news.at(-1)).toMatchObject({ moveId, source: { hostId: LAB, threadId: 'lab-1' }, outcome: 'stayed' })
+    moves.close()
+  })
+  it('says a move waits on the machine it goes to before its host holds the thread, and on that host once it must hold it', async () => {
+    // A move taken up again after a restart, not yet held, whose target is away: it waits for the target first.
+    const w = world(), at = new Date().toISOString(), moveId = randomUUID()
+    const record: MoveRecord = { id: moveId, sourceThreadId: 'lab-1', sourceHostId: LAB, from: 'lab', targetHostId: FORGE, machine: 'forge', state: 'fenced',
+      start: { provider: 'codex', modelId: model.id, title: 'Thread lab-1' }, watched: false, createdAt: at, updatedAt: at }
+    await writeFile(join(directory, 'moves.json'), JSON.stringify({ version: 1, moves: [record] }))
+    w.remote.connected = false
+    const moves = w.service(); await moves.load(); moves.useTargets(w.targets)
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true, waitingOn: 'forge' }))
+    expect(w.lab.asked).toEqual([])
+    // Back, the target lets the move ask lab to hold the thread.
+    w.remote.connected = true; w.connected()
+    await vi.waitFor(() => expect(w.lab.asked[0]).toMatchObject({ action: 'hold', moveId }))
+    moves.close()
+  })
+  it('says why a host’s thread stays: its host away or too old, or the thread already where it would go', () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.remote.threads.push(source('forge-1'))
+    const plan = (threadIds: string[], hostId: string) => (moves.prepare({ threadIds, hostId }) as Extract<ThreadMovePrepare, { status: 'ok' }>).threads
+    expect(plan([hostEntityKey(FORGE, 'forge-1'), key('a')], FORGE)).toEqual([
+      { threadId: hostEntityKey(FORGE, 'forge-1'), outcome: 'stays', words: THREAD_MOVE_WORDS.already('forge') },
+      expect.objectContaining({ threadId: key('a'), outcome: 'moves' }),
+    ])
+    expect(plan([key('a')], HERE)).toEqual([{ threadId: key('a'), outcome: 'stays', words: THREAD_MOVE_WORDS.already('This computer') }])
+    w.lab.supportsSource = false
+    expect(plan([labKey], FORGE)).toEqual([{ threadId: labKey, outcome: 'stays', words: THREAD_MOVE_WORDS.olderSource('lab') }])
+    w.lab.connected = false
+    expect(plan([labKey], FORGE)).toEqual([{ threadId: labKey, outcome: 'stays', words: THREAD_MOVE_WORDS.sourceAway('lab') }])
+  })
+  it('fences and keeps nothing here for a host’s thread across a restart: its host keeps that', async () => {
+    const w = world()
+    const at = new Date().toISOString()
+    const record: MoveRecord = { id: randomUUID(), sourceThreadId: 'lab-1', sourceHostId: LAB, from: 'lab', held: true, targetHostId: FORGE, machine: 'forge', state: 'fenced',
+      start: { provider: 'codex', modelId: model.id, title: 'Thread lab-1' }, watched: false, createdAt: at, updatedAt: at }
+    await writeFile(join(directory, 'moves.json'), JSON.stringify({ version: 1, moves: [record] }))
+    const moves = w.service(); await moves.load()
+    expect(w.fences.size).toBe(0); expect(moves.keepsWorktree('lab-1')).toBe(false)
+    const held = await holdUnfinishedMoves(directory, w.control)
+    expect(w.fences.size).toBe(0); expect(held.keepsWorktree('lab-1')).toBe(false)
     moves.close()
   })
 })

@@ -2407,6 +2407,10 @@ msgstr ""
 msgid "It takes no sends here while it moves."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "It takes no sends on {from} while it moves."
+msgstr ""
+
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
 msgid "It was blocked {blocked} of the last minute. The longest freeze was {longest}. Threads, typing and the window may lag until it recovers."
 msgstr ""
@@ -2421,6 +2425,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Its first turn on {machine} ended. Settling the thread here…"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Its first turn on {machine} ended. Settling the thread on {from}…"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherOverview.tsx
@@ -2467,6 +2475,11 @@ msgstr ""
 msgid "Keep it here"
 msgstr ""
 
+#. placeholder {0}: card.from
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Keep it on {0}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherHandover.tsx
 msgid "Keep local history is off, so it holds only what Sotto kept since it last started."
 msgstr ""
@@ -2485,6 +2498,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Kept here"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Kept on {from}"
 msgstr ""
 
 #: src/renderer/src/components/OpenRouterKeyField.tsx
@@ -3322,6 +3339,10 @@ msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Nothing was sent to {machine}. You can send here as before."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Nothing was sent to {machine}. You can send to it on {from} as before."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
@@ -4382,6 +4403,11 @@ msgstr ""
 msgid "Settled here, and its worktree is kept."
 msgstr ""
 
+#. placeholder {0}: card.from
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Settled on {0}, and its worktree is kept there."
+msgstr ""
+
 #. Before a thread’s name on a receipt card
 #: src/renderer/src/watcher/WatcherReceipts.tsx
 msgid "Settling"
@@ -5011,7 +5037,15 @@ msgid "Stayed here"
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stayed on {from}"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Stays here"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stays on {from}"
 msgstr ""
 
 #: src/renderer/src/features/updates/updateAll.ts
@@ -5454,7 +5488,7 @@ msgid "This removes the transcript and its numbers from this computer. It cannot
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
-msgid "This thread is waiting for {machine} to answer about its move. Nothing was lost."
+msgid "This thread is waiting for {waitsOn} to answer about its move. Nothing was lost."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherNew.tsx
@@ -5916,12 +5950,12 @@ msgstr ""
 msgid "Waiting"
 msgstr ""
 
-#: src/renderer/src/watcher/MoveThreads.tsx
-msgid "Waiting for {machine}"
-msgstr ""
-
 #: src/renderer/src/features/starting/startingView.ts
 msgid "Waiting for {names}"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Waiting for {waitsOn}"
 msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx

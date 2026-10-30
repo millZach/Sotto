@@ -185,6 +185,21 @@ describe('Each move’s card in Watcher’s conversation', () => {
     expect(moves.answer).toHaveBeenLastCalledWith({ cardId: CARD, answer: 'keep' })
   })
 
+  it('names the host a thread moved from, and where it stays, for a move from another machine (part 3)', () => {
+    bridges()
+    const { rerender } = render(<WatcherMoveCards cards={[card({ state: 'asks', from: 'lab', startsOn: 'Allow edits', words: 'It would start on Allow edits on forge.' })]} threads={threads} />)
+    const item = screen.getByRole('listitem')
+    expect(item.textContent).toContain('lab→toforge')
+    expect(screen.getByRole('button', { name: 'Keep it on lab' })).toBeTruthy()
+    rerender(<WatcherMoveCards cards={[card({ state: 'source-settled', from: 'lab', here: true, machine: 'This computer', moved: { hostId: LOCAL, threadId: 'tray' } })]} threads={threads} />)
+    expect(screen.getByRole('listitem').textContent).toContain('Settled on lab, and its worktree is kept there.')
+    rerender(<WatcherMoveCards cards={[card({ state: 'given-back', from: 'lab', words: 'A turn is running. This thread stays on lab and takes sends again.' })]} threads={threads} />)
+    expect(within(screen.getByRole('listitem')).getByText('Stays on lab')).toBeTruthy()
+    // A move that waits on the host its thread is on names that host.
+    rerender(<WatcherMoveCards cards={[card({ state: 'fenced', from: 'lab', waiting: true, waitingOn: 'lab' })]} threads={threads} />)
+    expect(screen.getByText('Waiting for lab')).toBeTruthy()
+  })
+
   it('says a move that waits on its machine lost nothing', () => {
     bridges()
     render(<WatcherMoveCards cards={[card({ state: 'branch-sent', waiting: true })]} threads={threads} />)

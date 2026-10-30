@@ -43,13 +43,14 @@ import { isThreadTurnRunning } from '../../shared/threadActivity'
 import type { PackageInstaller } from './checkWorktree'
 import { ContinueService } from './continueThread'
 import { holdUnfinishedMoves, ThreadMoveService } from './threadMoves'
+import { HostThreadMoves } from './threadMovesHost'
 import { AgentControl } from './control'
 import { TurnRecorder } from './turns'
 import { ConfiguredAgentReasoner } from './reasoning'
 import { ClaudeSubscriptionClient } from './subscriptionClaude'
 import { CodexSubscriptionClient } from './subscriptionCodex'
 import { GrokSubscriptionClient } from './subscriptionGrok'
-import { LocalHostService } from './hostService'
+import { desktopWindowClient, LocalHostService } from './hostService'
 import { threadToolReads } from './threadToolReads'
 import { GitStatusReader, runGitStatusCommand, runWithGhStandIn, type RunGitCommand } from './gitStatus'
 import { GitHubHosts, GitHubRateLimit, type GitHubRateLimitEvent } from './github'
@@ -190,6 +191,11 @@ export interface AgentRuntimeOptions {
   missingAttachment?: ControlDependencies['missingAttachment']
   /** The headless host says so: it connects every signed-in provider at start and names itself in refusals (ADR-0036). */
   runsAs?: ControlDependencies['runsAs']
+  /**
+   * A headless host's threads that a move holds or moved away (#1178 part 3), whose worktrees no automatic cleanup removes.
+   * The desktop keeps its own (`ThreadMoveService`).
+   */
+  keepsWorktree?: (threadId: string) => boolean
   /** Desktop design fixtures replace the whole provider boundary. */
   host?: AgentHost
   /** Native process overrides keep tests on the production coordinator path. */
@@ -543,12 +549,18 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // Continuing a thread on another provider (ADR-0089): the desktop's own threads only, so a headless host builds none.
   const continuation = options.continueEnabled === true && options.runsAs !== 'headless-host'
     ? new ContinueService({ control: agentControl, host: agentHost }) : undefined
-  // Moving This computer's threads to a paired host (#1178, ADR-0105 decision 7): only the desktop moves threads, where Work
+  // Moving threads between machines (#1178, ADR-0105 decision 7): only the desktop moves threads, where Work
   // across machines is on and its Watcher runs, since moves reach machines and carry watches through Watcher. Every move
   // under way fences its source as its record is read, before any window or send can reach it.
+  // A host's thread moves too (part 3): to another host through this desktop, or here, where this desktop makes the thread
+  // as a host does (`HostThreadMoves`), answering for itself, with its own record of those moves.
+  const movesHere = crossMachine && options.runsAs !== 'headless-host' && watcher && branchMoves
+    ? new HostThreadMoves(directory, { control: agentControl, workspace: agentHost, mayAnswer: () => true, file: 'thread-moves-here.json' }) : undefined
+  const thisComputer = desktopWindowClient()
   const threadMoves = crossMachine && options.runsAs !== 'headless-host' && watcher && branchMoves
     ? new ThreadMoveService(directory, { control: agentControl, workspace: agentHost, branches: branchMoves, watch: watcher,
-      news: move => watcher.wakes.threadMoved(move), ...delegation ? { delegations: delegation } : {} }) : undefined
+      news: move => watcher.wakes.threadMoved(move), ...delegation ? { delegations: delegation } : {},
+      ...movesHere ? { here: { supportsThreadMove: true, threadMove: request => movesHere.handle(request, thisComputer) } } : {} }) : undefined
   await threadMoves?.load()
   // A run that does not move threads, stable among them, still reads the record and keeps every move not finished fenced,
   // and its worktree kept: that thread may already work on another machine. Nothing steps, and nothing is shown.
@@ -576,7 +588,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
     removeUnsentThreads: () => agentControl.removeUnsentThreads(),
     // A move's source keeps its worktree, whatever the rules say (Zach, October 21, 2026).
-    ...moveKeeps ? { keeps: (threadId: string) => moveKeeps.keepsWorktree(threadId) } : {},
+    ...moveKeeps ? { keeps: (threadId: string) => moveKeeps.keepsWorktree(threadId) } : options.keepsWorktree ? { keeps: options.keepsWorktree } : {},
     ...clearsOnItsOwn(options) ? { clearSettledThreads: { afterDays: () => options.settings().clearSettledThreadsAfterDays,
       clear: (days: number, keep?: (thread: AgentThread) => Promise<ThreadClearKeptReason | null>) => agentControl.clearSettledThreads(days, keep) } } : {},
     ...merged && github ? { pullRequestMerged: (repositoryRoot: string, branch: string) => merged(repositoryRoot, branch, github) } : {},
@@ -666,6 +678,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     delegationRemote?.close()
     continuation?.close()
     threadMoves?.close()
+    movesHere?.close()
     closingWatcherTools = watcherTools?.close()
   }
   let stoppingProviders: Promise<void> | undefined
