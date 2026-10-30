@@ -185,7 +185,7 @@ describe('Orchestrating while Watcher runs: one choice in two places (#1041)', (
 
   it('keeps the shared speed when the quiet pill changes effort', () => {
     const { command, updateSettings } = show(OPUS, 'fast', true, true)
-    fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning' }), { key: 'ArrowRight' })
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Thread reasoning' }), { key: 'ArrowRight' })
     expect(command).toHaveBeenCalledWith({ type: 'configure-thread', threadId: 'watcher', reasoningEffort: 'xhigh' })
     expect(updateSettings).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: OPUS, reasoningEffort: 'xhigh', speed: 'fast' } } })
   })
@@ -223,7 +223,7 @@ describe('Orchestrating while Watcher runs: one choice in two places (#1041)', (
     const { command, updateSettings } = show(SONNET, undefined, true, true, {
       orchestrating: { modelId: SONNET, reasoningEffort: 'high', speed: 'fast' },
     })
-    fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning' }), { key: 'ArrowRight' })
+    fireEvent.keyDown(screen.getByRole('combobox', { name: 'Thread reasoning' }), { key: 'ArrowRight' })
     expect(updateSettings).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: SONNET, reasoningEffort: 'xhigh', speed: 'fast' } } })
     fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
     fireEvent.click(screen.getByRole('option', { name: 'Opus 5.5' }))
