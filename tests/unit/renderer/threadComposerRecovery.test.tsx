@@ -1,7 +1,7 @@
 import { setPromptText, promptText } from './helpers/promptEditor'
 import { deferred } from '../../fixtures/deferred'
 import React from 'react'
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentCommand, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
@@ -34,7 +34,7 @@ function questionFixture() {
 }
 
 describe('thread composer recovery', () => {
-  it('keeps focus and text when a permission arrives, blocks edits and sends, then resumes editing', () => {
+  it('keeps focus and text when a permission arrives, queues the draft, and preserves newer typing when the card clears', async () => {
     const f = fixture()
     const view = render(f.composer())
     const prompt = screen.getByRole('textbox', { name: 'Prompt' })
@@ -42,23 +42,29 @@ describe('thread composer recovery', () => {
     prompt.focus()
     const thread = f.state.host.threads.find(thread => thread.id === 'grok-previews')!
     thread.requests = [{ id: 'permission', kind: 'permission', text: 'Allow this command?', options: [] }]
+    const request = thread.requests[0]!
     view.rerender(f.composer())
     expect(prompt).not.toBeDisabled()
-    expect(prompt).toHaveAttribute('contenteditable', 'false')
-    expect(prompt).toHaveAttribute('aria-disabled', 'true')
+    expect(prompt).toHaveAttribute('contenteditable', 'true')
+    expect(prompt).not.toHaveAttribute('aria-disabled')
     expect(prompt).toHaveFocus()
     expect(promptText(prompt)).toBe('Keep this draft')
-    setPromptText(prompt, 'Blocked edit')
+    setPromptText(prompt, 'Keep this draft and check the release notes')
+    expect(f.store.draft(thread.id).text).toBe('Keep this draft and check the release notes')
+    expect(screen.getByRole('button', { name: 'Queue prompt' })).toBeEnabled()
     fireEvent.keyDown(prompt, { key: 'Enter' })
-    expect(f.store.draft(thread.id).text).toBe('Keep this draft')
-    expect(screen.getByRole('button', { name: 'Send prompt' })).toBeDisabled()
-    expect(f.command.mock.calls.some(([request]) => request.type === 'manual-send' || request.type === 'answer')).toBe(false)
+    await waitFor(() => expect(f.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'queue-followup', threadId: thread.id, text: 'Keep this draft and check the release notes' })))
+    expect(f.command.mock.calls.some(([request]) => request.type === 'manual-send' || request.type === 'steer' || request.type === 'answer')).toBe(false)
+    expect(thread.requests).toEqual([request])
+    expect(screen.getByRole('region', { name: 'Queued messages' })).toHaveTextContent('Keep this draft and check the release notes')
+    expect(promptText(prompt)).toBe('')
+    setPromptText(prompt, 'Continue typing')
     thread.requests = []
     view.rerender(f.composer())
     expect(prompt).toHaveAttribute('contenteditable', 'true')
     expect(prompt).not.toHaveAttribute('aria-disabled')
     expect(prompt).toHaveFocus()
-    setPromptText(prompt, 'Continue typing')
+    expect(promptText(prompt)).toBe('Continue typing')
     expect(f.store.draft(thread.id).text).toBe('Continue typing')
     f.store.flushAll()
   })

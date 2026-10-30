@@ -888,3 +888,9 @@ artifacts/worker-swarms/*
 !artifacts/worker-swarms/sidebar-closed-light.png
 !artifacts/worker-swarms/sidebar-dark.png
 !artifacts/worker-swarms/sidebar-light.png
+
+# Watcher pending-card queue evidence.
+artifacts/watcher-card-queue/*
+!artifacts/watcher-card-queue/*-1280.png
+!artifacts/watcher-card-queue/*-820.png
+!artifacts/watcher-card-queue/checks.json

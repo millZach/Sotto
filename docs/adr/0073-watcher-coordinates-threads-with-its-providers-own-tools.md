@@ -735,3 +735,10 @@ Lag came back on Owl after a few days of use. Watcher's record kept everything W
 - **Where Watcher is off** no archive is made or read and the record is kept whole (ADR-0072). Watcher is on in stable since 0.1.40, so this ships to both tracks as a fix.
 
 At the owner's scale per send, Owl's serializations go from 2,561 to 1,263 and stable's from 1,885 to 595, and a Watcher record ten times the owner's, with a conversation of 2,000 messages, now costs main the same as a short one on every count (`ownerScaleWorkBudget.perf.test.ts`). The identity check reads the same `agents.json` however much Watcher has archived.
+
+
+## October 29, 2026: the user can queue while a card waits
+
+Drake asked to write to Watcher while its question card is still waiting, on the desktop and the iPhone. **A pending question or permission card holds delivery, not the user's queue admission.** The user's composer accepts a follow-up into the existing ordered queue; Send shows Queue, and where its wait needs saying the line is “Queued until you answer the card”. Answering or skipping the card releases that hold. Once the provider can take the next message, the queue sends in order, ahead of messages queued later. An answer normally resumes the current provider turn, so its follow-ups wait for that turn to finish; queueing never becomes an implicit steer. A card with no running turn releases the next message immediately.
+
+The card alone answers or skips its request. Queueing leaves it pending, gives it no answer, and works the same for a permission card, a structured question and a question with choices. An older plain-text question whose answer lives in the composer keeps that answer path. The same admission and delivery rules serve ordinary thread composers. Watcher's agent-to-worker sends keep ADR-0130's refusal while a user card waits; this change is to the user's own composer. The iPhone uses its existing send and queue fields, without a socket, phone schema or `sotto_threads` contract change.
