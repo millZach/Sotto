@@ -242,7 +242,7 @@ function movedModel(source: AgentThread | undefined, sourceModel: AgentModel | u
 }
 /** What each planned thread would start on there, by the window's ID for it, to tell whether that changed. */
 const startsOf = (plans: ReadonlyMap<string, Plan>): ReadonlyMap<string, string> =>
-  new Map([...plans.values()].map(plan => [plan.threadId, JSON.stringify(plan.start ?? null)] as const))
+  new Map([...plans.values()].map(plan => [plan.threadId, plan.startsWith ?? ''] as const))
 /** The model a move's new thread starts on there: the source's own where it is ready there, else its provider's first ready one. */
 function targetModel(source: AgentThread, sourceModel: AgentModel | undefined, models: readonly AgentModel[]): AgentModel | undefined {
   const same = resolveModel(models, source.modelId)
@@ -281,6 +281,8 @@ interface Plan extends ThreadMovePlanned {
   readonly sourceThreadId?: string
   readonly sourceHostId?: string | undefined
   readonly from?: string | undefined
+  /** What it would start on there whole, a provider's own profile included, to tell whether that changed. */
+  readonly startsWith?: string | undefined
   readonly start?: MoveRecord['start']
 }
 /**
@@ -790,12 +792,13 @@ export class ThreadMoveService {
     const effort = source.reasoningEffort && model.reasoningEfforts?.includes(source.reasoningEffort) ? source.reasoningEffort : undefined
     const start: MoveRecord['start'] = { provider: source.providerId, modelId: model.id, title: source.title, ...effort ? { reasoningEffort: effort } : {},
       ...permission.runtimeMode ? { runtimeMode: permission.runtimeMode } : {}, ...source.titleSource === 'user' ? { titleSource: 'user' as const } : {} }
-    return { threadId, sourceThreadId: source.id, ...sourceHostId ? { sourceHostId, from } : {}, start, model: movedModel(source, sourceModel, model, model.id),
+    return { threadId, sourceThreadId: source.id, ...sourceHostId ? { sourceHostId, from } : {}, start, startsWith: JSON.stringify([start, permission.providerMode ?? null]),
+      model: movedModel(source, sourceModel, model, model.id),
       ...permission.narrowed ? { outcome: 'asks', words: movePermissionWords(permission.narrowed, machine), startsOn: narrowedName(permission.narrowed).slice(0, 200) } : { outcome: 'moves' } }
   }
   /** What a confirmation holds to: each thread's outcome, its words and what it would start on there. */
   private signature(hostId: string, plans: ReadonlyMap<string, Plan>): string {
-    return digest([hostId, [...plans.values()].map(plan => [plan.threadId, plan.outcome, plan.words ?? null, plan.start ?? null])])
+    return digest([hostId, [...plans.values()].map(plan => [plan.threadId, plan.outcome, plan.words ?? null, plan.startsWith ?? null])])
   }
   private pruneConfirmations(): void {
     for (const [confirmationId, confirmation] of this.confirmations) if (confirmation.expires < Date.now()) this.confirmations.delete(confirmationId)
