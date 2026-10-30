@@ -19,6 +19,7 @@ export const OWL_FEATURES = [
   { id: 'streaming-publish-cost', name: 'Cheaper publish windows while streaming', owlSince: '2026-10-13', owner: 'docs/adr/0016-sotto-owned-history-on-an-event-store.md', sentToStable: true },
   { id: 'thread-delegation', name: 'Delegation between threads', owlSince: '2026-10-15', owner: 'docs/adr/0081-a-thread-may-delegate-work-to-threads-it-starts.md', sentToStable: true },
   { id: 'worker-roles', name: 'Worker roles', owlSince: '2026-10-16', owner: 'docs/adr/0091-worker-roles-say-what-each-kind-of-work-starts-on.md', sentToStable: true },
+  { id: 'worker-swarms', name: 'Worker swarms', owlSince: '2026-10-29', owner: 'docs/adr/0162-worker-swarms-give-each-angle-a-worktree-and-one-lead.md', sentToStable: false },
   { id: 'continue-on-provider', name: 'Continue a thread on another provider', owlSince: '2026-10-16', owner: 'docs/adr/0089-a-thread-continues-on-another-provider-as-a-new-linked-thread.md', sentToStable: true },
   { id: 'continue-agent-thread', name: 'Continue an agent as its own thread, and Fork from here', owlSince: '2026-10-16', owner: 'docs/adr/0090-an-agent-or-a-reply-can-start-a-thread-of-its-own.md', sentToStable: true },
   { id: 'opencode', name: 'OpenCode provider', owlSince: '2026-10-16', owner: 'docs/adr/0087-opencode-is-a-thread-provider.md', sentToStable: true },

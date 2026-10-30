@@ -5,6 +5,7 @@ import { SocketHostService } from '../../../src/main/agents/socketHostService'
 import { DesktopHostRouter } from '../../../src/main/hosts/desktopHostRouter'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { WatcherService } from '../../../src/main/agents/watcher'
+import { WorkerAdmission } from '../../../src/main/agents/workerAdmission'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
 import type { WatcherHostProjection, WatcherRemoteHosts } from '../../../src/shared/watcherHost'
 import { watcherToolSchemas } from '../../../src/shared/watcher'
@@ -14,11 +15,13 @@ import { agentControlFixture } from '../../fixtures/agentControlFixture'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { vi.useRealTimers(); vi.restoreAllMocks(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
-async function fixture() {
+async function fixture(workerSwarms = false) {
   const workspace = await workspaceFixture(undefined, { history: false })
   const f = await agentControlFixture({ directory: workspace.root, host: workspace.host, credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => false, watcherEnabled: true } })
-  const watcher = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false })
-  cleanups.push(async () => { watcher.close(); await f.dispose(); await workspace.stop(); await workspace.remove() })
+  const admission = new WorkerAdmission({ ceiling: () => 1, working: () => new Set() })
+  const watcher = new WatcherService({ directory: f.root, host: workspace.host, control: f.control, historyEnabled: () => false,
+    ...(workerSwarms ? { swarms: { admission, service: () => undefined, ceiling: () => 1 } } : {}) })
+  cleanups.push(async () => { watcher.close(); admission.close(); await f.dispose(); await workspace.stop(); await workspace.remove() })
   await f.control.start(); await f.control.commandShell({ type: 'connect', provider: 'codex' })
   const record = watcherRecordFixture(), local = f.control.hostId()!, hostId = randomUUID()
   record.current!.target.hostId = local; record.requests[0]!.watcher.hostId = local
@@ -29,7 +32,7 @@ async function fixture() {
   const snapshot: AgentHostSnapshot = { ...localSnapshot, hostId, connected: true, threads: [{ ...native, id: 'worker', hostId, status: 'running' }] }
   let projection: WatcherHostProjection = { hostId, master: record.current!, revision: 'initial', observedAt: new Date().toISOString(), requests: record.requests, operations: record.operations, evidence: [] }
   const read = vi.fn<WatcherRemoteHosts['read']>(async (_hostId, _request) => { void _hostId; void _request; return structuredClone(projection) })
-  const hosts: ReturnType<WatcherRemoteHosts['hosts']> = [{ hostId, connected: true, reads: true, control: true, permissionCeiling: 'approval-required' }]
+  const hosts: ReturnType<WatcherRemoteHosts['hosts']> = [{ hostId, connected: true, reads: true, control: true, permissionCeiling: 'approval-required', ...(workerSwarms ? { swarms: true } : {}) }]
   let changed: ((hostId?: string, force?: boolean) => void) | undefined
   const remote: WatcherRemoteHosts = { hosts: () => hosts, snapshot: id => id === hostId ? snapshot : undefined, read, control: vi.fn(), subscribe: listener => { changed = listener; return () => { changed = undefined } } }
   const reconcile = () => (watcher as unknown as { reconcileRemote(): Promise<void> }).reconcileRemote()
@@ -74,6 +77,64 @@ it('keeps a validated accepted control receipt when its follow-up projection rea
   const result = await (f.watcher as unknown as { executeRemote(name: string, saved: typeof operation, input: unknown): Promise<unknown> }).executeRemote('send_to_thread', operation, input)
   expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: 'accepted' } })
   expect(f.control.watcherRecord().operations[0]!.deliveryState).toBe('accepted')
+})
+
+it('keeps a remote machine-queued start uncreated and stops its reserved thread before creation', async () => {
+  const f = await fixture(true)
+  await f.control.updateWatcher(record => Object.assign(record.operations[0]!, { action: 'start', deliveryState: 'queued', creationReceiptId: 'creation', firstPromptReceiptId: 'first' }))
+  const record = f.control.watcherRecord(), operation = record.operations[0]!
+  f.snapshot.threads = []
+  f.projection({ hostId: f.hostId, master: record.current!, revision: 'queued', observedAt: operation.updatedAt, requests: record.requests, operations: record.operations, evidence: [] })
+  const input = watcherToolSchemas.start_thread.input.parse({ requestId: operation.requestId, retryKey: operation.retryKey, project: { hostId: f.hostId, projectId: 'project' },
+    modelId: 'model', role: 'research', count: 2, prompts: ['First angle', 'Second angle'], workingCopy: { kind: 'new-worktree' }, title: 'Synthetic swarm', firstPrompt: 'Inspect the project' })
+  const receipt = { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'queued', receiptId: operation.receiptId, cardId: operation.cardId }
+  const queue = { ahead: 0, waiting: 1, note: 'One start waits for this machine.' }
+  vi.mocked(f.remote.control).mockResolvedValueOnce({ status: 'ok', receipt, limits: { promptCount: 1, promptLimit: 4 }, target: operation.target,
+    creationReceiptId: 'creation', firstPromptReceiptId: 'first', queue,
+    effectiveChoices: { modelId: 'model', reasoningEffort: null, permission: { kind: 'runtime', mode: 'approval-required' }, workingCopy: input.workingCopy } })
+  const result = await (f.watcher as unknown as { executeRemote(name: string, saved: typeof operation, input: unknown): Promise<unknown> }).executeRemote('start_thread', operation, input)
+  expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: 'queued' }, queue })
+  expect((f.watcher as unknown as { createdRemotely: Set<string> }).createdRemotely.has(operation.id)).toBe(false)
+  // This reconciliation fixture has a Watcher identity but no local Watcher conversation to read a prompt turn from.
+  vi.spyOn(f.watcher as unknown as { promptTurn(): undefined }, 'promptTurn').mockReturnValue(undefined)
+  vi.mocked(f.remote.control).mockImplementationOnce(async (_host, request) => ({ status: 'ok', receipt: { operationId: request.operation.id,
+    target: operation.target, requestId: operation.requestId, deliveryState: 'accepted', receiptId: request.operation.receiptId, cardId: request.operation.cardId },
+    limits: { promptCount: 1, promptLimit: 4 }, stopRequested: true,
+    state: { status: 'idle', stopped: true, settled: false, backgroundWorkCount: 0, observedAt: operation.updatedAt, freshness: 'fresh' } }))
+  const stopped = await f.watcher.invoke(record.current!.target.threadId, 'stop_thread', { requestId: operation.requestId, retryKey: randomUUID(), target: operation.target })
+  expect(watcherToolSchemas.stop_thread.output.parse(stopped)).toMatchObject({ status: 'ok', stopRequested: true })
+  expect(f.remote.control).toHaveBeenCalledTimes(2)
+})
+
+it('refreshes remote swarm progress on exact reads and retries without replaying the start', async () => {
+  const f = await fixture(true)
+  const original = f.control.watcherRecord().operations[0]!
+  const input = watcherToolSchemas.start_thread.input.parse({ requestId: original.requestId, retryKey: original.retryKey, project: { hostId: f.hostId, projectId: 'project' },
+    modelId: 'model', role: 'research', count: 2, prompts: ['First angle', 'Second angle'], workingCopy: { kind: 'new-worktree' }, title: 'Synthetic swarm', firstPrompt: 'Inspect the project' })
+  await f.control.updateWatcher(record => Object.assign(record.operations[0]!, { action: 'start', deliveryState: 'queued', creationReceiptId: 'creation', firstPromptReceiptId: 'first',
+    inputDigest: createHash('sha256').update(JSON.stringify(['start_thread', input])).digest('hex') }))
+  const record = f.control.watcherRecord(), operation = record.operations[0]!
+  f.snapshot.threads = []
+  const effectiveChoices = { modelId: 'model', reasoningEffort: 'high', permission: { kind: 'runtime' as const, mode: 'approval-required' as const } }
+  const receipt = { operationId: operation.id, target: operation.target, requestId: operation.requestId, deliveryState: 'queued' as 'queued' | 'accepted', receiptId: operation.receiptId, cardId: operation.cardId }
+  const state = { status: 'idle', stopped: false, settled: false, backgroundWorkCount: 0, observedAt: operation.updatedAt, freshness: 'fresh' }
+  const queue = { ahead: 0, waiting: 1, note: 'One start waits for this machine.' }
+  let exact: unknown = { status: 'ok', action: 'start', receipt, limits: { promptCount: 1, promptLimit: 4 }, state, effectiveChoices, queue }
+  f.read.mockImplementation(async (_host, request) => request.call ? exact : { hostId: f.hostId, master: record.current!, revision: receipt.deliveryState,
+    observedAt: operation.updatedAt, requests: record.requests, operations: [{ ...operation, deliveryState: receipt.deliveryState }], evidence: [] })
+  const retry = await f.watcher.invoke(record.current!.target.threadId, 'start_thread', input)
+  expect(watcherToolSchemas.start_thread.output.parse(retry)).toMatchObject({ status: 'ok', queue, effectiveChoices })
+  const swarm = { swarmId: randomUUID(), lead: { thread: operation.target.threadId }, receipts: [{ index: 0, state: 'answered', thread: 'angle-1' }, { index: 1, state: 'working', thread: 'angle-2' }],
+    queued: 0, done: 1, failed: 0, role: { usual: 1, upTo: 8 }, costShape: { angles: 2, lead: 1, effort: 'high' }, note: '1 of 2 angles done.' }
+  receipt.deliveryState = 'accepted'
+  exact = { status: 'ok', action: 'start', receipt, limits: { promptCount: 1, promptLimit: 4 }, state, effectiveChoices, swarm }
+  const progress = await f.watcher.invoke(record.current!.target.threadId, 'read_operation', { operationId: operation.id })
+  expect(watcherToolSchemas.read_operation.output.parse(progress)).toMatchObject({ status: 'ok', swarm })
+  expect(progress).not.toHaveProperty('queue')
+  const repeated = await f.watcher.invoke(record.current!.target.threadId, 'start_thread', input)
+  expect(watcherToolSchemas.start_thread.output.parse(repeated)).toMatchObject({ status: 'ok', swarm, effectiveChoices })
+  expect(repeated).not.toHaveProperty('queue')
+  expect(f.remote.control).not.toHaveBeenCalled()
 })
 
 it.each(['queued', 'dispatching', 'uncertain'] as const)('keeps a definitive paired failure refunded once after an older %s projection', async pending => {

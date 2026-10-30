@@ -3,6 +3,7 @@ import type { OmarchyTheme } from '../../shared/themes/omarchy'
 import type { RecoveryNotice } from '../../shared/recoveryNotice'
 import { AtomicJsonStore } from './atomicJsonStore'
 import { parseHostEntityKey } from '../../shared/clientIdentity'
+import { WORKER_KINDS } from '../../shared/workerRoles'
 
 export interface SettingsRepositoryOptions {
   /**
@@ -10,6 +11,8 @@ export interface SettingsRepositoryOptions {
    * reset keeps them, and a patch that would change them is refused. Absent keeps today's behaviour, as in tests.
    */
   workerRolesEnabled?: boolean
+  /** Worker counts and this machine's ceiling survive saves and resets while the swarm switch is off. */
+  workerSwarmsEnabled?: boolean
   /** The Owl list's answer for extra and hold dictation shortcuts, read once at start. Off, a save or a reset keeps the saved lists. */
   dictationHoldShortcutsEnabled?: boolean
   /** The Owl list's answer for the interface language (ADR-0123), read once at start. Off, a save, a patch or a reset keeps the saved choice. */
@@ -31,12 +34,14 @@ export class SettingsRepository {
   private readonly omarchyTheme: (() => OmarchyTheme | null) | undefined
   private readonly shellPillInUse: (() => boolean) | undefined
   private readonly workerRolesEnabled: boolean
+  private readonly workerSwarmsEnabled: boolean
   private readonly dictationHoldShortcutsEnabled: boolean
   private readonly interfaceLanguageEnabled: boolean
   private mutationTail: Promise<void> = Promise.resolve()
 
   constructor(filePath: string, options: SettingsRepositoryOptions = {}) {
     this.workerRolesEnabled = options.workerRolesEnabled ?? true
+    this.workerSwarmsEnabled = options.workerSwarmsEnabled ?? true
     this.dictationHoldShortcutsEnabled = options.dictationHoldShortcutsEnabled ?? true
     this.interfaceLanguageEnabled = options.interfaceLanguageEnabled ?? true
     this.omarchyTheme = options.omarchyTheme
@@ -76,8 +81,16 @@ export class SettingsRepository {
         throw new Error('Worker roles are available in Sotto Owl. Nothing was changed.')
       }
       if (!this.workerRolesEnabled) delete patchSnapshot.workerRoles
+      if (!this.workerSwarmsEnabled) {
+        if (patchSnapshot.workerCeiling !== undefined && patchSnapshot.workerCeiling !== current.workerCeiling
+          || patchSnapshot.workerMachineCeilings !== undefined && JSON.stringify(patchSnapshot.workerMachineCeilings) !== JSON.stringify(current.workerMachineCeilings)
+          || WORKER_KINDS.some(role => patchSnapshot.workerRoles?.[role]?.workers !== undefined
+            && JSON.stringify(patchSnapshot.workerRoles[role]!.workers) !== JSON.stringify(current.workerRoles[role]?.workers))) {
+          throw new Error('Worker swarms are available in Sotto Owl. Nothing was changed.')
+        }
+      }
       if (!this.interfaceLanguageEnabled) delete patchSnapshot.interfaceLanguage
-      const settings = this.parse({ ...current, ...patchSnapshot })
+      const settings = this.keepSwarms(this.parse({ ...current, ...patchSnapshot }), current)
       await this.writeSettings(settings)
       return this.project(settings)
     })
@@ -95,11 +108,26 @@ export class SettingsRepository {
 
   /** What a build without an Owl feature keeps as it was saved, whatever a whole save or a reset brings. */
   private async keepHeld(settings: AppSettings): Promise<AppSettings> {
-    if (this.workerRolesEnabled && this.dictationHoldShortcutsEnabled && this.interfaceLanguageEnabled) return settings
+    if (this.workerRolesEnabled && this.workerSwarmsEnabled && this.dictationHoldShortcutsEnabled && this.interfaceLanguageEnabled) return settings
     const saved = await this.readSettings()
-    return { ...settings, ...(this.workerRolesEnabled ? {} : { workerRoles: saved.workerRoles }),
+    return this.keepSwarms({ ...settings, ...(this.workerRolesEnabled ? {} : { workerRoles: saved.workerRoles }),
       ...(this.dictationHoldShortcutsEnabled ? {} : { pressShortcuts: saved.pressShortcuts, holdShortcuts: saved.holdShortcuts }),
-      ...(this.interfaceLanguageEnabled ? {} : { interfaceLanguage: saved.interfaceLanguage }) }
+      ...(this.interfaceLanguageEnabled ? {} : { interfaceLanguage: saved.interfaceLanguage }) }, saved)
+  }
+
+  private keepSwarms(settings: AppSettings, saved: AppSettings): AppSettings {
+    if (this.workerSwarmsEnabled) return settings
+    const workerRoles = { ...settings.workerRoles }
+    for (const role of WORKER_KINDS) {
+      const kept = saved.workerRoles[role], next = workerRoles[role]
+      if (kept?.workers) workerRoles[role] = { ...(next ?? kept), workers: kept.workers }
+      else if (next?.workers) {
+        const { workers: _workers, ...row } = next
+        void _workers
+        workerRoles[role] = row
+      }
+    }
+    return { ...settings, workerRoles, workerCeiling: saved.workerCeiling, workerMachineCeilings: saved.workerMachineCeilings }
   }
 
   async exists(): Promise<boolean> {

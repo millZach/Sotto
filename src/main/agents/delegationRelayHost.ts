@@ -3,6 +3,8 @@ import { hostname } from 'node:os'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { delegationWorkSchema, type DelegationNews, type DelegationWork } from '../../shared/delegation'
+import { hostEntityKey, parseHostEntityKey } from '../../shared/clientIdentity'
+import { swarmReceiptSchema } from '../../shared/workerSwarms'
 import type { DelegationNewsDetail } from './delegationNews'
 import { DELEGATION_RELAY_ANSWER_BYTES_MAX, DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_READ_MS, DELEGATION_RELAY_RECORDS_MAX,
   relayAwayWords, type DelegationRelayAsk, type RelayedReply } from '../../shared/delegationRelay'
@@ -38,6 +40,7 @@ export class RelayUnanswered extends Error {
 
 const id = z.string().min(1).max(512)
 const uuidSchema = z.uuid()
+const relayedSwarmReceiptSchema = swarmReceiptSchema.strip()
 const recordSchema = z.object({
   /** The ID the delegating thread knows it by: the desktop's delegation ID, or the host's `relayId` when the start's answer was lost. */
   id: z.uuid(), relayId: z.uuid(), delegatingThreadId: id, work: delegationWorkSchema,
@@ -45,10 +48,13 @@ const recordSchema = z.object({
   action: z.literal('send').optional(),
   /** The desktop's delegation ID, once its answer named one. */
   delegation: z.uuid().optional(),
+  swarmId: z.uuid().optional(),
   /** The delegated thread on the other machine, by that machine's Sotto thread ID, once the desktop named it. */
   thread: id.optional(),
   /** The machine it started on, as the desktop named it. */
   machine: z.string().min(1).max(200).optional(),
+  /** The target host qualifies angle thread IDs on later exact reads. */
+  hostId: z.uuid().optional(),
   outcome: watcherOutcomeSchema, told: watcherOutcomeSchema.optional(),
   /** The start's answer was lost, or a read could not reach the desktop: read it exactly once the desktop is back. */
   unread: z.literal(true).optional(),
@@ -258,10 +264,11 @@ export class HostDelegationRelay {
     const delegation = isObject(answer.delegation) ? answer.delegation : undefined
     if (answer.status !== 'ok' || !delegation || typeof delegation.id !== 'string') { this.forget(record); await this.persist(); return answer }
     // A retry with the same retry key reads the first call's delegation, which this machine already keeps.
-    if (this.records.some(item => item !== record && item.delegatingThreadId === callerId && item.delegation === delegation.id)) this.forget(record)
+    const previous = this.records.find(item => item !== record && item.delegatingThreadId === callerId && item.delegation === delegation.id)
+    if (previous) this.forget(record)
     else this.adopt(record, delegation, answer)
     await this.persist()
-    return answer
+    return this.asKnown(previous ?? record, answer)
   }
   /** An answered relayed delegation's reply for the wake-up that tells it, as the desktop sent it; none once worded or never sent. */
   detail(delegationId: string): DelegationNewsDetail | undefined {
@@ -296,7 +303,7 @@ export class HostDelegationRelay {
     const record = this.find(callerId, delegationId)!
     if (!record.delegation) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: `${LOST_CANCEL} Nothing was stopped.` }
     if (!this.reachable()) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: `${this.awayStop()} Nothing was stopped.` }
-    const answer = await this.cancelling(record, record.delegation)
+    const answer = await this.cancelling(record, record.swarmId ?? record.delegation)
     if (typeof answer === 'string') return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: LOST_CANCEL }
     await this.persist()
     return this.asKnown(record, answer)
@@ -331,7 +338,7 @@ export class HostDelegationRelay {
       if (seen.has(thread)) return
       seen.add(thread)
       const reachable = this.reachable()
-      const answer = record.delegation && reachable ? await this.cancelling(record, record.delegation) : undefined
+      const answer = record.delegation && reachable ? await this.cancelling(record, record.swarmId ?? record.delegation) : undefined
       if (typeof answer === 'object' && answer.status === 'ok') return
       // A cancel that never left this machine is as one never sent: its desktop was not there to take it.
       left.push({ machine: record.machine ?? 'This computer', ...record.thread ? { thread: record.thread } : {}, reason: reachable && answer !== 'unsent' ? 'unconfirmed' : 'away' })
@@ -434,7 +441,9 @@ export class HostDelegationRelay {
         if (saved.id === saved.relayId && !saved.unread && saved.told === undefined) saved.id = delegation.id
       }
       if (typeof delegation.thread === 'string' && id.safeParse(delegation.thread).success) saved.thread = delegation.thread
+      if (typeof answer.swarmId === 'string' && uuidSchema.safeParse(answer.swarmId).success) saved.swarmId = answer.swarmId
       if (typeof placement?.name === 'string' && placement.name.trim()) saved.machine = placement.name.trim().slice(0, 200)
+      if (typeof placement?.hostId === 'string' && uuidSchema.safeParse(placement.hostId).success) saved.hostId = placement.hostId
       saved.outcome = outcome.success ? outcome.data : 'unknown'
       // A call's own result tells the thread; a read after a reconnect does not, so what moved is sent as news.
       if (tells) saved.told = saved.outcome
@@ -443,14 +452,19 @@ export class HostDelegationRelay {
   }
   /** The desktop's answer, with the delegation named as this thread knows it. */
   private asKnown(record: RelayedRecord, answer: Record<string, unknown>): Record<string, unknown> {
-    return isObject(answer.delegation) ? { ...answer, delegation: { ...answer.delegation, id: record.id } } : answer
+    if (!isObject(answer.delegation)) return answer
+    const swarm = relayedSwarmReceiptSchema.safeParse(answer)
+    const threadKey = (value: string): string => record.hostId && !parseHostEntityKey(value) ? hostEntityKey(record.hostId, value) : value
+    return { ...answer, ...swarm.success ? { ...swarm.data, lead: { ...swarm.data.lead, thread: threadKey(swarm.data.lead.thread), delegation: record.id },
+      receipts: swarm.data.receipts.map(receipt => ({ ...receipt, ...receipt.thread ? { thread: threadKey(receipt.thread) } : {} })) } : {},
+    delegation: { ...answer.delegation, id: record.id } }
   }
   private lastRead(record: RelayedRecord): Record<string, unknown> {
     return { id: record.id, ...(record.thread ? { thread: record.thread } : {}), work: record.work, action: record.action ?? 'start', outcome: record.outcome, note: LAST_READ, createdAt: record.createdAt }
   }
   private awayStop(): string { return `This computer isn't connected to ${this.hereName()}, so Sotto could not stop this delegation there.` }
   private find(callerId: string, delegationId: string): RelayedRecord | undefined {
-    return this.records.find(record => record.delegatingThreadId === callerId && (record.id === delegationId || record.delegation === delegationId))
+    return this.records.find(record => record.delegatingThreadId === callerId && (record.id === delegationId || record.delegation === delegationId || record.swarmId === delegationId))
   }
   private update(record: RelayedRecord, change: (record: RelayedRecord) => void): void { change(record); record.updatedAt = now(); this.filed(record) }
   private forget(record: RelayedRecord): void {

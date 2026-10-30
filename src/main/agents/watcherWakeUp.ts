@@ -34,7 +34,7 @@ const TURN_ENDS: ReadonlySet<WatcherEvent['kind']> = new Set(['turn-finished', '
 /** How many hidden wake-ups in a row may miss Watcher before only news that needs it makes another (hiddenWakeUp.ts). */
 export const WAKE_UP_TRIES = 3
 
-interface Progress { fingerprint: string; connected: boolean; connectedAt: number; progressAt: number; quiet: boolean; links?: Set<string>; cancel?: () => void }
+interface Progress { swarm?: string; fingerprint: string; connected: boolean; connectedAt: number; progressAt: number; quiet: boolean; links?: Set<string>; cancel?: () => void }
 /**
  * Opaque progress only: no plan, message, tool input or output text crosses the host projection. A remote thread's cut
  * bodies count at their whole size, so output growing on its host is progress (ADR-0025, October 18 amendment).
@@ -43,7 +43,7 @@ export function watcherProgressFingerprint(thread: AgentThread): string {
   // The digest of JSON of [status, lastTurn, messages, activities, subagentSummary, backgroundWork, monitoring, requests],
   // put together from each part's JSON so a long history's records are not turned into JSON again on every pass (#1331).
   const head = `${json(thread.status)},${json(thread.lastTurn)},${json(thread.messages.map(message => [message.id, message.text.length]))}`
-  const tail = `${json(thread.subagentSummary)},${json(thread.backgroundWork?.map(work => [work.id, work.type]))},${json(thread.monitoring?.map(work => work.id))},${json(thread.requests.map(card => [card.id, card.kind]))}`
+  const tail = `${json(thread.subagentSummary)},${json(thread.backgroundWork?.map(work => [work.id, work.type]))},${json(thread.monitoring?.map(work => work.id))},${json(thread.requests.map(card => [card.id, card.kind]))},${json(thread.swarm)}`
   const activities = thread.activities, rest = `[${head},${tail}]`
   // A certified array is frozen to its last record and only ever replaced, so the same array with the same other facts
   // is the same fingerprint. Messages and the rest are read every time: they may change in place.
@@ -222,6 +222,7 @@ export interface WatcherWakeOptions {
   /** The Watcher record, read only: the record is replaced on every change and never edited, so it is not copied. */
   record: () => Readonly<WatcherRecord>
   progress?: (target: WatcherThreadTarget) => string | undefined
+  swarmPending?: (target: WatcherThreadTarget) => boolean
   /**
    * Which hosts report their threads' background work counts, read once per pass: the answer it returns is asked for each
    * host. Absent means every host does; one that does not reads as unknown.
@@ -717,6 +718,10 @@ export class WatcherWakeUp {
     })
     this.tell([event])
   }
+  /** Swarm changes are one piece of news about the watched lead, never one wake-up per angle. */
+  swarmProgress(target: WatcherThreadTarget, swarm: NonNullable<WatcherEvent['swarm']>): void {
+    this.event('swarm-progress', target, [swarm.id, swarm.done, swarm.failed, swarm.queued], { swarm })
+  }
   /** News made outside a pass, which needs Watcher by itself: it waits in the ordinary batch with whatever else came. */
   private tell(events: readonly WatcherEvent[]): void {
     for (const event of events) this.seen.add(event.id)
@@ -730,6 +735,7 @@ export class WatcherWakeUp {
   /** `key` is the target's key, when the caller has it already. */
   private event(kind: WatcherEvent['kind'], target: WatcherThreadTarget, identity: unknown, extra: Partial<WatcherEvent> = {}, key = targetKey(target)): void {
     if (!this.started || this.closed) return
+    if ((kind === 'turn-finished' || kind === 'work-settled') && this.options.swarmPending?.(target)) return
     // A thread a watched thread delegated to is that thread's to watch: its news reaches Watcher through it (#1190).
     if (this.delegatedOwner.has(key)) return
     const matching = this.workerIndex(kind === 'taken-over').byTarget.get(key) ?? []
@@ -1143,6 +1149,11 @@ export class WatcherWakeUp {
       const attention = told ? this.evidence.attention(target) : undefined
       const changedEvidence = this.evidence.observeThread(thread, target, stamp)
       if (told) {
+        const swarm = thread.swarm
+        if (swarm?.leadThreadId === thread.id) {
+          const revision = `${swarm.id}:${swarm.done}:${swarm.failed}:${swarm.queued}`
+          if (progress.swarm !== revision) { progress.swarm = revision; this.swarmProgress(target, swarm) }
+        }
         const turn = thread.lastTurn, finished = finishedTurn(thread)
         const ends = () => this.pending.filter(event => event.target.hostId === target.hostId && event.target.threadId === target.threadId && TURN_ENDS.has(event.kind)).map(event => event.id)
         const endsBefore = new Set(ends())
@@ -1480,6 +1491,8 @@ export class WatcherWakeUp {
     if (!snapshot.hostId) return true
     const thread = this.thread(snapshot, event.target)
     if (!thread || isThreadArchived(thread) || !standing && (isThreadClosed(thread) || isWorkspaceThreadSettled(thread, this.project(snapshot, thread)))) return false
+    if ((event.kind === 'turn-finished' || event.kind === 'work-settled') && this.options.swarmPending?.(event.target)) return false
+    if (event.kind === 'swarm-progress') return true
     if (event.kind === 'delivery-changed') {
       const operation = record.operations.find(item => item.id === event.operationId)
       return !!operation && receiptNeedsWatcher(operation) && event.revision === receiptRevision(operation) && this.toldReceipts.get(operation.id) !== event.revision

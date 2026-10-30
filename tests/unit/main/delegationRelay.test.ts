@@ -39,6 +39,32 @@ function desktop(relay: HostDelegationRelay, answer?: (ask: DelegationRelayAsk) 
 const startAsk = { levels: 0, rootUserMessageId: 'root-1', runtimeMode: 'auto' as const, projectId: 'project-a', machine: DESKTOP, input: { work: 'code-review', brief: 'Review it.' }, waitMs: 1_000 }
 
 describe('the host side of the relay', () => {
+  it('keeps swarm receipts through the relay, including target keys after a restart', async () => {
+    const root = await folder(), relay = new HostDelegationRelay(root)
+    const swarm = { swarmId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', lead: { thread: 'lead', delegation: DELEGATION },
+      receipts: [{ index: 0, state: 'working', thread: 'angle-1' }, { index: 1, state: 'queued', thread: `host:${MAC}:angle-2` }],
+      queued: 1, done: 0, failed: 0, role: { usual: 1, upTo: 4 }, costShape: { angles: 2, lead: 1, effort: 'high' }, note: 'One angle waits.' }
+    const calls: DelegationRelayAsk[] = []
+    const answer = (ask: DelegationRelayAsk) => {
+      calls.push(ask)
+      return { status: 'ok', delegation: { id: DELEGATION, thread: 'lead', outcome: 'background' },
+        ...swarm, ...(ask.type === 'start' ? { placement: { hostId: MAC, name: 'Mac' } } : { done: 2, queued: 0 }) }
+    }
+    relay.desktopConnected(desktop(relay, answer).handle)
+    expect(await relay.start('thread-a', 'code-review', { ...startAsk, input: { ...startAsk.input, count: 2 } }))
+      .toMatchObject({ lead: { thread: `host:${MAC}:lead`, delegation: DELEGATION },
+        receipts: [{ thread: `host:${MAC}:angle-1` }, { thread: `host:${MAC}:angle-2` }], queued: 1 })
+    const again = new HostDelegationRelay(root)
+    await again.load()
+    again.desktopConnected(desktop(again, answer).handle)
+    expect(again.holds('thread-b', swarm.swarmId)).toBe(false)
+    expect(await again.read('thread-a', swarm.swarmId)).toMatchObject({ lead: { thread: `host:${MAC}:lead`, delegation: DELEGATION },
+      receipts: [{ thread: `host:${MAC}:angle-1` }, { thread: `host:${MAC}:angle-2` }], queued: 0, done: 2 })
+    await again.cancel('thread-a', swarm.swarmId)
+    expect(calls.at(-1)).toMatchObject({ type: 'cancel', delegation: swarm.swarmId })
+    relay.close(); again.close()
+  })
+
   it('refuses by name while no desktop relays, and keeps nothing', async () => {
     const relay = new HostDelegationRelay(await folder(), { here: () => 'forge' })
     await relay.load()

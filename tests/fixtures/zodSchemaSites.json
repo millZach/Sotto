@@ -47,12 +47,6 @@
       "reason": "Built once when the adapter is constructed at start, for its stores' parsers."
     }
   },
-  "src/main/agents/delegationTools.ts": {
-    "delegationToolDefinitions": {
-      "count": 1,
-      "reason": "Builds the delegate tool's input schema for the roles, machines and place it is given; runs once at module load and once when the delegation tool server is constructed at start."
-    }
-  },
   "src/main/agents/devin.ts": {
     "DevinAcpHost.constructor": {
       "count": 2,

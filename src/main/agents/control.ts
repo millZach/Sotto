@@ -2059,8 +2059,15 @@ export class AgentControl {
     return state
   }
   /** A thread as the shell lists it: its summary in place of its history. */
+  private swarmView?: (threadId: string) => AgentThread['swarm']
+  useSwarms(read: (threadId: string) => AgentThread['swarm']): void { this.swarmView = read }
+  swarmsChanged(threadIds: readonly string[]): void {
+    for (const id of threadIds) { this.broadcastRecords.delete(id); this.marksMoved.add(id) }
+    this.publish()
+  }
   private shellThread(thread: AgentThread, messages: AgentMessage[], activities: AgentActivity[]): AgentThread {
-    return { ...thread, messages, ...(thread.activities === undefined ? {} : { activities }), summary: this.presentedSummary(thread) }
+    const swarm = this.swarmView?.(thread.id)
+    return { ...thread, ...swarm ? { swarm } : {}, messages, ...(thread.activities === undefined ? {} : { activities }), summary: this.presentedSummary(thread) }
   }
   /** The non-thread part of the last broadcast's shell, frozen, which the next one is read against. */
   private broadcastBase: AgentState | undefined

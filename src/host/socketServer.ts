@@ -323,6 +323,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Host facts are for a desktop placing work (#1031): a headless host offers them on both listeners, to desktops only,
     // and the desktop's own phone listener, which serves no desktop, never does.
     && (feature !== 'host-facts' || service.supportsHostFacts === true && service.hostFacts !== undefined && (options.admin !== false || options.tailnet !== undefined))
+    && (feature !== 'worker-swarms' || service.supportsWorkerSwarms === true && service.supportsHostFacts === true && options.watcherDesktops !== undefined && (options.admin !== false || options.tailnet !== undefined))
     // Project origins are for a desktop placing work (#1032), as host facts are, and only where the host's Owl answer
     // turns on Work across machines.
     && (feature !== 'project-origins' || service.supportsProjectOrigins === true && service.projectOrigins !== undefined && (options.admin !== false || options.tailnet !== undefined))
@@ -471,7 +472,15 @@ export async function startSocketServer(options: SocketServerOptions) {
   /** What this peer may not be sent (#1107): the providers it does not know, and their threads and projects as the host holds them. */
   const scopeOf = (peer: Peer): ProviderScope => ({ providers: peer.unknownProviders, thread: id => unknownProviderThread(peer, id), project: id => unknownProviderProject(peer, id) })
   /** A Watcher answer, projection, or phone state as this peer may be sent it: without a row of a provider it does not know. */
-  const watcherFor = <T>(peer: Peer, value: T): T => peer.unknownProviders.size ? readWithoutProviders(value, scopeOf(peer)) : value
+  const watcherFor = <T>(peer: Peer, value: T): T => {
+    const scoped = peer.unknownProviders.size ? readWithoutProviders(value, scopeOf(peer)) : value
+    if (offers(peer, 'worker-swarms') || scoped === null || typeof scoped !== 'object'
+      || !('swarm' in scoped || 'queue' in scoped || 'action' in scoped && 'effectiveChoices' in scoped)) return scoped
+    const result = { ...scoped } as Record<string, unknown>
+    delete result.swarm; delete result.queue
+    if ('action' in result) delete result.effectiveChoices
+    return result as T
+  }
   /** Watcher's phone page with the machines line, for a phone that accepted `watcher-phone-machines` (#1032). */
   const withMachines = <T extends object>(peer: Peer, page: T): T => peer.watcherPhoneMachines && service.watcherPhone ? { ...page, machines: service.watcherPhone.machines() } : page
   /** A phone answer carrying a page, with the machines line on its page for a phone that accepted it. */
@@ -1052,6 +1061,9 @@ export async function startSocketServer(options: SocketServerOptions) {
       guard()
       // A read or a direction of a thread, project or model this desktop does not know is refused before it runs (#1107).
       refuseHiddenWatcherInput(peer, request.op === 'watcher-control' ? request.request.call.input : request.request.call?.input)
+      if (request.op === 'watcher-control' && request.request.call.name === 'start_thread'
+        && (request.request.call.input.count !== undefined || request.request.call.input.prompts !== undefined)
+        && !offers(peer, 'worker-swarms')) throw new Refusal('invalid_request')
       if (request.op === 'watcher-control') return watcherFor(peer, await service.watcherControl!(request.request, peer.client, guard, () => options.mayAnswer?.(peer.client) ?? false))
       if (request.request.standingWatches !== undefined && !offers(peer, 'watcher-standing-watch')) throw new Refusal('invalid_request')
       if (request.request.adopt !== undefined && !offers(peer, 'watcher-new-owner')) throw new Refusal('invalid_request')
@@ -1403,9 +1415,14 @@ export async function startSocketServer(options: SocketServerOptions) {
         const read = await toolRead(() => service.threadDelegations!(request.threadId))
         return { ...read, threads: read.threads.filter(row => !hiddenThread(peer, row.thread) && !hiddenThread(peer, row.by)) }
       }
-      case 'host-facts':
+      case 'host-facts': {
         if (!offers(peer, 'host-facts') || !service.hostFacts) throw new Refusal('invalid_request')
-        try { return hostMachineReportSchema.parse(await service.hostFacts()) } catch { throw new Refusal('unavailable') }
+        try {
+          const report = hostMachineReportSchema.parse(await service.hostFacts())
+          if (!offers(peer, 'worker-swarms')) { delete report.workerCeiling; delete report.workerQueued }
+          return report
+        } catch { throw new Refusal('unavailable') }
+      }
       case 'project-origins': {
         if (!offers(peer, 'project-origins') || !service.projectOrigins) throw new Refusal('invalid_request')
         let read: ProjectOrigins
@@ -1438,6 +1455,7 @@ export async function startSocketServer(options: SocketServerOptions) {
         // A recorded desktop's new-thread default and worker roles (#1310): settings, never a grant. Whether they may be used
         // as sent is this host's `remote-answer` policy for that desktop, read at every delegated start.
         if (!offers(peer, 'host-delegation') || !service.desktopDefaults) throw new Refusal('invalid_request')
+        if (request.defaults.workerCeiling !== undefined && !offers(peer, 'worker-swarms')) throw new Refusal('invalid_request')
         try { return desktopDefaultsReceiptSchema.parse(await service.desktopDefaults(request.defaults, peer.client)) } catch { throw new Refusal('unavailable') }
       }
       case 'delegation-relay-answer': {

@@ -36,6 +36,10 @@ import { WatcherToolServer } from './watcherTools'
 import { DelegationService } from './delegation'
 import { homedir, hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
+import { WorkerAdmission } from './workerAdmission'
+import { workerMachineCeiling } from '../../shared/workerMachine'
+import { THIS_COMPUTER } from '../../shared/workingThreads'
+import { isThreadTurnRunning } from '../../shared/threadActivity'
 import type { PackageInstaller } from './checkWorktree'
 import { ContinueService } from './continueThread'
 import { holdUnfinishedMoves, ThreadMoveService } from './threadMoves'
@@ -105,6 +109,7 @@ export interface AgentRuntimeOptions {
   delegationEnabled?: boolean
   /** The Owl list's answer for worker roles (#1041), read once by the process owner. Absent fails closed. */
   workerRolesEnabled?: boolean
+  workerSwarmsEnabled?: boolean
   /** The Owl list's answer for continuing a thread on another provider (ADR-0089), read once by the process owner. Absent fails closed. */
   continueEnabled?: boolean
   /** The Owl list's answer for continuing an agent as its own thread and forking at a reply (#1028), read once. Absent fails closed. */
@@ -144,6 +149,8 @@ export interface AgentRuntimeOptions {
    * delegation's kind of work starts on the desktop's roles.
    */
   hostDelegation?: { counts(clientId: string): boolean; roles: boolean; revoked?(clientId: string): boolean
+    /** A paired, recorded desktop may narrow capacity even when it cannot answer permission requests. */
+    capacityEligible?(clientId: string): boolean
     /** The desktop relay (#1316): a thread here delegates to other machines through a desktop that relays, while one is connected. */
     relay?: HostDelegationRelay
     /** A desktop's delegations here for threads on other machines (#1316 part 2), admitted as this host's own threads' are. */
@@ -243,8 +250,9 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   void facts.read().then(() => crossMachine ? facts.primeLoad() : undefined).catch(() => undefined)
   // Its threads and sends are read in place, after the load, as the report is answered, with Watcher's starts still on
   // their way to a thread here.
-  const machineFacts = (): Promise<HostMachineReport> => hostMachineReport(facts, (): MachineWork => ({ threads: agentControl.watcherSnapshot().threads, ...agentControl.watcherSendRecords(),
-    ...crossMachine && watcher ? { startsNotYetSent: watcher.startsNotYetSent() } : {} }), crossMachine)
+  const machineFacts = async (): Promise<HostMachineReport> => ({ ...await hostMachineReport(facts, (): MachineWork => ({ threads: agentControl.watcherSnapshot().threads, ...agentControl.watcherSendRecords(),
+    ...crossMachine && watcher ? { startsNotYetSent: watcher.startsNotYetSent() } : {} }), crossMachine),
+    ...workerAdmission ? { workerCeiling: workerAdmission.ceiling(THIS_COMPUTER), workerQueued: workerAdmission.waiting(THIS_COMPUTER) } : {} })
   const threadRegistry = options.host ? null : new ThreadRegistry(directory)
   // Restarting stopped threads (ADR-0144): the adapters that can tell a usage limit report it on the failed turn, only with it on.
   const restartStopped = options.restartStoppedThreads === true
@@ -421,6 +429,20 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const relayed = options.runsAs === 'headless-host' ? options.hostDelegation?.relay : undefined
   const checks = crossMachine ? new CheckQueue(options.runsAs !== 'headless-host' ? 'This computer'
     : () => relayed?.hereName() ?? (hostname().trim().slice(0, 64) || 'this machine')) : undefined
+  const workerCeiling = (machine: string): number => {
+    const local = machine === THIS_COMPUTER || machine === agentControl.hostId()
+    const own = workerMachineCeiling(options.settings(), local ? THIS_COMPUTER : machine)
+    return local && desktopDefaults && hostDelegation ? Math.min(own, desktopDefaults.workerCeiling(hostDelegation.capacityEligible ?? hostDelegation.counts)) : own
+  }
+  const workerAdmission = options.workerSwarmsEnabled ? new WorkerAdmission({
+    ceiling: workerCeiling,
+    working: machine => {
+      const threads = machine === THIS_COMPUTER || machine === agentControl.hostId()
+        ? agentControl.watcherSnapshot().threads : moving.watcher?.machineThreads(machine) ?? []
+      return new Set(threads.filter(thread => thread.kind !== 'watcher' && thread.kind !== 'watcher-history' && isThreadTurnRunning(thread)).map(thread => thread.id))
+    },
+  }) : undefined
+  const admissionOff = workerAdmission ? agentControl.subscribe(() => workerAdmission.refresh()) : undefined
   // A machine with no copy of a start's project gets one (#1690): This computer's set up by the desktop, a host's by the
   // host, each through its own coordinator. Sotto's own data folder, where Watcher works, never says where projects go.
   const projectCopies = crossMachine ? new ProjectCopies({ projects: () => agentControl.watcherSnapshot().projects, projectsDirectory: () => agentControl.projectsDirectory(),
@@ -434,6 +456,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine, ...options.clockTime ? { clockTime: options.clockTime } : {},
       settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens, ...options.watcherLog ? { log: options.watcherLog } : {},
       ...roles, ...placing,
+      ...workerAdmission ? { swarms: { admission: workerAdmission, service: () => delegation,
+        ceiling: workerCeiling } } : {},
       // The desktop's Watcher queues checks where it moves branches; a host's, for the desktop's starts marked as checks.
       ...checks && ('branchMoves' in placing || options.runsAs === 'headless-host') ? { checks } : {} }) : undefined
   if (options.delegationEnabled === true && options.runsAs !== 'headless-host') {
@@ -454,6 +478,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     }
     const relaying = delegationRelay, remote = delegationRemote
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
+      ...workerAdmission ? { swarms: { admission: workerAdmission, changed: swarm => {
+        const ids = [swarm.leadThreadId, ...swarm.members.map(member => member.threadId)].filter((id): id is string => id !== undefined)
+        agentControl.swarmsChanged(ids)
+        if (swarm.leadThreadId) {
+          const row = delegation?.swarmForThread(swarm.leadThreadId)
+          const hostId = agentControl.hostId()
+          if (row && hostId) watcher?.wakes.swarmProgress({ hostId, threadId: swarm.leadThreadId }, row)
+        }
+      } } } : {},
       tool: threadId => babysitTool(threadId), ...roles,
       ...placingWatcher ? { machines: { list: () => placingWatcher.machines(), place: (ask, project, setting) => placingWatcher.placement(ask, project, setting),
         name: hostId => placingWatcher.machineName(hostId), setting: () => options.settings().newWorkerMachine } } : {},
@@ -472,6 +505,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     // own stored defaults; the four-prompt budget and the warning above ten are this machine's.
     const defaults = desktopDefaults
     delegation = new DelegationService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled,
+      ...workerAdmission ? { swarms: { admission: workerAdmission, changed: swarm => {
+        const ids = [swarm.leadThreadId, ...swarm.members.map(member => member.threadId)].filter((id): id is string => id !== undefined)
+        agentControl.swarmsChanged(ids)
+        if (swarm.leadThreadId) {
+          const row = delegation?.swarmForThread(swarm.leadThreadId)
+          const hostId = agentControl.hostId()
+          if (row && hostId) watcher?.wakes.swarmProgress({ hostId, threadId: swarm.leadThreadId }, row)
+        }
+      } } } : {},
       newThreadCeiling: () => defaults.ceiling(clientId => hostDelegation.counts(clientId), clientId => hostDelegation.revoked?.(clientId) === true),
       ...hostDelegation.roles ? { roles: () => defaults.roles(clientId => hostDelegation.counts(clientId)) } : {},
       warning: count => machineWorkingThreadsWarning(count, 'this machine'),
@@ -481,8 +523,17 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       ...hostDelegation.relay ? { relay: hostDelegation.relay } : {},
       // A thread on another machine that delegates here through the desktop (#1316 part 2) is admitted as one of this host's own.
       ...hostDelegation.remote ? { relayedCallers: hostDelegation.remote, hereName: () => relayed?.hereName() ?? (hostname().trim().slice(0, 64) || 'this machine') } : {},
-      machines: hostDelegationMachines(() => agentControl.hostId(), facts, () => agentControl.watcherSnapshot().threads, hostDelegation.relay) })
+      machines: hostDelegationMachines(() => agentControl.hostId(), facts, () => agentControl.watcherSnapshot().threads, hostDelegation.relay,
+        workerAdmission ? () => ({ workerCeiling: workerAdmission.ceiling(THIS_COMPUTER), workerQueued: workerAdmission.waiting(THIS_COMPUTER) }) : undefined) })
   }
+  if (workerAdmission && delegation) agentHost.useSwarmSettlements(id => delegation?.canSettle(id) ?? true)
+  if (workerAdmission && delegation) agentControl.useSwarms(id => {
+    const row = delegation?.swarmForThread(id)
+    if (!row) return undefined
+    const { threadId: _threadId, ...view } = row
+    void _threadId
+    return view
+  })
   if (delegation && hostDelegation?.remote) hostDelegation.remote.useDelegation(delegation)
   // A cleared thread's finished delegations and links go with it (ADR-0140 decision 4), on the desktop and on a host alike.
   if (delegation) {
@@ -507,7 +558,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (threadMoves) agentControl.onThreadsDeleted(threadIds => { threadMoves.forgetThreads(new Set(threadIds)) })
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
-    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired }); agentHost.useWatcherTools(watcherTools) }
+    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired, swarms: options.workerSwarmsEnabled === true }); agentHost.useWatcherTools(watcherTools) }
   }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's
@@ -657,6 +708,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   }
   let closing: Promise<void> | undefined
   const close = (): Promise<void> => {
+    admissionOff?.(); workerAdmission?.close()
     closing ??= (async () => {
       // A sweep in progress finishes its current worktree, and takes no other, before the host it asks is closed.
       // A babysitting pass finishes the pull request it is on, and records what it told, the same way.
@@ -705,10 +757,15 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (delegation) await delegation.recover()
   const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
+    ...workerAdmission ? { workerSwarms: true } : {},
     ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
     ...(projectCopies ? { setUpProject: (request: ProjectSetupRequest) => projectCopies.setUp(request) } : {}),
     // A headless host that runs delegation for its own threads keeps the desktop defaults a desktop sends it (#1310).
-    ...(desktopDefaults ? { desktopDefaults } : {}),
+    ...(desktopDefaults ? { desktopDefaults: { record: async (clientId, defaults) => {
+      const receipt = await desktopDefaults.record(clientId, defaults)
+      workerAdmission?.refresh()
+      return receipt
+    } } } : {}),
     // And answers the desktop window's read of those threads' delegations, for its Tools › Agents and rows of delegated work (#1310).
     ...(desktopDefaults && delegationRecord ? { delegationViews: delegationRecord } : {}),
     // And sends its own check queue to those desktops' windows, for the machine's panel and Tools › Agents (#1312).
@@ -748,5 +805,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
 }

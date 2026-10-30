@@ -20,6 +20,20 @@ export const workerRoleIdSchema = z.enum(WORKER_ROLE_IDS)
 export type WorkerKind = z.infer<typeof workerKindSchema>
 export type WorkerRoleId = z.infer<typeof workerRoleIdSchema>
 
+/** Angle workers, excluding the lead. A request's own count may exceed the role's automatic range. */
+export const workerCountSchema = z.object({
+  usual: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  upTo: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+}).strict().refine(value => value.usual <= value.upTo, { message: 'Usual must not exceed Up to.', path: ['usual'] })
+export type WorkerCount = z.infer<typeof workerCountSchema>
+export const WORKER_COUNTS: Readonly<Record<WorkerKind, WorkerCount>> = {
+  research: { usual: 1, upTo: 8 },
+  'code-review': { usual: 1, upTo: 4 },
+  building: { usual: 1, upTo: 2 },
+  ui: { usual: 1, upTo: 2 },
+  'computer-use': { usual: 1, upTo: 1 },
+}
+
 /**
  * A row as the user chose it. The whole row counts as their choice once any of its three settings changed, and it stays
  * until they reset it. Orchestrating saves no permission: Watcher's permission is its own, chosen in its room.
@@ -28,10 +42,17 @@ export const workerRoleChoiceSchema = z.object({
   modelId: z.string().min(1).max(512),
   reasoningEffort: z.string().min(1).max(64).nullable(),
   runtimeMode: agentRuntimeModeSchema.optional(),
+  // A damaged count never throws away the row's model, effort or permission.
+  workers: workerCountSchema.optional().catch(undefined),
 }).strict()
 export type WorkerRoleChoice = z.infer<typeof workerRoleChoiceSchema>
 export const workerRoleChoicesSchema = z.partialRecord(workerRoleIdSchema, workerRoleChoiceSchema)
 export type WorkerRoleChoices = z.infer<typeof workerRoleChoicesSchema>
+
+/** Counts survive a provider disconnect: they belong to the role, not its available model. */
+export function workerCounts(role: WorkerKind, choices: WorkerRoleChoices): WorkerCount {
+  return choices[role]?.workers ?? WORKER_COUNTS[role]
+}
 
 /** Read leniently, one row at a time, so a damaged or retired row costs the user only that row. */
 export function parseWorkerRoleChoices(input: unknown): WorkerRoleChoices {
@@ -40,8 +61,9 @@ export function parseWorkerRoleChoices(input: unknown): WorkerRoleChoices {
   for (const [key, value] of Object.entries(input)) {
     const role = workerRoleIdSchema.safeParse(key), choice = workerRoleChoiceSchema.safeParse(value)
     if (!role.success || !choice.success) continue
-    const { runtimeMode, ...rest } = choice.data
-    choices[role.data] = role.data === 'orchestrating' || runtimeMode === undefined ? rest : { ...rest, runtimeMode }
+    const { runtimeMode, workers, ...rest } = choice.data
+    choices[role.data] = role.data === 'orchestrating' ? rest
+      : { ...rest, ...runtimeMode === undefined ? {} : { runtimeMode }, ...workers === undefined ? {} : { workers } }
   }
   return choices
 }
@@ -235,7 +257,10 @@ export function roleInForce(id: WorkerRoleId, choices: WorkerRoleChoices, models
 export function isRoleDefault(id: WorkerRoleId, row: WorkerRoleChoice, models: readonly AgentModel[]): boolean {
   const fallback = roleDefaultInForce(id, models)
   if (!fallback || row.modelId !== fallback.model.id || (row.reasoningEffort ?? null) !== fallback.reasoningEffort) return false
-  return id === 'orchestrating' || (row.runtimeMode ?? workerRole(id).permission) === (fallback.runtimeMode ?? workerRole(id).permission)
+  if (id === 'orchestrating') return true
+  const counts = row.workers ?? WORKER_COUNTS[id], defaults = WORKER_COUNTS[id]
+  return counts.usual === defaults.usual && counts.upTo === defaults.upTo
+    && (row.runtimeMode ?? workerRole(id).permission) === (fallback.runtimeMode ?? workerRole(id).permission)
 }
 
 /**

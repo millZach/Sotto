@@ -6,6 +6,7 @@ import { createVividThemeColors } from '../../../src/shared/themes/engine'
 import { parseThemeFile } from '../../../src/shared/themes/library'
 import { MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES } from '../../../src/shared/menuBarOwl'
 import { WATCHER_SCENES } from '../../../src/shared/watcherScene'
+import { workerMachineCeiling } from '../../../src/shared/workerMachine'
 import {
   dictationOn,
   APPEARANCES,
@@ -49,6 +50,8 @@ const customSettings = {
   resumeThreadsAfterRestart: false,
   restartStoppedThreads: false,
   workerRoles: { building: { modelId: 'native:claude:model:sonnet', reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } },
+  workerCeiling: 10,
+  workerMachineCeilings: {},
   watcherSettlesFinishedThreads: false,
   newWorkerMachine: '0f6c2a8e-4d3b-4b1a-9c7e-2f5d8a1b3c4d',
   watcherCompactAtTokens: 650_000,
@@ -128,6 +131,19 @@ const customSettings = {
 } satisfies AppSettings
 
 describe('settings', () => {
+  it('keeps worker ceilings with per-machine overrides and defaults older settings to ten', () => {
+    const forge = '0f6c2a8e-4d3b-4b1a-9c7e-2f5d8a1b3c4d'
+    expect(parseSettings({})).toMatchObject({ workerCeiling: 10, workerMachineCeilings: {} })
+    const chosen = parseSettings({ workerCeiling: 6, workerMachineCeilings: { [forge]: 3, 'this-computer': 4 },
+      workerRoles: { research: { modelId: 'chosen', reasoningEffort: 'high', workers: { usual: 2, upTo: 8 } } } })
+    expect(workerMachineCeiling(chosen)).toBe(4)
+    expect(workerMachineCeiling(chosen, forge)).toBe(3)
+    expect(workerMachineCeiling(chosen, '22222222-2222-4222-8222-222222222222')).toBe(6)
+    expect(parseSettings(JSON.parse(JSON.stringify(chosen)))).toEqual(chosen)
+    for (const unusable of [0, -1, 2.5, '6']) expect(parseSettings({ workerCeiling: unusable }).workerCeiling).toBe(10)
+    expect(settingsSchema.shape.workerMachineCeilings.safeParse({ forge: 4 }).success).toBe(false)
+  })
+
   it('counts time saved against 40 words a minute for older profiles, keeps a chosen typing speed, and refuses one out of bounds', () => {
     expect(parseSettings({}).typingSpeedWpm).toBe(40)
     expect(parseSettings({ typingSpeedWpm: 72 }).typingSpeedWpm).toBe(72)
@@ -415,6 +431,8 @@ describe('settings', () => {
     expect(SETTINGS_VERSION).toBe(1)
     expect(DEFAULT_SETTINGS).toEqual({
       workerRoles: {},
+      workerCeiling: 10,
+      workerMachineCeilings: {},
       watcherSettlesFinishedThreads: true,
       newWorkerMachine: 'this-computer',
       watcherCompactAtTokens: 400_000,

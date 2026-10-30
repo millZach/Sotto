@@ -8,6 +8,7 @@ import { delegationWorkSchema, type DelegationNews, type DelegationWork } from '
 import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_READ_MS, DELEGATION_RELAY_RECORDS_MAX, type DelegationRemoteAsk, type RelayedReply, type RemoteLandedBranch } from '../../shared/delegationRelay'
 import { watcherOutcomeSchema, type WatcherOutcome } from '../../shared/watcher'
 import type { WorkerPlacementReceipt } from '../../shared/workerMachine'
+import { swarmReceiptSchema } from '../../shared/workerSwarms'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { RelayUnanswered, type StopLeft } from './delegationRelayHost'
 import type { DelegationNewsDetail } from './delegationNews'
@@ -50,6 +51,7 @@ export interface RemoteAsk {
 const id = z.string().min(1).max(512)
 /** Built once: a delegation ID a host's answer names is checked on every answer (zodSchemaSites). */
 const uuidSchema = z.uuid()
+const remoteSwarmReceiptSchema = swarmReceiptSchema.strip()
 const recordSchema = z.object({
   /** The ID the delegating thread knows it by: this computer's own, given before the host was asked. */
   id: z.uuid(), hostId: z.uuid(), callerId: id, action: z.enum(['start', 'send']), work: delegationWorkSchema,
@@ -59,6 +61,7 @@ const recordSchema = z.object({
   callerRetryKey: z.uuid().optional(),
   /** The host's delegation ID, once its answer named one. */
   delegation: z.uuid().optional(),
+  swarmId: z.uuid().optional(),
   /** The delegated thread, by the host's own thread ID, once the host named it. */
   thread: id.optional(),
   /** The machine it went to, by the name this computer saved for it. */
@@ -141,6 +144,7 @@ export class DesktopRemoteDelegations {
   private readonly byCaller = new Map<string, RemoteRecord[]>()
   /** By host and the host's own delegation ID: what its news names. */
   private readonly byTarget = new Map<string, RemoteRecord>()
+  private readonly bySwarm = new Map<string, RemoteRecord>()
   /** The first delegation to each thread, by caller, host and the host's thread ID: where a second brief goes. */
   private readonly byThread = new Map<string, RemoteRecord>()
   private readonly byRetry = new Map<string, RemoteRecord>()
@@ -339,7 +343,7 @@ export class DesktopRemoteDelegations {
       this.forget(record); this.release(record); await this.persist()
       return isObject(answer) ? this.asKnown(record, answer) : { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: `${capital(this.name(record))} could not start this delegation. Nothing was started.` }
     }
-    this.adopt(record, delegation)
+    this.adopt(record, delegation, true, answer.swarmId)
     await this.persist()
     // A call that waits for the outcome hears it from the host's news, then reads it exactly, the reply included.
     // News may have moved it already, while the start was being saved: then it is read at once, without waiting.
@@ -383,7 +387,7 @@ export class DesktopRemoteDelegations {
     const connection = this.connection(record.hostId)
     if (!connection) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: REMOTE_CANCEL_AWAY(this.name(record)) }
     if (!record.delegation) return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: `${REMOTE_LOST_CANCEL(this.name(record))} Nothing was stopped.` }
-    const answer = await this.cancelling(record, record.delegation, connection)
+    const answer = await this.cancelling(record, record.swarmId ?? record.delegation, connection)
     if (typeof answer === 'string') return { status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: REMOTE_LOST_CANCEL(this.name(record)) }
     await this.persist()
     return this.asKnown(record, answer)
@@ -421,7 +425,7 @@ export class DesktopRemoteDelegations {
       if (seen.has(thread)) return
       seen.add(thread)
       const connection = this.connection(record.hostId)
-      const answer = record.delegation && connection ? await this.cancelling(record, record.delegation, connection) : undefined
+      const answer = record.delegation && connection ? await this.cancelling(record, record.swarmId ?? record.delegation, connection) : undefined
       if (typeof answer === 'object' && answer.status === 'ok') return
       // A cancel that never left this computer is as one never sent: its host was not there to take it.
       left.push({ machine: this.name(record), hostId: record.hostId, ...record.thread ? { thread: record.thread } : {}, reason: connection && answer !== 'unsent' ? 'unconfirmed' : 'away' })
@@ -521,7 +525,7 @@ export class DesktopRemoteDelegations {
     const delegation = isObject(answer.delegation) ? answer.delegation : undefined
     const outcome = watcherOutcomeSchema.safeParse(delegation?.outcome)
     if (answer.status === 'ok' && delegation && outcome.success) {
-      this.adopt(record, delegation, tells)
+      this.adopt(record, delegation, tells, answer.swarmId)
       const reply = isObject(delegation.reply) ? delegation.reply : undefined
       if (outcome.data === 'answered' && reply && typeof reply.messageId === 'string' && typeof reply.text === 'string')
         this.keepReply(record.id, { messageId: reply.messageId, text: reply.text, truncated: reply.truncated === true })
@@ -549,9 +553,10 @@ export class DesktopRemoteDelegations {
     timer.unref?.()
     this.rereads.set(hostId, timer)
   }
-  private adopt(record: RemoteRecord, delegation: Record<string, unknown>, tells = true): void {
+  private adopt(record: RemoteRecord, delegation: Record<string, unknown>, tells = true, swarmId?: unknown): void {
     const outcome = watcherOutcomeSchema.safeParse(delegation.outcome)
     this.update(record, saved => {
+      if (typeof swarmId === 'string' && uuidSchema.safeParse(swarmId).success) saved.swarmId = swarmId
       // Named by the host, the delegation owns the branch landed for it there, and the host lets go of it if its start fails.
       if (typeof delegation.id === 'string' && uuidSchema.safeParse(delegation.id).success) { saved.delegation = delegation.id; delete saved.moveId; delete saved.reservation; this.release(saved) }
       if (typeof delegation.thread === 'string' && id.safeParse(delegation.thread).success) saved.thread = delegation.thread
@@ -566,7 +571,11 @@ export class DesktopRemoteDelegations {
     if (!isObject(answer.delegation)) return answer
     const delegation = answer.delegation, thread = record.thread ? hostEntityKey(record.hostId, record.thread) : undefined
     const reply = isObject(delegation.reply) && thread ? { ...delegation.reply, thread } : delegation.reply
-    return { ...answer, delegation: { ...delegation, id: record.id, ...thread ? { thread } : {}, ...reply !== undefined ? { reply } : {} } }
+    const swarm = remoteSwarmReceiptSchema.safeParse(answer)
+    const threadKey = (value: string): string => parseHostEntityKey(value) ? value : hostEntityKey(record.hostId, value)
+    return { ...answer, ...swarm.success ? { ...swarm.data, lead: { ...swarm.data.lead, thread: threadKey(swarm.data.lead.thread), delegation: record.id },
+      receipts: swarm.data.receipts.map(receipt => ({ ...receipt, ...receipt.thread ? { thread: threadKey(receipt.thread) } : {} })) } : {},
+    delegation: { ...delegation, id: record.id, ...thread ? { thread } : {}, ...reply !== undefined ? { reply } : {} } }
   }
   private keepReply(delegationId: string, reply: NonNullable<DelegationNewsDetail['reply']>): void {
     this.replies.delete(delegationId); this.replies.set(delegationId, reply)
@@ -586,7 +595,7 @@ export class DesktopRemoteDelegations {
   private name(record: RemoteRecord): string { return this.options.machineName(record.hostId) ?? record.machine }
   private open(record: RemoteRecord): boolean { return record.unread === true || !SETTLED.has(record.outcome) }
   private find(callerId: string, delegationId: string): RemoteRecord | undefined {
-    const record = this.byId.get(delegationId)
+    const record = this.byId.get(delegationId) ?? this.bySwarm.get(retryIndex(callerId, delegationId))
     return record?.callerId === callerId ? record : undefined
   }
   private update(record: RemoteRecord, change: (record: RemoteRecord) => void): void {
@@ -604,6 +613,7 @@ export class DesktopRemoteDelegations {
   }
   /** Files a record under what it has learned since it was made: the host's ID, its thread, and whether it is live. */
   private indexed(record: RemoteRecord): void {
+    if (record.swarmId) this.bySwarm.set(retryIndex(record.callerId, record.swarmId), record)
     if (record.delegation) this.byTarget.set(targetIndex(record.hostId, record.delegation), record)
     if (record.thread) { const key = threadIndex(record.callerId, record.hostId, record.thread); if (!this.byThread.has(key)) this.byThread.set(key, record) }
     const live = this.live.get(record.hostId)
@@ -615,6 +625,7 @@ export class DesktopRemoteDelegations {
     const own = this.byCaller.get(record.callerId)
     if (own) { const at = own.indexOf(record); if (at !== -1) own.splice(at, 1); if (!own.length) this.byCaller.delete(record.callerId) }
     const drop = (index: Map<string, RemoteRecord>, key: string) => { if (index.get(key) === record) index.delete(key) }
+    if (record.swarmId) drop(this.bySwarm, retryIndex(record.callerId, record.swarmId))
     if (record.delegation) drop(this.byTarget, targetIndex(record.hostId, record.delegation))
     if (record.thread) {
       // A later brief to the same thread that is still kept takes its place, so its caller still holds the thread (#1316 review).
