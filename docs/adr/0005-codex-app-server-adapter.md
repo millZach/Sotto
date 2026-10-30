@@ -203,8 +203,10 @@ thread. A position saved late costs only a re-read of what came after it at the 
 adapter stopped is left out of it, so input it never reported is read again. They hold digests and native
 IDs, as `codex-threads.json` does, never message text. They take about 5% of the rollouts they stand for: 4.8 MB for
 92 MB in the benchmark. A thread with no position yet, as every thread has on the first run with this change, is caught
-up once by the timer, a megabyte a tick as every connect did before, and its position is saved then; the connect waits
-on none of it.
+up once by the timer when the user has not settled it, a megabyte a tick as every connect did before, and its position is
+saved then; a settled thread is read when it is opened. Zach picked that on October 30, 2026, over catching up every
+thread or none. The workspace names the settled threads to the providers before they connect (`useSettledThreads`), and
+the connect waits on none of the catch-up.
 
 Measured on forge with 46 and 92 saved threads of 2 MB rollouts, a restart connected in 35 to 39 ms against 454 to
 1,221 ms, read no rollout bytes against 92 to 184 MB, and spent 9 to 11 ms of main's CPU against 0.65 to 1.5 s.

@@ -424,6 +424,8 @@ export class CodexAppServerHost implements AgentHost {
   private readonly workedSinceTick = new Set<string>()
   /** Where each thread's rollout was read to, kept between runs (#992). */
   private readonly rolloutPositions: RolloutPositionFiles
+  /** The threads the user had settled as this run began; unknown until the caller says. */
+  private settled: ReadonlySet<string> | undefined
   private readonly reaper: SessionReaper
   private readonly resuming = new Map<string, Promise<void>>()
   private readonly opening = new Map<string, Promise<void>>()
@@ -936,7 +938,11 @@ export class CodexAppServerHost implements AgentHost {
     this.watcher = new CodexSessionLogWatcher({ codexHome, pollIntervalMs: this.options.pollIntervalMs,
       // Each second reads only the rollouts of the threads in use; every other thread's is read from its saved position
       // when it is opened or sent to (#992).
-      inUse: () => this.rolloutsInUse(), positions: this.rolloutPositions, onMessage: (id, message) => {
+      inUse: () => this.rolloutsInUse(), positions: this.rolloutPositions,
+      // A rollout with no saved position, as every one has after the update that began saving them, is caught up once in
+      // the background for an unsettled thread; a settled one waits until it is opened (Zach's call, October 30).
+      catchUp: codexThreadId => { const id = this.sessionId(codexThreadId); return !id || !this.settled?.has(id) },
+      onMessage: (id, message) => {
       const sessionId = this.sessionId(id)
       if (sessionId) {
         this.touch(sessionId)
@@ -1301,6 +1307,7 @@ export class CodexAppServerHost implements AgentHost {
    * Take the watched set as given. A thread that has left it keeps its session until the reaper finds it
    * idle; a thread that has entered it has its session resumed now.
    */
+  useSettledThreads(sessionIds: readonly string[]): void { this.settled = new Set(sessionIds) }
   observeThreads(sessionIds: readonly string[]): void {
     const generation = this.generation
     const watched = new Set(sessionIds.filter(id => this.aliases[id]?.kind !== 'personal'))

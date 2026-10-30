@@ -4906,7 +4906,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
   }
   async connect(provider?: ProviderId): Promise<AgentHostSnapshot> {
-    await this.initialize(); this.accept(await this.inner.connect(provider)); await this.flush(); return this.workspaceSnapshot()
+    await this.initialize()
+    // Before the providers connect, so work an adapter does once for every saved thread knows which are settled (#992).
+    this.inner.useSettledThreads?.(this.settledThreadIds())
+    this.accept(await this.inner.connect(provider)); await this.flush(); return this.workspaceSnapshot()
   }
   async snapshot(provider?: ProviderId): Promise<AgentHostSnapshot> {
     await this.initialize(); this.accept(await this.inner.snapshot(provider)); await this.flush(); return this.workspaceSnapshot()

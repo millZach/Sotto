@@ -12,29 +12,28 @@ import { codexFixture } from '../fixtures/codexFixture'
 let fixture: Awaited<ReturnType<typeof codexFixture>> | undefined
 afterEach(async () => { vi.restoreAllMocks(); await fixture?.cleanup(); fixture = undefined })
 
-/** The bytes main reads from files whose path contains `part`, counted as each read returns. */
-async function bytesReadFrom(part: string): Promise<{ readonly bytes: () => number }> {
+/** The bytes main reads from each of `paths`, counted as each read returns, telling a file's handles by the inode they stat. */
+async function bytesReadFrom(...paths: string[]): Promise<{ readonly bytes: (path?: string) => number }> {
   const probe = await open(process.execPath, 'r')
-  const handles = Object.getPrototypeOf(probe) as { read(...args: unknown[]): Promise<{ bytesRead: number }> }
+  const handles = Object.getPrototypeOf(probe) as { read(...args: unknown[]): Promise<{ bytesRead: number }>; stat(): Promise<{ ino: number }> }
   await probe.close()
-  const opened = new WeakSet<object>()
-  let total = 0
-  const read = handles.read
+  const inodes = new Map(await Promise.all(paths.map(async path => [(await stat(path)).ino, path] as const)))
+  const owner = new WeakMap<object, string>()
+  const totals = new Map(paths.map(path => [path, 0]))
+  const read = handles.read, stats = handles.stat
   vi.spyOn(handles, 'read').mockImplementation(async function (this: object, ...args: unknown[]) {
     const result = await read.apply(this, args)
-    if (opened.has(this)) total += result.bytesRead
+    const path = owner.get(this)
+    if (path) totals.set(path, totals.get(path)! + result.bytesRead)
     return result
   })
-  // Which handles are the rollout's: those whose stat names its inode.
-  const statOf = handles as unknown as { stat(): Promise<{ ino: number }> }
-  const stats = statOf.stat
-  const target = (await stat(part)).ino
-  vi.spyOn(statOf, 'stat').mockImplementation(async function (this: object) {
+  vi.spyOn(handles, 'stat').mockImplementation(async function (this: object) {
     const result = await stats.apply(this)
-    if (result.ino === target) opened.add(this)
+    const path = inodes.get(result.ino)
+    if (path) owner.set(this, path)
     return result
   })
-  return { bytes: () => total }
+  return { bytes: (path = paths[0]!) => totals.get(path) ?? 0 }
 }
 
 it('reads a thread\'s rollout after a restart only once the thread is in use, and from where the last run left it', async () => {
@@ -112,4 +111,35 @@ it('reads a thread coming back into view to its rollout\'s end at once, while it
   } finally { off() }
   expect(ticks).not.toHaveBeenCalled()
   expect(polls).not.toHaveBeenCalled()
+})
+
+it('catches up once only the unsettled threads after the update, and a settled one when it is opened', async () => {
+  let f = fixture = await codexFixture(undefined, false, 2000, { pollIntervalMs: 3_600_000 })
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Rollouts', path: f.root })
+  const [active, settled] = [randomUUID(), randomUUID()]
+  for (const threadId of [active, settled]) {
+    await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, title: 'Rollouts', modelId: f.modelId })
+    await f.typeUnseen(threadId, `Typed in Codex on ${threadId}`)
+  }
+  const pathOf = async (threadId: string) => join(f.root, 'home', 'sessions', '2026', '09', '10', `rollout-2026-09-10-${await f.realId(threadId)}.jsonl`)
+  const [activePath, settledPath] = [await pathOf(active), await pathOf(settled)]
+  f.adapter.disconnect(); await f.adapter.closed()
+  // As the first run after the update finds them: no position saved.
+  await rm(join(f.root, 'codex-rollouts'), { recursive: true, force: true })
+  f = fixture = await codexFixture(f.root, false, 2000, { pollIntervalMs: 3_600_000 })
+  const read = await bytesReadFrom(activePath, settledPath)
+  const activeRead = { bytes: () => read.bytes(activePath) }, settledRead = { bytes: () => read.bytes(settledPath) }
+  // The run begins knowing which threads the user settled.
+  f.adapter.useSettledThreads([settled])
+  await f.host.connect()
+  const watcher = (f.adapter as unknown as { watcher: CodexSessionLogWatcher }).watcher
+  await watcher.tick(); await watcher.tick()
+  expect(activeRead.bytes()).toBe((await stat(activePath)).size)
+  expect(settledRead.bytes()).toBe(0)
+  // Opened, the settled thread reads its whole rollout, once.
+  f.host.observeThreads?.([settled])
+  await expect.poll(async () => (await f.adapter.refreshThread(settled)).threads.find(thread => thread.id === settled)?.messages.map(message => message.text))
+    .toContain(`Typed in Codex on ${settled}`)
+  expect(settledRead.bytes()).toBe((await stat(settledPath)).size)
 })

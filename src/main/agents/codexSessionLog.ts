@@ -125,7 +125,9 @@ export class CodexSessionLogWatcher {
    * every tick reads every tail. `positions` keeps where each tail had read to between runs.
    */
   constructor(private readonly options: { codexHome: string; pollIntervalMs?: number | undefined; onMessage: (threadId: string, message: AgentMessage) => void
-    inUse?: (() => ReadonlySet<string>) | undefined; positions?: RolloutPositions | undefined; saveDelayMs?: number | undefined }) {}
+    inUse?: (() => ReadonlySet<string>) | undefined; positions?: RolloutPositions | undefined; saveDelayMs?: number | undefined
+    /** Whether the tick catches up a tail with no saved position; absent, every one. A tail it leaves catches up when read whole. */
+    catchUp?: ((threadId: string) => boolean) | undefined }) {}
   observe(threadId: string): void {
     if (!this.tails.has(threadId)) this.tails.set(threadId, { locateAfter: 0, locateBackoffMs: INITIAL_LOCATE_BACKOFF_MS, locateGeneration: 0, offset: 0, buffer: [], bufferedBytes: 0, discarding: false, own: new Map(), files: new Set(), seen: new Set(), identities: new CodexRolloutIdentities(),
       lineStart: 0, caughtUp: false, saved: this.options.positions ? 'unknown' : 'settled', dirty: false, retry: false })
@@ -201,7 +203,7 @@ export class CodexSessionLogWatcher {
     const ids: string[] = []
     for (const [id, tail] of this.tails) {
       this.classify(id, tail, saved)
-      if (!inUse || inUse.has(id) || tail.retry || mode === 'tick' && (this.lastInUse.has(id) || !tail.caughtUp)) ids.push(id)
+      if (!inUse || inUse.has(id) || tail.retry || mode === 'tick' && (this.lastInUse.has(id) || !tail.caughtUp && (this.options.catchUp?.(id) ?? true))) ids.push(id)
     }
     if (mode === 'tick') this.lastInUse = new Set(inUse)
     // A thread let go meanwhile is not read, which would take up its tail again.

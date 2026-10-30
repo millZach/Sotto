@@ -464,4 +464,20 @@ describe('a Codex rollout read on from a saved position (#992)', () => {
     await reader.stop()
     expect(positions.kept.has('thread')).toBe(false)
   })
+
+  it('catches up on the tick only the tails it is told to, and reads one it left whole when it is read', async () => {
+    const { root, path } = await rollout()
+    await writeFile(path, turn(1))
+    await writeFile(join(dirname(path), 'rollout-settled.jsonl'), turn(2))
+    const messages: AgentMessage[] = []
+    const reader = new CodexSessionLogWatcher({ codexHome: root, onMessage: (id, message) => messages.push({ ...message, id: `${id}:${message.id}` }),
+      positions: new MemoryPositions(), inUse: () => new Set(), catchUp: id => id !== 'settled' })
+    watchers.push(reader); reader.observe('thread'); reader.observe('settled')
+    const read = vi.spyOn(reader, 'pollThread')
+    await reader.tick(); await reader.tick()
+    expect(read.mock.calls.map(([id]) => id)).toEqual(['thread'])
+    // Opened, it is read whole.
+    await reader.pollThread('settled')
+    expect(messages.map(message => message.id)).toEqual(['thread:user-1', 'settled:user-2'])
+  })
 })
