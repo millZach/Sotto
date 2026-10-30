@@ -661,18 +661,28 @@ struct PullRequestChip: Equatable {
 }
 
 /// Branch, changed lines and pull request, from the worktree's Git status. The row reads as one sentence; where the
-/// computer offers the pull request sheet, the pull request chip is a button of its own that opens it.
+/// computer offers the pull request sheet, the pull request chip is a button of its own that opens it. The chips wrap
+/// onto a second line when they don't fit: at the largest text sizes a row that couldn't wrap pushed the whole thread
+/// wider than a small iPhone's screen, cutting the first letters off every line (#1848).
 private struct GitChipRow: View {
     let chips: GitChips
     var sheet: PullRequestChip? = nil
     var open: () -> Void = {}
     var body: some View {
         if let sheet, let pullRequest = chips.pullRequest {
-            HStack(spacing: Space.s2) {
-                if chips.branch != nil || chips.changes != nil {
-                    HStack(spacing: Space.s2) { branchAndChanges }
+            ChipLine(squeezesFirst: chips.branch != nil) {
+                // The branch and changes still read as one sentence: the branch chip says both, and the changes chip
+                // speaks only when there is no branch.
+                if let branch = chips.branch {
+                    branchChip(branch)
                         .accessibilityElement(children: .ignore)
                         .accessibilityLabel(chips.spoken(includingPullRequest: false))
+                }
+                if let changes = chips.changes {
+                    changesChip(changes)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(chips.spoken(includingPullRequest: false))
+                        .accessibilityHidden(chips.branch != nil)
                 }
                 Button(action: open) {
                     HStack(spacing: 5) {
@@ -691,7 +701,6 @@ private struct GitChipRow: View {
                     .contentShape(Capsule())
                 }
                 .buttonStyle(PressStyle())
-                .fixedSize()
                 .accessibilityLabel(Self.spokenPullRequest(pullRequest, rollup: sheet.rollup))
                 .accessibilityIdentifier("pull-request-chip")
             }
@@ -711,41 +720,100 @@ private struct GitChipRow: View {
         return String(localized: "Show pull request \(number), \(state). Checks: \(rollup)", comment: "The first %@ is the pull request's number, the second its state, the third its checks' roll-up")
     }
 
-    @ViewBuilder private var branchAndChanges: some View {
-        if let branch = chips.branch {
-            GitChip {
-                Image(systemName: "arrow.triangle.branch").font(.system(size: 11, weight: .semibold))
-                Text(verbatim: branch)
-                    .font(.system(.caption, design: .monospaced))
-                    .foregroundStyle(Palette.ink)
-                    .truncationMode(.middle)
-            }
+    private func branchChip(_ branch: String) -> some View {
+        GitChip {
+            Image(systemName: "arrow.triangle.branch").font(.system(size: 11, weight: .semibold))
+            Text(verbatim: branch)
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(Palette.ink)
+                .truncationMode(.middle)
         }
-        if let changes = chips.changes {
-            GitChip {
-                Text("+\(changes.insertions)").foregroundStyle(Palette.accentText)
-                Text("−\(changes.deletions)").foregroundStyle(Palette.dangerText)
-                (changes.files == 1 ? Text("1 file") : Text("\(changes.files) files"))
-            }
-            .fixedSize()
+    }
+
+    private func changesChip(_ changes: GitChips.Changes) -> some View {
+        GitChip {
+            Text("+\(changes.insertions)").foregroundStyle(Palette.accentText)
+            Text("−\(changes.deletions)").foregroundStyle(Palette.dangerText)
+            (changes.files == 1 ? Text("1 file") : Text("\(changes.files) files"))
         }
     }
 
     /// The row as it is without the sheet: every chip one sentence.
     private var plain: some View {
-        HStack(spacing: Space.s2) {
-            branchAndChanges
+        ChipLine(squeezesFirst: chips.branch != nil) {
+            if let branch = chips.branch { branchChip(branch) }
+            if let changes = chips.changes { changesChip(changes) }
             if let pullRequest = chips.pullRequest {
                 GitChip {
                     Image(systemName: "arrow.triangle.pull").font(.system(size: 11, weight: .semibold))
                     Text("#\(String(pullRequest.number)) \(pullRequest.stateWord)", comment: "A pull request chip: its number, then its state, such as #721 open")
                 }
-                .fixedSize()
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(chips.spoken)
+    }
+}
+
+/// The Git chips on one line while they fit, the first (the branch) giving up width before anything wraps, as the row
+/// always did; when even a squeezed branch leaves no room, as many lines as it takes, each chip no wider than the row.
+/// Chips of different heights share a line's middle.
+private struct ChipLine: Layout {
+    var spacing: CGFloat = Space.s2
+    var squeezesFirst = false
+    /// The narrowest the first chip gets before the row wraps instead: its icon and a few letters of the branch.
+    private static let narrowest: CGFloat = 96
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let frames = arrange(width: proposal.width ?? .infinity, subviews: subviews)
+        return CGSize(width: proposal.width ?? (frames.map(\.maxX).max() ?? 0), height: frames.map(\.maxY).max() ?? 0)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        for (subview, frame) in zip(subviews, arrange(width: bounds.width, subviews: subviews)) {
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY), anchor: .topLeading,
+                          proposal: ProposedViewSize(width: frame.width, height: frame.height))
+        }
+    }
+
+    private func arrange(width: CGFloat, subviews: Subviews) -> [CGRect] {
+        var sizes = subviews.map { $0.sizeThatFits(.unspecified) }
+        guard let first = sizes.first else { return [] }
+        let others = sizes.dropFirst().reduce(CGFloat(0)) { $0 + spacing + $1.width }
+        var rows: [[Int]] = [[]]
+        if squeezesFirst, others + min(first.width, Self.narrowest) <= width {
+            if first.width + others > width {
+                sizes[0] = subviews[0].sizeThatFits(ProposedViewSize(width: width - others, height: nil))
+            }
+            rows = [Array(sizes.indices)]
+        } else {
+            var x: CGFloat = 0
+            for index in sizes.indices {
+                if sizes[index].width > width {
+                    sizes[index] = subviews[index].sizeThatFits(ProposedViewSize(width: width, height: nil))
+                }
+                if x > 0 && x + sizes[index].width > width {
+                    rows.append([])
+                    x = 0
+                }
+                rows[rows.count - 1].append(index)
+                x += sizes[index].width + spacing
+            }
+        }
+        var frames = Array(repeating: CGRect.zero, count: sizes.count)
+        var y: CGFloat = 0
+        for row in rows {
+            let height = row.map { sizes[$0].height }.max() ?? 0
+            var x: CGFloat = 0
+            for index in row {
+                let size = sizes[index]
+                frames[index] = CGRect(x: x, y: y + (height - size.height) / 2, width: size.width, height: size.height)
+                x += size.width + spacing
+            }
+            y += height + spacing
+        }
+        return frames
     }
 }
 
