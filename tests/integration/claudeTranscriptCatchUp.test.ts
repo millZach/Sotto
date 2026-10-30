@@ -406,12 +406,14 @@ describe('Claude transcript poll', () => {
       messageLog: { summary(id: string): { messageCount: number } }; observeCompaction(id: string, ...rest: unknown[]): void }
     const [shown, working, sent, outside] = [...sessions.keys()] as [string, string, string, string]
     const read: string[] = []
-    let failNext: string | undefined
+    let failNext: string | undefined, failAlways: string | undefined, unopenedNext: string | undefined
     const nativePoll = ClaudeSessionLog.prototype.poll
     vi.spyOn(ClaudeSessionLog.prototype, 'poll').mockImplementation(function (this: ClaudeSessionLog) {
       const id = [...adapter.logs].find(([, log]) => log === this)![0]
       read.push(id)
-      if (failNext === id) { failNext = undefined; return Promise.reject(new Error('Synthetic unreadable transcript')) }
+      if (failNext === id || failAlways === id) { failNext = undefined; return Promise.reject(new Error('Synthetic unreadable transcript')) }
+      // As a read that found the transcript and could not open it, which the reader answers without an error.
+      if (unopenedNext === id) { unopenedNext = undefined; return nativePoll.call(this).then(() => { this.unopened = true }) }
       return nativePoll.call(this)
     })
     const tick = async (): Promise<string[]> => { read.length = 0; timer(); await adapter.polling?.catch(() => undefined); return [...read].sort() }
@@ -425,6 +427,22 @@ describe('Claude transcript poll', () => {
     adapter.threads.get(working)!.status = 'idle'
     failNext = working
     expect(await tick()).toEqual([shown, working].sort())
+    expect(await tick()).toEqual([shown, working].sort())
+    expect(await tick()).toEqual([shown])
+    adapter.threads.get(working)!.status = 'running'
+    expect(await tick()).toEqual([shown, working].sort())
+    adapter.threads.get(working)!.status = 'idle'
+    unopenedNext = working
+    expect(await tick()).toEqual([shown, working].sort())
+    expect(await tick()).toEqual([shown, working].sort())
+    expect(await tick()).toEqual([shown])
+    // A transcript that fails every time holds up no other thread's read.
+    failAlways = shown
+    adapter.threads.get(working)!.status = 'running'
+    expect(await tick()).toEqual([shown, working].sort())
+    expect(await tick()).toEqual([shown, working].sort())
+    failAlways = undefined
+    adapter.threads.get(working)!.status = 'idle'
     expect(await tick()).toEqual([shown, working].sort())
     expect(await tick()).toEqual([shown])
     // A turn begun and ended between two ticks is read on the next.

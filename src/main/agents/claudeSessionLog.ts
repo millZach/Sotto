@@ -153,6 +153,8 @@ export class ClaudeSessionLog {
   private partsLength = 0
   private pending: Promise<void> = Promise.resolve()
   private path: string | undefined
+  /** Whether the last read found the transcript and could not open it, so what was written since may be unread. */
+  unopened = false
   /** `onSettled` runs once after each read that delivered entries, so a long catch-up costs one publish, not one per line. */
   constructor(private readonly home: string, private readonly cwd: string, private readonly sessionId: string, private readonly onEntry: (frame: ClaudeFrame) => void, private readonly onSettled?: () => void) {}
   async exists(): Promise<boolean> { const path = await this.resolve(); return Boolean(path && (await stat(path).catch(() => undefined))?.isFile()) }
@@ -186,9 +188,11 @@ export class ClaudeSessionLog {
     // reading a quiet transcript costs one stat (#992).
     if (this.identity && !this.resumeFrom && this.offset === this.identity.size) {
       const now = await stat(path).catch(() => undefined)
-      if (now?.isFile() && now.size === this.offset && sameFile(this.identity, identityOf(now))) return
+      if (now?.isFile() && now.size === this.offset && sameFile(this.identity, identityOf(now))) { this.unopened = false; return }
     }
-    const handle = await open(path, 'r').catch(() => undefined); if (!handle) return
+    const handle = await open(path, 'r').catch(() => undefined)
+    this.unopened = !handle
+    if (!handle) return
     let delivered = false
     try {
       const stats = await handle.stat()

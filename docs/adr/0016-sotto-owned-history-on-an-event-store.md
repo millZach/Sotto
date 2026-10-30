@@ -393,8 +393,9 @@ which covers a pane, the active thread, a draft, Watcher's watched threads, a de
 outbox. It also reads each thread that is working: a turn, a request waiting, a live watch, background work, a
 compaction or a command mid-dispatch. And it reads each thread whose CLI did anything since the last tick, so a turn begun
 and ended between two ticks is read too. A thread that leaves those is read once more on the next tick, so the last
-lines of its turn land, and a read that fails is tried again on the next tick, as every read was. A transcript nothing
-was written to since its last read is not opened: one stat says so.
+lines of its turn land. A read that fails, or that finds the transcript and cannot open it, is tried again on the next
+tick, as every read was, and one that keeps failing holds up no other thread's read. A transcript nothing was written to
+since its last read is not opened: one stat says so.
 
 **Every other thread catches up from its cursor.** Its transcript is read as soon as the thread comes into view, when it
 is sent to, since a send reads the thread before anything else, and at connect, which still reads every saved thread

@@ -1390,18 +1390,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (this.queuedPoll === work) this.queuedPoll = undefined
     }
   }
-  private async readSessionLogs(ids: Iterable<string> = this.logs.keys(), done?: (id: string) => void): Promise<void> {
-    for (const id of ids) {
-      const log = this.logs.get(id)
-      if (log) { await this.readLog(id, log); await this.readSubagentModels(id, log) }
-      done?.(id)
-    }
-  }
+  private async readSessionLogs(): Promise<void> { for (const [id, log] of this.logs) { await this.readLog(id, log); await this.readSubagentModels(id, log) } }
   /**
    * The timer's read: only the transcripts of the threads in use, those a window or Watcher looks at (`observed`), those
    * working (`busy`) and those whose CLI did anything since the last tick, so a turn begun and ended between two ticks is
-   * read too. Each is read once more on the tick after it leaves them, so the last lines of its turn land, and a read
-   * that did not finish is tried again on the next tick, as every read was. Every other thread's transcript waits for the
+   * read too. Each is read once more on the tick after it leaves them, so the last lines of its turn land. A read that
+   * failed, or that found the transcript and could not open it, is tried again on the next tick, as every read was, and
+   * one that keeps failing holds up no other thread's. Every other thread's transcript waits for the
    * thread to come into view or be sent to, or for the next connect, and is read then from its saved cursor, so a poll's
    * cost follows the threads in use rather than every thread saved (#992). A read already under way stands for this
    * tick; a whole read asked for meanwhile follows it (`pollSessionLogs`).
@@ -1411,12 +1406,25 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const active = new Set([...this.logs.keys()].filter(id => this.observed.has(id) || this.busy(id) || this.workedSinceTick.has(id)))
     this.workedSinceTick.clear()
     const ids = [...active, ...[...this.readAgain].filter(id => !active.has(id))]
-    const unread = new Set(ids)
-    const work = this.readSessionLogs(ids, id => unread.delete(id))
+    const failed = new Set<string>()
+    const work = (async () => {
+      let error: unknown
+      for (const id of ids) {
+        const log = this.logs.get(id)
+        if (!log) continue
+        try {
+          await this.readLog(id, log); await this.readSubagentModels(id, log)
+          if (log.unopened) failed.add(id)
+        } catch (cause) { failed.add(id); error ??= cause }
+      }
+      // Reported as a whole read's failure always was, once every other thread has been read.
+      if (error !== undefined) throw error
+    })()
     this.polling = work
     return work.finally(() => {
       if (this.polling === work) this.polling = undefined
-      this.readAgain = new Set([...active, ...unread])
+      // A thread let go meanwhile has no transcript to read again.
+      this.readAgain = new Set([...active, ...failed].filter(id => this.logs.has(id)))
     })
   }
   /** The CLI did something for this thread: the reaper hears of it, and the poll's next tick reads its transcript. */

@@ -26,8 +26,9 @@ open slower.
 
 - The timer reads the transcripts of the threads the coordinator observes, of the threads that are working, and of the
   threads whose CLI did anything since the last tick, so a turn begun and ended between two ticks is read too
-  (`pollActiveSessionLogs`). It reads a thread that leaves those once more, so its turn's last lines land, and tries a
-  read that failed again on the next tick.
+  (`pollActiveSessionLogs`). It reads a thread that leaves those once more, so its turn's last lines land. A read that
+  failed, or that found the transcript and could not open it, is tried again on the next tick, and one that keeps
+  failing holds up no other thread's read.
 - Every other thread's transcript is read from its cursor as soon as the thread comes into view (`observeThreads`) or is
   sent to (`sync`), and at connect, which still reads every saved thread once. That keeps each cursor current, so an open
   reads only what was written since.
@@ -60,15 +61,17 @@ reads per tick from 0.15-0.21 ms to the range above. The idle CPU includes the t
 after, and the rest when opened from their cursor", in the default suite. Six saved threads, one on screen:
 
 - each tick of the poll's own timer reads that one;
-- a thread that starts working is read while it works and on the tick after, and a read of it that fails is tried
-  again on the next tick;
+- a thread that starts working is read while it works and on the tick after, and a read of it that fails, or that could
+  not open its transcript, is tried again on the next tick;
+- a transcript that fails on every tick holds up no other thread's read;
 - a thread sent a turn that begins and ends between two ticks is read on the next tick;
 - a thread with work typed outside Sotto is read by no tick, and when a pane opens it, it reads at once the one entry
   added since its cursor, not its transcript from the first byte, and shows it.
 
 Each of these fails without its part of the change: with the timer reading every transcript, as before, its first tick
 reads all six. `claudeSessionLog.test.ts` counts the opens of a transcript nothing was written to: none, and one once it
-grows.
+grows. It also checks that a read which found the transcript and could not open it says so, until a read opens it; that
+case skips on Windows, which has no permission bit that refuses a read.
 
 ## What it leaves
 
