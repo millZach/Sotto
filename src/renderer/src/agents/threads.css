@@ -159,6 +159,9 @@
 .thread-pane > .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose { position: relative; z-index: 2; margin-top: calc(-1 * var(--thread-compose-height, 0px)); pointer-events: none; }
 .thread-workspace__compose > * { pointer-events: auto; }
 .thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: var(--thread-compose-height, 0px); }
+/* Stacked under a waiting question, the transcript still runs on under the card's top edge and rounded corners rather than
+   stopping in a hard line above it. Only the scroller reaches down, so the pane keeps every size it had. */
+.thread-pane[data-questions] > .thread-transcript > .thread-workspace__transcript { --thread-compose-height: 26px; margin-bottom: -26px; }
 .thread-pane .thread-transcript__jump { bottom: calc(14px + var(--thread-compose-height, 0px)); }
 /* The slim composer (ADR-0125; Owl only, the user's pick B of docs/prototypes/composer-shrink-prototype.html): while the
    user reads back, a floating composer with nothing in it is one line with its disc beside it. The options row steps
