@@ -17,13 +17,18 @@ through the uncertified lists too.
 
 The switch hands a caller its own copy of everything, as before, except the activity lists and the model catalog it holds
 certified, which it shares, frozen, as its subscribers are handed them (`cloneSnapshotSharingActivities`). Nothing a
-caller could write into is shared: every thread record and every other part is still the caller's copy. What the
-workspace keeps, saves and publishes is the same; only how many times it is copied changes.
+caller could write into is shared: every thread record and every other part is still the caller's copy.
+
+A read still reconciles every record it brings, as reads always did. A certified list can match the workspace's last
+merge, and the merge's cached path would then keep, at the record limit, a different set of the oldest records than a
+read always kept. So only a publication takes that path, and a read's records that come out the same as the records held
+are the records held. What the workspace keeps, saves and publishes is the same, byte for byte; only how many times it is
+copied changes.
 
 | A send, three observed threads of 2,000 records | Before | After |
 | --- | ---: | ---: |
-| Posted to the store worker | 76.6 MB in 54 posts | 662 bytes in 5 posts |
-| Benchmark CPU for the send scenario | 233 ms | 98 ms |
+| Posted to the store worker | 76.6 MB in 54 posts | 100 KB in 6 posts |
+| Benchmark CPU for the send scenario | 233 ms | 129 ms |
 
 At the owner's scale (`ownerScaleWorkBudget.perf.test.ts`, Owl):
 
@@ -38,7 +43,8 @@ At the owner's scale (`ownerScaleWorkBudget.perf.test.ts`, Owl):
 ## The guards
 
 The owner-scale gate's budgets drop to these counts. `providerSwitch.test.ts` holds a thread read to the switch's own
-certified records, the same objects read after read, and a caller's copy of the rest.
+certified records, the same objects read after read, and a caller's copy of the rest. `workspaceReadActivity.test.ts`
+holds a read at the record limit to exactly what a read of copies kept, and its unchanged records to the objects held.
 
 ## What it leaves
 

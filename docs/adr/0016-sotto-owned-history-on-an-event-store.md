@@ -354,3 +354,7 @@ send (`docs/perf/2026-10-30-send-read-copies.md`). A caller that would change a 
 now throws, as a subscriber always has. The only production caller, the workspace, builds new lists when it merges.
 `snapshot` and `workspaceSnapshot` of the workspace, ordinary `subscribe` and command replies stay writable copies.
 
+The workspace still reconciles every record a read brings, as it did when reads came as copies. Only a publication may
+take the merge it gave last time for the same certified list; at the record limit that would keep a different set of the
+oldest records. A read's record that comes out the same as the record held is the record held.
+
