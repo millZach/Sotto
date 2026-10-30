@@ -1074,6 +1074,10 @@ msgstr ""
 msgid "Approve access in Windows"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Asking {machine}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherPermissionChip.tsx
 msgid "Asks you before it edits a file or runs a command that changes something."
 msgstr ""
@@ -2513,6 +2517,14 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Keep usage"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Keeping it here"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Keeping it on {from}"
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
@@ -4877,6 +4889,12 @@ msgstr ""
 msgid "Sotto started with an empty history after its local history file could not be read. The original file was preserved."
 msgstr ""
 
+#. placeholder {0}: card.machine
+#. placeholder {1}: card.machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Sotto stops it and settles it on {0}, and this thread takes sends again once {1} says so."
+msgstr ""
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Sotto threads"
 msgstr ""
@@ -5134,6 +5152,15 @@ msgstr ""
 msgid "Stop all, show what it did"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop it there and keep this one"
+msgstr ""
+
+#. placeholder {0}: card.from
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop it there and keep this one on {0}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stop requested for {title}. Waiting on {hosts} to confirm."
 msgstr ""
@@ -5152,6 +5179,17 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Stop test"
+msgstr ""
+
+#. placeholder {0}: card.machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop the new thread on {0} and keep this one here?"
+msgstr ""
+
+#. placeholder {0}: card.machine
+#. placeholder {1}: card.from
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop the new thread on {0} and keep this one on {1}?"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
@@ -5987,6 +6025,11 @@ msgstr ""
 msgid "Waiting"
 msgstr ""
 
+#. placeholder {0}: card.waitingOn ?? machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Waiting for {0}"
+msgstr ""
+
 #: src/renderer/src/features/starting/startingView.ts
 msgid "Waiting for {names}"
 msgstr ""
@@ -6308,6 +6351,14 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You chose this in working preferences"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "You chose to keep this thread here. Sotto asks {machine} to call the move off, and to stop and settle the new thread if it made one, as soon as {machine} answers. This thread takes no sends until then. Nothing was lost."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "You chose to keep this thread on {from}. Sotto asks {machine} to call the move off, and to stop and settle the new thread if it made one, as soon as {machine} answers. This thread takes no sends until then. Nothing was lost."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx

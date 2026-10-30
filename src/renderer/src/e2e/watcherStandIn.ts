@@ -95,6 +95,11 @@ export function createE2EThreadMovesStandIn(): { readonly moves: ThreadMovesBrid
         publish(request.answer === 'move' ? [...view.cards, ...seeded.started ?? []] : view.cards, proposals)
         return { status: 'ok' }
       }
+      if ('moveId' in request) {
+        // Keep it here: the press is kept, and the move waits for its machine to call it off.
+        publish(view.cards.map(card => card.id === request.moveId ? threadMoveCardSchema.parse({ ...card, keeping: true, updatedAt: at }) : card))
+        return { status: 'ok' }
+      }
       const { cardId, answer } = request
       publish(view.cards.map(card => card.id !== cardId ? card : answer === 'keep' ? { ...card, state: 'kept', updatedAt: at }
         : { ...card, state: 'fenced', updatedAt: at, words: undefined, startsOn: undefined }).map(card => threadMoveCardSchema.parse(JSON.parse(JSON.stringify(card)))))

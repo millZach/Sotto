@@ -1074,6 +1074,10 @@ msgstr "Approve access in macOS"
 msgid "Approve access in Windows"
 msgstr "Approve access in Windows"
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Asking {machine}"
+msgstr "Asking {machine}"
+
 #: src/renderer/src/watcher/WatcherPermissionChip.tsx
 msgid "Asks you before it edits a file or runs a command that changes something."
 msgstr "Asks you before it edits a file or runs a command that changes something."
@@ -2514,6 +2518,14 @@ msgstr "Keep transcript"
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Keep usage"
 msgstr "Keep usage"
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Keeping it here"
+msgstr "Keeping it here"
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Keeping it on {from}"
+msgstr "Keeping it on {from}"
 
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Kept here"
@@ -4877,6 +4889,12 @@ msgstr "Sotto restored default settings after a local settings file could not be
 msgid "Sotto started with an empty history after its local history file could not be read. The original file was preserved."
 msgstr "Sotto started with an empty history after its local history file could not be read. The original file was preserved."
 
+#. placeholder {0}: card.machine
+#. placeholder {1}: card.machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Sotto stops it and settles it on {0}, and this thread takes sends again once {1} says so."
+msgstr "Sotto stops it and settles it on {0}, and this thread takes sends again once {1} says so."
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Sotto threads"
 msgstr "Sotto threads"
@@ -5134,6 +5152,15 @@ msgstr "Stop all, show its progress"
 msgid "Stop all, show what it did"
 msgstr "Stop all, show what it did"
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop it there and keep this one"
+msgstr "Stop it there and keep this one"
+
+#. placeholder {0}: card.from
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop it there and keep this one on {0}"
+msgstr "Stop it there and keep this one on {0}"
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stop requested for {title}. Waiting on {hosts} to confirm."
 msgstr "Stop requested for {title}. Waiting on {hosts} to confirm."
@@ -5153,6 +5180,17 @@ msgstr "Stop requested. Waiting on {computer} to confirm."
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Stop test"
 msgstr "Stop test"
+
+#. placeholder {0}: card.machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop the new thread on {0} and keep this one here?"
+msgstr "Stop the new thread on {0} and keep this one here?"
+
+#. placeholder {0}: card.machine
+#. placeholder {1}: card.from
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop the new thread on {0} and keep this one on {1}?"
+msgstr "Stop the new thread on {0} and keep this one on {1}?"
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stop the threads Watcher started?"
@@ -5987,6 +6025,11 @@ msgstr "Voxtype has these keys now. Sotto takes them over; Voxtype stays install
 msgid "Waiting"
 msgstr "Waiting"
 
+#. placeholder {0}: card.waitingOn ?? machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Waiting for {0}"
+msgstr "Waiting for {0}"
+
 #: src/renderer/src/features/starting/startingView.ts
 msgid "Waiting for {names}"
 msgstr "Waiting for {names}"
@@ -6309,6 +6352,14 @@ msgstr "You chose not to move these threads to {machine}. Nothing was moved."
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You chose this in working preferences"
 msgstr "You chose this in working preferences"
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "You chose to keep this thread here. Sotto asks {machine} to call the move off, and to stop and settle the new thread if it made one, as soon as {machine} answers. This thread takes no sends until then. Nothing was lost."
+msgstr "You chose to keep this thread here. Sotto asks {machine} to call the move off, and to stop and settle the new thread if it made one, as soon as {machine} answers. This thread takes no sends until then. Nothing was lost."
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "You chose to keep this thread on {from}. Sotto asks {machine} to call the move off, and to stop and settle the new thread if it made one, as soon as {machine} answers. This thread takes no sends until then. Nothing was lost."
+msgstr "You chose to keep this thread on {from}. Sotto asks {machine} to call the move off, and to stop and settle the new thread if it made one, as soon as {machine} answers. This thread takes no sends until then. Nothing was lost."
 
 #: src/renderer/src/features/usage/UsageOverview.tsx
 msgid "You sent <0>{sent}</0> and Watcher <1>{watcher}</1>."

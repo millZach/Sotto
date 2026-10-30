@@ -65,7 +65,7 @@ function world() {
     forget: vi.fn(async (input: { readonly moveId: string }) => { forgotten.push(input.moveId) }),
   }
   // The machine: it makes one thread per move, and answers the same one when asked again.
-  const remote = { connected: true, mayAnswer: true, supports: true, threads: [] as AgentThread[], made: new Map<string, string>(), requests: [] as HostThreadMoveStart[],
+  const remote = { connected: true, mayAnswer: true, supports: true, keepSupported: true, keeps: [] as string[], threads: [] as AgentThread[], made: new Map<string, string>(), requests: [] as HostThreadMoveStart[],
     fail: undefined as Error | undefined, answer: undefined as unknown, listeners: new Set<(hostId?: string) => void>(), updates: new Set<() => void>(),
     /** Each push makes a new snapshot, as the router does; between pushes the same one is read. */
     version: 0, snapshot: undefined as { version: number; snapshot: AgentHostSnapshot } | undefined,
@@ -73,7 +73,10 @@ function world() {
     visits: 0, snapshots: 0 }
   const host = {
     get supportsThreadMove() { return remote.supports },
+    get supportsThreadMoveKeep() { return remote.keepSupported },
     threadMove: vi.fn(async (asked: HostThreadMoveRequest) => {
+      // Keep it here (part 4): forge calls the move off, saying whether it had made a thread for it.
+      if (asked.action === 'keep') { if (remote.fail) throw remote.fail; remote.keeps.push(asked.moveId); return { type: 'kept', moveId: asked.moveId, made: remote.made.has(asked.moveId) } }
       if (asked.action !== 'start') throw new Error('Forge holds none of its own threads here.')
       const request = asked
       remote.requests.push(request)
@@ -96,7 +99,7 @@ function world() {
   const labHost: ThreadMoveHost = {
     supportsThreadMove: true, get supportsThreadMoveSource() { return lab.supportsSource },
     threadMove: vi.fn(async (asked: HostThreadMoveRequest) => {
-      if (asked.action === 'start') throw new Error('Nothing moves to lab here.')
+      if (asked.action === 'start' || asked.action === 'keep') throw new Error('Nothing moves to lab here.')
       lab.asked.push(asked)
       switch (asked.action) {
         case 'hold': if (lab.holdAnswer !== undefined) return lab.holdAnswer; lab.fences.add(asked.threadId); return { type: 'held', moveId: asked.moveId }
@@ -881,5 +884,63 @@ describe('Watcher’s proposal from the user’s words (#1178 part 3, Zach’s p
     expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'move', threadIds: ['b'] })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.notProposed })
     expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'dismiss' })).toEqual({ status: 'ok' })
     expect(moves.view().proposals![0]!.state).toBe('dismissed')
+  })
+})
+
+describe('Keep it here on a move waiting on its machine (#1178 part 4)', () => {
+  it('waits for the machine, then has it stop and settle the new thread, and the thread here takes sends again', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    // Not waiting yet: nothing to keep here.
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.notWaiting })
+    w.remote.connected = false; w.connected()
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true }))
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'ok' })
+    expect(moves.view().cards[0]).toMatchObject({ id: moveId, keeping: true })
+    // Remembered across a restart, and still fenced meanwhile.
+    expect(JSON.parse(await readFile(join(directory, 'moves.json'), 'utf8')).keeping).toEqual([moveId])
+    expect(w.fences.has('a')).toBe(true)
+    moves.close()
+    const again = w.service(); await again.load(); again.useTargets(w.targets)
+    expect(again.view().cards[0]).toMatchObject({ id: moveId, keeping: true })
+    w.remote.connected = true; w.connected()
+    await vi.waitFor(() => expect(stateOf(again, moveId)).toBe('kept'))
+    expect(w.remote.keeps).toEqual([moveId])
+    expect(again.list()[0]!.givenBack).toBe(THREAD_MOVE_WORDS.kept('forge', true))
+    // The fence lifts once the kept record is saved.
+    await vi.waitFor(() => expect(w.fences.has('a')).toBe(false))
+    expect(w.settled).toEqual([])
+    expect(w.news.at(-1)).toMatchObject({ moveId, outcome: 'kept', source: { hostId: HERE, threadId: 'a' } })
+    expect(JSON.parse(await readFile(join(directory, 'moves.json'), 'utf8')).keeping).toBeUndefined()
+    again.close()
+  })
+  it('ends a move never asked to start there at once, made nothing, with nothing asked of the machine', async () => {
+    const w = world(), at = new Date().toISOString(), moveId = randomUUID()
+    const record: MoveRecord = { id: moveId, sourceThreadId: 'a', targetHostId: FORGE, machine: 'forge', state: 'fenced',
+      start: { provider: 'codex', modelId: model.id, title: 'Thread a' }, watched: false, createdAt: at, updatedAt: at }
+    await writeFile(join(directory, 'moves.json'), JSON.stringify({ version: 1, moves: [record] }))
+    w.remote.connected = false
+    const moves = w.service(); await moves.load(); moves.useTargets(w.targets)
+    expect(w.fences.has('a')).toBe(true)
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ waiting: true }))
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'ok' })
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('kept'))
+    expect(moves.list()[0]!.givenBack).toBe(THREAD_MOVE_WORDS.kept('forge', false))
+    expect(w.remote.keeps).toEqual([])
+    await vi.waitFor(() => expect(w.fences.has('a')).toBe(false))
+    moves.close()
+  })
+  it('says a machine too old to call a move off needs a newer Sotto, and keeps nothing', async () => {
+    // Forge took the start but its answer was lost, so the move waits on it, connected and too old to call it off.
+    const w = world(), moves = w.service(1_000); moves.useTargets(w.targets)
+    w.remote.fail = new Error('The connection dropped.')
+    w.remote.keepSupported = false
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ waiting: true }))
+    expect(moves.list()[0]!.startAsked).toBe(true)
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.olderKeep('forge') })
+    expect(moves.view().cards[0]!.keeping).toBeUndefined()
+    moves.close()
   })
 })
