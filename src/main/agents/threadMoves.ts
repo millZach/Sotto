@@ -240,6 +240,9 @@ function movedModel(source: AgentThread | undefined, sourceModel: AgentModel | u
   const name = there?.name ?? (same ? sourceModel?.name : undefined) ?? modelId
   return { name: cut(name), ...source && !same ? { instead: cut(sourceModel?.name ?? source.modelId) } : {} }
 }
+/** What each planned thread would start on there, by the window's ID for it, to tell whether that changed. */
+const startsOf = (plans: ReadonlyMap<string, Plan>): ReadonlyMap<string, string> =>
+  new Map([...plans.values()].map(plan => [plan.threadId, JSON.stringify(plan.start ?? null)] as const))
 /** The model a move's new thread starts on there: the source's own where it is ready there, else its provider's first ready one. */
 function targetModel(source: AgentThread, sourceModel: AgentModel | undefined, models: readonly AgentModel[]): AgentModel | undefined {
   const same = resolveModel(models, source.modelId)
@@ -342,6 +345,8 @@ export class ThreadMoveService {
   private readonly placedAt = new Map<string, string>()
   /** Watcher's proposals from the user's words, this run's, newest last (`propose`). */
   private readonly proposals = new Map<string, ThreadMoveProposal>()
+  /** What each proposed thread would start on there, as its card showed it: a press moves it only on the same. */
+  private readonly proposedStarts = new Map<string, ReadonlyMap<string, string>>()
   private readonly listeners = new Set<(view: ThreadMovesView) => void>()
   private targets: MoveTargets | undefined
   private unhook: (() => void)[] = []
@@ -544,7 +549,8 @@ export class ThreadMoveService {
     const proposal: ThreadMoveProposal = { id, state: 'open', hostId: parsed.data.machine, machine: reach.name, ...parsed.data.machine === here ? { here: true as const } : {},
       threads: parsed.data.threads.flatMap(target => { const plan = plans.get(keyOf(target)); return plan ? [this.proposed(plan, target, true)] : [] }), at, updatedAt: at }
     this.proposals.set(id, proposal)
-    for (const old of this.proposals.keys()) { if (this.proposals.size <= THREAD_MOVE_PROPOSALS_MAX) break; this.proposals.delete(old) }
+    this.proposedStarts.set(id, startsOf(plans))
+    for (const old of this.proposals.keys()) { if (this.proposals.size <= THREAD_MOVE_PROPOSALS_MAX) break; this.proposals.delete(old); this.proposedStarts.delete(old) }
     this.changed()
     return { status: 'ok', proposalId: id, machine: reach.name, note: THREAD_MOVE_PROPOSE_NOTE,
       threads: proposal.threads.map(item => ({ hostId: item.source.hostId, threadId: item.source.threadId, outcome: item.outcome, ...item.words ? { words: item.words } : {} })) }
@@ -552,7 +558,8 @@ export class ThreadMoveService {
   /** One thread of a proposal as its plan says, on the machine it is on now; one that can move starts ticked when `ticked`. */
   private proposed(plan: Plan, target: WatcherThreadTarget, ticked: boolean): ThreadMoveProposedThread {
     const here = this.options.control.hostId()
-    const from = target.hostId === here ? undefined : plan.from ?? this.targets?.name(target.hostId)
+    // A machine no longer listed is still not This computer.
+    const from = target.hostId === here ? undefined : plan.from ?? this.targets?.name(target.hostId) ?? 'Paired machine'
     return { threadId: plan.threadId, outcome: plan.outcome, ...plan.words ? { words: plan.words } : {}, ...plan.model ? { model: plan.model } : {},
       ...plan.startsOn ? { startsOn: plan.startsOn } : {}, source: plan.sourceThreadId ? { hostId: plan.sourceHostId ?? target.hostId, threadId: plan.sourceThreadId } : target,
       ...from ? { from } : {}, ticked: ticked && plan.outcome !== 'stays' }
@@ -570,10 +577,12 @@ export class ThreadMoveService {
     const preview = this.prepare({ threadIds: press.threadIds, hostId: proposal.hostId })
     if (preview.status === 'refused') return preview
     const fresh = new Map(preview.threads.map(item => [item.threadId, item] as const))
+    // What each would start on, its permission included, as well as what the card says of it.
+    const startsNow = startsOf(this.confirmations.get(preview.confirmationId)?.plans ?? new Map()), startsShown = this.proposedStarts.get(proposal.id)
     const same = press.threadIds.every(threadId => {
       const was = shown.get(threadId)!, is = fresh.get(threadId)
       return is !== undefined && is.outcome === was.outcome && is.words === was.words && is.startsOn === was.startsOn
-        && is.model?.name === was.model?.name && is.model?.instead === was.model?.instead
+        && is.model?.name === was.model?.name && is.model?.instead === was.model?.instead && startsNow.get(threadId) === startsShown?.get(threadId)
     })
     if (!same) {
       this.confirmations.delete(preview.confirmationId)
@@ -581,6 +590,7 @@ export class ThreadMoveService {
       const plans = this.plansOf(proposal.threads.map(item => item.threadId), proposal.hostId)
       const threads = proposal.threads.map(item => { const plan = plans?.get(item.threadId); return plan ? this.proposed(plan, item.source, press.threadIds.includes(item.threadId)) : item })
       this.proposals.set(proposal.id, { ...proposal, threads, words: THREAD_MOVE_WORDS.proposalChanged, updatedAt: now() })
+      if (plans) this.proposedStarts.set(proposal.id, startsOf(plans))
       this.changed()
       return { status: 'refused', message: THREAD_MOVE_WORDS.proposalChanged }
     }

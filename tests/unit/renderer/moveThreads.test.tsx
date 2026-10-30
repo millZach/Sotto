@@ -182,6 +182,12 @@ describe('Moving threads from every machine (#1178 part 3)', () => {
     // Lab is where it is, so This computer is the only machine, and the sheet goes straight to it.
     const sheet = await screen.findByRole('dialog', { name: 'Move Shader cache warmup to This computer?' })
     expect(moves.prepare).toHaveBeenCalledWith({ threadIds: [`host:${LAB}:shader`], hostId: LOCAL })
+    // Its box is ticked, as the thread the user pointed at; unticked, Move waits.
+    const box = within(sheet).getByRole('checkbox', { name: 'Shader cache warmup' })
+    expect(box).toHaveProperty('checked', true)
+    fireEvent.click(box)
+    expect(within(sheet).getByRole('button', { name: 'Move it to This computer' })).toHaveProperty('disabled', true)
+    fireEvent.click(box)
     fireEvent.click(within(sheet).getByRole('button', { name: 'Move it to This computer' }))
     await waitFor(() => expect(moves.start).toHaveBeenCalledWith({ confirmationId: CONFIRMATION, threadIds: [`host:${LAB}:shader`], allowNarrower: [] }))
   })

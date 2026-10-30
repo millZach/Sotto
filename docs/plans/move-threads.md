@@ -146,3 +146,10 @@ Decisions made while building:
 - A proposal is this run's and is not saved, as the cards that ask first are; Watcher hears of each move it led to, not of the proposal or of Not now.
 - Watcher's row in the sheet says it stays on This computer only for a move to another machine.
 
+After Sol's standards and spec reviews of part 3b (October 29):
+
+- A press on Watcher's proposal moves nothing when anything a thread would start on there changed since the card showed it, its model and its permission included, not only what the card says; main keeps what each would start on with the proposal.
+- Shown again, a proposal is the same card with the ticks the user pressed with, so keyboard focus stays where it was and a box the user cleared stays clear. Its line after Move says the user asked to move the threads, since a move counts only once its new thread's first turn ends.
+- A proposal's thread on a machine no longer listed is named as a paired machine, never as This computer.
+- The sheet a More menu opens shows its thread's box too, ticked.
+

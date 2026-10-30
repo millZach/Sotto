@@ -331,7 +331,7 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
           : <Trans>Tick each thread to move. Each continues on {named} as a new thread, in the same project, on the same provider, with a handover of the thread where it is. Its first turn starts at once. Watcher’s conversation reports each move.</Trans>}</p>
       <div className="move-sheet__body" tabIndex={0} role="region" aria-label={t`What moves and what stays`}>
         <MoveGroups threads={preview.threads} machine={named} facts={planned => sheetThread(state, planned.threadId, t`A thread no longer here`, names)}
-          box={one !== null ? undefined : box} watcher={request.kind === 'all' && !machine.here} />
+          box={box} watcher={request.kind === 'all' && !machine.here} />
       </div>
       {going.length ? <p className="move-sheet__note tt-paragraph"><Trans>Each thread is settled where it is once its new thread’s first turn ends, and its worktree is kept there.</Trans></p> : null}
     </>

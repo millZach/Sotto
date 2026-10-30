@@ -867,6 +867,16 @@ describe('Watcher’s proposal from the user’s words (#1178 part 3, Zach’s p
     // Shown again ticked as the user pressed it: b was not, and stays unticked.
     expect(moves.view().proposals!.find(item => item.id === second.proposalId)).toMatchObject({ threads: [{ threadId: 'a', ticked: true }, { threadId: 'b', ticked: false }] })
     expect(moves.list()).toEqual([])
+    // A wider permission is a change too, though the card would still say it moves.
+    w.threads.find(thread => thread.id === 'a')!.modelId = model.id
+    const third = moves.propose({ threads: [{ hostId: HERE, threadId: 'a' }], machine: FORGE }) as { proposalId: string }
+    w.threads.find(thread => thread.id === 'a')!.runtimeMode = 'full-access'
+    expect(await moves.answer({ proposalId: third.proposalId, answer: 'move', threadIds: ['a'] })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.proposalChanged })
+    expect(moves.list()).toEqual([])
+    // A thread on a machine no longer listed is named as a paired machine, never as This computer.
+    const gone = randomUUID()
+    const fourth = moves.propose({ threads: [{ hostId: gone, threadId: 'x' }], machine: FORGE }) as { proposalId: string }
+    expect(moves.view().proposals!.find(item => item.id === fourth.proposalId)!.threads[0]).toMatchObject({ outcome: 'stays', from: 'Paired machine', ticked: false })
     // A thread it does not offer to move is refused, and Not now ends it.
     expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'move', threadIds: ['b'] })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.notProposed })
     expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'dismiss' })).toEqual({ status: 'ok' })
