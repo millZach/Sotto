@@ -33,10 +33,9 @@ afterEach(async () => {
 /** A loopback address nothing answers: a page that is offered but does not work, found without waiting for retries. */
 const DEAD_PAGE = 'http://127.0.0.1:9/'
 
-async function start() {
+async function start(host = new E2EAgentHost()) {
   const directory = await mkdtemp(join(tmpdir(), 'sotto-prototype-questions-'))
   roots.push(directory)
-  const host = new E2EAgentHost()
   await host.initializeWorkingFolders(directory)
   await writeFile(join(directory, 'project', 'greeting-prototype.html'), '<h1>Greeting</h1>')
   const credentials = await testCredentials(directory, { mode: 'unavailable' })
@@ -127,16 +126,25 @@ describe('the coordinator’s checked prototype questions', () => {
     expect(answers(execute)).toEqual([])
   })
 
-  it('keeps a queued follow-up back while a question is held', async () => {
-    const { host, control, execute } = await start()
+  it('keeps a queued follow-up back while a question is held, then sends when the request clears', async () => {
+    const { host, control, execute } = await start(new E2EAgentHost('queued-steering'))
+    await control.command({ type: 'manual-send', threadId: 'workshop', text: 'Start the prototype' })
+    host.event({ type: 'ready', threadId: 'workshop', text: 'The turn finished.' })
+    execute.mockClear()
     // Named no page at all, the question is looked for a few times before it is sent back. It arrives with the thread at
-    // rest, which would send a follow-up at once if nothing held it.
+    // rest on a completed turn, which would send a follow-up at once if nothing held it.
     host.event({ type: 'question', threadId: 'workshop', requestId: 'q1', text: 'Which prototype variant do you like?' })
     expect(requests(control.shell())).toEqual([])
     expect((await control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'Also add a footer' })).error).toBeNull()
-    expect(control.shell().followups).toHaveLength(1)
-    // The queue has decided: a thread waiting on the user keeps the follow-up for the user's review rather than sending it.
-    await vi.waitFor(() => expect(control.shell().followups?.[0]?.status).toBe('paused'))
+    const queued = control.shell().followups![0]!
+    // An edit crosses the queue's mutation lane, after any claim the first pump could have started.
+    expect((await control.command({ type: 'edit-followup', threadId: 'workshop', itemId: queued.id, text: queued.text })).error).toBeNull()
+    expect(control.shell().followups).toEqual([expect.objectContaining({ text: 'Also add a footer', status: 'queued' })])
+    expect(requests(control.shell())).toEqual([])
     expect(execute.mock.calls.some(([command]) => command.type === 'send')).toBe(false)
+    // The provider clears its request; the hidden card hold ends without requiring the user to resume the queue.
+    host.event({ type: 'history', threadId: 'workshop', messages: [], text: '' })
+    await vi.waitFor(() => expect(execute).toHaveBeenCalledWith(expect.objectContaining({ type: 'send', threadId: 'workshop', text: 'Also add a footer' })))
+    expect(answers(execute)).toEqual([])
   })
 })

@@ -22,9 +22,25 @@ Using Node 24.22.1 after `npm ci --ignore-scripts`:
   `tests/unit/renderer/threadQueueSkills.test.tsx`: 93 passed. Editable drafts,
   enabled Queue, unchanged cards, keyboard queueing, and no implicit answer or
   steer. Watcher cases run with the quiet-composer switch both on and off.
+- `tests/unit/renderer/threadRequestSurroundings.test.tsx` and
+  `tests/unit/renderer/threadComposerRecovery.test.tsx`: 10 passed. Native, legacy,
+  and provider-app cards stay pending while follow-ups queue; arriving cards keep
+  the draft and focus, and clearing cards preserves newer typing.
+- `tests/unit/main/agentAttentionWorkspace.test.ts`,
+  `tests/unit/main/prototypeQuestionsControl.test.ts`, and
+  `tests/unit/main/wakeUpQueue.test.ts`: 38 passed. Pending requests accept user
+  follow-ups without sending or answering, hidden cards hold delivery, and user
+  messages keep their place ahead of wake-ups. Closed/disconnected guards remain.
 - `npm run i18n:extract` and `tests/unit/shared/interfaceCatalogs.test.ts`: 4 passed.
   Extraction reports the existing nonliteral `COMMAND_NOTE` comment warnings in
   `MessageContent`; it exits successfully.
+
+The first GitHub run caught two omissions: the new iPhone labels lacked their
+30 translations, and existing request/queue tests still expected admission to be
+blocked or paused. The catalog now includes both labels in every language;
+`node apps/ios/scripts/check-strings.mjs` passes. The affected unit expectations
+now assert queue admission while preserving cards and delivery order. The
+permission-layout e2e expectations were updated too; execution stays on GitHub.
 
 The native iPhone model test and existing phone integration test were updated.
 Those suites, the rest of CI, and native iPhone compilation are left to GitHub.
