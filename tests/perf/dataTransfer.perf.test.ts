@@ -37,6 +37,8 @@ import { ownerScalePipeline, type OwnerScalePipeline, type OwnerScaleTrack } fro
 import { median } from '../fixtures/perfBench'
 
 const BENCH = process.env.SOTTO_PERF_BENCH === '1'
+/** `SOTTO_AUDIT_STRINGIFY_SITES=1`: where each counted `JSON.stringify` call was made, three frames deep. */
+const STRINGIFY_SITES = process.env.SOTTO_AUDIT_STRINGIFY_SITES === '1'
 const TRACK = (process.env.SOTTO_AUDIT_TRACK ?? 'owl') as OwnerScaleTrack
 const WATCHER_SCALE = Number(process.env.SOTTO_AUDIT_WATCHER ?? '1')
 const LONG = process.env.SOTTO_AUDIT_LONG !== '0'
@@ -52,8 +54,9 @@ interface Tally {
   wireMs: number; wireIds: number; wireRecords: number
   bigPosts: Record<string, number>
   methods: Record<string, { calls: number; ms: number; size: number }>
+  stringifySites: Record<string, number>
 }
-const fresh = (): Tally => ({ channels: {}, files: {}, stringify: { calls: 0, chars: 0, ms: 0 }, clone: { calls: 0, ms: 0 }, threadsChangedPerBroadcast: [], stateParts: {}, wireMs: 0, wireIds: 0, wireRecords: 0, bigPosts: {}, methods: {} })
+const fresh = (): Tally => ({ channels: {}, files: {}, stringify: { calls: 0, chars: 0, ms: 0 }, clone: { calls: 0, ms: 0 }, threadsChangedPerBroadcast: [], stateParts: {}, wireMs: 0, wireIds: 0, wireRecords: 0, bigPosts: {}, methods: {}, stringifySites: {} })
 /** The fake clock fakes `performance`; time work on the machine's own clock. */
 const realNow = (): number => Number(process.hrtime.bigint()) / 1e6
 let tally = fresh()
@@ -179,6 +182,10 @@ function install(): void {
     try {
       const text = nativeStringify(...args)
       tally.stringify.calls++; tally.stringify.chars += text?.length ?? 0; tally.stringify.ms += realNow() - started
+      if (STRINGIFY_SITES) {
+        const where = (new Error().stack ?? '').split('\n').filter(line => line.includes('/src/')).slice(0, 3).map(line => line.trim().replace(/.*\/src\//u, 'src/').replace(/\)$/u, '')).join(' <- ')
+        tally.stringifySites[where] = (tally.stringifySites[where] ?? 0) + 1
+      }
       return text
     } finally { depth-- }
   } as typeof JSON.stringify
@@ -226,6 +233,7 @@ interface Result {
   wire: { ms: number; ids: number; records: number }
   bigPosts: Record<string, number>
   methods: Tally['methods']
+  stringifySites?: Record<string, number>
 }
 const PROFILE = new Set((process.env.SOTTO_AUDIT_PROFILE ?? '').split(',').filter(Boolean))
 async function scenario(work: () => Promise<void>, settleMs = 1_000, name = ''): Promise<Result> {
@@ -250,7 +258,7 @@ async function measured(work: () => Promise<void>, settleMs: number): Promise<Re
     channels: Object.fromEntries(Object.entries(tally.channels).map(([name, c]) => [name, { ...c, encodeMs: round(c.encodeMs), perSecond: round(c.messages / (simulatedMs / 1000)) }])),
     files: tally.files, stringify: { ...tally.stringify, ms: round(tally.stringify.ms) }, clone: { ...tally.clone, ms: round(tally.clone.ms) },
     threadsChangedPerBroadcast: { mean: round(tally.threadsChangedPerBroadcast.reduce((a, b) => a + b, 0) / Math.max(1, tally.threadsChangedPerBroadcast.length)), max: Math.max(0, ...tally.threadsChangedPerBroadcast) },
-    wire: { ms: round(tally.wireMs), ids: tally.wireIds, records: tally.wireRecords }, bigPosts: tally.bigPosts, methods: Object.fromEntries(Object.entries(tally.methods).map(([k, v]) => [k, { ...v, ms: round(v.ms) }])),
+    wire: { ms: round(tally.wireMs), ids: tally.wireIds, records: tally.wireRecords }, bigPosts: tally.bigPosts, ...STRINGIFY_SITES ? { stringifySites: Object.fromEntries(Object.entries(tally.stringifySites).sort((a, b) => b[1] - a[1]).slice(0, 12)) } : {}, methods: Object.fromEntries(Object.entries(tally.methods).map(([k, v]) => [k, { ...v, ms: round(v.ms) }])),
     statePartsBytesPerBroadcast: Object.fromEntries(Object.entries(tally.stateParts).map(([key, bytes]) => [key, Math.round(bytes / Math.max(1, broadcasts))]).sort((a, b) => (b[1] as number) - (a[1] as number))),
   }
 }
@@ -367,6 +375,8 @@ it.skipIf(!BENCH)('measures what main moves per chunk and per action', async () 
     thread.status = 'idle'; p.adapter.mark(session); p.adapter.publish(false); await pass(1_000)
   }
   for (const [name, action] of Object.entries(p.actions)) results[name] = await scenario(() => until(action()), 1_000, name)
+  // Typing an answer saves it at every pause: the next save, after the first, is what each pause costs.
+  results['saveAnswerDraft again'] = await scenario(() => until(p.actions.saveAnswerDraft()), 1_000, 'saveAnswerDraft again')
   // Two turns of a thread nobody is looking at, a second apart, each adding one activity record (C1).
   results['background turns'] = await scenario(async () => {
     const thread = p.adapter.state.threads.find(item => item.id === BACKGROUND)!
