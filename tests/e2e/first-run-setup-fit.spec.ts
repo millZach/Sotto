@@ -23,7 +23,7 @@ test('every first-run setup step fits the default window, the minimum and larger
     await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
     const body = page.locator('.onboarding-card__body')
     for (let step = 1; step <= 9; step += 1) {
-      const title = (await page.locator('.onboarding-progress__text').textContent() ?? '').replace(/^Step \d+ of 9 · /u, '')
+      const title = await page.locator('#onboarding-heading').textContent() ?? `step ${step}`
       if (step === 3) {
         await page.getByRole('button', { name: 'Test microphone', exact: true }).click()
         await expect(page.getByText('Sotto heard you. Your microphone works.')).toBeVisible()

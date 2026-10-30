@@ -94,7 +94,7 @@
 .provider-model-list__tag { flex: none; padding: 1px 7px; border: 1px solid var(--tt-accent-border); border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-accent-text); font-size: 11px; white-space: nowrap; }
 .provider-models__empty { color: var(--tt-text-muted); font-size: 14px; line-height: 1.6; }
 /* A refusal inside OpenCode's model sources and its sign-in dialog. */
-.provider-detail__error { margin: 22px 0 0; padding: 12px 14px; border-left: 2px solid var(--tt-error); background: var(--tt-error-contrast); color: var(--tt-error); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
+.provider-detail__error { margin: 22px 0 0; padding: 12px 14px; border-radius: var(--tt-radius-sm); background: var(--tt-error-contrast); color: var(--tt-error); font-size: 14px; line-height: 1.6; overflow-wrap: anywhere; }
 
 .providers-note { margin: 14px 2px 0; color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.5; }
 .providers-updates { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--tt-hairline); }

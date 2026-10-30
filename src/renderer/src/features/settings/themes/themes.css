@@ -334,10 +334,8 @@
 .theme-editor__groups h4 {
   margin: 0 0 4px;
   color: var(--tt-text-muted);
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 600;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
 }
 
 .theme-editor__empty { margin: 0; color: var(--tt-text-muted); font-size: 12.5px; }
