@@ -27,6 +27,7 @@ import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink, type UsageRe
 import type { UserMessageInstantSource } from './usageHistory/sottoPrompts'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { samePlainData } from './agentStateBroadcast'
 import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentContinuation, type AgentHost, type ReplyFork, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StartHandoverSent, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
 import { agentHandover, type AgentHandover } from './agentHandover'
 import { AGENT_HANDOVER_UNAVAILABLE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING, FORK_REPLY_GONE, FORK_TURN_RUNNING, NATIVE_FORKS } from '../../shared/threadStarts'
@@ -220,6 +221,12 @@ function retainedActivities(activities: AgentActivity[]): AgentActivity[] {
   const retained = immutableActivities(records)
   retainedActivityViews.set(activities, retained)
   return retained
+}
+
+/** `records`, with each one that holds the same data as the record of its ID in `held` replaced by that record. */
+function keepingHeld(records: AgentActivity[], held: readonly AgentActivity[]): AgentActivity[] {
+  const byId = new Map(held.map(record => [record.id, record]))
+  return records.map(record => { const was = byId.get(record.id); return was !== undefined && was !== record && samePlainData(was, record) ? was : record })
 }
 
 /** Where the serialized catalog goes in a saved workspace built without it, spliced back from its cache. */
@@ -4213,13 +4220,18 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     const previous = this.activityInputs.get(thread.id)
     const stable = isImmutableActivities(input)
-    const reusable = stable && previous && old && previous.epoch === thread.historyEpoch
+    // A read reconciles every record it brings, as it did when reads came as copies: only a publication may take the merge
+    // it gave last time, so a list at the record limit keeps exactly what a read always kept (ADR-0016, October 30).
+    const reusable = !this.acceptingRead && stable && previous && old && previous.epoch === thread.historyEpoch
       && old.historyEpoch === thread.historyEpoch && old.activities === previous.output
     if (reusable && previous.input === input) return previous.output
     const incoming = reusable ? input!.filter(record => previous.records.get(record.id) !== record) : input ?? []
     const combined = old?.historyEpoch !== thread.historyEpoch ? input ?? [] : mergeAgentActivities(old?.activities, incoming)
     // A wordless Codex reasoning summary an earlier Sotto saved goes once the thread's activity is read again.
-    const merged = combined.some(wordlessReasoningSummary) ? combined.filter(record => !wordlessReasoningSummary(record)) : combined
+    const reconciled = combined.some(wordlessReasoningSummary) ? combined.filter(record => !wordlessReasoningSummary(record)) : combined
+    // A read's whole reconciliation makes each record again; one that comes out as the record held is the record held, so
+    // what the workspace keeps is what it always kept from a read, and nothing downstream sees an unchanged record as new.
+    const merged = this.acceptingRead && old?.activities?.length ? keepingHeld(reconciled, old.activities) : reconciled
     // Legacy input cannot be reused on the next update. Keep its full reconciliation path
     // without adding an ownership copy that every subsequent publication must replace.
     const output = stable ? immutableActivities(merged) : merged
@@ -4416,6 +4428,12 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * a read the state may say what the inner host's publications have not, so the next publication is taken in whole too.
    */
   private accept(snapshot: AgentHostSnapshot, fromPublication = false): void {
+    this.acceptingRead = !fromPublication
+    try { this.acceptNow(snapshot, fromPublication) } finally { this.acceptingRead = false }
+  }
+  /** A read's accept rather than a publication's: its activity is reconciled whole (`mergeActivities`). */
+  private acceptingRead = false
+  private acceptNow(snapshot: AgentHostSnapshot, fromPublication: boolean): void {
     const previousAcceptAt = this.acceptedAt
     this.acceptedAt = Date.now()
     this.remerge.clear()
