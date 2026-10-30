@@ -1519,7 +1519,7 @@ private struct WatcherDock: View {
                 Text(held).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .paragraphDirection()
-                    .padding(.horizontal, Space.s4).padding(.vertical, Space.s2)
+                    .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
                     .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
                     .accessibilityIdentifier("watcher-send-held")
             }

@@ -1912,7 +1912,7 @@ private struct ReplyDock: View, Equatable {
         .foregroundStyle(Palette.muted)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Space.s4)
-        .padding(.vertical, Space.s2)
+        .padding(.vertical, Space.s3)
         .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("watched-takeover")
