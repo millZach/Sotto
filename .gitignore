@@ -837,3 +837,11 @@ marketing/launch-video/public/takes/
 marketing/launch-video/public/stills/
 marketing/launch-video/src/takes.json
 marketing/launch-video/out/
+
+# Headless composer evidence; retain only the captures and checks cited by the verification note.
+artifacts/next-prompt-quiet-composer/*
+!artifacts/next-prompt-quiet-composer/main-thread.png
+!artifacts/next-prompt-quiet-composer/main-watcher.png
+!artifacts/next-prompt-quiet-composer/speed-thread.png
+!artifacts/next-prompt-quiet-composer/speed-watcher.png
+!artifacts/next-prompt-quiet-composer/checks.json

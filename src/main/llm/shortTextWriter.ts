@@ -1,11 +1,11 @@
 import type { AppSettings } from '../../shared/settings'
-import type { ShortTextPrompt } from '../agents/host'
+import type { ShortTextPrompt, ShortTextPurpose } from '../agents/host'
 
-export type ShortTextPurpose = 'thread-title' | 'thread-branch' | 'commit-message' | 'pull-request-text' | 'next-prompt'
+export type { ShortTextPurpose } from '../agents/host'
 export type ShortTextFailureReason = 'unavailable' | 'failed' | 'empty'
 
 export interface ShortTextRequest {
-  /** What this text is for, for the failure log only; never sent to the model. */
+  /** What this text is for, for provider routing and the failure log; never sent to the model. */
   readonly purpose: ShortTextPurpose
   /** The whole instruction the model follows. */
   readonly instruction: string
@@ -80,7 +80,7 @@ export class ShortTextWriter {
 
   private async performWrite(threadId: string, request: ShortTextRequest, stop: AbortSignal): Promise<string | null> {
     let content: string | null
-    try { content = await this.dependencies.write(threadId, { instruction: request.instruction, material: request.material }, stop) }
+    try { content = await this.dependencies.write(threadId, { instruction: request.instruction, material: request.material, purpose: request.purpose }, stop) }
     catch { return stop.aborted ? null : this.fail(request.purpose, 'failed') }
     if (stop.aborted) return null
     if (content === null) return this.fail(request.purpose, 'unavailable')

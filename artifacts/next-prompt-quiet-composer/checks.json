@@ -1,0 +1,174 @@
+{
+  "main": "fd5267ccadac07b54e0ccb79b9d93fb1ab74c53e",
+  "speed": "2ef654cd231b27ebe23b7d4f26cf07ac3087c640",
+  "rows": [
+    {
+      "source": "main",
+      "room": "thread",
+      "quiet": true,
+      "upList": true,
+      "tabAccepts": true,
+      "focusStaysInEditor": true,
+      "hasDots": true,
+      "stopFocus": "effort-dots__stop tt-focusable",
+      "samples": [
+        {
+          "width": 1600,
+          "theme": "dark",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 1280,
+          "theme": "dark",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 820,
+          "theme": "dark",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 820,
+          "theme": "light",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 390,
+          "theme": "light",
+          "ghostVisible": true,
+          "overflow": false
+        }
+      ]
+    },
+    {
+      "source": "main",
+      "room": "watcher",
+      "quiet": false,
+      "upList": true,
+      "tabAccepts": true,
+      "focusStaysInEditor": true,
+      "hasDots": false,
+      "stopFocus": null,
+      "samples": [
+        {
+          "width": 1600,
+          "theme": "dark",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 1280,
+          "theme": "dark",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 820,
+          "theme": "dark",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 820,
+          "theme": "light",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 390,
+          "theme": "light",
+          "ghostVisible": true,
+          "overflow": false
+        }
+      ]
+    },
+    {
+      "source": "speed",
+      "room": "thread",
+      "quiet": true,
+      "upList": true,
+      "tabAccepts": true,
+      "focusStaysInEditor": true,
+      "hasDots": true,
+      "stopFocus": "effort-dots__stop tt-focusable",
+      "samples": [
+        {
+          "width": 1600,
+          "theme": "dark",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 1280,
+          "theme": "dark",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 820,
+          "theme": "dark",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 820,
+          "theme": "light",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 390,
+          "theme": "light",
+          "ghostVisible": true,
+          "overflow": false
+        }
+      ]
+    },
+    {
+      "source": "speed",
+      "room": "watcher",
+      "quiet": true,
+      "upList": true,
+      "tabAccepts": true,
+      "focusStaysInEditor": true,
+      "hasDots": true,
+      "stopFocus": "effort-dots__stop tt-focusable",
+      "samples": [
+        {
+          "width": 1600,
+          "theme": "dark",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 1280,
+          "theme": "dark",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 820,
+          "theme": "dark",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 820,
+          "theme": "light",
+          "ghostVisible": true,
+          "overflow": false
+        },
+        {
+          "width": 390,
+          "theme": "light",
+          "ghostVisible": true,
+          "overflow": false
+        }
+      ]
+    }
+  ]
+}

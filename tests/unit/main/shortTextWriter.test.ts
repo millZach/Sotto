@@ -4,16 +4,32 @@
  * that name a thread and draft commit and pull request text, and the promise that every failure resolves to
  * null instead of an error.
  */
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import type { ShortTextPrompt } from '../../../src/main/agents/host'
+import type { AgentHost, ShortTextPrompt, ShortTextPurpose, ThreadLaunchProfiles, WatcherLaunchProfile } from '../../../src/main/agents/host'
+import { CodexAppServerHost } from '../../../src/main/agents/codex'
+import { ClaudeStreamJsonHost } from '../../../src/main/agents/claude'
+import { GrokAcpHost } from '../../../src/main/agents/grok'
+import { CursorAcpHost } from '../../../src/main/agents/cursor'
+import { WatcherProfileRefusal } from '../../../src/main/agents/watcherProfile'
+import * as threadWorktrees from '../../../src/main/agents/threadWorktrees'
 import { ShortTextWriter } from '../../../src/main/llm/shortTextWriter'
+import { nextPromptRequest } from '../../../src/main/llm/nextPrompt'
 import { THREAD_TITLE_MAX_CHARACTERS, threadTitleRequest, threadTitleWriter } from '../../../src/main/llm/threadTitle'
 import { pullRequestTextWriter } from '../../../src/main/llm/pullRequestText'
 import { COMMIT_DIFF_MAX_CHARACTERS, COMMIT_SUBJECT_MAX_CHARACTERS, commitMessageRequest, commitMessageWriter } from '../../../src/main/llm/commitMessage'
 import { diffExcerpt } from '../../../src/main/llm/diffExcerpt'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 import { deferred } from '../../fixtures/deferred'
+
+// The real admission checks run, but reaching the working-directory lookup stops before any side client runs.
+// Grok constructs its client before that lookup; keep its constructor from sweeping native session folders.
+vi.mock('../../../src/main/agents/subscriptionGrok', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../src/main/agents/subscriptionGrok')>(),
+  GrokSubscriptionClient: class {},
+}))
+
+afterEach(() => vi.restoreAllMocks())
 
 const SETTINGS: AppSettings = { ...DEFAULT_SETTINGS }
 
@@ -29,6 +45,76 @@ function createWriter(write: SideWrite = async () => 'Palette contrast pass') {
 const sent = (side: ReturnType<typeof vi.fn<SideWrite>>): ShortTextPrompt => side.mock.calls[0]![1]
 
 const exchange = { prompt: 'The palette is unreadable in dark mode.', reply: 'I raised the foreground contrast on the two dark themes.' }
+
+const watcherProfile: WatcherLaunchProfile = {
+  kind: 'watcher',
+  server: { name: 'sotto_threads', type: 'http', url: 'http://127.0.0.1:4321/mcp', headers: [] },
+  toolNames: ['list_threads'],
+  revoke: () => undefined,
+}
+const providers = [
+  { name: 'Codex', Host: CodexAppServerHost },
+  { name: 'Claude', Host: ClaudeStreamJsonHost },
+  { name: 'Grok', Host: GrokAcpHost },
+  { name: 'Cursor', Host: CursorAcpHost },
+]
+
+/** Exercise the adapters' real side-writing and profile checks without starting a provider or opening files. */
+function guardedProvider(Host: { prototype: Required<Pick<AgentHost, 'writeShortText'>> }, profile: WatcherLaunchProfile | undefined) {
+  const profileFor = vi.fn<ThreadLaunchProfiles['profileFor']>().mockResolvedValue(profile)
+  const known = new Map<string, WatcherLaunchProfile>()
+  const alias = { kind: 'project', modelId: 'fixture-model', cwd: process.cwd(), grokSessionId: 'grok-session', cursorSessionId: 'cursor-session' }
+  const reachedSideCall = new Error('Reached the isolated side call')
+  const sideCall = vi.spyOn(threadWorktrees, 'existingWorkingDirectory').mockRejectedValue(reachedSideCall)
+  const host = Object.assign(Object.create(Host.prototype) as Required<Pick<AgentHost, 'writeShortText'>>, {
+    generation: 0, launchProfiles: { profileFor }, aliases: { watcher: alias }, state: { connected: true, models: [] },
+    options: { executable: process.execPath, codexHome: process.cwd() }, userDataDirectory: process.cwd(),
+    executable: process.execPath, program: { executable: process.execPath, args: [] },
+    runtimes: new Map(), processes: new Map(), connections: new Map(),
+    watcherProfiles: known, resolvedWatcherProfiles: known, knownLaunchProfiles: known,
+    stopUnverifiedProfile: vi.fn(), stopWatcher: vi.fn(), revokeProfile: vi.fn(),
+  })
+  return { host, alias, profileFor, known, sideCall, reachedSideCall }
+}
+
+describe.each(providers)('$name Watcher side writing', ({ Host }) => {
+  it('admits only the internal next-prompt purpose after checking the Watcher profile', async () => {
+    const f = guardedProvider(Host, watcherProfile)
+    const refused: (ShortTextPurpose | undefined)[] = [undefined, 'thread-title', 'thread-branch', 'commit-message', 'pull-request-text']
+    for (const purpose of refused) {
+      await expect(f.host.writeShortText('watcher', { instruction: 'Write a line.', material: 'Conversation', ...(purpose ? { purpose } : {}) })).resolves.toBeNull()
+    }
+    expect(f.profileFor).toHaveBeenCalledTimes(refused.length)
+    expect(f.sideCall).not.toHaveBeenCalled()
+    await expect(f.host.writeShortText('watcher', nextPromptRequest([exchange]))).rejects.toBe(f.reachedSideCall)
+    expect(f.profileFor).toHaveBeenLastCalledWith('watcher')
+    expect(f.sideCall).toHaveBeenCalledOnce()
+  })
+
+  it.each(['failed', 'invalid', 'revoked'] as const)('refuses next-prompt writing when the profile is %s', async failure => {
+    const f = guardedProvider(Host, watcherProfile)
+    if (failure === 'failed') f.profileFor.mockRejectedValue(new Error('Profile unavailable'))
+    else if (failure === 'invalid') f.profileFor.mockResolvedValue({ ...watcherProfile, server: { ...watcherProfile.server, url: 'https://example.invalid/mcp' } })
+    else { f.known.set('watcher', watcherProfile); f.profileFor.mockResolvedValue(undefined) }
+    await expect(f.host.writeShortText('watcher', nextPromptRequest([exchange]))).rejects.toBeInstanceOf(WatcherProfileRefusal)
+    expect(f.sideCall).not.toHaveBeenCalled()
+  })
+
+  it('keeps ordinary thread writing available', async () => {
+    const f = guardedProvider(Host, undefined)
+    await expect(f.host.writeShortText('watcher', threadTitleRequest(exchange))).rejects.toBe(f.reachedSideCall)
+    expect(f.sideCall).toHaveBeenCalledOnce()
+  })
+})
+
+describe.each(providers.filter(provider => provider.name !== 'Cursor'))('$name personal side writing', ({ Host }) => {
+  it('still refuses next-prompt writing for a personal chat', async () => {
+    const f = guardedProvider(Host, undefined)
+    f.alias.kind = 'personal'
+    await expect(f.host.writeShortText('watcher', nextPromptRequest([exchange]))).resolves.toBeNull()
+    expect(f.sideCall).not.toHaveBeenCalled()
+  })
+})
 
 describe('the short-text writing path', () => {
   it('stops a side call in flight, waits for it, and refuses new writing after shutdown', async () => {
@@ -74,7 +160,15 @@ describe('the short-text writing path', () => {
     const prompt = sent(side)
     expect(prompt.instruction).toMatch(/^You name a coding conversation/u)
     expect(prompt.instruction).not.toContain(exchange.prompt)
-    expect(Object.keys(prompt).sort()).toEqual(['instruction', 'material'])
+    expect(prompt.purpose).toBe('thread-title')
+    expect(Object.keys(prompt).sort()).toEqual(['instruction', 'material', 'purpose'])
+  })
+
+  it('carries the trusted next-prompt purpose to the provider apart from its model prompt', async () => {
+    const { side, writer } = createWriter()
+    const request = nextPromptRequest([exchange])
+    await writer.write('watcher', request)
+    expect(sent(side)).toEqual({ instruction: request.instruction, material: request.material, purpose: 'next-prompt' })
   })
 
   it('carries the first message and the first reply, and nothing else', async () => {
