@@ -192,6 +192,19 @@ describe('delegated threads in the sidebar', () => {
     expect(folderOf(state, '', false).listedAs).toBeUndefined()
   })
 
+  it('lists a delegated swarm lead while keeping its angles underneath it only with swarms on', () => {
+    const state = delegatingState()
+    const swarm = { id: 'swarm', leadThreadId: CHILD, count: 1, done: 0, failed: 0, queued: 0 }
+    state.host.threads.find(thread => thread.id === CHILD)!.swarm = swarm
+    state.host.threads.find(thread => thread.id === GRANDCHILD)!.swarm = { ...swarm, index: 0, state: 'working' }
+    const organized = organizeWorkspace(state, describeThreads(state, NOW), '', null, true, NOW, true)
+    const rows = [...organized.open, ...organized.settled].flatMap(folder => folder.rows)
+    expect(rows.map(row => row.thread.id)).toEqual(expect.arrayContaining([PARENT, CHILD]))
+    expect(rows.map(row => row.thread.id)).not.toContain(GRANDCHILD)
+    expect(organized.listedAs).toEqual(new Map([[GRANDCHILD, CHILD]]))
+    expect(ids(state)).not.toContain(CHILD)
+  })
+
   it('keeps a delegated thread whose delegating thread is gone, and hides the one it delegated in turn', () => {
     const state = delegatingState()
     state.host.threads = state.host.threads.filter(thread => thread.id !== PARENT)

@@ -1,8 +1,8 @@
 import { z } from 'zod'
-import { workerKindSchema } from './workerRoles'
+import { WORKER_COUNT_MAX, workerKindSchema } from './workerRoles'
 
 /** Counts are angle workers. The lead is separate, and never consumes an angle's place. */
-export const SWARM_ANGLES_MAX = Number.MAX_SAFE_INTEGER
+export const SWARM_ANGLES_MAX = WORKER_COUNT_MAX
 export const swarmCountSchema = z.number().int().min(1).max(SWARM_ANGLES_MAX)
 export const swarmMemberStateSchema = z.enum(['planned', 'queued', 'working', 'background', 'answered', 'failed', 'stopped', 'paused', 'unknown', 'refused'])
 export type SwarmMemberState = z.infer<typeof swarmMemberStateSchema>
@@ -39,6 +39,7 @@ export interface SwarmThreadView {
   readonly failed: number
   readonly queued: number
   readonly synthesisDone: boolean
+  readonly stopped: boolean
   readonly state?: SwarmMemberState
 }
 export const swarmMemberTerminal = (state: SwarmMemberState): boolean =>

@@ -43,6 +43,7 @@ it('offers swarm arguments, receipts and machine counts only with worker-swarms 
   expect(JSON.stringify(start(false).inputSchema)).not.toContain('"prompts"')
   expect(JSON.stringify(start(false).outputSchema)).not.toContain('"swarm"')
   expect(JSON.stringify(machines(false).outputSchema)).not.toContain('"workerCeiling"')
+  expect((start(true).inputSchema as { properties: { count: { maximum: number } } }).properties.count.maximum).toBe(1_000)
   expect(JSON.stringify(start(true).inputSchema)).toContain('"count"')
   expect(JSON.stringify(start(true).inputSchema)).toContain('"prompts"')
   expect(JSON.stringify(start(true).outputSchema)).toContain('"swarmId"')

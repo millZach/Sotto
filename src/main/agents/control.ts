@@ -3240,6 +3240,13 @@ export class AgentControl {
     return !!thread && this.state.host.connected && thread.clientConnected !== false && isThreadProviderConnected(this.state.host, thread)
       && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))
   }
+  hasQueuedDelegationNews(threadId: string, delegationIds: ReadonlySet<string>): boolean {
+    return this.followupStore.peek().items.some(item => item.threadId === threadId
+      && item.news?.some(news => isDelegationNews(news) && news.items.some(part => delegationIds.has(part.delegationId))))
+  }
+
+  resumeDelegationNews(): void { this.pumpFollowups() }
+
   /**
    * Hands a thread babysitting's news as a wake-up (ADR-0061 decision 8): Sotto's own item in the thread's follow-up
    * queue, which sends it at once when the thread is ready and otherwise when the queue would send the next one,
@@ -4467,7 +4474,8 @@ export class AgentControl {
       // A prompt whose send is unresolved may have started a turn, as one a crash left between the queue's claim and its
       // outbox entry has, with nothing in the outbox to say so: the news waits until it is settled. A set-aside one does not hold it.
       && !this.followupStore.peek().items.some(item => item.threadId === threadId && item.id !== followup.id && (item.status === 'uncertain' || item.status === 'dispatching'))
-      && !(this.state.deliveries ?? []).some(item => item.threadId === threadId && item.setAside !== true && ['queued', 'submitting', 'uncertain'].includes(item.status)))
+      && !(this.state.deliveries ?? []).some(item => item.threadId === threadId && item.setAside !== true && ['queued', 'submitting', 'uncertain'].includes(item.status))
+      && this.delegationHooks?.newsReady?.(threadId, (followup.news ?? []).filter(isDelegationNews)) !== false)
   }
   /** When each thread's hidden delegation news may be tried again after a send that surely did not go. */
   private readonly delegationNewsRetryAt = new Map<string, number>()

@@ -572,7 +572,7 @@ export const agentThreadSchema = z.object({
   delegatedBy: id.optional(),
   /** Live swarm membership, supplied by its owner only while worker-swarms is on. */
   swarm: z.object({ id, leadThreadId: id, index: z.number().int().nonnegative().optional(), count: z.number().int().positive(),
-    synthesisDone: z.boolean().optional(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative(),
+    synthesisDone: z.boolean().optional(), stopped: z.boolean().optional(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative(),
     state: z.enum(['planned', 'queued', 'working', 'background', 'answered', 'failed', 'stopped', 'paused', 'unknown', 'refused']).optional() }).strict().optional(),
   /**
    * The thread this one continues on another provider (ADR-0089), and the threads that continue this one, newest last.

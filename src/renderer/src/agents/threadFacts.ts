@@ -475,15 +475,17 @@ const byActivity = (first: { readonly activityAt: number; readonly id: string },
  * Open with its own attention rather than under a thread on the Settled shelf. Threads no thread started are not in
  * the map.
  */
-export function delegationTops(threads: readonly Pick<AgentThread, 'id' | 'delegatedBy'>[], settled: (threadId: string) => boolean = () => false): ReadonlyMap<string, string> {
-  const parents = new Map<string, string | undefined>(threads.map(thread => [thread.id, thread.delegatedBy]))
+export function delegationTops(threads: readonly Pick<AgentThread, 'id' | 'delegatedBy' | 'swarm'>[], settled: (threadId: string) => boolean = () => false, swarms = false): ReadonlyMap<string, string> {
+  // A swarm lead has its own row, even when another thread delegated the swarm. Its angles remain under that lead.
+  const parents = new Map<string, string | undefined>(threads.map(thread => [thread.id, swarms && thread.swarm?.leadThreadId === thread.id ? undefined : thread.delegatedBy]))
   // A link holds unless it would put an open thread under a settled one.
   const linked = (child: string, parent: string): boolean => parents.has(parent) && (!settled(parent) || settled(child))
   const tops = new Map<string, string>()
   for (const thread of threads) {
-    if (thread.delegatedBy === undefined || !linked(thread.id, thread.delegatedBy)) continue
+    const parent = parents.get(thread.id)
+    if (parent === undefined || !linked(thread.id, parent)) continue
     const seen = new Set([thread.id])
-    let top = thread.delegatedBy
+    let top = parent
     let loop = false
     for (let up = parents.get(top); up !== undefined && linked(top, up); up = parents.get(top)) {
       if (seen.has(top)) { loop = true; break }
@@ -610,9 +612,9 @@ function folder(id: string, project: AgentProject | undefined, rows: readonly Th
  * that delegated to it, whose row says when it waits on you. The Needs you queue is described from the same rows
  * before the search narrows them, so searching never changes it (ADR-0135).
  */
-export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false, now: number = Date.now()): WorkspaceOrganization {
+export function organizeWorkspace(state: AgentState, allRows: readonly ThreadRow[], query: string, activeProjectId: string | null = null, delegation = false, now: number = Date.now(), swarms = false): WorkspaceOrganization {
   const settledIds = delegation ? new Set(allRows.filter(row => row.settledBy !== null).map(row => row.thread.id)) : undefined
-  const tops = delegation ? delegationTops(state.host.threads, threadId => settledIds!.has(threadId)) : undefined
+  const tops = delegation ? delegationTops(state.host.threads, threadId => settledIds!.has(threadId), swarms) : undefined
   const rows = tops?.size ? withoutDelegated(allRows, tops) : allRows
   const { matching, listed } = listThreads(rows, query)
   const isListed = new Set(listed)

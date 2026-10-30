@@ -43,7 +43,7 @@ describe('worker roles', () => {
 
   it('drops damaged counts without dropping the row and never gives Orchestrating counts', () => {
     const row = { modelId: 'chosen', reasoningEffort: 'high', runtimeMode: 'auto' }
-    for (const workers of [{ usual: 0, upTo: 8 }, { usual: 3, upTo: 2 }, { usual: 1.5, upTo: 8 }, 'damaged']) {
+    for (const workers of [{ usual: 0, upTo: 8 }, { usual: 3, upTo: 2 }, { usual: 1.5, upTo: 8 }, { usual: 1, upTo: 1_001 }, 'damaged']) {
       const parsed = parseWorkerRoleChoices({ research: { ...row, workers } })
       expect(parsed.research).toEqual(row)
       expect(workerCounts('research', parsed)).toEqual({ usual: 1, upTo: 8 })

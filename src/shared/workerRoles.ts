@@ -20,10 +20,12 @@ export const workerRoleIdSchema = z.enum(WORKER_ROLE_IDS)
 export type WorkerKind = z.infer<typeof workerKindSchema>
 export type WorkerRoleId = z.infer<typeof workerRoleIdSchema>
 
+/** Bound one request's identities and receipt before allocation. Capacity still queues every valid angle. */
+export const WORKER_COUNT_MAX = 1_000
 /** Angle workers, excluding the lead. A request's own count may exceed the role's automatic range. */
 export const workerCountSchema = z.object({
-  usual: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
-  upTo: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  usual: z.number().int().positive().max(WORKER_COUNT_MAX),
+  upTo: z.number().int().positive().max(WORKER_COUNT_MAX),
 }).strict().refine(value => value.usual <= value.upTo, { message: 'Usual must not exceed Up to.', path: ['usual'] })
 export type WorkerCount = z.infer<typeof workerCountSchema>
 export const WORKER_COUNTS: Readonly<Record<WorkerKind, WorkerCount>> = {

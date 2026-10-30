@@ -704,7 +704,7 @@ export class WatcherService implements WatcherControlHooks {
       ...options.swarms ? { swarmPending: (target: WatcherThreadTarget) => {
         const service = options.swarms!.service(), row = service?.swarmForThread(target.threadId)
           ?? this.owningSnapshot(target.hostId)?.threads.find(thread => thread.id === target.threadId)?.swarm
-        return row?.leadThreadId === target.threadId && row.synthesisDone !== true
+        return row?.leadThreadId === target.threadId && row.synthesisDone !== true && row.stopped !== true
       } } : {},
       reportsWork: () => {
         // One host list per pass, and only once a paired host's thread asks.
