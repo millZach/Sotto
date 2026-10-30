@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useState, type ComponentType, type ReactNode } from 'react'
+import React, { useId, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { ArrowLeftRight, BookOpen, FileSearch, Hammer, MousePointer2, Palette, RotateCcw, Users, Zap } from 'lucide-react'
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural, t } from '@lingui/core/macro'
@@ -101,6 +101,7 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
   const room = useWatcherRoom()
   const watcher: AgentThread | undefined = room?.currentThreadId ? state.host.threads.find(thread => thread.id === room.currentThreadId) : undefined
   const [watcherRefusal, setWatcherRefusal] = useState<LaterWords | null>(null)
+  const pendingWatcherChoice = useRef<WatcherChoice | null>(null)
   const watcherDrawn = watcher ? settingValues(state, watcher) : null
   // What the running Watcher is on now, as its thread reports it.
   const watcherNow: WatcherChoice | null = watcherDrawn ? { modelId: watcherDrawn.model, reasoningEffort: watcherDrawn.effort || null,
@@ -123,12 +124,20 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
       return
     }
     const now = settingValues(state, watcher)
-    // A model on Watcher's provider takes the effort in the same change, so Reset brings back the role's effort too.
-    if (next.modelId !== now.model) pendingSettingsStore.press(watcher.id, 'model', next.modelId, { modelId: next.modelId, ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}) }, command, now, now.model)
-    else if (next.reasoningEffort && next.reasoningEffort !== now.effort) pendingSettingsStore.press(watcher.id, 'effort', next.reasoningEffort, { reasoningEffort: next.reasoningEffort }, command, now, now.effort)
-    // The speed is its own press, after the model's, and only where the model offers it: a provider refuses one it does not.
+    const pending = pendingSettingsStore.view(watcher.id).pending
     const speed = next.speed ?? SPEED_STANDARD
-    if (speed !== now.fast && fitSpeed(next.speed, picked) === next.speed) pendingSettingsStore.press(watcher.id, 'fast', speed, speedPatch(speed, picked), command, now, now.fast)
+    const supportedSpeed = fitSpeed(next.speed, picked) === next.speed
+    // Name the model in the same patch as effort and supported speed, including a press made before its model lands.
+    const patch = { modelId: next.modelId, ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}),
+      ...(supportedSpeed ? speedPatch(speed, picked) : {}) }
+    const pendingChoice = pending.model?.value === pendingWatcherChoice.current?.modelId ? pendingWatcherChoice.current : null
+    const modelNow = pending.model?.value ?? now.model
+    const effortNow = pending.effort?.value ?? pendingChoice?.reasoningEffort ?? now.effort
+    const speedNow = pending.fast?.value ?? (pendingChoice ? pendingChoice.speed ?? SPEED_STANDARD : now.fast)
+    pendingWatcherChoice.current = next
+    if (next.modelId !== modelNow) pendingSettingsStore.press(watcher.id, 'model', next.modelId, patch, command, now, modelNow)
+    else if (next.reasoningEffort && next.reasoningEffort !== effortNow) pendingSettingsStore.press(watcher.id, 'effort', next.reasoningEffort, patch, command, now, effortNow)
+    else if (supportedSpeed && speed !== speedNow) pendingSettingsStore.press(watcher.id, 'fast', speed, patch, command, now, speedNow)
   }
   const local = state.connections?.find(connection => connection.kind === 'local')?.hostId
   const host = local === undefined ? state.host : hostForThread(state.host, { hostId: local })
@@ -151,8 +160,7 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
     const reasoningEffort = patch.reasoningEffort !== undefined ? patch.reasoningEffort : patch.modelId ? fitEffort(shown.reasoningEffort, model) : shown.reasoningEffort
     const runtimeMode = patch.runtimeMode ?? (patch.modelId ? fitRuntimeMode(shown.runtimeMode ?? read.role.permission, model) ?? shown.runtimeMode : shown.runtimeMode)
     // A speed stays through a change of model, as a thread's does; on a model without it the role starts at Standard (ADR-0091).
-    const wantedSpeed = patch.speed !== undefined ? patch.speed : shown.speed
-    const speed = read.role.id === 'orchestrating' && watcher && model?.providerId !== watcher.providerId ? fitSpeed(wantedSpeed, model) : wantedSpeed
+    const speed = patch.speed !== undefined ? patch.speed : shown.speed
     const row: WorkerRoleChoice = { modelId, reasoningEffort, ...(speed ? { speed } : {}), ...(read.role.id === 'orchestrating' || runtimeMode === undefined ? {} : { runtimeMode }) }
     save(withRoleRow(choices, read.role.id, row, catalog))
     if (read.role.id === 'orchestrating') void applyToWatcher({ modelId, reasoningEffort, speed })
@@ -438,10 +446,12 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
   const drawn = watcher ? settingValues(state, watcher) : null
   const liveId = watcher ? pending.pending.model?.value ?? watcher.modelId : null
   const liveModel = liveId ? resolveModel(catalog, liveId) : undefined
-  const liveEffort = watcher ? pending.pending.effort?.value ?? drawn?.effort ?? liveModel?.defaultReasoningEffort ?? null : null
-  const liveSpeed = pending.pending.fast?.value ?? drawn?.fast ?? SPEED_STANDARD
+  const saved = shownOf(read, catalog)
+  const liveEffort = watcher ? pending.pending.effort?.value ?? (liveId === watcher.modelId ? drawn?.effort
+    : saved?.modelId === liveId ? saved.reasoningEffort : liveModel?.defaultReasoningEffort) ?? null : null
+  const liveSpeed = pending.pending.fast?.value ?? (watcher && liveId !== watcher.modelId && saved ? saved.speed ?? SPEED_STANDARD : drawn?.fast) ?? SPEED_STANDARD
   const shown = watcher && liveId ? { modelId: liveId, model: liveModel, reasoningEffort: liveEffort || null, speed: liveSpeed === SPEED_STANDARD ? null : liveSpeed as AgentSpeed }
-    : shownOf(read, catalog)
+    : saved
   const model = shown?.model
   const fallback = read.fallback
   const differs = watcher ? chosen : read.choice !== undefined
@@ -452,8 +462,9 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
   const speedNow = speeds.some(speed => speed.id === shown?.speed) ? shown?.speed ?? SPEED_STANDARD : SPEED_STANDARD
   const providerName = model?.providerId ? PROVIDER_LABELS[model.providerId] : model?.provider ?? t`The provider`
   const notes = watcher ? [] : rowNotes(read, status, catalog, providerOf, 'watcher')
-  // The speed Watcher is on goes with every change, so a change made here never drops one made in its composer.
-  const choose = (modelId: string | undefined, reasoningEffort: string | null | undefined, speed: AgentSpeed | null = shown?.speed ?? null): void => {
+  // A model may run at Standard while Orchestrating keeps a speed it cannot offer.
+  const choiceSpeed = pending.pending.fast?.value ?? (read.choice ? read.choice.speed ?? SPEED_STANDARD : liveSpeed)
+  const choose = (modelId: string | undefined, reasoningEffort: string | null | undefined, speed: AgentSpeed | null = choiceSpeed === SPEED_STANDARD ? null : choiceSpeed as AgentSpeed): void => {
     const nextModel = modelId ?? shown?.modelId
     if (!nextModel) return
     const effort = reasoningEffort !== undefined ? reasoningEffort : modelId ? resolveModel(catalog, modelId)?.defaultReasoningEffort ?? null : shown?.reasoningEffort ?? null

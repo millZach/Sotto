@@ -11,6 +11,7 @@
 .thread-prompt[data-quiet] :is(.screenshot-previews, .attached-files, .screenshot-input__tools > small, .review-chips__note) { grid-row: 3; }
 .thread-prompt[data-quiet] > .thread-options-notices { grid-row: 4; }
 .thread-prompt[data-quiet] :is(.thread-prompt__meta, .thread-options-bar, .thread-options--chips) { flex: none; flex-wrap: nowrap; gap: 0 2px; }
+.thread-prompt[data-quiet] .thread-prompt__actions { gap: 2px; }
 
 /* The model keeps its mark and name and loses its chevron; permissions show only their shield, the words kept for
    assistive technology as ADR-0113 decision 2 keeps them in a narrow pane. */
@@ -35,11 +36,8 @@
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 50%; }
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc[data-face='steer'],
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc[data-face='steer']:hover { background: var(--tt-accent); color: var(--tt-on-accent); }
-.thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__stop.thread-prompt__disc { background: transparent; color: var(--tt-text-muted); }
-/* Where Stop sits beside the dots, the pill's own Stop waits for the slim composer, which hides them (ADR-0125). There the
-   disc a turn leaves with nothing to send steps aside, so the slim line keeps one disc. */
-.thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__stop[data-beside-dots] { display: none; }
-.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__stop[data-beside-dots] { display: inline-flex; }
+.thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__stop { width: 22px; min-width: 22px; padding: 0; }
+/* A slim composer with nothing to send keeps Stop and lets the disabled Send step aside (ADR-0125). */
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt[data-quiet][data-running] .thread-prompt__actions > .thread-prompt__disc[data-face='send']:disabled { display: none; }
 
 /* The effort dots, in the provider's colour drawn toward the text so they read on either theme. */

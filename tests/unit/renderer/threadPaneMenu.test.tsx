@@ -165,4 +165,23 @@ describe('the manual composer', () => {
     expect(view.head()).not.toContainElement(toolbar)
     expect(document.querySelector('.thread-workspace__compose')).toContainElement(toolbar)
   })
+
+  it('keeps quiet Stop after the shield and before the round Send, leaving the effort dots free', () => {
+    vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
+    const state = threadsStateFixture()
+    state.host.capabilities.configureThread = true
+    const thread = state.host.threads.find(item => item.id === THREAD)!
+    thread.status = 'running'
+    thread.requests = []
+    state.host.models.find(model => model.id === thread.modelId)!.runtimeModes = ['approval-required', 'full-access']
+    mount({ state })
+    const shield = screen.getByRole('combobox', { name: 'Thread permissions' })
+    const stop = screen.getByRole('button', { name: 'Stop agent' })
+    const send = screen.getByRole('button', { name: 'Queue prompt' })
+    expect(shield.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(stop.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(stop.parentElement).toHaveClass('thread-prompt__actions')
+    expect(send).toHaveClass('thread-prompt__disc')
+    expect(document.querySelector('.effort-dots__stop')).toBeNull()
+  })
 })

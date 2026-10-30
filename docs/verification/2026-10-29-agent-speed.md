@@ -63,4 +63,34 @@ Owl **0.1.41-owl.20261029.6** was then built and installed before Muse review fr
 
 The detached swap quit `com.sotto.desktop` normally in two seconds, installed `.6` and relaunched it; no termination signal was needed. Packaged resources and deep, strict code signing passed. The installed `app.asar` matches the build (SHA-256 `801f068e9657ad1b7c2336b069396fe5cb7768fcce25e927871f75aa52ee9b80`). The previous `.5` bundle remains at `/tmp/sotto-owl-0.1.41-owl.20261029.6-swap/old-Sotto.app` for rollback.
 
-During review, the speed-cycle instruction was limited to the selected effort dot. Other dots name their effort and current speed, matching their effort-setting action. The 17 speed-control assertions, typecheck and lint passed again on Node 24.22.1. An initial rerun under the shell's Node 25.8.2 failed in the test cleanup because `localStorage.clear` was unavailable; the supported Node 24 rerun passed. This tooltip-only correction follows the `.6` install and is included in the PR, not the installed bundle.
+Both throwaway build worktrees and branches were removed. Their combined commits remain under local tags `local-owl/0.1.41-owl.20261029.5` and `local-owl/0.1.41-owl.20261029.6`; the swap directories and rollback bundles remain.
+
+During review, the speed-cycle instruction was limited to the selected effort dot. Other dots name their effort and current speed, matching their effort-setting action. The 17 speed-control assertions, typecheck and lint passed again on Node 24.22.1. An initial rerun under the shell's Node 25.8.2 failed in the test cleanup because `localStorage.clear` was unavailable; the supported Node 24 rerun passed. Corrections made during review follow the `.6` install and are included in the PR, not the installed bundle.
+
+
+## Muse review
+
+Muse reviewed the whole branch at `42c19bd8b` against main `fd5267cca`, including the ADRs and screenshot evidence. Its first verdict requested changes for Orchestrating model/speed updates; it found no blocker in the core Codex or Claude speed path. Muse did not rerun the checks. Its public final reply was recovered with the native session export after Sotto left the completed review marked as background; the raw export was discarded.
+
+The review also clarified these boundaries:
+
+- Existing Fast changes keep the boolean compatibility command. New starts naming a speed need an updated host; Standard starts omit it. ADR-0091 now says this rather than promising unsupported old-host starts.
+- Codex start/resume still refuses an unconfirmed named tier, intentionally preserving the requested speed. The live probe checked the catalog without starting a turn; provider integration cases are left to GitHub CI.
+- Option/Alt+Up/Down is scoped to focused effort dots. The ADRs now make that scope explicit.
+- Every current speed-capable model offers effort levels. No separate quiet control was added for a hypothetical effort-less model.
+- The compact header keeps its branch-label cap and full-name tooltip. ADR-0161 now names both Automatic and Allow edits as accent outlines, and the evidence captures are all un-ignored.
+
+Watcher's restored full first-message speed control was rendered headlessly at all three desktop sizes in dark and light. No control overflow was found. Inspected evidence: [dark first-message composer](../../artifacts/agent-speed/watcher-first-full-dark.png), [light first-message composer at minimum size](../../artifacts/agent-speed/watcher-first-full-light.png). This uses the same real-component harness and app stylesheets; the temporary render test was removed.
+
+
+## Watcher phone recovery and Owl .7
+
+The desktop Watcher options gained `speed`, but the phone projection spread those options into a strict older contract. Any value, including `null`, made the projection fail and a Watcher-phone hello return `unavailable`. The phone projection now names only its existing fields. Desktop speed is unchanged; phone speed display and configuration remain separate work. Unexpected socket dispatch errors now log the operation and stack once before the existing redacted reply.
+
+The correction is commit `45e3a678deeeb6552779e68fd91b3f975a53c359`. Typecheck, lint and the existing `watcherPhonePage` unit file passed (11 tests, including Fast, Ultrafast and null). No integration suite or app-launched test ran.
+
+Drake then asked to install `.7` immediately after its signed build, including the final pill corrections: Stop follows the shield, and Watcher's New Watcher control sits between shield and Stop, before Send. Dot hover tooltips keep the provider's effort names and the current speed. The final visual and install receipts follow below.
+
+The final renderer correction passed five individually run unit files: 58 `watcherView`, 18 `watcherNew`, 12 `threadPaneMenu`, 13 `workerRolesOrchestrating` and 17 `threadFastMode` tests. The pending-settings correction passed 11 tests: explicitly requesting Standard during a model change no longer produces a false speed-loss warning, while an actually refused named speed still does.
+
+The final real-component headless captures were inspected in dark and light at 1600×1000, 1280×800 and 820×560. They show Standard, Fast, Ultrafast/Full access, running and queued thread and Watcher pills, plus Watcher's first-message states. No control overflow was found. The order is shield, New Watcher (Watcher only), Stop (while working), Send. Each dot's title names its effort and current speed; only the selected dot promises a speed cycle. Computed styles again confirm no dot animation, purple speed states and reduced-motion suppression of the gold sheen. Final evidence: [dark thread](../../artifacts/agent-speed/final-thread-dark.png), [light thread at minimum size](../../artifacts/agent-speed/final-thread-light.png), [dark Watcher](../../artifacts/agent-speed/final-watcher-dark.png), [light Watcher at minimum size](../../artifacts/agent-speed/final-watcher-light.png). The temporary rendering test was removed.

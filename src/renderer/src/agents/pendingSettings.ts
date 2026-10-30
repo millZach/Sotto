@@ -235,8 +235,9 @@ export class PendingSettingsStore {
         const thread = reply.host.threads.find(item => item.id === threadId)
         const expected = thread ? settingValues(reply, thread)[kind] : null
         // A model change that ends at Standard where the thread had chosen a faster speed is the provider refusing the speed
-        // the change carried (ADR-0143): the model went through, and the bolt's line says the speed did not.
-        const carried = this.lastDrawn.get(threadId)?.fast
+        // the change carried (ADR-0143): the model went through, and the speed control's line says the speed did not.
+        const carried = target.patch.speed !== undefined ? target.patch.speed ?? SPEED_STANDARD
+          : target.patch.fastMode !== undefined ? target.patch.fastMode ? 'fast' : SPEED_STANDARD : this.lastDrawn.get(threadId)?.fast
         if (kind === 'model' && thread && carried !== undefined && carried !== SPEED_STANDARD && settingValues(reply, thread).fast === SPEED_STANDARD) {
           const model = resolveModel(hostForThread(reply.host, thread).models, thread.modelId)
           this.refusals.set(keyOf(threadId, 'fast'), { kind: 'fast', wanted: carried, patch: speedPatch(carried, model), error: SPEED_NOT_CARRIED })

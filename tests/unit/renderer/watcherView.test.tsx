@@ -191,7 +191,7 @@ describe("Watcher's room", () => {
     expect(command).toHaveBeenCalledWith({ type: 'interrupt', threadId: 'watcher' })
   })
 
-  it.each([false, true])('cycles first-entry speed and keeps it through an effort change, worker roles %s', async workerRoles => {
+  it.each([false, true].flatMap(quiet => [false, true].map(workerRoles => ({ quiet, workerRoles }))))('cycles first-entry speed and keeps it through an effort change, quiet $quiet, worker roles $workerRoles', async ({ quiet, workerRoles }) => {
     const state = stateWithWatcher()
     state.host.models = [{ id: 'claude:sonnet', provider: 'Claude Code', providerId: 'claude', name: 'Sonnet 4.5', ready: true,
       reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium',
@@ -199,27 +199,40 @@ describe("Watcher's room", () => {
     const updateSettings = vi.fn()
     vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'watcher', platform: 'win32', windowMaximized: false,
       settings: { ...DEFAULT_SETTINGS, workerRoles: { orchestrating: { modelId: 'claude:sonnet', reasoningEffort: 'medium' } } },
-      update: { owlFeatures: { watcher: true, 'quiet-composer': true, 'worker-roles': workerRoles } },
+      update: { owlFeatures: { watcher: true, 'quiet-composer': quiet, 'worker-roles': workerRoles } },
       actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings },
     } as unknown as AppContextValue)
     const command = mockAgents(state)
     const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
     render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
-    const dots = await screen.findByRole('slider', { name: 'Thread reasoning' })
-    expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Standard')
-    fireEvent.click(dots.querySelector('[data-level="1"]')!)
-    expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Fast')
-    fireEvent.keyDown(dots, { key: 'ArrowUp', altKey: true })
-    expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Ultra fast')
-    fireEvent.keyDown(dots, { key: 'ArrowUp', altKey: true })
-    expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Standard')
-    fireEvent.keyDown(dots, { key: 'ArrowDown', altKey: true })
-    expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Ultra fast')
-    expect(dots).toHaveAttribute('aria-valuenow', '2')
+    if (quiet) {
+      const dots = await screen.findByRole('slider', { name: 'Thread reasoning' })
+      expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Standard')
+      fireEvent.click(dots.querySelector('[data-level="1"]')!)
+      expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Fast')
+      fireEvent.keyDown(dots, { key: 'ArrowUp', altKey: true })
+      expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Ultra fast')
+      fireEvent.keyDown(dots, { key: 'ArrowUp', altKey: true })
+      expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Standard')
+      fireEvent.keyDown(dots, { key: 'ArrowDown', altKey: true })
+      expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Ultra fast')
+      expect(dots).toHaveAttribute('aria-valuenow', '2')
+    } else {
+      fireEvent.click(await screen.findByRole('button', { name: 'Thread speed: Standard' }))
+      fireEvent.click(screen.getByRole('button', { name: 'Thread speed: Fast' }))
+      expect(screen.getByRole('button', { name: 'Thread speed: Ultra fast' })).toHaveAttribute('data-speed', 'ultrafast')
+    }
     if (workerRoles) expect(updateSettings).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: 'claude:sonnet', reasoningEffort: 'medium', speed: 'ultrafast' } } })
     else expect(updateSettings).not.toHaveBeenCalled()
-    fireEvent.keyDown(dots, { key: 'ArrowRight' })
-    expect(dots).toHaveAttribute('aria-valuetext', 'High · Ultra fast')
+    if (quiet) {
+      const dots = screen.getByRole('slider', { name: 'Thread reasoning' })
+      fireEvent.keyDown(dots, { key: 'ArrowRight' })
+      expect(dots).toHaveAttribute('aria-valuetext', 'High · Ultra fast')
+    } else {
+      fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+      fireEvent.change(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { target: { value: '2' } })
+      fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: 'Escape' })
+    }
     if (workerRoles) expect(updateSettings).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: 'claude:sonnet', reasoningEffort: 'high', speed: 'ultrafast' } } })
     else expect(updateSettings).not.toHaveBeenCalled()
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'configure-thread' }))
@@ -227,6 +240,40 @@ describe("Watcher's room", () => {
     fireEvent.click(screen.getByRole('button', { name: 'Start Watcher and send' }))
     await waitFor(() => expect(bridge.open).toHaveBeenCalledWith({ provider: 'claude', modelId: 'claude:sonnet', reasoningEffort: 'high', speed: 'ultrafast' }))
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread' }))
+  })
+
+  it.each([false, true])('keeps an unavailable first-entry role speed while starting at Standard, already saved %s', async alreadySaved => {
+    const state = stateWithWatcher()
+    state.host.models = [
+      { id: 'codex:gpt', provider: 'Codex', providerId: 'codex', name: 'GPT-6.1 Sol', ready: true,
+        reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium', speeds: [{ id: 'fast', name: 'Fast' }, { id: 'ultrafast', name: 'Ultra fast' }] },
+      { id: 'claude:sonnet', provider: 'Claude Code', providerId: 'claude', name: 'Sonnet 5.5', ready: true,
+        reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium', speeds: [{ id: 'fast', name: 'Fast' }] },
+    ]
+    const updateSettings = vi.fn()
+    vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'watcher', platform: 'win32', windowMaximized: false,
+      settings: { ...DEFAULT_SETTINGS, workerRoles: { orchestrating: { modelId: alreadySaved ? 'claude:sonnet' : 'codex:gpt', reasoningEffort: 'medium', ...(alreadySaved ? { speed: 'ultrafast' } : {}) } } },
+      update: { owlFeatures: { watcher: true, 'quiet-composer': true, 'worker-roles': true } },
+      actions: { navigate: vi.fn(), updateSettings },
+    } as unknown as AppContextValue)
+    mockAgents(state)
+    const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
+    render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
+    const dots = await screen.findByRole('slider', { name: 'Thread reasoning' })
+    if (!alreadySaved) {
+      fireEvent.keyDown(dots, { key: 'ArrowDown', altKey: true })
+      expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Ultra fast')
+      fireEvent.click(screen.getByRole('combobox', { name: 'Thread model' }))
+      fireEvent.click(screen.getByRole('tab', { name: 'Claude Code' }))
+      fireEvent.click(screen.getByRole('option', { name: 'Sonnet 5.5' }))
+      expect(updateSettings).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: 'claude:sonnet', reasoningEffort: 'medium', speed: 'ultrafast' } } })
+    }
+    expect(screen.getByRole('slider', { name: 'Thread reasoning' })).toHaveAttribute('aria-valuetext', 'Medium · Standard')
+    fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning' }), { key: 'ArrowRight' })
+    expect(updateSettings).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: 'claude:sonnet', reasoningEffort: 'high', speed: 'ultrafast' } } })
+    setPromptText(screen.getByRole('textbox', { name: 'Watcher message' }), 'Keep the saved speed.')
+    fireEvent.click(screen.getByRole('button', { name: 'Start Watcher and send' }))
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledWith({ provider: 'claude', modelId: 'claude:sonnet', reasoningEffort: 'high', ...(!alreadySaved ? { speed: null } : {}) }))
   })
 
   it('says main’s refusal in its own words and keeps the message in the composer', async () => {

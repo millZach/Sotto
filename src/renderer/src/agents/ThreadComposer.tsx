@@ -458,9 +458,6 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     window.addEventListener('keydown', read); window.addEventListener('keyup', read); window.addEventListener('blur', release)
     return () => { window.removeEventListener('keydown', read); window.removeEventListener('keyup', read); window.removeEventListener('blur', release); setSteerHeld(false) }
   }, [quiet, platform])
-  // While a turn runs, the effort dots hold Stop; where the options draw no dots (a provider that cannot change a started
-  // thread), Stop keeps a button of its own in the pill.
-  const stopOnDots = quiet && capabilities.configureThread === true
   const stopTitle = stopKeys ? `${stopName} ${threadChordLabel(stopKeys, platform).suffix}` : stopName
   const interrupt = (): void => { void command({ type: 'interrupt', threadId }) }
   // Queue's glyph follows what Enter does, as the disc's name does, so a provider that sends during a turn shows Send.
@@ -569,14 +566,14 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       <div className="thread-prompt__footer">
         <div className="thread-prompt__meta" id={statusId}>
           {/* Every composer belongs to a thread that already exists on its host, so the host is shown here, not chosen.
-              Watcher always runs on this computer, so its composer has New Watcher in that place instead. */}
-          {watcher ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} />
+              Watcher's full composer has New Watcher in that place; the quiet pill keeps it beside Send. */}
+          {watcher && !quiet ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} />
             : !quiet && threadHost ? <span className="thread-host-chip" title={hostTitle}>
             {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}{hostLabel}</span> : null}
           {continuing !== undefined ? <ContinueOptions thread={row.thread} state={state} choice={continuing} />
             : row.thread.nativeSessionStarted === false || capabilities.configureThread || continueOffer !== undefined
             ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher} continueOffer={continueOffer}
-              quiet={quiet ? { effortScore, stop: stopOnDots && working ? { label: stopName, keys: stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined, title: stopTitle, disabled: !canStop, onStop: interrupt } : undefined } : undefined}
+              quiet={quiet ? { effortScore } : undefined}
               {...(editable && !answering && !permission ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? t`Answer this question` : t`Manual prompt`}</small></span>
               {watcher ? <WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
@@ -585,8 +582,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         </div>
         <div ref={actionsRow} className="thread-prompt__actions">
           {quiet ? <>
-            {/* Shown where the dots cannot hold Stop: a thread that draws none, or the slim composer, which hides them. */}
-            {working ? <Button variant="ghost" className="thread-prompt__stop thread-prompt__disc" data-beside-dots={stopOnDots || undefined} aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
+            {watcher ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} /> : null}
+            {working ? <Button variant="ghost" className="thread-prompt__stop" data-beside aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
               title={stopTitle} disabled={!canStop} onClick={interrupt}><Square size={10} fill="currentColor" aria-hidden="true" /></Button> : null}
             {/* One disc: Send, Queue while a turn runs, Steer while Steer's modifier is held. Its glyph says which. */}
             {discFace === 'steer'

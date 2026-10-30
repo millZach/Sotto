@@ -30,7 +30,7 @@ import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
 import { useShared } from '../agents/stateSharing'
 import { threadDescriber, useWordsRevision, type ThreadRow } from '../agents/threadFacts'
 import { useContinueEnabled } from '../agents/continuations'
-import { effortChoices, nextSpeed, offeredSpeeds, speedName, speedTitle } from '../agents/ThreadOptions'
+import { effortChoices, nextSpeed, offeredSpeeds, speedName, speedTitle, SpeedToggle } from '../agents/ThreadOptions'
 import { SPEED_STANDARD } from '../agents/pendingSettings'
 import { ThreadPane } from '../agents/ThreadPane'
 import { isThreadClosed } from '../../../shared/threadActivity'
@@ -59,7 +59,7 @@ import { WatcherOwnChangesContext } from './WatcherOwnChange'
 import { placeAsks, useStablePlacements, WatcherAskAnsweringContext, type WatcherAskAnswering } from './WatcherAsks'
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { WatcherPermissionChip } from './WatcherPermissionChip'
-import { useOrchestratingStart, useSaveOrchestrating } from './orchestratingRole'
+import { useOrchestratingSpeed, useOrchestratingStart, useSaveOrchestrating } from './orchestratingRole'
 
 const WATCHER_PROMPT_ID = 'watcher-prompt'
 const WATCHER_PANE_ID = 'watcher-pane'
@@ -135,11 +135,13 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   // Unchosen here, Watcher starts on the Orchestrating role's model and effort where worker roles are on (#1041). A pick
   // here saves the role too, and a change to the role in Settings clears the pick, so the two never disagree.
   const roleStart = useOrchestratingStart(models)
+  const savedRoleSpeed = useOrchestratingSpeed()
   const saveOrchestrating = useSaveOrchestrating()
   const roleModel = roleStart === null ? undefined : resolveModel(models, roleStart.modelId)
   const model = models.find(item => item.id === modelId) ?? roleModel ?? models[0]
   const roleEffort = roleStart !== null && model !== undefined && model.id === roleStart.modelId ? roleStart.reasoningEffort ?? undefined : undefined
-  const roleSpeed = roleStart !== null && model !== undefined && model.id === roleStart.modelId ? roleStart.speed : null
+  const roleSpeed = roleStart !== null && model !== undefined && model.id === roleStart.modelId
+    ? savedRoleSpeed !== undefined ? savedRoleSpeed : roleStart.speed : null
   const [pickedSpeed, setPickedSpeed] = useState<AgentSpeed | null | undefined>(undefined)
   const selectedSpeed = pickedSpeed === undefined ? roleSpeed : pickedSpeed
   const speed = fitSpeed(selectedSpeed, model)
@@ -157,6 +159,11 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const changeEffort = (value: string): void => {
     firstMessage.update({ effort: value })
     if (model !== undefined) saveOrchestrating?.(model.id, value, models, pickedSpeed)
+  }
+  const changeSpeed = (value: string): void => {
+    const chosen = value === SPEED_STANDARD ? null : value as AgentSpeed
+    setPickedSpeed(chosen)
+    if (model !== undefined) saveOrchestrating?.(model.id, reasoning || null, models, chosen)
   }
   const start = async (): Promise<void> => {
     if (!canSend || model === undefined || provider === null || room.open === null) return
@@ -209,18 +216,14 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
                 <ModelPicker models={models} modelId={model.id} disabled={starting} onChange={id => {
                   firstMessage.update({ modelId: id, effort: null })
                   setPickedSpeed(selectedSpeed)
-                  saveOrchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, models, pickedSpeed)
+                  saveOrchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, models, selectedSpeed)
                 }} />
+                {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={provider ?? undefined} value={speedValue} disabled={starting} pending={false} onChange={changeSpeed} />}
                 {quiet ? levels.length > 0 && <EffortDots levels={levels} value={reasoning} provider={provider ?? undefined} disabled={starting}
                   suggestion={starting ? null : suggestedEffortIndex(draftEffortScore(text), levels.length, levels.indexOf(reasoning))}
                   speed={speeds.length === 0 ? undefined : { value: speedValue, name: speedName(speedValue, speeds),
                     description: speedTitle(speeds, speedValue, provider ?? undefined, starting),
-                    onStep: direction => {
-                      const next = nextSpeed(speeds, speedValue, direction)
-                      const chosen = next === SPEED_STANDARD ? null : next as AgentSpeed
-                      setPickedSpeed(chosen)
-                      saveOrchestrating?.(model.id, reasoning || null, models, chosen)
-                    } }}
+                    onStep: direction => changeSpeed(nextSpeed(speeds, speedValue, direction)) }}
                   onChange={changeEffort} />
                   : efforts.length > 0 ? <EffortPicker key={model.id} value={reasoning} options={efforts} disabled={starting} onChange={changeEffort}
                   defaultValue={model.defaultReasoningEffort} modelName={model.name} /> : null}

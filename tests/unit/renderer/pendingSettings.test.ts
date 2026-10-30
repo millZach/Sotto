@@ -3,7 +3,7 @@ import { deferred } from '../../fixtures/deferred'
 import { threadsStateFixture } from '../../fixtures/agentState'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, type AgentState, type AgentThread } from '../../../src/shared/agents'
-import { CONFIRMED_HOLD_MS, PendingSettingsStore, unconfirmedKinds, type SendSettings, type SettingValues } from '../../../src/renderer/src/agents/pendingSettings'
+import { CONFIRMED_HOLD_MS, PendingSettingsStore, SPEED_NOT_CARRIED, unconfirmedKinds, type SendSettings, type SettingsPatch, type SettingValues } from '../../../src/renderer/src/agents/pendingSettings'
 
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
 function state(thread: Partial<AgentThread> = {}, error: string | null = null, unconfirmed?: AgentState['unconfirmedSettings']): AgentState {
@@ -21,6 +21,17 @@ const lost = 'Codex did not confirm the change, and the session stopped.'
 afterEach(() => { vi.useRealTimers() })
 
 describe('pending settings store', () => {
+  it.each<[SettingsPatch, string | null]>([
+    [{ speed: null }, null], [{ fastMode: false }, null], [{ speed: 'ultrafast' }, 'ultrafast'], [{}, 'fast'],
+  ])('uses the model patch’s requested speed for a refusal, %j', async (patch, wanted) => {
+    const store = new PendingSettingsStore()
+    store.press('thread', 'model', 'next', { modelId: 'next', ...patch }, async () => state({ modelId: 'next' }), drawn('approval-required', 'low', 'fast'))
+    await settle()
+    expect(store.view('thread').refusals.fast).toEqual(wanted === null ? undefined
+      : { kind: 'fast', wanted, patch: { speed: wanted }, error: SPEED_NOT_CARRIED })
+    store.clear()
+  })
+
   it('holds a press per thread, whichever chip is on screen, until the window draws the answer', async () => {
     const store = new PendingSettingsStore()
     const send: SendSettings = vi.fn(async () => state({ runtimeMode: 'full-access' }))

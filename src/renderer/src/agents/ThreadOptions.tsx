@@ -14,7 +14,7 @@ import { ModelPicker, type UnavailablePickerProvider } from './ModelPicker'
 import { useOwnServersBridge } from './OwnModelServers'
 import { localHostId } from '../features/onboarding/localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
-import { EffortDots, type DotsStop } from './EffortDots'
+import { EffortDots } from './EffortDots'
 import { suggestedEffortIndex } from './effortSuggestion'
 import { ultracodeLevel } from './ultracodeLevel'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
@@ -24,7 +24,7 @@ import { WatcherPermissionChip } from '../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../watcher/watcherRoom'
 import { WatchOnSendToggle } from '../watcher/WatchControls'
 import { watcherProviderOf, type WatcherProvider } from '../watcher/watcherProviders'
-import { useSaveOrchestrating } from '../watcher/orchestratingRole'
+import { useOrchestratingSpeed, useSaveOrchestrating } from '../watcher/orchestratingRole'
 import { useLingui as useInterfaceLanguage } from '../state/interfaceLanguageReact'
 import './threadChips.css'
 
@@ -457,10 +457,10 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   /** Another provider's models, under "Continue in a new thread on", for a started thread that may continue elsewhere. */
   readonly continueOffer?: ThreadContinueOffer | undefined
   /**
-   * The quiet composer (ADR-0161, Owl): effort and speed as dots that may ring a level the draft seems to want, with Stop
-   * while a turn runs. Absent, the options are the chips of ADR-0113.
+   * The quiet composer (ADR-0161, Owl): effort and speed as dots that may ring a level the draft seems to want.
+   * Absent, the options are the chips of ADR-0113.
    */
-  readonly quiet?: { readonly effortScore: number; readonly stop?: DotsStop | undefined } | undefined
+  readonly quiet?: { readonly effortScore: number } | undefined
 }): ReactNode {
   const { t } = useLingui()
   const settings = usePendingSettings(thread.id)
@@ -478,6 +478,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const room = useWatcherRoom()
   // Watcher's model and effort are the Orchestrating role (#1041): a press here saves it for the next Watcher too.
   const saveOrchestrating = useSaveOrchestrating()
+  const savedRoleSpeed = useOrchestratingSpeed()
   const orchestrating = watcher ? saveOrchestrating : null
   const open = watcher ? room?.open ?? null : null
   const settle = room?.settle
@@ -559,11 +560,12 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const confirmedModel = resolveModel(models, thread.modelId)
   const modelId = settings.pending.model?.value ?? thread.modelId
   const model = resolveModel(models, modelId)
+  const keptSpeed = watcher && savedRoleSpeed !== undefined ? savedRoleSpeed : threadSpeed(thread)
   // What each chip shows with nothing pressed: the drawn values, except that a model change starts on the new
   // model's default effort, so that is what the effort chip shows meanwhile.
   const unpressed = modelId === thread.modelId ? drawn
     : settingValuesFor({ modelId, ...(thread.runtimeMode ? { runtimeMode: thread.runtimeMode } : {}), ...(thread.providerMode ? { providerMode: thread.providerMode } : {}),
-      ...(threadSpeed(thread) ? { speed: threadSpeed(thread) } : {}) }, model)
+      ...(keptSpeed ? { speed: keptSpeed } : {}) }, model)
   const reasoning = settings.pending.effort?.value ?? unpressed.effort
   const permission = settings.pending.permissions?.value ?? unpressed.permissions
   // The choice stays through a change of model; the bolt shows only on a model that offers a speed (ADR-0143).
@@ -571,7 +573,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const speedProvider = model?.providerId ?? thread.providerId
   const speeds = offeredSpeeds(model, speedProvider)
   /** Watcher's speed as the Orchestrating role saves it: the choice, which a model without it keeps. */
-  const roleSpeed = speed === SPEED_STANDARD ? null : speed as AgentSpeed
+  const roleSpeed = watcher && settings.pending.fast === undefined && savedRoleSpeed !== undefined ? savedRoleSpeed
+    : speed === SPEED_STANDARD ? null : speed as AgentSpeed
   /** A speed as it runs on this model, in words: one the model does not offer runs at Standard. */
   const speedInForce = (value: string): string => speedName(speeds.some(item => item.id === value) ? value : SPEED_STANDARD, speeds)
   const efforts = effortChoices(model, reasoning, { ultracode: !watcher })
@@ -644,16 +647,18 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         const provider = picked === undefined ? null : watcherProviderOf(picked)
         if (picked !== undefined && provider !== null) {
           const speed = fitSpeed(roleSpeed, picked)
-          orchestrating?.(picked.id, picked.defaultReasoningEffort ?? null, state.host.models, speed)
+          orchestrating?.(picked.id, picked.defaultReasoningEffort ?? null, state.host.models, roleSpeed)
           void replace(provider, picked.id, speed); return
         }
-        const id = chosenModelId(models, pressed, modelId, thread.modelId); press('model', id, { modelId: id })
+        const id = chosenModelId(models, pressed, modelId, thread.modelId)
+        const pickedModel = resolveModel(models, id)
+        press('model', id, { modelId: id, ...(watcher && fitSpeed(roleSpeed, pickedModel) === roleSpeed ? speedPatch(roleSpeed ?? SPEED_STANDARD, pickedModel) : {}) })
         orchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, state.host.models, roleSpeed)
       }} />
       {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={speedProvider} value={speed} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={unconfirmedFastId}
         onChange={changeSpeed} />}
-      {quiet ? (levels.length > 0 || quiet.stop) && <EffortDots levels={levels} value={reasoning} provider={model?.providerId ?? thread.providerId} disabled={fixed || modelDisabled}
-        pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={dotsDescription} stop={quiet.stop}
+      {quiet ? levels.length > 0 && <EffortDots levels={levels} value={reasoning} provider={model?.providerId ?? thread.providerId} disabled={fixed || modelDisabled}
+        pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={dotsDescription}
         speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), description: speedTitle(speeds, shownSpeed, speedProvider, fixed), onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
         suggestion={thread.status === 'running' ? null : suggestedEffortIndex(quiet.effortScore, levels.length,
           // On the provider's default, the model's own default is what a suggestion must stand above.

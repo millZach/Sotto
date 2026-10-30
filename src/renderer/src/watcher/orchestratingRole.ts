@@ -25,6 +25,14 @@ export function useSaveOrchestrating(): ((modelId: string, reasoningEffort: stri
   }
 }
 
+/** The saved choice, before a model fits it; undefined lets an existing Watcher keep its own choice. */
+export function useOrchestratingSpeed(): AgentSpeed | null | undefined {
+  const app = useOptionalApp()
+  const enabled = useOwlFeature('worker-roles')
+  const choice = enabled ? app?.settings?.workerRoles.orchestrating : undefined
+  return choice ? choice.speed ?? null : undefined
+}
+
 /** What Watcher's first message starts it on: the Orchestrating role's model, effort and speed, where worker roles are on. */
 export function useOrchestratingStart(models: readonly AgentModel[]): { readonly modelId: string; readonly reasoningEffort: string | null; readonly speed: AgentSpeed | null } | null {
   const app = useOptionalApp()
