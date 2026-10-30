@@ -552,7 +552,6 @@ export class DelegationService {
   private readonly swarmPlans = new Map<string, DelegateInput>()
   private readonly startingSwarms = new Map<string, Promise<unknown>>()
   private readonly planningSwarms = new Map<string, Promise<void>>()
-  private readonly swarmNewsAttempts = new Map<string, number>()
   /** A synthesis reservation or delivery in this process; never saved as proof that the wake-up landed. */
   private readonly sendingSwarmCompletions = new Set<string>()
   private readonly recoveringSwarmCompletions = new Set<string>()
@@ -981,7 +980,8 @@ export class DelegationService {
         this.recoveringSwarmCompletions.delete(swarm.id)
       }
     }
-    if (swarm.completionSent || this.sendingSwarmCompletions.has(swarm.id) || (this.swarmNewsAttempts.get(swarm.id) ?? 0) >= NEWS_ATTEMPTS_MAX) return
+    // A failed delivery can retry once recovery proves it never landed, however long the provider was unavailable.
+    if (swarm.completionSent || this.sendingSwarmCompletions.has(swarm.id)) return
     this.sendingSwarmCompletions.add(swarm.id)
     const tell = () => { void (async () => {
       if (this.closed || swarm.stopped) return
@@ -993,7 +993,6 @@ export class DelegationService {
       if (this.closed || swarm.stopped) return
       const records = swarm.members.flatMap(member => { const record = member.delegationId ? this.byId.get(member.delegationId) : undefined; return record ? [record] : [] })
       const items = records.slice(0, 50).map(record => ({ delegationId: record.id, threadId: record.delegatedThreadId, outcome: this.outcomeOf(record) }))
-      this.swarmNewsAttempts.set(swarm.id, (this.swarmNewsAttempts.get(swarm.id) ?? 0) + 1)
       await this.options.control.deliverWakeUp(swarm.leadThreadId!, { source: 'delegation', items: items.length ? items
         : [{ delegationId: swarm.id, threadId: swarm.leadThreadId!, outcome: 'answered' }] }, { tool: this.options.tool?.(swarm.leadThreadId!) ?? false })
       swarm.completionSent = true

@@ -315,6 +315,31 @@ it('does not resend a synthesis wake-up that landed before its completion marker
   restored.delegation.close(); restored.admission.close()
 })
 
+it('delivers synthesis after more than five failed attempts without restarting or duplicating it', async () => {
+  let attempts = 0
+  const f = await swarmService(4, undefined, { beforeWakeUp: async () => {
+    if (++attempts <= 6) throw new Error('Provider unavailable')
+  } })
+  const { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  await f.finish(receipt.receipts[0]!.thread!)
+  await f.finish(receipt.receipts[1]!.thread!)
+  await vi.waitFor(() => expect(attempts).toBe(1))
+  for (let expected = 2; expected <= 7; expected++) {
+    await settle()
+    f.observe()
+    await vi.waitFor(() => expect(attempts).toBe(expected))
+  }
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  expect((await f.file()).swarms[0]?.completionSent).toBe(true)
+  f.observe(); await settle()
+  expect(attempts).toBe(7)
+  expect(f.told).toHaveLength(1)
+  await f.finish(receipt.lead.thread)
+  expect(f.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  f.delegation.close(); f.admission.close()
+})
+
 it('lets the original plan retry fill only angles with no saved start after a restart', async () => {
   const f = await swarmService(), { receipt, input } = await f.start()
   const saved = await f.file()
