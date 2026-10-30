@@ -285,10 +285,6 @@ export class DesktopHostRouter {
       },
       subscribe: listener => { this.watcherListeners.add(listener); return () => this.watcherListeners.delete(listener) },
       answering: listener => { this.answerListeners.add(listener); return () => this.answerListeners.delete(listener) },
-      settle: async (id, threadId) => {
-        const result = await connection(id).service.command({ type: 'settle-thread', threadId }, desktopWindowClient())
-        if (result.error) throw new Error('Watcher could not settle this thread.')
-      },
       machineFacts: async id => {
         const host = connection(id)
         return host.service.supportsHostFacts === true && host.service.hostFacts ? host.service.hostFacts() : undefined

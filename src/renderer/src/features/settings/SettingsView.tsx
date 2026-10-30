@@ -799,8 +799,8 @@ export function SettingsView({
                   : workerMachine ? t`How Watcher looks after threads, and where new workers start`
                   : workerRoles ? t`How Watcher looks after threads, and what each kind of work runs on` : t`How Watcher looks after threads`}</p></div>
                 <SettingsGroup title={t`Watched threads`} icon={Eye}>
-                  <Toggle setting="watcher-settles" label={t`Settle finished threads`} checked={settings.watcherSettlesFinishedThreads} onCheckedChange={checked => void save({ watcherSettlesFinishedThreads: checked })}
-                    description={t`Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it.`} />
+                  <Toggle setting="watcher-settles" label={t`Settle without asking`} checked={settings.watcherSettlesFinishedThreads} onCheckedChange={checked => void save({ watcherSettlesFinishedThreads: checked })}
+                    description={t`Watcher decides when a thread it watches is finished, then settles it and stops watching it. On, it settles without asking you. Off, it asks you first.`} />
                 </SettingsGroup>
                 <SettingsGroup title={t`Compaction`} icon={Shrink}>
                   <WatcherCompactionSetting value={settings.watcherCompactAtTokens} onSave={save} />

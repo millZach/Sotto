@@ -5968,8 +5968,8 @@ export class AgentControl {
   }
   /**
    * New work reopens a settled thread before it is sent or queued (October 23, 2026): a thread working while settled is
-   * taken for put aside, so its queue never sends and Settle finished threads, a request's end and the cleanup's on-settle
-   * rule act on work still under way. Sotto's own news is not new work and never reopens one.
+   * taken for put aside, so its queue never sends and a request's end and the cleanup's on-settle rule act on work still
+   * under way. Sotto's own news is not new work and never reopens one.
    */
   private settledForWork(thread: AgentThread): boolean {
     return isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))

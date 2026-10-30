@@ -976,7 +976,7 @@ it('lets a Watcher send whose prompt the user set aside hold nothing open, while
 })
 
 
-it('refuses settle_thread while sub-agents still work or are not known to have ended, as Settle finished threads counts them', async () => {
+it('refuses settle_thread while sub-agents still work or are not known to have ended', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
   await f.finish(first.target.threadId)
@@ -2242,8 +2242,9 @@ it('gives the merge queue and each watched thread’s open pull requests from li
     { list: 'decisions', id: 'd1', reasons: ['Names pull request #4, which is merged.'] },
     { list: 'rules', id: 'r3', reasons: ['Names the thread “Synthetic release notes”, which Watcher does not watch.'] },
   ])
-  // This fixture has no Settle finished threads, so nothing is pending and read_state says why.
-  expect(read).toMatchObject({ settlesFinishedThreads: false, pendingSettles: [] })
+  // This fixture leaves Settle without asking at its default, on, and read_state says so.
+  expect(read).toMatchObject({ settleWithoutAsking: true })
+  expect(read).not.toHaveProperty('pendingSettles')
   // The kept words are as Watcher gave them: the flags sit beside them and change nothing kept.
   expect(texts(read.kept.decisions)).toEqual(['Merge #4 once CI is green?', 'Merge #5 after #7?'])
 })

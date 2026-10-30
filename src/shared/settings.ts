@@ -191,8 +191,9 @@ export interface AppSettings {
   workerCeiling: number
   workerMachineCeilings: WorkerMachineCeilings
   /**
-   * Settle finished threads, under Settings, Watcher: on by default, part of Watcher's Owl feature. On, Watcher settles a
-   * thread it watches once its work is done and Watcher has heard so, then stops watching it. Read live.
+   * Settle without asking, under Settings, Watcher: on by default, part of Watcher's Owl feature. Watcher decides when a
+   * thread it watches is finished; on, it settles that thread without asking, and off, it asks the user on a card first.
+   * The key keeps its first name, from when Sotto settled finished threads by its own rule (October 29, 2026). Read live.
    */
   watcherSettlesFinishedThreads: boolean
   /**

@@ -74,7 +74,7 @@ export function gitSettingDescriptions(settings: AppSettings, options: { readonl
       ? t`The pull request checklist starts on the method you used last, or Merge the first time.`
       : t`The pull request checklist starts on ${method}.`,
     settle: settings.autoSettleMergedThreads
-      ? t`Settles a thread once its pull request merges, checking GitHub through gh hourly. Folders follow the worktree rules under Application.`
+      ? t`Settles a thread once its pull request merges, checking GitHub through gh hourly. Watcher decides for the threads it watches. Folders follow the worktree rules under Application.`
       : t`A merged thread stays put until you settle it.`,
     layout: settings.diffLayout === 'stacked'
       ? t`Removed lines above added ones.`

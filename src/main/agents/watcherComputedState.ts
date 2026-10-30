@@ -22,19 +22,6 @@ export function watcherMergeQueue(threads: readonly { readonly target: WatcherTh
     .sort((a, b) => Date.parse(a.checksPassedAt) - Date.parse(b.checksPassedAt) || (a.pullRequest.number ?? 0) - (b.pullRequest.number ?? 0))
 }
 
-const numbered = (url: string) => { const number = pullRequestAddress(url)?.number; return number ? `#${number}` : 'its link' }
-const listed = (items: readonly string[]) => items.length < 3 ? items.join(' and ') : `${items.slice(0, -1).join(', ')} and ${items.at(-1)}`
-
-/**
- * What a watched thread whose work is otherwise done waits on before Settle finished threads settles it: its open pull
- * requests merging or closing, or else Watcher hearing its news and resting. Watcher is in a turn whenever it reads this.
- */
-export function watcherSettlesWhen(hold: { readonly pullRequests: readonly string[]; readonly unheard: boolean }): string {
-  if (hold.pullRequests.length === 1) return `Its pull request ${numbered(hold.pullRequests[0]!)} merges or closes.`
-  if (hold.pullRequests.length) return `Its pull requests ${listed(hold.pullRequests.slice(0, 10).map(numbered))} merge or close.`
-  return hold.unheard ? 'Watcher is told its news and rests.' : 'Watcher’s turn ends and it rests.'
-}
-
 /** A thread a kept note may name: who it is, what it is called, and whether it is settled or watched. */
 export interface WatcherKnownThread { readonly target: WatcherThreadTarget; readonly title: string; readonly settled: boolean; readonly watched: boolean }
 /** A pull request a kept note may name, as Sotto last read it. */

@@ -2,7 +2,7 @@
 // What read_state works out from live data at each read (#1274): the merge queue, what holds a pending settle, and the
 // kept notes that name something Sotto's records say is over.
 import { expect, it } from 'vitest'
-import { watcherMergeQueue, watcherSettlesWhen, watcherStaleNotes, type WatcherKnownThread } from '../../../src/main/agents/watcherComputedState'
+import { watcherMergeQueue, watcherStaleNotes, type WatcherKnownThread } from '../../../src/main/agents/watcherComputedState'
 import { WatcherEvidenceStore } from '../../../src/main/agents/watcherEvidence'
 import type { WatcherKeptItem } from '../../../src/shared/watcher'
 
@@ -33,14 +33,6 @@ it('queues open pull requests that are not drafts and whose checks passed, oldes
   ])
   expect(queue.map(item => [item.title, item.pullRequest.number])).toEqual([['Docs pass', 9], ['Docs pass', 8], ['Login fix', 12]])
   expect(queue[0]).toMatchObject({ target: target('b'), pullRequest: { approved: true }, checksPassedAt: '2026-10-21T10:00:00.000Z' })
-})
-
-it('says what holds a pending settle: its pull requests, else Watcher hearing its news and resting', () => {
-  expect(watcherSettlesWhen({ pullRequests: ['https://github.com/o/r/pull/7'], unheard: false })).toBe('Its pull request #7 merges or closes.')
-  expect(watcherSettlesWhen({ pullRequests: ['https://github.com/o/r/pull/7', 'https://github.com/o/r/pull/8', 'https://github.com/o/s/pull/2'], unheard: true }))
-    .toBe('Its pull requests #7, #8 and #2 merge or close.')
-  expect(watcherSettlesWhen({ pullRequests: [], unheard: true })).toBe('Watcher is told its news and rests.')
-  expect(watcherSettlesWhen({ pullRequests: [], unheard: false })).toBe('Watcher’s turn ends and it rests.')
 })
 
 const threads: WatcherKnownThread[] = [
