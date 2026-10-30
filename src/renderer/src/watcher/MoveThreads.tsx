@@ -595,7 +595,8 @@ function MoveProposalCard({ proposal, threads, answer }: { readonly proposal: Th
     setPending(false)
   }
   const machine = proposal.machine
-  const said = proposal.state === 'moved' ? plural(proposal.threads.filter(item => item.ticked).length, { one: `You asked to move # thread to ${machine}. Sotto reports its move here.`, other: `You asked to move # threads to ${machine}. Sotto reports each move here.` })
+  // Its moves' own line follows with their cards, so this one says only which of Watcher's threads the user chose.
+  const said = proposal.state === 'moved' ? plural(proposal.threads.filter(item => item.ticked).length, { one: `You chose # of the threads Watcher proposed moving to ${machine}.`, other: `You chose # of the threads Watcher proposed moving to ${machine}.` })
     : proposal.state === 'dismissed' ? t`You chose not to move these threads to ${machine}. Nothing was moved.`
       : going.length === 0 ? t`Watcher proposed moving threads to ${machine}, but none can move now. Each says why.`
         : plural(going.length, { one: `Watcher proposes moving # thread to ${machine}. Nothing moves until you press Move.`, other: `Watcher proposes moving # threads to ${machine}. Nothing moves until you press Move.` })
