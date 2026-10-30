@@ -61,6 +61,7 @@ export const WATCHER_REFUSAL_CODES = [
   'WORKING_COPY_UNAVAILABLE', 'WORKING_COPY_CHANGED', 'THREAD_BUSY', 'STEER_UNAVAILABLE', 'TURN_CHANGED',
   'BACKGROUND_WORK_RUNNING', 'PATH_OUTSIDE_PROJECT', 'UNSAFE_PATH', 'SENSITIVE_FILE', 'SCAN_LIMIT', 'SEARCH_TOO_BROAD',
   'BINARY_FILE', 'FILE_TOO_LARGE', 'FILE_CHANGED', 'UNKNOWN_OPERATION', 'OPERATION_NOT_RECORDED', 'STATE_FULL', 'SLASH_COMMAND',
+  'ASK_USER_FIRST',
 ] as const
 export const watcherRefusalCodeSchema = z.enum(WATCHER_REFUSAL_CODES)
 export const watcherDeliveryStateSchema = z.enum(['queued', 'dispatching', 'accepted', 'failed', 'uncertain'])
@@ -248,9 +249,8 @@ export const watcherStateThreadSchema = z.object({ target: watcherThreadTargetSc
 export type WatcherStateThread = z.infer<typeof watcherStateThreadSchema>
 /**
  * What read_state computes from live data each time it is read (#1274), so none of it can go stale the way notes Watcher
- * kept by hand did after a compaction: each watched thread's open pull requests, the merge queue, the watched threads
- * Settle finished threads is waiting to settle and what holds each, and the kept notes that name a settled or unwatched
- * thread or a merged or closed pull request.
+ * kept by hand did after a compaction: each watched thread's open pull requests, the merge queue, and the kept notes
+ * that name a settled or unwatched thread or a merged or closed pull request.
  */
 export const WATCHER_STATE_COMPUTED_MAX = 100
 const sottoSentence = z.string().min(1).max(300)
@@ -258,7 +258,6 @@ const watcherStateWatchingSchema = watcherStateThreadSchema.extend({ pullRequest
 /** A pull request in the merge queue: open, not a draft, its checks passed, oldest pass first. */
 export const watcherMergeQueueItemSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX),
   pullRequest: watcherPullRequestSummarySchema, checksPassedAt: time }).strict()
-export const watcherPendingSettleSchema = z.object({ target: watcherThreadTargetSchema, title: z.string().max(WATCHER_TITLE_MAX), settlesWhen: sottoSentence }).strict()
 export const watcherStaleNoteSchema = z.object({ list: z.enum(WATCHER_KEPT_LISTS), id: keptId, reasons: z.array(sottoSentence).min(1).max(6) }).strict()
 /**
  * One thing that waits on the user among the watched threads, worked out from live data at each read: an open question or
@@ -270,7 +269,6 @@ export type WatcherWaitingOnUser = z.infer<typeof watcherWaitingOnUserSchema>
 /** What waits on the user, a hundred to a page with the watched threads. */
 export const WATCHER_WAITING_ON_USER_MAX = 100
 export type WatcherMergeQueueItem = z.infer<typeof watcherMergeQueueItemSchema>
-export type WatcherPendingSettle = z.infer<typeof watcherPendingSettleSchema>
 export type WatcherStaleNote = z.infer<typeof watcherStaleNoteSchema>
 // Strict here, as every Watcher result is: the host's own report was already read leniently, so nothing extra remains.
 const machineFacts = hostFactsSchema.extend({ os: hostOsSchema.strict() }).strict()
@@ -402,11 +400,11 @@ export const watcherToolSchemas = {
   read_state: {
     // A hundred watched threads to a page; nextCursor reads the rest.
     input: z.object({ cursor: cursor.optional() }).strict(),
-    // Computed from live data at each read (#1274). The merge queue and pending settles page with the watched threads, a
-    // hundred of each to a page, and so does waitingOnUser; staleNotes is whole on every page.
+    // Computed from live data at each read (#1274). The merge queue pages with the watched threads, a hundred of each to a
+    // page, and so does waitingOnUser; staleNotes is whole on every page. settleWithoutAsking is the user's Settle without
+    // asking: off, Watcher asks on a card before each settle.
     output: result({ watching: z.array(watcherStateWatchingSchema).max(100), nextCursor: cursor.nullable(),
-      mergeQueue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX), settlesFinishedThreads: z.boolean(),
-      pendingSettles: z.array(watcherPendingSettleSchema).max(WATCHER_STATE_COMPUTED_MAX),
+      mergeQueue: z.array(watcherMergeQueueItemSchema).max(WATCHER_STATE_COMPUTED_MAX), settleWithoutAsking: z.boolean(),
       waitingOnUser: z.array(watcherWaitingOnUserSchema).max(WATCHER_WAITING_ON_USER_MAX), kept: watcherKeptStateSchema,
       staleNotes: z.array(watcherStaleNoteSchema).max(WATCHER_KEPT_ITEMS_MAX * 3), contextTokens: counter.nullable(), compactAtTokens: counter }),
   },

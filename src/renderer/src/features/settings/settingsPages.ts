@@ -204,7 +204,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'git-auto-pull', label: msg`Automatically pull`, section: 'settings-git', words: 'fetch' },
     { id: 'keep-main-current', label: msg`Keep main up to date`, section: 'settings-git', words: 'pull fetch fast-forward behind default branch', gate: 'keep-main-current' },
 
-    { id: 'watcher-settles', label: msg`Settle finished threads`, section: 'settings-watcher', gate: 'watcher' },
+    { id: 'watcher-settles', label: msg`Settle without asking`, section: 'settings-watcher', gate: 'watcher' },
     { id: 'watcher-compact-at', label: msg`Compact Watcher at`, section: 'settings-watcher', words: 'compaction context tokens conversation size cost', gate: 'watcher' },
     { id: 'new-workers', label: msg`Where new workers start`, section: 'settings-new-workers', words: 'machine computer host forge default worker placement', gate: 'cross-machine-work' },
     { id: 'worker-roles', label: msg`Worker roles`, section: 'settings-watcher', words: 'model building research review', gate: 'worker-roles' },

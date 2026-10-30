@@ -4612,11 +4612,6 @@ msgstr ""
 msgid "Settings sections"
 msgstr ""
 
-#: src/renderer/src/features/settings/settingsPages.ts
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Settle finished threads"
-msgstr ""
-
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Settle thread"
 msgstr ""
@@ -4625,12 +4620,17 @@ msgstr ""
 msgid "Settle thread shortcut"
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Settle without asking"
+msgstr ""
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "Settled threads on this computer quiet longer than"
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
-msgid "Settles a thread once its pull request merges, checking GitHub through gh hourly. Folders follow the worktree rules under Application."
+msgid "Settles a thread once its pull request merges, checking GitHub through gh hourly. Watcher decides for the threads it watches. Folders follow the worktree rules under Application."
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
@@ -6634,6 +6634,10 @@ msgstr ""
 msgid "Watcher compacts its conversation at its next rest once it passes this size. Lower costs less on every turn; higher keeps more of it word for word."
 msgstr ""
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Watcher decides when a thread it watches is finished, then settles it and stops watching it. On, it settles without asking you. Off, it asks you first."
+msgstr ""
+
 #: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
 msgid "Watcher is at {size}: it compacts at its next rest."
 msgstr ""
@@ -6661,10 +6665,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Watcher scene saved."
-msgstr ""
-
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx

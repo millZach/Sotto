@@ -45,7 +45,7 @@ export const watcherToolFixtures: Record<WatcherToolName, { input: unknown; outp
   read_state: { input: {}, output: { status: 'ok', watching: [{ target: centerTarget, title: 'Worker', waitsOn: 'Its turn to finish.',
     pullRequests: [{ number: 5, state: 'open', checks: 'passed' }] }], nextCursor: null,
     mergeQueue: [{ target: centerTarget, title: 'Worker', pullRequest: { number: 5, state: 'open', checks: 'passed' }, checksPassedAt: centerTime }],
-    settlesFinishedThreads: true, pendingSettles: [{ target: centerTarget, title: 'Worker', settlesWhen: 'Its pull request #5 merges or closes.' }],
+    settleWithoutAsking: true,
     waitingOnUser: [{ target: centerTarget, title: 'Worker', waitsFor: 'question', requestCardId: 'card' }],
     kept: { decisions: [{ id: 'd1', text: 'Merge #4 once CI is green?', touchedAt: centerTime }], rules: [], issues: [], updatedAt: null },
     staleNotes: [{ list: 'decisions', id: 'd1', reasons: ['Names pull request #4, which is merged.'] }], contextTokens: 120_000, compactAtTokens: 400_000 } },

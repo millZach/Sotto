@@ -176,7 +176,8 @@ describe('auto-settle merged threads', () => {
       workspaceSnapshot: (): AgentHostSnapshot => ({ ...EMPTY_AGENT_HOST, projects: [{ id: 'project', providerId: 'codex', title: 'Project', path: '/repo' }], threads }),
       subscribe: () => () => undefined,
       async reclaimThreadWorktree(threadId: string) { reclaimed.push(threadId) },
-      async setWorkspaceSettled(_kind: 'thread', id: string, _settled: true, options?: MergedSettleExpectation) {
+      async setWorkspaceSettled(_kind: 'thread', id: string, _settled: true, options?: MergedSettleExpectation, guard?: () => void) {
+        guard?.()
         settled.push(id); expected.push(options); threads.find(item => item.id === id)!.workspaceSettledAt = new Date().toISOString()
       },
       notePullRequestState(read: PullRequestObservation) { noted.push(read) },
@@ -257,6 +258,44 @@ describe('auto-settle merged threads', () => {
     })
     await new WorktreeCleanup({ host, git: trunkGit, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true, pullRequestMerged }).sweep()
     expect(host.settled).toEqual(['done'])
+  })
+
+  it('leaves a merged thread Watcher watches to Watcher, and settles it once it is no longer watched (October 29, 2026)', async () => {
+    const threads = [thread('watched', own('feature/watched')), thread('unwatched', own('feature/unwatched'))]
+    const host = settlingHost(threads)
+    const pullRequestMerged = vi.fn(async () => true)
+    const watched = new Set(['watched'])
+    const cleanup = new WorktreeCleanup({ host, git: trunkGit, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true, pullRequestMerged,
+      watched: threadId => watched.has(threadId) })
+    await cleanup.sweep()
+    expect(host.settled).toEqual(['unwatched'])
+    // Watched or not is asked again when it is about to settle: a watch given while GitHub is asked holds it too.
+    watched.clear()
+    pullRequestMerged.mockImplementationOnce(async () => { watched.add('watched'); return true })
+    await cleanup.sweep()
+    expect(host.settled).toEqual(['unwatched'])
+    watched.clear()
+    await cleanup.sweep()
+    expect(host.settled).toEqual(['unwatched', 'watched'])
+  })
+
+  it('leaves a merged thread alone while a thread it delegated to is watched, or once it is watched as the settle is written', async () => {
+    const threads = [
+      thread('parent', own('feature/parent')),
+      thread('child', { mode: 'shared', status: 'ready', path: '/repo', repositoryRoot: '/repo', branch: 'trunk', sentBranch: 'trunk' }, { delegatedBy: 'parent' }),
+      thread('late', own('feature/late')),
+    ]
+    const host = settlingHost(threads)
+    const watched = new Set(['child'])
+    const settle = host.setWorkspaceSettled.bind(host)
+    // Watcher takes the thread while the write waits for its checkout: the guard, asked in the write's lane, refuses it.
+    host.setWorkspaceSettled = async (kind, id, settled, options, guard) => {
+      if (id === 'late') watched.add('late')
+      return settle(kind, id, settled, options, guard)
+    }
+    await new WorktreeCleanup({ host, git: trunkGit, rules: () => DEFAULT_WORKTREE_CLEANUP, autoSettleMerged: () => true,
+      pullRequestMerged: vi.fn(async () => true), watched: threadId => watched.has(threadId) }).sweep()
+    expect(host.settled).toEqual([])
   })
 
   const link = (number: number): GitPullRequestLink => ({ number, url: `https://github.com/o/r/pull/${number}`, title: `PR ${number}`, state: 'open', draft: false, source: 'linked', linkedAt: '2026-10-26T00:00:00.000Z' })

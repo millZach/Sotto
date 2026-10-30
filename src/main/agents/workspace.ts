@@ -4916,7 +4916,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         if (branch !== options.expectedMergedBranch || tip !== options.expectedMergedTip) {
           throw new Error('This branch changed after its merged pull request was checked. Its thread stays unsettled.')
         }
-        return await this.setWorkspaceSettled(kind, id, settled)
+        // The guard is asked again in the write's own lane, as Auto-settle merged threads asks whether Watcher took the thread.
+        return await this.setWorkspaceSettled(kind, id, settled, undefined, watcherGuard)
       } finally { release() }
     })
     await this.initialize()

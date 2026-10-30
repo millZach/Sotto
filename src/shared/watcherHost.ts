@@ -88,9 +88,4 @@ export interface WatcherRemoteHosts {
    * The move says in plain words when the host does not list `thread-move`.
    */
   threadMoves?(hostId: string): ThreadMoveHost | undefined
-  /**
-   * Settles a thread on a connected host the way the user's Settle does from this computer, for Settle finished threads
-   * once Watcher has stopped watching it. Rejects when the host is out of reach or refuses.
-   */
-  settle?(hostId: string, threadId: string): Promise<void>
 }
