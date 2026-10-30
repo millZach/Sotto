@@ -179,11 +179,13 @@ describe('a change at the end of a long thread', () => {
   })
   const readsFor = (count: number): { ids: number; delta: AgentThreadDetailDelta } => {
     const reads = { ids: 0 }
-    const activities = Object.freeze(counted(count, reads))
+    const activities = counted(count, reads)
+    Object.freeze(activities)
     const base: AgentThreadDetail = { threadId: 'thread', revision: 1, messages: [message('m', 'Hi')], activities }
     const last = activities.at(-1)!
     const grown = Object.freeze({ ...last, id: last.id, output: `${last.output} and more` })
-    const next = Object.freeze([...activities.slice(0, -1), grown])
+    const next = [...activities.slice(0, -1), grown]
+    Object.freeze(next)
     reads.ids = 0
     const delta = diffAgentThreadDetail(base, { messages: base.messages, activities: next }, 2)!
     applyAgentThreadDetailDelta(base, delta)
