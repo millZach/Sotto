@@ -78,6 +78,8 @@
 /* One line under the row for what a press said: the refusal in the warning colour, a copy in the muted one. */
 .branch-toolbar__notice { flex-basis: 100%; margin: 0; padding: 0 6px; font-size: 12px; line-height: 1.4; }
 .branch-toolbar__notice[data-tone='error'] { color: var(--threads-warning-text); }
+/* Open <title> after a refusal another thread caused (#1823): a word in the line, underlined as a link is, in the line's ink. */
+.branch-toolbar__open { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 600; text-decoration: underline; text-underline-offset: 2px; }
 
 /* The quiet composer keeps these same choices beside the folder in the pane header. */
 .branch-toolbar[data-header] { flex-wrap: nowrap; margin: 0; }

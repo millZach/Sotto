@@ -5474,6 +5474,11 @@ msgstr ""
 msgid "On {hostName}"
 msgstr ""
 
+#. Leads a Git action refused because another thread or Sotto holds the folder. Nothing failed and nothing was changed.
+#: src/renderer/src/agents/GitActionButton.tsx
+msgid "On hold"
+msgstr ""
+
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
 msgstr ""
@@ -5526,6 +5531,10 @@ msgstr ""
 msgid "Open {threadTitle}"
 msgstr ""
 
+#. {title} is the title of the thread that holds this folder. Opens that thread.
+#. {title} is the title of the thread that holds this folder. Opens that thread.
+#: src/renderer/src/agents/BranchToolbar.tsx
+#: src/renderer/src/agents/GitActionButton.tsx
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "Open {title}"
 msgstr ""

@@ -1011,6 +1011,11 @@ export const agentStateSchema = z.object({
   threadDeletePreview: threadDeletePreviewSchema.optional(),
   threadClearPreview: threadClearPreviewSchema.optional(),
   threadClearResult: threadClearResultSchema.optional(),
+  /**
+   * A refusal because the checkout guard is held (#1823), on that reply alone: present for every such refusal, with the
+   * thread holding the folder when a thread does, so the window offers to open it. Keyed for the window by the router.
+   */
+  checkoutHold: z.object({ threadId: z.string().min(1).optional() }).optional(),
   clientScoped: z.boolean().optional(),
   connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),
   hostId: z.uuid().optional(),

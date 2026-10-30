@@ -298,3 +298,42 @@ describe('the Git action in the pane header', () => {
     await waitFor(() => expect(quick()).toBeEnabled())
   })
 })
+
+describe('a refusal because something holds the folder (#1823)', () => {
+  const words = 'Thread "Visual gate flake" is waiting for your answer. Nothing was changed. Answer it, then try again.'
+  function press(hold: AgentState['checkoutHold']) {
+    // Ahead of its upstream, the press is Push & create PR, which asks nothing first.
+    const current = thread(status({ ahead: 1 }))
+    const holder = thread(status(), { id: 'thread-2', title: 'Visual gate flake' })
+    vi.stubGlobal('sotto', { agents: { gitChangedFiles: vi.fn(async () => files()) }, openExternalLink: vi.fn() })
+    const command = vi.fn(async (request: AgentCommand) => request.type === 'git-action' ? state(current, { error: words, ...(hold ? { checkoutHold: hold } : {}) }) : state(current))
+    render(<GitActionButton thread={current} threads={[current, holder]} command={command} noticeSlot={null} />)
+    fireEvent.click(quick())
+    return { command }
+  }
+
+  it('reads as a hold, not a failure, and opens the thread holding the folder', async () => {
+    const { command } = press({ threadId: 'thread-2' })
+    const notice = await screen.findByRole('status')
+    expect(notice).toHaveTextContent(`On hold ${words}`)
+    expect(notice).not.toHaveTextContent('Action failed')
+    expect(screen.queryByRole('alert')).not.toBeInTheDocument()
+    fireEvent.click(within(notice).getByRole('button', { name: 'Open Visual gate flake' }))
+    expect(sent(command).at(-1)).toEqual({ type: 'select-thread', threadId: 'thread-2' })
+  })
+
+  it('offers nothing to open when the thread holding it is this one, or when Sotto holds it', async () => {
+    press({ threadId: 'thread-1' })
+    expect(await screen.findByRole('status')).toHaveTextContent('On hold')
+    expect(screen.queryByRole('button', { name: /^Open / })).not.toBeInTheDocument()
+    cleanup()
+    press({})
+    expect(await screen.findByRole('status')).toHaveTextContent('On hold')
+    expect(screen.queryByRole('button', { name: /^Open / })).not.toBeInTheDocument()
+  })
+
+  it('keeps Action failed for a refusal that is no hold', async () => {
+    press(undefined)
+    expect(await screen.findByRole('alert')).toHaveTextContent(`Action failed ${words}`)
+  })
+})
