@@ -1,6 +1,7 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
 import { describe, expect, it, vi } from 'vitest'
+import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { SocketHostService } from '../../src/main/agents/socketHostService'
 import type { AgentState } from '../../src/shared/agents'
 import { useSocketHostFixture } from '../fixtures/socketHostFixture'
@@ -53,5 +54,20 @@ describe('what a shell push costs the desktop', () => {
       // A copy a caller asks for is still its own to change.
       expect(Object.isFrozen(client.shell().host.models)).toBe(false)
     } finally { off() }
+  })
+
+  it('keeps that catalog through a command\'s answer', async () => {
+    const { client } = await fixture.pair('Desktop')
+    await expect.poll(() => client.view().host.threads.length).toBeGreaterThan(0)
+    const workId = change()
+    await expect.poll(() => carries(client.view(), workId)).toBe(true)
+    const models = client.view().host.models
+    expect(Object.isFrozen(models)).toBe(true)
+    const answered = await client.command({ type: 'select-thread', threadId: client.view().host.threads[0]!.id }, desktopWindowClient())
+    expect(answered.error).toBeFalsy()
+    expect(client.view().host.models).toBe(models)
+    const next = change()
+    await expect.poll(() => carries(client.view(), next)).toBe(true)
+    expect(client.view().host.models).toBe(models)
   })
 })

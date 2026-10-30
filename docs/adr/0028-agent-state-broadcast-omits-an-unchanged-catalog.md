@@ -215,13 +215,13 @@ The October 16 amendment had the desktop's client put the catalog it holds back 
 then read the shell, catalog and all. So every push read the catalog into a new array, and every comparison downstream,
 the window's broadcast among them, compared it by content again.
 
-A shell push naming a revision the connection holds is now read without its catalog. The first push that carries or
-names a revision is read whole, and that reading is frozen and kept with the revision; every later push naming it is
-handed that same array. A revision names one content, so a catalog carried whole again under the same revision keeps the
-reading. Command answers and `shell` reads still put the catalog back and read it, as before. The client also hands the
-listeners of its pushes its state as read, without a copy, as a local host's broadcast is handed: the router, the only
-listener, reads a few fields of it and builds what it publishes from its own read.
+A shell naming a revision the connection holds is now read without its catalog. The first shell that carries or names a
+revision is read whole, and that reading is frozen and kept with the revision; every later shell naming it, a push, a
+command's answer or a `shell` read, is read with an empty catalog and handed that same array. A revision names one
+content, so a catalog carried whole again under the same revision keeps the reading. The client also hands the listeners
+of its pushes its state as read, without a copy, as a local host's broadcast is handed: the router, the only listener,
+reads a few fields of it and builds what it publishes from its own read.
 
 On the owner-scale benchmark (`tests/perf/dataTransfer.perf.test.ts`, a host thread streaming), the client's time per
-push fell from 10.2 ms to 5.0 ms and the window broadcast's catalog comparison from 29.2 ms to 1.5 ms over 60 pushes
+push fell from 10.2 ms to 5.2 ms and the window broadcast's catalog comparison from 29.2 ms to 0.9 ms over 60 pushes
 (`docs/perf/2026-10-29-data-transfer.md`).

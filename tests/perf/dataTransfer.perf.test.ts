@@ -1,3 +1,4 @@
+// @vitest-environment node
 /**
  * The data-transfer benchmark (October 29, 2026): what main moves, serializes and writes per streamed chunk and per user
  * action at the owner's scale, measured on the pipeline `src/main/index.ts` wires (`ownerScalePipeline.ts`): bytes and
@@ -33,6 +34,7 @@ import { AgentControl } from '../../src/main/agents/control'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentState } from '../../src/shared/agents'
 import { ownerScalePipeline, type OwnerScalePipeline, type OwnerScaleTrack } from '../fixtures/ownerScalePipeline'
+import { median } from '../fixtures/perfBench'
 
 const BENCH = process.env.SOTTO_PERF_BENCH === '1'
 const TRACK = (process.env.SOTTO_AUDIT_TRACK ?? 'owl') as OwnerScaleTrack
@@ -258,6 +260,24 @@ function activities(prefix: string, count: number): AgentActivity[] {
     sequence: position, kind: 'command', status: 'completed', title: `Synthetic command ${position}`, output: `${prefix}:${position}:`.padEnd(3_000, `${position} lorem ipsum dolor sit amet `) }))
 }
 
+/**
+ * Long, real-looking histories: 275 turns of messages and 2,000 activity records of about 3 KB on each of `sessions`, as the
+ * longest threads on forge hold, and the records alone on each of `recordsOnly`.
+ */
+async function lengthen(p: OwnerScalePipeline, sessions: readonly string[], recordsOnly: readonly string[] = []): Promise<void> {
+  const at = new Date().toISOString()
+  for (const session of sessions) for (let turnIndex = 0; turnIndex < 275; turnIndex++) {
+    p.adapter.log.add(session, { id: `${session}-u${turnIndex}`, role: 'user', text: `Synthetic question ${turnIndex} `.repeat(8), createdAt: at })
+    p.adapter.log.add(session, { id: `${session}-r${turnIndex}`, role: 'assistant', text: `Synthetic answer paragraph ${turnIndex}. `.repeat(40), createdAt: at })
+  }
+  for (const session of [...sessions, ...recordsOnly]) {
+    p.adapter.state.threads.find(item => item.id === session)!.activities = activities(session, 2_000)
+    p.adapter.mark(session)
+  }
+  p.adapter.publish(false)
+  await pass(1_000)
+}
+
 /** An idle thread of this computer that no window observes and Watcher does not watch. */
 const BACKGROUND = 'idle-20'
 const roots: string[] = []
@@ -275,24 +295,7 @@ it.skipIf(!BENCH)('measures what main moves per chunk and per action', async () 
   pipeline = await until(ownerScalePipeline(root, { threads: 1, history: 1, watcher: WATCHER_SCALE }, 3, TRACK))
   const p = pipeline
   await pass(1_000)
-  // A long, real-looking history on the threads that stream: 275 turns of messages and 2,000 activity records of about 3 KB each, as the longest threads on forge hold.
-  if (LONG) {
-    const at = new Date().toISOString()
-    for (const session of p.streamSessions) {
-      for (let turnIndex = 0; turnIndex < 275; turnIndex++) {
-        p.adapter.log.add(session, { id: `${session}-u${turnIndex}`, role: 'user', text: `Synthetic question ${turnIndex} `.repeat(8), createdAt: at })
-        p.adapter.log.add(session, { id: `${session}-r${turnIndex}`, role: 'assistant', text: `Synthetic answer paragraph ${turnIndex}. `.repeat(40), createdAt: at })
-      }
-      const thread = p.adapter.state.threads.find(item => item.id === session)!
-      thread.activities = activities(session, 2_000)
-      p.adapter.mark(session)
-    }
-    const background = p.adapter.state.threads.find(item => item.id === BACKGROUND)!
-    background.activities = activities(BACKGROUND, 2_000)
-    p.adapter.mark(BACKGROUND)
-    p.adapter.publish(false)
-    await pass(1_000)
-  }
+  if (LONG) await lengthen(p, p.streamSessions, [BACKGROUND])
   // The window's whole read of state on load (AGENT_GET), and the coordinator's whole shell.
   const whole = p.router.shell() as AgentState
   results.wholeStateBytes = serialize(whole).byteLength
@@ -312,7 +315,6 @@ it.skipIf(!BENCH)('measures what main moves per chunk and per action', async () 
       const result = await until(p.router.command({ type: 'save-thread-draft', composer: 'manual', threadId: p.openThread, draftId: `00000000-0000-4000-a000-${index.toString(16).padStart(12, '0')}`, text: `Synthetic draft ${index}`, attachments: [], requestId: null }, desktopWindowClient()))
       replies.push(encoder.encodeReceipt(result as AgentState))
     }
-    const median = (values: number[]) => values.sort((a, b) => a - b)[Math.floor(values.length / 2)]!
     const timed = (work: (index: number) => unknown) => { const samples: number[] = []; for (let index = 1; index < replies.length; index++) { const started = realNow(); work(index); samples.push(realNow() - started) } return Math.round(median(samples) * 100) / 100 }
     const decoded = replies.map(reply => structuredClone(reply))
     const sharing = createStateSharing()
@@ -398,19 +400,7 @@ it.skipIf(!BENCH || process.env.SOTTO_AUDIT_SOCKET !== '1')('measures what the h
   const root = await mkdtemp(join(tmpdir(), 'sotto-transfer-socket-')); roots.push(root)
   const p = await until(ownerScalePipeline(root, { threads: 1, history: 1, watcher: WATCHER_SCALE }, 3, TRACK))
   await pass(1_000)
-  if (LONG) {
-    const at = new Date().toISOString()
-    for (const session of p.streamSessions) {
-      for (let turnIndex = 0; turnIndex < 275; turnIndex++) {
-        p.adapter.log.add(session, { id: `${session}-u${turnIndex}`, role: 'user', text: `Synthetic question ${turnIndex} `.repeat(8), createdAt: at })
-        p.adapter.log.add(session, { id: `${session}-r${turnIndex}`, role: 'assistant', text: `Synthetic answer paragraph ${turnIndex}. `.repeat(40), createdAt: at })
-      }
-      p.adapter.state.threads.find(item => item.id === session)!.activities = activities(session, 2_000)
-      p.adapter.mark(session)
-    }
-    p.adapter.publish(false)
-    await pass(1_000)
-  }
+  if (LONG) await lengthen(p, p.streamSessions)
   const service = new LocalHostService({ control: p.control, events: p.workspace, ...(p.watcher ? { watcher: p.watcher } : {}) })
   const pairing = new PairedClients(root)
   await until(pairing.load())

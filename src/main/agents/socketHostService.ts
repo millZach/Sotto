@@ -204,11 +204,15 @@ export class SocketHostService implements HostService {
   private readonly lateDetails = new Map<string, string>()
   /**
    * The model catalog this connection was last sent whole, under the revision the host named (ADR-0028, October 3
-   * amendment), and once a shell push carrying it has been read, that reading frozen and owned (`certified`). A later push
-   * naming the same revision is read without its catalog and handed the certified one, so each push neither reads the
-   * catalog again nor makes a new array of it, and everything downstream that compares catalogs meets the same array (#996).
+   * amendment), and once a shell naming it has been read, that reading frozen and owned (`certified`). A later shell naming
+   * the same revision is read without its catalog and handed the certified one, so no push or answer reads the catalog
+   * again or makes a new array of it, and everything downstream that compares catalogs meets the same array (#996).
    */
   private catalog: { revision: number; models: unknown; certified?: AgentModel[] } | undefined
+  /** Each raw shell `restoreCatalog` read with an empty catalog, by its `host`, and the catalog it is handed once read. */
+  private readonly readCatalogs = new WeakMap<object, AgentModel[]>()
+  /** The revision each raw shell `restoreCatalog` restored named, by its `host`, so its first reading can be kept. */
+  private readonly namedCatalogs = new WeakMap<object, number>()
   private cachedWatcher: WatcherHostProjection | undefined
   /** Native ownership is immutable; an omitted later shell must not reopen a held thread. */
   private readonly dormantProviderThreads = new Map<string, DormantProviderThread>()
@@ -435,11 +439,8 @@ export class SocketHostService implements HostService {
     // A shell naming a catalog this connection does not hold cannot be shown, so the connection starts again, and its
     // hello carries the catalog whole (ADR-0028, October 16 amendment).
     const result = field(raw, 'result')
-    const shellPush = field(raw, 'event') === 'shell'
-    const named = shellPush ? field(field(field(raw, 'state'), 'host'), 'modelsRevision') : undefined
-    const certified = shellPush ? this.certifiedCatalog(field(raw, 'state')) : undefined
-    const restored = certified !== undefined || (shellPush ? this.restoreCatalog(field(raw, 'state'))
-      : this.restoreCatalog(result) && this.restoreCatalog(field(result, 'shell')))
+    const restored = field(raw, 'event') === 'shell' ? this.restoreCatalog(field(raw, 'state'))
+      : this.restoreCatalog(result) && this.restoreCatalog(field(result, 'shell'))
     if (!restored) { this.frames?.close(); return }
     const parsed = raw !== null && typeof raw === 'object' && 'event' in raw ? hostPushSchema.safeParse(raw) : hostResponseSchema.safeParse(raw)
     if (!parsed.success) { this.unreadable(raw); return }
@@ -451,8 +452,7 @@ export class SocketHostService implements HostService {
         if (message.event === 'shell') {
           if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() }
           const state = message.state as AgentState
-          if (certified) state.host.models = certified
-          else if (typeof named === 'number' && this.catalog?.revision === named) state.host.models = this.catalog.certified = immutableModels(state.host.models)
+          this.adoptCatalog(field(raw, 'state'), state)
           this.publish(state, true)
         }
         else if (message.event === 'answer-receipt') { if (this.cacheAcceptedAnswer(message.acceptedAnswer) && this.cached) this.notifyState() }
@@ -522,20 +522,12 @@ export class SocketHostService implements HostService {
    * Puts a shell's model catalog back as the host wrote it. A shell naming the revision this connection was last sent
    * whole leaves `models` out; one carrying it is remembered. The revision itself is the wire's, and goes no further.
    * False for a shell naming a revision this connection was never sent.
+   *
+   * Once a catalog has been read, a shell naming its revision is read with an empty catalog instead and handed that
+   * reading afterwards (`adoptCatalog`), so no shell reads the catalog again and every one carries the same frozen array:
+   * a push, a command's answer and a `shell` read alike (#996). The raw `host` object is the key, for the schema reads it
+   * when the push arrives or when the caller reads the answer.
    */
-  /**
-   * For a shell push naming the revision whose catalog this connection has already read: that reading, with the push's
-   * own catalog left empty so the schema reads none of it. Undefined when the push carries its catalog whole, names
-   * another revision, or the catalog has not been read from a push yet; `restoreCatalog` then puts it back to be read.
-   */
-  private certifiedCatalog(shell: unknown): AgentModel[] | undefined {
-    const wire = field(shell, 'host') as { models?: unknown; modelsRevision?: unknown } | undefined
-    const revision = field(wire, 'modelsRevision'), catalog = this.catalog
-    if (typeof revision !== 'number' || wire!.models !== undefined || catalog?.revision !== revision || !catalog.certified) return undefined
-    wire!.models = []
-    delete wire!.modelsRevision
-    return catalog.certified
-  }
   private restoreCatalog(shell: unknown): boolean {
     const host = field(shell, 'host')
     const revision = field(host, 'modelsRevision')
@@ -543,10 +535,24 @@ export class SocketHostService implements HostService {
     const wire = host as { models?: unknown; modelsRevision?: unknown }
     // A revision names one content, so a catalog carried whole again under the revision already read keeps that reading.
     if (wire.models !== undefined) this.catalog = { revision, models: wire.models, ...this.catalog?.revision === revision && this.catalog.certified ? { certified: this.catalog.certified } : {} }
+    else if (this.catalog?.revision === revision && this.catalog.certified) { wire.models = []; this.readCatalogs.set(wire, this.catalog.certified) }
     else if (this.catalog?.revision === revision) wire.models = this.catalog.models
     else return false
+    this.namedCatalogs.set(wire, revision)
     delete wire.modelsRevision
     return true
+  }
+  /**
+   * After a shell restored by `restoreCatalog` is read: the catalog already read for its revision in place of the empty
+   * one it was read with, or, the first time its revision is read, that reading, frozen and kept as the revision's.
+   */
+  private adoptCatalog(raw: unknown, read: unknown): void {
+    const wire = field(raw, 'host'), host = field(read, 'host') as AgentState['host'] | undefined
+    if (wire === null || typeof wire !== 'object' || !host) return
+    const held = this.readCatalogs.get(wire)
+    if (held) { host.models = held; return }
+    const revision = this.namedCatalogs.get(wire), catalog = this.catalog
+    if (revision !== undefined && catalog?.revision === revision) host.models = catalog.certified ??= immutableModels(host.models)
   }
   /** Whether the host runs another Sotto version than this client, by what it advertised. */
   private skewed(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion }
@@ -581,7 +587,7 @@ export class SocketHostService implements HostService {
   /** Reads what the host answered; from a host of another version, an answer this client cannot read is named as skew. */
   private read<T>(schema: z.ZodType<T>, value: unknown): T {
     const parsed = schema.safeParse(value)
-    if (parsed.success) return parsed.data
+    if (parsed.success) { this.adoptCatalog(value, parsed.data); this.adoptCatalog(field(value, 'shell'), field(parsed.data, 'shell')); return parsed.data }
     if (this.skewed()) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     throw parsed.error
   }

@@ -53,19 +53,23 @@ function in a CPU profile sampled every 200 microseconds, taken the same way bef
 
 `SocketHostService` handed each listener of a push `state()`: a whole structured copy of the shell with every held
 detail laid over it, for the router, which reads a few fields. It now hands `view()`, as a local host's broadcast is
-handed. A push naming a catalog revision the client has read is read without its catalog and handed the frozen array it
-read first (ADR-0028, October 29 amendment). Six command paths that only read the shell read it in place too.
+handed. A shell naming a catalog revision the client has read, a push, an answer or a `shell` read, is read without its
+catalog and handed the frozen array it read first (ADR-0028, October 29 amendment). Six command paths that only read the
+shell read it in place too.
+
+This is the desktop's work on what arrives. The bytes on the wire are unchanged: 233 KB per shell push before
+compression, 11 KB after. Phones are untouched; they are sent no shells while a thread streams.
 
 One host thread streaming, 60 pushes, profiled:
 
 | | Before | After |
 | --- | ---: | ---: |
-| `SocketHostService.receive`, per push | 10.2 ms | 5.0 ms |
+| `SocketHostService.receive`, per push | 10.2 ms | 5.2 ms |
 | of it, the listener's copy (`notifyState`) | 5.8 ms | 1.0 ms |
-| Window broadcast `send`, per push | 1.09 ms | 0.64 ms |
-| of it, the catalog comparison, all 60 pushes | 29.2 ms | 1.5 ms |
+| Window broadcast `send`, per push | 1.09 ms | 0.69 ms |
+| of it, the catalog comparison, all 60 pushes | 29.2 ms | 0.9 ms |
 | `shell()` and `state()` calls per push | 1 | 0 |
 
 What is left per push is the schema read of the shell's thread rows, which shell deltas take away.
-`tests/integration/socketClientPushCopies.test.ts` fails if a push calls `shell()` or `state()`, or if a later push is
-handed a catalog other than the one first read.
+`tests/integration/socketClientPushCopies.test.ts` fails if a push calls `shell()` or `state()`, or if a later push or a
+command's answer leaves the client holding a catalog other than the one it first read.
