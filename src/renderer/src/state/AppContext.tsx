@@ -896,6 +896,17 @@ export function AppProvider({
     },
   }), [bridge, commitUpdate, enqueueHistoryMutation, enqueueSettings, isCurrentGeneration, queueDictationRecords, refreshDictationRecord, refreshDictationRecords, refreshSpeechModels])
 
+  // The application menu's Settings… (Cmd+, on a Mac, Ctrl+, elsewhere) opens Settings, once setup is done (#1825).
+  useEffect(() => {
+    if (bridge === undefined) return undefined
+    try {
+      return bridge.onSettingsRequested(() => { if (navigationRef.current !== 'onboarding') actions.navigate('settings') })
+    } catch {
+      // Without the menu's request, Settings is still a press or Ctrl+5 away.
+      return undefined
+    }
+  }, [actions, bridge])
+
   const value = useMemo<AppContextValue>(() => ({
     windowMaximized,
     platform,

@@ -37,7 +37,6 @@
   background: transparent;
   padding: 0 14px;
   color: var(--tt-text-muted);
-  cursor: pointer;
   font-size: 13px;
   font-weight: 600;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
@@ -63,7 +62,6 @@
   background: transparent;
   padding: 7px;
   color: var(--tt-text);
-  cursor: pointer;
   text-align: left;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }

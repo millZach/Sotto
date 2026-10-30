@@ -32,7 +32,8 @@ export const WATCHER_NEWS_TARGETS_MAX = 50
  * a thread no request watches carries `WATCHER_UNWATCHED_REQUEST_ID`, which no request has. It approves nothing either.
  * `thread-moved` comes once for each move the user made of a thread to another machine (#1178) as it ends, watched or not:
  * `moveOutcome` says whether it moved (`movedTo` continues it on `machine` and this one is settled), stayed here after the
- * new thread's first turn did not finish, or was given back before any thread was made there. Sotto runs moves, not Watcher.
+ * new thread's first turn did not finish, was given back before any thread was made there, or was kept here when the user
+ * called it off with Keep it here. Sotto runs moves, not Watcher.
  */
 export const watcherEventSchema = z.object({
   id: z.string().max(512), kind: z.enum(['turn-finished', 'needs-user', 'turn-failed', 'quiet', 'taken-over', 'delivery-changed', 'evidence-changed', 'work-settled', 'prototype-ready',
@@ -45,7 +46,7 @@ export const watcherEventSchema = z.object({
   delegatedThreadId: z.string().max(512).optional(), answeredByUser: z.literal(true).optional(),
   swarm: z.object({ id: z.uuid(), count: z.number().int().positive(), done: z.number().int().nonnegative(), failed: z.number().int().nonnegative(), queued: z.number().int().nonnegative() }).strict().optional(),
   restartedBy: z.string().min(1).max(64).optional(),
-  moveId: z.uuid().optional(), movedTo: watcherThreadTargetSchema.optional(), moveOutcome: z.enum(['moved', 'stayed', 'given-back']).optional(), machine: z.string().min(1).max(200).optional(),
+  moveId: z.uuid().optional(), movedTo: watcherThreadTargetSchema.optional(), moveOutcome: z.enum(['moved', 'stayed', 'given-back', 'kept']).optional(), machine: z.string().min(1).max(200).optional(),
 }).strict()
 /** The request a `threads-restarted` event names for a thread no request watches: the nil UUID, which no request has. */
 export const WATCHER_UNWATCHED_REQUEST_ID = '00000000-0000-0000-0000-000000000000'

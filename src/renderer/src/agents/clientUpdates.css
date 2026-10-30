@@ -7,7 +7,6 @@
   z-index: 11;
   width: min(360px, calc(100vw - 40px));
   border: 1px solid var(--tt-hairline);
-  border-left: 2px solid var(--tt-update);
   border-radius: 12px;
   background: var(--tt-surface-elevated);
   box-shadow: var(--tt-shadow-lg);
@@ -100,10 +99,6 @@
 }
 
 /* One client that went wrong: one line, its press, and the reason under Details. */
-.client-updates[data-tone='error'] {
-  border-left-color: var(--tt-error);
-}
-
 .client-updates--single .client-updates__row {
   padding: 12px 10px 12px 14px;
 }
@@ -125,7 +120,6 @@
   padding: 8px 14px;
   color: var(--tt-text-muted);
   font-size: 11.5px;
-  cursor: pointer;
 }
 
 .client-updates__details summary:focus-visible {

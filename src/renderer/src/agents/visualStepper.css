@@ -39,7 +39,6 @@
   border: 0;
   border-radius: 6px;
   background: transparent;
-  cursor: pointer;
   transition: width 160ms ease;
 }
 .visual-stepper__dot::before {

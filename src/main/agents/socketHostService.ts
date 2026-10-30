@@ -1387,6 +1387,8 @@ export class SocketHostService implements HostService {
   get supportsThreadMove(): boolean { return this.features.includes('thread-move') }
   /** The host lists `thread-move-source`: its own threads can be a move's source (#1178 part 3). */
   get supportsThreadMoveSource(): boolean { return this.features.includes('thread-move-source') }
+  /** The host lists `thread-move-keep`: it calls off a move it was asked to start (#1178 part 4). */
+  get supportsThreadMoveKeep(): boolean { return this.features.includes('thread-move-keep') }
   /**
    * Asks the host to make a move's new thread and send its first prompt (`threadMoves.ts`), answered as the host gave it for the
    * caller to read. Making a thread and its first send are quick, so the wait is a branch move step's. A host that does not
@@ -1394,7 +1396,8 @@ export class SocketHostService implements HostService {
    */
   async threadMove(request: HostThreadMoveRequest): Promise<unknown> {
     this.offers('thread-move')
-    if (request.action !== 'start') this.offers('thread-move-source')
+    if (request.action === 'keep') this.offers('thread-move-keep')
+    else if (request.action !== 'start') this.offers('thread-move-source')
     return this.call({ op: 'thread-move', request }, undefined, undefined, 120_000)
   }
   /** The host lists `project-origins`: it names each of its projects' GitHub repository (#1032). An older host's cannot be matched. */

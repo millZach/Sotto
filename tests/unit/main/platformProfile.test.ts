@@ -14,7 +14,7 @@ describe('platformProfile', () => {
     expect(profile.platform).toBe('win32')
     expect(profile.mainWindowChrome).toBe('frameless')
     expect(profile.trafficLightPosition).toBeNull()
-    expect(profile.applicationMenu).toBe('none')
+    expect(profile.applicationMenu).toBe('hidden')
     expect(profile.widgetAlwaysOnTopLevel).toBe('normal')
     expect(profile.widgetFocusable).toBe(false)
     expect(profile.widgetVisibleOnAllWorkspaces).toBe(false)
@@ -31,7 +31,7 @@ describe('platformProfile', () => {
       platform: 'win32',
       mainWindowChrome: 'frameless',
       trafficLightPosition: null,
-      applicationMenu: 'none',
+      applicationMenu: 'hidden',
       widgetAlwaysOnTopLevel: 'normal',
       widgetFocusable: false,
       widgetVisibleOnAllWorkspaces: false,
@@ -76,7 +76,7 @@ describe('platformProfile', () => {
       platform: 'linux',
       mainWindowChrome: 'frameless',
       trafficLightPosition: null,
-      applicationMenu: 'none',
+      applicationMenu: 'hidden',
       widgetAlwaysOnTopLevel: 'normal',
       widgetFocusable: false,
       widgetVisibleOnAllWorkspaces: false,

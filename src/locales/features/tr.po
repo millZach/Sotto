@@ -48,7 +48,7 @@ msgstr ""
 
 #. placeholder {0}: proposal.threads.filter(item => item.ticked).length
 #: src/renderer/src/watcher/MoveThreads.tsx
-msgid "{0, plural, one {You asked to move # thread to {machine}. Sotto reports its move here.} other {You asked to move # threads to {machine}. Sotto reports each move here.}}"
+msgid "{0, plural, one {You chose # of the threads Watcher proposed moving to {machine}.} other {You chose # of the threads Watcher proposed moving to {machine}.}}"
 msgstr ""
 
 #. placeholder {0}: card.machine
@@ -1074,6 +1074,10 @@ msgstr ""
 msgid "Approve access in Windows"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Asking {machine}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherPermissionChip.tsx
 msgid "Asks you before it edits a file or runs a command that changes something."
 msgstr ""
@@ -1474,7 +1478,6 @@ msgid "Codex, Claude Code, Grok Build or Muse"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
-#: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Coding agents"
 msgstr ""
 
@@ -2060,10 +2063,6 @@ msgstr ""
 msgid "Finish setup"
 msgstr ""
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "First project"
-msgstr ""
-
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "First turn ended"
 msgstr ""
@@ -2527,6 +2526,14 @@ msgid "Keep usage"
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Keeping it here"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Keeping it on {from}"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Kept here"
 msgstr ""
 
@@ -2686,11 +2693,6 @@ msgstr ""
 msgid "longest freeze"
 msgstr ""
 
-#. First-run setup: the step that chooses how Sotto looks
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Look"
-msgstr ""
-
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Looking for speech models on this computer…"
 msgstr ""
@@ -2790,7 +2792,6 @@ msgstr ""
 msgid "Memory is unavailable. Restart Sotto and try again."
 msgstr ""
 
-#. First-run setup: the microphone step
 #. The macOS Privacy & Security pane, as System Settings names it
 #. The microphone picker
 #: src/renderer/src/components/OpenSystemSettingsButton.tsx
@@ -3611,10 +3612,6 @@ msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Other apps"
-msgstr ""
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Other computers"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsagePerDay.tsx
@@ -4485,11 +4482,6 @@ msgstr ""
 msgid "Short or detailed replies, spoken summaries, progress updates, and when to interrupt you."
 msgstr ""
 
-#. First-run setup: the dictation shortcut step
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Shortcut"
-msgstr ""
-
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Shortcut conflicts"
 msgstr ""
@@ -4896,6 +4888,12 @@ msgstr ""
 msgid "Sotto started with an empty history after its local history file could not be read. The original file was preserved."
 msgstr ""
 
+#. placeholder {0}: card.machine
+#. placeholder {1}: card.machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Sotto stops it and settles it on {0}, and this thread takes sends again once {1} says so."
+msgstr ""
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Sotto threads"
 msgstr ""
@@ -4938,10 +4936,6 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Speak, then paste into any window"
-msgstr ""
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Speech model"
 msgstr ""
 
 #: src/renderer/src/components/SpeechModelStatus.tsx
@@ -5117,7 +5111,7 @@ msgid "Step {number} of 4 · {title} once its clients have"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Step {stepNumber} of {stepCount} · {stepTitle}"
+msgid "Step {stepNumber} of {stepCount}"
 msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
@@ -5153,6 +5147,15 @@ msgstr ""
 msgid "Stop all, show what it did"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop it there and keep this one"
+msgstr ""
+
+#. placeholder {0}: card.from
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop it there and keep this one on {0}"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stop requested for {title}. Waiting on {hosts} to confirm."
 msgstr ""
@@ -5171,6 +5174,28 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Stop test"
+msgstr ""
+
+#. placeholder {0}: card.machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop the new thread on {0} and keep this one here?"
+msgstr ""
+
+#. placeholder {0}: card.machine
+#. placeholder {1}: card.from
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop the new thread on {0} and keep this one on {1}?"
+msgstr ""
+
+#. placeholder {0}: card.machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop the new thread on {0} if it made one, and keep this one here?"
+msgstr ""
+
+#. placeholder {0}: card.machine
+#. placeholder {1}: card.from
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop the new thread on {0} if it made one, and keep this one on {1}?"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
@@ -6006,6 +6031,11 @@ msgstr ""
 msgid "Waiting"
 msgstr ""
 
+#. placeholder {0}: card.waitingOn ?? machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Waiting for {0}"
+msgstr ""
+
 #: src/renderer/src/features/starting/startingView.ts
 msgid "Waiting for {names}"
 msgstr ""
@@ -6164,15 +6194,6 @@ msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "weekly window"
-msgstr ""
-
-#. First-run setup: the first step
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Welcome"
-msgstr ""
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Welcome to Sotto"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx
@@ -6339,6 +6360,14 @@ msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "You chose this in working preferences"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "You chose to keep this thread here. Sotto asks {machine} to call the move off, and to stop and settle the new thread if it made one, as soon as {machine} answers. This thread takes no sends until then. Nothing was lost."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "You chose to keep this thread on {from}. Sotto asks {machine} to call the move off, and to stop and settle the new thread if it made one, as soon as {machine} answers. This thread takes no sends until then. Nothing was lost."
 msgstr ""
 
 #: src/renderer/src/features/usage/UsageOverview.tsx

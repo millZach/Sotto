@@ -36,7 +36,7 @@
 /* At the highest level the word may be painted through a clipped gradient with a transparent fill (Rainbow), which would
    leave a currentColor stroke invisible, so the mark takes the colourway's ink itself. */
 .effort-card__word[data-top='true'] .effort-card__mark { color: var(--tt-effort-text); }
-.effort-card__default { flex: none; min-height: 24px; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+.effort-card__default { flex: none; min-height: 24px; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .effort-card__default:hover:not(:disabled) { color: var(--tt-text); background: var(--tt-hover); }
 .effort-card__default:active:not(:disabled) { color: var(--tt-text); background: var(--tt-hover-strong); }
 .effort-card__default:disabled { opacity: .5; cursor: default; }
@@ -80,7 +80,7 @@
 .effort-card__ends { display: flex; justify-content: space-between; margin: 6px 2px 0; color: var(--tt-text-faint); font-size: 11.5px; line-height: 1.2; }
 
 /* Ultrathink: one row that reads as a check, on Claude threads with an editable draft. */
-.effort-card__ultrathink { display: flex; align-items: center; gap: 9px; width: calc(100% + 8px); min-height: 30px; margin: 8px -4px 0; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.effort-card__ultrathink { display: flex; align-items: center; gap: 9px; width: calc(100% + 8px); min-height: 30px; margin: 8px -4px 0; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .effort-card__ultrathink:hover:not(:disabled) { color: var(--tt-text); background: var(--tt-hover); }
 .effort-card__ultrathink:active:not(:disabled) { color: var(--tt-text); background: var(--tt-hover-strong); }
 .effort-card__ultrathink:disabled { cursor: default; }

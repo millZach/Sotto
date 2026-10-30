@@ -47,13 +47,13 @@
 .pr-surface__merge-go[aria-disabled='true']:hover { border-color: var(--tt-field-border); color: var(--tt-text-muted); filter: none; }
 .pr-surface__method { position: relative; flex: none; }
 .pr-surface__method-list { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 30; display: grid; width: 270px; max-width: calc(100cqw - 32px); padding: 6px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
-.pr-surface__method-item { display: grid; grid-template-columns: minmax(0, 1fr) 14px; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.pr-surface__method-item { display: grid; grid-template-columns: minmax(0, 1fr) 14px; align-items: center; gap: 10px; padding: 7px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; text-align: left; }
 .pr-surface__method-item:hover, .pr-surface__method-item:focus-visible { background: var(--tt-hover); outline: none; }
 .pr-surface__method-item:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 .pr-surface__method-item small { display: block; color: var(--tt-text-muted); font-size: 12px; }
 .pr-surface__method-item > svg { color: var(--tt-accent-text); }
 .pr-surface__hint { margin: 8px 0 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
-.pr-surface__textlink { padding: 0; border: 0; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.pr-surface__textlink { padding: 0; border: 0; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
 .pr-surface__textlink:disabled { color: var(--tt-text-muted); cursor: default; }
 .pr-surface__finished { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); }
 .pr-surface__finished > svg { flex: none; color: var(--tt-text-muted); }
@@ -82,14 +82,14 @@
 /* The folds: Description, Linked pull requests. */
 .pr-surface__fold { border-top: 1px solid var(--tt-hairline); }
 .pr-surface__dock + .pr-surface__fold { margin-top: 6px; }
-.pr-surface__fold-head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0; border: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 13.5px; font-weight: 500; text-align: left; cursor: pointer; }
+.pr-surface__fold-head { display: flex; align-items: center; gap: 8px; width: 100%; min-height: 40px; padding: 0; border: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 13.5px; font-weight: 500; text-align: left; }
 .pr-surface__fold-head > svg { flex: none; color: var(--tt-text-muted); }
 .pr-surface__fold-body { display: grid; gap: 8px; justify-items: start; padding: 0 0 14px 23px; }
 .pr-surface__description { color: var(--tt-text-2); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .pr-surface__links { justify-self: stretch; margin: 0; padding: 0; list-style: none; }
 .pr-surface__link { border-top: 1px solid var(--tt-hairline); }
 .pr-surface__link:first-child { border-top: 0; }
-.pr-surface__link-open { display: grid; width: 100%; grid-template-columns: 15px auto minmax(0, 1fr); grid-template-areas: 'icon number title' '. source source'; align-items: center; column-gap: 8px; row-gap: 2px; min-width: 0; padding: 9px 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; }
+.pr-surface__link-open { display: grid; width: 100%; grid-template-columns: 15px auto minmax(0, 1fr); grid-template-areas: 'icon number title' '. source source'; align-items: center; column-gap: 8px; row-gap: 2px; min-width: 0; padding: 9px 6px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text); font: inherit; text-align: left; }
 .pr-surface__link-open:hover { background: var(--tt-hover); }
 .pr-surface__link-open:active:not(:disabled) { background: var(--tt-hover-strong); }
 .pr-surface__link-open > svg { grid-area: icon; }
