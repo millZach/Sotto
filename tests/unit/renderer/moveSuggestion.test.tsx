@@ -163,6 +163,24 @@ describe('the line under the machines line', () => {
     expect((await screen.findByRole('group')).textContent).toContain('Move Studio render there?')
   })
 
+  it('asks the next machine once the thread named on the first starts a turn, and asks nothing while the sheet is open', async () => {
+    const moves = bridge()
+    const studioBusy = entry(STUDIO, 'studio', { problems: ['busy'], headroom: 0 })
+    const threads = [...THREADS, thread('studio-one', 'Studio render', { hostId: STUDIO })]
+    act(() => { moveSheetStore.open({ kind: 'all' }) })
+    const { rerender } = render(<WatcherMoveSuggestion entries={[here(), forgeShort(), studioBusy]} threads={threads} now={NOW} />)
+    await act(async () => { await Promise.resolve() })
+    expect(moves.prepare).not.toHaveBeenCalled()
+    act(() => { moveSheetStore.close() })
+    await screen.findByRole('group', { name: /forge is short on memory.*Tray icon at night/u })
+    expect(moves.prepare).toHaveBeenCalledTimes(1)
+    // Tray starts a turn: forge names nothing now, and studio, not asked yet, is.
+    const running = threads.map(item => item.id === 'tray' ? { ...item, status: 'running' } as AgentThread : item)
+    rerender(<WatcherMoveSuggestion entries={[here(), forgeShort(), studioBusy]} threads={running} now={NOW} />)
+    expect((await screen.findByRole('group', { name: /studio is busy/u })).textContent).toContain('Move Studio render there?')
+    expect(moves.prepare).toHaveBeenLastCalledWith({ threadIds: ['studio-one'], hostId: LOCAL })
+  })
+
   it('asks the next short or busy machine when nothing on the first would move now', async () => {
     const moves = bridge(ids => ({ status: 'ok', confirmationId: CONFIRMATION, expiresAt: ago(-1), machine: 'This computer',
       threads: ids.map(threadId => ({ threadId, outcome: threadId === 'studio-one' ? 'moves' as const : 'stays' as const, words: 'It has uncommitted work.' })) }))

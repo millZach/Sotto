@@ -8,6 +8,11 @@ import { agoWords, machineName } from './machineWords'
 import { moveSheetStore, useMovesOffered } from './MoveThreads'
 import { moveSuggestionCandidates, moveSuggestionNotNow, moveSuggestionPlan, plainlyHeld, type MoveSuggestionSource } from './moveSuggestionPlan'
 
+/**
+ * How many hundreds of a machine's threads one reading asks about: four previews at most, below the eight main keeps, so
+ * the line never pushes out a preview the sheet or a card still holds.
+ */
+const MOVE_SUGGESTION_PAGES_MAX = 4
 /** A press under way or refused, for the reading it was pressed on. */
 type Phase = { readonly kind: 'moving'; readonly reading: string } | { readonly kind: 'refused'; readonly reading: string; readonly message: string }
 
@@ -48,20 +53,31 @@ export function WatcherMoveSuggestion({ entries, threads, now }: {
   const [phase, setPhase] = useState<Phase | null>(null)
   const threadsRef = useRef(threads)
   threadsRef.current = threads
+  // While the Move threads sheet is open the line asks main nothing: main keeps only a few previews at once, and the
+  // line's would push out the sheet's before its Move is pressed.
+  const sheetOpen = useSyncExternalStore(moveSheetStore.subscribe, moveSheetStore.get) !== null
+  /** A machine's answer, unless the thread it named has since stopped being plainly movable: then it names nothing. */
+  const usable = (answer: string | null | undefined): string | null | undefined => {
+    if (answer === undefined || answer === null) return answer
+    const found = threadsRef.current.find(item => item.id === answer)
+    return found === undefined || plainlyHeld(found) ? null : answer
+  }
   // Each machine's reading asks main once which of its threads would move now, a troubled machine at a time until one has
   // a thread to name. The same reading never asks again, whatever the threads do under it, however often the line draws,
   // and whatever another machine reads or the user says Not now to.
   useEffect(() => {
-    if (bridge === undefined || plan === null) return
+    if (bridge === undefined || plan === null || sheetOpen) return
     for (const key of answers.current.keys()) if (!plan.troubled.some(source => source.reading === key)) answers.current.delete(key)
-    const next = plan.troubled.find(source => answers.current.get(source.reading) !== null)
+    const next = plan.troubled.find(source => usable(answers.current.get(source.reading)) !== null)
     if (next === undefined || answers.current.has(next.reading) || asking.current.has(next.reading)) return
     asking.current.add(next.reading)
     const target = plan.to.machine!.hostId
     void (async () => {
       let named: string | null = null
       try {
-        for (const page of moveSuggestionCandidates(threadsRef.current, next.from)) {
+        for (const page of moveSuggestionCandidates(threadsRef.current, next.from).slice(0, MOVE_SUGGESTION_PAGES_MAX)) {
+          // The sheet opened meanwhile: this reading is asked again once it closes.
+          if (moveSheetStore.get() !== null) { asking.current.delete(next.reading); return }
           const preview = await bridge.prepare({ threadIds: [...page], hostId: target })
           const moves = new Set(preview.status === 'ok' ? preview.threads.filter(item => item.outcome === 'moves').map(item => item.threadId) : [])
           named = page.find(id => moves.has(id)) ?? null
@@ -72,11 +88,13 @@ export function WatcherMoveSuggestion({ entries, threads, now }: {
       asking.current.delete(next.reading)
       setAnswered(count => count + 1)
     })()
-  }, [bridge, plan, answered])
+    // `usable` reads the threads through a ref on purpose: a thread's update asks nothing, and the machines line draws a
+    // new plan when a thread starts or ends a turn, which is when a named thread can stop being movable.
+  }, [bridge, plan, answered, sheetOpen])
   const labelId = useId()
   let named: { readonly source: MoveSuggestionSource; readonly threadId: string } | null = null
   for (const source of plan?.troubled ?? []) {
-    const answer = answers.current.get(source.reading)
+    const answer = usable(answers.current.get(source.reading))
     if (answer === undefined) break
     if (answer !== null) { named = { source, threadId: answer }; break }
   }
