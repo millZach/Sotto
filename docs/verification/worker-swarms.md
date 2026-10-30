@@ -57,3 +57,11 @@ After the merge, `npm run typecheck` and `npm run lint` passed. The nine existin
 - `renderer/workerRolesSettings`, `renderer/workerRolesOrchestrating`, `renderer/workerMachineSettings`
 
 The six Workers captures above were refreshed and inspected after bringing in #1812's Speed controls. Dark and light passed at 1600 × 1000, 1280 × 800 and 820 × 560, with no content extending beyond the Watcher card. The capacity captures were unchanged byte for byte. The headless component render also passed; no Electron app, integration suite, performance suite, e2e spec or local CI gate was launched. GitHub will verify the full combination on the next push.
+
+### Second CI follow-up
+
+For `bc2bcdb26`, [Tests (Windows, 5/6)](https://github.com/millZach/Sotto/actions/runs/40994796331/job/123865879799) failed one test: `tests/integration/threadMoves.test.ts`, “gives back a thread with uncommitted work, in the branch’s own words, and starts nothing on forge”. Its final manual send received the move-fence refusal instead of `null`. `Tests (Linux, 6/6)` passed; this was not the reported Watcher archive failure. `Package result` and `Desktop result` also passed, but the failed Windows shard blocks `Gates (Windows)`.
+
+The test waited for the in-memory `given-back` state, which is published before the move record's save completes. The source's send fence is deliberately lifted only after that save succeeds. The test now waits for both the state and the cleared fence before making its single manual send. Production ordering and the send assertion are unchanged. Main `144e54619` carries neither a fix nor changes to this path, and a merge-tree check found no conflict.
+
+`npm run typecheck`, focused ESLint on the integration file, and all 33 tests in the existing `tests/unit/main/threadMoves.test.ts` passed. The integration file was not run locally; GitHub CI will exercise it. No app was launched.
