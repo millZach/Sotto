@@ -521,6 +521,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private pollTimer: ReturnType<typeof setInterval> | undefined
   private polling: Promise<void> | undefined
   private queuedPoll: Promise<void> | undefined
+  /** The threads the poll timer read on its last tick (`pollActiveSessionLogs`). */
+  private polledLastTick = new Set<string>()
   private readonly closures = new Set<Promise<void>>()
   private trackClosure(work: Promise<void>): void {
     this.closures.add(work)
@@ -573,8 +575,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   /**
    * End this thread's CLI and flush its transcript cursor, the way disconnecting does (ADR-0015). Nothing
-   * the user can see changes: the thread keeps its messages and its idle status, its transcript is still
-   * read, and the next action launches the CLI again from the stored session.
+   * the user can see changes: the thread keeps its messages and its idle status, its transcript is read
+   * while it is looked at or working and when it is opened, and the next action launches the CLI again from
+   * the stored session.
    */
   private async stopSession(id: string): Promise<void> {
     if (this.spares.has(id)) { this.discardSpare(id); return }
@@ -685,7 +688,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     }
     await Promise.all(Array.from({ length: Math.min(Math.max(1, this.options.connectStarts ?? CONNECT_STARTS), watched.length) }, startNext))
     if (generation !== this.generation) throw new Error('Claude connection was cancelled.')
-    this.pollTimer = setInterval(() => { void this.pollSessionLogs().catch(() => { this.state.error = 'Claude history is unavailable. Check the native client before continuing.'; this.emit() }) }, this.options.pollIntervalMs ?? 1000)
+    this.pollTimer = setInterval(() => { void this.pollActiveSessionLogs().catch(() => { this.state.error = 'Claude history is unavailable. Check the native client before continuing.'; this.emit() }) }, this.options.pollIntervalMs ?? 1000)
     this.pollTimer.unref(); this.emit(); return this.view()
   }
   /**
@@ -1377,7 +1380,28 @@ export class ClaudeStreamJsonHost implements AgentHost {
       if (this.queuedPoll === work) this.queuedPoll = undefined
     }
   }
-  private async readSessionLogs(): Promise<void> { for (const [id, log] of this.logs) { await this.readLog(id, log); await this.readSubagentModels(id, log) } }
+  private async readSessionLogs(ids: Iterable<string> = this.logs.keys()): Promise<void> {
+    for (const id of ids) {
+      const log = this.logs.get(id)
+      if (log) { await this.readLog(id, log); await this.readSubagentModels(id, log) }
+    }
+  }
+  /**
+   * The timer's read: only the transcripts of threads a window or Watcher looks at (`observed`) or that are working
+   * (`busy`), and once more on the tick after a thread leaves both, so the last lines of its turn land. Every other
+   * thread's transcript waits for the thread to be opened or sent to (`sync`), or for the next connect, and is read then
+   * from its saved cursor, so a poll's cost follows the threads in use rather than every thread saved (#992). A read
+   * already under way stands for this tick; a whole read asked for meanwhile follows it (`pollSessionLogs`).
+   */
+  private pollActiveSessionLogs(): Promise<void> {
+    if (this.polling) return this.polling
+    const active = new Set([...this.logs.keys()].filter(id => this.observed.has(id) || this.busy(id)))
+    const ids = [...active, ...[...this.polledLastTick].filter(id => !active.has(id))]
+    this.polledLastTick = active
+    const work = this.readSessionLogs(ids)
+    this.polling = work
+    return work.finally(() => { if (this.polling === work) this.polling = undefined })
+  }
   /**
    * Read the rest of a thread's transcript. A replay ends once a read has run to the end of the file: not when the
    * read found no transcript yet or failed partway, since the next read still starts from where this one stopped,
@@ -1392,7 +1416,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   }
   /**
    * A subagent's model from its own transcript, for the workflow and background agents the stream never
-   * named one for. Read on the transcript's cadence, bounded per thread, and only until each row has one.
+   * named one for. Read when the thread's transcript is, bounded per thread, and only until each row has one.
    */
   private async readSubagentModels(id: string, log: ClaudeSessionLog): Promise<void> {
     const projector = this.activity.get(id)
@@ -1417,7 +1441,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     return Promise.resolve()
   }
   disconnect(): void {
-    this.generation++; clearInterval(this.pollTimer); this.pollTimer = undefined; this.state.connected = false
+    this.generation++; clearInterval(this.pollTimer); this.pollTimer = undefined; this.polledLastTick = new Set(); this.state.connected = false
     for (const id of this.threads.keys()) this.clearMonitoring(id)
     this.reaper.dispose()
     this.flushCursors()
