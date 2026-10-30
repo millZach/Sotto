@@ -41,6 +41,28 @@ const parseSaved = (input: unknown): Saved => {
 const unreadable = 'Answer draft storage could not be read. The original request-drafts.json is unchanged. Repair it and restart before saving answers.'
 const saveFailed = 'Could not save this answer draft. Keep this window open and try Save again.'
 const privacyFailed = 'Local history is off, but retired submitted answers could not be removed. Nothing was changed. Restore local storage access and save Settings again.'
+/**
+ * The keys of a saved owner list, made once for each list: the lists are replaced, never edited, and a dormant check that
+ * keyed every Watcher owner on every look-up grew with the owners the store had kept (#1248).
+ */
+const ownerKeyLists = new WeakMap<readonly RequestDraftOwner[], ReadonlyMap<string, RequestDraftOwner>>()
+const NO_KEYS: ReadonlyMap<string, RequestDraftOwner> = new Map()
+function ownerKeys(owners: readonly RequestDraftOwner[] | undefined): ReadonlyMap<string, RequestDraftOwner> {
+  if (!owners) return NO_KEYS
+  let keys = ownerKeyLists.get(owners)
+  if (!keys) ownerKeyLists.set(owners, keys = new Map(owners.map(owner => [requestDraftOwnerKey(owner), owner])))
+  return keys
+}
+/**
+ * A list a commit read from the owners it had keyed, in their order: it takes their keys rather than making them again.
+ * Each owner is checked against the one it was read from, and a list that does not match is keyed afresh when asked.
+ */
+function keyedOwners(owners: readonly RequestDraftOwner[] | undefined, keyed: ReadonlyMap<string, RequestDraftOwner>): void {
+  if (!owners || owners.length !== keyed.size) return
+  const entries = [...keyed]
+  const same = owners.every((owner, index) => { const from = entries[index]![1]; return owner.kind === from.kind && owner.ownerId === from.ownerId && owner.providerId === from.providerId })
+  if (same) ownerKeyLists.set(owners, new Map(owners.map((owner, index) => [entries[index]![0], owner])))
+}
 export const requestQuestionsDigest = (questions: NonNullable<AgentRequest['questions']>): string => createHash('sha256').update(requestQuestionsSignature(questions)).digest('hex')
 
 export type BindRequestDraftDecision = (target: RequestDraftTarget, decisionId: string, answers: AgentQuestionAnswers | undefined) => Promise<void>
@@ -61,6 +83,12 @@ export interface RequestDraftOwnerState {
 export class RequestDraftService {
   private saved: Saved = { version: 2, drafts: [], retirements: [] }
   private readonly store: Pick<AtomicJsonStore<Saved>, 'write'>
+  /**
+   * The ledger's JSON, made once for each ledger. Every save while the user types an answer kept the ledger as it was and
+   * still wrote it out again, indented, with every answered question in it; it is now joined to the rest as text
+   * (October 29, 2026).
+   */
+  private ledgerText: { readonly retirements: readonly Retirement[]; readonly text: string } | undefined
   private readonly path: string
   private storageError: string | null = null
   private writing: Promise<unknown> = Promise.resolve()
@@ -79,7 +107,7 @@ export class RequestDraftService {
     private readonly preserveOwner?: (owner: RequestDraftOwner) => boolean | undefined,
     private readonly watcherOwnerIds?: () => Iterable<string>) {
     this.path = join(directory, 'request-drafts.json')
-    this.store = store ?? new AtomicJsonStore(this.path, parseSaved, () => ({ version: 2, drafts: [], retirements: [] }))
+    this.store = store ?? AtomicJsonStore.compact(this.path, parseSaved, () => ({ version: 2, drafts: [], retirements: [] }))
   }
 
   async start(): Promise<void> {
@@ -122,17 +150,19 @@ export class RequestDraftService {
         await unlink(path)
       }
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') this.storageError = unreadable }
+    // The ledger's index is made once for each ledger, here and where a commit replaces the ledger, so no save made while
+    // the user types builds a key for every answered question (#1248); the kept owners are keyed once here too.
+    this.ledger(); ownerKeys(this.saved.watcherOwners); ownerKeys(this.saved.unclassifiedOwners)
   }
 
   private dormant(owner: RequestDraftOwner, saved = this.saved): boolean {
     if (!this.preserveOwner) return false
     const classification = this.preserveOwner(owner)
     const key = requestDraftOwnerKey(owner)
-    if (classification === true || saved.watcherOwners?.some(item => requestDraftOwnerKey(item) === key)) return true
+    if (classification === true || ownerKeys(saved.watcherOwners).has(key)) return true
     // Old Owl snapshots carry no classification. Park unavailable owners until a host supplies it;
     // this is retention evidence only, never a launch profile or permission.
-    return classification === undefined && (saved.watcherOwners === undefined
-      || saved.unclassifiedOwners?.some(item => requestDraftOwnerKey(item) === key) === true)
+    return classification === undefined && (saved.watcherOwners === undefined || ownerKeys(saved.unclassifiedOwners).has(key))
   }
 
   private serial<T>(operation: () => Promise<T>): Promise<T> {
@@ -167,8 +197,8 @@ export class RequestDraftService {
    * ordinary owner again can change what is saved only if its thread is Watcher or dormant now, or it is still
    * unclassified; an owner already kept as Watcher stays kept. Every other lookup would change nothing.
    */
-  private retirementOwners(retirements: readonly Retirement[], watchers: ReadonlyMap<string, unknown>, unclassified: ReadonlyMap<string, RequestDraftOwner>): RequestDraftOwner[] {
-    if (!this.watcherOwnerIds || this.saved.watcherOwners === undefined) return retirements.map(item => item.owner)
+  private retirementOwners(retirements: readonly Retirement[], watchers: ReadonlyMap<string, unknown>, unclassified: ReadonlyMap<string, RequestDraftOwner>): { readonly key: string; readonly owner: RequestDraftOwner }[] {
+    if (!this.watcherOwnerIds || this.saved.watcherOwners === undefined) return retirements.map(item => ({ key: requestDraftOwnerKey(item.owner), owner: item.owner }))
     const { owners } = this.ledger(retirements)
     const found = new Map<string, { owner: RequestDraftOwner; first: number }>()
     for (const id of this.watcherOwnerIds()) {
@@ -178,19 +208,20 @@ export class RequestDraftService {
       const entry = owners.get(owner.ownerId)?.find(item => item.key === key)
       if (entry) found.set(key, entry)
     }
-    return [...found.values()].sort((a, b) => a.first - b.first).map(entry => entry.owner)
+    return [...found.entries()].sort(([, a], [, b]) => a.first - b.first).map(([key, entry]) => ({ key, owner: entry.owner }))
   }
 
   private async commit(drafts: RequestDraft[], retirements = this.saved.retirements): Promise<void> {
     // Remote hosts reconnect in the background. Remember known Watcher owners with their
     // forms so offline startup and ordinary ledger trimming cannot lose their identity.
-    const watchers = new Map((this.saved.watcherOwners ?? []).map(owner => [requestDraftOwnerKey(owner), owner]))
-    const unclassified = new Map((this.saved.unclassifiedOwners ?? []).map(owner => [requestDraftOwnerKey(owner), owner]))
+    const watchers = new Map(ownerKeys(this.saved.watcherOwners))
+    const unclassified = new Map(ownerKeys(this.saved.unclassifiedOwners))
     // Each owner once, in the order the drafts, the ledger and the unclassified owners name them.
     const owners = new Map<string, RequestDraftOwner>()
-    for (const owner of [...drafts.map(draft => draft.target), ...this.retirementOwners(retirements, watchers, unclassified), ...unclassified.values()]) {
+    // The ledger's and the unclassified owners come with the keys made when their lists were.
+    for (const { key, owner } of [...drafts.map(draft => ({ key: requestDraftOwnerKey(draft.target), owner: draft.target })),
+      ...this.retirementOwners(retirements, watchers, unclassified), ...[...unclassified].map(([key, owner]) => ({ key, owner }))]) {
       if (owner.kind !== 'thread') continue
-      const key = requestDraftOwnerKey(owner)
       if (!owners.has(key)) owners.set(key, owner)
     }
     for (const [key, owner] of owners) {
@@ -228,12 +259,21 @@ export class RequestDraftService {
         if (beforeRetirements.get(key) !== afterRetirements.get(key)) changed.set(requestDraftOwnerKey(item.owner), item.owner)
       }
     }
-    try { await this.store.write(next) } catch { throw new Error(saveFailed) }
+    try { await this.store.write(next, this.savedText(next)) } catch { throw new Error(saveFailed) }
     this.saved = next
+    if (!kept) this.ledger()
+    keyedOwners(next.watcherOwners, watchers); keyedOwners(next.unclassifiedOwners, unclassified)
     for (const owner of changed.values()) for (const listener of this.listeners) {
       // A failed window notification cannot turn a successful durable write into a failed save.
       try { listener(owner) } catch { /* the window lists again when it mounts */ }
     }
+  }
+
+  /** `next` as the file keeps it, compact, with the ledger's text made once for each ledger. */
+  private savedText(next: Saved): string {
+    const { retirements, ...rest } = next
+    if (this.ledgerText?.retirements !== retirements) this.ledgerText = { retirements, text: JSON.stringify(retirements) }
+    return `${JSON.stringify(rest).slice(0, -1)},"retirements":${this.ledgerText.text}}`
   }
 
   private current(target: RequestDraftTarget): RequestDraft | undefined {
@@ -292,7 +332,7 @@ export class RequestDraftService {
           && item.decisionId === draft.decisionId && item.questionsDigest === requestQuestionsDigest(draft.target.questions)))
       if (accepted.length) await this.retire(accepted)
       else if (this.saved.drafts.filter(draft => draft.target.kind === 'thread').map(draft => draft.target).some(owner =>
-        this.lookup(owner)?.watcher === true && !this.saved.watcherOwners?.some(item => requestDraftOwnerKey(item) === requestDraftOwnerKey(owner)))
+        this.lookup(owner)?.watcher === true && !ownerKeys(this.saved.watcherOwners).has(requestDraftOwnerKey(owner)))
         || this.saved.unclassifiedOwners?.some(owner => this.lookup(owner) !== undefined || this.preserveOwner?.(owner) !== undefined)) {
         await this.commit(this.saved.drafts)
       }

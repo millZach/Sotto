@@ -1771,10 +1771,6 @@ msgid "Another provider’s model starts a new Watcher. This conversation stays 
 msgstr "Another provider’s model starts a new Watcher. This conversation stays in Watcher history, and you can send its handover with your first message."
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
-msgid "Answer draft saved."
-msgstr "Answer draft saved."
-
-#: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Answer sent."
 msgstr "Answer sent."
 
@@ -4731,10 +4727,6 @@ msgstr "Loading messages…"
 msgid "Loading providers…"
 msgstr "Loading providers…"
 
-#: src/renderer/src/agents/requests/AgentRequestCard.tsx
-msgid "Loading saved answer…"
-msgstr "Loading saved answer…"
-
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "Loading skills…"
 msgstr "Loading skills…"
@@ -6802,10 +6794,6 @@ msgstr "Saved draft"
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Saved model servers"
 msgstr "Saved model servers"
-
-#: src/renderer/src/agents/requests/AgentRequestCard.tsx
-msgid "Saving answer…"
-msgstr "Saving answer…"
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Saving…"
