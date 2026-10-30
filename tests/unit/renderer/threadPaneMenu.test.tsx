@@ -176,7 +176,7 @@ describe('the manual composer', () => {
     expect(document.querySelector('.thread-workspace__compose')).toContainElement(toolbar)
   })
 
-  it('keeps quiet Stop after the shield and before the round Send, leaving the effort dots free', () => {
+  it('keeps quiet Stop after the split chip and before the round Send, with the shield at the start of the pill', () => {
     vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
     const state = threadsStateFixture()
     state.host.capabilities.configureThread = true
