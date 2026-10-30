@@ -263,7 +263,7 @@ private struct PullRequestBody: View {
                 .accessibilityIdentifier("pull-request-title")
             if !detail.headBranch.isEmpty {
                 HStack(spacing: 6) {
-                    Image(systemName: "arrow.triangle.branch").font(.system(size: 11, weight: .semibold)).accessibilityHidden(true)
+                    Image(systemName: "arrow.triangle.branch").iconFont(11, weight: .semibold).accessibilityHidden(true)
                     BranchName(name: detail.headBranch)
                     Text("into", comment: "Between two branch names, as in: feature-branch into main.")
                     BranchName(name: detail.baseBranch)
@@ -357,7 +357,7 @@ private struct PullRequestBody: View {
                         showPassed.toggle()
                     } label: {
                         HStack(spacing: 6) {
-                            Image(systemName: showPassed ? "chevron.up" : "chevron.down").font(.system(size: 11, weight: .bold)).accessibilityHidden(true)
+                            Image(systemName: showPassed ? "chevron.up" : "chevron.down").iconFont(11, weight: .bold).accessibilityHidden(true)
                             (showPassed ? Text("Hide passed checks") : passed == 1 ? Text("Show 1 passed", comment: "Shows the one check that passed.") : Text("Show \(passed) passed", comment: "Shows the checks that passed; the number counts them."))
                         }
                         .font(.sotto(.small, .semibold))
@@ -449,7 +449,7 @@ private struct CheckRow: View {
                 Text(duration).font(.sotto(.caption)).monospacedDigit().foregroundStyle(Palette.muted)
             }
             if link != nil {
-                Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.muted).accessibilityHidden(true)
+                Image(systemName: "chevron.right").iconFont(11, weight: .bold).foregroundStyle(Palette.muted).accessibilityHidden(true)
             }
         }
         .padding(.horizontal, Space.s4).padding(.vertical, Space.s2)
@@ -487,7 +487,7 @@ private struct ReviewRow: View {
             }
             Spacer(minLength: Space.s2)
             if link != nil {
-                Image(systemName: "chevron.right").font(.system(size: 11, weight: .bold)).foregroundStyle(Palette.muted).accessibilityHidden(true)
+                Image(systemName: "chevron.right").iconFont(11, weight: .bold).foregroundStyle(Palette.muted).accessibilityHidden(true)
             }
         }
         .padding(.horizontal, Space.s4).padding(.vertical, Space.s2)
@@ -510,7 +510,7 @@ private struct FileRow: View {
     let file: PullRequestDetail.File
     var body: some View {
         HStack(spacing: Space.s3) {
-            Image(systemName: "doc").font(.system(size: 14, weight: .semibold)).foregroundStyle(Palette.muted).frame(width: 18).accessibilityHidden(true)
+            Image(systemName: "doc").iconFont(14, weight: .semibold).foregroundStyle(Palette.muted).frame(minWidth: 18).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(file.name).font(.system(.subheadline, design: .monospaced)).foregroundStyle(Palette.ink).lineLimit(1).truncationMode(.middle)
                 Text(file.folder ?? String(localized: "The top folder")).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.head)
@@ -581,7 +581,7 @@ private struct StatePill: View {
     @Environment(\.sottoTheme) private var theme
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: state == "merged" ? "arrow.triangle.merge" : "arrow.triangle.pull").font(.system(size: 11, weight: .bold)).accessibilityHidden(true)
+            Image(systemName: state == "merged" ? "arrow.triangle.merge" : "arrow.triangle.pull").iconFont(11, weight: .bold).accessibilityHidden(true)
             Text(word)
         }
         .font(.sotto(.caption, .bold))
@@ -706,7 +706,7 @@ private struct BabysitDock: View {
 
     private func line(icon: String, tone: PullRequests.Tone, title: String?, words: String) -> some View {
         HStack(alignment: .top, spacing: Space.s3) {
-            Image(systemName: icon).font(.system(size: 17, weight: .semibold))
+            Image(systemName: icon).iconFont(17, weight: .semibold)
                 .foregroundStyle(tone == .passed ? Palette.accentText : Palette.muted)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {

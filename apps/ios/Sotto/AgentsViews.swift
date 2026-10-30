@@ -261,6 +261,7 @@ private struct RowBody: View {
     let row: AgentsRow
     let tag: String
     let mark: AnyView
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         HStack(alignment: .top, spacing: Space.s3) {
             mark
@@ -269,17 +270,18 @@ private struct RowBody: View {
                 .foregroundStyle(Palette.ink)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 3) {
-                HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
-                    Text(verbatim: row.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).lineLimit(2)
-                    Text(tag)
-                        .font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
-                        .padding(.horizontal, 7).padding(.vertical, 1)
-                        .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
-                        .fixedSize()
-                    Spacer(minLength: Space.s1)
-                    RowElapsed(elapsed: row.elapsed)
-                        .font(.sotto(.caption).monospacedDigit()).foregroundStyle(Palette.muted)
-                        .fixedSize()
+                if typeSize.isAccessibilitySize {
+                    // At the largest sizes the kind and the time go under the name, which beside them was cut to a few
+                    // letters.
+                    title.lineLimit(4)
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s2) { kind; Spacer(minLength: Space.s1); elapsed }
+                } else {
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
+                        title.lineLimit(2)
+                        kind
+                        Spacer(minLength: Space.s1)
+                        elapsed
+                    }
                 }
                 if let by = row.delegatedBy {
                     Text("Delegated by \(by)").font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1)
@@ -305,6 +307,19 @@ private struct RowBody: View {
         // A row under another is set in, as Tools › Agents sets it.
         .padding(.leading, CGFloat(min(row.level - 1, 3)) * 18)
     }
+    private var title: Text { Text(verbatim: row.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink) }
+    private var kind: some View {
+        Text(tag)
+            .font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
+            .padding(.horizontal, 7).padding(.vertical, 1)
+            .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
+            .fixedSize()
+    }
+    private var elapsed: some View {
+        RowElapsed(elapsed: row.elapsed)
+            .font(.sotto(.caption).monospacedDigit()).foregroundStyle(Palette.muted)
+            .fixedSize()
+    }
 }
 
 /// A delegated thread: pressed, it opens. One that waits on the user says Open to answer, as the desktop does; it opens
@@ -318,7 +333,7 @@ private struct AgentsThreadRow: View {
                 HStack(alignment: .center, spacing: Space.s2) {
                     RowBody(row: row, tag: String(localized: "Thread", comment: "The tag on a row of the Agents sheet that is a delegated thread."), mark: ProviderLogo.asset(row.providerID) != nil ? AnyView(ProviderLogo(providerID: row.providerID))
                         : AnyView(Image(systemName: "bubble.left").font(.system(size: 12, weight: .semibold))))
-                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
+                    Image(systemName: "chevron.right").iconFont(12, weight: .semibold).foregroundStyle(Palette.muted)
                         .accessibilityHidden(true)
                 }
                 .padding(.horizontal, Space.s4)
@@ -359,7 +374,7 @@ private struct AgentsAgentRow: View {
                     RowBody(row: row, tag: row.workflow ? String(localized: "Workflow", comment: "The tag on a row of the Agents sheet that is a workflow's run.")
                                 : String(localized: "Agent", comment: "The tag on a row of the Agents sheet that is one of the provider's own agents."),
                             mark: AnyView(Image(systemName: row.workflow ? "square.stack.3d.up" : "person.crop.square").font(.system(size: 13, weight: .semibold))))
-                    Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
+                    Image(systemName: "chevron.right").iconFont(12, weight: .semibold).foregroundStyle(Palette.muted)
                         .rotationEffect(.degrees(open ? 90 : 0))
                         .accessibilityHidden(true)
                 }

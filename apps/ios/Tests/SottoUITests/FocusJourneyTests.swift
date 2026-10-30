@@ -2164,6 +2164,26 @@ import UIKit
         XCUIDevice.shared.orientation = .portrait
         waitForRenderedOrientation(landscape: false)
     }
+
+    /// At the accessibility text sizes New thread's title takes its own line, clear of its buttons, and Settings' New
+    /// thread defaults put each value under its name rather than cut it in the middle (#1857).
+    func testSheetHeadersAndDefaultsStackAtTheLargestTextSizes() {
+        launch(Self.fixture + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        app.buttons["new-thread"].tap()
+        let cancel = app.buttons["Cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
+        let title = app.staticTexts["New thread"].firstMatch
+        XCTAssertTrue(title.exists)
+        XCTAssertFalse(title.frame.intersects(cancel.frame), "New thread's title doesn't run into Cancel")
+        capture("new-thread-largest-text")
+        cancel.tap()
+        XCTAssertTrue(waitUntilGone(cancel))
+        app.tab("Settings").tap()
+        let modelDefault = byID("setting-default-model")
+        reveal(modelDefault)
+        XCTAssertGreaterThan(modelDefault.frame.height, 70, "At the largest sizes the default's value sits under its name")
+        capture("settings-defaults-largest-text")
+    }
 }
 
 extension XCUIApplication {

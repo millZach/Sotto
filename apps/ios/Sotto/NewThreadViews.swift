@@ -8,6 +8,7 @@ struct NewThreadSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var typeSize
     let opened: (ThreadRef) -> Void
     private enum Step: Equatable { case computer, project, folders, options }
     @State private var step = Step.computer
@@ -63,32 +64,51 @@ struct NewThreadSheet: View {
     // MARK: Header, steps and footer
 
     private var header: some View {
-        ZStack {
-            Text("New thread").font(.sotto(.lead, .bold)).foregroundStyle(Palette.ink)
-                .accessibilityAddTraits(.isHeader)
-            HStack {
-                if step == .computer {
-                    cancelButton
-                    Spacer(minLength: Space.s2)
-                } else {
-                    Button { back() } label: {
-                        HStack(spacing: Space.s1) {
-                            Image(systemName: "chevron.left").font(.system(size: 14, weight: .semibold)).accessibilityHidden(true)
-                            Text("Back")
-                        }
-                    }
-                    .buttonStyle(PillButtonStyle(kind: .ghost))
-                    .disabled(busy)
-                    .accessibilityLabel("Back")
-                    .accessibilityHint("Returns to the step before.")
-                    Spacer(minLength: Space.s2)
-                    cancelButton
+        Group {
+            if typeSize.isAccessibilitySize {
+                // At the largest sizes the title takes its own line under Back and Cancel: centred between them, it ran
+                // into both ("CancelNew thread").
+                VStack(alignment: .leading, spacing: Space.s1) {
+                    headerButtons
+                    headerTitle.padding(.horizontal, Space.s3)
+                }
+            } else {
+                ZStack {
+                    headerTitle
+                    headerButtons
                 }
             }
         }
         .frame(minHeight: 48)
         .padding(.horizontal, Space.s2)
         .padding(.top, Space.s3)
+    }
+
+    private var headerTitle: some View {
+        Text("New thread").font(.sotto(.lead, .bold)).foregroundStyle(Palette.ink)
+            .accessibilityAddTraits(.isHeader)
+    }
+
+    private var headerButtons: some View {
+        HStack {
+            if step == .computer {
+                cancelButton
+                Spacer(minLength: Space.s2)
+            } else {
+                Button { back() } label: {
+                    HStack(spacing: Space.s1) {
+                        Image(systemName: "chevron.left").iconFont(14, weight: .semibold).accessibilityHidden(true)
+                        Text("Back")
+                    }
+                }
+                .buttonStyle(PillButtonStyle(kind: .ghost))
+                .disabled(busy)
+                .accessibilityLabel("Back")
+                .accessibilityHint("Returns to the step before.")
+                Spacer(minLength: Space.s2)
+                cancelButton
+            }
+        }
     }
 
     private var cancelButton: some View {
@@ -220,7 +240,7 @@ struct NewThreadSheet: View {
                     ForEach(model.projects(hostID)) { project in
                         Button { projectID = project.id; folder = nil; chooseOptions() } label: {
                             PickRow(title: project.title, detail: projectDetail(project)) {
-                                Image(systemName: "folder").font(.system(size: 17, weight: .medium)).foregroundStyle(Palette.accentText)
+                                Image(systemName: "folder").iconFont(17, weight: .medium).foregroundStyle(Palette.accentText)
                             }
                         }
                         .buttonStyle(PressStyle())
@@ -229,7 +249,7 @@ struct NewThreadSheet: View {
                     }
                     Button { go(.folders, forward: true) } label: {
                         PickRow(title: String(localized: "Browse another folder"), detail: String(localized: "Folders on \(computerName)", comment: "%@ is the computer's name.")) {
-                            Image(systemName: "folder.badge.plus").font(.system(size: 17, weight: .medium)).foregroundStyle(Palette.accentText)
+                            Image(systemName: "folder.badge.plus").iconFont(17, weight: .medium).foregroundStyle(Palette.accentText)
                         }
                     }
                     .buttonStyle(PressStyle())
@@ -490,20 +510,25 @@ private struct PickRow<Leading: View>: View {
     var chevron = true
     @ViewBuilder let leading: () -> Leading
     @Environment(\.isEnabled) private var enabled
+    @Environment(\.dynamicTypeSize) private var typeSize
     var body: some View {
         let shape = RoundedRectangle(cornerRadius: Radius.md, style: .continuous)
+        // At the largest sizes the line under a choice wraps: on one line "Can’t be reached right now" was cut to
+        // "Can’t be re…d right now". A long path still loses its middle once it runs past three lines.
+        let large = typeSize.isAccessibilitySize
         HStack(spacing: Space.s3) {
-            leading().frame(width: 24).accessibilityHidden(true)
+            leading().frame(minWidth: 24).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-                    .lineLimit(2).multilineTextAlignment(.leading)
+                    .lineLimit(large ? 4 : 2).multilineTextAlignment(.leading)
                 if let detail {
-                    Text(detail).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(1).truncationMode(.middle)
+                    Text(detail).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(large ? 3 : 1).truncationMode(.middle)
+                        .multilineTextAlignment(.leading)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if chevron {
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
+                Image(systemName: "chevron.right").iconFont(13, weight: .semibold).foregroundStyle(Palette.muted)
                     .accessibilityHidden(true)
             }
         }
@@ -525,7 +550,7 @@ private struct Crumb: View {
     var body: some View {
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: symbol).font(.system(size: 13, weight: .medium)).accessibilityHidden(true)
+                Image(systemName: symbol).iconFont(13, weight: .medium).accessibilityHidden(true)
                 Text(text).lineLimit(1).truncationMode(.middle)
             }
         }
@@ -566,7 +591,7 @@ private struct FieldBoxLabel: View {
                 Text(value).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).lineLimit(1)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "chevron.up.chevron.down").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
+            Image(systemName: "chevron.up.chevron.down").iconFont(13, weight: .semibold).foregroundStyle(Palette.muted)
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, Space.s4).padding(.vertical, Space.s3)
@@ -765,14 +790,14 @@ private struct FolderRow: View {
     let folder: HostFolder
     var body: some View {
         HStack(spacing: Space.s3) {
-            Image(systemName: "folder").font(.system(size: 17, weight: .medium)).foregroundStyle(Palette.accentText)
-                .frame(width: 24).accessibilityHidden(true)
+            Image(systemName: "folder").iconFont(17, weight: .medium).foregroundStyle(Palette.accentText)
+                .frame(minWidth: 24).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: folder.name).font(.sotto(.body)).foregroundStyle(Palette.ink).multilineTextAlignment(.leading)
                 if folder.git { Text("Git repository").font(.sotto(.caption)).foregroundStyle(Palette.muted) }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
+            Image(systemName: "chevron.right").iconFont(13, weight: .semibold).foregroundStyle(Palette.muted)
                 .accessibilityHidden(true)
         }
         .padding(.horizontal, Space.s4).padding(.vertical, Space.s2)
