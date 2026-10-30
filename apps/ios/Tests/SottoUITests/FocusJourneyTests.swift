@@ -105,7 +105,10 @@ import UIKit
             let distance = min(120, visible.height * 0.3)
             let direction: CGFloat = down ? 1 : -1
             let origin = window.coordinate(withNormalizedOffset: .zero)
-            let x = visible.midX - window.frame.minX
+            // Drag in the page's leading margin, where no control sits: a drag that starts on a slider moves the slider,
+            // not the page. Settings' Glow slider came to sit under the viewport's middle once Glass added a third row of
+            // theme tiles, and forty drags in a row moved only the slider (#1752).
+            let x = visible.minX + 10 - window.frame.minX
             let y = visible.midY - window.frame.minY
             let start = origin.withOffset(CGVector(dx: x, dy: y - direction * distance / 2))
             let end = origin.withOffset(CGVector(dx: x, dy: y + direction * distance / 2))
@@ -1506,7 +1509,9 @@ import UIKit
         let own = byID("watcher-own-card")
         revealInWatcher(own)
         XCTAssertTrue(own.label.contains("Watcher asks each time. It can’t be given lasting permission."))
-        XCTAssertTrue(byID("watcher-send-held").exists, "Watcher waits for its own request before it takes more")
+        // Since #1813 a message written while Watcher's own request waits is queued until the card is answered, rather than
+        // held back (#1878).
+        XCTAssertTrue(text("Queued until you answer the card").exists, "Watcher queues new messages until its own request is answered")
         capture("watcher-cannot-answer-dark")
         // While Watcher's own request waits on the user, its permissions are fixed, as on the desktop, and the chip says so.
         let permissions = app.buttons["watcher-permissions"]
