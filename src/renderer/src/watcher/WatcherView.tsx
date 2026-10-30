@@ -1,12 +1,13 @@
 import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { Marked } from '../components/marks'
-import { ChevronDown, List } from 'lucide-react'
+import { ArrowUp, ChevronDown, List } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { shownWords } from '../features/settings/laterWords'
-import { PROVIDER_LABELS, type AgentState } from '../../../shared/agents'
+import { PROVIDER_LABELS, type AgentSpeed, type AgentState } from '../../../shared/agents'
 import { releaseTrackName } from '../../../shared/releaseTrack'
 import { useReleaseTrack } from '../state/useReleaseTrack'
 import { resolveModel } from '../../../shared/modelCatalog'
+import { fitSpeed } from '../../../shared/workerRoles'
 import { Button } from '../components/Button'
 import { SottoMark } from '../components/SottoMark'
 import { PageWindowControls } from '../components/WindowControls'
@@ -19,6 +20,8 @@ import { threadChordCap } from '../agents/threadShortcuts'
 import { WayOffThePage } from '../agents/SidebarFrame'
 import { UpdateControl, type UpdateControlProps } from '../features/updates/UpdateControl'
 import { EffortPicker } from '../agents/EffortPicker'
+import { EffortDots } from '../agents/EffortDots'
+import { draftEffortScore, suggestedEffortIndex } from '../agents/effortSuggestion'
 import { EffortTrace } from '../agents/EffortTrace'
 import { ModelPicker } from '../agents/ModelPicker'
 import { OwlRoomSky } from '../agents/OwlSky'
@@ -27,7 +30,8 @@ import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
 import { useShared } from '../agents/stateSharing'
 import { threadDescriber, useWordsRevision, type ThreadRow } from '../agents/threadFacts'
 import { useContinueEnabled } from '../agents/continuations'
-import { effortChoices } from '../agents/ThreadOptions'
+import { effortChoices, nextSpeed, offeredSpeeds, speedName, speedTitle, SpeedToggle } from '../agents/ThreadOptions'
+import { SPEED_STANDARD } from '../agents/pendingSettings'
 import { ThreadPane } from '../agents/ThreadPane'
 import { isThreadClosed } from '../../../shared/threadActivity'
 import { BrowserPageRouteContext } from '../tools/webLinks'
@@ -55,7 +59,7 @@ import { WatcherOwnChangesContext } from './WatcherOwnChange'
 import { placeAsks, useStablePlacements, WatcherAskAnsweringContext, type WatcherAskAnswering } from './WatcherAsks'
 import { prefersReducedMotion } from '../state/reducedMotion'
 import { WatcherPermissionChip } from './WatcherPermissionChip'
-import { useOrchestratingStart, useSaveOrchestrating } from './orchestratingRole'
+import { useOrchestratingSpeed, useOrchestratingStart, useSaveOrchestrating } from './orchestratingRole'
 
 const WATCHER_PROMPT_ID = 'watcher-prompt'
 const WATCHER_PANE_ID = 'watcher-pane'
@@ -123,6 +127,7 @@ function WatcherHeader({ room, count, listOpen, listButton, onToggleList, stopAl
 function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readonly room: WatcherRoom }): ReactNode {
   const { t } = useLingui()
   const app = useOptionalApp()
+  const quiet = useOwlFeature('quiet-composer')
   // Muse is named only where its own gate shows it (ADR-0072); its models are listed only then too.
   const providers = useOwlFeature('muse') ? t`Codex, Claude Code, Grok Build or Muse` : t`Codex, Claude Code or Grok Build`
   const models = useMemo(() => state.host.models.filter(model => model.ready !== false && watcherProviderOf(model) !== null), [state.host.models])
@@ -130,24 +135,46 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   // Unchosen here, Watcher starts on the Orchestrating role's model and effort where worker roles are on (#1041). A pick
   // here saves the role too, and a change to the role in Settings clears the pick, so the two never disagree.
   const roleStart = useOrchestratingStart(models)
+  const savedRoleSpeed = useOrchestratingSpeed()
   const saveOrchestrating = useSaveOrchestrating()
   const roleModel = roleStart === null ? undefined : resolveModel(models, roleStart.modelId)
   const model = models.find(item => item.id === modelId) ?? roleModel ?? models[0]
   const roleEffort = roleStart !== null && model !== undefined && model.id === roleStart.modelId ? roleStart.reasoningEffort ?? undefined : undefined
+  const roleSpeed = roleStart !== null && model !== undefined && model.id === roleStart.modelId
+    ? savedRoleSpeed !== undefined ? savedRoleSpeed : roleStart.speed : null
+  const [pickedSpeed, setPickedSpeed] = useState<AgentSpeed | null | undefined>(undefined)
+  const [speedSourceModelId, setSpeedSourceModelId] = useState<string | undefined>(undefined)
+  const selectedSpeed = pickedSpeed === undefined ? roleSpeed : pickedSpeed
+  const speed = fitSpeed(selectedSpeed, model)
   const reasoning = effort ?? roleEffort ?? model?.defaultReasoningEffort ?? ''
   const efforts = effortChoices(model, reasoning)
+  const levels = efforts.filter(option => !option.disabled).map(option => option.id)
   const starting = phase !== 'writing'
   const field = useRef<PromptEditorElement | null>(null)
   const [notices, setNotices] = useState<HTMLElement | null>(null)
   const provider = model === undefined ? null : watcherProviderOf(model)
+  const speeds = offeredSpeeds(model, provider ?? undefined)
+  const speedValue = speed ?? SPEED_STANDARD
   const ready = model !== undefined && provider !== null && room.open !== null && !starting
   const canSend = ready && text.trim() !== ''
+  const changeEffort = (value: string): void => {
+    firstMessage.update({ effort: value })
+    if (model !== undefined) saveOrchestrating?.(model.id, value, models, pickedSpeed)
+  }
+  const changeSpeed = (value: string): void => {
+    const chosen = value === SPEED_STANDARD ? null : value as AgentSpeed
+    setPickedSpeed(chosen)
+    setSpeedSourceModelId(chosen ? model?.id : undefined)
+    if (model !== undefined) saveOrchestrating?.(model.id, reasoning || null, models, chosen)
+  }
   const start = async (): Promise<void> => {
     if (!canSend || model === undefined || provider === null || room.open === null) return
     firstMessage.update({ phase: 'starting', error: null })
     // Main's answer is kept by the window, not here: the room may be gone by the time it comes.
     try {
-      const refusal = room.settle(await room.open({ provider, modelId: model.id, ...(reasoning ? { reasoningEffort: reasoning } : {}) }))
+      const keptSpeed = selectedSpeed && selectedSpeed !== speed && speedSourceModelId !== undefined
+      const refusal = room.settle(await room.open({ provider, modelId: model.id, ...(reasoning ? { reasoningEffort: reasoning } : {}),
+        ...(speed || pickedSpeed !== undefined ? { speed: keptSpeed ? selectedSpeed : speed } : {}), ...(keptSpeed ? { speedSourceModelId } : {}) }))
       firstMessage.update(refusal === null ? { phase: 'started' } : { phase: 'writing', error: refusal })
     } catch {
       firstMessage.update({ phase: 'writing', error: t`Sotto could not start Watcher. Nothing was started, and your message is still here. Try again.` })
@@ -173,8 +200,9 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
     </div>
     {model !== undefined ? <div className="thread-workspace__compose" data-room-backdrop="">
       {error ? <p className="agent-error watcher-first__error tt-paragraph" role="alert">{error}</p> : null}
-      <form className="thread-prompt" onSubmit={event => { event.preventDefault(); void start() }}>
+      <form className="thread-prompt" data-quiet={quiet || undefined} onSubmit={event => { event.preventDefault(); void start() }}>
         <EffortTrace />
+        <div className="screenshot-input"><div>
         <PromptEditor fieldRef={field} id={WATCHER_PROMPT_ID} text={text} skills={[]} sigils={[]} label={t`Watcher message`} editable={!starting}
           placeholder={t`Say what to start or check. Sending starts Watcher.`}
           onChange={next => firstMessage.update({ text: next })}
@@ -183,19 +211,26 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
             event.preventDefault()
             void start()
           }} />
+        </div></div>
         <label className="tt-visually-hidden" htmlFor={WATCHER_PROMPT_ID} onClick={() => field.current?.focus()}>{t`Watcher message`}</label>
         <div className="thread-prompt__footer">
           <div className="thread-prompt__meta">
-            <div className="thread-options-bar">
+            <div className="thread-options-bar" data-permission={quiet ? room.state?.runtimeMode ?? 'approval-required' : undefined}>
               <div className="thread-options thread-options--chips" role="group" aria-label={t`Watcher’s model`}>
                 <ModelPicker models={models} modelId={model.id} disabled={starting} onChange={id => {
                   firstMessage.update({ modelId: id, effort: null })
-                  saveOrchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, models)
+                  setPickedSpeed(selectedSpeed)
+                  setSpeedSourceModelId(source => source ?? (speed ? model.id : undefined))
+                  saveOrchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, models, selectedSpeed)
                 }} />
-                {efforts.length > 0 ? <EffortPicker key={model.id} value={reasoning} options={efforts} disabled={starting} onChange={value => {
-                  firstMessage.update({ effort: value })
-                  saveOrchestrating?.(model.id, value, models)
-                }}
+                {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={provider ?? undefined} value={speedValue} disabled={starting} pending={false} onChange={changeSpeed} />}
+                {quiet ? levels.length > 0 && <EffortDots levels={levels} value={reasoning} provider={provider ?? undefined} disabled={starting}
+                  suggestion={starting ? null : suggestedEffortIndex(draftEffortScore(text), levels.length, levels.indexOf(reasoning))}
+                  speed={speeds.length === 0 ? undefined : { value: speedValue, name: speedName(speedValue, speeds),
+                    description: speedTitle(speeds, speedValue, provider ?? undefined, starting),
+                    onStep: direction => changeSpeed(nextSpeed(speeds, speedValue, direction)) }}
+                  onChange={changeEffort} />
+                  : efforts.length > 0 ? <EffortPicker key={model.id} value={reasoning} options={efforts} disabled={starting} onChange={changeEffort}
                   defaultValue={model.defaultReasoningEffort} modelName={model.name} /> : null}
                 <WatcherPermissionChip model={model} provider={providerName ?? model.provider} disabled={starting} noticeSlot={notices} />
               </div>
@@ -203,8 +238,8 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
             {starting ? <span className="thread-prompt__status" role="status"><Trans>Starting Watcher…</Trans></span> : null}
           </div>
           <div className="thread-prompt__actions">
-            <Button className="thread-prompt__send" type="submit" aria-label={t`Start Watcher and send`} aria-keyshortcuts="Enter" title={canSend ? t`Start Watcher and send` : t`Write what Watcher should do first`} disabled={!canSend}>
-              <KeyedGlyph role="send" keyCap={threadChordCap('enter', app?.platform ?? 'win32')} />
+            <Button className={quiet ? 'thread-prompt__send thread-prompt__disc' : 'thread-prompt__send'} data-face={quiet ? 'send' : undefined} type="submit" aria-label={t`Start Watcher and send`} aria-keyshortcuts="Enter" title={canSend ? t`Start Watcher and send` : t`Write what Watcher should do first`} disabled={!canSend}>
+              {quiet ? <ArrowUp size={16} strokeWidth={2.4} aria-hidden="true" /> : <KeyedGlyph role="send" keyCap={threadChordCap('enter', app?.platform ?? 'win32')} />}
             </Button>
           </div>
         </div>

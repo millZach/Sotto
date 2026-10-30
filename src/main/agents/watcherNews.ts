@@ -49,6 +49,7 @@ export const requestRevision = (request: unknown): string => observationDigest(r
 export const LATER_REQUEST_REACHES = 'A message the user sends Watcher after that starts a request that reaches the thread; while the user’s own turn there runs, it can only steer it.'
 /** Each kind's line; a closed card's depends on whose it was and whether Sotto saw the user answer it (`closedWords`). */
 const words: Record<Exclude<WatcherEvent['kind'], 'request-closed' | 'threads-restarted' | 'thread-moved'>, string> = {
+  'swarm-progress': 'The swarm made progress. Read its lead for the synthesis.',
   'turn-finished': 'The foreground turn finished. This is not review or merge approval.',
   'work-settled': 'The background work and monitoring this turn left running have ended, so the turn is done. This is not review or merge approval.',
   'turn-failed': 'The provider confirmed that this turn failed. Read the thread for its error.',
@@ -103,7 +104,9 @@ function movedWords(event: WatcherEvent): string {
       : `The user moved this thread to ${machine}, but the move was given back before any thread was made there, so this one stays where it is and takes sends again.`
   return `${said} This approves nothing.`
 }
-const kindWords = (event: WatcherEvent): string => event.kind === 'threads-restarted' ? restartedWords(event) : event.kind === 'thread-moved' ? movedWords(event) : event.kind === 'needs-user' && event.delegatedThreadId !== undefined
+const kindWords = (event: WatcherEvent): string => event.kind === 'swarm-progress' && event.swarm
+  ? `${event.swarm.done} of ${event.swarm.count} angles done, ${event.swarm.failed} failed, ${event.swarm.queued} queued. The lead holds their replies and writes the synthesis. This grants no permission.`
+  : event.kind === 'threads-restarted' ? restartedWords(event) : event.kind === 'thread-moved' ? movedWords(event) : event.kind === 'needs-user' && event.delegatedThreadId !== undefined
   ? `A thread this one delegated to, ${event.delegatedThreadId}, has a ${event.requestCardKind === 'permission' ? 'permission request' : 'question'} for the user. Open that thread to answer it. Only the user can answer.`
   : event.kind === 'request-closed' ? closedWords(event) : words[event.kind]
 /**

@@ -128,3 +128,28 @@
 .delegation-note > svg { flex: none; }
 .delegation-note > span { min-width: 0; }
 
+
+/* A swarm's angles under its lead's row in the Threads list (ADR-0162, Owl `worker-swarms`): a quiet line of how the swarm
+   stands that opens the list, and a short row per angle with its ring, its title, its word and Stop while it works. The
+   list is indented to the lead's title, so it reads as the lead's own. */
+.thread-swarm { display: grid; gap: 1px; margin: -1px 0 3px; padding-left: 26px; list-style: none; }
+.thread-swarm__toggle { display: flex; align-items: baseline; gap: 6px; min-width: 0; min-height: 24px; padding: 2px 8px 2px 4px; border: 0; border-radius: 6px; background: none; color: var(--tt-text-muted); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.thread-swarm__toggle:hover:not(:disabled) { background: var(--threads-hover); color: var(--tt-text-2); }
+.thread-swarm__toggle:disabled { cursor: default; }
+.thread-swarm__toggle:disabled .thread-swarm__chevron { visibility: hidden; }
+.thread-swarm__chevron { flex: none; align-self: flex-start; margin-top: 3px; }
+.thread-swarm[data-open] .thread-swarm__chevron { rotate: 90deg; }
+.thread-swarm__facts { min-width: 0; line-height: 1.45; font-variant-numeric: tabular-nums; }
+.thread-swarm__angles { display: grid; gap: 1px; margin: 0 0 0 10px; padding: 0 0 0 8px; border-left: 1px solid var(--tt-hairline); list-style: none; }
+.thread-swarm__angle { display: flex; align-items: center; min-width: 0; border: 1px solid transparent; border-radius: 6px; }
+.thread-swarm__angle:hover { background: var(--threads-hover); }
+.thread-swarm__angle[data-current] { background: var(--threads-selected); border-color: var(--threads-selected-border); }
+.thread-swarm__open { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 8px; flex: 1; min-width: 0; min-height: 28px; padding: 3px 8px; border: 0; border-radius: 6px; background: none; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.thread-swarm__angle[data-current] .thread-swarm__open { color: var(--tt-text); }
+.thread-swarm__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-swarm__state { color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.thread-swarm__state[data-outcome='working'], .thread-swarm__state[data-outcome='background'] { color: var(--tt-activity); }
+.thread-swarm__state[data-outcome='needs'] { color: var(--tt-warning-text); }
+.thread-swarm__state:is([data-outcome='failed'], [data-outcome='refused']) { color: var(--tt-error-text); }
+.thread-swarm__stop { flex: none; }
+@media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .thread-swarm__chevron { transition: rotate 120ms ease; } }

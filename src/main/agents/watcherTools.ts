@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { watcherMachinesWithoutLoadOutput, watcherToolSchemas, type WatcherToolName } from '../../shared/watcher'
+import { watcherMachinesWithoutLoadOutput, watcherToolSchemas, WATCHER_MACHINES_MAX, type WatcherToolName } from '../../shared/watcher'
 import { ThreadToolServer, type ThreadToolCallContext, type ThreadToolDefinition, type ThreadMcpServer, type ThreadToolResult } from './threadToolServer'
 import { watcherRefusal, type WatcherService } from './watcher'
 import type { WatcherProfileTools } from './host'
@@ -30,7 +30,7 @@ const descriptions: Record<WatcherToolName, string> = {
 /** With Work across machines on (ADR-0082), list_machines also says how busy each machine is and what waits to start there (#1311). */
 const LIST_MACHINES_WITH_LOAD = 'List This computer and each connected machine: its operating system, architecture, memory and CPUs, how many threads it is running, how many it has been sent work for that have not started, how busy its CPU and memory are now, and its headroom: about how many more workers it can take now. A machine that does not report these reads unknown; one not connected says so.'
 /** With worker roles on (#1041), a start names its role and leaves the rest to the user's Settings. */
-const START_BY_ROLE = `Start one worker in a known project and send its first prompt under an active user Watcher request. Name its role (${WORKER_KIND_LIST}) and leave out the model, effort and permission: Sotto starts it on what the user's Settings give that role, never wider than the new-thread default. Name a model, effort or permission only when the user asked for one for this request; that overrides the role for this start only, and the receipt says so. Retry with the same key to read the original receipt. ${WORKING_WARNING}`
+const START_BY_ROLE = `Start one worker in a known project and send its first prompt under an active user Watcher request. Name its role (${WORKER_KIND_LIST}) and leave out the model, effort, speed and permission: Sotto starts it on what the user's Settings give that role, never wider than the new-thread default. Name a model, effort, speed or permission only when the user asked for one for this request; that overrides the role for this start only, and the receipt says so. Retry with the same key to read the original receipt. ${WORKING_WARNING}`
 /** With Work across machines on (#1032), a start may name its machine or system, and list_machines says where one that names neither goes. */
 const START_WHERE = 'Name machine, a host ID from list_machines, or os (windows, macos or linux) to say where it runs; leave both out to start it where new workers start, which list_machines gives as newWorkersStart. A system never falls back to another. The placement in the receipt names the machine.'
 /** With Work across machines on (#1033), a start may begin from a thread's branch, and say it is a test run. */
@@ -40,37 +40,53 @@ const MACHINES_WHERE = ' newWorkersStart says where a start that names no machin
 const startByModel = watcherToolSchemas.start_thread.input.omit({ role: true }).extend({ modelId: z.string().min(1).max(6_144) })
 /** What Work across machines adds to a start (#1032, #1033), none of it offered while that is off. */
 const ACROSS_MACHINES = { machine: true, os: true, fromThread: true, testRun: true } as const
-/** The start's schema as offered: no machine, system or branch to start from while Work across machines is off, and never a move. */
-const offeredStart = (roles: boolean, machines: boolean): z.ZodType => {
-  if (roles) {
-    const start = watcherToolSchemas.start_thread.input.omit({ fromMove: true, madeFrom: true, check: true, fromOrigin: true })
-    return machines ? start : start.omit(ACROSS_MACHINES)
-  }
-  const start = startByModel.omit({ fromMove: true, madeFrom: true, check: true, fromOrigin: true })
-  return machines ? start : start.omit(ACROSS_MACHINES)
-}
+/** Fixed feature variants are built once; tool registration only selects them. */
+const roleSwarmStart = watcherToolSchemas.start_thread.input.omit({ fromMove: true, madeFrom: true, check: true, fromOrigin: true })
+const modelSwarmStart = startByModel.omit({ fromMove: true, madeFrom: true, check: true, fromOrigin: true })
+const roleStart = roleSwarmStart.omit({ count: true, prompts: true })
+const modelStart = modelSwarmStart.omit({ count: true, prompts: true })
+const roleSwarmStartHere = roleSwarmStart.omit(ACROSS_MACHINES)
+const modelSwarmStartHere = modelSwarmStart.omit(ACROSS_MACHINES)
+const roleStartHere = roleStart.omit(ACROSS_MACHINES)
+const modelStartHere = modelStart.omit(ACROSS_MACHINES)
+const offeredStart = (roles: boolean, machines: boolean, swarms: boolean): z.ZodType =>
+  roles ? swarms ? machines ? roleSwarmStart : roleSwarmStartHere : machines ? roleStart : roleStartHere
+    : swarms ? machines ? modelSwarmStart : modelSwarmStartHere : machines ? modelStart : modelStartHere
 
-/**
- * The results as offered while Work across machines is off: without the start's placement (#1032) or where it
- * started from and what a check's snapshot carried (#1033), and list_machines without where new workers start (#1032)
- * or any machine's live load (#1311), so Stable advertises none of it. Only the answer carries them; the refusal is the same.
- */
-const MACHINELESS_OUTPUTS: Partial<Record<WatcherToolName, z.ZodType>> = {
-  start_thread: z.union([watcherToolSchemas.start_thread.output.options[0].omit({ placement: true, startedFrom: true, check: true }), watcherToolSchemas.start_thread.output.options[1]]),
-  list_machines: watcherMachinesWithoutLoadOutput,
+const startAnswer = watcherToolSchemas.start_thread.output.options[0]
+const startRefusal = watcherToolSchemas.start_thread.output.options[1]
+const startHereAnswer = startAnswer.omit({ placement: true, startedFrom: true, check: true })
+const startHereOutput = z.union([startHereAnswer, startRefusal])
+const singleStartOutput = z.union([startAnswer.omit({ swarm: true, queue: true }), startRefusal])
+const singleStartHereOutput = z.union([startHereAnswer.omit({ swarm: true, queue: true }), startRefusal])
+const singleOperationOutput = z.union([watcherToolSchemas.read_operation.output.options[0].omit({ swarm: true, queue: true, effectiveChoices: true }), watcherToolSchemas.read_operation.output.options[1]])
+const machinesAnswer = watcherToolSchemas.list_machines.output.options[0]
+const machinesHereAnswer = watcherMachinesWithoutLoadOutput.options[0]
+const machinesWithoutWorkers = machinesAnswer.omit({ workers: true }).extend({ machines: machinesAnswer.shape.machines.element.omit({ workerCeiling: true, workerQueued: true }).array().max(WATCHER_MACHINES_MAX) })
+const machinesHereWithoutWorkers = machinesHereAnswer.omit({ workers: true }).extend({ machines: machinesHereAnswer.shape.machines.element.omit({ workerCeiling: true, workerQueued: true }).array().max(WATCHER_MACHINES_MAX) })
+const singleMachinesOutput = z.union([machinesWithoutWorkers, watcherToolSchemas.list_machines.output.options[1]])
+const singleMachinesHereOutput = z.union([machinesHereWithoutWorkers, watcherToolSchemas.list_machines.output.options[1]])
+const singleOutputs: Partial<Record<WatcherToolName, z.ZodType>> = {
+  start_thread: singleStartOutput, read_operation: singleOperationOutput, list_machines: singleMachinesOutput,
 }
-const offeredOutput = (name: WatcherToolName, machines: boolean): z.ZodType => (machines ? undefined : MACHINELESS_OUTPUTS[name]) ?? watcherToolSchemas[name].output
+const singleHereOutputs: Partial<Record<WatcherToolName, z.ZodType>> = {
+  start_thread: singleStartHereOutput, read_operation: singleOperationOutput, list_machines: singleMachinesHereOutput,
+}
+const swarmHereOutputs: Partial<Record<WatcherToolName, z.ZodType>> = {
+  start_thread: startHereOutput, list_machines: watcherMachinesWithoutLoadOutput,
+}
 
 /**
  * The tools Watcher is offered: with worker roles on, start_thread takes a role and its model is optional; with Work across
  * machines on (`machines`), it takes a machine or a system (#1032), and list_machines shows each machine's live load
  * (#1311) and where new workers start.
  */
-export function watcherToolDefinitions(roles: boolean, machines = false): readonly ThreadToolDefinition[] {
+export function watcherToolDefinitions(roles: boolean, machines = false, swarms = false): readonly ThreadToolDefinition[] {
+  const outputs = swarms ? machines ? undefined : swarmHereOutputs : machines ? singleOutputs : singleHereOutputs
   return Object.freeze((Object.keys(watcherToolSchemas) as WatcherToolName[]).map(name => Object.freeze({ name,
-    description: name === 'start_thread' ? `${roles ? START_BY_ROLE : descriptions[name]}${machines ? ` ${START_WHERE} ${START_FROM}` : ''}`
-      : name === 'list_machines' && machines ? LIST_MACHINES_WITH_LOAD + MACHINES_WHERE : descriptions[name],
-    inputSchema: z.toJSONSchema(name === 'start_thread' ? offeredStart(roles, machines) : watcherToolSchemas[name].input), outputSchema: z.toJSONSchema(offeredOutput(name, machines)),
+    description: name === 'start_thread' ? `${swarms ? (roles ? START_BY_ROLE : descriptions[name]).replace(WORKING_WARNING, '') : roles ? START_BY_ROLE : descriptions[name]}${machines ? ` ${START_WHERE} ${START_FROM}` : ''}${swarms ? ' Count greater than one starts a swarm: that many angles, each in its own worktree, and one lead on the role’s model for synthesis. Supply prompts with one brief per angle, or the lead plans them. Use one retryKey for the whole swarm. Counts explicitly requested by the user override the role’s usual and up-to counts. Extra starts queue in order above the machine ceiling; the receipt names how many wait and the cost shape, count × effort plus the lead.' : ''}`
+      : name === 'list_machines' ? (machines ? LIST_MACHINES_WITH_LOAD + MACHINES_WHERE : descriptions[name]) + (swarms ? ' Also returns each role’s usual and up-to worker counts, and each supporting machine’s workerCeiling and workerQueued. A null ceiling is unknown, never unlimited.' : '') : descriptions[name],
+    inputSchema: z.toJSONSchema(name === 'start_thread' ? offeredStart(roles, machines, swarms) : watcherToolSchemas[name].input), outputSchema: z.toJSONSchema(outputs?.[name] ?? watcherToolSchemas[name].output),
     annotations: { readOnlyHint: name.startsWith('list_') || name.startsWith('read_'), destructiveHint: false,
       idempotentHint: true, openWorldHint: false } })))
 }
@@ -88,10 +104,10 @@ export class WatcherToolServer implements WatcherProfileTools {
    * `machines` is the Owl answer for Work across machines (ADR-0082), as `roles` is for worker roles; `pullRequestNews`
    * says Watcher's pull request news runs (ADR-0144).
    */
-  constructor(private readonly service: WatcherService, options: { roles?: boolean; machines?: boolean; pullRequestNews?: boolean } = {}) {
+  constructor(private readonly service: WatcherService, options: { roles?: boolean; machines?: boolean; pullRequestNews?: boolean; swarms?: boolean } = {}) {
     const roles = options.roles === true, machines = options.machines === true, pullRequestNews = options.pullRequestNews === true
-    this.definitions = roles || machines ? watcherToolDefinitions(roles, machines) : WATCHER_TOOL_DEFINITIONS
-    this.instructions = roles || machines || pullRequestNews ? watcherSystemPrompt(roles, machines, pullRequestNews) : undefined
+    this.definitions = roles || machines || options.swarms ? watcherToolDefinitions(roles, machines, options.swarms) : WATCHER_TOOL_DEFINITIONS
+    this.instructions = roles || machines || pullRequestNews || options.swarms ? watcherSystemPrompt(roles, machines, pullRequestNews, options.swarms) : undefined
     this.transport = new ThreadToolServer({ name: this.name, serverName: 'Sotto threads',
       instructions: 'Use explicit Sotto host and thread IDs. Use the requestId supplied with the user’s Watcher instruction. Native project reads use your own tools. No tool answers a request, approves a permission or changes policy. A send steers unless you name now or queue, and its result says when a steer went now or queued instead; queue only a prompt that must wait for the turn to end. Read receipts instead of replaying uncertain delivery.',
       unavailable: 'Watcher’s thread tools are unavailable.', failed: 'This Watcher call could not be completed. Check its receipt before trying again.' },

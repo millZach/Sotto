@@ -26,9 +26,9 @@ Say what you sent and to which thread.`
  * What Watcher is told when worker roles are on (#1041). Orchestrating is Watcher itself; each start names one of the five
  * kinds of work, and the user's Settings say what it starts on.
  */
-export const WATCHER_ROLES_PROMPT = `The user's Settings give each worker role a model, an effort and a permission. You are the Orchestrating role; the threads you start are Building, UI, Code review, Research or Computer use.
-Name a role in every start_thread and leave out the model, effort and permission, so the thread starts on what the user chose for that role.
-When the user asks for a model, effort or permission in a request, name it in that request's starts: it overrides the role for those starts only.
+export const WATCHER_ROLES_PROMPT = `The user's Settings give each worker role a model, an effort, a speed and a permission. You are the Orchestrating role; the threads you start are Building, UI, Code review, Research or Computer use.
+Name a role in every start_thread and leave out the model, effort, speed and permission, so the thread starts on what the user chose for that role.
+When the user asks for a model, effort, speed or permission in a request, name it in that request's starts: it overrides the role for those starts only.
 In your reply, say which role and which model each thread you started is on.`
 
 /**
@@ -53,6 +53,10 @@ export const WATCHER_PULL_REQUEST_NEWS_PROMPT = `A watched thread that pushed to
  * Watcher's system prompt: the base one, and the lines for each Owl feature that is on: worker roles, Work across machines,
  * and the pull request news of Restart stopped threads.
  */
-export function watcherSystemPrompt(roles: boolean, machines = false, pullRequestNews = false): string {
-  return [WATCHER_SYSTEM_PROMPT, ...roles ? [WATCHER_ROLES_PROMPT] : [], ...machines ? [WATCHER_MACHINES_PROMPT] : [], ...pullRequestNews ? [WATCHER_PULL_REQUEST_NEWS_PROMPT] : []].join('\n')
+export function watcherSystemPrompt(roles: boolean, machines = false, pullRequestNews = false, swarms = false): string {
+  return [WATCHER_SYSTEM_PROMPT, ...roles ? [WATCHER_ROLES_PROMPT] : [], ...machines ? [WATCHER_MACHINES_PROMPT] : [], ...pullRequestNews ? [WATCHER_PULL_REQUEST_NEWS_PROMPT] : [], ...swarms ? [WATCHER_SWARMS_PROMPT] : []].join('\n')
 }
+
+export const WATCHER_SWARMS_PROMPT = `Workers gives each role a usual count and an up-to count. Read list_machines for the current counts and each machine's ceiling. Defaults are Research 1/8, Code review 1/4, Building 1/2, UI 1/2 and Computer use 1/1. Orchestrating stays one. Use the usual count unless distinct angles would help, and stay within Up to unless the user's request names a count; that number wins for this request.
+Use start_thread count greater than one for a swarm, with prompts containing one distinct brief per angle when already known. Without prompts the lead plans the angles. Each angle gets its own new worktree. A separate lead uses the role's model, holds the delegations and writes the synthesis. Watch the lead; do not send the same work again to its angles. Above the machine ceiling extra angles queue in order, never disappear or get refused for capacity. Pass on the receipt's waiting count and cost shape: N × the role's effort plus lead planning and synthesis, not a dollar estimate.
+News gives aggregate progress such as 5 of 8 angles done, 1 failed. A question or permission still needs the user at once. Failures and stopped or unknown angles must be named in the synthesis, never counted as successful. Stop removes a queued angle. Settle the lead only when it and its angles are finished; its finished angles settle with it.`

@@ -61,6 +61,11 @@ msgstr "{0, plural, one {It no longer lists {names}, so threads on it will fail 
 msgid "{0, plural, one {Show {label} models, # model} other {Show {label} models, # models}}"
 msgstr "{0, plural, one {Show {label} models, # model} other {Show {label} models, # models}}"
 
+#. placeholder {0}: needs.length
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "{0, plural, other {# needs you}}"
+msgstr "{0, plural, other {# needs you}}"
+
 #. {about} is a sentence saying where the sign-in is; {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "{about} Sotto’s OpenCode on {host} reads it there, and Sotto keeps no copy."
@@ -142,6 +147,10 @@ msgstr "{clientName} lists no model you can use now. Check your {clientName} sig
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{commands, plural, one {ran {commandCount} command} other {ran {commandCount} commands}}"
 msgstr "{commands, plural, one {ran {commandCount} command} other {ran {commandCount} commands}}"
+
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "{count, plural, one {{done} of # angle done} other {{done} of # angles done}}"
+msgstr "{count, plural, one {{done} of # angle done} other {{done} of # angles done}}"
 
 #: src/renderer/src/agents/gitActionButton.logic.ts
 #: src/renderer/src/agents/threadActivityView.ts
@@ -287,6 +296,11 @@ msgstr "{directory} has nothing to mention."
 msgid "{done} of {total} done"
 msgstr "{done} of {total} done"
 
+#. An effort dot's tooltip and value: {effort} is a reasoning effort level, such as High; {name} is the thread's speed, such as Fast or Standard.
+#: src/renderer/src/agents/EffortDots.tsx
+msgid "{effort} · {name}"
+msgstr "{effort} · {name}"
+
 #. {error} says why the answer was not sent; "It" is the answer.
 #. {error} says why the prompt was not queued; "It" is the prompt.
 #: src/renderer/src/agents/ThreadComposer.tsx
@@ -303,6 +317,10 @@ msgstr "{error} Restoring it replaces the draft in the composer."
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "{error} Your newer draft is in the composer."
 msgstr "{error} Your newer draft is in the composer."
+
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "{failed, plural, other {# failed}}"
+msgstr "{failed, plural, other {# failed}}"
 
 #. How many delegated threads failed.
 #. How many threads whose last turn failed wait beyond those shown.
@@ -572,6 +590,7 @@ msgid "{label} source"
 msgstr "{label} source"
 
 #. A chip's tooltip: the setting's name, then its value.
+#. A chip's tooltip: the setting's name, then its value.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{label}: {shown}"
 msgstr "{label}: {shown}"
@@ -731,6 +750,21 @@ msgstr "{name} is checked out in another worktree. Start a new thread there to w
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "{name} is now {installed}."
 msgstr "{name} is now {installed}."
+
+#. {name} and {next} are speeds, such as Fast; {cost} and {nextCost} are sentences about what they cost.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{name} is on for this thread. {cost}"
+msgstr "{name} is on for this thread. {cost}"
+
+#. {name} and {next} are speeds, such as Fast; {cost} and {nextCost} are sentences about what they cost.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{name} is on for this thread. {cost} Press for {next}: {nextCost}"
+msgstr "{name} is on for this thread. {cost} Press for {next}: {nextCost}"
+
+#. {name} and {next} are speeds, such as Fast; {cost} and {nextCost} are sentences about what they cost.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{name} is on for this thread. {cost} Press for Standard."
+msgstr "{name} is on for this thread. {cost} Press for Standard."
 
 #. {name} is a provider's name; {installed} is a version number.
 #: src/renderer/src/agents/ClientUpdateCard.tsx
@@ -904,36 +938,18 @@ msgid "{provider} did not report this agent’s result."
 msgstr "{provider} did not report this agent’s result."
 
 #. {error} is the provider's or Sotto's own reason, shown as it came.
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "{provider} did not switch fast mode off. {error}"
-msgstr "{provider} did not switch fast mode off. {error}"
-
-#. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "{provider} did not switch fast mode off. The thread stays in fast mode; nothing else changed."
-msgstr "{provider} did not switch fast mode off. The thread stays in fast mode; nothing else changed."
-
-#. {error} is the provider's or Sotto's own reason, shown as it came.
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "{provider} did not switch fast mode on. {error}"
-msgstr "{provider} did not switch fast mode on. {error}"
-
-#. {provider} is a provider's name or "The provider"; {model} is the model the thread is now on.
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "{provider} did not switch fast mode on. The thread is on {model} at normal speed."
-msgstr "{provider} did not switch fast mode on. The thread is on {model} at normal speed."
-
-#. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "{provider} did not switch fast mode on. The thread stays at normal speed; nothing else changed."
-msgstr "{provider} did not switch fast mode on. The thread stays at normal speed; nothing else changed."
-
-#. {error} is the provider's or Sotto's own reason, shown as it came.
+#. {provider} is a provider's name or "The provider"; {wanted} is a thread speed, such as Fast; {error} is the provider's or Sotto's own reason, shown as it came.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} did not switch to {wanted}. {error}"
 msgstr "{provider} did not switch to {wanted}. {error}"
 
+#. {provider} is a provider's name or "The provider"; {wanted} is a thread speed, such as Fast; {model} is the model the thread is now on.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "{provider} did not switch to {wanted}. The thread is on {model} at Standard speed."
+msgstr "{provider} did not switch to {wanted}. The thread is on {model} at Standard speed."
+
 #. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are a model, effort or permission mode.
+#. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are thread speeds, such as Fast or Standard.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} did not switch to {wanted}. The thread stays on {inForce}; nothing else changed."
 msgstr "{provider} did not switch to {wanted}. The thread stays on {inForce}; nothing else changed."
@@ -963,19 +979,10 @@ msgid "{provider} has not confirmed {wanted}. The thread starts on {wanted} the 
 msgstr "{provider} has not confirmed {wanted}. The thread starts on {wanted} the next time it is used, and Sotto checks it then."
 
 #. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are a model, effort or permission mode.
+#. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are thread speeds, such as Fast or Standard.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} has not confirmed {wanted}. Until it does, a turn can still run on {inForce}."
 msgstr "{provider} has not confirmed {wanted}. Until it does, a turn can still run on {inForce}."
-
-#. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "{provider} has not confirmed fast mode. Until it does, a turn can still run at normal speed."
-msgstr "{provider} has not confirmed fast mode. Until it does, a turn can still run at normal speed."
-
-#. {provider} is a provider's name or "The provider".
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "{provider} has not confirmed turning fast mode off. Until it does, a turn can still run in fast mode."
-msgstr "{provider} has not confirmed turning fast mode off. Until it does, a turn can still run in fast mode."
 
 #. {provider} is a provider's name or "The provider".
 #: src/renderer/src/agents/ThreadOptions.tsx
@@ -1056,6 +1063,10 @@ msgstr "{questionCount, plural, one {Send answer} other {Send answers}}"
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "{questionCount, plural, one {Skip question} other {Skip questions}}"
 msgstr "{questionCount, plural, one {Skip question} other {Skip questions}}"
+
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "{queued, plural, other {# waiting}}"
+msgstr "{queued, plural, other {# waiting}}"
 
 #. {reason} says why the page is not shown; {fallbackHint} says where else to look.
 #: src/renderer/src/agents/InteractiveVisual.tsx
@@ -1371,6 +1382,10 @@ msgstr "{working, plural, one {Stop also stops the thread it delegated that is w
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "{working, plural, other {{workingThreads} working}}"
 msgstr "{working, plural, other {{workingThreads} working}}"
+
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "{working, plural, other {# working}}"
+msgstr "{working, plural, other {# working}}"
 
 #. {working} is how many threads are working.
 #: src/renderer/src/agents/HostUpdates.tsx
@@ -1715,10 +1730,6 @@ msgstr "Allow"
 msgid "Allow edits"
 msgstr "Allow edits"
 
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Allow or deny the request above to continue."
-msgstr "Allow or deny the request above to continue."
-
 #. {existingTitle} is a project's title.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Already the project {existingTitle}"
@@ -1745,6 +1756,12 @@ msgstr "An OpenAI-compatible server"
 msgid "and {more} more"
 msgstr "and {more} more"
 
+#. {title} is the title of the thread that leads a swarm.
+#. {title} is the title of the thread that leads a swarm.
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "Angles of {title}"
+msgstr "Angles of {title}"
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "another machine"
 msgstr "another machine"
@@ -1760,14 +1777,6 @@ msgstr "Answer draft saved."
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Answer sent."
 msgstr "Answer sent."
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Answer the question above to continue."
-msgstr "Answer the question above to continue."
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Answer the request above to continue."
-msgstr "Answer the request above to continue."
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Answer this question"
@@ -3238,8 +3247,8 @@ msgid "Created {subject}"
 msgstr "Created {subject}"
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-msgid "Created on first send. Choose the workspace and branch under the composer."
-msgstr "Created on first send. Choose the workspace and branch under the composer."
+msgid "Created on first send. Choose the workspace and branch before sending."
+msgstr "Created on first send. Choose the workspace and branch before sending."
 
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Creates the repository on GitHub through the gh command and your own sign-in, adds it as origin, and pushes the current branch."
@@ -3876,29 +3885,11 @@ msgstr "Failed to switch ref. Sotto could not confirm this change."
 msgid "Failed when last read"
 msgstr "Failed when last read"
 
-#: src/renderer/src/agents/optionChipNames.ts
-msgid "Fast mode"
-msgstr "Fast mode"
-
-#. {cost} is a sentence about what fast mode costs.
+#. A thread speed: faster output at a higher price.
+#. A thread speed: faster output at a higher price.
 #: src/renderer/src/agents/ThreadOptions.tsx
-msgid "Fast mode is off. {cost}"
-msgstr "Fast mode is off. {cost}"
-
-#. {cost} is a sentence about what fast mode costs.
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "Fast mode is off. {cost} Press to turn it on for this thread."
-msgstr "Fast mode is off. {cost} Press to turn it on for this thread."
-
-#. {cost} is a sentence about what fast mode costs.
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "Fast mode is on for this thread. {cost}"
-msgstr "Fast mode is on for this thread. {cost}"
-
-#. {cost} is a sentence about what fast mode costs.
-#: src/renderer/src/agents/ThreadOptions.tsx
-msgid "Fast mode is on for this thread. {cost} Press to turn it off."
-msgstr "Fast mode is on for this thread. {cost} Press to turn it off."
+msgid "Fast"
+msgstr "Fast"
 
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Fast. For small, clear tasks."
@@ -5052,6 +5043,7 @@ msgstr "Near the model's limit. Slow and costly."
 
 #. A provider's status.
 #: src/renderer/src/agents/ProvidersSettings.tsx
+#: src/renderer/src/agents/SwarmAngles.tsx
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Needs attention"
 msgstr "Needs attention"
@@ -5067,10 +5059,12 @@ msgctxt "delegated work"
 msgid "Needs you"
 msgstr "Needs you"
 
+#: src/renderer/src/agents/SwarmAngles.tsx
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Needs your answer"
 msgstr "Needs your answer"
 
+#: src/renderer/src/agents/SwarmAngles.tsx
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Needs your approval"
 msgstr "Needs your approval"
@@ -6218,6 +6212,11 @@ msgstr "Queued <0>{count}</0>"
 msgid "Queued messages"
 msgstr "Queued messages"
 
+#: src/renderer/src/agents/ThreadComposer.tsx
+#: src/renderer/src/agents/ThreadFollowups.tsx
+msgid "Queued until you answer the card"
+msgstr "Queued until you answer the card"
+
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Queued: {addedText}"
 msgstr "Queued: {addedText}"
@@ -6939,10 +6938,6 @@ msgstr "Sending"
 msgid "Sending answer…"
 msgstr "Sending answer…"
 
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Sending returns once the request above is answered in {provider}’s app."
-msgstr "Sending returns once the request above is answered in {provider}’s app."
-
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "Sending starts a <0>new {target} thread</0> with a handover of this one."
 msgstr "Sending starts a <0>new {target} thread</0> with a handover of this one."
@@ -7487,8 +7482,8 @@ msgstr "Sotto did not get {provider}'s answer about {wanted}, so the chip shows 
 
 #. {provider} is a provider's name or "The provider".
 #: src/renderer/src/agents/ThreadOptions.tsx
-msgid "Sotto did not get {provider}'s answer about fast mode, so the toggle shows what the thread last reported. Try again to send it once more."
-msgstr "Sotto did not get {provider}'s answer about fast mode, so the toggle shows what the thread last reported. Try again to send it once more."
+msgid "Sotto did not get {provider}'s answer about the speed, so the speed control shows what the thread last reported. Try again to send it once more."
+msgstr "Sotto did not get {provider}'s answer about the speed, so the speed control shows what the thread last reported. Try again to send it once more."
 
 #. {name} is the name of a saved host.
 #: src/renderer/src/agents/HostUpdates.tsx
@@ -7582,6 +7577,21 @@ msgstr "Sotto’s OpenCode holds the key for {name} and is not running, so nothi
 #: src/renderer/src/agents/ProjectChooser.tsx
 msgid "Sources"
 msgstr "Sources"
+
+#. A thread speed: the model's usual speed and price.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Standard"
+msgstr "Standard"
+
+#. The thread speed bolt's tooltip while the thread runs at the usual speed and the bolt cannot be pressed.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Standard speed."
+msgstr "Standard speed."
+
+#. {name} and {next} are speeds, such as Fast; {cost} and {nextCost} are sentences about what they cost.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Standard speed. Press for {next}: {nextCost}"
+msgstr "Standard speed. Press for {next}: {nextCost}"
 
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Star a model to keep it here."
@@ -7773,8 +7783,13 @@ msgstr "Still working after this reply"
 
 #. Button on the line of a turn that is waiting on the user’s own model server: stops the turn.
 #: src/renderer/src/agents/ownServerTurnWords.ts
+#: src/renderer/src/agents/SwarmAngles.tsx
 msgid "Stop"
 msgstr "Stop"
+
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "Stop {title}"
+msgstr "Stop {title}"
 
 #: src/renderer/src/agents/delegationWords.ts
 #: src/renderer/src/agents/ownServerTurnWords.ts
@@ -7859,6 +7874,11 @@ msgstr "Switching…"
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "Sync ref"
 msgstr "Sync ref"
+
+#. A swarm lead has written its synthesis of the angles.
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "Synthesis written"
+msgstr "Synthesis written"
 
 #. Who wrote a message: the system.
 #: src/renderer/src/agents/ThreadTranscript.tsx
@@ -8604,6 +8624,10 @@ msgstr "Thread reasoning effort"
 msgid "Thread sidebar"
 msgstr "Thread sidebar"
 
+#: src/renderer/src/agents/optionChipNames.ts
+msgid "Thread speed"
+msgstr "Thread speed"
+
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Thread transcript"
 msgstr "Thread transcript"
@@ -8786,6 +8810,11 @@ msgstr "typed into the page"
 #: src/renderer/src/agents/browserLine.ts
 msgid "typed on the cloud iPhone"
 msgstr "typed on the cloud iPhone"
+
+#. A thread speed: faster than Fast, at a higher price still.
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Ultra fast"
+msgstr "Ultra fast"
 
 #. The effort level past Max on Claude models, where Claude Code plans the work and runs it as a team of agents. Ultracode is Claude Code’s own name; keep it as it is.
 #: src/renderer/src/agents/EffortPicker.tsx
@@ -9199,9 +9228,10 @@ msgstr "Waiting for your permission. Open it to answer."
 msgid "Waiting in {waitingIn}"
 msgstr "Waiting in {waitingIn}"
 
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Waiting on the request above."
-msgstr "Waiting on the request above."
+#. A swarm angle that has not started: its machine is at its ceiling, or its lead has not planned it yet.
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "Waiting its turn"
+msgstr "Waiting its turn"
 
 #: src/renderer/src/agents/threadClearWords.ts
 msgid "waiting on you"

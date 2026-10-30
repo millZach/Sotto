@@ -17,7 +17,7 @@ import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal, isVisualMessage,
-  type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
+  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
 import { BABYSITTING_RETIRED, BABYSIT_REFUSALS, type Babysitter } from './babysitting'
@@ -84,7 +84,7 @@ import { isResumeNoteText } from '../../shared/restartResume'
 import { isLimitRestartNoteText } from '../../shared/limitRestart'
 import type { LimitRestart } from './limitRestart'
 import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT, watcherRecordForDisk } from './watcherRecords'
-import { NOTHING_ARCHIVED, removeArchivedWork, returnArchivedWork, WATCHER_ARCHIVE_BATCH, WatcherArchive, watcherArchiveBatch, watcherWorkVersion, type WatcherArchived } from './watcherArchive'
+import { NOTHING_ARCHIVED, removeArchivedWork, WATCHER_ARCHIVE_BATCH, WatcherArchive, watcherArchiveBatch, watcherWorkVersion, type WatcherArchived } from './watcherArchive'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
 const EMPTY_MESSAGES: AgentMessage[] = []
@@ -512,7 +512,7 @@ type BabysitCommand = Extract<AgentCommand, { type: 'babysit-pull-request' | 'st
 const readBeforeSend = (sendMessageId: string | undefined): ThreadReadPurpose => ({ beforeSend: true, ...(sendMessageId ? { sendMessageId } : {}) })
 
 /**
- * A settings change that sets only a model, an effort or fast mode holds nothing back while its result is unknown: at worst a
+ * A settings change that sets only a model, an effort or speed holds nothing back while its result is unknown: at worst a
  * turn runs on the model before, which the thread's chip shows, and the adapter asks for the wanted one again before its next
  * turn (#1192; Zach's rule that nothing blocks sending another message or changing the model). A change that sets a
  * permission mode or a provider mode still holds the thread, since a turn under a wider mode than the user chose could
@@ -521,7 +521,7 @@ const readBeforeSend = (sendMessageId: string | undefined): ThreadReadPurpose =>
 function holdsNothingBack(item: { readonly type: string; readonly options?: Readonly<Record<string, unknown>> | undefined }): boolean {
   if (item.type !== 'configure-thread' || !item.options) return false
   const keys = Object.keys(item.options).filter(key => item.options![key] !== undefined)
-  return keys.length > 0 && keys.every(key => key === 'modelId' || key === 'reasoningEffort' || key === 'fastMode')
+  return keys.length > 0 && keys.every(key => key === 'modelId' || key === 'reasoningEffort' || key === 'fastMode' || key === 'speed')
 }
 
 export class AgentControl {
@@ -625,7 +625,11 @@ export class AgentControl {
     }
     const now = version(this.watcher)
     const fresh = ids.filter(id => !archive.holds(id, now(id)))
-    for (let at = 0; at < fresh.length; at += WATCHER_ARCHIVE_BATCH) await archive.append(watcherArchiveBatch(this.watcher, fresh.slice(at, at + WATCHER_ARCHIVE_BATCH)))
+    // A paired desktop's requests go in batches of their own, which stay saved whatever Keep local history says (#1759).
+    const desktops = new Set(this.watcher.requests.flatMap(request => request.remoteOrigin ? [request.id] : []))
+    for (const group of [fresh.filter(id => !desktops.has(id)), fresh.filter(id => desktops.has(id))]) {
+      for (let at = 0; at < group.length; at += WATCHER_ARCHIVE_BATCH) await archive.append(watcherArchiveBatch(this.watcher, group.slice(at, at + WATCHER_ARCHIVE_BATCH)))
+    }
     // Only work the archive holds, as the record holds it now, leaves the record: Keep local history may have changed
     // between the batches, and a request may have changed while they were written.
     const current = version(this.watcher), allowed = new Set(stillArchivable())
@@ -639,18 +643,6 @@ export class AgentControl {
    * answered as it was before the work was archived. Never read on the update path.
    */
   archivedWatcherWork(): WatcherArchive | undefined { return this.watcherArchive }
-  /**
-   * Started with Keep local history off over a saved archive that holds paired desktops' work (#1759): that work goes back
-   * to the record before the archive goes, so a desktop's late retry still gives its first receipt. Asked by Watcher's recovery.
-   */
-  /** Puts archived work back as Watcher has it now, a newer Watcher's takeover of a desktop's requests included (#1735). */
-  private returnArchived(record: WatcherRecord, work: WatcherArchived): void {
-    if (this.watcherHooks?.returnArchived) this.watcherHooks.returnArchived(record, work)
-    else returnArchivedWork(record, work)
-  }
-  returnArchivedRemoteWork(): Promise<void> {
-    return this.watcherArchive?.returnRemoteWork(work => this.updateWatcher(record => this.returnArchived(record, work))) ?? Promise.resolve()
-  }
   /** Settles once whatever was asked of Watcher's archive has settled. */
   watcherArchiveSettled(): Promise<void> { return this.watcherArchive?.settled() ?? Promise.resolve() }
   /**
@@ -911,13 +903,13 @@ export class AgentControl {
     return this.commandShell(parsed, client, decisionId)
   }
   /** User-requested setup only, never exposed as a tool. */
-  commandForWatcherRoom(command: Extract<AgentCommand, { type: 'create-project' | 'create-thread' | 'configure-thread' }>, connectionGuard?: () => void): Promise<AgentState> {
+  commandForWatcherRoom(command: Extract<AgentCommand, { type: 'create-project' | 'create-thread' | 'configure-thread' }>, connectionGuard?: () => void, keptSpeed?: true): Promise<AgentState> {
     if (!this.watcherHooks) throw new Error('Watcher is unavailable.')
     // `userSetup` lets a command pass a prompt set aside, so only setup may carry it, whatever a caller's type allows.
     if (!['create-project', 'create-thread', 'configure-thread'].includes(command.type)) throw new Error('Watcher\'s room only sets up Watcher. Nothing was sent.')
     const parsed = agentCommandSchema.parse(command)
     const guard = () => { connectionGuard?.(); if (this.disposed) throw new Error('Sotto is stopping.') }
-    guard(); this.watcherOrigins.set(parsed, { guard, userSetup: true })
+    guard(); this.watcherOrigins.set(parsed, { guard, userSetup: true, ...(parsed.type === 'create-thread' && keptSpeed ? { keptSpeed: true as const } : {}) })
     return this.admitCommandShell(parsed)
   }
   /**
@@ -2059,8 +2051,15 @@ export class AgentControl {
     return state
   }
   /** A thread as the shell lists it: its summary in place of its history. */
+  private swarmView?: (threadId: string) => AgentThread['swarm']
+  useSwarms(read: (threadId: string) => AgentThread['swarm']): void { this.swarmView = read }
+  swarmsChanged(threadIds: readonly string[]): void {
+    for (const id of threadIds) { this.broadcastRecords.delete(id); this.marksMoved.add(id) }
+    this.publish()
+  }
   private shellThread(thread: AgentThread, messages: AgentMessage[], activities: AgentActivity[]): AgentThread {
-    return { ...thread, messages, ...(thread.activities === undefined ? {} : { activities }), summary: this.presentedSummary(thread) }
+    const swarm = this.swarmView?.(thread.id)
+    return { ...thread, ...swarm ? { swarm } : {}, messages, ...(thread.activities === undefined ? {} : { activities }), summary: this.presentedSummary(thread) }
   }
   /** The non-thread part of the last broadcast's shell, frozen, which the next one is read against. */
   private broadcastBase: AgentState | undefined
@@ -2725,7 +2724,7 @@ export class AgentControl {
       () => this.dependencies.host.privacyChanged?.(),
       () => this.followupStore.privacyChanged(),
       () => this.watcherHooks?.privacyChanged?.(),
-      () => this.watcherArchive?.privacyChanged(work => this.updateWatcher(record => this.returnArchived(record, work))),
+      () => this.watcherArchive?.privacyChanged(),
       () => this.persist(),
     ]
     const results = await Promise.allSettled(cleanup.map(operation => Promise.resolve().then(operation)))
@@ -3233,6 +3232,13 @@ export class AgentControl {
     return !!thread && this.state.host.connected && thread.clientConnected !== false && isThreadProviderConnected(this.state.host, thread)
       && !isThreadClosed(thread) && !isWorkspaceThreadSettled(thread, this.state.host.projects.find(project => project.id === thread.projectId))
   }
+  hasQueuedDelegationNews(threadId: string, delegationIds: ReadonlySet<string>): boolean {
+    return this.followupStore.peek().items.some(item => item.threadId === threadId
+      && item.news?.some(news => isDelegationNews(news) && news.items.some(part => delegationIds.has(part.delegationId))))
+  }
+
+  resumeDelegationNews(): void { this.pumpFollowups() }
+
   /**
    * Hands a thread babysitting's news as a wake-up (ADR-0061 decision 8): Sotto's own item in the thread's follow-up
    * queue, which sends it at once when the thread is ready and otherwise when the queue would send the next one,
@@ -3456,12 +3462,12 @@ export class AgentControl {
     }
   }
   /**
-   * The effort, runtime mode and provider mode a create-thread ends up on: the caller's own choice where it made
+   * The effort, speed, runtime mode and provider mode a create-thread ends up on: the caller's own choice where it made
    * one, Settings → Threads' new-thread defaults otherwise, each fit to what `model` actually offers (issue #347).
    * An install with no new-thread defaults saved leaves every option the caller left unset alone, which is
    * today's behaviour: the model's own default effort and the provider's own starting permission mode.
    */
-  private newThreadOptionDefaults(command: Extract<AgentCommand, { type: 'create-thread' }>, model: AgentModel | undefined): { reasoningEffort?: string; runtimeMode?: AgentRuntimeMode; providerMode?: string } {
+  private newThreadOptionDefaults(command: Extract<AgentCommand, { type: 'create-thread' }>, model: AgentModel | undefined): Omit<AgentThreadOptions, 'modelId'> {
     const configuration = this.state.configuration
     let reasoningEffort = command.reasoningEffort
     if (reasoningEffort === undefined && configuration.newThreadReasoningEffort) {
@@ -3475,7 +3481,8 @@ export class AgentControl {
       runtimeMode = resolved.runtimeMode
       providerMode = resolved.providerMode
     }
-    return { ...(reasoningEffort !== undefined ? { reasoningEffort } : {}), ...(runtimeMode !== undefined ? { runtimeMode } : {}), ...(providerMode !== undefined ? { providerMode } : {}) }
+    return { ...(reasoningEffort !== undefined ? { reasoningEffort } : {}), ...(runtimeMode !== undefined ? { runtimeMode } : {}), ...(providerMode !== undefined ? { providerMode } : {}),
+      ...(command.speed !== undefined ? { speed: command.speed } : command.fastMode !== undefined ? { fastMode: command.fastMode } : {}) }
   }
   private obsoleteDraft(threadId: string, draftId: string): void {
     if (this.state.deliveredDrafts?.some(item => item.threadId === threadId && item.draftId === draftId)) return
@@ -4223,10 +4230,19 @@ export class AgentControl {
     // A create-thread carries the ID the window minted, which no lane can be keyed on until the thread exists.
     const actionThreadId = 'threadId' in command && command.type !== 'create-thread' ? command.threadId ?? '' : ''
     const actionDraftId = 'draftId' in command ? command.draftId : undefined
-    const reconcilingDraft = command.type === 'manual-send' && this.outbox.some(item => item.threadId === actionThreadId && item.draftId === actionDraftId)
+    const reconcilingDraft = (command.type === 'manual-send' || command.type === 'steer') && this.outbox.some(item => item.threadId === actionThreadId && item.draftId === actionDraftId)
+    const promptThread = command.type === 'manual-send' || command.type === 'steer'
+      ? this.state.host.threads.find(thread => thread.id === actionThreadId) : undefined
+    const waitingOnCard = promptThread !== undefined && this.waitsOnRequest(promptThread)
     // A Send joins the follow-ups the user already queued; a waiting wake-up is not one of them, so it changes nothing here.
-    if (!origin && command.type === 'manual-send' && !reconcilingDraft && (this.threadPrompts.has(actionThreadId) || this.pumping.has(actionThreadId) || this.state.host.threads.find(t => t.id === actionThreadId)?.status === 'running' || this.followupStore.peek().items.some(item => item.threadId === actionThreadId && !isWaitingWakeUp(item)))) {
-      return this.followupCommand({ ...command, type: 'queue-followup', draftId: command.draftId ?? randomUUID() })
+    // A user's message may wait behind a card, but only the card can answer it. A phone carries its user origin with it.
+    if ((!origin || origin.phoneOrigin) && !reconcilingDraft
+      && (command.type === 'manual-send' && (waitingOnCard || this.threadPrompts.has(actionThreadId) || this.pumping.has(actionThreadId)
+        || promptThread?.status === 'running' || this.followupStore.peek().items.some(item => item.threadId === actionThreadId && !isWaitingWakeUp(item)))
+        || command.type === 'steer' && waitingOnCard)) {
+      const queued = { ...command, type: 'queue-followup' as const, draftId: command.draftId ?? randomUUID() }
+      if (origin) this.watcherOrigins.set(queued, origin)
+      return this.followupCommand(queued)
     }
     if (command.type === 'interrupt') return this.interruptThread(command)
     const receivedAt = performance.now()
@@ -4460,7 +4476,8 @@ export class AgentControl {
       // A prompt whose send is unresolved may have started a turn, as one a crash left between the queue's claim and its
       // outbox entry has, with nothing in the outbox to say so: the news waits until it is settled. A set-aside one does not hold it.
       && !this.followupStore.peek().items.some(item => item.threadId === threadId && item.id !== followup.id && (item.status === 'uncertain' || item.status === 'dispatching'))
-      && !(this.state.deliveries ?? []).some(item => item.threadId === threadId && item.setAside !== true && ['queued', 'submitting', 'uncertain'].includes(item.status)))
+      && !(this.state.deliveries ?? []).some(item => item.threadId === threadId && item.setAside !== true && ['queued', 'submitting', 'uncertain'].includes(item.status))
+      && this.delegationHooks?.newsReady?.(threadId, (followup.news ?? []).filter(isDelegationNews)) !== false)
   }
   /** When each thread's hidden delegation news may be tried again after a send that surely did not go. */
   private readonly delegationNewsRetryAt = new Map<string, number>()
@@ -4520,7 +4537,7 @@ export class AgentControl {
       // Native idle status can precede turn/completed. A still-running outcome is
       // neither permission to dispatch nor a terminal failure requiring review. A compaction that failed is one, though the
       // thread still rests on the completed turn before it (ADR-0127).
-      const unreviewed = (item: Readonly<QueuedFollowup>): boolean => !!thread && !isThreadTurnRunning(thread)
+      const unreviewed = (item: Readonly<QueuedFollowup>): boolean => !!thread && !this.waitsOnRequest(thread) && !isThreadTurnRunning(thread)
         && (thread.lastTurn ? (thread.lastTurn.status !== 'completed' || thread.status === 'error' && thread.compaction?.status === 'failed')
           && item.resumeAfterTurnId !== thread.lastTurn.id : item.resumeAfterTurnId !== UNKNOWN_TURN)
       // A delegation's hidden news goes past whatever of the user's waits without going, leaving it in place and in order:
@@ -5187,7 +5204,7 @@ export class AgentControl {
         // A create-thread that leaves an option unset takes Settings → Threads' new-thread defaults instead,
         // a caller's explicit choice still wins.
         const defaults = this.newThreadOptionDefaults(command, model)
-        validateThreadOptions(this.state.host, { modelId: command.modelId, ...defaults })
+        validateThreadOptions(this.state.host, { modelId: command.modelId, ...defaults }, undefined, origin?.keptSpeed)
         const validatePermission = (): void => { origin?.guard(); if (!origin?.operationId) this.guardThreadPermission(client, defaults, model) }
         validatePermission()
         // The window may already be showing this thread under an ID it minted; main adopts it so nothing has to move.
@@ -5212,6 +5229,7 @@ export class AgentControl {
           ...(command.startFromOrigin !== undefined ? { startFromOrigin: command.startFromOrigin } : {}),
           ...(command.existingWorktreePath ? { existingWorktreePath: command.existingWorktreePath } : {}),
           ...(command.check ? { check: true as const } : {}),
+          ...(origin?.keptSpeed ? { keptSpeed: true as const } : {}),
           ...defaults }, turn, validatePermission, undefined, client, undefined, origin)
         if (!origin && selectionRevision === this.selectionRevision) {
           this.state.activeThreadId = threadId; this.state.activeProjectId = command.projectId
@@ -5259,7 +5277,7 @@ export class AgentControl {
       case 'configure-thread': {
         this.canAct(undefined, false)
         if (command.modelId === undefined && command.reasoningEffort === undefined && command.runtimeMode === undefined && command.providerMode === undefined
-          && command.fastMode === undefined) throw new Error('Choose a thread setting to change.')
+          && command.fastMode === undefined && command.speed === undefined) throw new Error('Choose a thread setting to change.')
         if (this.thread(command.threadId).nativeSessionStarted !== false && !capabilitiesForThread(this.state.host, this.thread(command.threadId)).configureThread) throw new Error('This provider does not support changing thread settings.')
         // Checked against the thread as Sotto holds it, without opening it: watching or reading a reaped Claude
         // thread starts its CLI only for the adapter to restart it with the new settings. Each adapter checks
@@ -5275,11 +5293,12 @@ export class AgentControl {
         validate()
         // The thread interface exposes two distinct commands. Each has its own durable identity;
         // a partial or uncertain save cannot be mistaken for an atomic update.
-        if (command.modelId !== undefined || command.reasoningEffort !== undefined || command.fastMode !== undefined) {
+        if (command.modelId !== undefined || command.reasoningEffort !== undefined || command.fastMode !== undefined || command.speed !== undefined) {
           await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId,
             ...(command.modelId !== undefined ? { modelId: command.modelId } : {}),
             ...(command.reasoningEffort !== undefined ? { reasoningEffort: command.reasoningEffort } : {}),
-            ...(command.fastMode !== undefined ? { fastMode: command.fastMode } : {}) }, turn, validate, undefined, client, undefined, origin)
+            ...(command.speed === undefined && command.fastMode !== undefined ? { fastMode: command.fastMode } : {}),
+            ...(command.speed !== undefined ? { speed: command.speed } : {}) }, turn, validate, undefined, client, undefined, origin)
         }
         if (command.runtimeMode !== undefined) await this.dispatch({ type: 'configure-thread', commandId: randomUUID(), threadId: command.threadId, runtimeMode: command.runtimeMode }, turn, validate, undefined, client, undefined, origin)
         // A provider that names its own permission modes takes them on their own command, as runtimeMode does.
@@ -5798,6 +5817,7 @@ export class AgentControl {
       // thread shows, and an entry with nothing left goes.
       const chosen = command
       const covers = (key: string): boolean => chosen[key as keyof typeof chosen] !== undefined || (key === 'reasoningEffort' && chosen.modelId !== undefined)
+        || (key === 'fastMode' && chosen.speed !== undefined) || (key === 'speed' && chosen.fastMode !== undefined)
       this.outbox = this.outbox.flatMap(item => {
         if (item.id === chosen.commandId || item.threadId !== chosen.threadId || !holdsNothingBack(item)) return [item]
         const options = Object.fromEntries(Object.entries(item.options!).filter(([key, value]) => value !== undefined && !covers(key)))
@@ -6396,7 +6416,8 @@ export class AgentControl {
         ? snapshot.projects.some(p => p.id === (this.dependencies.host.resolveProjectId?.(item.entityId ?? '') ?? item.entityId)) : item.type === 'create-thread'
           ? item.entityId !== undefined && shownThread(item.entityId) !== undefined : item.type === 'compact-thread'
             ? thread?.compaction?.commandId === item.id && ['completed', 'failed'].includes(thread.compaction.status) : item.type === 'configure-thread'
-            ? thread !== undefined && item.options !== undefined && Object.entries(item.options).every(([key, value]) => key === 'fastMode' ? (thread.fastMode === true) === value
+            ? thread !== undefined && item.options !== undefined && Object.entries(item.options).every(([key, value]) => key === 'fastMode' ? (thread.speed !== undefined ? thread.speed : thread.fastMode ? 'fast' : null) === (value ? 'fast' : null)
+              : key === 'speed' ? (thread.speed !== undefined ? thread.speed : thread.fastMode ? 'fast' : null) === value
               : thread[key as keyof AgentThread] === (key === 'modelId' && typeof value === 'string' ? this.dependencies.host.resolveModelId?.(value) ?? value : value)) : item.type === 'answer'
             ? thread !== undefined && isThreadProviderConnected(snapshot, thread) && thread.historyStatus !== 'loading' && thread.historyStatus !== 'error'
               && !thread.requests.some(r => r.id === item.requestId) : thread?.status === 'idle'

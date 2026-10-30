@@ -23,8 +23,10 @@ describe('an unused new thread', () => {
     expect(unusedNewThread(state([thread({})]), project)?.id).toBe('thread')
   })
 
-  it('does not reuse an empty thread the user turned fast mode on for, since a new thread starts with it off', () => {
+  it('does not reuse an empty thread the user chose a faster speed for, since a new thread starts at Standard', () => {
     expect(unusedNewThread(state([thread({ fastMode: true })]), project)).toBeUndefined()
+    expect(unusedNewThread(state([thread({ speed: 'ultrafast' })]), project)).toBeUndefined()
+    expect(unusedNewThread(state([thread({ speed: null })]), project)?.id).toBe('thread')
   })
 
   it('does not reopen an empty thread from workspace-settled work', () => {

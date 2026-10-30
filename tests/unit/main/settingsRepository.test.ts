@@ -52,6 +52,28 @@ describe('SettingsRepository', () => {
     expect((await reopened.get()).workerRoles).toEqual(rows)
     expect((await reopened.update({ workerRoles: {} })).workerRoles).toEqual({})
   })
+  it('keeps hidden swarm counts and machine ceilings through role edits, resets and whole saves', async () => {
+    const { filePath, repository: owl } = await createRepository()
+    const forge = '11111111-1111-4111-8111-111111111111'
+    const row: AppSettings['workerRoles']['building'] = { modelId: 'model', reasoningEffort: 'high', workers: { usual: 2, upTo: 5 } }
+    await owl.update({ workerRoles: { building: row }, workerCeiling: 6, workerMachineCeilings: { [forge]: 3 } })
+    const stable = new SettingsRepository(filePath, { workerRolesEnabled: true, workerSwarmsEnabled: false })
+    const whole = await stable.save({ ...DEFAULT_SETTINGS, autoPaste: false })
+    expect(whole).toMatchObject({ autoPaste: false, workerRoles: { building: row }, workerCeiling: 6, workerMachineCeilings: { [forge]: 3 } })
+    const edited = { modelId: 'another-model', reasoningEffort: null, workers: row.workers }
+    expect((await stable.update({ workerRoles: { building: { modelId: edited.modelId, reasoningEffort: null } } })).workerRoles.building).toEqual(edited)
+    // A row reset cannot discard counts the current build does not show; the counted row remains whole.
+    expect((await stable.update({ workerRoles: {} })).workerRoles.building).toEqual(edited)
+    const before = await readFile(filePath, 'utf8')
+    await expect(stable.update({ workerCeiling: 2 })).rejects.toThrow('Sotto Owl')
+    await expect(stable.update({ workerMachineCeilings: {} })).rejects.toThrow('Sotto Owl')
+    await expect(stable.update({ workerRoles: { building: { ...edited, workers: { usual: 1, upTo: 2 } } } })).rejects.toThrow('Sotto Owl')
+    expect(await readFile(filePath, 'utf8')).toBe(before)
+    expect(await stable.reset()).toMatchObject({ workerRoles: { building: edited }, workerCeiling: 6, workerMachineCeilings: { [forge]: 3 } })
+    const reopened = new SettingsRepository(filePath, { workerSwarmsEnabled: true })
+    expect((await reopened.get()).workerRoles.building).toEqual(edited)
+    expect(await reopened.reset()).toMatchObject({ workerRoles: {}, workerCeiling: DEFAULT_SETTINGS.workerCeiling, workerMachineCeilings: {} })
+  })
   it('keeps saved extra and hold dictation shortcuts whole through a build without them', async () => {
     const { filePath, repository: owl } = await createRepository()
     await owl.update({ pressShortcuts: ['Alt+Shift+D'], holdShortcuts: ['Fn'] })

@@ -39,7 +39,7 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'settle-thread': ['threadId'], 'restore-thread': ['threadId'],
   'rename-thread': ['threadId', 'title'], 'regenerate-thread-title': ['threadId'],
   'create-thread': ['projectId', 'title', 'modelId', 'titleSource', 'threadId', 'workingCopy', 'baseBranch', 'startFromOrigin',
-    'existingWorktreePath', 'reasoningEffort', 'runtimeMode', 'providerMode'],
+    'existingWorktreePath', 'reasoningEffort', 'runtimeMode', 'providerMode', 'speed', 'fastMode'],
   // Continuing an agent as its own thread makes a new thread on the new-thread defaults, as create-thread does, and asks
   // the model nothing (#1028). Only on a listener that offers `thread-starts`: see remoteCommandRefusal.
   'continue-agent': ['threadId', 'agentId', 'newThreadId', 'modelId', 'handover', 'workingCopy', 'baseBranch', 'startFromOrigin'],
@@ -77,8 +77,8 @@ export const REMOTE_COMMANDS: { readonly [T in CommandType]?: Fields<T> } = {
   'babysit-pull-request': ['threadId', 'url'], 'stop-babysitting': ['threadId', 'url'],
   // Don't restart takes back a restart Sotto scheduled (ADR-0144): it sends and grants nothing, so pairing is enough.
   'cancel-restart': ['threadId'],
-  // Fast mode changes a thread's speed and price, as a model does, and answers no permission (ADR-0143).
-  'configure-thread': ['threadId', 'modelId', 'reasoningEffort', 'runtimeMode', 'providerMode', 'fastMode'],
+  // Speed changes a thread's speed and price, as a model does, and answers no permission (ADR-0143).
+  'configure-thread': ['threadId', 'modelId', 'reasoningEffort', 'runtimeMode', 'providerMode', 'fastMode', 'speed'],
   'select-thread': ['threadId'], 'observe-threads': ['threadIds'], 'load-earlier-messages': ['threadId', 'throughMessageId'],
   // Dismiss all marks failed threads seen, as opening each would (ADR-0092). It answers no request: a thread waiting on a
   // permission or a question is never marked, so pairing is enough.

@@ -45,7 +45,8 @@ export const watcherPhoneSendSchema = z.object({ origin: watcherPhoneOriginSchem
   // WATCHER_PHONE_FILES_FEATURE its staged files too.
   images: agentAttachmentHandlesSchema.min(1).optional(),
   // Only from a phone that negotiated WATCHER_PHONE_STEER_FEATURE: while Watcher works the message steers into its turn,
-  // or goes next as its own turn when it cannot. Absent, a send while Watcher works is refused, as before (#1229).
+  // or goes next as its own turn when it cannot. A pending user card queues either version; otherwise,
+  // absent delivery, a send while Watcher works is refused, as before (#1229).
   delivery: z.literal('steer').optional() }).strict()
   .refine(send => send.text.trim().length > 0 || send.images !== undefined, 'Send words, photos or both.')
 /** One photo of a message in Watcher's conversation, for the phone to draw: Watcher's thread is never a phone's to read. */

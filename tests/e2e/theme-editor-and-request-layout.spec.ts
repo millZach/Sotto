@@ -357,7 +357,7 @@ test('a minimized editor rests at the window edge, clear of the sidebar foot lin
 // ---------------------------------------------------------------------------------------------------------------------
 // 4: the composer beside a pending permission, with the compact Grid/Row switch and a structured form
 
-const INSTRUCTION = 'Allow or deny the request above to continue.'
+const QUEUE_HINT = 'Queued until you answer the card'
 const formMessage = 'The release-notes server needs a publishing target before it drafts v0.9.'
 const codexForm = (): AgentRequest => pendingRequest('release-notes', 'mcpServer/elicitation/request', {
   threadId: 'native-thread', itemId: 'mcp-call-7', mode: 'form', message: formMessage,
@@ -366,11 +366,11 @@ const codexForm = (): AgentRequest => pendingRequest('release-notes', 'mcpServer
   } },
 }, 'native-thread')!.request
 
-/** How often the composer states the instruction, counting its placeholder. */
-const composerSays = (pane: Locator) => pane.locator('form.thread-prompt').evaluate((form, instruction) => {
+/** How often the composer states the queue hold, counting its placeholder. */
+const composerSays = (pane: Locator) => pane.locator('form.thread-prompt').evaluate((form, hint) => {
   const prompt = form.querySelector('.prompt-editor')!
-  return (form.textContent!.split(instruction).length - 1) + (prompt.getAttribute('data-placeholder') === instruction ? 1 : 0)
-}, INSTRUCTION)
+  return (form.textContent!.split(hint).length - 1) + (prompt.getAttribute('data-placeholder') === hint ? 1 : 0)
+}, QUEUE_HINT)
 
 /** Deny and Allow come into view uncovered from the keyboard. */
 async function expectDecisionReachable(page: Page, pane: Locator): Promise<void> {
@@ -385,7 +385,7 @@ async function expectDecisionReachable(page: Page, pane: Locator): Promise<void>
   }
 }
 
-test('the composer beside a pending permission says to allow or deny once, through the grid, the compact row and a structured form', async () => {
+test('the composer beside a pending permission offers queueing with one hold hint, through the grid, the compact row and a structured form', async () => {
   test.setTimeout(240_000)
   await mkdir(SHOTS, { recursive: true })
   const profileOwner = await ownedE2EProfile({ prefix: 'sotto-e2e-final-visual-fixes-requests-' })
@@ -403,8 +403,8 @@ test('the composer beside a pending permission says to allow or deny once, throu
       await page.evaluate(async () => { await window.sotto!.agents!.command({ type: 'connect' }) })
       // Panes are keyed by the host that owns their thread; test events still take the bare ID.
       const key = await hostKeys(page)
-      // A working thread with nothing to send shows Stop in Send's place, and the prompt is off while a permission is
-      // pending, so the draft is written before the pane opens: with something to send, Send (here Queue) comes back.
+      // A working thread with nothing to send shows Stop in Send's place. Start with a draft so the queue action
+      // is visible beside the pending permission throughout the layout checks.
       await page.evaluate(async () => window.sotto!.agents!.command({ type: 'save-thread-draft', composer: 'manual', threadId: 'visual-gate',
         draftId: crypto.randomUUID(), text: 'Check the flaky capture once the request is answered.', attachments: [], requestId: null }))
       await size(launched, 1600, 1000)
@@ -419,10 +419,13 @@ test('the composer beside a pending permission says to allow or deny once, throu
       await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(4)
       const gate = pane('visual-gate')
       const prompt = promptField(gate)
-      await expect(prompt).toHaveAttribute('data-placeholder', INSTRUCTION)
-      // The Send button still says why it is off, and the held draft stays in the prompt.
+      await expect(prompt).toHaveAttribute('data-placeholder', QUEUE_HINT)
+      await expect(prompt).toHaveAttribute('contenteditable', 'true')
+      // The draft stays editable and can join the queue while the card waits for its own answer.
       await expectPromptText(prompt, 'Check the flaky capture once the request is answered.')
-      await expect(gate.getByRole('button', { name: /^(Send|Queue) prompt$/u })).toHaveAttribute('title', INSTRUCTION)
+      const queue = gate.getByRole('button', { name: 'Queue prompt', exact: true })
+      await expect(queue).toBeEnabled()
+      await expect(queue).toHaveAttribute('title', 'Queue prompt')
 
       for (const [width, height, name] of [[1600, 1000, '1600'], [1280, 800, '1280x800']] as const) {
         await size(launched, width, height)
@@ -457,8 +460,8 @@ test('the composer beside a pending permission says to allow or deny once, throu
       }
       await appearance(page, 'dark')
 
-      // A structured form in the same window: its explanation shows once in its card, and the composer says only
-      // that the question is answered above.
+      // A structured form in the same window: its explanation shows once in its card, and the editable composer
+      // says a queued follow-up waits for the card's answer.
       await page.evaluate(async request => window.sottoE2E!.agentEvent!({ type: request.kind, threadId: 'footer-links', text: request.text, request, status: 'running' }), codexForm())
       await size(launched, 1280, 800)
       const links = pane('footer-links')
@@ -467,6 +470,8 @@ test('the composer beside a pending permission says to allow or deny once, throu
       expect(await form.evaluate((element, message) => element.textContent!.split(message).length - 1, formMessage)).toBe(1)
       const linkComposer = links.locator('form.thread-prompt')
       const placeholder = await promptField(linkComposer).getAttribute('data-placeholder')
+      expect(placeholder).toBe(QUEUE_HINT)
+      await expect(promptField(linkComposer)).toHaveAttribute('contenteditable', 'true')
       const statusText = await linkComposer.locator('.thread-prompt__status').allTextContents()
       expect(statusText.filter(text => text === placeholder)).toEqual([])
       await form.evaluate(element => element.scrollIntoView({ block: 'start' }))

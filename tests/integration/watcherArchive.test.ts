@@ -246,6 +246,41 @@ it('archives a request again as it now stands when it changed after an earlier a
     .toMatchObject({ requests: [{ id, participants: [{ state: 'taken-over' }, {}] }] })
 })
 
+it("saves a paired desktop's archived work with Keep local history off, apart from this computer's own, and answers for it after a restart (#1759)", async () => {
+  const workspace = await workspaceFixture(undefined, { history: true })
+  cleanups.push(workspace.remove)
+  const f = await agentControlFixture({ directory: workspace.root, host: workspace.host,
+    credentialOptions: { mode: 'unavailable' }, control: { historyEnabled: () => false, watcherEnabled: true } })
+  let control = f.control
+  cleanups.push(async () => { control.dispose(); await control.closed(); await workspace.stop() })
+  await control.start()
+  const hostId = control.hostId()!, targets = ['synthetic-worker', 'synthetic-other'].map(threadId => ({ hostId, threadId }))
+  const master = { target: { hostId: randomUUID(), threadId: randomUUID() }, projectId: 'synthetic-project', provider: 'codex' as const, creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
+  await control.updateWatcher(record => {
+    addWatcherHistory(record, targets, { requests: 120, operations: 120 }, master.target)
+    // Every other request was a paired desktop's, interleaved with this computer's own as they came.
+    record.requests.forEach((request, index) => { if (index % 2 === 0) request.remoteOrigin = { clientId: 'synthetic-desktop', master, creationOperationId: master.creationOperationId, ceiling: 'approval-required' } })
+  })
+  const requests = control.watcherRecordView().requests, ids = requests.map(request => request.id)
+  const desktop = requests.filter(request => request.remoteOrigin).map(request => request.id), own = ids.filter(id => !desktop.includes(id))
+  const receipts = new Map(control.watcherRecordView().operations.filter(operation => desktop.includes(operation.requestId)).map(operation => [operation.id, operation.receiptId] as const))
+  expect(await control.archiveWatcherWork(ids, () => ids)).toBe(120)
+  expect(control.watcherRecordView().requests).toEqual([])
+  // On disk, only the desktop's work, in batches of its own; this computer's is held in memory for this run.
+  const saved = (await readFile(join(f.root, WATCHER_ARCHIVE_FILE), 'utf8')).split('\n').filter(Boolean)
+    .flatMap(line => (JSON.parse(line) as { requests: { id: string }[] }).requests.map(request => request.id))
+  expect(saved.sort()).toEqual([...desktop].sort())
+  expect(own.every(id => control.archivedWatcherWork()!.hasRequest(id))).toBe(true)
+  // After a restart with history off, every receipt of the desktop's is there as it was, and nothing of this computer's.
+  control.dispose(); await control.closed()
+  control = f.create(); await control.start()
+  const archive = control.archivedWatcherWork()!
+  await archive.ready()
+  expect(own.some(id => archive.hasRequest(id))).toBe(false)
+  const read = await archive.read({ operations: [...receipts.keys()] })
+  expect(new Map(read.operations.map(operation => [operation.id, operation.receiptId] as const))).toEqual(receipts)
+})
+
 it('archives nothing and keeps the record whole where Watcher is off', async () => {
   const workspace = await workspaceFixture(undefined, { history: true })
   cleanups.push(workspace.remove)

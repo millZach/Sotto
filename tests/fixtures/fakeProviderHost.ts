@@ -62,7 +62,7 @@ export class FakeProviderHost implements AgentHost {
     } else if (command.type === 'create-thread') {
       if (!this.state.threads.some(thread => thread.id === command.threadId)) {
         this.state.threads.push({ id: command.threadId, projectId: command.projectId, title: command.title,
-          modelId: command.modelId, status: 'idle', messages: [], requests: [] })
+          modelId: command.modelId, ...(command.speed ? { speed: command.speed } : {}), status: 'idle', messages: [], requests: [] })
       }
     } else {
       const thread = this.state.threads.find(thread => thread.id === command.threadId)

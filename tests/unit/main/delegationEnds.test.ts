@@ -4,13 +4,15 @@
  * reaches an outcome, Sotto stops looking at it, and the delegating thread is told.
  */
 import { randomUUID } from 'node:crypto'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { DelegationService, type DelegationControlHooks, type DelegationCoordinator } from '../../../src/main/agents/delegation'
 import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentThread } from '../../../src/shared/agents'
 import type { DelegationNews } from '../../../src/shared/delegation'
+import type { SwarmReceipt, WorkerSwarm } from '../../../src/shared/workerSwarms'
+import { WorkerAdmission } from '../../../src/main/agents/workerAdmission'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -100,4 +102,275 @@ it('ends the briefs of a delegated thread that is gone, stops looking at them an
   const read = await f.delegation.read('parent', { delegation: working.id }) as { delegation: { outcome: string; note: string } }
   expect(read.delegation).toMatchObject({ outcome: 'unknown', note: expect.stringMatching(/gone from Sotto/u) })
   expect(f.delegation.views('parent').made).toMatchObject([{ id: working.id, unknownWhy: 'gone' }, { id: waiting.id, outcome: 'failed', notSent: 'provider' }])
+})
+
+/** Real admission and delivery, without a provider process or a worktree on disk. */
+async function swarmService(ceiling = 4, saved?: { root: string; snapshot: AgentHostSnapshot },
+  delivery: { beforeWakeUp?: () => Promise<void>; pending?: boolean; queued?: DelegationNews[] } = {}) {
+  const root = saved?.root ?? await mkdtemp(join(tmpdir(), 'sotto-delegation-ends-'))
+  if (!saved) roots.push(root)
+  const snapshot: AgentHostSnapshot = saved?.snapshot ?? { ...EMPTY_AGENT_HOST, connected: true,
+    projects: [{ id: 'project', providerId: 'codex', title: 'Project', path: join(root, 'project') }],
+    models: [{ id: 'model', provider: 'codex', providerId: 'codex', name: 'Model', ready: true, runtimeModes: ['approval-required'] }],
+    threads: [thread('parent', { lastUserMessageId: 'root', messages: [{ id: 'root', role: 'user', text: 'Review it', createdAt: at }] })] }
+  let hooks: DelegationControlHooks | undefined
+  const created: { id: string; workingCopy: string | undefined }[] = [], sent: string[] = [], told: DelegationNews[] = []
+  const admission = new WorkerAdmission({ ceiling: () => ceiling,
+    working: () => new Set(snapshot.threads.filter(item => item.status === 'running').map(item => item.id)) })
+  const control: DelegationCoordinator = {
+    hostId: () => 'host', watcherSnapshot: () => snapshot, configuration: () => ({}),
+    useDelegation: given => { hooks = given; return () => { hooks = undefined } },
+    commandFromDelegation: async (command, guard) => {
+      guard()
+      if (command.type === 'create-thread') {
+        created.push({ id: command.threadId!, workingCopy: command.workingCopy })
+        snapshot.threads.push(thread(command.threadId!, { modelId: command.modelId! }))
+      } else if (command.type === 'manual-send') {
+        const target = snapshot.threads.find(item => item.id === command.threadId)!, messageId = hooks!.messageIdFor(command.draftId!)!
+        target.messages.push({ id: messageId, role: 'user', text: command.text, createdAt: at })
+        target.lastUserMessageId = messageId; target.lastTurn = { id: messageId, status: 'running' }; target.status = 'running'
+        sent.push(command.threadId)
+      }
+      return { host: snapshot } as never
+    },
+    hasPendingThreadWork: () => delivery.pending === true, hasUserDraft: () => false, refreshDelegationObservation: () => undefined,
+    hasQueuedDelegationNews: (_threadId, ids) => delivery.queued?.some(news => news.items.some(item => ids.has(item.delegationId))) === true,
+    deliverWakeUp: async (threadId, news) => {
+      await delivery.beforeWakeUp?.()
+      told.push(news)
+      const target = snapshot.threads.find(item => item.id === threadId)!, messageId = randomUUID()
+      target.messages.push({ id: messageId, role: 'user', text: 'Swarm completion', wakeUp: true, hiddenWakeUp: true, createdAt: at })
+      target.lastUserMessageId = messageId; target.lastTurn = { id: messageId, status: 'running' }; target.status = 'running'
+    },
+  }
+  const delegation = new DelegationService({ directory: root, control,
+    host: { setDelegatedBy: async (id, parent) => { snapshot.threads.find(item => item.id === id)!.delegatedBy = parent }, threadMessage: () => undefined },
+    historyEnabled: () => true, swarms: { admission } })
+  await delegation.recover()
+  const finish = async (id: string) => {
+    const target = snapshot.threads.find(item => item.id === id)!
+    target.status = 'idle'; target.lastTurn = { id: target.lastUserMessageId!, status: 'completed' }
+    target.messages.push({ id: randomUUID(), role: 'assistant', text: 'Done', createdAt: at })
+    hooks!.observe(snapshot); await settle(); await settle()
+  }
+  const start = async (prompts: string[] | null = ['Check errors', 'Check permissions']) => {
+    const input = { work: 'code-review', brief: 'Review it', provider: 'codex', model: 'model', permission: 'approval-required',
+      count: 2, ...(prompts ? { prompts } : {}), retry_key: randomUUID(), wait_seconds: 0 }
+    const receipt = await delegation.delegate('parent', input) as SwarmReceipt & { status: string }
+    return { input, receipt }
+  }
+  const file = async (): Promise<{ swarms: WorkerSwarm[]; delegations: Record<string, unknown>[] }> => {
+    await (delegation as unknown as { save(): Promise<void> }).save()
+    return JSON.parse(await readFile(join(root, 'delegations.json'), 'utf8'))
+  }
+  return { root, delegation, admission, snapshot, created, sent, told, finish, start, file, observe: () => hooks!.observe(snapshot),
+    newsReady: (id: string, news: DelegationNews[]) => hooks!.newsReady!(id, news) }
+}
+
+it('starts one lead and one independent worktree per angle, and retries the same group without more starts', async () => {
+  const f = await swarmService(), { receipt, input } = await f.start()
+  expect(receipt).toMatchObject({ status: 'ok', queued: 0, costShape: { angles: 2, lead: 1 } })
+  expect(receipt.receipts).toHaveLength(2)
+  expect(f.created).toHaveLength(3)
+  expect(f.created.every(item => item.workingCopy === 'independent')).toBe(true)
+  expect(f.snapshot.threads.filter(item => item.delegatedBy === receipt.lead.thread)).toHaveLength(2)
+  expect(await f.delegation.delegate('parent', input)).toMatchObject({ swarmId: receipt.swarmId, lead: receipt.lead })
+  expect(f.created).toHaveLength(3)
+  expect(await f.delegation.delegate('parent', { ...input, prompts: ['Different', 'Angles'] })).toMatchObject({ status: 'refused', code: 'RETRY_KEY_CONFLICT' })
+  f.delegation.close(); f.admission.close()
+})
+
+it('queues extra angles in order at a ceiling of one, removes a stopped angle, and reserves the synthesis', async () => {
+  const f = await swarmService(1), { receipt } = await f.start()
+  expect(receipt.queued).toBe(2)
+  expect(f.created).toHaveLength(1)
+  expect(f.delegation.cancelQueued(receipt.receipts[1]!.thread!)).toBe(true)
+  await f.finish(receipt.lead.thread)
+  expect(f.created.map(item => item.id)).toEqual([receipt.lead.thread, receipt.receipts[0]!.thread])
+  await vi.waitFor(() => expect(f.sent).toContain(receipt.receipts[0]!.thread))
+  expect(f.told).toHaveLength(0)
+  expect(f.delegation.canSettle(receipt.lead.thread)).toBe(false)
+  await f.finish(receipt.receipts[0]!.thread!)
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  expect(f.delegation.canSettle(receipt.lead.thread)).toBe(false)
+  expect(f.delegation.swarmReceiptForLead(receipt.lead.thread)).toMatchObject({ done: 1, queued: 0,
+    receipts: [{ state: 'answered' }, { state: 'stopped' }] })
+  await f.finish(receipt.lead.thread)
+  expect(f.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  expect(f.admission.reserved('this-computer')).toBe(0)
+  f.delegation.close(); f.admission.close()
+})
+
+it('lets an unplanned lead fill its reserved angles once and keeps their outcomes readable', async () => {
+  const f = await swarmService(), { receipt, input } = await f.start(null)
+  expect(f.created).toHaveLength(1)
+  expect(receipt.receipts.map(item => item.state)).toEqual(['planned', 'planned'])
+  const filled = await f.delegation.delegate(receipt.lead.thread, { ...input, prompts: ['Review auth', 'Review storage'] }) as SwarmReceipt
+  expect(filled.swarmId).toBe(receipt.swarmId)
+  expect(f.created).toHaveLength(3)
+  await f.delegation.delegate(receipt.lead.thread, { ...input, prompts: ['Review auth', 'Review storage'] })
+  expect(f.created).toHaveLength(3)
+  await f.finish(filled.receipts[0]!.thread!)
+  await f.finish(filled.receipts[1]!.thread!)
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  expect(await f.delegation.read(receipt.lead.thread, { delegation: filled.receipts[0]!.delegation })).toMatchObject({ delegation: { outcome: 'answered' } })
+  expect(await f.delegation.read(receipt.lead.thread, { delegation: receipt.swarmId })).toMatchObject({ swarmId: receipt.swarmId, done: 2 })
+  f.delegation.close(); f.admission.close()
+})
+
+it('keeps a single start ordinary and uses the one requested angle brief', async () => {
+  const f = await swarmService()
+  const answer = await f.delegation.delegate('parent', { work: 'code-review', brief: 'Overall task', provider: 'codex', model: 'model',
+    permission: 'approval-required', count: 1, prompts: ['Only this angle'], retry_key: randomUUID(), wait_seconds: 0 }) as { delegation: { thread: string } }
+  expect(f.created).toHaveLength(1)
+  expect(f.delegation.swarmForThread(answer.delegation.thread)).toBeUndefined()
+  expect(f.snapshot.threads.find(item => item.id === answer.delegation.thread)?.messages[0]?.text).toBe('Only this angle')
+  expect(await f.delegation.delegate('parent', { work: 'code-review', brief: 'Task', prompts: ['One angle'] })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+  f.delegation.close(); f.admission.close()
+})
+
+it('cancels the whole swarm when the caller names the lead delegation', async () => {
+  const f = await swarmService(1), { receipt } = await f.start()
+  const cancelled = await f.delegation.cancel('parent', { delegation: receipt.lead.delegation }) as SwarmReceipt
+  expect(cancelled.receipts.map(item => item.state)).toEqual(['stopped', 'stopped'])
+  expect(f.delegation.swarmForThread(receipt.lead.thread)).toMatchObject({ stopped: true, synthesisDone: false })
+  expect(f.admission.waiting('this-computer')).toBe(0)
+  expect(f.created).toHaveLength(1)
+  f.delegation.close(); f.admission.close()
+})
+
+it('recovers a synthesis that was only waiting for the machine ceiling', async () => {
+  const f = await swarmService(1), { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  await vi.waitFor(() => expect(f.sent).toContain(receipt.receipts[0]!.thread))
+  await f.finish(receipt.receipts[0]!.thread!)
+  await vi.waitFor(() => expect(f.sent).toContain(receipt.receipts[1]!.thread))
+  f.snapshot.threads.push(thread('busy', { status: 'running' }))
+  await f.finish(receipt.receipts[1]!.thread!)
+  expect(f.admission.waiting('this-computer')).toBe(1)
+  const queued = (await f.file()).swarms[0]!
+  expect(queued.synthesisStarted).toBeUndefined()
+  expect(queued.completionSent).toBeUndefined()
+  f.delegation.close(); f.admission.close()
+  const restored = await swarmService(1, f)
+  restored.observe()
+  expect(restored.admission.waiting('this-computer')).toBe(1)
+  restored.snapshot.threads.find(item => item.id === 'busy')!.status = 'idle'
+  restored.observe()
+  await vi.waitFor(() => expect(restored.told.some(news => news.items[0]?.delegationId === receipt.receipts[0]!.delegation)).toBe(true))
+  restored.delegation.close(); restored.admission.close()
+})
+
+it('reconciles a saved synthesis queue and an uncertain send before retrying a wake-up that never landed', async () => {
+  let entered = false
+  const f = await swarmService(4, undefined, { beforeWakeUp: () => { entered = true; return new Promise(() => undefined) } })
+  const { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  await f.finish(receipt.receipts[0]!.thread!)
+  await f.finish(receipt.receipts[1]!.thread!)
+  await vi.waitFor(() => expect(entered).toBe(true))
+  const unsent = (await f.file()).swarms[0]!
+  expect(unsent.synthesisStarted).toBe(true)
+  expect(unsent.completionSent).toBeUndefined()
+  f.delegation.close(); f.admission.close()
+  const queued: DelegationNews = { source: 'delegation', items: receipt.receipts.map(item => ({ delegationId: item.delegation!, threadId: item.thread!, outcome: 'answered' })) }
+  const delivery = { queued: [queued], pending: false }
+  f.snapshot.threads.push(thread('busy', { status: 'running' }))
+  const restored = await swarmService(1, f, delivery)
+  restored.observe(); await settle()
+  expect(restored.told.some(news => news.items[0]?.delegationId === receipt.receipts[0]!.delegation)).toBe(false)
+  expect(restored.newsReady(receipt.lead.thread, [queued])).toBe(false)
+  expect(restored.admission.waiting('this-computer')).toBe(1)
+  restored.snapshot.threads.find(item => item.id === 'busy')!.status = 'idle'
+  restored.admission.refresh()
+  expect(restored.newsReady(receipt.lead.thread, [queued])).toBe(true)
+  delivery.queued = []; delivery.pending = true
+  const lead = restored.snapshot.threads.find(item => item.id === receipt.lead.thread)!
+  lead.messages.push({ id: 'restart-note', role: 'user', text: 'Resume after restart', wakeUp: true, createdAt: at })
+  lead.lastUserMessageId = 'restart-note'; lead.lastTurn = { id: 'restart-note', status: 'completed' }
+  restored.observe(); await settle()
+  expect(restored.told.some(news => news.items[0]?.delegationId === receipt.receipts[0]!.delegation)).toBe(false)
+  delivery.pending = false
+  restored.observe()
+  await vi.waitFor(() => expect(restored.told.filter(news => news.items[0]?.delegationId === receipt.receipts[0]!.delegation)).toHaveLength(1))
+  restored.delegation.close(); restored.admission.close()
+})
+
+it('does not resend a synthesis wake-up that landed before its completion marker was saved', async () => {
+  const f = await swarmService(), { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  await f.finish(receipt.receipts[0]!.thread!)
+  await f.finish(receipt.receipts[1]!.thread!)
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  const saved = await f.file()
+  f.delegation.close(); f.admission.close()
+  saved.swarms[0]!.completionSent = false
+  delete saved.swarms[0]!.synthesisMessageId
+  await writeFile(join(f.root, 'delegations.json'), JSON.stringify(saved))
+  const restored = await swarmService(4, f)
+  restored.observe(); await settle()
+  expect(restored.told.some(news => news.items[0]?.delegationId === receipt.receipts[0]!.delegation)).toBe(false)
+  await restored.finish(receipt.lead.thread)
+  expect(restored.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  restored.delegation.close(); restored.admission.close()
+})
+
+it('delivers synthesis after more than five failed attempts without restarting or duplicating it', async () => {
+  let attempts = 0
+  const f = await swarmService(4, undefined, { beforeWakeUp: async () => {
+    if (++attempts <= 6) throw new Error('Provider unavailable')
+  } })
+  const { receipt } = await f.start()
+  await f.finish(receipt.lead.thread)
+  await f.finish(receipt.receipts[0]!.thread!)
+  await f.finish(receipt.receipts[1]!.thread!)
+  await vi.waitFor(() => expect(attempts).toBe(1))
+  for (let expected = 2; expected <= 7; expected++) {
+    await settle()
+    f.observe()
+    await vi.waitFor(() => expect(attempts).toBe(expected))
+  }
+  await vi.waitFor(() => expect(f.told).toHaveLength(1))
+  expect((await f.file()).swarms[0]?.completionSent).toBe(true)
+  f.observe(); await settle()
+  expect(attempts).toBe(7)
+  expect(f.told).toHaveLength(1)
+  await f.finish(receipt.lead.thread)
+  expect(f.delegation.canSettle(receipt.lead.thread)).toBe(true)
+  f.delegation.close(); f.admission.close()
+})
+
+it('lets the original plan retry fill only angles with no saved start after a restart', async () => {
+  const f = await swarmService(), { receipt, input } = await f.start()
+  const saved = await f.file()
+  f.delegation.close(); f.admission.close()
+  const swarm = saved.swarms[0]!, first = swarm.members[0]!, second = swarm.members[1]!
+  const originalFirstId = first.threadId, originalSecondId = second.threadId
+  // The first admission reached disk before its link; the second never reached admission.
+  first.state = 'planned'; delete first.delegationId; delete first.threadId
+  saved.delegations = saved.delegations.filter(record => record['id'] !== second.delegationId)
+  second.state = 'planned'; delete second.delegationId; delete second.threadId
+  swarm.planned = true
+  f.snapshot.threads = f.snapshot.threads.filter(item => item.id !== originalSecondId)
+  await writeFile(join(f.root, 'delegations.json'), JSON.stringify(saved))
+  const restored = await swarmService(4, f)
+  expect(restored.delegation.swarmReceiptForLead(receipt.lead.thread)?.receipts.map(item => item.state)).toEqual(['unknown', 'planned'])
+  const retried = await restored.delegation.delegate('parent', input) as SwarmReceipt
+  expect(retried.receipts[0]).toMatchObject({ thread: originalFirstId, state: 'unknown' })
+  expect(retried.receipts[1]?.thread).toBeDefined()
+  expect(restored.created).toHaveLength(1)
+  restored.delegation.close(); restored.admission.close()
+})
+
+it('keeps saved swarms readable after their history exceeds two thousand groups', async () => {
+  const f = await swarmService(), { receipt } = await f.start(null)
+  const saved = await f.file(), template = saved.swarms[0]!
+  f.delegation.close(); f.admission.close()
+  saved.swarms = Array.from({ length: 2_001 }, (_, index) => ({ ...template, id: randomUUID(), retryKey: randomUUID(), leadKey: randomUUID(), leadThreadId: `lead-${index}` }))
+  await writeFile(join(f.root, 'delegations.json'), JSON.stringify(saved))
+  const restored = await swarmService(4, f)
+  expect(restored.delegation.swarmRows()).toHaveLength(2_001)
+  expect((await restored.file()).swarms).toHaveLength(2_001)
+  expect(restored.delegation.swarmReceiptForLead('lead-2000')?.receipts).toHaveLength(receipt.receipts.length)
+  restored.delegation.close(); restored.admission.close()
 })

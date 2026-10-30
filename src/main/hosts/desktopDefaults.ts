@@ -1,6 +1,12 @@
 import type { AgentRuntimeMode } from '../../shared/agents'
 import type { DesktopDefaultsInput, DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { WorkerRoleChoices } from '../../shared/workerRoles'
+import { workerMachineCeiling, type WorkerMachineCeilings } from '../../shared/workerMachine'
+
+export interface DesktopWorkerCeilings {
+  readonly workerCeiling: number
+  readonly workerMachineCeilings: WorkerMachineCeilings
+}
 
 /** A host connection as the push uses it: its ID, whether it is remote, and whether it takes desktop defaults. */
 export interface DesktopDefaultsTarget {
@@ -8,6 +14,7 @@ export interface DesktopDefaultsTarget {
   readonly kind: 'local' | 'remote'
   readonly service: {
     readonly supportsHostDelegation?: boolean | undefined
+    readonly supportsWorkerSwarms?: boolean | undefined
     desktopDefaults?(defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt>
   }
 }
@@ -37,6 +44,7 @@ const RETRY_AFTER_MAX_MS = 60_000
 export class DesktopDefaultsPush {
   private mode: AgentRuntimeMode | null = null
   private roles: WorkerRoleChoices | undefined
+  private ceilings: DesktopWorkerCeilings | undefined
   private known = false
   private readonly sending = new Map<string, Promise<void>>()
   /** Hosts whose last send failed: the retry waiting for each and how many failures in a row it follows. */
@@ -45,10 +53,11 @@ export class DesktopDefaultsPush {
   constructor(private readonly options: DesktopDefaultsPushOptions) {}
 
   /** Main says what the defaults are now. Absent roles mean worker roles are off. Sends only when they changed. */
-  update(mode: AgentRuntimeMode | null | undefined, roles: WorkerRoleChoices | undefined): void {
+  update(mode: AgentRuntimeMode | null | undefined, roles: WorkerRoleChoices | undefined, ceilings?: DesktopWorkerCeilings): void {
     const next = mode ?? null
-    if (this.known && next === this.mode && roles === this.roles) return
-    this.mode = next; this.roles = roles; this.known = true
+    if (this.known && next === this.mode && roles === this.roles && ceilings?.workerCeiling === this.ceilings?.workerCeiling
+      && ceilings?.workerMachineCeilings === this.ceilings?.workerMachineCeilings) return
+    this.mode = next; this.roles = roles; this.ceilings = ceilings; this.known = true
     for (const connection of this.options.connections()) this.send(connection)
   }
   /** A host connected, new or again: it is told the defaults, once they are known. */
@@ -64,7 +73,8 @@ export class DesktopDefaultsPush {
     const previous = this.sending.get(connection.hostId) ?? Promise.resolve()
     const next = previous.then(async () => {
       if (this.closed) return
-      const defaults: DesktopDefaultsInput = { newThreadRuntimeMode: this.mode, ...(this.roles ? { workerRoles: this.roles } : {}) }
+      const defaults: DesktopDefaultsInput = { newThreadRuntimeMode: this.mode, ...(this.roles ? { workerRoles: this.roles } : {}),
+        ...this.ceilings && service.supportsWorkerSwarms === true ? { workerCeiling: workerMachineCeiling(this.ceilings, connection.hostId) } : {} }
       try {
         await service.desktopDefaults!(defaults)
         this.options.log?.('desktop-defaults-sent')
@@ -114,14 +124,15 @@ export interface DesktopDefaultsSource {
  * Settings, read through `roles` when a state is published and when Main says they changed. Each host is told on every
  * connection the router takes.
  */
-export function followDesktopDefaults(push: DesktopDefaultsPush, source: DesktopDefaultsSource, roles: () => WorkerRoleChoices | undefined): { rolesChanged(): void; dispose(): void } {
+export function followDesktopDefaults(push: DesktopDefaultsPush, source: DesktopDefaultsSource, roles: () => WorkerRoleChoices | undefined,
+  ceilings: () => DesktopWorkerCeilings | undefined = () => undefined): { rolesChanged(): void; dispose(): void } {
   let mode: AgentRuntimeMode | undefined
   let seen = false
   const offConnected = source.subscribeConnected(connection => push.connected(connection))
-  const offState = source.subscribe(state => { mode = state.configuration.newThreadRuntimeMode; seen = true; push.update(mode, roles()) })
+  const offState = source.subscribe(state => { mode = state.configuration.newThreadRuntimeMode; seen = true; push.update(mode, roles(), ceilings()) })
   return {
     // Before the first state, the roles go with it.
-    rolesChanged: () => { if (seen) push.update(mode, roles()) },
+    rolesChanged: () => { if (seen) push.update(mode, roles(), ceilings()) },
     dispose: () => { offConnected(); offState() },
   }
 }

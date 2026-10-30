@@ -189,6 +189,22 @@ describe("durable project/thread organization", () => {
     expect(f.host.workspaceSnapshot().threads.find(item => item.id === 'child')?.workspaceSettledAt).toBeNull()
   })
 
+  it('settles a swarm lead with its finished angles while unfinished angles stay open', async () => {
+    const f = await fixture(); f.host.enableDelegation()
+    for (const id of ['lead', 'finished', 'queued', 'working']) await local(f, id)
+    for (const id of ['finished', 'queued', 'working']) await f.host.setDelegatedBy(id, 'lead')
+    f.host.useSwarmSettlements(id => id !== 'queued' && id !== 'working')
+    await f.host.setWorkspaceSettled('thread', 'lead', true)
+    let threads = f.host.workspaceSnapshot().threads
+    const settledAt = threads.find(item => item.id === 'lead')?.workspaceSettledAt
+    expect(settledAt).toEqual(expect.any(String))
+    expect(threads.find(item => item.id === 'finished')?.workspaceSettledAt).toBe(settledAt)
+    for (const id of ['queued', 'working']) expect(threads.find(item => item.id === id)?.workspaceSettledAt).toBeNull()
+    await f.host.setWorkspaceSettled('thread', 'lead', false)
+    threads = f.host.workspaceSnapshot().threads
+    for (const id of ['lead', 'finished', 'queued', 'working']) expect(threads.find(item => item.id === id)?.workspaceSettledAt).toBeNull()
+  })
+
   it('leaves a thread and its delegated threads unsettled when saving the settlement fails', async () => {
     const f = await fixture(); f.host.enableDelegation(); await local(f, 'parent'); await local(f, 'child')
     await f.host.setDelegatedBy('child', 'parent')

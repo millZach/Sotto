@@ -130,12 +130,29 @@ describe('a wake-up', () => {
     const f = await fixture()
     for (const threadId of ['workshop', 'docs']) f.host.update(threadId, { requests: [{ id: `permit-${threadId}`, kind: 'permission', text: 'Allow?', options: [] }] })
     const without = await f.control.command({ type: 'manual-send', threadId: 'docs', draftId: randomUUID(), text: 'Do this instead.' })
-    expect(without.error).toContain('Answer the pending question or permission')
+    expect(without.error).toBeNull()
     await f.control.deliverWakeUp('workshop', news(1), { tool: true })
     const sent = await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'Do this instead.' })
-    expect(sent.error).toBe(without.error)
-    expect(f.control.get().followups!.map(item => item.wakeUp ? 'wake-up' : item.text)).toEqual(['wake-up'])
+    expect(sent.error).toBeNull()
+    const queue = f.control.get().followups!
+    expect(queue.filter(item => item.threadId === 'docs').map(item => item.text)).toEqual(['Do this instead.'])
+    expect(queue.filter(item => item.threadId === 'workshop').map(item => item.wakeUp ? 'wake-up' : item.text)).toEqual(['Do this instead.', 'wake-up'])
+    expect(queue.every(item => item.status === 'queued')).toBe(true)
+    for (const threadId of ['workshop', 'docs']) expect(f.control.get().host.threads.find(thread => thread.id === threadId)!.requests).toEqual([
+      expect.objectContaining({ id: `permit-${threadId}`, kind: 'permission' }),
+    ])
     expect(f.host.attempts).toHaveLength(0)
+    for (const threadId of ['docs', 'workshop']) {
+      f.host.update(threadId, { requests: [], status: 'idle', lastTurn: { id: randomUUID(), status: 'completed' } })
+      await expect.poll(() => sends(f.host).filter(command => command.threadId === threadId)).toEqual([
+        expect.objectContaining({ text: 'Do this instead.' }),
+      ])
+    }
+    complete(f.host)
+    await expect.poll(() => sends(f.host).filter(command => command.threadId === 'workshop')).toEqual([
+      expect.objectContaining({ text: 'Do this instead.' }), expect.objectContaining({ wakeUp: true }),
+    ])
+    expect(f.host.attempts.every(command => command.type === 'send')).toBe(true)
   })
 
   it('is taken back, part by part, when babysitting ends quietly, and can be removed as the user\'s follow-ups can', async () => {

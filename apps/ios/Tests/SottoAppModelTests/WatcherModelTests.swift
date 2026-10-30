@@ -994,14 +994,25 @@ final class WatcherModelTests: XCTestCase {
         model.phase(.background)
     }
 
-    @MainActor func testWatcherWaitsForItsOwnRequestBeforeTakingMore() async throws {
-        let model = try await fixture(spec: Spec(ownCard: true))
-        model.drafts[model.watcherDraftKey(laptop)] = "And the webhook thread?"
-        XCTAssertEqual(model.watcherSendHeld(laptop), "Answer Watcher’s request first.")
-        XCTAssertFalse(model.canSendToWatcher(laptop))
+    @MainActor func testWatcherQueuesBehindItsOwnCardWithoutAnsweringIt() async throws {
+        let model = try await fixture(features: Self.steerFeatures, spec: Spec(ownCard: true))
+        let key = model.watcherDraftKey(laptop)
+        model.drafts[key] = "And the webhook thread?"
+        HostConnection.watcherHandler = { op, operation, _ in
+            guard op == "watcher-phone-send", let request = operation["request"] else { throw ClientError.invalidRequest }
+            let queued = self.page(Spec(ownCard: true, observedAt: "2026-10-11T09:03:00.000Z",
+                                       followups: [("q", request["draftId"].string ?? "", "And the webhook thread?", "queued")]))
+            return try self.json(#"{"status":"ok","draftId":"\#(request["draftId"].string ?? "")","state":\#(queued)}"#)
+        }
+        XCTAssertNil(model.watcherSendHeld(laptop))
+        XCTAssertTrue(model.canSendToWatcher(laptop))
         await model.sendToWatcher(laptop)
-        XCTAssertTrue(try connection.watcherCalls.isEmpty, "Nothing was sent")
-        XCTAssertEqual(model.drafts[model.watcherDraftKey(laptop)], "And the webhook thread?")
+        XCTAssertEqual(try calls("watcher-phone-send").count, 1)
+        XCTAssertEqual(model.drafts[key], "")
+        let page = try XCTUnwrap(model.watcherPage(laptop))
+        XCTAssertTrue(page.needsYou.contains { page.isOwn($0) }, "Only the card can answer the request")
+        XCTAssertEqual(page.followups?.map(\.text), ["And the webhook thread?"])
+        XCTAssertNil(WatcherWords.followupNote("queued", page: page, computer: "Laptop"))
         model.phase(.background)
     }
 

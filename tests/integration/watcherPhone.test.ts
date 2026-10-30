@@ -186,7 +186,7 @@ it('does not attach an old receipt to an assistant reply after a later user inst
   expect(f.phone.state(false).receiptGroups.find(row => row.requestId === firstRequest)?.replyMessageId).toBeNull()
 })
 
-it('uses the computer default even when the phone cannot answer and refuses a Watcher send that would answer a card', async () => {
+it('uses the computer default even when the phone cannot answer and queues behind Watcher’s card without answering it', async () => {
   const f = await fixture(), peer = await f.pair()
   f.workspace.adapters.codex.state.models[0]!.runtimeModes = ['approval-required', 'auto-accept-edits']
   f.workspace.adapters.codex.emit()
@@ -197,7 +197,10 @@ it('uses the computer default even when the phone cannot answer and refuses a Wa
   f.native(f.target.threadId).requests = [{ id: 'watcher-question', kind: 'question', text: 'Synthetic question', options: [] }]
   f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   const before = f.workspace.adapters.codex.commands.length
-  expect(await peer.call('blocked-send', f.send(peer.paired.clientId))).toMatchObject({ ok: true, result: { status: 'refused' } })
+  const queued = f.send(peer.paired.clientId)
+  expect(await peer.call('queued-send', queued)).toMatchObject({ ok: true, result: { status: 'ok' } })
+  expect(f.control.watcherFollowups(f.target.threadId)).toEqual([expect.objectContaining({ draftId: queued.request.draftId, text: queued.request.text, status: 'queued' })])
+  expect(f.native(f.target.threadId).requests).toEqual([{ id: 'watcher-question', kind: 'question', text: 'Synthetic question', options: [] }])
   expect(f.workspace.adapters.codex.commands).toHaveLength(before)
 })
 

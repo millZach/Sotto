@@ -77,6 +77,25 @@ afterEach(() => {
 })
 
 describe('follow-up queue in the Threads composer', () => {
+  it.each(['question', 'permission'] as const)('queues beside a pending %s card, including the steer shortcut', async kind => {
+    const state = manualState({ running: true, capabilities: { steer: true } })
+    const thread = state.host.threads.find(item => item.id === THREAD)!
+    const request = kind === 'question'
+      ? { id: 'card', kind, text: 'Which branch?', options: [{ id: 'main', label: 'Main' }, { id: 'release', label: 'Release' }] }
+      : { id: 'card', kind, text: 'Allow the command?', options: [], permissionChoices: [{ id: 'allow', label: 'Allow', kind: 'allow-once' as const }] }
+    thread.requests = [request]
+    const { live, prompt } = mount(state)
+    type(prompt(), 'Next, check the release notes.')
+    expect(screen.getByRole('button', { name: 'Queue prompt' })).toBeEnabled()
+    fireEvent.keyDown(prompt(), { key: 'Enter', ctrlKey: true })
+    await waitFor(() => expect(requests(live, 'queue-followup')).toHaveLength(1))
+    expect(requests(live, 'steer')).toEqual([])
+    expect(requests(live, 'answer')).toEqual([])
+    expect(thread.requests).toEqual([request])
+    expect(screen.getByRole('region', { name: 'Queued messages' })).toHaveTextContent('Queued until you answer the card')
+    expect(promptText(prompt())).toBe('')
+  })
+
   it.each(['unsupported', 'idle', 'uncertain', 'question', 'disconnected', 'settled-project', 'settled-thread'] as const)('does not allow queued steering when %s', async condition => {
     const state = manualState({ running: condition !== 'idle', capabilities: { steer: condition !== 'unsupported' } })
     state.followups = [followup({ id: crypto.randomUUID(), text: 'Queued message', status: condition === 'uncertain' ? 'uncertain' : 'queued' })]

@@ -999,7 +999,7 @@ export class GrokAcpHost implements AgentHost {
     const generation = this.generation
     const profile = await this.checkLaunchProfile(id)
     this.assertGeneration(generation)
-    if (profile) return null
+    if (profile && prompt.purpose !== 'next-prompt') return null
     if (this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
     if (!this.state.connected || !alias?.grokSessionId) return null

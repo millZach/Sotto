@@ -31,7 +31,7 @@
 .worker-role__tag--moved { border: 1px solid var(--tt-field-border); background: transparent; color: var(--tt-text-2); }
 .worker-role__what { margin: -6px 0 0; color: var(--tt-text-muted); font-size: 13px; }
 
-/* The fields: Model across the card, Effort and Permissions side by side, each a field-style chip under its label. */
+/* The fields: Model across the card, then Effort and Speed side by side and Permissions under them, each a field-style chip under its label. */
 .worker-role__fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
 .worker-role__field { display: grid; align-content: start; gap: 5px; min-width: 0; }
 .worker-role__field--full { grid-column: 1 / -1; }
@@ -42,6 +42,12 @@
 .worker-role__field[data-away='true'] .thread-chip { border-style: dashed; border-color: var(--tt-field-border); }
 .worker-role__field .thread-chip-menu__list:not(.thread-chip-menu__list--foot) { min-width: 100%; width: max-content; max-width: min(320px, calc(100vw - 24px)); }
 .worker-role__field .thread-options__caption:not(:empty) { margin-top: 2px; }
+/* Workers (Worker swarms, Owl): Usual and Up to, two small numbers on one line under the role's other fields. */
+.worker-role__counts { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.worker-role__counts > label { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-2); font-size: 13px; }
+.worker-role__count { width: 64px; height: 34px; padding: 0 10px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-card-inset); color: var(--tt-text); font: inherit; font-size: 13.5px; font-variant-numeric: tabular-nums; appearance: textfield; }
+.worker-role__count:hover { border-color: var(--tt-border); }
+.worker-role__count::-webkit-inner-spin-button, .worker-role__count::-webkit-outer-spin-button { margin: 0; appearance: none; }
 .worker-role__none { display: flex; align-items: center; min-height: 34px; padding: 0 11px; border: 1px dashed var(--tt-hairline); border-radius: 8px; color: var(--tt-text-muted); font-size: 13px; }
 p.worker-role__none { margin: 0; }
 
@@ -74,6 +80,9 @@ p.worker-role__none { margin: 0; }
 .worker-role__composer { display: grid; gap: 10px; padding: 12px 12px 10px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-canvas); color: var(--tt-text-muted); font-size: 13px; }
 .worker-role__chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .worker-role__chip { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; height: 28px; padding: 0 9px; border: 1px solid var(--tt-field-border); border-radius: 5px; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.worker-role__chip--speed { padding: 0 7px; }
+.worker-role__chip--speed:not([data-speed='standard']) { color: var(--tt-accent-text); }
+.worker-role__chip--speed > small { align-self: flex-end; margin: 0 0 6px -5px; font-size: 9.5px; font-weight: 700; line-height: 1; }
 .worker-role__chip > span:not(.provider-mark) { overflow: hidden; text-overflow: ellipsis; }
 .worker-role__chip .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
 .worker-role__chip .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }

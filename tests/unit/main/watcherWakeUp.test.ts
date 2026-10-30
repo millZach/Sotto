@@ -82,6 +82,26 @@ it('looks over the threads at most every WATCHER_OBSERVE_MS while one streams, a
   expect(looked).toHaveBeenCalledTimes(2)
 })
 
+it('aggregates angle progress on the lead and holds its planning finish until synthesis', async () => {
+  let pending = true
+  const f = fixture(true, undefined, { swarmPending: () => pending })
+  f.thread.swarm = { id: randomUUID(), leadThreadId: f.thread.id, count: 8, done: 5, failed: 1, queued: 2, synthesisDone: false }
+  f.thread.status = 'idle'; f.thread.lastTurn = { id: 'turn-1', status: 'completed' }
+  f.wakes.observe()
+  await f.advance(WATCHER_BATCH_MAX_MS)
+  const events = f.delivered.flatMap(news => news.events)
+  expect(events.filter(event => event.kind === 'turn-finished')).toHaveLength(0)
+  expect(events.filter(event => event.kind === 'swarm-progress')).toHaveLength(1)
+  expect(watcherNewsText(f.delivered[0]!)).toContain('5 of 8 angles done, 1 failed, 2 queued')
+  f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'swarm-progress')).toHaveLength(1)
+  pending = false
+  f.thread.swarm = { ...f.thread.swarm, done: 7, failed: 1, queued: 0, synthesisDone: true }
+  f.thread.lastTurn = { id: 'synthesis', status: 'completed' }
+  f.wakes.observe(); await f.advance(WATCHER_BATCH_MAX_MS)
+  expect(f.delivered.flatMap(news => news.events).filter(event => event.kind === 'turn-finished')).toHaveLength(1)
+})
+
 it('looks at once when a turn finishes or a request card arrives between two looks', async () => {
   const f = fixture(), after = vi.fn()
   await f.advance(WATCHER_OBSERVE_MS)

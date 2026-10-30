@@ -1,25 +1,25 @@
-import React, { useId, useMemo, useState, type ComponentType, type ReactNode } from 'react'
-import { ArrowLeftRight, BookOpen, FileSearch, Hammer, MousePointer2, Palette, RotateCcw, Users } from 'lucide-react'
+import React, { useEffect, useId, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import { ArrowLeftRight, BookOpen, FileSearch, Hammer, MousePointer2, Palette, RotateCcw, Users, Zap } from 'lucide-react'
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { enabledThreadProviders, hostForThread, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type AgentState, type AgentThread, type ProviderId } from '../../../../shared/agents'
+import { enabledThreadProviders, hostForThread, PROVIDER_LABELS, type AgentModel, type AgentModelSpeed, type AgentRuntimeMode, type AgentSpeed, type AgentState, type AgentThread, type ProviderId } from '../../../../shared/agents'
 import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { RUNTIME_MODE_ORDER } from '../../../../shared/newThreadDefaults'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
-import { capRuntimeMode, defaultModel, fitEffort, fitRuntimeMode, roleInForce, watcherProvidersInWords, withRoleRow, WORKER_ROLES,
-  type RoleInForce, type WorkerRoleChoice, type WorkerRoleChoices, type WorkerRoleId } from '../../../../shared/workerRoles'
+import { capRuntimeMode, defaultModel, fitEffort, fitRuntimeMode, fitSpeed, roleInForce, watcherProvidersInWords, withRoleRow, WORKER_COUNT_MAX, WORKER_COUNTS, WORKER_ROLES, workerCounts,
+  type RoleInForce, type WorkerCount, type WorkerRoleChoice, type WorkerRoleChoices, type WorkerRoleId } from '../../../../shared/workerRoles'
 import { useOptionalAgents, type AgentConnection } from '../../agents/AgentContext'
 import { shownWords, type LaterWords } from './laterWords'
 import { EffortPicker, effortLabel } from '../../agents/EffortPicker'
 import { ModelPicker } from '../../agents/ModelPicker'
 import { newThreadDefaultsCatalog } from '../../agents/newThread'
-import { pendingSettingsStore, settingValues, usePendingSettings } from '../../agents/pendingSettings'
+import { pendingSettingsStore, settingValues, speedPatch, SPEED_STANDARD, usePendingSettings } from '../../agents/pendingSettings'
 import { ProviderMark } from '../../agents/ProviderMark'
-import { ChoiceChip, effortChoices, RUNTIME_LABELS, watcherPermissionFixedReason } from '../../agents/ThreadOptions'
+import { ChoiceChip, effortChoices, offeredSpeeds, RUNTIME_LABELS, speedChoices, speedName, watcherPermissionFixedReason } from '../../agents/ThreadOptions'
 import { useOptionalApp } from '../../state/AppContext'
-import { useHeldProviders } from '../../state/owlFeature'
+import { useHeldProviders, useOwlFeature } from '../../state/owlFeature'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
 import { WatcherPermissionChip } from '../../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../../watcher/watcherRoom'
@@ -36,10 +36,12 @@ const ICONS: Record<WorkerRoleId, RoleIcon> = {
 type ProviderState = 'connected' | 'off' | 'absent'
 type Section = 'settings-agents' | 'settings-providers'
 /** What a row shows: the user's choice when they made one, the default in force otherwise. */
-interface Shown { readonly modelId: string; readonly model: AgentModel | undefined; readonly reasoningEffort: string | null; readonly runtimeMode: AgentRuntimeMode | undefined }
+interface Shown { readonly modelId: string; readonly model: AgentModel | undefined; readonly reasoningEffort: string | null; readonly speed: AgentSpeed | null; readonly runtimeMode: AgentRuntimeMode | undefined }
 type RowStatus = 'chosen' | 'away' | 'moved' | 'default' | 'none'
-/** A model and effort, as Watcher runs on them and as Orchestrating saves them. */
-interface WatcherChoice { readonly modelId: string; readonly reasoningEffort: string | null }
+/** A model, effort and speed, as Watcher runs on them and as Orchestrating saves them. */
+interface WatcherChoice { readonly modelId: string; readonly reasoningEffort: string | null; readonly speed: AgentSpeed | null }
+/** A row's change from a card: any of its settings, the rest kept. */
+interface RowPatch { readonly modelId?: string; readonly reasoningEffort?: string | null; readonly speed?: AgentSpeed | null; readonly runtimeMode?: AgentRuntimeMode; readonly workers?: WorkerCount }
 /** What a line under the heading says was done, and what Undo puts back: the saved rows, and Watcher as it was. */
 interface Said { readonly text: LaterWords; readonly undo: WorkerRoleChoices; readonly watcher: WatcherChoice | null }
 const WATCHER_NOT_STARTED = msg`Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.`
@@ -52,10 +54,10 @@ type Starter = 'workers' | 'watcher'
 function shownOf(read: RoleInForce, models: readonly AgentModel[]): Shown | undefined {
   if (read.choice) {
     const model = resolveModel(models, read.choice.modelId)
-    return { modelId: read.choice.modelId, model, reasoningEffort: read.choice.reasoningEffort,
+    return { modelId: read.choice.modelId, model, reasoningEffort: read.choice.reasoningEffort, speed: read.choice.speed ?? null,
       runtimeMode: read.choice.runtimeMode ?? fitRuntimeMode(read.role.permission, model) ?? read.role.permission ?? undefined }
   }
-  return read.fallback ? { modelId: read.fallback.model.id, model: read.fallback.model, reasoningEffort: read.fallback.reasoningEffort, runtimeMode: read.fallback.runtimeMode } : undefined
+  return read.fallback ? { modelId: read.fallback.model.id, model: read.fallback.model, reasoningEffort: read.fallback.reasoningEffort, speed: read.fallback.speed, runtimeMode: read.fallback.runtimeMode } : undefined
 }
 /** The providers of the defaults ahead of the one in force that are set up but not connected: why a row moved. */
 function awayBefore(read: RoleInForce, providerOf: (id: ProviderId) => ProviderState): ProviderId[] {
@@ -92,6 +94,8 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
 }): ReactNode {
   const { t } = useLingui()
   const headingId = useId()
+  // Worker counts are part of Worker swarms (Owl): stable shows none, and keeps a row's saved counts whole.
+  const swarms = useOwlFeature('worker-swarms')
   // This computer's catalog: the roles, like the new-thread defaults, are this computer's own (ADR-0074).
   const catalog = useMemo(() => newThreadDefaultsCatalog(state), [state])
   const choices = settings.workerRoles
@@ -99,11 +103,13 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
   const room = useWatcherRoom()
   const watcher: AgentThread | undefined = room?.currentThreadId ? state.host.threads.find(thread => thread.id === room.currentThreadId) : undefined
   const [watcherRefusal, setWatcherRefusal] = useState<LaterWords | null>(null)
+  const pendingWatcherChoice = useRef<WatcherChoice | null>(null)
   const watcherDrawn = watcher ? settingValues(state, watcher) : null
   // What the running Watcher is on now, as its thread reports it.
-  const watcherNow: WatcherChoice | null = watcherDrawn ? { modelId: watcherDrawn.model, reasoningEffort: watcherDrawn.effort || null } : null
+  const watcherNow: WatcherChoice | null = watcherDrawn ? { modelId: watcherDrawn.model, reasoningEffort: watcherDrawn.effort || null,
+    speed: watcherDrawn.fast === SPEED_STANDARD ? null : watcherDrawn.fast as AgentSpeed } : null
   /**
-   * Orchestrating is Watcher's own model and effort, so a change to it changes the running Watcher the way its
+   * Orchestrating is Watcher's own model, effort and speed, so a change to it changes the running Watcher the way its
    * composer's chips do: on its provider, a settings change Watcher's provider confirms; on another, a new Watcher, which
    * offers the last one's handover (ADR-0073). Before Watcher exists, the first message's own pick gives way to the role.
    */
@@ -114,14 +120,26 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
     const provider = picked ? watcherProviderOf(picked) : null
     if (provider !== null && provider !== watcher.providerId) {
       if (!room?.open) return
-      try { setWatcherRefusal(room.settle(await room.open({ provider, modelId: next.modelId, ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}) }))) }
+      const speed = fitSpeed(next.speed, picked)
+      try { setWatcherRefusal(room.settle(await room.open({ provider, modelId: next.modelId, ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}), ...(speed ? { speed } : {}) }))) }
       catch { setWatcherRefusal(WATCHER_NOT_STARTED) }
       return
     }
     const now = settingValues(state, watcher)
-    // A model on Watcher's provider takes the effort in the same change, so Reset brings back the role's effort too.
-    if (next.modelId !== now.model) pendingSettingsStore.press(watcher.id, 'model', next.modelId, { modelId: next.modelId, ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}) }, command, now, now.model)
-    else if (next.reasoningEffort && next.reasoningEffort !== now.effort) pendingSettingsStore.press(watcher.id, 'effort', next.reasoningEffort, { reasoningEffort: next.reasoningEffort }, command, now, now.effort)
+    const pending = pendingSettingsStore.view(watcher.id).pending
+    const speed = next.speed ?? SPEED_STANDARD
+    const supportedSpeed = fitSpeed(next.speed, picked) === next.speed
+    // Name the model in the same patch as effort and supported speed, including a press made before its model lands.
+    const patch = { modelId: next.modelId, ...(next.reasoningEffort ? { reasoningEffort: next.reasoningEffort } : {}),
+      ...(supportedSpeed ? speedPatch(speed, picked) : {}) }
+    const pendingChoice = pending.model?.value === pendingWatcherChoice.current?.modelId ? pendingWatcherChoice.current : null
+    const modelNow = pending.model?.value ?? now.model
+    const effortNow = pending.effort?.value ?? pendingChoice?.reasoningEffort ?? now.effort
+    const speedNow = pending.fast?.value ?? (pendingChoice ? pendingChoice.speed ?? SPEED_STANDARD : now.fast)
+    pendingWatcherChoice.current = next
+    if (next.modelId !== modelNow) pendingSettingsStore.press(watcher.id, 'model', next.modelId, patch, command, now, modelNow)
+    else if (next.reasoningEffort && next.reasoningEffort !== effortNow) pendingSettingsStore.press(watcher.id, 'effort', next.reasoningEffort, patch, command, now, effortNow)
+    else if (supportedSpeed && speed !== speedNow) pendingSettingsStore.press(watcher.id, 'fast', speed, patch, command, now, speedNow)
   }
   const local = state.connections?.find(connection => connection.kind === 'local')?.hostId
   const host = local === undefined ? state.host : hostForThread(state.host, { hostId: local })
@@ -136,16 +154,22 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
     setSaid(words === undefined ? null : { text: words, undo: choices, watcher: watcherNow })
     void onUpdateSettings({ workerRoles: next })
   }
-  const setRow = (read: RoleInForce, patch: { readonly modelId?: string; readonly reasoningEffort?: string | null; readonly runtimeMode?: AgentRuntimeMode }): void => {
+  const setRow = (read: RoleInForce, patch: RowPatch): void => {
     const shown = shownOf(read, catalog)
     if (!shown) return
     const modelId = patch.modelId ?? shown.modelId
     const model = resolveModel(catalog, modelId)
     const reasoningEffort = patch.reasoningEffort !== undefined ? patch.reasoningEffort : patch.modelId ? fitEffort(shown.reasoningEffort, model) : shown.reasoningEffort
     const runtimeMode = patch.runtimeMode ?? (patch.modelId ? fitRuntimeMode(shown.runtimeMode ?? read.role.permission, model) ?? shown.runtimeMode : shown.runtimeMode)
-    const row: WorkerRoleChoice = read.role.id === 'orchestrating' || runtimeMode === undefined ? { modelId, reasoningEffort } : { modelId, reasoningEffort, runtimeMode }
-    save(withRoleRow(choices, read.role.id, row, catalog))
-    if (read.role.id === 'orchestrating') void applyToWatcher({ modelId, reasoningEffort })
+    const id = read.role.id
+    // A speed stays through a change of model; unsupported models use Standard (ADR-0091).
+    const speed = patch.speed !== undefined ? patch.speed : shown.speed
+    // A row keeps its counts through any other change, and saves none while they are the role's defaults.
+    const workers = id === 'orchestrating' ? undefined : patch.workers ?? read.choice?.workers
+    const counted = workers === undefined || id === 'orchestrating' || (workers.usual === WORKER_COUNTS[id].usual && workers.upTo === WORKER_COUNTS[id].upTo) ? {} : { workers }
+    const row: WorkerRoleChoice = { modelId, reasoningEffort, ...(speed ? { speed } : {}), ...(id === 'orchestrating' || runtimeMode === undefined ? {} : { runtimeMode }), ...counted }
+    save(withRoleRow(choices, id, row, catalog))
+    if (id === 'orchestrating') void applyToWatcher({ modelId, reasoningEffort, speed })
   }
   const reset = (read: RoleInForce): void => {
     const next: WorkerRoleChoices = { ...choices }
@@ -156,22 +180,23 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
     const effort = fallback?.reasoningEffort ? effortLabel(fallback.reasoningEffort) : ''
     save(next, !fallback ? msg`${roleName} is back on its defaults.`
       : effort ? msg`${roleName} is back on its default, ${modelName} at ${effort}.` : msg`${roleName} is back on its default, ${modelName}.`)
-    if (read.role.id === 'orchestrating' && fallback) void applyToWatcher({ modelId: fallback.model.id, reasoningEffort: fallback.reasoningEffort })
+    if (read.role.id === 'orchestrating' && fallback) void applyToWatcher({ modelId: fallback.model.id, reasoningEffort: fallback.reasoningEffort, speed: fallback.speed })
   }
   const orchestratingDefault = reads[0]?.fallback
   // A running Watcher off Orchestrating's default is the user's choice, whether it was made here or in its composer.
   const watcherChosen = watcherNow !== null && (!orchestratingDefault || watcherNow.modelId !== orchestratingDefault.model.id
-    || watcherNow.reasoningEffort !== orchestratingDefault.reasoningEffort)
+    || watcherNow.reasoningEffort !== orchestratingDefault.reasoningEffort || watcherNow.speed !== orchestratingDefault.speed)
   const chosen = reads.filter(read => read.choice !== undefined || read.role.id === 'orchestrating' && watcherChosen).length
   const resetAll = (): void => {
     save({}, msg`${plural(chosen, { one: 'The role you chose is back on its default.', other: 'The # roles you chose are back on their defaults.' })}`)
-    if (orchestratingDefault && (watcherChosen || !watcher)) void applyToWatcher({ modelId: orchestratingDefault.model.id, reasoningEffort: orchestratingDefault.reasoningEffort })
+    if (orchestratingDefault && (watcherChosen || !watcher)) void applyToWatcher({ modelId: orchestratingDefault.model.id, reasoningEffort: orchestratingDefault.reasoningEffort, speed: orchestratingDefault.speed })
   }
   const undo = (was: Said): void => {
     setSaid(null)
     void onUpdateSettings({ workerRoles: was.undo })
     // Watcher goes back to what it ran on before; a change it already has sends nothing.
-    const before = was.watcher ?? was.undo.orchestrating
+    const saved = was.undo.orchestrating
+    const before = was.watcher ?? (saved ? { modelId: saved.modelId, reasoningEffort: saved.reasoningEffort, speed: saved.speed ?? null } : null)
     if (before) void applyToWatcher(before)
   }
   const anyConnected = catalog.some(model => model.ready)
@@ -190,7 +215,8 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
         onClick={resetAll}>
         <RotateCcw size={14} aria-hidden="true" /><Trans>Reset all to defaults</Trans></button>
     </div>
-    <p className="worker-roles__lead tt-paragraph"><Trans>Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it.</Trans></p>
+    <p className="worker-roles__lead tt-paragraph"><Trans>Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it.</Trans>
+      {swarms ? <>{' '}<Trans>Workers is how many Watcher starts for one request: usually the first number, never more than Up to unless you name a count.</Trans></> : null}</p>
     {said ? <p className="worker-roles__said tt-paragraph" role="status"><span>{shownWords(said.text)}</span>
       <button type="button" className="tt-focusable" onClick={() => undo(said)}><Trans>Undo</Trans></button></p> : null}
     {!anyConnected ? <div className="worker-roles__empty">
@@ -204,7 +230,7 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
       <div className="worker-roles__grid">
         {orchestrating ? <OrchestratingCard read={orchestrating} state={state} watcher={watcher} chosen={watcherChosen} refusal={watcherRefusal} catalog={catalog} providerOf={providerOf}
           onRow={patch => setRow(orchestrating, patch)} onReset={() => reset(orchestrating)} /> : null}
-        {workers.map(read => <RoleCard key={read.role.id} read={read} catalog={catalog} providerOf={providerOf} ceiling={ceiling} platform={platform}
+        {workers.map(read => <RoleCard key={read.role.id} read={read} catalog={catalog} providerOf={providerOf} ceiling={ceiling} platform={platform} swarms={swarms} counts={read.role.id === 'orchestrating' ? undefined : workerCounts(read.role.id, choices)}
           onRow={patch => setRow(read, patch)} onReset={() => reset(read)} onOpenAgents={() => onOpenSection('settings-agents')} />)}
       </div>
     </>}
@@ -295,10 +321,14 @@ function Defaults({ read, catalog, providerOf }: { readonly read: RoleInForce; r
 }
 
 /** One worker role: a model, an effort and a permission, the notes that hold, and its defaults in order. */
-function RoleCard({ read, catalog, providerOf, ceiling, platform, onRow, onReset, onOpenAgents }: {
+function RoleCard({ read, catalog, providerOf, ceiling, platform, swarms, counts, onRow, onReset, onOpenAgents }: {
   readonly read: RoleInForce; readonly catalog: readonly AgentModel[]; readonly providerOf: (id: ProviderId) => ProviderState
   readonly ceiling: AgentRuntimeMode; readonly platform: SottoPlatform
-  readonly onRow: (patch: { readonly modelId?: string; readonly reasoningEffort?: string | null; readonly runtimeMode?: AgentRuntimeMode }) => void
+  /** Worker swarms is on, so the card offers its Workers counts. */
+  readonly swarms: boolean
+  /** How many workers a request starts in this role: saved, or the role's defaults. */
+  readonly counts: WorkerCount | undefined
+  readonly onRow: (patch: RowPatch) => void
   readonly onReset: () => void; readonly onOpenAgents: () => void
 }): ReactNode {
   const { t, i18n } = useLingui()
@@ -311,6 +341,7 @@ function RoleCard({ read, catalog, providerOf, ceiling, platform, onRow, onReset
   const model = shown?.model
   const efforts = model ? effortChoices(model, shown?.reasoningEffort ?? model.defaultReasoningEffort ?? '') : []
   const offered = model?.runtimeModes ?? []
+  const speeds = offeredSpeeds(model, model?.providerId)
   const own = (model?.providerModes?.length ?? 0) > 0
   const providerName = model?.providerId ? PROVIDER_LABELS[model.providerId] : model?.provider ?? t`This provider`
   const permission = shown?.runtimeMode
@@ -347,6 +378,8 @@ function RoleCard({ read, catalog, providerOf, ceiling, platform, onRow, onReset
           defaultValue={model.defaultReasoningEffort} modelName={model.name} onChange={value => onRow({ reasoningEffort: value })} />
           : <span className="worker-role__none">{t({ message: `${name} has none`, comment: 'The model offers no reasoning effort levels' })}</span>}
       </div>
+      <SpeedField speeds={speeds} provider={model?.providerId} speed={shown.speed} label={(speedNow: string) => t`Choose ${roleName}’s speed. Now ${speedNow}`}
+        disabled={false} onChange={speed => onRow({ speed })} />
       <div className="worker-role__field"><span aria-hidden="true">{t({ message: 'Permissions', comment: 'A worker role field: what its workers may do without asking' })}</span>
         {own || !permission ? <span className="worker-role__none">{own ? t`${providerName}’s own` : t`None offered`}</span>
           : <ChoiceChip label={t`Choose what ${roleName} workers may do without asking. Now ${permissionName}`} placeholder={RUNTIME_LABELS[permission]} value={permission}
@@ -354,6 +387,7 @@ function RoleCard({ read, catalog, providerOf, ceiling, platform, onRow, onReset
             disabled={false} pending={false} flip foot={t`A worker never starts wider than your new-thread default, “${ceilingName}”, and a delegated thread never wider than the thread that delegates.`}
             onChange={mode => onRow({ runtimeMode: mode as AgentRuntimeMode })} />}
       </div>
+      {swarms && counts ? <WorkerCounts roleName={roleName} counts={counts} onSave={workers => onRow({ workers })} /> : null}
     </div> : <p className="worker-role__none tt-paragraph"><Trans>No connected provider can do this work.</Trans></p>}
     {notes.map(note => <p key={note} className="worker-role__note tt-paragraph" data-kind="moved">{note}</p>)}
     {fit ? <p className="worker-role__note tt-paragraph">{fit}</p> : null}
@@ -367,6 +401,52 @@ function RoleCard({ read, catalog, providerOf, ceiling, platform, onRow, onReset
         : defaultMode ? t`Reset ${roleName} to its default, ${defaultModelName} with ${defaultMode}`
         : t`Reset ${roleName} to its default, ${defaultModelName}`}><Trans>Reset to default</Trans></button></footer> : null}
   </article>
+}
+
+/**
+ * A role's Workers (Worker swarms, Owl): how many workers Watcher usually starts for one request in this role, and the
+ * most it starts on its own. Each number saves when it is left or Enter is pressed; one that would cross the other moves
+ * it too, so Usual never passes Up to, and anything but a whole number from 1 puts the saved one back.
+ */
+function WorkerCounts({ roleName, counts, onSave }: { readonly roleName: string; readonly counts: WorkerCount; readonly onSave: (next: WorkerCount) => void }): ReactNode {
+  const { t } = useLingui()
+  const [usual, setUsual] = useState(String(counts.usual))
+  const [upTo, setUpTo] = useState(String(counts.upTo))
+  useEffect(() => { setUsual(String(counts.usual)); setUpTo(String(counts.upTo)) }, [counts.usual, counts.upTo])
+  const commit = (field: keyof WorkerCount, text: string): void => {
+    const typed = /^\d+$/u.test(text.trim()) && Number.isSafeInteger(Number(text)) ? Number(text) : 0
+    const next = typed < 1 || typed > WORKER_COUNT_MAX ? counts : field === 'usual' ? { usual: typed, upTo: Math.max(typed, counts.upTo) } : { usual: Math.min(counts.usual, typed), upTo: typed }
+    setUsual(String(next.usual)); setUpTo(String(next.upTo))
+    if (next.usual !== counts.usual || next.upTo !== counts.upTo) onSave(next)
+  }
+  const input = (field: keyof WorkerCount, value: string, set: (text: string) => void, name: string): ReactNode =>
+    <input className="worker-role__count tt-focusable" type="number" inputMode="numeric" min={1} max={WORKER_COUNT_MAX} step={1} value={value} aria-label={name}
+      onChange={event => set(event.currentTarget.value)} onBlur={event => commit(field, event.currentTarget.value)}
+      onKeyDown={event => { if (event.key === 'Enter') commit(field, event.currentTarget.value) }} />
+  return <div className="worker-role__field worker-role__field--full" data-setting="worker-counts"><span aria-hidden="true">{t({ message: 'Workers', comment: 'A worker role field: how many workers one request starts' })}</span>
+    <div className="worker-role__counts">
+      <label>{t({ message: 'Usual', comment: 'How many workers a request usually starts in a role' })}{input('usual', usual, setUsual, t`Usual number of ${roleName} workers for one request`)}</label>
+      <label>{t({ message: 'Up to', comment: 'The most workers a request starts in a role unless the user names a count' })}{input('upTo', upTo, setUpTo, t`Most ${roleName} workers Watcher starts for one request on its own`)}</label>
+    </div>
+  </div>
+}
+
+/**
+ * A role's speed (ADR-0091): Standard and the speeds its model offers, each with what it costs as its tooltip, beside
+ * Effort. A model with none says so. A saved speed the model does not offer stays saved and shows Standard, which is what
+ * the role starts on there.
+ */
+function SpeedField({ speeds, provider, speed, label, disabled, onChange }: {
+  readonly speeds: readonly AgentModelSpeed[]; readonly provider: string | undefined; readonly speed: AgentSpeed | null
+  readonly label: (speedNow: string) => string; readonly disabled: boolean; readonly onChange: (speed: AgentSpeed | null) => void
+}): ReactNode {
+  const { t } = useLingui()
+  const value = speed !== null && speeds.some(item => item.id === speed) ? speed : SPEED_STANDARD
+  return <div className="worker-role__field"><span aria-hidden="true">{t({ message: 'Speed', comment: 'A worker role field: how fast its model answers, and at what price' })}</span>
+    {speeds.length > 0 ? <ChoiceChip label={label(speedName(value, speeds))} placeholder={speedName(SPEED_STANDARD, speeds)} value={value} options={speedChoices(speeds, provider)}
+      disabled={disabled} pending={false} flip onChange={id => onChange(id === SPEED_STANDARD ? null : id as AgentSpeed)} />
+      : <span className="worker-role__none">{t({ message: 'Standard only', comment: 'The model offers no faster speed' })}</span>}
+  </div>
 }
 
 const MODE_LINES: Record<AgentRuntimeMode, MessageDescriptor> = {
@@ -391,7 +471,7 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
   /** Why the last change could not start a new Watcher: main's words, or Sotto's own when it could not ask. */
   readonly refusal: LaterWords | null
   readonly catalog: readonly AgentModel[]; readonly providerOf: (id: ProviderId) => ProviderState
-  readonly onRow: (patch: { readonly modelId?: string; readonly reasoningEffort?: string | null }) => void; readonly onReset: () => void
+  readonly onRow: (patch: RowPatch) => void; readonly onReset: () => void
 }): ReactNode {
   const { t } = useLingui()
   const headId = useId()
@@ -406,21 +486,29 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
   const drawn = watcher ? settingValues(state, watcher) : null
   const liveId = watcher ? pending.pending.model?.value ?? watcher.modelId : null
   const liveModel = liveId ? resolveModel(catalog, liveId) : undefined
-  const liveEffort = watcher ? pending.pending.effort?.value ?? drawn?.effort ?? liveModel?.defaultReasoningEffort ?? null : null
-  const shown = watcher && liveId ? { modelId: liveId, model: liveModel, reasoningEffort: liveEffort || null } : shownOf(read, catalog)
+  const saved = shownOf(read, catalog)
+  const liveEffort = watcher ? pending.pending.effort?.value ?? (liveId === watcher.modelId ? drawn?.effort
+    : saved?.modelId === liveId ? saved.reasoningEffort : liveModel?.defaultReasoningEffort) ?? null : null
+  const liveSpeed = pending.pending.fast?.value ?? (watcher && liveId !== watcher.modelId && saved ? saved.speed ?? SPEED_STANDARD : drawn?.fast) ?? SPEED_STANDARD
+  const shown = watcher && liveId ? { modelId: liveId, model: liveModel, reasoningEffort: liveEffort || null, speed: liveSpeed === SPEED_STANDARD ? null : liveSpeed as AgentSpeed }
+    : saved
   const model = shown?.model
   const fallback = read.fallback
   const differs = watcher ? chosen : read.choice !== undefined
   const status: RowStatus = watcher ? differs ? 'chosen' : 'default' : statusOf(read, providerOf)
   const fixedReason = watcher ? watcherPermissionFixedReason(state, watcher) : undefined
   const efforts = model ? effortChoices(model, shown?.reasoningEffort ?? model.defaultReasoningEffort ?? '') : []
+  const speeds = offeredSpeeds(model, model?.providerId)
+  const speedNow = speeds.some(speed => speed.id === shown?.speed) ? shown?.speed ?? SPEED_STANDARD : SPEED_STANDARD
   const providerName = model?.providerId ? PROVIDER_LABELS[model.providerId] : model?.provider ?? t`The provider`
   const notes = watcher ? [] : rowNotes(read, status, catalog, providerOf, 'watcher')
-  const choose = (modelId: string | undefined, reasoningEffort: string | null | undefined): void => {
+  // A model may run at Standard while Orchestrating keeps a speed it cannot offer.
+  const choiceSpeed = pending.pending.fast?.value ?? (read.choice ? read.choice.speed ?? SPEED_STANDARD : liveSpeed)
+  const choose = (modelId: string | undefined, reasoningEffort: string | null | undefined, speed: AgentSpeed | null = choiceSpeed === SPEED_STANDARD ? null : choiceSpeed as AgentSpeed): void => {
     const nextModel = modelId ?? shown?.modelId
     if (!nextModel) return
     const effort = reasoningEffort !== undefined ? reasoningEffort : modelId ? resolveModel(catalog, modelId)?.defaultReasoningEffort ?? null : shown?.reasoningEffort ?? null
-    onRow({ modelId: nextModel, reasoningEffort: effort })
+    onRow({ modelId: nextModel, reasoningEffort: effort, speed })
   }
   const name = model?.name ?? shown?.modelId ?? ''
   const effortNow = shown?.reasoningEffort ? effortLabel(shown.reasoningEffort) : ''
@@ -450,6 +538,8 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
             defaultValue={model.defaultReasoningEffort} modelName={model.name} onChange={value => choose(undefined, value)} />
             : <span className="worker-role__none">{t({ message: `${name} has none`, comment: 'The model offers no reasoning effort levels' })}</span>}
         </div>
+        <SpeedField speeds={speeds} provider={model?.providerId} speed={shown.speed} label={(speedNow: string) => t`Choose Watcher’s speed. Now ${speedNow}`}
+          disabled={fixedReason !== undefined} onChange={speed => choose(undefined, undefined, speed)} />
         <div className="worker-role__field"><span aria-hidden="true">{t`Permissions, Watcher’s own`}</span>
           <WatcherPermissionChip model={model} provider={providerName} inForce={watcher?.runtimeMode} disabled={fixedReason !== undefined} fixedReason={fixedReason} flip /></div>
       </div> : <p className="worker-role__none tt-paragraph"><Trans>Watcher runs on {watcherProviders}. Connect one to choose its model.</Trans></p>}
@@ -469,10 +559,12 @@ function OrchestratingCard({ read, state, watcher, chosen, refusal, catalog, pro
         <span className="worker-role__chips">
           {model ? <span className="worker-role__chip"><ProviderMark provider={model.providerId} name={model.provider} size={13} /><span>{model.name}</span></span> : <span className="worker-role__chip"><span><Trans>No model</Trans></span></span>}
           {shown?.reasoningEffort ? <span className="worker-role__chip"><span>{effortLabel(shown.reasoningEffort)}</span></span> : null}
+          {speeds.length > 0 ? <span className="worker-role__chip worker-role__chip--speed" data-speed={speedNow}>
+            <Zap size={13} fill={speedNow === SPEED_STANDARD ? 'none' : 'currentColor'} />{speedNow === 'ultrafast' ? <small>2</small> : null}</span> : null}
           <span className="worker-role__chip"><span>{RUNTIME_LABELS[mirrorMode]}</span></span>
         </span>
       </div>
-      <p className="worker-role__caption tt-paragraph"><ArrowLeftRight size={14} aria-hidden="true" /><span><Trans>Watcher’s composer shows these three. A change in either place changes both.</Trans>{' '}
+      <p className="worker-role__caption tt-paragraph"><ArrowLeftRight size={14} aria-hidden="true" /><span><Trans>Watcher’s composer shows the same choices. A change in either place changes both.</Trans>{' '}
         {app ? <button type="button" className="worker-role__link tt-focusable" onClick={() => app.actions.navigate('watcher')}><Trans>Show Watcher’s room</Trans></button> : null}</span></p>
     </div>
   </article>

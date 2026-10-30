@@ -184,6 +184,7 @@ function clientThread(thread: AgentThread, hostId: string, across?: DelegatingKe
     // The thread that delegated to this one (ADR-0081), and the threads a continuation links (ADR-0089), are named as the
     // window names threads, so their links find them; across machines only where the desktop keys them so (#1316 part 3).
     ...(thread.delegatedBy ? { delegatedBy: across ? delegatingKey(own, thread.delegatedBy, across) : hostEntityKey(own, thread.delegatedBy) } : {}),
+    ...(thread.swarm ? { swarm: { ...thread.swarm, leadThreadId: hostEntityKey(own, thread.swarm.leadThreadId) } } : {}),
     ...(thread.continuedFrom ? { continuedFrom: keyedLinks(thread.continuedFrom, own) } : {}),
     ...(thread.continuedIn ? { continuedIn: keyedLinks(thread.continuedIn, own) } : {}),
     // So is the thread one began from (#1028), so its note opens it.
