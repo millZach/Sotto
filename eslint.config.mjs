@@ -178,6 +178,7 @@ export default tseslint.config(
       'artifacts/codex-connection-recovery/**',
       'artifacts/devin-local-provider/**',
       'artifacts/muse-provider/**',
+      'artifacts/plain-cards-sentence-case/**',
       'artifacts/opencode-provider/**',
       'artifacts/opencode-sign-in/**',
       'artifacts/opencode-model-menu/**',

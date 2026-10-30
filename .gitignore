@@ -239,6 +239,8 @@ artifacts/git-settings/
 artifacts/question-message-links/
 artifacts/question-prototype-pages/
 artifacts/prototype-ready/
+# Plain cards and sentence-case labels (#1830, #1829); the cited captures are committed
+artifacts/plain-cards-sentence-case/
 artifacts/phase-three-themes/
 artifacts/thread-browser-player/
 artifacts/new-thread-defaults/

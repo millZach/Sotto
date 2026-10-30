@@ -245,10 +245,8 @@
 .journal-day__head h2 {
   margin: 0;
   color: var(--tt-text-2);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
 }
 
 .journal-day__head span { color: var(--tt-text-faint); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
@@ -373,10 +371,8 @@
 .journal-stats__heading {
   margin: 0 0 10px;
   color: var(--tt-text-2);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
-  letter-spacing: 0.6px;
-  text-transform: uppercase;
 }
 
 .journal-stats__quiet { margin: 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }

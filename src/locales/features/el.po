@@ -1476,7 +1476,6 @@ msgid "Codex, Claude Code, Grok Build or Muse"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/AgentsStep.tsx
-#: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Coding agents"
 msgstr ""
 
@@ -2060,10 +2059,6 @@ msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Finish setup"
-msgstr ""
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "First project"
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx
@@ -2687,11 +2682,6 @@ msgstr ""
 msgid "longest freeze"
 msgstr ""
 
-#. First-run setup: the step that chooses how Sotto looks
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Look"
-msgstr ""
-
 #: src/renderer/src/features/onboarding/Onboarding.tsx
 msgid "Looking for speech models on this computer…"
 msgstr ""
@@ -2791,7 +2781,6 @@ msgstr ""
 msgid "Memory is unavailable. Restart Sotto and try again."
 msgstr ""
 
-#. First-run setup: the microphone step
 #. The macOS Privacy & Security pane, as System Settings names it
 #. The microphone picker
 #: src/renderer/src/components/OpenSystemSettingsButton.tsx
@@ -3604,10 +3593,6 @@ msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Other apps"
-msgstr ""
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Other computers"
 msgstr ""
 
 #: src/renderer/src/features/usage/UsagePerDay.tsx
@@ -4478,11 +4463,6 @@ msgstr ""
 msgid "Short or detailed replies, spoken summaries, progress updates, and when to interrupt you."
 msgstr ""
 
-#. First-run setup: the dictation shortcut step
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Shortcut"
-msgstr ""
-
 #: src/renderer/src/features/help/HelpView.tsx
 msgid "Shortcut conflicts"
 msgstr ""
@@ -4939,10 +4919,6 @@ msgstr ""
 msgid "Speak, then paste into any window"
 msgstr ""
 
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Speech model"
-msgstr ""
-
 #: src/renderer/src/components/SpeechModelStatus.tsx
 msgid "Speech model could not be saved"
 msgstr ""
@@ -5116,7 +5092,7 @@ msgid "Step {number} of 4 · {title} once its clients have"
 msgstr ""
 
 #: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Step {stepNumber} of {stepCount} · {stepTitle}"
+msgid "Step {stepNumber} of {stepCount}"
 msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
@@ -6191,15 +6167,6 @@ msgstr ""
 
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "weekly window"
-msgstr ""
-
-#. First-run setup: the first step
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Welcome"
-msgstr ""
-
-#: src/renderer/src/features/onboarding/Onboarding.tsx
-msgid "Welcome to Sotto"
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherAsks.tsx

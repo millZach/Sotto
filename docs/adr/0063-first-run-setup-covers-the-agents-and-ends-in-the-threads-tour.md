@@ -24,7 +24,7 @@ Setup had four steps, all about dictation: welcome, microphone, OpenRouter key, 
 
 **6. Only new users see setup.** A profile with `onboardingComplete` never sees the new steps. Reset settings reopens setup as before.
 
-**7. Every step fits the window it opens in.** At Sotto's default 1080x720 window and at the 820x560 minimum, each step's resting state fits its card with nothing to scroll. The bar above the card names the step, so a step has no icon tile or eyebrow of its own; only the welcome keeps its mark and eyebrow. The heading is 28 px, 23 px on a window under 640 px tall, and each lead is a sentence or two. The card still scrolls rather than clipping, for an error or a pairing code on a window at its smallest. `tests/e2e/first-run-setup-fit.spec.ts` walks the nine steps at both sizes, light and dark, and fails on any that scrolls.
+**7. Every step fits the window it opens in.** At Sotto's default 1080x720 window and at the 820x560 minimum, each step's resting state fits its card with nothing to scroll. The bar above the card names the step, so a step has no icon tile or eyebrow of its own; only the welcome keeps its mark and eyebrow (amended October 30, 2026: the welcome keeps only its mark, below). The heading is 28 px, 23 px on a window under 640 px tall, and each lead is a sentence or two. The card still scrolls rather than clipping, for an error or a pairing code on a window at its smallest. `tests/e2e/first-run-setup-fit.spec.ts` walks the nine steps at both sizes, light and dark, and fails on any that scrolls.
 
 ## Consequences
 
@@ -35,3 +35,7 @@ The end-to-end specs walk setup through one helper that also ends the tour, and 
 Amended October 10, 2026, by [ADR-0071](0071-dictation-transcribes-on-this-computer-with-parakeet.md). The Dictation group's OpenRouter key step is now the speech model step, the variant the owner picked from a before/after prototype: it names Parakeet v3, by NVIDIA, shows the download's progress, and its button reads **Continue** once the download is under way, so setup goes on while it runs. The OpenRouter key leaves setup; it is only for AI cleanup and lives under the AI formatting switch in Settings → Cleanup.
 
 Amended October 19, 2026, by [ADR-0094](0094-dictation-runs-the-speech-model-the-user-chooses.md). The step is now "Choose a speech model" and starts no download by itself. It lists the speech models already on this computer first, with **Use** beside each, then a **Download** for each of Sotto's models not here yet, with its size beside it: Parakeet Ultra, Parakeet v3 and Parakeet v2 since October 20, 2026, when Zach chose Ultra as the suggestion where nothing is here yet. Its button reads **Continue** once a model is chosen and has not failed.
+
+## The step line in sentence case
+
+Amended October 30, 2026, from the desktop UI review (#1829, Zach's pick in `look-fixes-prototype.html` on the tag `prototype/ui-hillclimb-desktop`). The line over the progress bar reads "Step 1 of 10" in sentence case: it no longer names the step after a dot, since the step's own heading names it and the bar's labels name its group. The welcome drops its "Welcome to Sotto" eyebrow, which said what the heading under it says, and keeps its mark. Decision 7's eyebrow for the welcome is gone with it.
