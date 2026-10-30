@@ -19,6 +19,11 @@ export type CodexOrigin = { messageId: string; commandId: string; digest: string
   itemId?: string | undefined; clientIdentity?: boolean | undefined }
 export type IdentityItem = { id: string; role: 'user' | 'assistant'; digest: string; clientId?: string | null | undefined }
 export type RolloutIdentity = { role: 'user' | 'assistant'; digest: string; nativeId?: string | undefined; clientId?: string | undefined; eventId?: string | undefined }
+const rolloutIdentitySchema = z.object({ role: z.enum(['user', 'assistant']), digest: z.string(), nativeId: z.string().optional(), clientId: z.string().optional(), eventId: z.string().optional() })
+/** What `CodexRolloutIdentities` has read, saved: each turn's rows, the turn under way and its assistant row awaiting its native ID. */
+export const rolloutIdentitiesStateSchema = z.object({ turn: z.string().optional(), pending: z.number().int().nonnegative().optional(),
+  turns: z.array(z.tuple([z.string(), z.array(rolloutIdentitySchema)])) })
+export type RolloutIdentitiesState = z.infer<typeof rolloutIdentitiesStateSchema>
 
 /** Only identity metadata. User response_items (including injected skills) never
  * become authored messages or command origins. Assistant IDs require the paired
@@ -27,6 +32,21 @@ export class CodexRolloutIdentities {
   private turn: string | undefined
   private pending: RolloutIdentity | undefined
   private readonly turns = new Map<string, RolloutIdentity[]>()
+  /** The identities read so far, as a saved rollout position keeps them (#992). */
+  snapshot(): RolloutIdentitiesState {
+    const rows = this.turn === undefined ? undefined : this.turns.get(this.turn)
+    const pending = this.pending && rows ? rows.indexOf(this.pending) : -1
+    return { ...(this.turn === undefined ? {} : { turn: this.turn }), ...(pending >= 0 ? { pending } : {}),
+      turns: [...this.turns].map(([turnId, turnRows]) => [turnId, turnRows.map(row => ({ ...row }))] as [string, RolloutIdentity[]]) }
+  }
+  /** Identities as a reader that had read what `state` was taken from would hold them. */
+  static restore(state: RolloutIdentitiesState): CodexRolloutIdentities {
+    const identities = new CodexRolloutIdentities()
+    for (const [turnId, rows] of state.turns) identities.turns.set(turnId, rows.map(row => ({ ...row })))
+    identities.turn = state.turn
+    if (state.turn !== undefined && state.pending !== undefined) identities.pending = identities.turns.get(state.turn)?.[state.pending]
+    return identities
+  }
   get(turnId: string): readonly RolloutIdentity[] { return this.turns.get(turnId) ?? [] }
   consume(entry: { type: string; payload: unknown; timestamp: string; ordinal?: number | undefined }): void {
     const parsed = rolloutPayloadSchema.safeParse(entry.payload)

@@ -1,9 +1,9 @@
 // @vitest-environment node
-import { appendFile, mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { CodexSessionLogWatcher, promptDigest } from '../../../src/main/agents/codexSessionLog'
+import { CodexSessionLogWatcher, promptDigest, type RolloutPosition, type RolloutPositions } from '../../../src/main/agents/codexSessionLog'
 import { browserFeedbackNote, carriesAttachedFiles } from '../../../src/main/agents/attachedFiles'
 import { rolloutLine } from '../../fixtures/codexFixture'
 import type { AgentMessage } from '../../../src/shared/agents'
@@ -261,5 +261,116 @@ describe('a Point at something send read back from the rollout (ADR-0154)', () =
     await writeFile(join(directory, 'rollout-thread.jsonl'), rolloutLine(1, { type: 'user_message', client_id: 'own-client', message: `Look at this\n\n${browserFeedbackNote([picture])}` }))
     await watcher.pollThread('thread')
     expect(messages).toEqual([])
+  })
+})
+
+// Every saved thread's rollout was read from its first byte at every connect, 394 MB on the owner's machine (#992). A tail
+// now saves where it read to, and a later run reads on from there; it must hold then what a read from the first byte holds.
+describe('a Codex rollout read on from a saved position (#992)', () => {
+  /** Saved positions kept here, each through JSON as the files keep them, so nothing is shared with the watcher. */
+  class MemoryPositions implements RolloutPositions {
+    readonly kept = new Map<string, string>()
+    async list(): Promise<ReadonlySet<string>> { return new Set(this.kept.keys()) }
+    async load(threadId: string): Promise<RolloutPosition | undefined> { const text = this.kept.get(threadId); return text === undefined ? undefined : JSON.parse(text) as RolloutPosition }
+    async save(threadId: string, position: RolloutPosition): Promise<void> { this.kept.set(threadId, JSON.stringify(position)) }
+    async remove(threadId: string): Promise<void> { this.kept.delete(threadId) }
+  }
+  async function rollout(): Promise<{ root: string; path: string }> {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-codex-log-')); roots.push(root)
+    const directory = join(root, 'sessions'); await mkdir(directory)
+    return { root, path: join(directory, 'rollout-thread.jsonl') }
+  }
+  /** A turn as Codex writes it, cut where `upTo` says: before the answer's native ID, or whole. */
+  const turn = (index: number, upTo: 'answer' | 'whole' = 'whole'): string => {
+    const id = `turn-${index}`
+    const head = rolloutLine(index * 10, { turn_id: id }, 'turn_context') + rolloutLine(index * 10 + 1, { type: 'task_started', turn_id: id })
+      + rolloutLine(index * 10 + 2, { type: 'user_message', id: `user-${index}`, message: `Question ${index}` })
+      + rolloutLine(index * 10 + 3, { type: 'agent_message', message: `Answer ${index}` })
+    return upTo === 'answer' ? head : head + rest(index)
+  }
+  const rest = (index: number): string => rolloutLine(index * 10 + 4, { type: 'message', role: 'assistant', id: `native-${index}`, content: [{ type: 'output_text', text: `Answer ${index}` }] }, 'response_item')
+    + rolloutLine(index * 10 + 5, { type: 'task_complete', turn_id: `turn-${index}` })
+  const watcher = (root: string, messages: AgentMessage[], extra: Partial<ConstructorParameters<typeof CodexSessionLogWatcher>[0]> = {}): CodexSessionLogWatcher => {
+    const made = new CodexSessionLogWatcher({ codexHome: root, onMessage: (_id, message) => messages.push(message), ...extra })
+    watchers.push(made); made.observe('thread'); return made
+  }
+
+  it('holds what a read from the first byte holds, after reading on from where a stopped watcher saved its place', async () => {
+    const { root, path } = await rollout()
+    const positions = new MemoryPositions()
+    // Saved mid-turn, between an answer and its native ID, with half the next line written.
+    const half = rest(3).slice(0, 40)
+    await writeFile(path, turn(1) + turn(2) + turn(3, 'answer') + half)
+    const before: AgentMessage[] = []
+    const first = watcher(root, before, { positions })
+    await first.pollThread('thread')
+    await first.stop()
+    expect(JSON.parse(positions.kept.get('thread')!)).toMatchObject({ offset: Buffer.byteLength(turn(1) + turn(2) + turn(3, 'answer')) })
+    await appendFile(path, rest(3).slice(40) + turn(4) + turn(5))
+    const after: AgentMessage[] = []
+    const second = watcher(root, after, { positions })
+    await second.pollThread('thread')
+    const whole: AgentMessage[] = []
+    const reference = watcher(root, whole)
+    await reference.pollThread('thread')
+    expect([...before, ...after].map(message => message.id)).toEqual(whole.map(message => message.id))
+    expect(after.map(message => message.id)).toEqual(['user-4', 'user-5'])
+    for (const index of [1, 2, 3, 4, 5]) expect(second.identities('thread', `turn-${index}`)).toEqual(reference.identities('thread', `turn-${index}`))
+    expect(second.identities('thread', 'turn-3').find(row => row.role === 'assistant')?.nativeId).toBe('native-3')
+  })
+
+  it('reads from the first byte when its saved position names another file, or one shorter than it read', async () => {
+    const { root, path } = await rollout()
+    const positions = new MemoryPositions()
+    await writeFile(path, turn(1) + turn(2))
+    const first = watcher(root, [], { positions })
+    await first.pollThread('thread')
+    await first.stop()
+    // Shorter than it read: Codex wrote the file again from its start.
+    await writeFile(path, turn(7))
+    const shorter: AgentMessage[] = []
+    const second = watcher(root, shorter, { positions })
+    await second.pollThread('thread')
+    expect(shorter.map(message => message.id)).toEqual(['user-7'])
+    await second.stop()
+    // Another file put in its place, as long as the one read: it is not trusted. Written beside it first, so the two are
+    // never one inode.
+    await writeFile(`${path}.new`, `${turn(8)}${' '.repeat(Math.max(0, Buffer.byteLength(turn(7)) - Buffer.byteLength(turn(8)) - 1))}\n`)
+    await rename(`${path}.new`, path)
+    const replaced: AgentMessage[] = []
+    const third = watcher(root, replaced, { positions })
+    await third.pollThread('thread')
+    if (JSON.parse(positions.kept.get('thread')!).ino) expect(replaced.map(message => message.id)).toEqual(['user-8'])
+  })
+
+  it('reads on each tick only the tails in use, once more after, a tail with no saved position until it catches up, and a failed read again', async () => {
+    const { root, path } = await rollout()
+    const positions = new MemoryPositions()
+    await writeFile(path, turn(1))
+    await writeFile(join(dirname(path), 'rollout-saved.jsonl'), turn(2))
+    const first = watcher(root, [], { positions }); first.observe('saved')
+    await first.poll()
+    await first.stop()
+    positions.kept.delete('thread')
+    const inUse = new Set<string>()
+    const second = watcher(root, [], { positions, inUse: () => inUse }); second.observe('saved')
+    const read = vi.spyOn(second, 'pollThread')
+    const tick = async (): Promise<string[]> => { read.mockClear(); await second.pollInUse(); return read.mock.calls.map(([id]) => id).sort() }
+    // The tail with no saved position catches up; the one with a saved position waits.
+    expect(await tick()).toEqual(['thread'])
+    expect(await tick()).toEqual([])
+    inUse.add('saved')
+    expect(await tick()).toEqual(['saved'])
+    inUse.delete('saved')
+    expect(await tick()).toEqual(['saved'])
+    expect(await tick()).toEqual([])
+    // A whole read still reads every tail.
+    read.mockClear(); await second.poll()
+    expect(read.mock.calls.map(([id]) => id).sort()).toEqual(['saved', 'thread'])
+    // A read that fails is read again on the next tick, in use or not.
+    await rm(join(dirname(path), 'rollout-saved.jsonl'))
+    await mkdir(join(dirname(path), 'rollout-saved.jsonl'))
+    inUse.add('saved'); await tick(); inUse.delete('saved')
+    expect(await tick()).toEqual(['saved'])
   })
 })

@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
-import { open, readdir } from 'node:fs/promises'
+import { open, readdir, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { AGENT_MAX_ATTACHMENT_BYTES, type AgentMessage } from '../../shared/agents'
-import { CodexRolloutIdentities, type RolloutIdentity } from './codexMessageIdentity'
+import { CodexRolloutIdentities, rolloutIdentitiesStateSchema, type RolloutIdentity } from './codexMessageIdentity'
 import { isAttachedFilesNote, stripAttachedFilesNote } from './attachedFiles'
+import { AtomicJsonStore } from '../storage/atomicJsonStore'
 
 export const promptDigest = (text: string): string => createHash('sha256').update(text).digest('hex')
 type TextContent = { type: string; text?: string | undefined }[]
@@ -23,20 +24,109 @@ const textContent = z.array(z.object({ type: z.string(), text: z.string().option
 const userEvent = z.object({ type: z.string(), id: z.string().optional(), message: z.string().optional(), text: z.string().optional(),
   client_id: z.string().nullish(), images: z.array(z.string()).optional(), local_images: z.array(z.string()).optional(),
   content: textContent.optional(), item: z.object({ type: z.string(), id: z.string().optional(), client_id: z.string().nullish(), content: textContent.optional() }).optional() })
-type Tail = { path?: string | undefined; locateAfter: number; locateBackoffMs: number; locateGeneration: number; offset: number; buffer: Buffer[]; bufferedBytes: number; discarding: boolean; own: Map<string, string>; files: Set<string>; seen: Set<string>; identities: CodexRolloutIdentities }
+type Tail = { path?: string | undefined; locateAfter: number; locateBackoffMs: number; locateGeneration: number; offset: number; buffer: Buffer[]; bufferedBytes: number; discarding: boolean; own: Map<string, string>; files: Set<string>; seen: Set<string>; identities: CodexRolloutIdentities
+  /** Where the line being read began: everything before it has been read whole, and is what a saved position stands for. */
+  lineStart: number
+  /** The rollout's identity when it was last read, so a saved position is trusted only for the same file. */
+  file?: FileIdentity | undefined
+  /** Whether the tail has read its rollout to the end once, or holds a saved position that had. */
+  caughtUp: boolean
+  /** Its saved position: not looked for yet, to be read before the tail first reads, or dealt with. */
+  saved: 'unknown' | 'pending' | 'settled'
+  /** A saved position was just restored, so the next read checks it is the same file before trusting it. */
+  check: boolean
+  /** Read past its saved position, so it is saved again. */
+  dirty: boolean
+  /** The last read failed, so the next tick reads it again. */
+  retry: boolean }
 const INITIAL_LOCATE_BACKOFF_MS = 2000
 const MAX_LOCATE_BACKOFF_MS = 60_000
+/**
+ * How long a tail that read on waits before its position is saved. A position saved late costs only a re-read of what
+ * came after it at the next start, so a streaming thread saves twice a minute rather than with every line; stopping
+ * saves every tail.
+ */
+const SAVE_DELAY_MS = 30_000
+
+type FileIdentity = { readonly ino?: string | undefined; readonly birthtimeMs?: number | undefined }
+function identityOf(stats: { readonly ino: number | bigint; readonly birthtimeMs: number }): FileIdentity {
+  return { ...(stats.ino ? { ino: String(stats.ino) } : {}), ...(Number.isFinite(stats.birthtimeMs) ? { birthtimeMs: stats.birthtimeMs } : {}) }
+}
+/** Some Windows filesystems report no inode; the creation time is then the only identity on offer. */
+function sameFile(left: FileIdentity, right: FileIdentity): boolean {
+  if (left.ino || right.ino) return Boolean(left.ino && right.ino && left.ino === right.ino)
+  return left.birthtimeMs !== undefined && right.birthtimeMs !== undefined && Math.abs(left.birthtimeMs - right.birthtimeMs) < 1
+}
+
+/**
+ * How far a thread's rollout has been read, saved so a later run reads on from there rather than from the first byte
+ * (#992): the start of the first line not yet read whole, the file's identity, and what reading up to there gave, the
+ * user messages already reported and each turn's identity rows. A tail restored from it holds what one that read the
+ * rollout from its first byte to there holds.
+ */
+export const rolloutPositionSchema = z.object({ path: z.string(), offset: z.number().int().nonnegative(), ino: z.string().optional(), birthtimeMs: z.number().optional(),
+  seen: z.array(z.string()), identities: rolloutIdentitiesStateSchema })
+export type RolloutPosition = z.infer<typeof rolloutPositionSchema>
+/** Where saved rollout positions are kept, one for each thread, by its Codex thread ID. */
+export interface RolloutPositions {
+  /** The threads that have a saved position. */
+  list(): Promise<ReadonlySet<string>>
+  load(threadId: string): Promise<RolloutPosition | undefined>
+  save(threadId: string, position: RolloutPosition): Promise<void>
+  remove(threadId: string): Promise<void>
+}
+
+const savedPositionSchema = rolloutPositionSchema.nullable()
+/** A Codex thread ID, which names its saved position's file. */
+const CODEX_THREAD_ID = /^[A-Za-z0-9-]+$/u
+
+/** Saved rollout positions as files in one folder, each named by its thread's Codex thread ID and written compact. */
+export class RolloutPositionFiles implements RolloutPositions {
+  private readonly stores = new Map<string, AtomicJsonStore<RolloutPosition | null>>()
+  constructor(private readonly directory: string) {}
+  async list(): Promise<ReadonlySet<string>> {
+    const names = await readdir(this.directory).catch(() => [] as string[])
+    return new Set(names.filter(name => name.endsWith('.json')).map(name => name.slice(0, -'.json'.length)).filter(id => CODEX_THREAD_ID.test(id)))
+  }
+  async load(threadId: string): Promise<RolloutPosition | undefined> { return (await this.store(threadId)?.read()) ?? undefined }
+  async save(threadId: string, position: RolloutPosition): Promise<void> { await this.store(threadId)?.write(position) }
+  async remove(threadId: string): Promise<void> {
+    if (!CODEX_THREAD_ID.test(threadId)) return
+    this.stores.delete(threadId)
+    await rm(join(this.directory, `${threadId}.json`), { force: true })
+  }
+  private store(threadId: string): AtomicJsonStore<RolloutPosition | null> | undefined {
+    if (!CODEX_THREAD_ID.test(threadId)) return undefined
+    let store = this.stores.get(threadId)
+    if (!store) { store = AtomicJsonStore.compact(join(this.directory, `${threadId}.json`), savedPositionSchema.parse, () => null); this.stores.set(threadId, store) }
+    return store
+  }
+}
 
 /** Rollout event messages are authored input; response_item user messages can be injected instructions. */
 export class CodexSessionLogWatcher {
   private readonly tails = new Map<string, Tail>()
   private timer: ReturnType<typeof setInterval> | undefined
   private polling: Promise<void> | undefined
+  private wholePoll: Promise<void> | undefined
   private readonly reading = new Map<string, Promise<void>>()
   private stopped = false
-  constructor(private readonly options: { codexHome: string; pollIntervalMs?: number | undefined; onMessage: (threadId: string, message: AgentMessage) => void }) {}
+  /** The threads with a saved position, listed once. */
+  private savedThreads: Promise<ReadonlySet<string>> | undefined
+  /** The threads in use on the last tick, each read once more on the tick after it leaves them. */
+  private lastInUse: ReadonlySet<string> = new Set()
+  private saveTimer: ReturnType<typeof setTimeout> | undefined
+  private saving: Promise<void> = Promise.resolve()
+  /**
+   * `inUse` names the threads each tick reads: where it is given, the others are read only to catch up once, when they
+   * have no saved position, and then when a complete read asks, as opening or sending to a thread does (#992). Absent,
+   * every tick reads every tail. `positions` keeps where each tail had read to between runs.
+   */
+  constructor(private readonly options: { codexHome: string; pollIntervalMs?: number | undefined; onMessage: (threadId: string, message: AgentMessage) => void
+    inUse?: (() => ReadonlySet<string>) | undefined; positions?: RolloutPositions | undefined; saveDelayMs?: number | undefined }) {}
   observe(threadId: string): void {
-    if (!this.tails.has(threadId)) this.tails.set(threadId, { locateAfter: 0, locateBackoffMs: INITIAL_LOCATE_BACKOFF_MS, locateGeneration: 0, offset: 0, buffer: [], bufferedBytes: 0, discarding: false, own: new Map(), files: new Set(), seen: new Set(), identities: new CodexRolloutIdentities() })
+    if (!this.tails.has(threadId)) this.tails.set(threadId, { locateAfter: 0, locateBackoffMs: INITIAL_LOCATE_BACKOFF_MS, locateGeneration: 0, offset: 0, buffer: [], bufferedBytes: 0, discarding: false, own: new Map(), files: new Set(), seen: new Set(), identities: new CodexRolloutIdentities(),
+      lineStart: 0, caughtUp: false, saved: this.options.positions ? 'unknown' : 'settled', check: false, dirty: false, retry: false })
   }
   identities(threadId: string, turnId: string): readonly RolloutIdentity[] { return this.tails.get(threadId)?.identities.get(turnId) ?? [] }
   /** A prompt Sotto sent, by its words' digest; `files` when it carried an attached file, and so the note (ADR-0131). */
@@ -50,17 +140,32 @@ export class CodexSessionLogWatcher {
     tail.locateGeneration++
   }
   forget(threadId: string, messageId: string): void { const tail = this.tails.get(threadId); tail?.own.delete(messageId); tail?.files.delete(messageId) }
-  /** A deleted thread (ADR-0140): stop tailing its rollout and drop any read in flight for it. */
-  drop(threadId: string): void { this.tails.delete(threadId); this.reading.delete(threadId) }
+  /** A deleted thread (ADR-0140): stop tailing its rollout, drop any read in flight for it, and forget where it had read to. */
+  drop(threadId: string): void {
+    this.tails.delete(threadId); this.reading.delete(threadId)
+    void this.options.positions?.remove(threadId).catch(() => undefined)
+  }
   start(): void {
     if (this.timer || this.stopped) return
-    this.timer = setInterval(() => { void this.poll() }, this.options.pollIntervalMs ?? 1000)
+    this.timer = setInterval(() => { void this.pollInUse() }, this.options.pollIntervalMs ?? 1000)
     this.timer.unref()
   }
-  async stop(): Promise<void> { this.stopped = true; clearInterval(this.timer); this.timer = undefined; await this.polling; await Promise.all(this.reading.values()) }
+  async stop(): Promise<void> {
+    this.stopped = true; clearInterval(this.timer); this.timer = undefined; await this.polling; await Promise.all(this.reading.values())
+    // Where each tail read to is kept for the next run.
+    clearTimeout(this.saveTimer); this.saveTimer = undefined
+    await this.savePositions()
+  }
+  /** A read of every tail, after any tick under way, as a whole read of the provider asks. */
   poll(): Promise<void> {
     if (this.stopped) return Promise.resolve()
-    this.polling ??= this.readAll().finally(() => { this.polling = undefined })
+    this.wholePoll ??= (this.polling ?? Promise.resolve()).then(() => this.readAll(false)).finally(() => { this.wholePoll = undefined })
+    return this.wholePoll
+  }
+  /** One tick: the tails in use and those `readAll` reads besides them. A tick under way stands for this one. */
+  pollInUse(): Promise<void> {
+    if (this.stopped) return Promise.resolve()
+    this.polling ??= this.readAll(true).finally(() => { this.polling = undefined })
     return this.polling
   }
   /** Queue a fresh read behind this tail only; a guarded send cannot reuse a pre-origin read. */
@@ -72,7 +177,67 @@ export class CodexSessionLogWatcher {
     void work.finally(() => { if (this.reading.get(threadId) === work) this.reading.delete(threadId) })
     return work
   }
-  private async readAll(): Promise<void> { for (const id of this.tails.keys()) await this.pollThread(id, false) }
+  /**
+   * Every tail, or for a tick each in use, each that left them since the last tick, once, so the last lines of its turn
+   * land, each whose last read failed, and each still catching up to the end of a rollout it has no saved position for.
+   */
+  private async readAll(inUseOnly: boolean): Promise<void> {
+    const saved = await this.savedPositions()
+    const inUse = inUseOnly ? this.options.inUse?.() : undefined
+    const ids: string[] = []
+    for (const [id, tail] of this.tails) {
+      this.classify(id, tail, saved)
+      if (!inUse || inUse.has(id) || this.lastInUse.has(id) || tail.retry || !tail.caughtUp) ids.push(id)
+    }
+    if (inUseOnly) this.lastInUse = new Set(inUse)
+    for (const id of ids) await this.pollThread(id, false)
+  }
+  private savedPositions(): Promise<ReadonlySet<string>> {
+    return this.savedThreads ??= this.options.positions?.list().catch(() => new Set<string>()) ?? Promise.resolve(new Set<string>())
+  }
+  /** A tail first seen with a saved position counts as read to the end: it reads on from there when it is next read. */
+  private classify(threadId: string, tail: Tail, saved: ReadonlySet<string>): void {
+    if (tail.saved !== 'unknown') return
+    tail.saved = saved.has(threadId) ? 'pending' : 'settled'
+    if (saved.has(threadId)) tail.caughtUp = true
+  }
+  /** Takes up the saved position, while the tail has read nothing; one that cannot be read leaves it reading from the first byte. */
+  private async restore(threadId: string, tail: Tail): Promise<void> {
+    tail.saved = 'settled'
+    const position = await this.options.positions?.load(threadId).catch(() => undefined)
+    if (!position || tail.offset !== 0 || tail.lineStart !== 0) { tail.caughtUp = false; return }
+    tail.path ??= position.path
+    if (tail.path !== position.path) { tail.caughtUp = false; return }
+    tail.offset = position.offset; tail.lineStart = position.offset
+    tail.file = { ...(position.ino === undefined ? {} : { ino: position.ino }), ...(position.birthtimeMs === undefined ? {} : { birthtimeMs: position.birthtimeMs }) }
+    for (const id of position.seen) tail.seen.add(id)
+    tail.identities = CodexRolloutIdentities.restore(position.identities)
+    tail.check = true
+  }
+  /** Back to the first byte, as for a rollout that shrank or is not the one a saved position named. */
+  private reset(tail: Tail): void {
+    tail.offset = 0; tail.lineStart = 0; tail.buffer = []; tail.bufferedBytes = 0; tail.discarding = false; tail.identities = new CodexRolloutIdentities()
+    tail.caughtUp = false
+  }
+  private scheduleSave(): void {
+    if (this.saveTimer || this.stopped || !this.options.positions) return
+    this.saveTimer = setTimeout(() => { this.saveTimer = undefined; void this.savePositions() }, this.options.saveDelayMs ?? SAVE_DELAY_MS)
+    this.saveTimer.unref()
+  }
+  /** Saves each tail that read on since it was last saved. A save that fails is tried again with the next. */
+  private savePositions(): Promise<void> {
+    const positions = this.options.positions
+    if (!positions) return Promise.resolve()
+    this.saving = this.saving.then(async () => {
+      for (const [threadId, tail] of this.tails) {
+        if (!tail.dirty || !tail.path || !tail.file) continue
+        tail.dirty = false
+        const position: RolloutPosition = { path: tail.path, offset: tail.lineStart, ...tail.file, seen: [...tail.seen], identities: tail.identities.snapshot() }
+        try { await positions.save(threadId, position) } catch { tail.dirty = true }
+      }
+    })
+    return this.saving
+  }
   private async locate(directory: string, threadId: string, depth = 0): Promise<string | undefined> {
     if (depth > 3) return
     const entries = await readdir(directory, { withFileTypes: true }).catch(() => [])
@@ -85,6 +250,8 @@ export class CodexSessionLogWatcher {
     const tail = this.tails.get(threadId)!
     if (this.stopped) return
     try {
+      if (tail.saved === 'unknown') this.classify(threadId, tail, await this.savedPositions())
+      if (tail.saved === 'pending') await this.restore(threadId, tail)
       if (!tail.path) {
         // Complete reads protect a dispatch and must search for new evidence now.
         if (!complete && Date.now() < tail.locateAfter) return
@@ -97,20 +264,29 @@ export class CodexSessionLogWatcher {
             tail.locateAfter = Date.now() + tail.locateBackoffMs
             tail.locateBackoffMs = Math.min(tail.locateBackoffMs * 2, MAX_LOCATE_BACKOFF_MS)
           }
+          // Nothing to catch up on: a thread not in use finds its rollout when it is next read whole.
+          tail.caughtUp = true; tail.retry = false
           return
         }
         tail.locateAfter = 0; tail.locateBackoffMs = INITIAL_LOCATE_BACKOFF_MS
       }
       const file = await open(tail.path, 'r')
+      const lineStart = tail.lineStart
       try {
-        const size = (await file.stat()).size
-        if (size < tail.offset) { tail.offset = 0; tail.buffer = []; tail.bufferedBytes = 0; tail.discarding = false; tail.identities = new CodexRolloutIdentities() }
+        const stats = await file.stat()
+        const size = stats.size
+        // A saved position is trusted only for the file it was taken from, and only while that file is not shorter.
+        if (tail.check && !sameFile(tail.file ?? {}, identityOf(stats))) this.reset(tail)
+        tail.check = false
+        tail.file = identityOf(stats)
+        if (size < tail.offset) this.reset(tail)
         // Background polls stay bounded. A guarded target read reaches the captured
         // file size with bounded buffers so takeover evidence is never truncated.
         do {
           const buffer = Buffer.alloc(Math.min(size - tail.offset, 1024 * 1024))
           const { bytesRead } = await file.read(buffer, 0, buffer.length, tail.offset)
           if (!bytesRead) break
+          const base = tail.offset
           tail.offset += bytesRead
           let start = 0
           while (start < bytesRead) {
@@ -127,10 +303,17 @@ export class CodexSessionLogWatcher {
             if (!tail.discarding) this.consume(threadId, tail, Buffer.concat(tail.buffer, tail.bufferedBytes).toString('utf8'))
             tail.buffer = []; tail.bufferedBytes = 0; tail.discarding = false
             start = newline + 1
+            tail.lineStart = base + start
           }
         } while (complete && tail.offset < size && !this.stopped)
+        if (tail.offset >= size) tail.caughtUp = true
       } finally { await file.close() }
-    } catch { /* A rollout may not exist yet, rotate, or be temporarily locked by Codex. */ }
+      tail.retry = false
+      if (tail.lineStart !== lineStart) { tail.dirty = true; this.scheduleSave() }
+    } catch {
+      // A rollout may not exist yet, rotate, or be temporarily locked by Codex; the next tick reads it again.
+      tail.retry = true
+    }
   }
   private consume(threadId: string, tail: Tail, line: string): void {
     try {

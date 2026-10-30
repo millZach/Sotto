@@ -168,3 +168,38 @@ Issue #767. A send rewrote whole stores in series before the provider heard it, 
 - **Codex shows a frame's effect before it saves it.** A frame's message, turn or identity reaches the thread first; the save of `codex-threads.json` behind it is not waited for, and saves made while one is running share the next write. The responses to `turn/start` and `turn/steer` start their save in the frame queue too, and the send waits for it outside the queue, so the reply's frames behind the acknowledgement are not held; a failed save leaves that send uncertain, as a response that could not be applied does. What a crash between them can lose is identities the next read derives again: a reply's from its native item ID, a prompt's from its origin, which was saved before `turn/start`. A save that fails no longer stops the app-server; the next one carries the same state, and the next send's origin write, which a send does wait for, fails the send if the disk is still refusing.
 - **The stores rewritten whole around a send and while a reply streams are written without indentation.** `claude-threads.json`, `codex-threads.json` (1.3 MB indented on the development machine, about 0.86 MB compact) and each provider's usage ledger are compact JSON, as `agents.json` is (ADR-0058). Every reader parses either form, so a file an older version wrote reads as before. A person reading one needs a JSON formatter.
 - **The usage ledger is written at most once a second while a reply streams**, and at once when a turn ends or a compaction is recorded. It is serialized as the write starts rather than copied whole first.
+
+## Amendment: a rollout is read each second only while its thread is in use, from where it was left (October 30, 2026, #992)
+
+The takeover watcher above tailed every saved thread's rollout from its first byte at every connect. It read a megabyte of
+each a tick until it reached the end, and then opened every rollout every second. On the owner's machine that was 394 MB
+over 46 threads: 23.1 s of wall time and 36.6 s of main's CPU after each start, with the connect itself waiting 2.5 to
+3.9 s on its share (#992). Zach decided on October 29, 2026 to check every second only threads open in a pane, working, or
+watched by Watcher. Every other thread catches up when it is opened or sent to, and a thread he comes back to must not
+open slower.
+
+**Each tick reads only the rollouts in use.** Those are the rollouts of the threads the coordinator observes, of the
+threads that are working by the reaper's rule, and of the threads whose app-server did anything since the last tick. A
+rollout that leaves those is read once more on the next tick, so the last lines of its turn land, and a read that failed
+is tried again on the next tick. A whole read of the adapter, its snapshot, reads the same set: another thread's rollout
+could only fill the messages that wait for it to be opened, and opening reads it.
+
+**A thread's rollout is read on from where it was left.** Each tail saves a rollout position: the start of the first line
+it has not read whole, the file's identity, and what reading up to there gave. That is the user messages it already
+reported and each turn's identity rows, the turn under way included. A tail restored from it holds exactly what one that
+read the rollout from its first byte to there holds, so identity corroboration and takeover are unchanged. A position is
+trusted only for the same file at no shorter a length; otherwise the rollout is read from its first byte again. Opening
+or sending to a thread reads on from its position, as its whole read before resuming always did, so it reads only what
+was written since.
+
+Positions are kept in `codex-rollouts/` in the app's data folder, one compact file for each thread, named by its Codex
+thread ID. They are saved at most twice a minute while a rollout grows, and when the adapter stops, and deleted with the
+thread. A position saved late costs only a re-read of what came after it at the next start. They hold digests and native
+IDs, as `codex-threads.json` does, never message text. They take about 5% of the rollouts they stand for: 4.8 MB for
+92 MB in the benchmark. A thread with no position yet, as every thread has on the first run with this change, is caught
+up in the background once, as every connect did before, and its position is saved then.
+
+Measured on forge with 46 and 92 saved threads of 2 MB rollouts, a restart connected in 35 to 39 ms against 454 to
+1,221 ms, read no rollout bytes against 92 to 184 MB, and spent 9 to 11 ms of main's CPU against 0.65 to 1.5 s.
+Opening a thread was unchanged at about 50 ms, and one with work done outside Sotto read only that
+(`docs/perf/2026-10-30-codex-rollout-positions.md`).
