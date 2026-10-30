@@ -59,12 +59,15 @@ export function diffAgentThreadDetail(base: AgentThreadDetail,
   const activityDeltas: AgentActivityDelta[] = []
   const heldActivities = base.activities ?? []
   const nextActivities = next.activities ?? []
-  const signatures = activitySignature === agentActivitySignature
+  // The very list the detail holds has nothing to say: a streamed word leaves a thread's activity as it was, and reading
+  // every record of a long thread on every word was the delta's whole cost (#1248).
+  const sameActivities = base.activities === next.activities
+  const signatures = sameActivities ? undefined : activitySignature === agentActivitySignature
     ? new Map(heldActivities.map(record => [record.id, activitySignature(record)])) : undefined
-  const heldRecords = signatures === undefined ? new Map(heldActivities.map(record => [record.id, record])) : undefined
-  const present = new Set(nextActivities.map(record => record.id))
-  for (const record of heldActivities) if (!present.has(record.id)) activityDeltas.push({ id: record.id, removed: true })
-  for (const record of nextActivities) {
+  const heldRecords = signatures === undefined && !sameActivities ? new Map(heldActivities.map(record => [record.id, record])) : undefined
+  const present = new Set(sameActivities ? [] : nextActivities.map(record => record.id))
+  if (!sameActivities) for (const record of heldActivities) if (!present.has(record.id)) activityDeltas.push({ id: record.id, removed: true })
+  if (!sameActivities) for (const record of nextActivities) {
     const held = heldRecords?.get(record.id)
     if (held === record || (held !== undefined ? activitySignature(held) : signatures?.get(record.id)) === activitySignature(record)) continue
     activityDeltas.push({ record: structuredClone(record) })
@@ -74,7 +77,7 @@ export function diffAgentThreadDetail(base: AgentThreadDetail,
   // copies, and anything the rules above cannot express is caught before it reaches a window.
   const applied = applyAgentThreadDetailDelta(base, delta)
   if (applied === null) return null
-  if (!sameOrder(applied.messages, next.messages) || !sameOrder(applied.activities ?? [], nextActivities)) return null
+  if (!sameOrder(applied.messages, next.messages) || !sameActivities && !sameOrder(applied.activities ?? [], nextActivities)) return null
   return delta
 }
 
@@ -102,6 +105,8 @@ export function applyAgentThreadDetailDelta(base: AgentThreadDetail, delta: Agen
   if (base.activities === undefined) {
     return delta.activityDeltas.length > 0 ? null : { threadId: base.threadId, revision: delta.revision, messages }
   }
+  // A delta with no record in it keeps the records the detail holds, the same list.
+  if (delta.activityDeltas.length === 0) return { threadId: base.threadId, revision: delta.revision, messages, activities: base.activities }
   // Insertion order is the record order, and re-setting a key keeps its place: an updated record stays
   // where it was and a new one lands at the end, which is how the coordinator keeps activity itself.
   const records = new Map(base.activities.map(record => [record.id, record]))
