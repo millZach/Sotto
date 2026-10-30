@@ -6,7 +6,7 @@ import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 
 // The shared Files panel beside a real split: a Git worktree thread and a shared-folder thread on real temporary
 // folders, real Git and Files IPC; only providers are fixtures. Captures are the inspected review evidence.
@@ -32,7 +32,7 @@ async function capture(page: Page, name: string): Promise<void> {
   await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
 }
 
-/** Activate Close from the keyboard and prove focus reached the toggle without ever resting on the page. */
+/** Activate Close from the keyboard and prove focus reached the ··· button that lists Tools without ever resting on the page. */
 async function closeWithKey(page: Page, panel: Locator, key: 'Enter' | 'Escape'): Promise<string> {
   if (key === 'Enter') await panel.getByRole('button', { name: 'Close tools panel' }).focus()
   else await panel.getByRole('tab', { name: 'Files' }).focus()
@@ -44,13 +44,13 @@ async function closeWithKey(page: Page, panel: Locator, key: 'Enter' | 'Escape')
   await page.keyboard.press(key)
   const immediate = await page.evaluate(() => {
     const active = document.activeElement
-    return { gaps: (window as unknown as { __toolsFocusGaps: number }).__toolsFocusGaps, toggle: active?.getAttribute('aria-controls') === 'sotto-tools-panel', pane: active?.closest('[data-thread-id]')?.getAttribute('data-thread-id') ?? null }
+    return { gaps: (window as unknown as { __toolsFocusGaps: number }).__toolsFocusGaps, toggle: active?.getAttribute('data-opens') === 'tools', pane: active?.closest('[data-thread-id]')?.getAttribute('data-thread-id') ?? null }
   })
   await expect(panel).toHaveCount(0)
   expect(immediate).toMatchObject({ gaps: 0, toggle: true })
   // Still there once the panes have re-laid out for the freed width.
   await page.waitForTimeout(400)
-  await expect(page.locator('[aria-controls="sotto-tools-panel"]')).toBeFocused()
+  await expect(page.locator('[data-opens="tools"]')).toBeFocused()
   return immediate.pane!
 }
 
@@ -111,7 +111,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     await expect(left).toHaveAttribute('data-focused')
 
     // Sidecar keeps a generous dock; the remaining pane area uses focus tabs at 1600.
-    await left.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(left)
     const panel = page.getByRole('complementary', { name: 'Tools' })
     await expect(panel).toHaveAttribute('data-mode', 'docked')
     await expect(panes).toHaveAttribute('data-narrow', 'true')
@@ -129,9 +129,12 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     await page.getByRole('tab', { name: 'Field notes', exact: true }).click()
     await promptField(right).click()
     await expect(right).toHaveAttribute('data-focused')
-    const rightToggle = right.getByRole('button', { name: 'Tools', exact: true })
-    await expect(rightToggle).toHaveAttribute('data-pinned-elsewhere', 'true')
-    await expect(rightToggle).toHaveAttribute('aria-description', 'Showing Worktree checkout, pinned')
+    // Tools is a row of the focused pane's ··· menu (ADR-0163): pinned elsewhere, it shows a pin and says whose files are open.
+    await right.locator('[data-opens="tools"]').click()
+    const toolsRow = right.getByRole('menuitemcheckbox', { name: 'Tools', exact: true })
+    await expect(toolsRow).toHaveAttribute('aria-checked', 'true')
+    await expect(toolsRow).toHaveAttribute('aria-description', 'Showing Worktree checkout, pinned')
+    await page.keyboard.press('Escape')
     await expect(panel.locator('.tools-panel__pinned-owner')).toHaveText('Worktree checkoutPinned')
     await expect(panel.locator('.tools-panel__path-text')).toHaveAttribute('title', actual.directory)
     await capture(page, 'split-1600-pinned-other-pane-focused')
@@ -187,7 +190,9 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     // The sidebar is hidden; the compact pane tabs still choose the focused thread.
     await page.getByRole('tab', { name: 'Field notes', exact: true }).click()
     await expect(right).toHaveAttribute('data-focused')
-    await expect(right.getByRole('button', { name: 'Tools', exact: true })).toHaveAttribute('data-pinned-elsewhere', 'true')
+    await right.locator('[data-opens="tools"]').click()
+    await expect(right.getByRole('menuitemcheckbox', { name: 'Tools', exact: true })).toHaveAttribute('aria-description', 'Showing Worktree checkout, pinned')
+    await page.keyboard.press('Escape')
     await capture(page, 'docked-820x560-pinned-other-tab')
     expect(await closeWithKey(page, panel, 'Enter')).toBe(notesThread)
     await page.keyboard.press('Enter')
@@ -199,7 +204,7 @@ test('Files beside a split: worktree identity, pinned ownership, docking choice 
     await page.getByRole('button', { name: 'Close Field notes pane' }).click()
     await expect(panes).not.toHaveAttribute('data-split')
     await promptField(left).click()
-    await left.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(left)
     await expect(panel).toHaveAttribute('data-mode', 'docked')
     await expect(panel.getByRole('tree').getByRole('treeitem', { name: 'README.md' })).toHaveAttribute('aria-selected', 'true')
     await capture(page, 'single-1280-worktree-docked')

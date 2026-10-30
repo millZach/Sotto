@@ -14,7 +14,11 @@ export function paneMenuItem(scope: HTMLElement, name: string): HTMLElement {
   return within(openPaneMenu(scope)).getByRole('menuitem', { name })
 }
 
-/** Everything the open menu lists, in the order it lists it. */
+/**
+ * Everything the open menu lists, in the order it lists it, by name: rows that show something (Tools, the Terminal
+ * drawer) included, and a row's keys left out (ADR-0163).
+ */
 export function paneMenuItems(menu: HTMLElement): string[] {
-  return within(menu).getAllByRole('menuitem').map(item => item.textContent ?? '')
+  return [...menu.querySelectorAll<HTMLElement>('[role="menuitem"], [role="menuitemradio"], [role="menuitemcheckbox"]')]
+    .map(item => item.querySelector('.pane-menu__label')?.textContent ?? item.textContent ?? '')
 }

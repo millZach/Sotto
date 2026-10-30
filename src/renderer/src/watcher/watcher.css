@@ -19,15 +19,17 @@
 
 /* ---------- Watching a thread ---------- */
 /* Watcher's own controls ease their hover as the shared buttons do, so a wash or an edge settles in instead of snapping. */
-/* Watch in a thread's pane header: a pill, lit in the accent while Watcher watches the thread. Narrow panes keep the owl.
-   The lit fill is the accent mixed into the surface under it, so it is solid and its text is measured against what shows. */
+/* Watch in a thread's pane header: a pill, lit in the accent while Watcher watches the thread. The lit fill is the accent
+   mixed into the surface under it, so it is solid and its text is measured against what shows. In the Threads workspace
+   it keeps its word at every pane width, so nothing in the header moves as a divider is dragged (ADR-0163); a narrow pane
+   beside Watcher keeps the owl alone. */
 .watch-toggle { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 6px;
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watch-toggle:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watch-toggle:active:not(:disabled):not([aria-pressed='true']) { border-color: var(--tt-border-faint); background: var(--tt-hover-strong); color: var(--tt-text); }
 .watch-toggle[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-canvas)); color: var(--tt-text); }
-@container thread-pane (width < 520px) { .watch-toggle { padding: 0 7px; } .watch-toggle__text { display: none; } }
+@container thread-pane (width < 520px) { .watcher-beside .watch-toggle { padding: 0 7px; } .watcher-beside .watch-toggle__text { display: none; } }
 /* The owl among a sidebar row's actions, in the accent while pressed. */
 .thread-nav__action.watch-row-toggle[aria-pressed='true'] { color: var(--tt-accent-text); }
 /* The owl at the end of a row in All threads: a ring when not watched, lit when watched. It spans the row's first two lines. */

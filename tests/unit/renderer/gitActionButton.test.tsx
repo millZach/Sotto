@@ -3,7 +3,7 @@ import { threadsStateFixture } from '../../fixtures/agentState'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { GitActionButton } from '../../../src/renderer/src/agents/GitActionButton'
+import { GitActionButton, type GitActionHandle } from '../../../src/renderer/src/agents/GitActionButton'
 import { commitLabel, defaultBranchQuestion, HINT_DETACHED, HINT_DIVERGED, HINT_NOTHING_TO_PUSH, HINT_UP_TO_DATE, lineCounts, menuEntries, needsDefaultBranchConfirmation, noticeFor, quickAction, stackedFor } from '../../../src/renderer/src/agents/gitActionButton.logic'
 import type { AgentCommand, AgentState, AgentThread } from '../../../src/shared/agents'
 import type { GitActionProgress } from '../../../src/shared/gitActions'
@@ -26,8 +26,9 @@ function mount(current: AgentThread, options: { command?: (request: AgentCommand
   const gitChangedFiles = vi.fn(async () => options.changed ?? files())
   vi.stubGlobal('sotto', { agents: { gitChangedFiles }, openExternalLink: options.openExternalLink ?? vi.fn() })
   const command = vi.fn(options.command ?? (async () => state(current)))
-  const view = render(<GitActionButton thread={current} command={command} noticeSlot={null} onExplainedError={options.explained} />)
-  return { ...view, command, gitChangedFiles, rerender: (next: AgentThread) => view.rerender(<GitActionButton thread={next} command={command} noticeSlot={null} onExplainedError={options.explained} />) }
+  const handle = React.createRef<GitActionHandle>()
+  const view = render(<GitActionButton ref={handle} thread={current} command={command} noticeSlot={null} onExplainedError={options.explained} />)
+  return { ...view, command, gitChangedFiles, handle, rerender: (next: AgentThread) => view.rerender(<GitActionButton ref={handle} thread={next} command={command} noticeSlot={null} onExplainedError={options.explained} />) }
 }
 /** The header's own button, apart from the notice's, whose labels can match. */
 const quick = (): HTMLButtonElement => { const button = document.querySelector<HTMLButtonElement>('.git-action__quick'); if (!button) throw new Error('No Git action button.'); return button }
@@ -111,13 +112,16 @@ describe('the Git action in the pane header', () => {
     fireEvent.click(disabled)
     expect(command).toHaveBeenCalledTimes(1)
   })
-  it('draws nothing before the host has read the folder, and Initialize Git for a folder without one', async () => {
-    const { command, rerender } = mount(thread(undefined))
+  it('draws nothing before the host has read the folder, nor for a folder without Git, whose Initialize Git the ··· menu presses here', async () => {
+    const { command, rerender, handle } = mount(thread(undefined))
     expect(screen.queryByRole('button')).toBeNull()
     rerender(thread(status({ isRepository: false, branch: null, hasRemote: false, upstream: null })))
-    expect(screen.queryByRole('button', { name: 'More Git actions' })).toBeNull()
-    fireEvent.click(screen.getByRole('button', { name: 'Initialize Git' }))
+    // Initialize Git is a row of the pane's ··· menu (ADR-0163); the button leaves the header to it.
+    expect(screen.queryByRole('button')).toBeNull()
+    act(() => handle.current!.initialize())
     await waitFor(() => expect(sent(command)).toEqual([{ type: 'git-init', threadId: 'thread-1' }]))
+    // Its answer is the Git action's own notice.
+    expect(await screen.findByText('Git initialized.')).toBeInTheDocument()
   })
   it('opens the commit dialog with the files and their counts, leaves a file out in Edit, and commits the rest with the typed message', async () => {
     const { command, gitChangedFiles } = mount(thread(status({ dirty: true })))

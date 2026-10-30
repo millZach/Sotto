@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { msg, ph, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -55,13 +55,19 @@ interface ActionRequest {
 }
 type Dialog = { readonly kind: 'commit'; readonly action: GitStackedAction } | { readonly kind: 'confirm'; readonly request: ActionRequest } | { readonly kind: 'publish' }
 
+/** What the pane's ··· menu presses on the Git action: Initialize Git, which is the menu's row rather than the button's (ADR-0163). */
+export interface GitActionHandle {
+  readonly initialize: () => void
+}
+
 /**
  * T3's Git action in the pane header (ADR-0027): one button whose label follows the folder's status and
  * does what it says, a chevron menu with every action, the commit dialog, the default-branch question,
  * and one notice above the composer for the action as it runs and once it is over. Every action goes to
- * the host as a command; the record the host publishes is what the notice shows.
+ * the host as a command; the record the host publishes is what the notice shows. A folder without Git shows no
+ * button: Initialize Git is a row of the pane's ··· menu, which presses it here, so its notice is this one.
  */
-export function GitActionButton({ thread, command, noticeSlot, onExplainedError, threads: givenThreads, state: windowState }: {
+export function GitActionButton({ thread, command, noticeSlot, onExplainedError, threads: givenThreads, state: windowState, ref }: {
   readonly thread: AgentThread
   readonly command: Command
   /** Every thread the window shows, for the thread this one began from (#1030); the window state's own list when absent. */
@@ -72,6 +78,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
   readonly noticeSlot: HTMLElement | null
   /** The refusal the notice is showing, so the pane's own error line does not say it twice; null when none. */
   readonly onExplainedError?: ((error: string | null) => void) | undefined
+  readonly ref?: React.Ref<GitActionHandle> | undefined
 }): ReactNode {
   const { t } = useLingui()
   const status = thread.worktree?.git
@@ -153,6 +160,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
       }
     }
   }
+  useImperativeHandle(ref, () => ({ initialize: () => press('init') }))
   const menu: PaneMenuItem[] = menuEntries(status).map(entry => {
     const EntryIcon = ICONS[entry.id]
     return { id: entry.id, label: entry.label, disabled: running || entry.hint !== undefined, ...(entry.hint ? { hint: entry.hint } : {}), icon: <EntryIcon size={15} aria-hidden="true" />, run: () => press(entry.id) }
@@ -185,7 +193,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
   const disabled = running || quick?.hint !== undefined
   return <>
     {/* The button waits for the host's read of the folder; a notice or a dialog already open does not. */}
-    {status && quick && Icon ? <div className="git-action" data-running={running || undefined}>
+    {status && quick && Icon && quick.kind !== 'init' ? <div className="git-action" data-running={running || undefined}>
       <button type="button" className="git-action__quick tt-focusable" title={quick.hint ?? quick.label} aria-disabled={disabled || undefined} disabled={running}
         onClick={() => { if (!disabled) press(quick.kind) }}>
         <Icon size={15} aria-hidden="true" />

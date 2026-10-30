@@ -12,6 +12,7 @@ import {
   LAYOUT_STORAGE_KEY, MIN_PANE_HEIGHT, MIN_PANE_WIDTH, SINGLE_VIEW, SplitLayoutStore, THREAD_DRAG_TYPE, threadPromptId,
 } from '../../../src/renderer/src/agents/splitLayout'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { openPaneMenu, paneMenuItems } from '../../fixtures/renderer/paneMenu'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -53,6 +54,23 @@ beforeEach(() => { vi.mocked(useAgents).mockReset() })
 afterEach(() => { cleanup(); vi.useRealTimers() })
 
 const sidebar = () => screen.getByRole('complementary', { name: 'Thread sidebar' })
+/**
+ * Presses a row of a pane's ··· menu (ADR-0163) as a person does: the press on the button focuses its pane, the menu
+ * opens, and the row is pressed.
+ */
+async function pressRow(pane: HTMLElement, name: string): Promise<void> {
+  const more = within(pane).getByRole('button', { name: 'More actions' })
+  await act(async () => { fireEvent.pointerDown(more) })
+  await act(async () => { more.focus(); fireEvent.click(more) })
+  await act(async () => { fireEvent.click(within(pane).getByRole('menuitem', { name })) })
+}
+/** What a pane's ··· menu lists, read with the menu open and put away again. */
+function menuRows(pane: HTMLElement): string[] {
+  const menu = openPaneMenu(pane)
+  const rows = paneMenuItems(menu)
+  fireEvent.keyDown(menu, { key: 'Escape' })
+  return rows
+}
 const openBesideButton = (title: string) => within(sidebar()).getByRole('button', { name: `Open ${title} beside` })
 
 describe('split thread workspace', () => {
@@ -247,7 +265,7 @@ describe('split thread workspace', () => {
       onPaneThreadsChange: ids => reported.push(ids),
       paneWorkingCopy: pane => <span data-testid="crumb">{pane.row.thread.id}</span>,
       paneNotice: pane => <button type="button" onClick={pane.focusPrompt}>Notice for {pane.row.thread.id}</button>,
-      focusedPaneActions: <button type="button">Files</button>,
+      paneTools: true,
     } })
     expect(reported).toEqual([['grok-previews']])
     await act(async () => { fireEvent.click(openBesideButton('Streaming WAV stall')) })
@@ -255,8 +273,10 @@ describe('split thread workspace', () => {
     for (const [title, id] of [['Grok voice previews', 'grok-previews'], ['Streaming WAV stall', 'wav-stall']] as const) {
       expect(within(view.pane(title)).getByTestId('crumb')).toHaveTextContent(id)
     }
-    expect(within(view.pane('Streaming WAV stall')).getByRole('button', { name: 'Files' })).toBeInTheDocument()
-    expect(within(view.pane('Grok voice previews')).queryByRole('button', { name: 'Files' })).toBeNull()
+    // Tools is a row of the focused pane's ··· menu, as its toggle was the focused pane's, and that ··· button wears its
+    // dot (ADR-0163). Opening another pane's menu focuses that pane first.
+    expect(view.pane('Streaming WAV stall').querySelector('[data-opens="tools"]')).toHaveAccessibleName('More actions')
+    expect(view.pane('Grok voice previews').querySelector('[data-opens="tools"]')).toBeNull()
     fireEvent.click(within(view.pane('Grok voice previews')).getByRole('button', { name: 'Notice for grok-previews' }))
     expect(view.prompt('Grok voice previews')).toHaveFocus()
     // Narrow focus hides a pane but it is still on screen for this purpose; the list is unchanged and nothing is selected.
@@ -325,19 +345,19 @@ describe('multi-pane workspace', () => {
     const top = screen.getByRole('separator', { name: 'Resize Grok voice previews and Streaming WAV stall' })
     fireEvent.keyDown(top, { key: 'ArrowRight' })
     expect(top).toHaveAttribute('aria-valuenow', '55')
-    const toggle = within(view.pane('Footer links')).getByRole('button', { name: 'Single row' })
-    expect(within(view.pane('Grok voice previews')).queryByRole('button', { name: 'Single row' })).toBeNull()
-    fireEvent.click(toggle)
-    expect(toggle).toHaveAttribute('aria-pressed', 'true')
+    // The arrangement is a row of every placed pane's ··· menu (ADR-0163), named for the arrangement a press makes.
+    expect(menuRows(view.pane('Grok voice previews'))).toContain('Arrange in a single row')
+    await pressRow(view.pane('Footer links'), 'Arrange in a single row')
+    expect(menuRows(view.pane('Footer links'))).toContain('Arrange in a grid')
     expect(screen.getByRole('group', { name: 'Thread panes' })).not.toHaveAttribute('data-rows')
     const dividers = screen.getAllByRole('separator', { name: /^Resize (?!sidebar$)/ })
     expect(dividers.map(item => item.getAttribute('aria-orientation'))).toEqual(['vertical', 'vertical'])
     expect(dividers.map(item => item.getAttribute('aria-valuenow'))).toEqual(['33', '67'])
     fireEvent.keyDown(dividers[1]!, { key: 'ArrowLeft' })
     expect(screen.getAllByRole('separator', { name: /^Resize (?!sidebar$)/ })[1]).toHaveAttribute('aria-valuenow', '62')
-    fireEvent.click(within(view.pane('Footer links')).getByRole('button', { name: 'Single row' }))
+    await pressRow(view.pane('Footer links'), 'Arrange in a grid')
     expect(screen.getByRole('separator', { name: 'Resize Grok voice previews and Streaming WAV stall' })).toHaveAttribute('aria-valuenow', '55')
-    fireEvent.click(within(view.pane('Footer links')).getByRole('button', { name: 'Single row' }))
+    await pressRow(view.pane('Footer links'), 'Arrange in a single row')
     expect(screen.getAllByRole('separator', { name: /^Resize (?!sidebar$)/ })[1]).toHaveAttribute('aria-valuenow', '62')
     expect(view.store.get().arrangement).toBe('row')
   })
@@ -354,27 +374,27 @@ describe('multi-pane workspace', () => {
     expect(rows).toHaveAttribute('aria-valuenow', '50')
   })
 
-  it('zooms one pane and returns to the same arrangement, from the button or Ctrl+Shift+M, without touching threads', async () => {
+  it('zooms one pane and returns to the same arrangement, from the ··· menu or Ctrl+Shift+M, without touching threads', async () => {
     const view = mount({ height: TALL })
     await openAll('Streaming WAV stall', 'Footer links', 'Weekly note')
     fireEvent.keyDown(screen.getByRole('separator', { name: 'Resize rows 1 and 2' }), { key: 'ArrowUp' })
     setPromptText(view.prompt('Footer links'), 'Footer draft while zoomed')
     const before = view.command.mock.calls.length
-    await act(async () => { fireEvent.click(within(view.pane('Grok voice previews')).getByRole('button', { name: 'Zoom Grok voice previews pane' })) })
+    await pressRow(view.pane('Grok voice previews'), 'Zoom pane')
     const tabs = screen.getByRole('tablist', { name: 'Open panes' })
     expect(within(tabs).getAllByRole('tab')).toHaveLength(4)
     expect(within(tabs).getByRole('tab', { name: 'Grok voice previews' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryAllByRole('separator', { name: /^Resize (?!sidebar$)/ })).toHaveLength(0)
     expect(document.getElementById('thread-pane-footer-links')).toHaveAttribute('inert')
     expect(screen.getByText('Grok voice previews zoomed')).toHaveAttribute('role', 'status')
-    // Zoom focused the pane it was asked for; nothing else was sent.
+    // Zoom focused the pane it was asked for, once; nothing else was sent.
     expect(view.command.mock.calls.slice(before).map(([request]) => request)).toEqual([{ type: 'select-thread', threadId: 'grok-previews' }])
     await act(async () => { fireEvent.keyDown(document.getElementById(threadPromptId('grok-previews'))!, { key: 'M', ctrlKey: true, shiftKey: true }) })
     expect(screen.queryByRole('tablist', { name: 'Open panes' })).toBeNull()
     expect(screen.getByRole('separator', { name: 'Resize rows 1 and 2' })).toHaveAttribute('aria-valuenow', '45')
     await act(async () => { fireEvent.pointerDown(view.pane('Footer links')); fireEvent.keyDown(view.prompt('Footer links'), { key: 'm', ctrlKey: true, shiftKey: true }) })
     expect(within(screen.getByRole('tablist', { name: 'Open panes' })).getByRole('tab', { name: 'Footer links' })).toHaveAttribute('aria-selected', 'true')
-    await act(async () => { fireEvent.click(within(document.getElementById('thread-pane-footer-links')!).getByRole('button', { name: 'Show all panes' })) })
+    await pressRow(document.getElementById('thread-pane-footer-links')!, 'Show all panes')
     expect(regions()).toEqual(['Grok voice previews', 'Streaming WAV stall', 'Footer links', 'Weekly note'])
     expect(promptText(view.prompt('Footer links'))).toBe('Footer draft while zoomed')
     // Drafting in this legacy thread inspects its existing checkout; layout changes send no work.
@@ -386,62 +406,62 @@ describe('multi-pane workspace', () => {
     await openAll('Streaming WAV stall', 'Footer links', 'Weekly note')
     view.resize(WIDE, 2 * MIN_PANE_HEIGHT + 8)
     expect(screen.getByRole('tablist', { name: 'Open panes' })).toBeInTheDocument()
-    // No zoom control while the window alone decides; closing still works.
+    // No Zoom pane while the window alone decides; closing still works.
     const weekly = document.getElementById('thread-pane-weekly-note')!
-    expect(within(weekly).queryByRole('button', { name: /Zoom/ })).toBeNull()
+    expect(menuRows(weekly)).not.toContain('Zoom pane')
     expect(within(weekly).getByRole('button', { name: 'Close Weekly note pane' })).toBeInTheDocument()
     view.resize(WIDE, TALL)
     expect(screen.queryByRole('tablist', { name: 'Open panes' })).toBeNull()
     expect(screen.getAllByRole('separator', { name: /^Resize (?!sidebar$)/ })).toHaveLength(3)
   })
 
-  it('keeps the arrangement switch when a single row goes compact, and returns to the same grid from it by keyboard', async () => {
+  it('keeps the arrangement row when a single row goes compact, and returns to the same grid from it', async () => {
     // Four panes fit a 2-by-2 grid here; a single row of four needs 4 × 400px plus dividers.
     const view = mount({ width: 1200, height: 700 })
     await openAll('Streaming WAV stall', 'Footer links', 'Weekly note')
     const rows = screen.getByRole('separator', { name: 'Resize rows 1 and 2' })
     fireEvent.keyDown(rows, { key: 'ArrowUp' })
     setPromptText(view.prompt('Footer links'), 'Footer draft through compact')
-    await act(async () => { fireEvent.click(within(view.pane('Weekly note')).getByRole('button', { name: 'Single row' })) })
+    await pressRow(view.pane('Weekly note'), 'Arrange in a single row')
     const tabs = screen.getByRole('tablist', { name: 'Open panes' })
     expect(within(tabs).getByRole('tab', { name: 'Weekly note' })).toHaveAttribute('aria-selected', 'true')
     expect(screen.queryAllByRole('separator', { name: /^Resize (?!sidebar$)/ })).toHaveLength(0)
-    // The shown pane keeps the switch, pressed for the retained row; hidden panes stay out of reach.
+    // The shown pane keeps the row, named for the grid it returns to; hidden panes stay out of reach.
     const weekly = document.getElementById('thread-pane-weekly-note')!
-    const toggle = within(weekly).getByRole('button', { name: 'Single row' })
-    expect(toggle).toHaveAttribute('aria-pressed', 'true')
     expect(document.querySelector('.thread-panes > [role="status"]')).toHaveTextContent('Panes will be arranged in a single row when there is room')
-    expect(within(weekly.querySelector<HTMLElement>('.thread-pane__controls')!).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['Single row', 'Close Weekly note pane'])
-    expect(within(document.getElementById('thread-pane-footer-links')!).queryByRole('button', { name: 'Single row' })).toBeNull()
-    toggle.focus()
-    await act(async () => { fireEvent.click(toggle) })
+    expect(menuRows(weekly).filter(row => row.startsWith('Arrange'))).toEqual(['Arrange in a grid'])
+    expect(document.getElementById('thread-pane-footer-links')).toHaveAttribute('inert')
+    await pressRow(weekly, 'Arrange in a grid')
     expect(screen.queryByRole('tablist', { name: 'Open panes' })).toBeNull()
     expect(view.store.get().arrangement).toBe('grid')
     expect(screen.getByRole('separator', { name: 'Resize rows 1 and 2' })).toHaveAttribute('aria-valuenow', '45')
     expect(regions()).toEqual(['Grok voice previews', 'Streaming WAV stall', 'Footer links', 'Weekly note'])
-    expect(within(view.pane('Weekly note')).getByRole('button', { name: 'Single row' })).toHaveAttribute('aria-pressed', 'false')
-    expect(document.activeElement).toBe(within(view.pane('Weekly note')).getByRole('button', { name: 'Single row' }))
+    expect(menuRows(view.pane('Weekly note'))).toContain('Arrange in a single row')
+    expect(document.activeElement).toBe(within(view.pane('Weekly note')).getByRole('button', { name: 'More actions' }))
     expect(document.querySelector('.thread-panes > [role="status"]')).toHaveTextContent('Panes arranged in a grid')
     expect(promptText(view.prompt('Footer links'))).toBe('Footer draft through compact')
     expect(view.command.mock.calls.filter(([request]) => request.type !== 'select-thread')).toEqual([[{ type: 'refresh-thread-worktree', threadId: 'footer-links', background: true }]])
   })
 
-  it('moves a pane from its handle with the arrow keys, keeping focus, drafts and the selection where they were', async () => {
+  it('moves a pane from its ··· menu toward each neighbour it has, keeping focus on the button and drafts where they were', async () => {
     const view = mount({ height: TALL })
     await openAll('Streaming WAV stall', 'Footer links', 'Weekly note')
     setPromptText(view.prompt('Grok voice previews'), 'Previews draft')
     const before = view.command.mock.calls.length
-    const grip = within(view.pane('Grok voice previews')).getByRole('button', { name: 'Move Grok voice previews pane' })
-    grip.focus()
-    await act(async () => { fireEvent.keyDown(grip, { key: 'ArrowRight' }) })
+    const grok = () => view.pane('Grok voice previews')
+    // The first pane of a 2-by-2 grid has a neighbour to its right and one below; Move pane offers those two.
+    expect(menuRows(grok()).filter(row => row.startsWith('Move pane'))).toEqual(['Move pane right', 'Move pane down'])
+    await pressRow(grok(), 'Move pane right')
     expect(regions()).toEqual(['Streaming WAV stall', 'Grok voice previews', 'Footer links', 'Weekly note'])
-    await act(async () => { fireEvent.keyDown(grip, { key: 'ArrowDown' }) })
+    expect(menuRows(grok()).filter(row => row.startsWith('Move pane'))).toEqual(['Move pane left', 'Move pane down'])
+    await pressRow(grok(), 'Move pane down')
     expect(regions()).toEqual(['Streaming WAV stall', 'Weekly note', 'Footer links', 'Grok voice previews'])
-    expect(grip).toHaveFocus()
+    expect(within(grok()).getByRole('button', { name: 'More actions' })).toHaveFocus()
     expect(screen.getByText('Grok voice previews moved to pane 4 of 4')).toHaveAttribute('role', 'status')
     expect(promptText(view.prompt('Grok voice previews'))).toBe('Previews draft')
-    expect(view.command.mock.calls.slice(before)).toEqual([])
-    expect(view.pane('Weekly note')).toHaveAttribute('data-focused')
+    // Its ··· button took focus, so the moved pane holds the selection; nothing but that selection was sent.
+    expect(view.command.mock.calls.slice(before).map(([request]) => request)).toEqual([{ type: 'select-thread', threadId: 'grok-previews' }])
+    expect(grok()).toHaveAttribute('data-focused')
   })
 
   it('previews the snapped slot while a thread is dragged, adds it there or replaces the pane it is dropped on', async () => {
@@ -468,7 +488,7 @@ describe('multi-pane workspace', () => {
     expect(regions()).toEqual(['Grok voice previews', 'Weekly note', 'Footer links'])
   })
 
-  it('keeps the page order pane, divider, pane, row by row, with each pane\'s layout controls before its content', async () => {
+  it('keeps the page order pane, divider, pane, row by row, with each pane\'s header controls before its content', async () => {
     mount({ height: TALL })
     await openAll('Streaming WAV stall', 'Footer links', 'Weekly note')
     const group = screen.getByRole('group', { name: 'Thread panes' })
@@ -477,16 +497,21 @@ describe('multi-pane workspace', () => {
       'Footer links', 'Resize Footer links and Weekly note', 'Weekly note',
     ])
     const tabbable = [...within(group).getByRole('region', { name: 'Footer links' }).querySelectorAll<HTMLElement>('button, textarea, [role="textbox"]')].filter(item => !item.hasAttribute('disabled'))
-    expect(tabbable[0]).toHaveAccessibleName('Move Footer links pane')
-    expect(tabbable.at(-1)!.closest('.thread-pane__controls')).toBeNull()
+    // The header's own controls, ··· and close last (ADR-0163), then the pane's content; nothing floats over the header.
+    expect(tabbable.slice(0, 2).map(item => item.getAttribute('aria-label'))).toEqual(['More actions', 'Close Footer links pane'])
+    expect(tabbable.at(-1)!.closest('header')).toBeNull()
+    expect(group.querySelector('.thread-pane__controls')).toBeNull()
   })
 
   it('shows move targets only after a pane drag has started, so they never cover the handle as it starts, and moves the pane where it is dropped', async () => {
-    mount({ height: TALL })
+    const view = mount({ height: TALL })
     await openAll('Streaming WAV stall', 'Footer links')
     const data = new Map<string, string>()
     const dataTransfer = { setData: (type: string, value: string) => data.set(type, value), getData: (type: string) => data.get(type) ?? '', get types() { return [...data.keys()] }, effectAllowed: 'all', dropEffect: 'none' }
-    fireEvent.dragStart(screen.getByRole('button', { name: 'Move Grok voice previews pane' }), { dataTransfer })
+    // The title is the handle that moves the pane (ADR-0163).
+    const handle = view.pane('Grok voice previews').querySelector<HTMLElement>('.thread-workspace__title')!
+    expect(handle).toHaveAttribute('draggable', 'true')
+    fireEvent.dragStart(handle, { dataTransfer })
     expect(screen.queryByText('Move here')).toBeNull()
     await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
     const targets = screen.getAllByText('Move here')
@@ -494,6 +519,20 @@ describe('multi-pane workspace', () => {
     await act(async () => { fireEvent.drop(targets[2]!.parentElement!, { dataTransfer }) })
     expect(regions()).toEqual(['Footer links', 'Streaming WAV stall', 'Grok voice previews'])
     expect(screen.queryByText('Move here')).toBeNull()
+  })
+
+  it('leaves a drag that starts on a control inside the title to that control, and has no handle without a split', async () => {
+    const view = mount({ height: TALL, slots: { paneWorkingCopy: pane => <button type="button">Working copy of {pane.row.thread.id}</button> } })
+    expect(view.pane('Grok voice previews').querySelector('.thread-workspace__title')).not.toHaveAttribute('draggable')
+    await openAll('Streaming WAV stall')
+    const data = new Map<string, string>()
+    const dataTransfer = { setData: (type: string, value: string) => data.set(type, value), getData: (type: string) => data.get(type) ?? '', get types() { return [...data.keys()] }, effectAllowed: 'all', dropEffect: 'none' }
+    const handle = view.pane('Grok voice previews').querySelector<HTMLElement>('.thread-workspace__title')!
+    fireEvent.pointerDown(within(handle).getByRole('button', { name: 'Working copy of grok-previews' }))
+    expect(fireEvent.dragStart(handle, { dataTransfer })).toBe(false)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) })
+    expect(screen.queryByText('Move here')).toBeNull()
+    expect(data.size).toBe(0)
   })
 
   it('ends a divider drag when pointer capture is taken away and keeps the size the drag reached', async () => {

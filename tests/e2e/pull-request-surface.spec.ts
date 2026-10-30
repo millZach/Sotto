@@ -5,7 +5,7 @@ import { resizeContentWindow } from './support/sottoWindow'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // The Pull request surface (#269), the merge checklist, against a real repository, an owned bare remote and a scripted
@@ -112,14 +112,13 @@ test('a pull request is checked out from the branch picker, opened from its badg
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     const picker = pane(page).getByRole('combobox', { name: 'Choose branch' })
     await expect(picker).toHaveText(/main/u, { timeout: 20_000 })
-    const toolsToggle = page.getByRole('button', { name: 'Tools', exact: true })
-    await toolsToggle.click()
+    await toggleTools(page)
     await panel.getByRole('tab', { name: 'Pull request', exact: true }).click()
     await expect(panel.getByRole('heading', { name: 'Nothing to merge yet' })).toBeVisible({ timeout: 30_000 })
     await expect(panel.getByRole('button', { name: 'Create PR', exact: true })).toHaveAttribute('aria-disabled', 'true')
     await expect(panel.getByRole('button', { name: 'Link pull request', exact: true })).toBeVisible()
     await capture(page, 'none-1280-dark')
-    await toolsToggle.click()
+    await toggleTools(page)
     await expect(panel).toHaveCount(0)
 
     // The branch picker: a pull request number offers Checkout pull request first, and Enter opens it.

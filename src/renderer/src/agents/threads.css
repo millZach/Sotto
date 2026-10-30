@@ -22,8 +22,9 @@
 /* A notice above the panes (recovered work) scrolls within its own box before it squeezes the composer below it. */
 .threads-view .thread-workspace > .thread-workspace__body[data-panes] { min-height: min(560px, calc(100% - 140px)); }
 .threads-view .thread-workspace > .provider-recovery { min-height: min(140px, 30%); }
-/* One 44px row: the provider mark, the name, its project, and at the end the Tools toggle and the More menu.
-   The row is the window's drag handle, so everything that can be clicked or typed in opts out of dragging. */
+/* One 44px row: the provider mark, the name, its project, then pinned to the right in a fixed order the Git action, Watch,
+   the ··· menu and, in a split, close (ADR-0163). The row is the window's drag handle, so everything that can be clicked
+   or typed in opts out of dragging; the title opts out too, since in a split it is the handle that moves the pane. */
 .thread-workspace__head { display: flex; align-items: center; gap: 4px; flex: none; height: 44px; padding: 0 6px 0 18px; -webkit-app-region: drag; }
 .thread-workspace__head :is(.thread-workspace__title, .thread-workspace__actions, button, input, a) { -webkit-app-region: no-drag; }
 .thread-workspace__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
@@ -43,7 +44,7 @@
 .thread-workspace__actions { display: flex; flex: none; align-items: center; gap: 2px; }
 .thread-workspace__error { margin: 12px 24px 0; }
 
-/* The header's icon buttons: the Tools toggle, the More menu, and anything a pane adds beside them. */
+/* The header's icon buttons: the ··· menu, close, and anything a pane adds beside them. */
 .pane-action { display: grid; place-items: center; width: 30px; height: 30px; flex: none; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .pane-action:hover:not(:disabled), .pane-action[aria-pressed='true'], .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .pane-action:active:not(:disabled):not([aria-pressed='true']):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
@@ -61,6 +62,15 @@
 .pane-menu__item:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 .pane-menu__item:disabled { color: var(--tt-text-muted); cursor: default; }
 .pane-menu__item:disabled > svg { opacity: .55; }
+/* A row that shows something ticks while it shows, and a row with keys names them at its end, muted, in a title's words. */
+.pane-menu__label { flex: 1 1 auto; min-width: 0; }
+.pane-menu__end { display: inline-flex; flex: none; align-items: center; gap: 8px; margin-left: 18px; color: var(--tt-text-muted); }
+.pane-menu__end > svg { color: var(--tt-text-2); }
+.pane-menu__end kbd { font: inherit; font-size: 12px; }
+/* Tools' dot, on the ··· button of the pane that lists Tools: agents working, or the attention colour while a delegated
+   thread waits for you. It sits above-left of the dots, where it sat on the Tools icon. */
+.tools-dot { position: absolute; top: 3px; left: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); box-shadow: 0 0 0 2px var(--tt-canvas); pointer-events: none; }
+.tools-dot[data-needs] { background: var(--tt-attention); }
 
 .thread-transcript { --thread-jump-gap: 14px; position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
 /* Positioned so absolute content (a diagram's hidden text) scrolls inside the transcript instead of stretching the pane. */

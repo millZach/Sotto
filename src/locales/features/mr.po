@@ -1467,13 +1467,11 @@ msgstr ""
 msgid "Codex plugin in Claude Code"
 msgstr ""
 
-#: src/renderer/src/features/help/HelpView.tsx
-#: src/renderer/src/watcher/WatcherView.tsx
+#: src/renderer/src/watcher/watcherProviders.ts
 msgid "Codex, Claude Code or Grok Build"
 msgstr ""
 
-#: src/renderer/src/features/help/HelpView.tsx
-#: src/renderer/src/watcher/WatcherView.tsx
+#: src/renderer/src/watcher/watcherProviders.ts
 msgid "Codex, Claude Code, Grok Build or Muse"
 msgstr ""
 
