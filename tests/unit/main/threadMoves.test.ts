@@ -903,9 +903,10 @@ describe('Keep it here on a move waiting on its machine (#1178 part 4)', () => {
     // Not waiting yet: nothing to keep here.
     expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.notWaiting })
     w.remote.connected = false; w.connected()
-    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true }))
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true, keepable: true }))
     expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'ok' })
     expect(moves.view().cards[0]).toMatchObject({ id: moveId, keeping: true })
+    expect(moves.view().cards[0]!.keepable).toBeUndefined()
     // Remembered across a restart, and still fenced meanwhile.
     expect(JSON.parse(await readFile(join(directory, 'moves.json'), 'utf8')).keeping).toEqual([moveId])
     expect(w.fences.has('a')).toBe(true)

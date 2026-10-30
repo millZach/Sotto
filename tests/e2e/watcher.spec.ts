@@ -1784,7 +1784,7 @@ test.describe("Watcher's room on the built app", () => {
     const moves = (hostId: string): NonNullable<WatcherStandInSeed['moves']> => ({
       machines: [{ hostId: FORGE, name: 'forge', connected: false }],
       cards: [{ id: randomUUID(), state: 'thread-started', source: { hostId, threadId: 'grok-previews' }, moved: { hostId: FORGE, threadId: 'previews-there' }, hostId: FORGE,
-        machine: 'forge', model: { name: 'Claude Sonnet 4.6' }, waiting: true, waitingOn: 'forge', at: now, updatedAt: now }],
+        machine: 'forge', model: { name: 'Claude Sonnet 4.6' }, waiting: true, waitingOn: 'forge', keepable: true, at: now, updatedAt: now }],
     })
     await onReleaseTrack('owl', async () => {
       for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance, 'reduced'), async (launched) => {

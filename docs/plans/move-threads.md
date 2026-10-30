@@ -186,3 +186,8 @@ After Sol's spec review of part 4 (October 30):
 - Watcher's watch comes back before the machine is asked to call the move off, while the new thread is still there to take it from.
 - A thread made there whose ID was never heard here still keeps the branch its worktree came from (`keptMade`).
 
+After Sol's confirmation pass on part 4 (October 30):
+
+- Main says when a move can be kept here (`keepable` on its card): it waits on a machine, with no step under way and not already ending or kept. A press during a step under way, settling the source among them, is refused as not waiting, so it never races the step.
+- Bringing Watcher's watch back has tries of its own, apart from the tries to carry it.
+

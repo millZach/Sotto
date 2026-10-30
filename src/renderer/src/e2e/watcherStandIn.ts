@@ -97,7 +97,7 @@ export function createE2EThreadMovesStandIn(): { readonly moves: ThreadMovesBrid
       }
       if ('moveId' in request) {
         // Keep it here: the press is kept, and the move waits for its machine to call it off.
-        publish(view.cards.map(card => card.id === request.moveId ? threadMoveCardSchema.parse({ ...card, keeping: true, updatedAt: at }) : card))
+        publish(view.cards.map(card => { if (card.id !== request.moveId) return card; const { keepable: _keepable, ...rest } = card; void _keepable; return threadMoveCardSchema.parse({ ...rest, keeping: true, updatedAt: at }) }))
         return { status: 'ok' }
       }
       const { cardId, answer } = request

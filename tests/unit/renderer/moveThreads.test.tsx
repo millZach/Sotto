@@ -297,7 +297,7 @@ describe('Each move’s card in Watcher’s conversation', () => {
     const { moves } = bridges()
     const { rerender } = render(<WatcherMoveCards cards={[card({ state: 'thread-started' })]} threads={threads} />)
     expect(screen.queryByRole('button', { name: 'Keep it here' })).toBeNull()
-    rerender(<WatcherMoveCards cards={[card({ state: 'thread-started', waiting: true, waitingOn: 'forge', moved: { hostId: FORGE, threadId: 'tray-there' } })]} threads={threads} />)
+    rerender(<WatcherMoveCards cards={[card({ state: 'thread-started', waiting: true, waitingOn: 'forge', keepable: true, moved: { hostId: FORGE, threadId: 'tray-there' } })]} threads={threads} />)
     const keep = screen.getByRole('button', { name: 'Keep it here' })
     fireEvent.click(keep)
     // The question takes focus on Cancel, and Cancel gives it back to Keep it here, with nothing sent.
@@ -318,13 +318,13 @@ describe('Each move’s card in Watcher’s conversation', () => {
   })
   it('asks first too when forge was asked to start the thread but its answer never came', () => {
     bridges()
-    render(<WatcherMoveCards cards={[card({ state: 'branch-sent', waiting: true, waitingOn: 'forge', startAsked: true })]} threads={threads} />)
+    render(<WatcherMoveCards cards={[card({ state: 'branch-sent', waiting: true, waitingOn: 'forge', keepable: true, startAsked: true })]} threads={threads} />)
     fireEvent.click(screen.getByRole('button', { name: 'Keep it here' }))
     expect(screen.getByRole('group', { name: /Stop the new thread on forge if it made one, and keep this one here\?/u })).toBeTruthy()
   })
   it('keeps a move with no thread there at one press, then says it waits to call the move off', async () => {
     const { moves } = bridges()
-    const { rerender } = render(<WatcherMoveCards cards={[card({ state: 'branch-sent', waiting: true, waitingOn: 'forge' })]} threads={threads} />)
+    const { rerender } = render(<WatcherMoveCards cards={[card({ state: 'branch-sent', waiting: true, waitingOn: 'forge', keepable: true })]} threads={threads} />)
     fireEvent.click(screen.getByRole('button', { name: 'Keep it here' }))
     await waitFor(() => expect(moves.answer).toHaveBeenCalledWith({ moveId: CARD, answer: 'keep-here' }))
     rerender(<WatcherMoveCards cards={[card({ state: 'branch-sent', waiting: true, waitingOn: 'forge', keeping: true })]} threads={threads} />)

@@ -469,7 +469,8 @@ function MoveCard({ card, threads, answer }: { readonly card: ThreadMoveCard; re
   useEffect(() => {
     if (confirming) { asked.current = true; cancelRef.current?.focus() } else if (asked.current) { asked.current = false; keepRef.current?.focus() }
   }, [confirming])
-  const keepable = card.waiting === true && card.keeping !== true && STEPS.includes(card.state) && card.state !== 'source-settled'
+  // Main says when a move can be kept here: waiting on its machine, with nothing under way and not already ending.
+  const keepable = card.keepable === true
   const press = async (choice: 'move' | 'keep' | 'keep-here'): Promise<void> => {
     if (answer === undefined || pending) return
     setPending(true); setRefusal(null)
