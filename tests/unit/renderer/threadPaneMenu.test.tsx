@@ -192,6 +192,7 @@ describe('the manual composer', () => {
     expect(stop.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(stop.parentElement).toHaveClass('thread-prompt__actions')
     expect(send).toHaveClass('thread-prompt__disc')
-    expect(document.querySelector('.effort-dots__stop')).toBeNull()
+    // The shield stands at the pill's start, after attach (ADR-0161).
+    expect(shield.closest('.thread-prompt__lead')).not.toBeNull()
   })
 })

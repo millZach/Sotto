@@ -140,7 +140,7 @@ describe('New Watcher in Watcher’s composer', () => {
       const pane = await watcherPane()
       const controls = pane.querySelector('.thread-prompt__actions')!
       expect([...controls.querySelectorAll('button')].map(control => control.getAttribute('aria-label'))).toEqual(['New Watcher', 'Stop agent', 'Queue prompt'])
-      expect(pane.querySelector('.effort-dots__stop')).toBeNull()
+      expect(pane.querySelector('.thread-prompt__lead .thread-chip')).not.toBeNull()
       expect(controls.querySelector('.thread-prompt__send')).toHaveClass('thread-prompt__disc')
     }
     await user.click(button)
