@@ -4,14 +4,14 @@ name: iPhone UI hillclimb captures
 # merged. GitHub runs workflow_dispatch only for a workflow on the default branch, so a push to this branch starts it.
 on:
   push:
-    branches: [chore/ios-ui-hillclimb-captures]
+    branches: [chore/ios-ui-hillclimb-captures, chore/ios-captures-large-text]
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: ios-ui-hillclimb-captures
+  group: ios-ui-hillclimb-captures-${{ github.ref_name }}
   cancel-in-progress: true
 
 jobs:
