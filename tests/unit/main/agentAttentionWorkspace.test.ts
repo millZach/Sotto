@@ -119,9 +119,20 @@ describe('workspace manual prompt authority and durable dispatch', () => {
     expect(f.host.attempts).toHaveLength(1)
   })
 
-  it.each(['permission', 'question', 'disconnected', 'closed'] as const)('rejects a manual prompt when %s without sending or answering', async guard => {
+  it.each(['permission', 'question'] as const)('queues a manual prompt behind a %s without sending or answering', async kind => {
     const f = await fixture()
-    if (guard === 'permission' || guard === 'question') f.host.event({ type: guard, threadId: 'workshop', text: 'Explicit answer required' })
+    f.host.event({ type: kind, threadId: 'workshop', requestId: 'pending', text: 'Explicit answer required' })
+    const requests = f.control.get().host.threads.find(thread => thread.id === 'workshop')!.requests
+    const result = await f.control.command(agentCommandSchema.parse({ type: 'manual-send', threadId: 'workshop', text: 'Saved prompt' }))
+    expect(result.error).toBeNull()
+    expect(result.draft).toBe('')
+    expect(result.followups).toEqual([expect.objectContaining({ threadId: 'workshop', text: 'Saved prompt', status: 'queued' })])
+    expect(result.host.threads.find(thread => thread.id === 'workshop')!.requests).toEqual(requests)
+    expect(f.host.attempts).toEqual([])
+  })
+
+  it.each(['disconnected', 'closed'] as const)('rejects a manual prompt when %s without sending or answering', async guard => {
+    const f = await fixture()
     if (guard === 'disconnected') f.host.event({ type: 'disconnect', threadId: 'workshop', text: '' })
     if (guard === 'closed') f.host.transform = snapshot => ({ ...snapshot, threads: snapshot.threads.map(t => ({ ...t, archivedAt: new Date().toISOString() })) })
     const result = await f.control.command(agentCommandSchema.parse({ type: 'manual-send', threadId: 'workshop', text: 'Saved prompt' }))

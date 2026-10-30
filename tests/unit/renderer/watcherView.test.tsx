@@ -279,6 +279,30 @@ describe("Watcher's room", () => {
       ...(!alreadySaved ? { speed: 'ultrafast', speedSourceModelId: 'codex:gpt' } : {}) }))
   })
 
+  it.each([['question', false], ['question', true], ['permission', false], ['permission', true]] as const)('queues a follow-up while Watcher waits on a %s card (quiet: %s) without answering it', async (kind, quiet) => {
+    const state = stateWithWatcher()
+    const thread = state.host.threads.find(item => item.id === 'watcher')!
+    const request: AgentThread['requests'][number] = kind === 'question'
+      ? { id: 'card', kind, text: 'Which branch?', options: [{ id: 'main', label: 'Main' }, { id: 'release', label: 'Release' }], skippable: true }
+      : { id: 'card', kind, text: 'Allow the command?', options: [], permissionChoices: [{ id: 'allow', label: 'Allow', kind: 'allow-once' as const }] }
+    thread.requests = [request]
+    // Providers may report idle while waiting on a card; the card still holds delivery.
+    thread.status = 'idle'
+    const { command } = renderRoom(state, roomState(), true, quiet)
+    await paneReady()
+    const prompt = screen.getByRole('textbox', { name: 'Watcher message' })
+    expect(prompt).toHaveAttribute('contenteditable', 'true')
+    setPromptText(prompt, 'After this, check the release notes.')
+    const queue = screen.getByRole('button', { name: 'Queue prompt' })
+    expect(queue).toBeEnabled()
+    fireEvent.click(queue)
+    await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'queue-followup', threadId: 'watcher', text: 'After this, check the release notes.' })))
+    expect(command.mock.calls.some(([item]) => item.type === 'answer' || item.type === 'steer' || item.type === 'manual-send')).toBe(false)
+    expect(thread.requests).toEqual([request])
+    expect(screen.getByRole('region', { name: 'Queued messages' })).toHaveTextContent('After this, check the release notes.')
+    expect(promptText(prompt)).toBe('')
+  })
+
   it('says main’s refusal in its own words and keeps the message in the composer', async () => {
     const { bridge, command } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null }))
     bridge.open.mockResolvedValueOnce({ status: 'refused', code: 'PROVIDER_UNAVAILABLE', message: 'Claude Code is not connected. Nothing was started.', retryable: true })

@@ -182,6 +182,7 @@ export default tseslint.config(
       'artifacts/cursor-provider/**',
       'artifacts/starting-screen/**',
       'artifacts/unconfirmed-send/**',
+      'artifacts/watcher-card-queue/**',
       'node_modules/**',
       'out/**',
       'playwright-report/**',

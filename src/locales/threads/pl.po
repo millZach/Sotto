@@ -1709,10 +1709,6 @@ msgstr ""
 msgid "Allow edits"
 msgstr ""
 
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Allow or deny the request above to continue."
-msgstr ""
-
 #. {existingTitle} is a project's title.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Already the project {existingTitle}"
@@ -1753,14 +1749,6 @@ msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Answer sent."
-msgstr ""
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Answer the question above to continue."
-msgstr ""
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Answer the request above to continue."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
@@ -6194,6 +6182,11 @@ msgstr ""
 msgid "Queued messages"
 msgstr ""
 
+#: src/renderer/src/agents/ThreadComposer.tsx
+#: src/renderer/src/agents/ThreadFollowups.tsx
+msgid "Queued until you answer the card"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Queued: {addedText}"
 msgstr ""
@@ -6913,10 +6906,6 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Sending answer…"
-msgstr ""
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Sending returns once the request above is answered in {provider}’s app."
 msgstr ""
 
 #: src/renderer/src/agents/ContinueThread.tsx
@@ -9197,10 +9186,6 @@ msgstr ""
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Waiting in {waitingIn}"
-msgstr ""
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Waiting on the request above."
 msgstr ""
 
 #: src/renderer/src/agents/threadClearWords.ts

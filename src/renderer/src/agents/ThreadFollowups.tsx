@@ -287,8 +287,11 @@ export function ThreadFollowups({ row, state, command, store, onRetryAdmission }
   const pausedBy = queuePaused && paused.every(item => item.pausedBy === 'watcher') ? t`Paused by Watcher` : t({ message: 'Paused', comment: 'A queued message\'s state: the queue is paused.' })
   // When the list sends, said beside its count while a turn runs and something waits for it to end.
   const runningProvider = row.providerId === undefined ? undefined : PROVIDER_LABELS[row.providerId]
-  const sendsWhen = row.thread.status === 'running' && !queuePaused && runningProvider !== undefined && visible.some(item => item.status === 'queued')
-    ? t({ message: `sends when ${runningProvider} finishes`, comment: 'Beside "Queued" and its count: when the queue sends.' }) : null
+  const sendsWhen = !queuePaused && visible.some(item => item.status === 'queued')
+    ? row.thread.requests.length > 0 ? t`Queued until you answer the card`
+      : row.thread.status === 'running' && runningProvider !== undefined
+        ? t({ message: `sends when ${runningProvider} finishes`, comment: 'Beside "Queued" and its count: when the queue sends.' }) : null
+    : null
   const tool = (itemId: string, name: string): HTMLElement | null | undefined =>
     section.current?.querySelector<HTMLElement>(`[data-followup="${itemId}"] [data-tool="${name}"]`)
   const toggle = (): HTMLElement | null | undefined => section.current?.querySelector<HTMLElement>('.thread-followups__toggle')

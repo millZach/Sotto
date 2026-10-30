@@ -1709,10 +1709,6 @@ msgstr "Allow"
 msgid "Allow edits"
 msgstr "Allow edits"
 
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Allow or deny the request above to continue."
-msgstr "Allow or deny the request above to continue."
-
 #. {existingTitle} is a project's title.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Already the project {existingTitle}"
@@ -1754,14 +1750,6 @@ msgstr "Answer draft saved."
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Answer sent."
 msgstr "Answer sent."
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Answer the question above to continue."
-msgstr "Answer the question above to continue."
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Answer the request above to continue."
-msgstr "Answer the request above to continue."
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Answer this question"
@@ -6194,6 +6182,11 @@ msgstr "Queued <0>{count}</0>"
 msgid "Queued messages"
 msgstr "Queued messages"
 
+#: src/renderer/src/agents/ThreadComposer.tsx
+#: src/renderer/src/agents/ThreadFollowups.tsx
+msgid "Queued until you answer the card"
+msgstr "Queued until you answer the card"
+
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Queued: {addedText}"
 msgstr "Queued: {addedText}"
@@ -6914,10 +6907,6 @@ msgstr "Sending"
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Sending answer…"
 msgstr "Sending answer…"
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Sending returns once the request above is answered in {provider}’s app."
-msgstr "Sending returns once the request above is answered in {provider}’s app."
 
 #: src/renderer/src/agents/ContinueThread.tsx
 msgid "Sending starts a <0>new {target} thread</0> with a handover of this one."
@@ -9198,10 +9187,6 @@ msgstr "Waiting for your permission. Open it to answer."
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Waiting in {waitingIn}"
 msgstr "Waiting in {waitingIn}"
-
-#: src/renderer/src/agents/ThreadComposer.tsx
-msgid "Waiting on the request above."
-msgstr "Waiting on the request above."
 
 #: src/renderer/src/agents/threadClearWords.ts
 msgid "waiting on you"

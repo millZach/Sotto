@@ -222,7 +222,6 @@ extension AppModel {
         if !current.connected {
             return String(localized: "\(AgentNames.name(current.provider)) isn’t connected on \(name(hostID)), so Watcher can’t take messages. Nothing was sent.", comment: "The first placeholder is the provider's name, such as Codex; the second is the computer's name")
         }
-        if page.needsYou.contains(where: { page.isOwn($0) }) { return String(localized: "Answer Watcher’s request first.") }
         return nil
     }
     /// Whether the Watcher box holds something it can send now: words, photos, files or any of them, every photo prepared and

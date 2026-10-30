@@ -1,5 +1,5 @@
 import React from 'react'
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentState } from '../../../src/shared/agents'
@@ -8,6 +8,7 @@ import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
+import { setPromptText } from './helpers/promptEditor'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -32,6 +33,18 @@ function mount(state: AgentState) {
   return { live, view: render(<ThreadsView now={E2E_THREADS_NOW} />) }
 }
 
+async function queueFollowup(live: ReturnType<typeof liveAgentState>, prompt: HTMLElement) {
+  const requests = live.state.host.threads.find(thread => thread.id === 'visual-gate')!.requests
+  setPromptText(prompt, 'After this, check the release notes.')
+  const queue = screen.getByRole('button', { name: 'Queue prompt' })
+  expect(queue).toBeEnabled()
+  fireEvent.click(queue)
+  await waitFor(() => expect(live.command).toHaveBeenCalledWith(expect.objectContaining({ type: 'queue-followup', threadId: 'visual-gate', text: 'After this, check the release notes.' })))
+  expect(live.command.mock.calls.some(([request]) => request.type === 'answer' || request.type === 'steer' || request.type === 'manual-send')).toBe(false)
+  expect(live.state.host.threads.find(thread => thread.id === 'visual-gate')!.requests).toEqual(requests)
+  expect(screen.getByRole('region', { name: 'Queued messages' })).toHaveTextContent('After this, check the release notes.')
+}
+
 beforeEach(() => { vi.mocked(useAgents).mockReset() })
 afterEach(() => {
   cleanup()
@@ -40,27 +53,32 @@ afterEach(() => {
 })
 
 describe('the composer beside a pending permission', () => {
-  it('sends the reader to the provider’s app when Sotto has no choice to send, without repeating itself', () => {
-    mount(permissionState([]))
+  it('queues a follow-up while directing the card’s answer to the provider’s app when Sotto has no choice to send', async () => {
+    const { live, view } = mount(permissionState([]))
     const prompt = screen.getByRole('textbox', { name: 'Prompt' })
-    expect(prompt).toHaveAttribute('data-placeholder', 'Waiting on the request above.')
-    expect(prompt).toHaveAttribute('contenteditable', 'false')
-    expect(prompt).toHaveAccessibleDescription(/Sending returns once the request above is answered in .+’s app\./u)
+    expect(prompt).toHaveAttribute('data-placeholder', 'Queued until you answer the card')
+    expect(prompt).toHaveAttribute('contenteditable', 'true')
+    const card = view.container.querySelector<HTMLElement>('.agent-request')!
+    expect(within(card).getByText('Sotto has no choice it can send for this request. Answer it in the provider’s app.')).toBeVisible()
+    expect(within(card).queryByRole('button', { name: 'Allow' })).not.toBeInTheDocument()
+    expect(within(card).queryByRole('button', { name: 'Deny' })).not.toBeInTheDocument()
     expect(screen.queryByText(/Allow or deny/u)).not.toBeInTheDocument()
+    await queueFollowup(live, prompt)
+    expect(card).toBeInTheDocument()
   })
 
-  it.each([['native choices', CHOICES], ['legacy approval', undefined]] as const)('still asks to allow or deny with %s, once', (_name, choices) => {
-    const { view } = mount(permissionState(choices))
+  it.each([['native choices', CHOICES], ['legacy approval', undefined]] as const)('queues a follow-up while keeping %s answerable in the card', async (_name, choices) => {
+    const { live, view } = mount(permissionState(choices))
     const prompt = screen.getByRole('textbox', { name: 'Prompt' })
-    expect(prompt).toHaveAttribute('data-placeholder', 'Allow or deny the request above to continue.')
-    expect(prompt).toHaveAttribute('aria-disabled', 'true')
-    // The empty prompt already says it; the line under the model picker does not say it again.
+    expect(prompt).toHaveAttribute('data-placeholder', 'Queued until you answer the card')
+    expect(prompt).toHaveAttribute('contenteditable', 'true')
     const form = prompt.closest('form')!
     expect(within(form).queryByText(/Allow or deny/u)).not.toBeInTheDocument()
     expect(form.querySelector('.thread-prompt__status')).toBeNull()
-    // The request stays answerable in its card.
+    await queueFollowup(live, prompt)
     const card = view.container.querySelector<HTMLElement>('.agent-request')!
-    expect(within(card).getAllByRole('button').length).toBeGreaterThan(0)
+    expect(within(card).getByRole('button', { name: choices ? 'Allow once' : 'Allow' })).toBeEnabled()
+    expect(within(card).getByRole('button', { name: 'Deny' })).toBeEnabled()
   })
 })
 
