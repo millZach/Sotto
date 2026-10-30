@@ -2180,7 +2180,9 @@ import UIKit
         XCTAssertTrue(waitUntilGone(cancel))
         app.tab("Settings").tap()
         let modelDefault = byID("setting-default-model")
-        reveal(modelDefault)
+        // Plain swipes rather than `reveal`, whose drags no longer move Settings on main (#1752).
+        for _ in 0..<20 where !(modelDefault.exists && modelDefault.isHittable) { app.swipeUp() }
+        XCTAssertTrue(modelDefault.isHittable, "Settings scrolls to its New thread defaults")
         XCTAssertGreaterThan(modelDefault.frame.height, 70, "At the largest sizes the default's value sits under its name")
         capture("settings-defaults-largest-text")
     }
