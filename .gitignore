@@ -205,6 +205,7 @@ artifacts/ultracode-effort/
 artifacts/question-choices/
 # Floating composer verification captures; the cited ones are committed
 artifacts/composer-float/
+artifacts/pending-card-clearance/
 # Slim composer and Watcher column verification captures; the cited ones are committed
 artifacts/composer-shrink/
 artifacts/needs-you-queue/

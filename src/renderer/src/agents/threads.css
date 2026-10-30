@@ -222,11 +222,10 @@
 .thread-prompt .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }
 .thread-prompt > .thread-prompt__footer { grid-column: 2; }
 .thread-prompt .prompt-editor { display: block; width: 100%; min-height: 36px; max-height: 220px; overflow-y: auto; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
-/* Placeholder ink is muted ink let through at 55%: words nobody has typed yet read as unaccepted, the way Claude Code's
-   desktop draws them (Drake's ask, October 24, 2026). The next prompt's ghost wears the same ink (nextPrompt.css), its
-   Tab keycap excepted. Suggestion ink stands outside the 4.5:1 text pairs (paintedTextPairs.ts): the ghost is hidden
-   from speech beside its spoken description, and a placeholder stands beside its field's label. */
-.prompt-editor { --placeholder-ink: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The placeholder is muted ink, as every other field's is, and reads at 4.5:1 on the composer card in every theme
+   (paintedTextPairs.ts). While a turn runs it is the only thing that says what typing will do ("Queued until you answer
+   the card"), so it is text, not decoration (#1819). The next prompt's ghost keeps its translucent ink (nextPrompt.css). */
+.prompt-editor { --placeholder-ink: var(--tt-text-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 .prompt-editor p { margin: 0; }
 .prompt-editor[data-empty="true"]::before { content: attr(data-placeholder); color: var(--placeholder-ink); float: left; height: 0; pointer-events: none; }
 .prompt-editor[aria-disabled="true"] { cursor: not-allowed; }
