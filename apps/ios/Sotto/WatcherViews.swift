@@ -1108,7 +1108,8 @@ private struct ReceiptCard: View {
             .accessibilityAddTraits(.isHeader)
             ForEach(Array(group.rows.enumerated()), id: \.element.id) { index, row in
                 if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 44) }
-                ReceiptRow(row: row, computer: model.computerName(row.target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for"),
+                let computer = model.computerName(row.target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for")
+                ReceiptRow(row: row, place: model.placeLine(row.target.ref, provider: AgentNames.name(row.provider), computer: computer),
                            thread: model.thread(row.target.ref), watched: model.watchedByWatcher(row.target.ref))
             }
         }
@@ -1122,7 +1123,8 @@ private struct ReceiptCard: View {
 
 private struct ReceiptRow: View {
     let row: WatcherPage.Receipt
-    let computer: String
+    /// Where the thread runs: provider · project · computer.
+    let place: String
     /// The thread as this iPhone's list has it; nil when it isn't listed here, so the row doesn't open it.
     let thread: ThreadSummary?
     let watched: Bool
@@ -1151,8 +1153,7 @@ private struct ReceiptRow: View {
                 Text(verbatim: row.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
                     .fixedSize(horizontal: false, vertical: true)
                 Text(WatcherWords.action(row.action)).font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
-                PlaceLine(providerID: row.provider, watched: watched,
-                          text: String(localized: "\(AgentNames.name(row.provider)) on \(computer)", comment: "Where a thread runs. The first %@ is the provider's name, such as Claude Code; the second is the computer's name"))
+                PlaceLine(providerID: row.provider, watched: watched, text: place)
                 if let words = WatcherWords.delivery(row) {
                     Text(words).font(.sotto(.small, .semibold))
                         .foregroundStyle(row.deliveryState == "failed" ? Palette.dangerText : Palette.warningText)
@@ -1186,9 +1187,7 @@ private struct ReceiptRow: View {
         }
     }
     private var spoken: String {
-        var words = String(localized: "\(row.title), \(WatcherWords.action(row.action)), \(AgentNames.name(row.provider)) on \(computer)",
-                           comment: "For VoiceOver. The first %@ is a thread's title, the second what Watcher did, such as Started, the third the provider's name, the fourth the computer's name")
-            + WatchedWords.spoken(watched)
+        var words = "\(row.title), \(WatcherWords.action(row.action)), \(place)" + WatchedWords.spoken(watched)
         if let delivery = WatcherWords.delivery(row) { words += ", " + delivery }
         else if let thread { words += ", " + ThreadState(thread).words }
         return words
@@ -1327,10 +1326,10 @@ private struct WatcherRequestCard: View {
     }
     private var ask: String { isPermission ? request.text : (request.questions?.first?.question ?? request.text) }
     private var computer: String { model.name(hostID) }
-    /// "Claude Code on Laptop": the thread's provider and computer.
+    /// "Claude Code · Sotto · Laptop": the thread's provider, project and computer.
     private var whereItRuns: String {
         let computer = model.computerName(card.target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for")
-        return String(localized: "\(AgentNames.name(card.provider)) on \(computer)", comment: "Where a thread runs. The first %@ is the provider's name, such as Claude Code; the second is the computer's name")
+        return model.placeLine(card.target.ref, provider: AgentNames.name(card.provider), computer: computer)
     }
     private var reviewWords: String { isPermission ? String(localized: "Review permission") : String(localized: "Review question") }
     /// Watcher's own permissions are asked each time: it can't be given one that lasts.
@@ -1744,9 +1743,17 @@ private struct WatcherPermissionSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: Space.s3) {
                 VStack(alignment: .leading, spacing: Space.s1) {
-                    Text(WatcherPermissions.title).font(.sotto(.title, .bold)).headingTracking(-0.4).foregroundStyle(Palette.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityAddTraits(.isHeader)
+                    // A sheet that can be dragged away has a button that closes it too (#1860), trailing, as Agents has.
+                    HStack(alignment: .firstTextBaseline, spacing: Space.s3) {
+                        Text(WatcherPermissions.title).font(.sotto(.title, .bold)).headingTracking(-0.4).foregroundStyle(Palette.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityAddTraits(.isHeader)
+                        Spacer(minLength: Space.s2)
+                        Button("Done") { dismiss() }
+                            .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                            .keyboardShortcut(.cancelAction)
+                            .accessibilityIdentifier("watcher-permissions-done")
+                    }
                     Text(provider.map { String(localized: "Watcher on \(computer), on \($0)", comment: "The first %@ is the computer's name; the second is Watcher's provider, such as Codex") }
                          ?? String(localized: "Watcher on \(computer)", comment: "%@ is the computer's name"))
                         .font(.sotto(.small)).foregroundStyle(Palette.muted)
@@ -1772,6 +1779,7 @@ private struct WatcherPermissionSheet: View {
             .padding(.bottom, Space.s6)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .accessibilityAction(.escape) { dismiss() }
         .presentationBackground { SheetBackdrop(wash: false) }
         .presentationCornerRadius(Radius.xl)
     }
@@ -1888,7 +1896,7 @@ private struct WatchedPane: View {
                             ForEach(page.watched, id: \.target.ref.id) { thread in
                                 let ref = thread.target.ref
                                 let stop: (() -> Void)? = manages ? { stopWatching(thread) } : nil
-                                WatchedCard(thread: thread, computer: computer(thread), listed: model.thread(ref),
+                                WatchedCard(thread: thread, place: place(thread), listed: model.thread(ref),
                                             doing: manages ? WatcherWords.doing(thread, in: page) : nil, stop: stop,
                                             stopping: model.changingWatch(ref), canStop: model.canChangeWatch(ref))
                             }
@@ -1906,7 +1914,7 @@ private struct WatchedPane: View {
                         VStack(spacing: 0) {
                             ForEach(Array(page.noLongerWatched.enumerated()), id: \.element.target.ref.id) { index, thread in
                                 if index > 0 { Rectangle().fill(Palette.hairline).frame(height: 1).padding(.leading, Space.s4 + 20) }
-                                LeftRow(thread: thread, computer: computer(thread), listed: model.thread(thread.target.ref) != nil)
+                                LeftRow(thread: thread, place: place(thread), listed: model.thread(thread.target.ref) != nil)
                             }
                         }
                         .sottoCard(.plain)
@@ -1942,6 +1950,10 @@ private struct WatchedPane: View {
 
     private func computer(_ thread: WatcherPage.WatchedThread) -> String {
         model.computerName(thread.target.hostId) ?? String(localized: "another computer", comment: "Stands in for a computer this iPhone has no name for")
+    }
+    /// Where a watched thread runs: provider · project · computer.
+    private func place(_ thread: WatcherPage.WatchedThread) -> String {
+        model.placeLine(thread.target.ref, provider: AgentNames.name(thread.provider), computer: computer(thread))
     }
 
     private func stopWatching(_ thread: WatcherPage.WatchedThread) {
@@ -2040,7 +2052,8 @@ private struct WatchedPane: View {
 private struct WatchedCard: View {
     @State private var stops = 0
     let thread: WatcherPage.WatchedThread
-    let computer: String
+    /// Where it runs: provider · project · computer.
+    let place: String
     let listed: ThreadSummary?
     let doing: String?
     /// Stops watching the thread, on a computer that takes it from this iPhone.
@@ -2083,8 +2096,7 @@ private struct WatchedCard: View {
             Text(verbatim: thread.title).font(.sotto(.lead, .semibold)).foregroundStyle(Palette.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .padding(.top, Space.s2)
-            PlaceLine(providerID: thread.provider, watched: true,
-                      text: String(localized: "\(AgentNames.name(thread.provider)) on \(computer)", comment: "Where a thread runs. The first %@ is the provider's name, such as Claude Code; the second is the computer's name"))
+            PlaceLine(providerID: thread.provider, watched: true, text: place)
                 .padding(.top, Space.s1)
             if let doing {
                 Text(doing).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
@@ -2120,9 +2132,7 @@ private struct WatchedCard: View {
         .padding(.bottom, Space.s3)
     }
     private var spoken: String {
-        var words = String(localized: "\(thread.title), \(WatcherWords.status(thread)), \(AgentNames.name(thread.provider)) on \(computer)",
-                           comment: "For VoiceOver. The first %@ is a thread's title, the second its state, such as Working, the third the provider's name, the fourth the computer's name")
-            + WatchedWords.spoken(true)
+        var words = "\(thread.title), \(WatcherWords.status(thread)), \(place)" + WatchedWords.spoken(true)
         if let doing { words += ". " + doing }
         return words
     }
@@ -2242,7 +2252,8 @@ struct WatchToast: View {
 /// A thread Watcher no longer works with, and why.
 private struct LeftRow: View {
     let thread: WatcherPage.WatchedThread
-    let computer: String
+    /// Where it runs: provider · project · computer.
+    let place: String
     let listed: Bool
     var body: some View {
         if listed {
@@ -2260,10 +2271,11 @@ private struct LeftRow: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: thread.title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
                     .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                PlaceLine(providerID: thread.provider, watched: false,
-                          text: WatcherWords.left(thread) + " · " + String(localized: "\(AgentNames.name(thread.provider)) on \(computer)", comment: "Where a thread runs. The first %@ is the provider's name, such as Claude Code; the second is the computer's name"))
+                PlaceLine(providerID: thread.provider, watched: false, text: place)
             }
-            Spacer(minLength: 0)
+            Spacer(minLength: Space.s2)
+            // Why it left Watched takes the place a row's time has, out of the line that says where it runs (#1861).
+            Text(WatcherWords.left(thread)).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(1).padding(.top, 3)
         }
         .padding(.horizontal, Space.s4)
         .padding(.vertical, Space.s3 + 2)
@@ -2271,7 +2283,6 @@ private struct LeftRow: View {
         .contentShape(Rectangle())
     }
     private var spoken: String {
-        String(localized: "\(thread.title), \(WatcherWords.left(thread)), \(AgentNames.name(thread.provider)) on \(computer)",
-               comment: "For VoiceOver. The first %@ is a thread's title, the second why Watcher no longer watches it, the third the provider's name, the fourth the computer's name")
+        "\(thread.title), \(WatcherWords.left(thread)), \(place)"
     }
 }

@@ -4,6 +4,8 @@ Accepted by Zach on October 21, 2026 (#1200). An Owl feature (ADR-0072), `iphone
 
 A thread on the desktop lists its delegated threads (ADR-0081) and its provider's own sub-agents in Tools › Agents. Once #1279 took delegated threads off the phone's thread list, the phone had no way to reach them, or to see what a thread's sub-agents were doing.
 
+Amended October 30, 2026 (#1861): a delegated thread's row says where it runs in the order every thread row and card on the iPhone now uses, provider · project · computer, before its kind of work and model, then its start time. The iPhone UI review found that order mixed from page to page, and Zach chose one order for all of them (`docs/prototypes/iphone-ui-fixes-prototype.html`, section 5, variant A). A sub-agent's row still names only its model. The mark for an agent, on the Agents button, a sub-agent's row and a sub-agent step, is the desktop's Bot rather than two people or a person in a square.
+
 ## What the phone shows
 
 Variant A of `docs/prototypes/iphone-agents-view-prototype.html`, Zach's pick on October 21, 2026. Variant B (a Threads | Agents switch at the top of the Threads tab) and variant C (a line on each delegating thread's card that opens in place) were rejected.

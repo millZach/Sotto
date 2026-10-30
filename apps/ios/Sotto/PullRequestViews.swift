@@ -66,13 +66,11 @@ struct PullRequestSheet: View {
                 .accessibilityHint("Opens it in Safari.")
                 .accessibilityIdentifier("pull-request-github")
             }
-            Button { dismiss() } label: {
-                Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
-            }
-            .buttonStyle(GlassCircleStyle())
-            .keyboardShortcut(.cancelAction)
-            .accessibilityLabel("Close the pull request")
-            .accessibilityIdentifier("pull-request-close")
+            // Done, trailing, as every sheet that only shows things closes (#1860); Open on GitHub stays beside it.
+            Button("Done") { dismiss() }
+                .buttonStyle(PillButtonStyle(kind: .ghost, compact: true))
+                .keyboardShortcut(.cancelAction)
+                .accessibilityIdentifier("pull-request-done")
         }
         .padding(.horizontal, Space.s4)
         .padding(.top, Space.s4)

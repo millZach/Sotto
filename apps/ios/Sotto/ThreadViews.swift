@@ -635,12 +635,9 @@ private struct ThreadHero: View, Equatable {
         }
     }
 
-    /// Where it runs: the agent, the computer and the project.
+    /// Where it runs: the agent, the project and the computer, in the order every thread's line reads (#1861).
     private var place: String {
-        let base = String(localized: "\(Words.provider(thread?.providerId)) on \(model.name(ref.hostID))", comment: "Where a thread runs: the first %@ is the agent's name, the second the computer's name")
-        let project = model.lists.first(where: { $0.hostID == ref.hostID })?.projects.first(where: { $0.id == thread?.projectId })?.title
-        guard let project else { return base }
-        return base + " · " + project
+        model.placeLine(ref, provider: Words.provider(thread?.providerId), computer: model.name(ref.hostID))
     }
 
     private func edgeReader(_ edge: KeyPath<CGRect, CGFloat>, _ moved: @escaping (CGFloat) -> Void) -> some View {
@@ -649,6 +646,22 @@ private struct ThreadHero: View, Equatable {
                 .onAppear { moved(proxy.frame(in: .global)[keyPath: edge]) }
                 .onChange(of: proxy.frame(in: .global)[keyPath: edge]) { _, value in moved(value) }
         }
+    }
+}
+
+extension AppModel {
+    /// Every project a computer shares, settled ones too: a thread in a settled project still names it.
+    func projectsListed(_ hostID: String) -> [Project] { live[hostID]?.shell?.host.projects ?? [] }
+    /// The name of the project a thread belongs to, where this iPhone lists the thread.
+    func projectTitle(_ ref: ThreadRef) -> String? {
+        guard let id = thread(ref)?.projectId else { return nil }
+        return projectsListed(ref.hostID).first { $0.id == id }?.title
+    }
+    /// Where a thread runs, as every row and card says it (#1861): provider · project · computer, the project only where
+    /// this iPhone lists the thread. The caller names the provider and computer, since Watcher's records name them for
+    /// threads this iPhone may not list.
+    func placeLine(_ ref: ThreadRef, provider: String, computer: String) -> String {
+        [provider, projectTitle(ref), computer].compactMap { $0 }.joined(separator: " · ")
     }
 }
 
@@ -1665,9 +1678,11 @@ private struct StepTrail: View {
 private struct StepLine: View {
     let record: Activity
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// The mark's room, which grows with the step's words so a sub-agent's Bot, which grows too, keeps clear of them.
+    @ScaledMetric(relativeTo: .caption) private var markRoom: CGFloat = 16
     var body: some View {
         HStack(spacing: 7) {
-            mark.frame(width: 16, height: 16)
+            mark.frame(width: markRoom, height: markRoom)
             Text(verbatim: record.title)
                 .font(.sotto(.caption, .semibold))
                 .foregroundStyle(verbStyle)
@@ -1697,6 +1712,9 @@ private struct StepLine: View {
             } else {
                 ProgressView().controlSize(.mini).tint(Palette.accentText).accessibilityHidden(true)
             }
+        } else if record.kind == "subagent" {
+            // One agent, as the Agents button and the Agents sheet draw it.
+            AgentMark(size: 13, relativeTo: .caption).foregroundStyle(iconStyle)
         } else {
             Image(systemName: icon)
                 .font(.system(size: 11, weight: .semibold))
@@ -1747,7 +1765,6 @@ private struct StepLine: View {
         case "tool": return "wrench.and.screwdriver"
         case "reasoning": return "sparkles"
         case "plan": return "checklist"
-        case "subagent": return "person.2"
         case "compaction": return "arrow.down.right.and.arrow.up.left"
         default: return "info.circle"
         }
@@ -2239,23 +2256,30 @@ struct RequestSheet: View {
         let provider = Words.provider(providerID)
         let permission = current.kind == "permission"
         let count = current.questions?.count ?? 0
-        let from = Self.from(permission: permission, count: count, provider: provider, threadTitle: threadTitle)
-        HStack(spacing: Space.s2) {
-            Light(tone: .warning)
-            Text(from).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
+        let from = Self.from(count: count, provider: provider, threadTitle: threadTitle)
+        let ask: (headline: String?, rest: String?)? = permission ? Self.permissionAsk(current) : nil
+        // Who asks and where is one quiet line over the request, and VoiceOver reads the request first (#1855).
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: Space.s2) {
+                Light(tone: .warning)
+                Text(from).font(.sotto(.small)).foregroundStyle(Palette.muted).lineLimit(2)
+            }
+            .accessibilityElement(children: .combine)
+            // Several questions have no headline: each carries its own, and the text a provider built from them would only
+            // repeat them.
+            if let headline = title(current, provider, ask: ask) {
+                Text(headline)
+                    .font(.sotto(.title, .semibold))
+                    .headingTracking(-0.4)
+                    .foregroundStyle(Palette.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, Space.s3)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilitySortPriority(1)
+                    .accessibilityIdentifier("request-headline")
+            }
         }
-        .accessibilityElement(children: .combine)
-        // Several questions have no headline: each carries its own, and the text a provider built from them would only
-        // repeat them.
-        if let headline = title(current, provider) {
-            Text(headline)
-                .font(.sotto(.title, .semibold))
-                .headingTracking(-0.4)
-                .foregroundStyle(Palette.ink)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, Space.s3)
-                .accessibilityAddTraits(.isHeader)
-        }
+        .accessibilityElement(children: .contain)
         if !permission, count > 0, let explanation = RequestText.explanation(current) {
             Text(explanation).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s3)
@@ -2280,8 +2304,9 @@ struct RequestSheet: View {
                     .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
             }
         }
-        if permission && current.context?.command == nil {
-            Text(verbatim: current.text).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
+        // The rest of a permission's words, where its first line is the headline and it names no command of its own.
+        if let rest = ask?.rest, current.context?.command == nil {
+            Text(verbatim: rest).font(.sotto(.body)).foregroundStyle(Palette.ink).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true).padding(.top, Space.s4)
         }
         if !current.supported {
@@ -2303,24 +2328,32 @@ struct RequestSheet: View {
         }
     }
 
-    /// Who asks, and in which thread, over the headline.
-    private static func from(permission: Bool, count: Int, provider: String, threadTitle: String) -> String {
-        if permission {
-            return String(localized: "Permission for \(provider) in \(threadTitle)", comment: "The first %@ is the agent's name, the second the thread's title")
-        }
-        if count > 1 {
-            let questions = count == 1
-                ? String(localized: "1 question", comment: "How many questions a request asks")
-                : String(localized: "\(count) questions", comment: "How many questions a request asks")
-            return String(localized: "\(questions) from \(provider) in \(threadTitle)", comment: "The first %@ is how many questions, such as “2 questions”, the second the agent's name, the third the thread's title")
-        }
-        return String(localized: "Question from \(provider) in \(threadTitle)", comment: "The first %@ is the agent's name, the second the thread's title")
+    /// Who asks, and in which thread, over the headline: "Claude Code · Choose the release target", the same on a
+    /// permission and a question (#1855). Several questions have no headline, so the line counts them first.
+    private static func from(count: Int, provider: String, threadTitle: String) -> String {
+        let place = "\(provider) · \(threadTitle)"
+        guard count > 1 else { return place }
+        let questions = String(localized: "\(count) questions", comment: "How many questions a request asks")
+        return "\(questions) · \(place)"
     }
 
-    /// The sheet's headline: what a permission is for, a lone question, or a request's own words when it has no
+    /// A permission as the desktop's card reads it (`permissionSummary` in `requestAnswers.ts`): its first line is what it
+    /// asks, and the rest of its words follow. A first line that only repeats the command it would run asks nothing of
+    /// its own, as Codex's does.
+    private static func permissionAsk(_ request: AgentRequest) -> (headline: String?, rest: String?) {
+        let lines = request.text.split(separator: "\n", omittingEmptySubsequences: false)
+        let first = lines.first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        let rest = lines.dropFirst().joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+        let command = (request.context?.command ?? "").split(separator: "\n").first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
+        let headline: String? = first.isEmpty || first == command ? nil : first
+        return (headline, rest.isEmpty ? nil : rest)
+    }
+
+    /// The sheet's headline: what a permission asks, a lone question, or a request's own words when it has no
     /// structured questions. Nil for several questions.
-    private func title(_ request: AgentRequest, _ provider: String) -> String? {
+    private func title(_ request: AgentRequest, _ provider: String, ask: (headline: String?, rest: String?)?) -> String? {
         if request.kind == "permission" {
+            if let headline = ask?.headline { return headline }
             return request.context?.command != nil
                 ? String(localized: "\(provider) wants to run a command", comment: "%@ is the agent's name")
                 : String(localized: "\(provider) is asking permission", comment: "%@ is the agent's name")

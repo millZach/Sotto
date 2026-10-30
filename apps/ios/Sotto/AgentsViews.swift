@@ -7,6 +7,22 @@ import SottoCore
 // comes back to the sheet; a sub-agent's row opens in place to its task and result. Nothing here answers anything: a
 // thread that waits on the user opens to be answered there.
 
+/// One agent, as the desktop draws it: Lucide's Bot (ISC), in the asset catalog as a template, in the colour of what holds
+/// it. It marks the Agents button, a sub-agent's row in the sheet and a sub-agent's step in a thread, and grows with the
+/// text beside it. Decorative: the words beside it name it.
+struct AgentMark: View {
+    @ScaledMetric private var size: CGFloat
+    init(size: CGFloat, relativeTo style: Font.TextStyle) { _size = ScaledMetric(wrappedValue: size, relativeTo: style) }
+    var body: some View {
+        Image("AgentBot")
+            .renderingMode(.template)
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
+    }
+}
+
 /// Agents beside the thread's state: the count of its delegated threads and agents, with the Needs you light while a
 /// delegated thread waits on the user. At compact width, where the bar's room goes to the thread's title, and at the
 /// largest text sizes it is the mark and the count alone.
@@ -20,7 +36,7 @@ struct AgentsButton: View {
         let compact = typeSize.isAccessibilitySize || sizeClass != .regular
         Button(action: action) {
             HStack(spacing: 6) {
-                Image(systemName: "person.2").font(.system(size: 13, weight: .semibold)).accessibilityHidden(true)
+                AgentMark(size: 16, relativeTo: .footnote)
                 if !compact { Text("Agents").lineLimit(1) }
                 if needs { Light(tone: .warning, size: 7) }
                 Text("\(count.total)")
@@ -117,7 +133,8 @@ private struct AgentsSheet: View {
     var body: some View {
         let source = model.agentsSource(ref)
         let rows = source.map { AgentsRoster.rows(owner: $0.owner, threads: $0.threads, delegations: delegations, agents: page?.rows ?? [], models: $0.models,
-                                                  failuresSeen: $0.failuresSeen) } ?? []
+                                                  failuresSeen: $0.failuresSeen, projects: model.projectsListed(ref.hostID),
+                                                  computer: model.computerName(ref.hostID)) } ?? []
         let counts = AgentsRoster.countLine(rows, summary: page?.summary ?? source?.owner.subagentSummary)
         let needs = rows.contains { $0.tone == .needs }
         ScrollView {
@@ -358,7 +375,8 @@ private struct AgentsAgentRow: View {
                 HStack(alignment: .center, spacing: Space.s2) {
                     RowBody(row: row, tag: row.workflow ? String(localized: "Workflow", comment: "The tag on a row of the Agents sheet that is a workflow's run.")
                                 : String(localized: "Agent", comment: "The tag on a row of the Agents sheet that is one of the provider's own agents."),
-                            mark: AnyView(Image(systemName: row.workflow ? "square.stack.3d.up" : "person.crop.square").font(.system(size: 13, weight: .semibold))))
+                            mark: row.workflow ? AnyView(Image(systemName: "square.stack.3d.up").font(.system(size: 13, weight: .semibold)))
+                                : AnyView(AgentMark(size: 15, relativeTo: .footnote)))
                     Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
                         .rotationEffect(.degrees(open ? 90 : 0))
                         .accessibilityHidden(true)
