@@ -95,7 +95,7 @@ export function EffortDots({ levels, value, disabled, pending = false, described
         // The selected dot steps the speed; any other sets its level.
         if (index === current && speed) { if (!disabled) speed.onStep(1) } else set(index)
       }}>
-      {levels.map((level, index) => <i key={level} data-level={index} data-lit={index <= current || undefined} title={speed?.description ? `${named(level)}. ${speed.description}` : named(level)}
+      {levels.map((level, index) => <i key={level} data-level={index} data-lit={index <= current || undefined} title={index === current && speed?.description ? `${named(level)}. ${speed.description}` : named(level)}
         data-suggested={suggestion !== null && index > current && index <= suggestion || undefined} />)}
     </span> : null}
     {stop ? <button type="button" className="effort-dots__stop tt-focusable" aria-label={stop.label} aria-keyshortcuts={stop.keys} title={stop.title}

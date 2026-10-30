@@ -184,6 +184,7 @@ describe('speed in quiet effort dots', () => {
     fireEvent.click(selected())
     await waitFor(() => expect(dots()).toHaveAttribute('aria-valuetext', 'High · Fast'))
     expect(selected()).toHaveAttribute('title', 'High · Fast. Fast is on for this thread. 2x speed, increased usage. Press for Ultrafast: 4x speed, highest usage.')
+    expect(dots().querySelector('[data-level="1"]')).toHaveAttribute('title', 'Medium · Fast')
     fireEvent.click(selected())
     await waitFor(() => expect(dots()).toHaveAttribute('aria-valuetext', 'High · Ultrafast'))
     expect(dots().closest('.effort-dots')).toHaveAttribute('data-speed', 'ultrafast')
