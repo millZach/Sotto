@@ -42,7 +42,7 @@ import { rowStatus } from '../agents/threadFacts'
 import { threadAddressIndex, threadForTarget, useWatcherRoom, watchedRows, type WatcherRoom } from './watcherRoom'
 import { placeAfterTurns, placeTakeovers, WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
 import { WatcherStopAll } from './WatcherStopAll'
-import { useMoveCards, WatcherMoveThreads } from './MoveThreads'
+import { useMoveCards, useMoveProposals, WatcherMoveThreads } from './MoveThreads'
 import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
 import { WatcherGlance } from './WatcherGlance'
@@ -327,8 +327,12 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   const since = current?.createdAt
   const movesPlaced = useMemo(() => !crossMachine || moveCards.length === 0 || since === undefined ? undefined
     : placeAfterTurns(messages, moveCards.filter(card => Date.parse(card.at) >= Date.parse(since))), [crossMachine, moveCards, messages, since])
-  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, moves: movesPlaced }),
-    [byMessage, lines, describe, press, asks, placementsById, movesPlaced])
+  // Watcher's proposals from the user's words (#1178 part 3), after the turn that made each, the same way.
+  const proposals = useMoveProposals()
+  const proposalsPlaced = useMemo(() => !crossMachine || proposals.length === 0 || since === undefined ? undefined
+    : placeAfterTurns(messages, proposals.filter(proposal => Date.parse(proposal.at) >= Date.parse(since))), [crossMachine, proposals, messages, since])
+  const conversation = useMemo<WatcherConversation>(() => ({ receipts: byMessage, takeovers: lines, describe, press, asks, placements: placementsById, moves: movesPlaced, proposals: proposalsPlaced }),
+    [byMessage, lines, describe, press, asks, placementsById, movesPlaced, proposalsPlaced])
   // Watcher is not on the Threads page, so a page in its own browser could never be seen: its links open in the
   // system browser.
   return <BrowserPageRouteContext.Provider value={null}><WatcherOwnChangesContext.Provider value={changes}><WatcherSendGateContext.Provider value={gate}>

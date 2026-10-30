@@ -133,3 +133,16 @@ After Sol's confirmation pass (October 29):
 - A move not yet held waits for the machine it goes to before it asks the host its thread is on, and its card says so.
 - Left as it was: `delegatedThreadsBelow` copies a growing list as it walks a thread's delegated threads, which part 1's preview already did; not this part's to change.
 
+## Part 3b, as built (October 29, 2026)
+
+- `src/renderer/src/watcher/MoveThreads.tsx`: the sheet picks where threads go, This computer among the machines while another machine has a thread to bring here and the thread's own machine left out; it gathers every other connected machine's open threads (`movableThreadIds(state, target)`), each row saying where it is now, with a box for each that can move. Nothing starts ticked but the thread a More menu opened it for; Move counts the ticked and waits for one. The sheet waits for the paired machines before it goes straight to the only one. A connected host's thread has **Continue on another machine…** too (`ThreadPane.tsx`).
+- Watcher's proposal: `propose_moves` (`watcherTools.ts`), offered only where the move service runs, calls `ThreadMoveService.propose`; the proposal goes to the window with the cards and is drawn after the turn that made it (`WatcherMoveProposals`), with the threads Watcher named ticked, **Move** and **Not now**. Its press (`answer` with `proposalId`) plans the threads ticked again and moves them only while the plan says what the card showed.
+- The end-to-end journey ticks its threads, and a second journey presses Watcher's proposal; the stand-in takes This computer's host ID and proposals.
+
+Decisions made while building:
+
+- **Move threads** offers This computer only while another machine has an open thread to bring here, so with This computer's threads alone and one machine connected the sheet still goes straight to it.
+- A proposal holds no confirmation: its press asks for a fresh preview, since the card may wait longer than a minute. A thread whose outcome, words or permission changed moves nothing, and the card shows every thread as it is now.
+- A proposal is this run's and is not saved, as the cards that ask first are; Watcher hears of each move it led to, not of the proposal or of Not now.
+- Watcher's row in the sheet says it stays on This computer only for a move to another machine.
+

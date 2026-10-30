@@ -12,9 +12,10 @@ import {
   movePermission, movePermissionWords, movePrompt, narrowedName, THREAD_MOVE_CARDS_MAX, THREAD_MOVE_CONFIRMATION_MS, THREAD_MOVE_SOURCE_UNDECIDED, THREAD_MOVE_UNDECIDED, THREAD_MOVE_WORDS,
   threadMoveAnswerRequestSchema, threadMovePrepareRequestSchema, threadMoveRefusal, threadMoveSourceAnswerSchema, threadMoveStartAnswerSchema, threadMoveStartRequestSchema,
   type HostThreadMoveSource, type MoveFacts, type ThreadMoveAnswer, type ThreadMoveCard, type ThreadMoveHost, type ThreadMoveLink, type ThreadMoveModel, type ThreadMovePlanned,
-  type ThreadMovePrepare, type ThreadMoveStart, type ThreadMovesView,
+  type ThreadMovePrepare, type ThreadMoveStart, type ThreadMovesView, THREAD_MOVE_PROPOSALS_MAX, THREAD_MOVE_PROPOSE_NOTE, threadMoveProposeInputSchema,
+  type ThreadMoveAnswerRequest, type ThreadMoveProposal, type ThreadMoveProposedThread, type ThreadMoveProposeOutput,
 } from '../../shared/threadMoves'
-import type { WatcherThreadTarget } from '../../shared/watcher'
+import type { WatcherRefusal, WatcherThreadTarget } from '../../shared/watcher'
 import type { WatcherRemoteHosts } from '../../shared/watcherHost'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { readStrictJson } from '../storage/strictJsonFile'
@@ -24,7 +25,7 @@ import type { Handover } from './handover'
 import { settleMovedSource } from './threadMovesHost'
 import { handoverCounts, handoverPrefixProof } from './watcherHandover'
 import { watcherBackgroundWorkCount } from './watcherWakeUp'
-import type { WatcherService } from './watcher'
+import { watcherRefusal, type WatcherService } from './watcher'
 
 /**
  * Moving threads between machines (#1178; ADR-0105 decision 7, Owl `cross-machine-work`). A move is "continue on another
@@ -339,6 +340,8 @@ export class ThreadMoveService {
   private readonly runCards = new Map<string, RunCard>()
   /** A move made from a card that asked first keeps that card's place in Watcher's conversation, for this run. */
   private readonly placedAt = new Map<string, string>()
+  /** Watcher's proposals from the user's words, this run's, newest last (`propose`). */
+  private readonly proposals = new Map<string, ThreadMoveProposal>()
   private readonly listeners = new Set<(view: ThreadMovesView) => void>()
   private targets: MoveTargets | undefined
   private unhook: (() => void)[] = []
@@ -455,7 +458,8 @@ export class ThreadMoveService {
       ...card.from ? { from: card.from } : {}, ...card.hostId === here ? { here: true as const } : {},
       ...card.words ? { words: card.words } : {}, ...card.model ? { model: card.model } : {}, ...card.state === 'asks' && card.startsOn ? { startsOn: card.startsOn } : {},
       at: card.at, updatedAt: card.updatedAt }))
-    return { cards: [...moves, ...run].sort((a, b) => a.at.localeCompare(b.at)).slice(-THREAD_MOVE_CARDS_MAX) }
+    return { cards: [...moves, ...run].sort((a, b) => a.at.localeCompare(b.at)).slice(-THREAD_MOVE_CARDS_MAX),
+      ...this.proposals.size ? { proposals: [...this.proposals.values()] } : {} }
   }
   /** Hears every change to the cards. Returns the unhook. */
   subscribe(listener: (view: ThreadMovesView) => void): () => void {
@@ -500,6 +504,7 @@ export class ThreadMoveService {
   async answer(input: unknown): Promise<ThreadMoveAnswer> {
     const parsed = threadMoveAnswerRequestSchema.safeParse(input)
     if (!parsed.success) return { status: 'refused', message: THREAD_MOVE_WORDS.unread }
+    if ('proposalId' in parsed.data) return this.answerProposal(parsed.data)
     const card = this.runCards.get(parsed.data.cardId)
     if (!card || card.state !== 'asks') return { status: 'refused', message: THREAD_MOVE_WORDS.noCard }
     if (parsed.data.answer === 'keep') {
@@ -520,6 +525,77 @@ export class ThreadMoveService {
     }
     const started = await this.move({ confirmationId: preview.confirmationId, threadIds: [card.threadId], allowNarrower: [card.threadId] }, card)
     return started.status === 'refused' ? started : { status: 'ok' }
+  }
+  /**
+   * Watcher's proposal from the user's words (`propose_moves`, #1178 part 3, Zach's pick A): the preview of moving these
+   * threads to that machine, as the sheet would show it, put in Watcher's conversation as Sotto's card with a box for each
+   * thread that can move, ticked. It moves nothing and holds no confirmation: the user's press asks for a fresh preview.
+   */
+  propose(input: unknown): ThreadMoveProposeOutput | WatcherRefusal {
+    const parsed = threadMoveProposeInputSchema.safeParse(input)
+    if (!parsed.success) return watcherRefusal('INVALID_INPUT', 'Name the threads, by their hostId and threadId, and the machine, a host ID from list_machines. Nothing was proposed.')
+    if (this.unreadable) return watcherRefusal('PROVIDER_UNAVAILABLE', THREAD_MOVE_WORDS.unreadableRecord)
+    const here = this.options.control.hostId()
+    const reach = this.reach(parsed.data.machine)
+    if (!here || 'refused' in reach) return watcherRefusal('UNKNOWN_TARGET', 'refused' in reach ? reach.refused : THREAD_MOVE_WORDS.unknownMachine)
+    const keyOf = (target: WatcherThreadTarget): string => target.hostId === here ? target.threadId : hostEntityKey(target.hostId, target.threadId)
+    const plans = this.planAll(parsed.data.threads.map(keyOf), parsed.data.machine, reach.name, reach.snapshot)
+    const at = now(), id = randomUUID()
+    const proposal: ThreadMoveProposal = { id, state: 'open', hostId: parsed.data.machine, machine: reach.name, ...parsed.data.machine === here ? { here: true as const } : {},
+      threads: parsed.data.threads.flatMap(target => { const plan = plans.get(keyOf(target)); return plan ? [this.proposed(plan, target, true)] : [] }), at, updatedAt: at }
+    this.proposals.set(id, proposal)
+    for (const old of this.proposals.keys()) { if (this.proposals.size <= THREAD_MOVE_PROPOSALS_MAX) break; this.proposals.delete(old) }
+    this.changed()
+    return { status: 'ok', proposalId: id, machine: reach.name, note: THREAD_MOVE_PROPOSE_NOTE,
+      threads: proposal.threads.map(item => ({ hostId: item.source.hostId, threadId: item.source.threadId, outcome: item.outcome, ...item.words ? { words: item.words } : {} })) }
+  }
+  /** One thread of a proposal as its plan says, on the machine it is on now; one that can move starts ticked when `ticked`. */
+  private proposed(plan: Plan, target: WatcherThreadTarget, ticked: boolean): ThreadMoveProposedThread {
+    const here = this.options.control.hostId()
+    const from = target.hostId === here ? undefined : plan.from ?? this.targets?.name(target.hostId)
+    return { threadId: plan.threadId, outcome: plan.outcome, ...plan.words ? { words: plan.words } : {}, ...plan.model ? { model: plan.model } : {},
+      ...plan.startsOn ? { startsOn: plan.startsOn } : {}, source: plan.sourceThreadId ? { hostId: plan.sourceHostId ?? target.hostId, threadId: plan.sourceThreadId } : target,
+      ...from ? { from } : {}, ticked: ticked && plan.outcome !== 'stays' }
+  }
+  /**
+   * The user's press on Watcher's proposal: Not now ends it; Move asks for a fresh preview of the threads ticked and moves
+   * them only while it still says what the card showed. One that changed moves nothing, and the card shows it as it is now.
+   */
+  private async answerProposal(press: Exclude<ThreadMoveAnswerRequest, { cardId: string }>): Promise<ThreadMoveAnswer> {
+    const proposal = this.proposals.get(press.proposalId)
+    if (!proposal || proposal.state !== 'open') return { status: 'refused', message: THREAD_MOVE_WORDS.noProposal }
+    if (press.answer === 'dismiss') { this.proposals.set(proposal.id, { ...proposal, state: 'dismissed', updatedAt: now() }); this.changed(); return { status: 'ok' } }
+    const shown = new Map(proposal.threads.map(item => [item.threadId, item] as const))
+    if (press.threadIds.some(threadId => (shown.get(threadId)?.outcome ?? 'stays') === 'stays')) return { status: 'refused', message: THREAD_MOVE_WORDS.notProposed }
+    const preview = this.prepare({ threadIds: press.threadIds, hostId: proposal.hostId })
+    if (preview.status === 'refused') return preview
+    const fresh = new Map(preview.threads.map(item => [item.threadId, item] as const))
+    const same = press.threadIds.every(threadId => {
+      const was = shown.get(threadId)!, is = fresh.get(threadId)
+      return is !== undefined && is.outcome === was.outcome && is.words === was.words && is.startsOn === was.startsOn
+    })
+    if (!same) {
+      this.confirmations.delete(preview.confirmationId)
+      // Shown again as it is now, each thread still ticked if it still can move.
+      const plans = this.plansOf(proposal.threads.map(item => item.threadId), proposal.hostId)
+      const threads = proposal.threads.map(item => { const plan = plans?.get(item.threadId); return plan ? this.proposed(plan, item.source, item.ticked || press.threadIds.includes(item.threadId)) : item })
+      this.proposals.set(proposal.id, { ...proposal, threads, words: THREAD_MOVE_WORDS.proposalChanged, updatedAt: now() })
+      this.changed()
+      return { status: 'refused', message: THREAD_MOVE_WORDS.proposalChanged }
+    }
+    const started = await this.move({ confirmationId: preview.confirmationId, threadIds: press.threadIds, allowNarrower: [] })
+    if (started.status === 'refused') return started
+    const current = this.proposals.get(proposal.id) ?? proposal
+    const { words: _words, ...rest } = current
+    void _words
+    this.proposals.set(proposal.id, { ...rest, state: 'moved', threads: current.threads.map(item => ({ ...item, ticked: press.threadIds.includes(item.threadId) })), updatedAt: now() })
+    this.changed()
+    return { status: 'ok' }
+  }
+  /** The plans for these threads on that machine now, or undefined where it cannot be reached. */
+  private plansOf(threadIds: readonly string[], hostId: string): ReadonlyMap<string, Plan> | undefined {
+    const reach = this.reach(hostId)
+    return 'refused' in reach ? undefined : this.planAll(threadIds, hostId, reach.name, reach.snapshot)
   }
   /**
    * The moves under way that wait on a machine that is not connected, the one they go to or the host their thread is on, or

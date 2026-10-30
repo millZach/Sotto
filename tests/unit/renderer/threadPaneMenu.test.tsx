@@ -27,7 +27,8 @@ vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => {
 const THREAD = 'grok-previews'
 
 /** One idle thread of the fixture, on its own, with a provider that can compact and a place to open beside. */
-function mount({ beside = true, state = threadsStateFixture() }: { readonly beside?: boolean; readonly state?: AgentState } = {}) {
+function mount({ beside = true, state = threadsStateFixture(), patch }: { readonly beside?: boolean; readonly state?: AgentState; readonly patch?: Partial<AgentState['host']['threads'][number]> } = {}) {
+  if (patch) Object.assign(state.host.threads.find(thread => thread.id === THREAD)!, patch)
   state.activeThreadId = THREAD
   state.host.capabilities = { ...state.host.capabilities, compact: true }
   const live = liveAgentState(state)
@@ -108,6 +109,15 @@ describe('Continue on another machine… (#1178 part 2, Owl Work across machines
     expect(paneMenuItems(menu)).toContain('Continue on another machine…')
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Continue on another machine…' }))
     expect(moveSheetStore.get()).toMatchObject({ kind: 'one', threadId: THREAD })
+  })
+  it('is offered for a connected host’s thread, which can always come to This computer, naming its machine (part 3)', async () => {
+    offer('disconnected')
+    const LAB = '3f2a9c71-6e4b-4d18-9a52-7b1c0e8d6f24'
+    const view = mount({ patch: { remoteHost: true, hostId: LAB, hostLabel: 'lab' } })
+    await act(async () => { await Promise.resolve() })
+    const menu = openPaneMenu(view.head())
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Continue on another machine…' }))
+    expect(moveSheetStore.get()).toMatchObject({ kind: 'one', threadId: THREAD, hostId: LAB })
   })
   it('is left out while no other machine is connected', async () => {
     offer('disconnected')

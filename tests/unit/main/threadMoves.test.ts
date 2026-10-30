@@ -827,3 +827,41 @@ describe('a host’s thread moves too (#1178 part 3)', () => {
     moves.close()
   })
 })
+
+describe('Watcher’s proposal from the user’s words (#1178 part 3, Zach’s pick A)', () => {
+  it('shows the preview as a card with each thread that can move ticked, and moves nothing', () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    const proposed = moves.propose({ threads: [{ hostId: HERE, threadId: 'a' }, { hostId: HERE, threadId: 'busy' }, { hostId: LAB, threadId: 'lab-1' }], machine: FORGE })
+    expect(proposed).toMatchObject({ status: 'ok', machine: 'forge', threads: [{ hostId: HERE, threadId: 'a', outcome: 'moves' },
+      { hostId: HERE, threadId: 'busy', outcome: 'stays', words: THREAD_MOVE_WORDS.running }, { hostId: LAB, threadId: 'lab-1', outcome: 'moves' }] })
+    const [proposal] = moves.view().proposals!
+    expect(proposal).toMatchObject({ state: 'open', hostId: FORGE, machine: 'forge', threads: [
+      { threadId: 'a', outcome: 'moves', ticked: true, source: { hostId: HERE, threadId: 'a' } },
+      { threadId: 'busy', outcome: 'stays', ticked: false },
+      { threadId: hostEntityKey(LAB, 'lab-1'), outcome: 'moves', ticked: true, from: 'lab', source: { hostId: LAB, threadId: 'lab-1' } }] })
+    expect(moves.list()).toEqual([]); expect(w.fences.size).toBe(0); expect(w.lab.asked).toEqual([])
+    expect(moves.propose({ threads: [], machine: FORGE })).toMatchObject({ status: 'refused', code: 'INVALID_INPUT' })
+    expect(moves.propose({ threads: [{ hostId: HERE, threadId: 'a' }], machine: randomUUID() })).toMatchObject({ status: 'refused', message: THREAD_MOVE_WORDS.unknownMachine })
+  })
+  it('moves only the threads ticked on Move, from a fresh preview, and ends', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    const proposed = moves.propose({ threads: [{ hostId: HERE, threadId: 'a' }, { hostId: HERE, threadId: 'b' }], machine: FORGE }) as { proposalId: string }
+    expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'move', threadIds: ['a'] })).toEqual({ status: 'ok' })
+    await vi.waitFor(() => expect(moves.list().map(record => record.sourceThreadId)).toEqual(['a']))
+    expect(moves.view().proposals![0]).toMatchObject({ state: 'moved', threads: [{ threadId: 'a', ticked: true }, { threadId: 'b', ticked: false }] })
+    expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'move', threadIds: ['b'] })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.noProposal })
+    moves.close()
+  })
+  it('moves nothing when the preview changed since the card showed it, and shows it as it is now', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    const proposed = moves.propose({ threads: [{ hostId: HERE, threadId: 'a' }], machine: FORGE }) as { proposalId: string }
+    w.threads.find(thread => thread.id === 'a')!.status = 'running'
+    expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'move', threadIds: ['a'] })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.proposalChanged })
+    expect(moves.list()).toEqual([])
+    expect(moves.view().proposals![0]).toMatchObject({ state: 'open', words: THREAD_MOVE_WORDS.proposalChanged, threads: [{ threadId: 'a', outcome: 'stays', words: THREAD_MOVE_WORDS.running, ticked: false }] })
+    // A thread it does not offer to move is refused, and Not now ends it.
+    expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'move', threadIds: ['b'] })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.notProposed })
+    expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'dismiss' })).toEqual({ status: 'ok' })
+    expect(moves.view().proposals![0]!.state).toBe('dismissed')
+  })
+})

@@ -619,6 +619,28 @@
 .move-sheet__line { color: var(--tt-text-2); }
 .move-sheet__line[data-tone='needs'] { color: var(--watcher-needs-ink); }
 .move-sheet__note { flex: none; margin: 12px 0 16px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+/* Part 3 (Zach's picks, October 29): each thread says where it is now, and one that can move has a box, none ticked but
+   what the user pointed at. A list with boxes keeps its names in one column, a row that stays leaving the box's place. */
+.move-sheet__where { display: inline-flex; align-items: center; gap: 4px; color: var(--tt-text-2); white-space: nowrap; }
+.move-sheet__where > svg { flex: none; color: var(--tt-accent-text); }
+.move-sheet__row[data-box] { grid-template-columns: 16px 16px minmax(0, 1fr); }
+.move-sheet__row[data-box] > :is(.move-sheet__meta, .move-sheet__line) { grid-column: 3; }
+.move-sheet__list[data-box] > .move-sheet__row:not([data-box]) { grid-template-columns: 16px 16px minmax(0, 1fr); }
+.move-sheet__list[data-box] > .move-sheet__row:not([data-box]) > :is(.move-sheet__meta, .move-sheet__line) { grid-column: 3; }
+.move-sheet__list[data-box] > .move-sheet__row:not([data-box])::before { content: ''; }
+.move-sheet__box { width: 15px; height: 15px; margin: 0; accent-color: var(--tt-accent); cursor: pointer; }
+.move-sheet__box:disabled { cursor: default; }
+label.move-sheet__name { cursor: pointer; }
+/* Watcher's proposal from the user's words (part 3, Zach's pick A): Sotto's line, then the preview as a card with its
+   boxes, Move and Not now, in Watcher's conversation. */
+.move-proposal { margin: 0 0 18px; }
+.move-proposal .sotto-line { margin-bottom: 10px; }
+.move-proposal__card { padding: 4px 14px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface); }
+.move-proposal__card h3 { display: flex; align-items: baseline; gap: 8px; margin: 12px 0 6px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; }
+.move-proposal__card h3 > span { color: var(--tt-text-muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.move-proposal__card h3[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.move-proposal__changed { margin: 8px 0 0; color: var(--watcher-needs-ink); font-size: 12.5px; line-height: 1.5; }
+.move-proposal__card .move-card__actions { padding-left: 0; }
 .move-sheet__refused { color: var(--tt-error-text); }
 .move-sheet .tt-dialog__actions { flex: none; }
 .move-sheet__machines { display: grid; gap: 6px; margin: 14px 0 18px; padding: 0; list-style: none; }

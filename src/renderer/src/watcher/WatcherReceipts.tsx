@@ -6,13 +6,13 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentMessage, ProviderId } from '../../../shared/agents'
 import type { WatcherOperation, WatcherThreadTarget } from '../../../shared/watcher'
 import { isShownReply, type WatcherTakeover } from '../../../shared/watcherRoom'
-import type { ThreadMoveCard } from '../../../shared/threadMoves'
+import type { ThreadMoveCard, ThreadMoveProposal } from '../../../shared/threadMoves'
 import type { WorkerPlacementReceipt } from '../../../shared/workerMachine'
 import { SottoMark } from '../components/SottoMark'
 import { ProviderMark } from '../agents/ProviderMark'
 import { clockLabel } from '../agents/threadFacts'
 import { WatcherAsks, type WatcherAskPlacement } from './WatcherAsks'
-import { WatcherMoveCards } from './MoveThreads'
+import { WatcherMoveCards, WatcherMoveProposals } from './MoveThreads'
 import type { ByMessage, ByOperation } from './watcherConversationWork'
 import { t } from '@lingui/core/macro'
 
@@ -51,6 +51,8 @@ export interface WatcherConversation {
    * The moves Sotto ran for the user (#1178), after the turn each was confirmed in: only while Work across machines is on.
    */
   readonly moves?: ReadonlyMap<string, readonly ThreadMoveCard[]> | undefined
+  /** Watcher's proposals from the user's words (#1178 part 3), after the turn that made each: only while Work across machines is on. */
+  readonly proposals?: ReadonlyMap<string, readonly ThreadMoveProposal[]> | undefined
   /** Where each start was placed, by operation ID (#1032): only while Work across machines is on, and only this run's. */
   readonly placements?: ByOperation<WorkerPlacementReceipt> | undefined
   readonly describe: (target: WatcherThreadTarget) => ConversationThread
@@ -188,7 +190,7 @@ function TakeoverLine({ line, conversation }: { readonly line: WatcherTakeover; 
 
 /**
  * What follows a message in Watcher's own pane: its receipt cards, then the cards of the requests its wake-up said wait
- * on the user, then any takeover line, then the moves confirmed in its turn. Nothing anywhere else.
+ * on the user, then any takeover line, then Watcher's proposals and the moves confirmed in its turn. Nothing anywhere else.
  */
 export function WatcherAfterMessage({ message }: { readonly message: AgentMessage }): ReactNode {
   const conversation = useContext(WatcherConversationContext)
@@ -197,11 +199,13 @@ export function WatcherAfterMessage({ message }: { readonly message: AgentMessag
   const lines = conversation.takeovers.get(message.id)
   const asks = conversation.asks?.get(message.id)
   const moves = conversation.moves?.get(message.id)
-  if (operations === undefined && lines === undefined && asks === undefined && moves === undefined) return null
+  const proposals = conversation.proposals?.get(message.id)
+  if (operations === undefined && lines === undefined && asks === undefined && moves === undefined && proposals === undefined) return null
   return <>
     {operations?.length ? <WatcherReceipts operations={operations} conversation={conversation} /> : null}
     {asks?.length ? <WatcherAsks asks={asks} describe={conversation.describe} press={conversation.press} /> : null}
     {lines?.map(line => <TakeoverLine key={`${line.target.hostId}:${line.target.threadId}:${line.at}`} line={line} conversation={conversation} />)}
+    {proposals?.length ? <WatcherMoveProposals proposals={proposals} threads={conversation} /> : null}
     {moves?.length ? <WatcherMoveCards cards={moves} threads={conversation} /> : null}
   </>
 }
