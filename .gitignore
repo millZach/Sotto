@@ -894,3 +894,8 @@ artifacts/watcher-card-queue/*
 !artifacts/watcher-card-queue/*-1280.png
 !artifacts/watcher-card-queue/*-820.png
 !artifacts/watcher-card-queue/checks.json
+
+# Keep only the Dock crops cited by the macOS icon verification note.
+artifacts/macos-dock-icon-padding/*
+!artifacts/macos-dock-icon-padding/sidebar-before.png
+!artifacts/macos-dock-icon-padding/sidebar-after.png

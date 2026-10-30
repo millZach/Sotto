@@ -95,10 +95,29 @@ export function immutableUpdates<T>(records: readonly T[], previous: readonly (T
   return copyOver(records, previous, isOwned, own)
 }
 
+/**
+ * A caller's own copy of a snapshot whose thread records may themselves be certified, as the provider switch holds them:
+ * every thread and every other part is the caller's to change, and only certified activity lists and a certified catalog
+ * are shared, frozen, as subscribers are handed them. A read before every send had handed back a deep copy of every
+ * thread's records, which the workspace then merged again record by record and the thread store's worker was sent whole.
+ */
+export function cloneSnapshotSharingActivities(snapshot: AgentHostSnapshot): AgentHostSnapshot {
+  const { threads, models } = snapshot
+  const sharedModels = isImmutableModels(models)
+  const shared = threads.map(thread => isImmutableActivities(thread.activities) ? thread.activities : undefined)
+  // Spread first, so every key keeps its place: a snapshot's text, which a socket compares to the last shell it sent, is
+  // the same whether it came from a read or a publication.
+  const copied = cloneHostSnapshot({ ...snapshot, models: sharedModels ? [] : models,
+    threads: threads.map((thread, index) => shared[index] ? { ...thread, activities: [] } : thread) })
+  return { ...copied, models: sharedModels ? models : copied.models,
+    threads: copied.threads.map((thread, index) => shared[index] ? { ...thread, activities: shared[index] } : thread) }
+}
+
 /** A private subscription snapshot: mutable metadata belongs to this consumer, while certified
  * activity trees may be shared. It is also what an adapter hands back for a thread refresh or settings
- * result that asked for history from events (#368). Every other public snapshot still uses
- * cloneHostSnapshot and remains writable. */
+ * result that asked for history from events (#368). The provider switch hands its own reads out through
+ * `cloneSnapshotSharingActivities` (ADR-0016, October 30 amendment); every other public snapshot still
+ * uses cloneHostSnapshot and remains writable. */
 export function cloneActivitySnapshot(snapshot: AgentHostSnapshot): AgentHostSnapshot {
   // Whole-history legacy hosts have nothing to share. Keep their established clone path
   // instead of checking ownership on every nested object in every retained record.

@@ -42,6 +42,9 @@ struct ThreadView: View {
                     if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title) }
                     if model.compactionOffered(ref) || model.shelfAction(ref) != nil { ThreadMenu(ref: ref) }
                 }
+                // Where the bar is short, iOS gives the group its smallest size, which squeezed Agents' and Watch's words
+                // to nothing; held at its own size, the title gives way instead.
+                .fixedSize()
             }
             .horizontalOnly()
         }
@@ -99,16 +102,18 @@ extension ToolbarContent {
     }
 }
 
-/// The thread's state in the bar, in a word: a light, the word and, while it works, how long it has been at it.
+/// The thread's state in the bar, in a word: a light, the word and, while it works, how long it has been at it, except at
+/// compact width, where the bar's room goes to the thread's title.
 private struct ThreadStatePill: View {
     let state: ThreadState
     let since: Date?
     let reachable: Bool
+    @Environment(\.horizontalSizeClass) private var sizeClass
     var body: some View {
         HStack(spacing: 6) {
             if reachable { StatusDot(state: state, size: 7) } else { Light(tone: .off, size: 7) }
             Text(word)
-            if reachable, state.workInProgress, let since { ElapsedText(since: since) }
+            if reachable, state.workInProgress, sizeClass == .regular, let since { ElapsedText(since: since) }
         }
         .font(.sotto(.caption, .semibold).monospacedDigit())
         .lineLimit(1)
@@ -150,17 +155,19 @@ private struct ThreadStatePill: View {
 /// Watch beside the thread's state (watch B, Zach's pick on October 13, 2026): pressed while Watcher watches the thread,
 /// which then lasts until the user stops it here or on Watched, with no limit on how many. A press asks nothing first;
 /// what it did is said over the reply box with Undo. Its name stays Watch and its value says whether it is on. Only where
-/// a computer that runs Watcher takes it from this iPhone; at the largest text sizes it is the owl alone.
+/// a computer that runs Watcher takes it from this iPhone; at compact width, where the bar's room goes to the thread's
+/// title, and at the largest text sizes it is the owl alone.
 private struct WatchToggle: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let title: String?
     @State private var presses = 0
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
         let watched = model.watchedByWatcher(ref)
-        let compact = typeSize.isAccessibilitySize
+        let compact = typeSize.isAccessibilitySize || sizeClass != .regular
         Button { presses += 1; Task { await model.setWatched(ref, !watched, title: title) } } label: {
             HStack(spacing: 6) {
                 if model.changingWatch(ref) { ProgressView().controlSize(.mini) } else { WatcherOwlMark(size: 17).accessibilityHidden(true) }
@@ -1912,7 +1919,7 @@ private struct ReplyDock: View, Equatable {
         .foregroundStyle(Palette.muted)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, Space.s4)
-        .padding(.vertical, Space.s2)
+        .padding(.vertical, Space.s3)
         .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("watched-takeover")

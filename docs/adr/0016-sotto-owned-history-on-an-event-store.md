@@ -339,3 +339,22 @@ The October 23 amendment took the log's checkpoints off main and left two parts 
 - **Closing waits for a list on its way,** within closing's minute, so what the provider published behind it is in the last save.
 - **The provider is told once for a batch.** It takes the whole observation each time, so it is told when no thread the window looks at has a list on its way: a window opening many stored threads tells it as it looks and once more when the last list is in, rather than once for each.
 - **What stays on main.** A record the provider publishes for a stored thread no window is looking at, with no read on its way, still reads the list back on main, as do the adapters' handoff and the start's read of a profile whose subagent words have not moved.
+
+## Amendment: the provider switch's reads share certified activity (October 30, 2026, #1645)
+
+The October 24 amendment kept `snapshot` and every other whole result independently writable. The provider switch's
+are the exception now. Its `connect`, `snapshot`, `refreshThread` and confirmed settings results share the activity lists
+and the model catalog it holds certified, frozen, as its subscribers are handed them. Every thread record and every
+other part is still the caller's own copy.
+
+The read before every send went through `refreshThread`, and its deep copy of every thread's activity records reached
+the workspace uncertified. The workspace then merged every record of every thread again and kept the result
+uncertified, and the thread store's worker was sent those lists whole: with three long threads on screen, 76.6 MB for one
+send (`docs/perf/2026-10-30-send-read-copies.md`). A caller that would change a returned activity list or catalog in place
+now throws, as a subscriber always has. The only production caller, the workspace, builds new lists when it merges.
+`snapshot` and `workspaceSnapshot` of the workspace, ordinary `subscribe` and command replies stay writable copies.
+
+The workspace still reconciles every record a read brings, as it did when reads came as copies. Only a publication may
+take the merge it gave last time for the same certified list; at the record limit that would keep a different set of the
+oldest records. A read's record that comes out the same as the record held is the record held.
+

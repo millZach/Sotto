@@ -14,7 +14,7 @@ import { ModelPicker, type UnavailablePickerProvider } from './ModelPicker'
 import { useOwnServersBridge } from './OwnModelServers'
 import { localHostId } from '../features/onboarding/localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
-import { EffortDots } from './EffortDots'
+import { SplitChipEffort, type SpeedOption } from './SplitChipEffort'
 import { suggestedEffortIndex } from './effortSuggestion'
 import { ultracodeLevel } from './ultracodeLevel'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
@@ -343,6 +343,10 @@ export function speedName(value: string, offered: readonly AgentModelSpeed[]): s
   return offered.find(speed => speed.id === value)?.name ?? (value === 'ultrafast' ? t({ message: 'Ultra fast', comment: 'A thread speed: faster than Fast, at a higher price still.' })
     : t({ message: 'Fast', comment: 'A thread speed: faster output at a higher price.' }))
 }
+/** Standard, then each speed the model offers, with its name and what it costs: the quiet composer's list of speeds. */
+export function speedOptions(offered: readonly AgentModelSpeed[], provider: string | undefined): readonly SpeedOption[] {
+  return [{ id: SPEED_STANDARD, name: speedName(SPEED_STANDARD, offered) }, ...offered.map(speed => ({ id: speed.id, name: speedName(speed.id, offered), description: speedCost(speed, provider) }))]
+}
 /** The speed after this one when the bolt is pressed: Standard, then each offered speed in turn, then Standard again. */
 export function nextSpeed(offered: readonly AgentModelSpeed[], value: string, direction: 1 | -1 = 1): string {
   const cycle = [SPEED_STANDARD, ...offered.map(speed => speed.id)]
@@ -457,10 +461,11 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   /** Another provider's models, under "Continue in a new thread on", for a started thread that may continue elsewhere. */
   readonly continueOffer?: ThreadContinueOffer | undefined
   /**
-   * The quiet composer (ADR-0161, Owl): effort and speed as dots that may ring a level the draft seems to want.
-   * Absent, the options are the chips of ADR-0113.
+   * The quiet composer (ADR-0161, Owl): effort and speed as a word and a bolt beside the model, which may mark a level the
+   * draft seems to want, and the permissions shield drawn in `shieldSlot`, at the pill's start. Absent, the options are
+   * the chips of ADR-0113.
    */
-  readonly quiet?: { readonly effortScore: number } | undefined
+  readonly quiet?: { readonly effortScore: number; readonly shieldSlot?: HTMLElement | null | undefined } | undefined
 }): ReactNode {
   const { t } = useLingui()
   const settings = usePendingSettings(thread.id)
@@ -605,8 +610,9 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const caption = pendingPermission === null || permissionUnconfirmed ? '' : permissionInForceCaption(provider, usesProviderModes(confirmedModel)
     ? { providerModeName: valueName('permissions', drawn.permissions, confirmedModel) } : { runtimeMode: (drawn.permissions || undefined) as AgentRuntimeMode | undefined })
   const retry = (kind: SettingKind): void => {
-    // The speed control is either the bolt or the quiet effort slider.
-    if (pendingSettingsStore.retry(thread.id, kind, command, drawn)) bar.current?.querySelector<HTMLElement>(kind === 'fast' ? '.thread-fast, .effort-dots__track' : `[aria-label="${OPTION_CHIP_NAMES[kind]}"]`)?.focus()
+    // The speed control is either the bolt or the split chip's effort half.
+    // The quiet pill draws the shield outside the bar, at its start, so the chip is looked for in the whole composer.
+    if (pendingSettingsStore.retry(thread.id, kind, command, drawn)) (bar.current?.closest('form') ?? bar.current)?.querySelector<HTMLElement>(kind === 'fast' ? '.thread-fast, .split-chip-effort__trigger' : `[aria-label="${OPTION_CHIP_NAMES[kind]}"]`)?.focus()
   }
   const kinds: readonly SettingKind[] = ['model', 'effort', 'permissions', 'fast']
   const unconfirmedIds: Readonly<Record<SettingKind, string>> = { model: unconfirmedModelId, effort: unconfirmedEffortId, permissions: unconfirmedId, fast: unconfirmedFastId }
@@ -635,7 +641,13 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
     press('fast', next, speedPatch(next, model), unpressed.fast)
     orchestrating?.(modelId, reasoning || null, state.host.models, next === SPEED_STANDARD ? null : next as AgentSpeed)
   }
-  const dotsDescription = [settings.pending.effort?.awaiting === 'unconfirmed' ? unconfirmedEffortId : '', settings.pending.fast?.awaiting === 'unconfirmed' ? unconfirmedFastId : ''].filter(Boolean).join(' ')
+  const effortDescription = [settings.pending.effort?.awaiting === 'unconfirmed' ? unconfirmedEffortId : '', settings.pending.fast?.awaiting === 'unconfirmed' ? unconfirmedFastId : ''].filter(Boolean).join(' ')
+  const permissions = watcher
+    ? <WatcherPermissionChip model={model} provider={provider} inForce={thread.runtimeMode} noticeSlot={noticeSlot}
+      disabled={fixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
+    : modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder={t`Provider default`} value={permission} options={modes} disabled={fixed} icon={PERMISSIONS_ICON}
+      pending={pendingPermission !== null} describedBy={permissionUnconfirmed ? unconfirmedId : captionId}
+      onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />
   return <div ref={bar} className="thread-options-bar" data-provider-locked={locked} data-permission={quiet ? permission : undefined}>
     <div className="thread-options thread-options--chips">
       <ModelPicker models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
@@ -657,9 +669,9 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       }} />
       {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={speedProvider} value={speed} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={unconfirmedFastId}
         onChange={changeSpeed} />}
-      {quiet ? levels.length > 0 && <EffortDots levels={levels} value={reasoning} provider={model?.providerId ?? thread.providerId} disabled={fixed || modelDisabled}
-        pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={dotsDescription}
-        speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), description: speedTitle(speeds, shownSpeed, speedProvider, fixed), onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
+      {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={fixed || modelDisabled}
+        pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={effortDescription}
+        speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), options: speedOptions(speeds, speedProvider), onChange: changeSpeed, onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
         suggestion={thread.status === 'running' ? null : suggestedEffortIndex(quiet.effortScore, levels.length,
           // On the provider's default, the model's own default is what a suggestion must stand above.
           levels.includes(reasoning) ? levels.indexOf(reasoning) : levels.indexOf(model?.defaultReasoningEffort ?? ''))}
@@ -674,12 +686,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         }}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name} ultracodeEffort={ultracodeLevel(state, thread, model)}
         hasUltrathink={hasUltrathink} {...(addUltrathink ? { onUltrathink: addUltrathink } : {})} />}
-      {watcher
-        ? <WatcherPermissionChip model={model} provider={provider} inForce={thread.runtimeMode} noticeSlot={noticeSlot}
-          disabled={fixed} fixedReason={watcherPermissionFixedReason(state, thread)} />
-        : modes.length > 0 && <ChoiceChip label={OPTION_CHIP_NAMES.permissions} placeholder={t`Provider default`} value={permission} options={modes} disabled={fixed} icon={PERMISSIONS_ICON}
-        pending={pendingPermission !== null} describedBy={permissionUnconfirmed ? unconfirmedId : captionId}
-        onChange={mode => press('permissions', mode, permissionPatch(model, mode), unpressed.permissions)} />}
+      {quiet?.shieldSlot ? createPortal(permissions, quiet.shieldSlot) : permissions}
       {/* Before the first send, Watch puts the new thread under a standing watch once it is sent (Watcher only). */}
       {!watcher && !quiet && thread.nativeSessionStarted === false ? <WatchOnSendToggle threadId={thread.id} /> : null}
     </div>

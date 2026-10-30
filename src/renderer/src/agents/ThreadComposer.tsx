@@ -193,6 +193,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // The row under the footer where the option chips say what happened to a refused or unconfirmed change.
   const [settingsNotices, setSettingsNotices] = useState<HTMLDivElement | null>(null)
   const [toolbarNotices, setToolbarNotices] = useState<HTMLDivElement | null>(null)
+  // The quiet pill draws the permissions shield at its start, after attach (ADR-0161).
+  const [shieldSlot, setShieldSlot] = useState<HTMLDivElement | null>(null)
   const field = useRef<PromptEditorElement>(null)
   const caretAfterInsert = useRef<number | null>(null)
   const pendingRequest = row.request?.requestId === undefined ? undefined : row.thread.requests.find(request => request.id === row.request!.requestId)
@@ -435,6 +437,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // The quiet composer (ADR-0161, Owl): one pill. Answers, continuations and Watcher's handover keep the full footer,
   // since each has a primary action of its own that the pill's disc does not draw.
   const quiet = quietComposer && !answering && continuing === undefined && handover === null
+  /** In the quiet pill, the permissions shield goes to the pill's start; elsewhere it stays where it is drawn. */
+  const inSlot = (node: ReactNode): ReactNode => quiet && shieldSlot ? createPortal(node, shieldSlot) : node
   // The pill's disc turns into Steer while Steer's modifier is held, so it always shows what the key pressed will do.
   const [steerHeld, setSteerHeld] = useState(false)
   useEffect(() => {
@@ -517,6 +521,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         onHighlight={index => setNextList({ ...nextList, index })} onChoose={chooseNext} /> : null}
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span><Trans>This answer was for a question that is no longer pending.</Trans></span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}><Trans>Discard answer</Trans></Button></div> : null}
+      {/* Before the prompt in the Tab order, as the shield is before it on the line. */}
+      {quiet ? <div ref={setShieldSlot} className="thread-prompt__lead" /> : null}
       <ThreadComposerEditor key={threadId} row={row} state={state} command={command} store={store} composerId={composerId}
         editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering} attachable={!answering} watcher={watcher}
         field={field} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
@@ -559,11 +565,11 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {continuing !== undefined ? <ContinueOptions thread={row.thread} state={state} choice={continuing} />
             : row.thread.nativeSessionStarted === false || capabilities.configureThread || continueOffer !== undefined
             ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher} continueOffer={continueOffer}
-              quiet={quiet ? { effortScore } : undefined}
+              quiet={quiet ? { effortScore, shieldSlot } : undefined}
               {...(editable && !answering ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? t`Answer this question` : t`Manual prompt`}</small></span>
-              {watcher ? <WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
-                disabled={watcherPermissionFixedReason(state, row.thread) !== undefined} fixedReason={watcherPermissionFixedReason(state, row.thread)} /> : null}</>}
+              {watcher ? inSlot(<WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
+                disabled={watcherPermissionFixedReason(state, row.thread) !== undefined} fixedReason={watcherPermissionFixedReason(state, row.thread)} />) : null}</>}
           {status}
         </div>
         <div ref={actionsRow} className="thread-prompt__actions">
