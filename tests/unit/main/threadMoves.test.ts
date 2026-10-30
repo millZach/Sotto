@@ -915,6 +915,21 @@ describe('Keep it here on a move waiting on its machine (#1178 part 4)', () => {
     expect(JSON.parse(await readFile(join(directory, 'moves.json'), 'utf8')).keeping).toBeUndefined()
     again.close()
   })
+  it('keeps the press of a move stuck on its watch, and calls it off rather than settling it', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.watch.watched.add('a'); w.watch.refuses = true
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('thread-started'))
+    w.endTurn(moveId)
+    // The watch will not go: after its tries the move waits, stuck, and Keep it here is offered.
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true }), { timeout: 5_000 })
+    w.watch.refuses = false
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'ok' })
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('kept'))
+    expect(w.remote.keeps).toEqual([moveId]); expect(w.settled).toEqual([])
+    await vi.waitFor(() => expect(w.fences.has('a')).toBe(false))
+    moves.close()
+  })
   it('ends a move never asked to start there at once, made nothing, with nothing asked of the machine', async () => {
     const w = world(), at = new Date().toISOString(), moveId = randomUUID()
     const record: MoveRecord = { id: moveId, sourceThreadId: 'a', targetHostId: FORGE, machine: 'forge', state: 'fenced',

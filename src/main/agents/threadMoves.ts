@@ -170,7 +170,8 @@ const FINISHED_KEPT = 500
 const RETRY_MS = 5_000
 /** How many times in a row Watcher's watch is tried before the move waits, unsettled and fenced, for part 4 to show it. */
 const WATCH_TRIES = 5
-const UNFINISHED = new Set<string>(MOVE_STATES.filter(state => state !== 'source-settled' && state !== 'given-back' && state !== 'stayed' && state !== 'kept'))
+const terminal = (state: MoveState): boolean => state === 'source-settled' || state === 'given-back' || state === 'stayed' || state === 'kept'
+const UNFINISHED = new Set<string>(MOVE_STATES.filter(state => !terminal(state)))
 /**
  * What a record that does not read as a whole still names: each move it calls unfinished, with its source and machine, and
  * every source whose worktree it keeps. Read leniently, so a source is fenced and kept whenever anything says it might move.
@@ -215,7 +216,6 @@ export async function holdUnfinishedMoves(directory: string, control: Pick<MoveC
   return { keepsWorktree: threadId => kept.has(threadId),
     settleFences: () => { for (const threadId of control.fencedForMove?.() ?? []) if (!unfinished.has(threadId)) void Promise.resolve(control.liftMoveFence(threadId)).catch(() => undefined) } }
 }
-const terminal = (state: MoveState): boolean => state === 'source-settled' || state === 'given-back' || state === 'stayed' || state === 'kept'
 const now = (): string => new Date().toISOString()
 const digest = (value: unknown): string => createHash('sha256').update(JSON.stringify(value)).digest('hex')
 
@@ -1083,6 +1083,8 @@ export class ThreadMoveService {
    * linked and settled by that host (`settle`), which lets go of its fence.
    */
   private async settleSource(record: MoveRecord, here: string, source: AgentThread | undefined): Promise<boolean> {
+    // Keep it here pressed meanwhile wins: the move is called off rather than finished (part 4).
+    if (this.keeping.has(record.id)) return this.callOff(record)
     // The watch goes first, and the source settles only once it has: a watch on a settled thread ends, and would be lost.
     // One that will not go is tried again a few times, then the move waits, fenced and unsettled, for part 4 to show it.
     if (record.watched && record.watchMoved !== true && record.threadId && this.options.watch) {
@@ -1095,6 +1097,7 @@ export class ThreadMoveService {
         return false
       }
       record = await this.update(record, { watchMoved: true })
+      if (this.keeping.has(record.id)) return this.callOff(record)
     }
     if (record.sourceHostId) {
       if (record.threadId && !await this.sourceStep(record, { action: 'settle', moveId: record.id, link: this.linkOf(record) })) { this.later(record.id); return false }
@@ -1167,8 +1170,15 @@ export class ThreadMoveService {
   /** The move is called off: Watcher's watch comes back if it went, and the thread here, or on its host, takes sends again. */
   private async endKept(record: MoveRecord, made: boolean): Promise<boolean> {
     const here = this.options.control.hostId()
+    // A watch that had gone to the new thread comes back, tried again a few times before the move ends without it.
     if (record.watchMoved === true && record.threadId && here && this.options.watch) {
-      await this.options.watch.moveWatch({ hostId: record.targetHostId, threadId: record.threadId }, { hostId: record.sourceHostId ?? here, threadId: record.sourceThreadId }).catch(() => false)
+      const back = await this.options.watch.moveWatch({ hostId: record.targetHostId, threadId: record.threadId }, { hostId: record.sourceHostId ?? here, threadId: record.sourceThreadId }).catch(() => false)
+      if (back) record = await this.update(record, { watchMoved: false })
+      else {
+        const tries = (this.watchTries.get(record.id) ?? 0) + 1
+        this.watchTries.set(record.id, tries)
+        if (tries < WATCH_TRIES) { this.later(record.id); return false }
+      }
     }
     const words = THREAD_MOVE_WORDS.kept(record.machine, made, this.fromName(record)).slice(0, 1_200)
     if (record.sourceHostId && record.held) return this.end(await this.update(record, { ending: 'kept', givenBack: words }))

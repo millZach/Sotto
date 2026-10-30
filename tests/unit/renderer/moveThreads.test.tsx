@@ -309,6 +309,10 @@ describe('Each move’s card in Watcher’s conversation', () => {
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Keep it here' }))
     expect(moves.answer).not.toHaveBeenCalled()
     fireEvent.click(screen.getByRole('button', { name: 'Keep it here' }))
+    // Escape anywhere in the question puts it away.
+    fireEvent.keyDown(screen.getByRole('button', { name: 'Stop it there and keep this one' }), { key: 'Escape' })
+    expect(screen.queryByRole('group')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Keep it here' }))
     fireEvent.click(screen.getByRole('button', { name: 'Stop it there and keep this one' }))
     await waitFor(() => expect(moves.answer).toHaveBeenCalledWith({ moveId: CARD, answer: 'keep-here' }))
   })

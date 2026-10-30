@@ -172,3 +172,10 @@ Decisions made while building:
 - A refusal of `keep` proves nothing about a thread there, so the move stays fenced and asks again; only `kept` ends it.
 - A kept move with no thread there lets go of its incoming ref; one whose thread was stopped and settled keeps it, since that thread's worktree was made from it.
 
+After Sol's standards review of part 4 (October 30):
+
+- The machine a move went to says it kept the move only once the thread it made has stopped: a turn the interrupt did not stop fails the step, nothing settled, and the desktop asks again.
+- A press made while a step is under way is not lost: settling the source checks for it before and after Watcher's watch moves, and calls the move off instead.
+- A watch that had gone to the new thread is tried again a few times on its way back before the move ends without it.
+- Escape anywhere in the card's question puts it away.
+

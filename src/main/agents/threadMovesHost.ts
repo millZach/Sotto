@@ -180,7 +180,12 @@ export class HostThreadMoves {
     if (!record.kept) { record = { ...record, kept: true, updatedAt: at }; await this.put(record) }
     const thread = this.options.control.watcherSnapshot().threads.find(item => item.id === record.threadId)
     if (!thread) return { type: 'kept', moveId, made: false }
-    if (isThreadTurnRunning(thread)) await this.options.control.commandFromMove({ type: 'interrupt', threadId: thread.id }, stopping)
+    // Kept only once its turn has stopped: one still running fails the step, and the desktop asks again.
+    if (isThreadTurnRunning(thread)) {
+      const stopped = await this.options.control.commandFromMove({ type: 'interrupt', threadId: thread.id }, stopping)
+      const now = this.options.control.watcherSnapshot().threads.find(item => item.id === thread.id)
+      if (stopped.error || now !== undefined && isThreadTurnRunning(now)) throw new Error('The thread made for this move has not stopped yet.')
+    }
     if (!thread.workspaceSettledAt) {
       const settled = await this.options.control.commandFromMove({ type: 'settle-thread', threadId: thread.id }, stopping)
       if (settled.error && !this.options.control.watcherSnapshot().threads.find(item => item.id === thread.id)?.workspaceSettledAt) throw new Error('The thread made for this move did not settle yet.')
