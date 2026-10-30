@@ -296,7 +296,6 @@ import type { GitHubRateLimitEvent } from './agents/github'
 import type { BabysitEvent } from './agents/babysitting'
 import type { WatchedPullRequestEvent } from './agents/watchedPullRequests'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './agents/claude'
-import type { WatcherAutoSettleEvent } from './agents/watcher'
 import { CodexAppServerHost, type CodexAdapterEvent } from './agents/codex'
 import { BROWSER_EVENT } from '../shared/browser'
 import { GIT_CHANGES_EVENT } from '../shared/gitChanges'
@@ -356,7 +355,6 @@ type NativeDiagnostic =
   | 'delivered-app-unreadable'
   | 'checkpoint-unavailable'
   | WorktreeCleanupEvent
-  | WatcherAutoSettleEvent
   | GitHubRateLimitEvent
   | BabysitEvent
   | WatchedPullRequestEvent
@@ -1062,7 +1060,6 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
     worktreeCleanup: { ...(e2eConfiguration === null ? { pullRequestMerged: githubPullRequestMerged, pullRequestState: githubPullRequestState, openPullRequestBranches: githubOpenPullRequestBranches } : {}), log: code => { logOperational(code) } },
-    watcherLog: event => { logOperational(event) },
     claudeSettingsLog: event => { logOperational(event) },
     codexLog: event => { logOperational(event) },
   }) : await inactiveLocalHost(userDataPath)

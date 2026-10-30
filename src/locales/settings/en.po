@@ -4612,11 +4612,6 @@ msgstr "Settings reset to defaults."
 msgid "Settings sections"
 msgstr "Settings sections"
 
-#: src/renderer/src/features/settings/settingsPages.ts
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Settle finished threads"
-msgstr "Settle finished threads"
-
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Settle thread"
 msgstr "Settle thread"
@@ -4625,13 +4620,18 @@ msgstr "Settle thread"
 msgid "Settle thread shortcut"
 msgstr "Settle thread shortcut"
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Settle without asking"
+msgstr "Settle without asking"
+
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "Settled threads on this computer quiet longer than"
 msgstr "Settled threads on this computer quiet longer than"
 
 #: src/renderer/src/features/settings/GitSettings.tsx
-msgid "Settles a thread once its pull request merges, checking GitHub through gh hourly. Folders follow the worktree rules under Application."
-msgstr "Settles a thread once its pull request merges, checking GitHub through gh hourly. Folders follow the worktree rules under Application."
+msgid "Settles a thread once its pull request merges, checking GitHub through gh hourly. Watcher decides for the threads it watches. Folders follow the worktree rules under Application."
+msgstr "Settles a thread once its pull request merges, checking GitHub through gh hourly. Watcher decides for the threads it watches. Folders follow the worktree rules under Application."
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Settling removes a clean worktree without asking. One with uncommitted changes still asks."
@@ -6634,6 +6634,10 @@ msgstr "Watcher can’t run on {provider} yet."
 msgid "Watcher compacts its conversation at its next rest once it passes this size. Lower costs less on every turn; higher keeps more of it word for word."
 msgstr "Watcher compacts its conversation at its next rest once it passes this size. Lower costs less on every turn; higher keeps more of it word for word."
 
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Watcher decides when a thread it watches is finished, then settles it and stops watching it. On, it settles without asking you. Off, it asks you first."
+msgstr "Watcher decides when a thread it watches is finished, then settles it and stops watching it. On, it settles without asking you. Off, it asks you first."
+
 #: src/renderer/src/features/settings/WatcherCompactionSetting.tsx
 msgid "Watcher is at {size}: it compacts at its next rest."
 msgstr "Watcher is at {size}: it compacts at its next rest."
@@ -6662,10 +6666,6 @@ msgstr "Watcher scene"
 #: src/renderer/src/features/settings/AppearanceSettings.tsx
 msgid "Watcher scene saved."
 msgstr "Watcher scene saved."
-
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it."
-msgstr "Watcher settles a thread it watches once its work is done: nothing running or waiting on you, and every pull request merged or closed. Then it stops watching it."
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Watcher’s composer shows the same choices. A change in either place changes both."

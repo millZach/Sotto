@@ -7,7 +7,9 @@ import type { WatcherArchived } from '../../../src/main/agents/watcherArchive'
 import type { WorkspaceHost } from '../../../src/main/agents/workspace'
 import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { emptyWatcherRecord, type WatcherOperation, type WatcherPromptTurn, type WatcherRecord, type WatcherRequest } from '../../../src/shared/watcher'
-import { watcherRoomWork } from '../../../src/shared/watcherRoom'
+import type { AgentMessage } from '../../../src/shared/agents'
+import { watcherTakeovers, type WatcherRoomState } from '../../../src/shared/watcherRoom'
+import { joinedReceipts, joinedTakeovers, liveReceipts, placeTakeovers, recalledConversation, recalledTakeovers } from '../../../src/renderer/src/watcher/watcherConversationWork'
 
 // Watcher's archive (#1759): the archived work a conversation shown far back brings to the room is placed once, when it is
 // read back, and kept apart from the record's own lists, so neither a room build nor a change of the record reads or copies
@@ -27,7 +29,10 @@ function roomWith(recalledCount: number, overlap = false) {
   record.current = { target: watcher, projectId: 'project', provider: 'codex', creationOperationId: randomUUID(), createdAt: at }
   const liveRequest = randomUUID(), liveTurn = randomUUID()
   record.promptTurns = [{ id: liveTurn, watcher, createdAt: at, rootUserMessageId: 'live-message' }]
-  record.requests.push({ id: liveRequest, watcher, rootUserMessageId: 'live-message', state: 'closed', createdAt: at, closedAt: at, participants: [] })
+  // With the archive overlapping, a thread the user took over in the request, so its line has two sources too.
+  record.requests.push({ id: liveRequest, watcher, rootUserMessageId: 'live-message', state: 'closed', createdAt: at, closedAt: at,
+    participants: overlap ? [{ target: { hostId: localId, threadId: 'worker-live' }, requestId: liveRequest, startedBy: 'watcher', generation: 0, state: 'taken-over', promptCount: 1,
+      takeover: { reason: 'user-send', at } }] : [] })
   record.operations.push(operation(liveRequest, liveTurn, -1))
   let reads = 0, counting = false
   const counted = <T extends object>(value: T): T => new Proxy(value, { get(target, property, receiver) { if (counting) reads++; return Reflect.get(target, property, receiver) } })
@@ -51,7 +56,7 @@ function roomWith(recalledCount: number, overlap = false) {
     watcherSnapshot: () => host, hostId: () => localId, hostThreadsOf: () => undefined, useWatcher: () => () => undefined, subscribe: () => () => undefined,
     archivedWatcherWork: () => undefined } as unknown as AgentControl
   const service = new WatcherService({ directory: '', control, host: {} as WorkspaceHost, historyEnabled: () => false, streamingPublishCost: true })
-  return { service, recalledCount,
+  return { service, recalledCount, messages: host.threads[0]!.messages,
     /** Counts reads of what was read back from here on. */
     count: () => { counting = true; reads = 0 },
     reads: () => reads,
@@ -59,13 +64,26 @@ function roomWith(recalledCount: number, overlap = false) {
     replaceRecord: () => { record = { ...record, operations: [...record.operations, operation(liveRequest, liveTurn, -2)] } } }
 }
 
+/** The receipt cards the window shows under Watcher's messages, joined as its pane joins them. */
+function cards(room: WatcherRoomState, messages: readonly { readonly id: string }[]): WatcherOperation[] {
+  const own = liveReceipts(room.receipts, room.receiptReplies)
+  const shown = joinedReceipts(own.byMessage, own.operations, recalledConversation(room.recalled, room.current?.target))
+  return messages.flatMap(message => shown.get(message.id) ?? [])
+}
+/** The takeover lines the window shows after Watcher's messages, joined as its pane joins them. */
+function lines(room: WatcherRoomState, messages: readonly AgentMessage[]) {
+  const own = placeTakeovers(messages, watcherTakeovers({ current: room.current, requests: room.requests }))
+  const shown = joinedTakeovers(own, recalledTakeovers(messages, recalledConversation(room.recalled, room.current?.target)))
+  return messages.flatMap(message => shown.get(message.id) ?? [])
+}
+
 /** Reads of the recalled records and lists over `builds` room builds after the first, the record replaced before each. */
 function readsPerBuild(recalledCount: number, builds: number): number {
   const room = roomWith(recalledCount)
   try {
     const first = room.service.state()
-    expect(watcherRoomWork(first).receipts).toHaveLength(recalledCount + 1)
-    expect(watcherRoomWork(first).receiptReplies).toHaveLength(recalledCount + 1)
+    // The window shows a card for every operation, the record's one and each read back.
+    expect(cards(first, room.messages)).toHaveLength(recalledCount + 1)
     room.count()
     for (let build = 0; build < builds; build++) { room.service.state(); room.replaceRecord(); room.service.state() }
     return room.reads()
@@ -81,12 +99,13 @@ describe('the room with archived work read back (#1759)', () => {
   it('shows a card the record and the archive both hold once, as the record holds it', () => {
     const room = roomWith(3, true)
     try {
-      const state = room.service.state(), work = watcherRoomWork(state)
+      const state = room.service.state(), shown = cards(state, room.messages)
       const own = state.receipts[0]!
-      expect(work.receipts.filter(item => item.id === own.id)).toEqual([own])
-      expect(work.receiptReplies.filter(item => item.operationId === own.id)).toHaveLength(1)
-      expect(work.requests.filter(item => item.id === own.requestId)).toHaveLength(1)
-      expect(new Set(work.receiptReplies.map(item => item.operationId)).size).toBe(work.receiptReplies.length)
+      expect(shown.filter(item => item.id === own.id)).toEqual([own])
+      expect(new Set(shown.map(item => item.id)).size).toBe(shown.length)
+      expect(shown).toHaveLength(4)
+      // The request both hold gives its takeover line once.
+      expect(lines(state, room.messages)).toEqual([{ target: { hostId: localId, threadId: 'worker-live' }, at }])
     } finally { room.service.close() }
   })
 })

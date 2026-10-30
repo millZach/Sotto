@@ -30,7 +30,7 @@ import { SottoThreadHost, ThreadRegistry } from './threads'
 import { WorkspaceHost } from './workspace'
 import { MainCheckoutKeeper, type MainCheckoutEvent } from './mainCheckout'
 import type { PullRequestObservation } from './watcherEvidence'
-import { WatcherService, type WatcherAutoSettleEvent } from './watcher'
+import { WatcherService } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
 import { DelegationService } from './delegation'
@@ -233,8 +233,6 @@ export interface AgentRuntimeOptions {
    * pull requests of the threads Watcher watches, for Watcher alone. `run` stands in for that reader's reads too.
    */
   babysitting?: { agentTool?: () => boolean; run?: RunGitCommand; retired?: boolean }
-  /** What Watcher's Settle finished threads did, as stable event names; never a thread, a title or a pull request. */
-  watcherLog?: (event: WatcherAutoSettleEvent) => void
 }
 
 /** The provider stack both Electron main and a plain Node host own. No client transport lives here. */
@@ -460,7 +458,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const watcher = moving.watcher = options.watcherEnabled === true
     ? new WatcherService({ directory, control: agentControl, host: agentHost, historyEnabled: options.historyEnabled, streamingPublishCost: options.streamingPublishCost === true,
       workerHost: options.runsAs === 'headless-host', revoke: id => watcherTools?.revoke(id), machineFacts, crossMachine, ...options.clockTime ? { clockTime: options.clockTime } : {},
-      settleFinished: () => options.settings().watcherSettlesFinishedThreads, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens, ...options.watcherLog ? { log: options.watcherLog } : {},
+      settleWithoutAsking: () => options.settings().watcherSettlesFinishedThreads, ...babysittingRetired ? { babysittingRetired: true } : {}, compactAt: () => options.settings().watcherCompactAtTokens,
       ...roles, ...placing,
       ...workerAdmission ? { swarms: { admission: workerAdmission, service: () => delegation,
         ceiling: workerCeiling } } : {},
@@ -586,6 +584,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // never a headless host's, which has no Settings to choose it in (clearsOnItsOwn).
   const worktreeCleanup = new WorktreeCleanup({ host: agentHost, rules: () => options.settings().worktreeCleanup,
     autoSettleMerged: () => options.settings().autoSettleMergedThreads, ...options.worktreeCleanup,
+    // A thread Watcher watches is Watcher's to settle (October 29, 2026).
+    ...watcher ? { watched: (threadId: string) => { const hostId = agentControl.hostId(); return Boolean(hostId && watcher.watches({ hostId, threadId })) } } : {},
     removeUnsentThreads: () => agentControl.removeUnsentThreads(),
     // A move's source keeps its worktree, whatever the rules say (Zach, October 21, 2026).
     ...moveKeeps ? { keeps: (threadId: string) => moveKeeps.keepsWorktree(threadId) } : options.keepsWorktree ? { keeps: options.keepsWorktree } : {},

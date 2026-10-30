@@ -6,7 +6,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { WatcherToolServer } from '../../src/main/agents/watcherTools'
 import { watcherRecordSchema, watcherToolSchemas } from '../../src/shared/watcher'
-import { watcherRoomWork } from '../../src/shared/watcherRoom'
+import { joinedReceipts, liveReceipts, recalledConversation } from '../../src/renderer/src/watcher/watcherConversationWork'
 import { WATCHER_ARCHIVE_FILE, WATCHER_LIVE_CLOSED_REQUESTS, WatcherArchive } from '../../src/main/agents/watcherArchive'
 import { addWatcherHistory } from '../fixtures/ownerScale'
 import { WatcherLaunchProfiles } from '../../src/main/agents/watcherLaunchProfiles'
@@ -67,13 +67,19 @@ it('answers reads, retries and new calls on archived work as it did before the w
   await f.control.command({ type: 'observe-threads', threadIds: [watcherId] })
   await f.control.commandShell({ type: 'refresh', provider: 'codex' })
   await expect.poll(() => f.control.watcherSnapshot().threads.find(item => item.id === watcherId)?.messages.length ?? 0).toBeGreaterThan(0)
-  // What the window shows of Watcher's work: the room's own, and what the conversation shown back recalled.
-  const work = () => watcherRoomWork(service.state())
-  const room = () => steady({ receipts: work().receipts.filter(item => item.requestId === requestId),
-    replies: work().receiptReplies.filter(item => operations.includes(item.operationId)),
-    requests: work().requests.filter(item => item.id === requestId) })
+  // What the window shows of Watcher's work, joined as its pane joins it: each receipt card under its message of
+  // Watcher's conversation, the room's own and what the conversation shown back recalled. The room carries the request
+  // in its own list or in what was recalled.
+  const cards = () => {
+    const state = service.state(), own = liveReceipts(state.receipts, state.receiptReplies)
+    const shown = joinedReceipts(own.byMessage, own.operations, recalledConversation(state.recalled, state.current?.target))
+    return (f.control.watcherSnapshot().threads.find(item => item.id === watcherId)?.messages ?? [])
+      .flatMap(message => (shown.get(message.id) ?? []).map(operation => ({ messageId: message.id, operation })))
+  }
+  const requestsHeld = () => { const state = service.state(); return [...state.recalled?.requests ?? [], ...state.requests].filter(item => item.id === requestId) }
+  const room = () => steady({ cards: cards().filter(item => item.operation.requestId === requestId), requests: requestsHeld() })
   const shown = room()
-  expect(shown).toMatchObject({ receipts: { length: 2 }, replies: { length: 2 }, requests: { length: 1 } })
+  expect(shown).toMatchObject({ cards: { length: 2 }, requests: { length: 1 } })
   const asked = async () => steady({
     reads: await Promise.all([...operations, laterOperation].map(operationId => call('read_operation', { operationId }))),
     startRetry: await call('start_thread', start),
@@ -111,14 +117,13 @@ it('answers reads, retries and new calls on archived work as it did before the w
   expect(await asked()).toEqual(before)
   // Archived, the room no longer carries the work until the conversation is shown back to it; once Watcher's
   // conversation is read that far back, its cards come back under the same messages.
-  expect(room()).toMatchObject({ receipts: [], replies: [], requests: [] })
+  expect(room()).toMatchObject({ cards: [], requests: [] })
   f.control.threadDetail(watcherId)
   await expect.poll(async () => { await f.control.watcherArchiveSettled(); return room() }).toEqual(shown)
   // Archiving more while that conversation stays shown back brings the newly archived card back too.
-  const laterCard = () => steady({ receipts: work().receipts.filter(item => item.id === laterOperation),
-    replies: work().receiptReplies.filter(item => item.operationId === laterOperation) })
+  const laterCard = () => steady(cards().filter(item => item.operation.id === laterOperation))
   const laterShown = laterCard()
-  expect(laterShown).toMatchObject({ receipts: { length: 1 }, replies: { length: 1 } })
+  expect(laterShown).toMatchObject({ length: 1 })
   expect(await f.control.archiveWatcherWork([laterId], () => [laterId])).toBe(1)
   f.control.threadDetail(watcherId)
   await expect.poll(async () => { await f.control.watcherArchiveSettled(); f.control.threadDetail(watcherId); return laterCard() }).toEqual(laterShown)

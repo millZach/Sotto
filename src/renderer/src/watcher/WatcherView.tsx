@@ -37,10 +37,10 @@ import { isThreadClosed } from '../../../shared/threadActivity'
 import { BrowserPageRouteContext } from '../tools/webLinks'
 import type { WatcherThreadTarget } from '../../../shared/watcher'
 import { watcherTakeovers, type WatcherRoomState } from '../../../shared/watcherRoom'
-import { joinedPlacements, joinedReceipts, joinedTakeovers, liveReceipts, recalledConversation } from './watcherConversationWork'
+import { joinedPlacements, joinedReceipts, joinedTakeovers, liveReceipts, placeAfterTurns, placeTakeovers, recalledConversation, recalledTakeovers } from './watcherConversationWork'
 import { rowStatus } from '../agents/threadFacts'
 import { threadAddressIndex, threadForTarget, useWatcherRoom, watchedRows, type WatcherRoom } from './watcherRoom'
-import { placeAfterTurns, placeTakeovers, WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
+import { WatcherConversationContext, type ConversationThread, type WatcherConversation } from './WatcherReceipts'
 import { WatcherStopAll } from './WatcherStopAll'
 import { useMoveCards, useMoveProposals, WatcherMoveThreads } from './MoveThreads'
 import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, shownShare, useKeptReadingPosition, useRoomView } from './WatcherBeside'
@@ -299,7 +299,8 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   // Each action Watcher took is a receipt card under the reply of the turn that took it, where main's record places it,
   // and each thread the user took over is a quiet line in the conversation, after the turn it came in (ADR-0073).
   // With what the conversation shown back recalled from Watcher's archive ahead of the record's own (#1759): the read
-  // back is indexed once for its own object, and a change of the record's lists works over those lists alone.
+  // back is indexed once for its own object, and a change of the record's lists works over those lists alone. Its
+  // takeover lines are placed once for the read back, and a change of the messages places only the newest turn's (#1773).
   const receipts = room?.state?.receipts, replies = room?.state?.receiptReplies, requests = room?.state?.requests
   const current = room?.state?.current ?? null, recalledWork = room?.state?.recalled
   const recalled = useMemo(() => recalledConversation(recalledWork, current?.target), [recalledWork, current?.target])
@@ -308,7 +309,7 @@ function WatcherPane({ state, row, header, error, focused, now, describe, press,
   const takeovers = useMemo(() => requests === undefined ? [] : watcherTakeovers({ current, requests }), [current, requests])
   const messages = row.thread.messages
   const ownLines = useMemo(() => placeTakeovers(messages, takeovers), [messages, takeovers])
-  const recalledLines = useMemo(() => recalled === undefined ? undefined : placeTakeovers(messages, recalled.takeovers), [messages, recalled])
+  const recalledLines = useMemo(() => recalledTakeovers(messages, recalled), [messages, recalled])
   const lines = useMemo(() => joinedTakeovers(ownLines, recalledLines), [ownLines, recalledLines])
   // Each request a wake-up said waited on the user has its thread's own card under the reply that told of it, where
   // main's record places it, and only under the newest wake-up that named it (Zach's pick on October 19, 2026).

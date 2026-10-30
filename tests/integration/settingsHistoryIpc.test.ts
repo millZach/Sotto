@@ -328,7 +328,7 @@ describe('IPC validation and lifecycle', () => {
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ nextPromptSuggestions: false })
     })
 
-  it('persists turning Watcher’s Settle finished threads off through settings IPC', async () => {
+  it('persists turning Watcher’s Settle without asking off through settings IPC', async () => {
       const { ipc, settings } = createIpcHarness()
       await expect(ipc.invoke(SETTINGS_UPDATE, { watcherSettlesFinishedThreads: false })).resolves.toMatchObject({ watcherSettlesFinishedThreads: false })
       expect(settings.update).toHaveBeenCalledExactlyOnceWith({ watcherSettlesFinishedThreads: false })

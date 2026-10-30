@@ -21,7 +21,8 @@ export interface WorktreeCleanupHost {
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void
   /** Reports the current IDs immediately, then on publication, without copying histories. */
   subscribeSettledThreads?(listener: (ids: readonly string[]) => void): () => void
-  setWorkspaceSettled?(kind: 'thread', id: string, settled: true, options?: MergedSettleExpectation): Promise<unknown>
+  /** `guard` runs in the write's own lane, just before the settle is written, and refuses it by throwing. */
+  setWorkspaceSettled?(kind: 'thread', id: string, settled: true, options?: MergedSettleExpectation, guard?: () => void): Promise<unknown>
   /** Brings the thread's links to a pull request to the state GitHub just gave (#1147). */
   notePullRequestState?(read: PullRequestObservation): void
 }
@@ -39,6 +40,12 @@ export interface WorktreeCleanupDependencies {
   readonly rules: () => WorktreeCleanupRules
   /** The Auto-settle merged threads setting, read at every sweep; absent, no thread is settled on its own. */
   readonly autoSettleMerged?: () => boolean
+  /**
+   * Whether Watcher watches this computer's thread. Auto-settle merged threads leaves a watched thread alone, and a thread
+   * whose delegated threads, which settle with it (ADR-0081), include a watched one: only Watcher decides when one is
+   * finished (October 29, 2026). Absent, no thread is watched.
+   */
+  readonly watched?: (threadId: string) => boolean
   /**
    * Clear settled threads after (ADR-0140), given only while the Owl feature is on: the setting, read at every sweep, and
    * the coordinator's clear. It runs after the folders, so a folder a rule removes first is not read twice.
@@ -78,7 +85,7 @@ export type WorktreeCleanupEvent = 'worktree-cleanup-reclaimed' | 'worktree-clea
 const HOUR_MS = 3_600_000
 /**
  * A thread still at work or waiting on the user: its turn, background work, sub-agents working or not yet known to have
- * ended, or monitoring, as Settle finished threads counts them. Neither sweep settles it or takes its folder, where that
+ * ended, or monitoring, as settle_thread counts them. Neither sweep settles it or takes its folder, where that
  * work may still be writing (October 23, 2026).
  */
 const busy = (thread: AgentThread): boolean => thread.requests.length > 0 || isWatcherWorkActive(thread) || (thread.subagentSummary?.unknown ?? 0) > 0
@@ -183,6 +190,12 @@ export class WorktreeCleanup {
     this.running = this.running.then(async () => { this.queued = false; await this.sweep() }).catch(() => undefined)
     return this.running
   }
+  /** Whether Watcher watches this thread or a thread it delegated to, which would settle with it; an unreadable answer is yes. */
+  private watched(threads: readonly AgentThread[], threadId: string): boolean {
+    const watched = this.dependencies.watched
+    if (!watched) return false
+    try { return watched(threadId) || delegatedThreadsBelow(threads, threadId).some(id => watched(id)) } catch { return true }
+  }
   private autoSettleOn(): boolean {
     try { return this.dependencies.autoSettleMerged?.() === true && Boolean(this.dependencies.pullRequestMerged && this.dependencies.host.setWorkspaceSettled) } catch { return false }
   }
@@ -260,7 +273,7 @@ export class WorktreeCleanup {
       const worktree = thread.worktree
       const project = snapshot.projects.find(item => item.id === thread.projectId)
       if (thread.nativeSessionStarted === false || thread.archivedAt || isWorkspaceThreadSettled(thread, project)) continue
-      if (atWork(snapshot.threads, thread.id, true)) continue
+      if (atWork(snapshot.threads, thread.id, true) || this.watched(snapshot.threads, thread.id)) continue
       const branch = (worktree?.mode === 'independent' ? worktree.sentBranch ?? worktree.branch : worktree?.sentBranch) ?? null
       const key = `${thread.id}\0${branch ?? ''}`
       if (this.autoSettled.has(key)) continue
@@ -287,9 +300,12 @@ export class WorktreeCleanup {
         }
         // Asked again as it now stands: work may have started, or a pull request been linked, while Git and GitHub were asked.
         const now = this.dependencies.host.workspaceSnapshot().threads
-        if (atWork(now, thread.id, true)) continue
+        if (atWork(now, thread.id, true) || this.watched(now, thread.id)) continue
         if (asked && [...this.openLinks(now.find(item => item.id === thread.id)).keys()].some(key => !asked.has(key))) continue
-        await this.dependencies.host.setWorkspaceSettled!('thread', thread.id, true, expected)
+        // A watch given while the write waits for the checkout holds it too.
+        await this.dependencies.host.setWorkspaceSettled!('thread', thread.id, true, expected, () => {
+          if (this.watched(this.dependencies.host.workspaceSnapshot().threads, thread.id)) throw new Error('Watcher watches this thread now. It stays unsettled.')
+        })
         this.autoSettled.add(key)
         this.dependencies.log?.('thread-auto-settled')
       } catch { this.dependencies.log?.('thread-auto-settle-skipped') }

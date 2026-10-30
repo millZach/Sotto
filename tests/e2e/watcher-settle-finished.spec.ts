@@ -1,7 +1,8 @@
 /**
- * Settle finished threads, in Settings under Watcher, on the Owl track: the toggle sits first, under Watched threads, on by
- * default, above Compaction and worker roles under their own headings (Zach's pick A on October 20, 2026). It works from the keyboard and
- * saves as it changes, and nothing clips at any size, in dark or light.
+ * Settle without asking, in Settings under Watcher, on the Owl track: the toggle sits first, under Watched threads, on by
+ * default, above Compaction and worker roles under their own headings (Zach's pick A on October 20, 2026). It was Settle
+ * finished threads until Watcher, not Sotto, came to decide a settle (October 29, 2026); its description says what on
+ * and off do. It works from the keyboard and saves as it changes, and nothing clips at any size, in dark or light.
  *
  *   npm run build && npx playwright test tests/e2e/watcher-settle-finished.spec.ts
  */
@@ -24,7 +25,7 @@ async function capture(page: Page, name: string): Promise<void> {
 }
 const saved = (page: Page): Promise<boolean> => page.evaluate(async () => (await window.sotto!.getSettings()).watcherSettlesFinishedThreads)
 
-test('Settle finished threads leads Settings under Watcher, on by default, and saves from the keyboard', async () => {
+test('Settle without asking leads Settings under Watcher, on by default, says what on and off do, and saves from the keyboard', async () => {
   test.setTimeout(180_000)
   let launched: LaunchedSotto | undefined
   try {
@@ -40,9 +41,12 @@ test('Settle finished threads leads Settings under Watcher, on by default, and s
       await expect(panel.getByRole('heading', { name: 'Worker roles' })).toBeVisible()
       // The toggle comes before Compaction and worker roles, as the eye reads the section.
       const order = await panel.evaluate(element => [...element.querySelectorAll('h3')].map(heading => heading.textContent?.trim()))
-      expect(order.slice(0, 3)).toEqual(['Watched threads', 'Compaction', 'Worker roles'])
-      const toggle = panel.getByRole('switch', { name: /Settle finished threads/u })
+      // Where new workers start, Work across machines' own heading, may sit between them on Owl.
+      expect(order.slice(0, 2)).toEqual(['Watched threads', 'Compaction'])
+      expect(order.indexOf('Worker roles')).toBeGreaterThan(1)
+      const toggle = panel.getByRole('switch', { name: 'Settle without asking' })
       await expect(toggle).toBeChecked()
+      await expect(panel.getByText('Watcher decides when a thread it watches is finished, then settles it and stops watching it. On, it settles without asking you. Off, it asks you first.')).toBeVisible()
       expect(await saved(page)).toBe(true)
 
       for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {

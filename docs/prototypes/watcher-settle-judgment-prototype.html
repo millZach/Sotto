@@ -1,0 +1,166 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Not shipped, not tested, not wired to anything.
+
+  Question: Watcher, not Sotto's own rule, decides when a watched thread is finished and can be settled. What does the
+  Settings › Watcher › Watched threads toggle say, and what does it do when it is off?
+
+  Why (October 29, 2026): Sotto settled the perf thread 4c343f94 four times while PRs #1792 and #1784 were open. The rule
+  only counts pull requests linked to the thread or on its checkout's branch, and those two were on other branches. Zach:
+  "you judge when a watched thread can be settled, the toggle just says the user acknowledges that so you dont have to
+  ask for every settle."
+
+  Variants (?variant=A|B|C|D, the bottom bar, or the arrow keys):
+    A  Settle without asking.   On: Watcher settles when it judges a thread finished. Off: it asks on a card first.
+    B  Settle finished threads.  Today's label, new description. Same behaviour as A.
+    C  Ask before each settle.   Inverted, as Ask before each 3D model (ADR-0141). On asks; off settles without asking.
+    D  Off never settles.        On: as A. Off: Watcher settles a thread only when you tell it to; it never asks.
+  Other params: theme (dark | light), on (1 | 0).
+
+  Zach's picks (October 29, 2026): A, Settle without asking, and off asks on a card for each thread. Watcher's prompt says
+  how it judges, and settle_thread also refuses what Sotto can see is unfinished, an open linked pull request included;
+  read_state drops its pending settles. Auto-settle merged threads leaves a watched thread to Watcher. ADR-0073, October 29.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<title>Sotto: who decides a settle, prototype</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('figtree-latin.woff2') format('woff2'), url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --r-canvas: oklch(0.115 0.008 265); --r-surface: oklch(0.145 0.008 265); --r-raised: oklch(0.185 0.008 265);
+  --r-text: oklch(0.985 0.005 280); --r-muted: oklch(0.72 0.014 265); --r-border: oklch(0.305 0.02 265);
+  --r-accent: oklch(0.714403 0.104089 183.092); --r-accent-fg: oklch(0.16 0.012 190); --r-accent-surface: oklch(0.32 0.05 185);
+  --r-track: oklch(0.375 0.024 265);
+}
+html[data-theme='light'] {
+  color-scheme: light;
+  --r-canvas: oklch(0.978 0.004 85); --r-surface: oklch(0.99 0.003 85); --r-raised: oklch(0.955 0.006 85);
+  --r-text: oklch(0.235 0.014 75); --r-muted: oklch(0.5 0.014 75); --r-border: oklch(0.86 0.012 80);
+  --r-accent: oklch(0.53 0.095 186); --r-accent-fg: oklch(0.99 0.003 85); --r-accent-surface: oklch(0.92 0.03 186);
+  --r-track: oklch(0.8 0.016 80);
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--r-canvas); color: var(--r-text); font: 14px/1.5 Figtree, system-ui, sans-serif; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.stage { max-width: 760px; margin: 0 auto; padding: 108px 16px 170px; }
+.card { background: var(--r-surface); border: 1px solid var(--r-border); border-radius: 14px; padding: 20px 22px; }
+.card h2 { margin: 0; font-size: 18px; font-weight: 600; }
+.sub { margin: 2px 0 18px; color: var(--r-muted); font-size: 13px; }
+.group h3 { margin: 0 0 8px; font-size: 12px; font-weight: 600; letter-spacing: .02em; color: var(--r-muted); text-transform: uppercase; }
+.row { display: flex; gap: 16px; align-items: flex-start; justify-content: space-between; padding: 14px 0; border-top: 1px solid var(--r-border); }
+.row h4 { margin: 0 0 3px; font-size: 14px; font-weight: 600; }
+.row p { margin: 0; color: var(--r-muted); font-size: 13px; max-width: 54ch; }
+.row.dim h4, .row.dim p { opacity: .55; }
+.toggle { flex: none; width: 34px; height: 20px; margin-top: 2px; border-radius: 10px; border: 0; background: var(--r-track); position: relative; padding: 0; }
+.toggle::after { content: ''; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 50%; background: var(--r-text); transition: left 140ms ease; }
+.toggle[aria-checked='true'] { background: var(--r-accent); }
+.toggle[aria-checked='true']::after { left: 17px; background: var(--r-accent-fg); }
+.toggle:focus-visible, .opt:focus-visible { outline: 2px solid var(--r-accent); outline-offset: 2px; }
+.then { margin-top: 22px; }
+.then > h3 { margin: 0 0 10px; font-size: 13px; font-weight: 600; color: var(--r-muted); }
+.room { background: var(--r-raised); border-radius: 12px; padding: 14px 16px; }
+.who { font-size: 12px; color: var(--r-muted); margin-bottom: 4px; }
+.room p { margin: 0 0 8px; }
+.q { margin-top: 10px; border: 1px solid var(--r-accent); border-radius: 12px; padding: 14px; background: var(--r-surface); }
+.q strong { display: block; margin-bottom: 4px; }
+.q .why { color: var(--r-muted); font-size: 13px; margin-bottom: 12px; }
+.opts { display: flex; flex-wrap: wrap; gap: 8px; }
+.opt { padding: 7px 12px; border-radius: 8px; border: 1px solid var(--r-border); background: var(--r-raised); }
+.opt.primary { background: var(--r-accent); border-color: var(--r-accent); color: var(--r-accent-fg); font-weight: 600; }
+.note { margin-top: 10px; font-size: 12.5px; color: var(--r-muted); }
+.chip { display: inline-block; padding: 1px 7px; border-radius: 5px; background: var(--r-accent-surface); font-size: 12px; }
+/* Prototype chrome. */
+.top { position: fixed; top: 0; left: 0; right: 0; z-index: 40; padding: 10px 14px; background: #111; color: #ccc; font: 12.5px/1.45 system-ui, sans-serif; border-bottom: 1px solid #333; }
+.top b { color: #fff; }
+.bar { position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%); z-index: 50; display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; padding: 8px; width: max-content; max-width: calc(100vw - 16px); background: #111; color: #eee; border: 1px solid #333; border-radius: 12px; font: 12px system-ui, sans-serif; }
+.bar fieldset { display: flex; flex-wrap: wrap; gap: 3px; border: 0; margin: 0; padding: 0 6px 0 0; align-items: center; }
+.bar legend { float: left; padding: 0 4px 0 0; color: #999; }
+.bar button { padding: 7px 10px; border-radius: 7px; border: 1px solid #333; background: #1d1d1d; color: #ddd; }
+.bar button[aria-pressed='true'] { background: #2a6f69; border-color: #2a6f69; color: #fff; }
+@media (max-width: 600px) { .stage { padding: 120px 10px 190px; } .card { padding: 16px; } .top { font-size: 11.5px; } }
+@media (prefers-reduced-motion: reduce) { .toggle::after { transition: none; } }
+</style>
+</head>
+<body>
+<div class="top" id="top"></div>
+<main class="stage" id="stage"></main>
+<div class="bar" id="bar"></div>
+<script>
+const THREAD = '“Finish perf PRs #1765 and #1768”'
+const VARIANTS = {
+  A: { name: 'Settle without asking', label: 'Settle without asking', on: true, offAsks: true,
+    desc: 'Watcher decides when a thread it watches is finished, then settles it and stops watching it. On, it settles without asking you. Off, it asks you first.' },
+  B: { name: 'Keep today’s label', label: 'Settle finished threads', on: true, offAsks: true,
+    desc: 'Watcher judges when a thread it watches is finished: its work done and its pull requests merged or closed. On, Watcher settles it without asking you, then stops watching it. Off, Watcher asks you first.' },
+  C: { name: 'Ask before each settle', label: 'Ask before each settle', on: false, offAsks: true, inverted: true,
+    desc: 'Watcher decides when a thread it watches is finished. On, it asks you before it settles one. Off, it settles without asking, then stops watching it.' },
+  D: { name: 'Off never settles', label: 'Let Watcher settle threads', on: true, offAsks: false,
+    desc: 'Watcher decides when a thread it watches is finished, then settles it and stops watching it, without asking you. Off, Watcher settles a thread only when you tell it to.' },
+}
+const params = new URLSearchParams(location.search)
+const state = { variant: VARIANTS[params.get('variant')] ? params.get('variant') : 'A', theme: params.get('theme') === 'light' ? 'light' : 'dark', checked: undefined }
+if (params.has('on')) state.checked = params.get('on') === '1'
+
+function asks(v, checked) { return v.inverted ? checked : (!checked && v.offAsks) }
+function settlesAlone(v, checked) { return v.inverted ? !checked : checked }
+
+function render() {
+  const v = VARIANTS[state.variant]
+  const checked = state.checked ?? v.on
+  document.documentElement.dataset.theme = state.theme
+  const mode = settlesAlone(v, checked) ? 'settles without asking' : asks(v, checked) ? 'asks on a card' : 'settles only when you say'
+  document.getElementById('top').innerHTML = `<b>Prototype.</b> Watcher, not Sotto’s rule, decides when a watched thread is finished. Variant <b>${state.variant}</b>: ${v.name}. Toggle is <b>${checked ? 'on' : 'off'}</b>, so Watcher <b>${mode}</b>. Flip the toggle to see the other state.`
+  const then = settlesAlone(v, checked)
+    ? `<div class="room"><div class="who">Watcher, after the news that both pull requests merged</div>
+        <p>#1792 and #1784 merged, and nothing is running in ${THREAD}. Settled it and stopped watching it.</p></div>
+       <div class="note">No card. Watcher says what it settled in its reply. It leaves Watched and moves to Settled.</div>`
+    : asks(v, checked)
+    ? `<div class="room"><div class="who">Watcher, after the news that both pull requests merged</div>
+        <p>${THREAD} looks finished.</p>
+        <div class="q" role="group" aria-label="Watcher’s question"><strong>Settle ${THREAD}?</strong>
+          <div class="why">#1792 and #1784 merged, nothing is running and nothing waits on you. Settling stops Watcher watching it.</div>
+          <div class="opts"><button class="opt primary" type="button">Settle it</button><button class="opt" type="button">Keep watching</button><button class="opt" type="button">Other…</button></div></div></div>
+       <div class="note">One card per thread, on Watcher’s own thread, the way any thread asks you. Watcher settles only after you answer Settle it. Several threads finishing together are several cards.</div>`
+    : `<div class="room"><div class="who">Watcher, after the news that both pull requests merged</div>
+        <p>#1792 and #1784 merged, and nothing is running in ${THREAD}. It stays watched until you ask me to settle it.</p></div>
+       <div class="note">No card. The thread stays under Watched until you tell Watcher to settle it, or settle it yourself.</div>`
+  document.getElementById('stage').innerHTML = `
+    <section class="card" aria-labelledby="h-watcher">
+      <h2 id="h-watcher">Watcher</h2><p class="sub">How Watcher looks after threads</p>
+      <div class="group"><h3>Watched threads</h3>
+        <div class="row"><div><h4 id="l-settle">${v.label}</h4><p id="d-settle">${v.desc}</p></div>
+          <button type="button" class="toggle" role="switch" aria-checked="${checked}" aria-labelledby="l-settle" aria-describedby="d-settle" data-settle></button></div>
+      </div>
+      <div class="group"><h3>Compaction</h3>
+        <div class="row dim"><div><h4>Compact Watcher at</h4><p>Unchanged by this prototype.</p></div></div></div>
+    </section>
+    <section class="then"><h3>When Watcher judges ${THREAD} finished</h3>${then}</section>`
+  const bar = document.getElementById('bar')
+  bar.innerHTML = `<fieldset><legend>Variant</legend>${Object.keys(VARIANTS).map(k => `<button type="button" data-v="${k}" aria-pressed="${k === state.variant}" title="${VARIANTS[k].name}">${k} ${VARIANTS[k].name}</button>`).join('')}</fieldset>
+    <fieldset><legend>Theme</legend><button type="button" data-t="dark" aria-pressed="${state.theme === 'dark'}">Dark</button><button type="button" data-t="light" aria-pressed="${state.theme === 'light'}">Light</button></fieldset>`
+  const url = new URL(location.href); url.searchParams.set('variant', state.variant); url.searchParams.set('theme', state.theme)
+  if (state.checked === undefined) url.searchParams.delete('on'); else url.searchParams.set('on', state.checked ? '1' : '0')
+  history.replaceState(null, '', url)
+}
+document.addEventListener('click', event => {
+  const t = event.target.closest('button'); if (!t) return
+  if (t.dataset.v) { state.variant = t.dataset.v; state.checked = undefined }
+  else if (t.dataset.t) state.theme = t.dataset.t
+  else if (t.hasAttribute('data-settle')) state.checked = !(state.checked ?? VARIANTS[state.variant].on)
+  else return
+  render()
+  if (t.hasAttribute('data-settle')) document.querySelector('[data-settle]').focus()
+})
+document.addEventListener('keydown', event => {
+  if (event.target.closest('button') && event.target.hasAttribute('data-settle')) return
+  const keys = Object.keys(VARIANTS), at = keys.indexOf(state.variant)
+  if (event.key === 'ArrowRight') { state.variant = keys[(at + 1) % keys.length]; state.checked = undefined; render() }
+  if (event.key === 'ArrowLeft') { state.variant = keys[(at + keys.length - 1) % keys.length]; state.checked = undefined; render() }
+})
+render()
+</script>
+</body>
+</html>
