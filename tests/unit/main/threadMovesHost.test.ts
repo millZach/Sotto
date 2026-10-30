@@ -20,15 +20,16 @@ afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
 
 /**
  * A host's coordinator: commands dispatch after `gate` opens, asking their guard as they go, as the real one does; a
- * guard that refuses leaves nothing made or sent.
+ * guard that refuses leaves nothing made or sent. `atGate` hears a command arrive at the gate, its guard asked once.
  */
 function host() {
   const threads: AgentThread[] = [], sent: string[] = [], stopped: string[] = []
-  const state = { mayAnswer: true, gate: Promise.resolve() as Promise<void>, linkFails: 0, interruptFails: false }
+  const state = { mayAnswer: true, gate: Promise.resolve() as Promise<void>, atGate: undefined as (() => void) | undefined, linkFails: 0, interruptFails: false }
   const control = {
     watcherSnapshot: () => ({ ...EMPTY_AGENT_HOST, models: [model], projects: [{ id: 'project', title: 'Sotto', path: '/forge/sotto' }], threads }),
     commandFromMove: async (command: Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'interrupt' | 'settle-thread' }>, guard: () => void): Promise<AgentState> => {
       guard()
+      state.atGate?.()
       await state.gate
       try { guard() } catch (error) { return { error: (error as Error).message } as AgentState }
       // Keep it here (part 4) stops and settles the thread a move made.
@@ -106,8 +107,11 @@ describe('the answers grant, read as each command dispatches (ADR-0004)', () => 
     const h = host()
     let open!: () => void
     h.state.gate = new Promise(done => { open = done })
+    // The grant goes once the thread's making waits at the gate, after its record was written and the grant first read
+    // (#1886): taken away any sooner, the start reads it gone and is held to Ask for approval instead.
+    const waiting = new Promise<void>(done => { h.state.atGate = done })
     const asked = h.moves.handle(request(), desktop)
-    await new Promise(done => setTimeout(done, 10))
+    await waiting
     h.state.mayAnswer = false; open()
     expect(await asked).toEqual({ type: 'refused', reason: 'failed', message: HOST_THREAD_MOVE_WORDS.grantGone })
     expect(h.threads).toEqual([]); expect(h.sent).toEqual([])
