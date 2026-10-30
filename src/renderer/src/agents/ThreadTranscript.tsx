@@ -656,12 +656,13 @@ const JUMP_BAND_PX = 60
 /** Whether a request card reaches the button's band, which rides above a floating composer by the composer's height. */
 export function reachesJumpBand(scroller: HTMLElement): boolean {
   const view = scroller.getBoundingClientRect()
-  // Scroll padding also includes the button while it shows, so use the composer's own inset when checking
-  // whether a request needs the button to step aside.
+  // Scroll padding also includes the button while it shows. A question's 26px corner overlap is not clipped,
+  // but still extends below the button's anchor, so include it when checking whether a request reaches the band.
   const pane = scroller.closest<HTMLElement>('.thread-pane')
   const shown = pane?.hasAttribute('data-slim') ? parseFloat(getComputedStyle(pane).getPropertyValue('--thread-compose-shown')) : Number.NaN
   const style = getComputedStyle(scroller)
-  const bottom = view.bottom - (Number.isFinite(shown) ? shown : parseFloat(style.getPropertyValue('--thread-compose-cover') || style.scrollPaddingBottom) || 0)
+  const inset = style.getPropertyValue(pane?.hasAttribute('data-questions') ? '--thread-compose-height' : '--thread-compose-cover')
+  const bottom = view.bottom - (Number.isFinite(shown) ? shown : parseFloat(inset || style.scrollPaddingBottom) || 0)
   return [...scroller.querySelectorAll('.agent-request')].some(card => {
     const box = card.getBoundingClientRect()
     return box.bottom > bottom - JUMP_BAND_PX && box.top < bottom

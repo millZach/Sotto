@@ -192,10 +192,20 @@ test('a thread composer floats over its transcript, alone, side by side and in a
     const stacked = await weekly.evaluate(element => {
       const compose = element.querySelector<HTMLElement>(':scope > .thread-workspace__compose')!
       const transcript = element.querySelector<HTMLElement>(':scope > .thread-transcript')
-      return { marginTop: parseFloat(getComputedStyle(compose).marginTop), transcriptBottom: transcript?.getBoundingClientRect().bottom ?? null, composeTop: compose.getBoundingClientRect().top }
+      const log = element.querySelector<HTMLElement>('[aria-label="Thread transcript"]')!
+      const card = compose.querySelector('.thread-questions')!.getBoundingClientRect()
+      return {
+        marginTop: parseFloat(getComputedStyle(compose).marginTop), transcriptBottom: transcript?.getBoundingClientRect().bottom ?? null, composeTop: compose.getBoundingClientRect().top,
+        overlap: log.getBoundingClientRect().bottom - compose.getBoundingClientRect().top,
+        cover: parseFloat(getComputedStyle(log).getPropertyValue('--thread-compose-cover')),
+        corners: [card.left + 1, card.right - 1].map(x => log.contains(document.elementFromPoint(x, card.top + 1))),
+      }
     })
     expect(stacked.marginTop, JSON.stringify(stacked)).toBe(0)
     if (stacked.transcriptBottom !== null) expect(stacked.transcriptBottom, JSON.stringify(stacked)).toBeLessThanOrEqual(stacked.composeTop + 1)
+    expect(stacked.overlap, JSON.stringify(stacked)).toBeCloseTo(26, 0)
+    expect(stacked.cover, JSON.stringify(stacked)).toBe(0)
+    expect(stacked.corners, JSON.stringify(stacked)).toEqual([true, true])
     expectFloating(await float(footer))
   } finally { await closeSotto(launched) }
 })

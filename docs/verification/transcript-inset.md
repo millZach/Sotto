@@ -6,7 +6,7 @@ October 30, 2026. `fix/chat-transcript-inset`, from `d5ec2219b`. Drake reported 
 
 The composer floated over a full-height scroll box. Its measured height supplied bottom padding, which made the last item reachable at maximum scroll, but did not stop other messages painting or accepting presses behind the composer while reading back. Jump to latest also stood over the words. The resize observer watched message content only, so changing composer padding or window height could leave a following reader short of the new end.
 
-A non-scrolling viewport now clips the transcript above the measured visible composer and the measured Jump button. Keeping the scroll box and its bottom spacer preserves the existing slim-composer reading position. The existing 14px Jump gap supplies both sides of its clear space; the existing 26px question overlap gets the same readable edge. No new spacing constant, color, typography, radius, shadow, glass effect or motion was introduced. The readable edge has no CSS transition: the global reduced-motion rule otherwise made it lag the composer for a frame. The observer now also watches the scroll box's content size, which changes with its padding and the window.
+A non-scrolling viewport now clips the transcript above the measured visible floating composer and the measured Jump button. Keeping the scroll box and its bottom spacer preserves the existing slim-composer reading position. The existing 14px Jump gap supplies both sides of its clear space. A waiting question keeps the existing 26px overlap under its rounded corners without clipping those words (#1815); Jump's clear space still sits above that stacked composer. No new spacing constant, color, typography, radius, shadow, glass effect or motion was introduced. The readable edge has no CSS transition: the global reduced-motion rule otherwise made it lag the composer for a frame. The observer now also watches the scroll box's content size, which changes with its padding and the window.
 
 `reachesJumpBand` uses the composer's inset independently of the button's reserved space. A permission card still makes Jump step aside without making that decision feed back on itself.
 
@@ -25,7 +25,7 @@ npm run typecheck
 npm run lint
 ```
 
-`jumpBand.test.tsx`: **5/5 passed**, including separation of the composer inset from Jump's clear space. Typecheck and lint passed. The Node option avoids this machine's Node 25 built-in localStorage conflicting with JSDOM; it does not alter the test's layout mocks.
+`jumpBand.test.tsx`: **5/5 passed** initially, including separation of the composer inset from Jump's clear space; the question regression below brings it to **6/6**. Typecheck and lint passed. The Node option avoids this machine's Node 25 built-in localStorage conflicting with JSDOM; it does not alter the test's layout mocks.
 
 The maintained `composer-float.spec.ts` and `watcher-column.spec.ts` now assert that neither the composer margin nor Jump's band exposes transcript hit targets, alongside their existing geometry checks. The floating-composer check also requires the scrollbar gutter to remain reachable down to the scroll box's bottom. **These Electron specs were not run locally.** The project's CI-only instruction overrides the local gate commands. No installed app, Electron app, full unit suite, design capture/verify, or Owl build was launched.
 
@@ -33,7 +33,7 @@ The maintained `composer-float.spec.ts` and `watcher-column.spec.ts` now assert 
 
 A temporary Vite entry under ignored `test-results/transcript-inset/` rendered the production `ThreadPane`, `ThreadTranscript`, `ThreadComposer`, `ThreadDraftStore`, `WatcherNightScene` and styles, with the established renderer-fixture pattern of an in-memory AgentContext and deterministic provider state. It used 24 alternating messages with paragraphs and links, and real request, attachment, follow-up, prototype and activity rendering. Watcher's header was a simple fixture header; its coordinator, sidebar and OS window were not mounted. The runner used cached Chromium headless shell 1248 through Playwright, with no native window.
 
-Observed results:
+Observed results before the waiting-question review correction below; this matrix was not rerun for that correction:
 
 - **150 layouts**: Watcher and ordinary thread, 1600x1000, 1280x800 and 820x560, Sotto dark/light. Idle, working, reading back, multiline draft, banner, streaming while reading, Jump, permission, question, compacting, queued follow-up, attachment, prototype (ordinary thread), and a half-width/65%-height split pane. Every bottom-follow check ended with **0px remaining**. Final items cleared the composer by **14–56px**, using the existing item/padding rules. No transcript hit targets below the visible edge and no outer-pane overflow. Composer, banner and appended-content changes retained the tracked message within **1px** while reading back.
 - **56 additional layouts**: full and quiet composers on both surfaces with normal motion at devicePixelRatio 1.5; growth while following, resize to 820x560, reading back, height resize to 820x760, multiline growth, Jump and an activity row. The quiet-composer cases also switched through all six built-in palettes, dark and light. Every bottom-follow check ended with **0px remaining** and every last item was above the readable edge. No page errors in either matrix.
@@ -53,6 +53,27 @@ All of these reading-back PNGs were opened and visually inspected:
 | Thread | [dark](../../artifacts/composer-float/inset-thread-1280-dark-reading.png), [light](../../artifacts/composer-float/inset-thread-1280-light-reading.png) | [dark](../../artifacts/composer-float/inset-thread-820-dark-reading.png), [light](../../artifacts/composer-float/inset-thread-820-light-reading.png) |
 
 The inspected bottom-follow captures are [Watcher, dark at 820x560](../../artifacts/composer-float/inset-watcher-820-dark-latest.png) and [thread with a multiline draft, light at 1280x800](../../artifacts/composer-float/inset-thread-1280-light-multiline-latest.png).
+
+## PR #1885 review: preserve the waiting-question corners
+
+The initial clip incorrectly treated #1815's 26px question overlap as covered space. A waiting question now sets the composer cover to **0px**, while keeping the **26px** overlap and its existing bottom padding. The floating composer still clips. Since the question's scroll box extends 26px below Jump's anchor, Jump's reserved band and `reachesJumpBand` retain that offset independently of the cover. The guide's question/link explanation is restored, and ADRs 0125/0126 distinguish the floating composer from a waiting question.
+
+Added **keeps the question overlap out of the clip without moving the button's band** to `tests/unit/renderer/jumpBand.test.tsx` before the correction. With an unclipped question and the old band calculation it failed authentically: **5 passed, 1 failed**, `false` instead of `true` for a request reaching Jump. After the correction: **6/6 passed**, including a request below the band. Typecheck and lint passed again. The maintained `composer-float.spec.ts` now also checks the 26px extension, zero cover and transcript hits in both rounded corner gaps; that Electron spec was not run locally.
+
+One targeted Watcher waiting-question case was rendered at **1280x800**, in **Sotto dark and light**, using the same headless fixture. These two captures were opened and visually inspected: [dark](../../artifacts/composer-float/inset-question-corners-1280-dark.png), [light](../../artifacts/composer-float/inset-question-corners-1280-light.png). The last reply includes a web link and a paragraph positioned across the card's rounded top edge. The prior captures and measurements remain unchanged.
+
+| Measurement | Dark | Light |
+| --- | --- | --- |
+| Composer top / question card top | 317px / 327px | 317px / 327px |
+| Scroll box bottom / overlap | 343px / 26px | 343px / 26px |
+| Composer cover / bottom padding | 0px / 54px | 0px / 54px |
+| Transcript hit at both corner gaps, 1px inside the card's bounds | yes | yes |
+| Same hits with the prior 26px cover temporarily restored | neither | neither |
+| Jump height / reserved scroll-padding | 36px / 90px | 36px / 90px |
+| Readable edge / Jump top / clear gap | 253px / 267px / 14px | 253px / 267px / 14px |
+| Remaining scroll after Jump / final item's gap above composer | 0px / 52.25px | 0px / 52.25px |
+
+[Exact measurements](../../artifacts/composer-float/inset-question-corners-measurements.json). No page errors were observed. No full matrix, narrow or split layouts, other themes, Electron run or CI watch was repeated for this follow-up.
 
 ## Remaining verification
 

@@ -154,7 +154,7 @@
 .thread-pane > .thread-transcript { min-height: min(160px, 30%); }
 .thread-workspace__compose { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
 .thread-workspace__compose > * { flex: none; }
-/* Keep the scroll box steady, but stop its words above the composer, including the strips beside the card.
+/* Keep the scroll box steady, but stop its words above the floating composer, including the strips beside the card.
    Padding brings the last line clear; clipping also protects every line while reading back. */
 .thread-pane:not([data-greeting], [data-questions]) { --thread-compose-height: var(--thread-compose-measured, 0px); }
 .thread-pane > .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose { position: relative; z-index: 2; margin-top: calc(-1 * var(--thread-compose-height, 0px)); pointer-events: none; }
@@ -168,8 +168,10 @@
 }
 .thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: calc(var(--thread-compose-cover) + var(--thread-jump-band)); }
 .thread-transcript:has(> .thread-transcript__jump) > .thread-transcript__viewport { --thread-jump-band: calc(var(--thread-jump-height, 0px) + 2 * var(--thread-jump-gap)); }
-/* The question's existing 26px overlap gets the same readable edge as a floating composer. */
-.thread-pane[data-questions] > .thread-transcript > .thread-transcript__viewport { --thread-compose-height: 26px; margin-bottom: -26px; }
+/* A waiting question keeps 26px of conversation under its rounded corners (#1815), without clipping those words.
+   Jump still sits above the stacked composer, so its clear band also includes that overlap. */
+.thread-pane[data-questions] > .thread-transcript > .thread-transcript__viewport { --thread-compose-height: 26px; --thread-compose-cover: 0px; margin-bottom: -26px; }
+.thread-pane[data-questions] > .thread-transcript:has(> .thread-transcript__jump) > .thread-transcript__viewport { --thread-jump-band: calc(var(--thread-jump-height, 0px) + 2 * var(--thread-jump-gap) + var(--thread-compose-height)); }
 .thread-pane .thread-transcript__jump { bottom: calc(var(--thread-jump-gap) + var(--thread-compose-height, 0px)); }
 /* The slim composer (ADR-0125; Owl only, the user's pick B of docs/prototypes/composer-shrink-prototype.html): while the
    user reads back, a floating composer with nothing in it is one line with its disc beside it. The options row steps
