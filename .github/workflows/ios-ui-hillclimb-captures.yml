@@ -1,0 +1,38 @@
+name: iPhone UI hillclimb captures
+
+# Throwaway, for the October 29, 2026 iPhone UI review: this file lives on chore/ios-ui-hillclimb-captures and is never
+# merged. GitHub runs workflow_dispatch only for a workflow on the default branch, so a push to this branch starts it.
+on:
+  push:
+    branches: [chore/ios-ui-hillclimb-captures]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-ui-hillclimb-captures
+  cancel-in-progress: true
+
+jobs:
+  captures:
+    name: iPhone captures (macOS)
+    runs-on: macos-26
+    timeout-minutes: 110
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v4
+      - name: Record native toolchain
+        run: xcodebuild -version
+      - name: Capture a small and a large iPhone at two text sizes, dark and light
+        run: sh apps/ios/Scripts/hillclimb-captures.sh
+      - name: Keep the captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ui-hillclimb-captures
+          path: apps/ios/.build-hillclimb/out/
+          if-no-files-found: warn
+          retention-days: 14

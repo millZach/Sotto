@@ -2217,3 +2217,139 @@ private extension XCUIElement {
         return false
     }
 }
+
+// MARK: - UI hillclimb captures
+
+/// Throwaway: screenshots for the October 29, 2026 iPhone UI review, on `chore/ios-ui-hillclimb-captures` only and never
+/// merged. Nothing here asserts; each step takes what it can reach and moves on, so one missed tap costs one picture.
+extension FocusJourneyTests {
+    func testHillclimbCapturesDark() { hillclimbWalk(light: false) }
+    func testHillclimbCapturesLight() { hillclimbWalk(light: true) }
+
+    private func hillclimbWalk(light: Bool) {
+        continueAfterFailure = true
+        let look: [String] = light ? ["--ui-light"] : []
+        let tag = light ? "light" : "dark"
+        func settle(_ seconds: TimeInterval = 1.2) { RunLoop.current.run(until: Date().addingTimeInterval(seconds)) }
+        func shot(_ name: String) { settle(); capture("hc-\(tag)-\(name)") }
+        func tapOnce(_ element: XCUIElement, _ timeout: TimeInterval = 8) -> Bool {
+            guard element.waitForExistence(timeout: timeout) else { return false }
+            if !element.isHittable { reveal(element) }
+            guard element.exists && element.isHittable else { return false }
+            element.tap()
+            return true
+        }
+        func page(down: Bool) {
+            let window = app.windows.firstMatch
+            let origin = window.coordinate(withNormalizedOffset: .zero)
+            let height = window.frame.height
+            let x = window.frame.width / 2
+            let from = down ? height * 0.32 : height * 0.68
+            let to = down ? height * 0.68 : height * 0.32
+            origin.withOffset(CGVector(dx: x, dy: from))
+                .press(forDuration: 0.05, thenDragTo: origin.withOffset(CGVector(dx: x, dy: to)), withVelocity: .slow, thenHoldForDuration: 0.3)
+        }
+        func openThread(_ id: String) -> Bool {
+            reveal(row(id))
+            guard tapOnce(row(id)) else { return false }
+            _ = byID("thread-title").waitForExistence(timeout: 10)
+            return true
+        }
+
+        // Threads: its top with Needs you, Working now, Recent and Settled, and a search that matches nothing.
+        launch(Self.fixture + look)
+        shot("01-threads-top")
+        reveal(row("wiring")); shot("02-threads-working")
+        reveal(app.buttons["settled-threads"]); shot("03-threads-recent")
+        let search = app.textFields["thread-search"]
+        reveal(search, swipingDown: true)
+        if tapOnce(search) { search.typeText("no matching thread"); shot("04-threads-search-empty") }
+
+        // New thread, Computers and Settings, page by page.
+        launch(Self.fixture + look)
+        if tapOnce(app.buttons["new-thread"]) {
+            shot("05-new-thread")
+            if tapOnce(app.buttons["new-thread-computer-\(laptop)"]) { shot("06-new-thread-options") }
+        }
+        launch(Self.fixture + look)
+        if tapOnce(app.tab("Computers")) { shot("07-computers") }
+        if tapOnce(app.tab("Settings")) {
+            shot("08-settings-1")
+            for index in 2...6 { page(down: false); shot("08-settings-\(index)") }
+        }
+
+        // A busy thread from its end to its top, a run of steps opened, and the reply box with the keyboard and words.
+        launch(Self.fixture + look)
+        if openThread("iphone") {
+            _ = byID("thread-reply").waitForExistence(timeout: 10)
+            shot("09-thread-busy-end")
+            page(down: true); shot("10-thread-busy-middle")
+            scrollThread(to: byID("thread-title"), towardStart: true); shot("11-thread-busy-top")
+        }
+        launch(Self.fixture + look)
+        if openThread("iphone") {
+            if tapOnce(byID("steps-run-drawer-test")) { shot("12-thread-steps-open") }
+            if tapOnce(byID("thread-reply")) {
+                _ = app.keyboards.firstMatch.waitForExistence(timeout: 5)
+                app.typeText("Check the drawer chord on the small iPhone too, then push the branch.")
+                shot("13-composer-keyboard")
+            }
+        }
+
+        // A question, then a permission, as their sheets, then the thread with both set aside.
+        launch(Self.fixture + look)
+        if openThread("release") {
+            let notNow = app.buttons["Not now"]
+            if notNow.waitForExistence(timeout: 10) {
+                shot("14-question-sheet")
+                if tapOnce(notNow) {
+                    _ = app.staticTexts["Allow reading the release checklist?"].waitForExistence(timeout: 8)
+                    shot("15-permission-sheet")
+                    if tapOnce(app.buttons["Not now"]) { shot("16-thread-requests-waiting") }
+                }
+            }
+        }
+
+        // The pull request sheet, and the fullest top bar (Agents, state, Watch and •••) with the Agents sheet.
+        launch(Self.fixture + ["--ui-pull-request"] + look)
+        if openThread("iphone") {
+            let chip = app.buttons["pull-request-chip"]
+            scrollThread(to: chip, towardStart: true)
+            shot("17-thread-git-chips")
+            if tapOnce(chip) { _ = byID("pull-request-title").waitForExistence(timeout: 8); shot("18-pull-request-sheet") }
+        }
+        launch(Self.watcher + ["--ui-agents"] + look)
+        if openThread("iphone") {
+            shot("19-thread-bar-full")
+            if tapOnce(app.buttons["thread-agents"], 10) {
+                _ = app.buttons["agents-row-agent:waits"].waitForExistence(timeout: 8)
+                shot("20-agents-sheet")
+            }
+        }
+
+        // Watcher: its conversation, a worker's card, and Watched.
+        launch(Self.watcher + ["--ui-watcher-can-answer"] + look)
+        openWatcher()
+        shot("21-watcher-top")
+        let choice = app.buttons["A fresh account for each run"]
+        if choice.waitForExistence(timeout: 8) { revealInWatcher(choice); shot("22-watcher-card") }
+        if tapOnce(app.buttons["watcher-section-watched"]) { shot("23-watcher-watched") }
+
+        // Problems: a banner that stays, a computer reconnecting under an open thread, and a folder read that timed out.
+        launch(Self.fixture + ["--ui-feedback-request-gone"] + look)
+        shot("24-feedback-banner")
+        launch(Self.fixture + ["--ui-reconnecting"] + look)
+        if openThread("iphone") { settle(3); shot("25-thread-reconnecting") }
+        launch(Self.fixture + ["--ui-folder-timeout"] + look)
+        if tapOnce(app.buttons["new-thread"]), tapOnce(app.buttons["new-thread-computer-\(laptop)"]) {
+            let browse = app.buttons["browse-project-folder"]
+            reveal(browse)
+            if tapOnce(browse) {
+                let problem = app.staticTexts["Sotto did not answer in time. Try again."]
+                _ = problem.waitForExistence(timeout: 8)
+                reveal(problem)
+                shot("26-folder-timeout")
+            }
+        }
+    }
+}
