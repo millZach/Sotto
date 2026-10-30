@@ -76,7 +76,7 @@
 /* A sunken track with the chosen segment raised out of it (ADR-0110). On a card the track sinks to the card's inset. */
 .segmented-control { grid-area: control; display: inline-flex; align-items: center; justify-self: end; padding: 3px; border: 0; border-radius: 6px; gap: 2px; background: var(--tt-surface-sunken); }
 .settings-rows .segmented-control { background: var(--tt-card-inset); }
-.segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 4px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; cursor: pointer; transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+.segmented-control button { min-height: 30px; padding: 2px 12px; border: 0; border-radius: 4px; font: inherit; font-size: 14px; white-space: nowrap; color: var(--tt-text-muted); background: none; transition: background-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .segmented-control button:hover:not(:disabled) { color: var(--tt-text); }
 .segmented-control button:active:not(:disabled):not([aria-checked='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .segmented-control button:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
@@ -100,7 +100,7 @@
 /* Linux draws no window controls, so its notice keeps only the gutter the left side has, at every width. */
 [data-platform='linux'] .settings-view .settings-feedback { padding-right: 6vw; }
 .settings-view .settings-subnav { position: static; display: flex; flex-direction: column; align-self: auto; gap: 4px; padding: 0; border: 0; overflow: visible; }
-.settings-subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; color: var(--tt-text-muted); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; transition: background 160ms ease, color 160ms ease; }
+.settings-subnav button { position: relative; display: flex; align-items: center; gap: 11px; width: 100%; min-height: 42px; padding: 10px 12px; border: 0; border-radius: 8px; color: var(--tt-text-muted); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; transition: background 160ms ease, color 160ms ease; }
 .settings-subnav button > span { flex: 1; }
 .settings-subnav button > svg { flex: none; }
 .settings-subnav button:hover { background: var(--theme-sidebar-row-hover); color: var(--tt-text); }
@@ -112,7 +112,7 @@
 /* Find a setting: the Threads sidebar's search field, with the matches in place of the pages while it holds text. */
 .settings-view .settings-find { height: 36px; margin: 0 0 14px; }
 .settings-find__results ul { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 0; list-style: none; }
-.settings-find__results button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 12px; border: 0; border-radius: 6px; color: var(--tt-text); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; cursor: pointer; transition: background-color 120ms ease, color 120ms ease; }
+.settings-find__results button { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; width: 100%; padding: 8px 12px; border: 0; border-radius: 6px; color: var(--tt-text); background: transparent; text-align: left; font: inherit; font-size: 14px; line-height: 1.35; transition: background-color 120ms ease, color 120ms ease; }
 .settings-find__results button:hover { background: var(--tt-sidebar-row-hover); }
 .settings-find__results button:active { background: var(--tt-hover-strong); }
 .settings-find__results small { color: var(--tt-text-muted); font-size: 12.5px; }
@@ -228,7 +228,7 @@
 .settings-view .tt-toggle[aria-checked='true'] .tt-toggle__track { border-color: var(--theme-accent); background: var(--theme-accent); }
 .settings-view .tt-toggle[aria-checked='true'] .tt-toggle__thumb { background: var(--theme-accent-foreground); }
 .settings-view .agent-wake-advanced { margin-top: 24px; border-top: 1px solid var(--tt-hairline); }
-.settings-view .agent-wake-advanced > summary { padding: 18px 0; color: var(--tt-text-muted); font-size: 14px; cursor: pointer; }
+.settings-view .agent-wake-advanced > summary { padding: 18px 0; color: var(--tt-text-muted); font-size: 14px; }
 .settings-view .agent-wake-advanced > summary:hover, .settings-view .agent-wake-advanced[open] > summary { color: var(--tt-text); }
 .settings-view .agent-wake-advanced > summary:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 3px; }
 .settings-view #settings-agents > .account-settings > .account-settings .account-rows > label:first-child { border-top: 0; }
@@ -251,7 +251,6 @@
 .settings-view .agent-voice-actions, .settings-view .agent-actions { display: flex; flex-wrap: wrap; gap: 10px; }
 .settings-view .agent-voice-settings .agent-hint { margin: 0; color: var(--tt-text-muted); font-weight: 400; }
 .settings-view .agent-voice-license { color: var(--tt-text-muted); font-size: 13px; }
-.settings-view .agent-voice-license summary { cursor: pointer; }
 .settings-view .agent-voice-license pre { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; }
 .settings-view .agent-voice-settings progress { width: 100%; accent-color: var(--theme-accent); }
 @media (max-width: 620px) { .settings-view .agent-fields { grid-template-columns: minmax(0, 1fr); } }
@@ -268,12 +267,12 @@
 .settings-view .settings-rows .cleanup-model__control { grid-area: control; position: relative; display: flex; gap: 6px; min-width: 0; }
 .settings-view .settings-rows .cleanup-model__control > .tt-input { flex: 1; min-width: 0; min-height: 38px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-card-inset); color: var(--tt-text); font-size: 14px; text-overflow: ellipsis; }
 .settings-view .settings-rows .cleanup-model__control > .tt-input:hover { border-color: var(--tt-border); }
-.cleanup-model__refresh { flex: none; display: grid; place-items: center; width: 38px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-card-inset); color: var(--tt-text-muted); cursor: pointer; }
+.cleanup-model__refresh { flex: none; display: grid; place-items: center; width: 38px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-card-inset); color: var(--tt-text-muted); }
 .cleanup-model__refresh:hover:not(:disabled) { border-color: var(--tt-border); color: var(--tt-text); }
 .cleanup-model__refresh:disabled { cursor: default; opacity: 0.5; }
 .cleanup-model__list { position: absolute; z-index: 20; top: calc(100% + 4px); left: 0; right: 0; max-height: min(280px, 45vh); margin: 0; padding: 4px; overflow-y: auto; overscroll-behavior: contain; list-style: none; border: 1px solid var(--tt-border); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); }
 .cleanup-model__list[data-above] { top: auto; bottom: calc(100% + 4px); }
-.cleanup-model__list > [role='option'] { display: grid; gap: 1px; padding: 7px 9px; border-radius: 5px; cursor: pointer; }
+.cleanup-model__list > [role='option'] { display: grid; gap: 1px; padding: 7px 9px; border-radius: 5px; }
 .cleanup-model__list > [data-active] { background: var(--tt-hover); }
 .cleanup-model__list > [aria-selected='true'] .cleanup-model__name { color: var(--tt-primary); }
 .cleanup-model__name { overflow: hidden; color: var(--tt-text); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }

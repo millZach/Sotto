@@ -51,6 +51,7 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     installUpdate: vi.fn(async () => OK),
     onUpdateStatus: vi.fn(() => () => undefined),
     onUpdateCheckRequested: vi.fn(() => () => undefined),
+    onSettingsRequested: vi.fn(() => () => undefined),
     getStartup: vi.fn(async () => ({ enabled: false })),
     setStartup: vi.fn(async (enabled) => ({ enabled })),
     showApp: vi.fn(async () => undefined),

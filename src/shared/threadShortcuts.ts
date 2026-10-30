@@ -74,15 +74,15 @@ export const DEFAULT_THREAD_SHORTCUTS: Readonly<Record<ThreadShortcutId, string>
 
 /**
  * The chords the application menu answers before the renderer sees the keys, so no thread shortcut may
- * claim them however they are spelled. Windows and Linux keep Electron's default menu, whose Reload,
- * Force Reload, Toggle Developer Tools, Close and Actual Size these are; a Mac gets Sotto's own menu
- * (`applicationMenu.ts`), whose Close and Actual Size are the recordable ones it owns. The menus' other
- * zoom keys (Ctrl+=/-) and F11 cannot end a thread chord, so they need no entry.
+ * claim them however they are spelled. Every platform has Sotto's own menu (`applicationMenu.ts`, #1825),
+ * whose Close and Actual Size are recordable keys. Off a Mac, an unpackaged run's menu also answers Reload
+ * and Toggle Developer Tools, and the window cannot tell that run from a shipped one, so their keys stay
+ * refused there as they were under Electron's default menu; its Force Reload is gone. The menus' other
+ * zoom keys (Ctrl+=/-), Settings (Ctrl+, or Cmd+,) and a Mac's full screen cannot end a thread chord, so
+ * they need no entry.
  */
 export function menuOwnedChords(platform: SottoPlatform): readonly string[] {
-  return platform === 'darwin'
-    ? ['mod+w', 'mod+0']
-    : ['ctrl+r', 'ctrl+shift+r', 'ctrl+shift+i', 'ctrl+w', 'ctrl+0']
+  return platform === 'darwin' ? ['mod+w', 'mod+0'] : ['ctrl+r', 'ctrl+shift+i', 'ctrl+w', 'ctrl+0']
 }
 
 /** The modifier spellings `parseChord` (renderer) understands, so a hand-written chord classifies the same way here. */

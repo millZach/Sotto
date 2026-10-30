@@ -221,7 +221,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         <strong>{notice.title}</strong>
         {notice.detail === null ? null : <> {notice.detail}</>}
         {link !== null && open !== undefined
-          ? <> <button type="button" className="tt-toast__link tt-focusable" onClick={() => { void open(link) }}><Trans>Read more</Trans></button></>
+          ? <> <button type="button" className="tt-toast__link tt-focusable" data-outside-link="" onClick={() => { void open(link) }}><Trans>Read more</Trans></button></>
           : null}
       </>
     )

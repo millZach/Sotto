@@ -40,7 +40,7 @@
 .browser-player__grip::after { content: ''; position: absolute; right: 4px; bottom: 4px; width: 6px; height: 6px; border-right: 1.5px solid var(--tt-text-muted); border-bottom: 1.5px solid var(--tt-text-muted); }
 .browser-player__grip:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 
-.browser-player-pill { position: fixed; z-index: 40; display: inline-flex; align-items: center; gap: 8px; max-width: 320px; height: 34px; padding: 0 12px; border: 1px solid var(--tt-border); border-radius: 6px; background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 10px 32px color-mix(in srgb, var(--tt-code-bg) 40%, transparent); cursor: pointer; }
+.browser-player-pill { position: fixed; z-index: 40; display: inline-flex; align-items: center; gap: 8px; max-width: 320px; height: 34px; padding: 0 12px; border: 1px solid var(--tt-border); border-radius: 6px; background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 10px 32px color-mix(in srgb, var(--tt-code-bg) 40%, transparent); }
 .browser-player-pill > svg { flex: none; color: var(--tt-text-muted); }
 .browser-player-pill__dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); transition: background-color 200ms ease; }
 .browser-player-pill__dot[data-state='waiting'] { background: var(--tt-attention); }

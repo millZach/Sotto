@@ -21,7 +21,7 @@
 .bring-back .tt-button { gap: 6px; min-height: 34px; padding: 0 12px; font-size: 14px; }
 .bring-back .tt-button[aria-disabled='true'] { opacity: .6; cursor: not-allowed; }
 .bring-back .tt-button[aria-busy='true'] { cursor: progress; }
-.bring-back__dismiss { display: grid; place-items: center; width: 28px; height: 28px; flex: none; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.bring-back__dismiss { display: grid; place-items: center; width: 28px; height: 28px; flex: none; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .bring-back__dismiss:hover { background: var(--tt-hover); }
 .bring-back__dismiss:active:not(:disabled) { background: var(--tt-hover-strong); }
 /* Git's own words, as Git said them. */

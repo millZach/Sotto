@@ -20,16 +20,19 @@ describe('thread shortcut choices (ADR-0133)', () => {
   })
 
   it('keeps every default clear of the application menu’s own accelerators, which fire before the window', () => {
-    // Windows and Linux keep Electron's default menu; its Force Reload is why Restore is not mod+shift+r.
+    // Restore was kept off mod+shift+r while Windows and Linux kept Electron's default menu and its Force Reload.
     for (const platform of ['win32', 'linux', 'darwin'] as const) {
       for (const id of THREAD_SHORTCUT_IDS) {
         expect(menuOwnedChord(DEFAULT_THREAD_SHORTCUTS[id], platform), `${id} on ${platform}`).toBeNull()
       }
     }
     expect(chosenThreadChord(settings(), 'restore')).toBe('mod+alt+r')
-    expect(menuOwnedChord('mod+shift+r', 'win32')).toBe('ctrl+shift+r')
-    expect(menuOwnedChord('ctrl+shift+r', 'linux')).toBe('ctrl+shift+r')
+    // Sotto's own menu on every platform has no Force Reload (#1825); an unpackaged run's Reload and developer tools stay refused.
+    for (const platform of ['win32', 'linux'] as const) expect(menuOwnedChord('mod+shift+r', platform), platform).toBeNull()
     expect(menuOwnedChord('mod+r', 'win32')).toBe('ctrl+r')
+    expect(menuOwnedChord('mod+shift+i', 'linux')).toBe('ctrl+shift+i')
+    expect(menuOwnedChord('mod+w', 'win32')).toBe('ctrl+w')
+    expect(menuOwnedChord('ctrl+0', 'linux')).toBe('ctrl+0')
     expect(menuOwnedChord('mod+w', 'darwin')).toBe('mod+w')
     // Close pane's shifted W is not the menu's Close, on any platform.
     expect(menuOwnedChord('mod+shift+w', 'win32')).toBeNull()

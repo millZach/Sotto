@@ -9,7 +9,7 @@ import {
 
 function template(
   overrides: Partial<Parameters<typeof buildApplicationMenuTemplate>[0]> = {},
-): ApplicationMenuItem[] | null {
+): ApplicationMenuItem[] {
   return buildApplicationMenuTemplate({
     platform: 'darwin',
     appName: 'Sotto',
@@ -23,9 +23,7 @@ function template(
 function darwinTemplate(
   overrides: Partial<Parameters<typeof buildApplicationMenuTemplate>[0]> = {},
 ): ApplicationMenuItem[] {
-  const items = template({ ...overrides, platform: 'darwin' })
-  if (items === null) throw new Error('macOS builds an application menu')
-  return items
+  return template({ ...overrides, platform: 'darwin' })
 }
 
 function submenu(items: ApplicationMenuItem[], label: string): ApplicationMenuItem[] {
@@ -39,12 +37,39 @@ function entries(items: ApplicationMenuItem[]): string[] {
 }
 
 describe('buildApplicationMenuTemplate', () => {
-  it.each([true, false])(
-    'installs no application menu on Windows (developer tools: %s)',
-    (includeDeveloperTools) => {
-      expect(template({ platform: 'win32', includeDeveloperTools })).toBeNull()
-    },
-  )
+  describe.each(['win32', 'linux'] as const)('on %s (#1825)', (platform) => {
+    it('carries Settings, Close and zoom alone in a packaged build, so no browser key reaches it', () => {
+      const items = template({ platform, includeDeveloperTools: false, onShowTurnRecords: () => undefined })
+      expect(items.map((item) => item.label)).toEqual(['Sotto', 'View'])
+      expect(entries(submenu(items, 'Sotto'))).toEqual(['Settings…', 'separator', 'close'])
+      expect(entries(submenu(items, 'View'))).toEqual(['resetZoom', 'zoomIn', 'zoomOut'])
+      const roles = JSON.stringify(items)
+      for (const role of ['reload', 'forceReload', 'toggleDevTools', 'togglefullscreen']) expect(roles).not.toContain(`"${role}"`)
+    })
+
+    it('adds reload and developer tools only with the option the Mac menu follows', () => {
+      expect(entries(submenu(template({ platform, includeDeveloperTools: true }), 'View'))).toEqual([
+        'reload',
+        'toggleDevTools',
+        'separator',
+        'resetZoom',
+        'zoomIn',
+        'zoomOut',
+      ])
+    })
+
+    it('opens Settings on Ctrl+, through the same callback as the Mac’s Cmd+,', () => {
+      const onShowSettings = vi.fn()
+      const settings = submenu(template({ platform, onShowSettings }), 'Sotto').find((item) => item.label === 'Settings…')
+      expect(settings?.accelerator).toBe('Control+,')
+      settings?.click?.()
+      expect(onShowSettings).toHaveBeenCalledTimes(1)
+    })
+
+    it('leaves the update check to the tray', () => {
+      expect(JSON.stringify(template({ platform }))).not.toContain('Check for Updates')
+    })
+  })
 
   it('names the top-level macOS menus after the app', () => {
     expect(darwinTemplate({ appName: 'Sotto' }).map((item) => item.label)).toEqual([
