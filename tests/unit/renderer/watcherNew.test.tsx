@@ -66,10 +66,10 @@ function roomState(current: string, patch: Partial<WatcherRoomState> = {}): Watc
   }
 }
 
-function renderRoom(room: WatcherRoomState, state: AgentState, startNew: () => Promise<WatcherRoomResult>) {
+function renderRoom(room: WatcherRoomState, state: AgentState, startNew: () => Promise<WatcherRoomResult>, quiet = false) {
   vi.mocked(useOptionalApp).mockReturnValue({
     navigation: 'watcher', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: { watcherEnabled: true }, actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
+    update: { watcherEnabled: true, owlFeatures: { watcher: true, 'quiet-composer': quiet } }, actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
   } as unknown as AppContextValue)
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)
   const connection = agentContextFixture(state, command, { threadDrafts: new ThreadDraftStore(command) })
@@ -99,11 +99,14 @@ beforeEach(() => {
 afterEach(() => { cleanup(); localStorage.clear() })
 
 describe('New Watcher in Watcher’s composer', () => {
-  it('stands first in the footer, where an ordinary thread says where it runs, and never says where Watcher runs', async () => {
-    renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a', { messages: said })), vi.fn())
+  it.each([false, true])('keeps a named and titled New Watcher control first in the footer, quiet %s', async quiet => {
+    renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a', { messages: said })), vi.fn(), quiet)
     const button = await newButton()
     expect(button).toHaveAccessibleName('New Watcher')
     expect(button).toHaveAttribute('title', NEW_WATCHER_TITLE)
+    expect(button).toHaveAttribute('aria-label', 'New Watcher')
+    expect(button.querySelector('svg')).toHaveAttribute('aria-hidden', 'true')
+    expect(button.closest('form')?.getAttribute('data-quiet')).toBe(quiet ? 'true' : null)
     expect(button).not.toHaveAttribute('aria-disabled')
     const pane = await watcherPane()
     expect(pane.querySelector('.thread-host-chip')).toBeNull()

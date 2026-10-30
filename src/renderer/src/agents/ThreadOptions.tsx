@@ -303,7 +303,7 @@ export function ChoiceChip({ label, placeholder, value, options, disabled, pendi
     }}
     onBlur={event => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) setOpen(false) }}>
     <button ref={trigger} type="button" className="thread-chip tt-focusable" role="combobox" aria-label={label} title={title} aria-haspopup="listbox" aria-expanded={open}
-      aria-controls={open ? listId : undefined} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined}
+      aria-controls={open ? listId : undefined} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined} data-permission={icon ? value : undefined}
       disabled={disabled} onClick={() => setOpen(value => !value)}>
       {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
       {icon ? <span className="thread-chip__icon" aria-hidden="true">{icon}</span> : null}
@@ -344,9 +344,9 @@ export function speedName(value: string, offered: readonly AgentModelSpeed[]): s
     : t({ message: 'Fast', comment: 'A thread speed: faster output at a higher price.' }))
 }
 /** The speed after this one when the bolt is pressed: Standard, then each offered speed in turn, then Standard again. */
-export function nextSpeed(offered: readonly AgentModelSpeed[], value: string): string {
+export function nextSpeed(offered: readonly AgentModelSpeed[], value: string, direction: 1 | -1 = 1): string {
   const cycle = [SPEED_STANDARD, ...offered.map(speed => speed.id)]
-  return cycle[(cycle.indexOf(value) + 1) % cycle.length] ?? SPEED_STANDARD
+  return cycle[(Math.max(0, cycle.indexOf(value)) + direction + cycle.length) % cycle.length] ?? SPEED_STANDARD
 }
 /**
  * What a speed costs, said in the bolt's tooltip (ADR-0143): the provider's own line where it gives one (Codex's tier
@@ -378,7 +378,7 @@ export function speedTitle(offered: readonly AgentModelSpeed[], value: string, p
  */
 export function speedRefusalText(provider: string, wanted: string, inForce: string, error: string | null, model = ''): string {
   if (error === SPEED_NOT_CARRIED) return t({ message: `${provider} did not switch to ${wanted}. The thread is on ${model} at Standard speed.`, comment: '{provider} is a provider\'s name or "The provider"; {wanted} is a thread speed, such as Fast; {model} is the model the thread is now on.' })
-  if (error === null) return t({ message: `Sotto did not get ${provider}'s answer about the speed, so the bolt shows what the thread last reported. Try again to send it once more.`, comment: '{provider} is a provider\'s name or "The provider".' })
+  if (error === null) return t({ message: `Sotto did not get ${provider}'s answer about the speed, so the speed control shows what the thread last reported. Try again to send it once more.`, comment: '{provider} is a provider\'s name or "The provider".' })
   if (error === PROVIDER_REJECTED_ACTION) return t({ message: `${provider} did not switch to ${wanted}. The thread stays on ${inForce}; nothing else changed.`, comment: '{provider} is a provider\'s name or "The provider"; {wanted} and {inForce} are thread speeds, such as Fast or Standard.' })
   return t({ message: `${provider} did not switch to ${wanted}. ${error}`, comment: '{provider} is a provider\'s name or "The provider"; {wanted} is a thread speed, such as Fast; {error} is the provider\'s or Sotto\'s own reason, shown as it came.' })
 }
@@ -457,7 +457,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   /** Another provider's models, under "Continue in a new thread on", for a started thread that may continue elsewhere. */
   readonly continueOffer?: ThreadContinueOffer | undefined
   /**
-   * The quiet composer (ADR-0161, Owl): effort as dots that may ring a level the draft seems to want, and that hold Stop
+   * The quiet composer (ADR-0161, Owl): effort and speed as dots that may ring a level the draft seems to want, with Stop
    * while a turn runs. Absent, the options are the chips of ADR-0113.
    */
   readonly quiet?: { readonly effortScore: number; readonly stop?: DotsStop | undefined } | undefined
@@ -602,8 +602,8 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const caption = pendingPermission === null || permissionUnconfirmed ? '' : permissionInForceCaption(provider, usesProviderModes(confirmedModel)
     ? { providerModeName: valueName('permissions', drawn.permissions, confirmedModel) } : { runtimeMode: (drawn.permissions || undefined) as AgentRuntimeMode | undefined })
   const retry = (kind: SettingKind): void => {
-    // The bolt's name carries its speed, so it is found by its class.
-    if (pendingSettingsStore.retry(thread.id, kind, command, drawn)) bar.current?.querySelector<HTMLButtonElement>(kind === 'fast' ? '.thread-fast' : `[aria-label="${OPTION_CHIP_NAMES[kind]}"]`)?.focus()
+    // The speed control is either the bolt or the quiet effort slider.
+    if (pendingSettingsStore.retry(thread.id, kind, command, drawn)) bar.current?.querySelector<HTMLElement>(kind === 'fast' ? '.thread-fast, .effort-dots__track' : `[aria-label="${OPTION_CHIP_NAMES[kind]}"]`)?.focus()
   }
   const kinds: readonly SettingKind[] = ['model', 'effort', 'permissions', 'fast']
   const unconfirmedIds: Readonly<Record<SettingKind, string>> = { model: unconfirmedModelId, effort: unconfirmedEffortId, permissions: unconfirmedId, fast: unconfirmedFastId }
@@ -627,6 +627,12 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   </>
   const replacingName = replacing === null ? '' : PROVIDER_LABELS[replacing.provider]
   const levels = efforts.filter(option => !option.disabled).map(option => option.id)
+  const shownSpeed = speeds.some(item => item.id === speed) ? speed : SPEED_STANDARD
+  const changeSpeed = (next: string): void => {
+    press('fast', next, speedPatch(next, model), unpressed.fast)
+    orchestrating?.(modelId, reasoning || null, state.host.models, next === SPEED_STANDARD ? null : next as AgentSpeed)
+  }
+  const dotsDescription = [settings.pending.effort?.awaiting === 'unconfirmed' ? unconfirmedEffortId : '', settings.pending.fast?.awaiting === 'unconfirmed' ? unconfirmedFastId : ''].filter(Boolean).join(' ')
   return <div ref={bar} className="thread-options-bar" data-provider-locked={locked} data-permission={quiet ? permission : undefined}>
     <div className="thread-options thread-options--chips">
       <ModelPicker models={modelDisabled && continuations.length > 0 ? continueOnly(models) : models} modelId={modelId}
@@ -644,13 +650,11 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
         const id = chosenModelId(models, pressed, modelId, thread.modelId); press('model', id, { modelId: id })
         orchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, state.host.models, roleSpeed)
       }} />
-      {speeds.length > 0 && <SpeedToggle offered={speeds} provider={speedProvider} value={speed} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={unconfirmedFastId}
-        onChange={next => {
-          press('fast', next, speedPatch(next, model), unpressed.fast)
-          orchestrating?.(modelId, reasoning || null, state.host.models, next === SPEED_STANDARD ? null : next as AgentSpeed)
-        }} />}
+      {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={speedProvider} value={speed} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={unconfirmedFastId}
+        onChange={changeSpeed} />}
       {quiet ? (levels.length > 0 || quiet.stop) && <EffortDots levels={levels} value={reasoning} provider={model?.providerId ?? thread.providerId} disabled={fixed || modelDisabled}
-        pending={settings.pending.effort?.awaiting === 'unconfirmed'} describedBy={unconfirmedEffortId} stop={quiet.stop}
+        pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={dotsDescription} stop={quiet.stop}
+        speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), description: speedTitle(speeds, shownSpeed, speedProvider, fixed), onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
         suggestion={thread.status === 'running' ? null : suggestedEffortIndex(quiet.effortScore, levels.length,
           // On the provider's default, the model's own default is what a suggestion must stand above.
           levels.includes(reasoning) ? levels.indexOf(reasoning) : levels.indexOf(model?.defaultReasoningEffort ?? ''))}

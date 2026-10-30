@@ -1,6 +1,7 @@
 import React from 'react'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { ThreadOptions } from '../../../../src/renderer/src/agents/ThreadOptions'
 import { PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, type AgentModel, type AgentState, type AgentThread } from '../../../../src/shared/agents'
 import { fixture, LiveThread, mount, setupThreadOptionsTests, withThread } from '../../../fixtures/renderer/threadOptionsHarness'
 
@@ -152,5 +153,79 @@ describe('speed bolt', () => {
     expect(toggle()).toHaveAttribute('aria-pressed', 'true')
     expect(screen.getByRole('alert')).toHaveTextContent('Claude Code has not confirmed Fast. Until it does, a turn can still run on Standard.')
     expect(toggle()).toHaveAccessibleDescription('Claude Code has not confirmed Fast. Until it does, a turn can still run on Standard.')
+  })
+})
+
+// The same setting and confirmation path, drawn in the quiet pill's effort dots.
+describe('speed in quiet effort dots', () => {
+  function quiet(start = bothSpeeds(), unconfirmed = false) {
+    const command = vi.fn()
+    function LiveQuiet(): React.ReactElement {
+      const [state, setState] = React.useState(start)
+      return <ThreadOptions thread={state.host.threads[0]!} state={state} quiet={{ effortScore: 0 }} command={async request => {
+        command(request)
+        const speed = 'speed' in request ? request.speed ?? undefined : state.host.threads[0]!.speed
+        const next = unconfirmed ? { ...state, error: PROVIDER_RESULT_UNCONFIRMED, unconfirmedSettings: [{ threadId: 'thread', speed: 'fast' as const }] }
+          : withThread(state, { speed, fastMode: undefined, ...('reasoningEffort' in request ? { reasoningEffort: request.reasoningEffort ?? undefined } : {}) })
+        setState(next)
+        return next
+      }} />
+    }
+    render(<LiveQuiet />)
+    return command
+  }
+  const dots = (): HTMLElement => screen.getByRole('slider', { name: 'Thread reasoning' })
+  const selected = (): HTMLElement => dots().querySelector('[data-level="2"]')!
+
+  it('cycles supported speeds on the selected dot without changing effort or drawing a bolt', async () => {
+    const command = quiet()
+    expect(screen.queryByRole('button', { name: /^Thread speed/u })).toBeNull()
+    expect(dots()).toHaveAttribute('aria-valuetext', 'High · Standard')
+    fireEvent.click(selected())
+    await waitFor(() => expect(dots()).toHaveAttribute('aria-valuetext', 'High · Fast'))
+    expect(selected()).toHaveAttribute('title', 'High · Fast. Fast is on for this thread. 2x speed, increased usage. Press for Ultrafast: 4x speed, highest usage.')
+    fireEvent.click(selected())
+    await waitFor(() => expect(dots()).toHaveAttribute('aria-valuetext', 'High · Ultrafast'))
+    expect(dots().closest('.effort-dots')).toHaveAttribute('data-speed', 'ultrafast')
+    fireEvent.click(selected())
+    await waitFor(() => expect(dots()).toHaveAttribute('aria-valuetext', 'High · Standard'))
+    expect(command.mock.calls.map(call => call[0])).toEqual(['fast', 'ultrafast', null].map(speed => ({ type: 'configure-thread', threadId: 'thread', speed })))
+  })
+
+  it('uses Alt arrows for speed in either direction and plain arrows for effort', async () => {
+    const command = quiet()
+    dots().focus()
+    fireEvent.keyDown(dots(), { key: 'ArrowDown', altKey: true })
+    await waitFor(() => expect(dots()).toHaveAttribute('aria-valuetext', 'High · Ultrafast'))
+    fireEvent.keyDown(dots(), { key: 'ArrowUp', altKey: true })
+    await waitFor(() => expect(dots()).toHaveAttribute('aria-valuetext', 'High · Standard'))
+    fireEvent.keyDown(dots(), { key: 'ArrowLeft' })
+    await waitFor(() => expect(dots()).toHaveAttribute('aria-valuetext', 'Medium · Standard'))
+    expect(command).toHaveBeenLastCalledWith({ type: 'configure-thread', threadId: 'thread', reasoningEffort: 'medium' })
+    expect(dots()).toHaveFocus()
+  })
+
+  it('keeps a model with no speed tiers in its provider colour and names each effort', () => {
+    const command = quiet(offering({}, model => ({ ...model, speeds: [], fastMode: undefined })))
+    expect(dots().closest('.effort-dots')).not.toHaveAttribute('data-speed')
+    expect(selected()).toHaveAttribute('title', 'High')
+    fireEvent.click(selected())
+    expect(command).not.toHaveBeenCalled()
+  })
+
+  it('keeps speed fixed while running and exposes the selected permission for its shield', () => {
+    const command = quiet(bothSpeeds({ speed: 'ultrafast', status: 'running', nativeSessionStarted: true, runtimeMode: 'full-access' }))
+    expect(dots()).toHaveAttribute('aria-disabled', 'true')
+    expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toHaveAttribute('data-permission', 'full-access')
+    fireEvent.click(selected())
+    fireEvent.keyDown(dots(), { key: 'ArrowUp', altKey: true })
+    expect(command).not.toHaveBeenCalled()
+  })
+
+  it('announces an unconfirmed speed through the dots', async () => {
+    quiet(bothSpeeds(), true)
+    fireEvent.click(selected())
+    await waitFor(() => expect(dots()).toHaveAccessibleDescription('Codex has not confirmed Fast. Until it does, a turn can still run on Standard.'))
+    expect(dots().closest('.effort-dots')).toHaveAttribute('data-pending', 'true')
   })
 })

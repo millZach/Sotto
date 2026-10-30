@@ -80,11 +80,11 @@ function fakeBridge(state: WatcherRoomState) {
   return { bridge: bridge as unknown as WatcherBridge & typeof bridge, publish: (next: WatcherRoomState) => { for (const listener of listeners) listener(next) } }
 }
 
-function mockApp(navigation: AppNavigation, watcherEnabled = true, museEnabled = false) {
+function mockApp(navigation: AppNavigation, watcherEnabled = true, museEnabled = false, quiet = false) {
   const navigate = vi.fn()
   vi.mocked(useOptionalApp).mockReturnValue({
     navigation, platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: museEnabled ? { watcherEnabled, owlFeatures: { watcher: watcherEnabled, muse: true } } : { watcherEnabled }, actions: { navigate, minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
+    update: museEnabled || quiet ? { watcherEnabled, owlFeatures: { watcher: watcherEnabled, muse: museEnabled, 'quiet-composer': quiet } } : { watcherEnabled }, actions: { navigate, minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
   } as unknown as AppContextValue)
   return navigate
 }
@@ -97,8 +97,8 @@ function mockAgents(state: AgentState) {
   return command
 }
 
-function renderRoom(state: AgentState, room: WatcherRoomState, watcherEnabled = true) {
-  const navigate = mockApp('watcher', watcherEnabled)
+function renderRoom(state: AgentState, room: WatcherRoomState, watcherEnabled = true, quiet = false) {
+  const navigate = mockApp('watcher', watcherEnabled, false, quiet)
   const command = mockAgents(state)
   const { bridge, publish } = fakeBridge(room)
   const view = render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
@@ -137,21 +137,96 @@ describe("Watcher's room", () => {
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'select-thread' }))
   })
 
-  it('lists follow-ups queued while Watcher works above its composer and not in its conversation', async () => {
+  it.each([false, true])('starts with the chosen model and effort from the first-entry composer, quiet %s', async quiet => {
+    const state = stateWithWatcher()
+    state.host.models = [{ id: 'claude:sonnet', provider: 'Claude Code', providerId: 'claude', name: 'Sonnet 4.5', ready: true,
+      reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium' }]
+    const { bridge, command } = renderRoom(state, roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }), true, quiet)
+    const prompt = await screen.findByRole('textbox', { name: 'Watcher message' })
+    expect(prompt.closest('form')?.getAttribute('data-quiet')).toBe(quiet ? 'true' : null)
+    expect(bridge.open).not.toHaveBeenCalled()
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread' }))
+    if (quiet) {
+      expect(screen.queryByRole('combobox', { name: 'Thread reasoning' })).toBeNull()
+      const dots = screen.getByRole('slider', { name: 'Thread reasoning' })
+      expect(dots.closest('.effort-dots')).not.toHaveAttribute('data-speed')
+      expect(dots).toHaveAttribute('aria-valuetext', 'Medium')
+      fireEvent.keyDown(dots, { key: 'End' })
+      expect(dots).toHaveAttribute('aria-valuetext', 'High')
+    } else {
+      expect(screen.queryByRole('slider', { name: 'Thread reasoning' })).toBeNull()
+      fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
+      fireEvent.change(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { target: { value: '2' } })
+      fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: 'Escape' })
+    }
+    expect(screen.getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveTextContent('Ask for approval')
+    setPromptText(prompt, 'Keep an eye on the footer links.')
+    fireEvent.click(screen.getByRole('button', { name: 'Start Watcher and send' }))
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledWith({ provider: 'claude', modelId: 'claude:sonnet', reasoningEffort: 'high' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'manual-send', threadId: 'watcher', text: 'Keep an eye on the footer links.' })))
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread' }))
+  })
+
+  it.each([false, true])('keeps queued follow-ups above Watcher’s working composer and preserves Queue and Stop, quiet %s', async quiet => {
     const state = stateWithWatcher()
     state.host.threads.find(thread => thread.id === 'watcher')!.status = 'running'
     const texts = ['On PR #1216, fix the two bug bot findings.', 'Has PR #1251 merged to main?']
     state.followups = texts.map((text, index) => ({ id: `6000000${index}-0000-4000-8000-000000000000`, threadId: 'watcher', draftId: crypto.randomUUID(), text, attachments: [], createdAt: at, updatedAt: at, status: 'queued' as const }))
-    renderRoom(state, roomState())
+    const { command } = renderRoom(state, roomState(), true, quiet)
     await paneReady()
     const pane = screen.getByRole('region', { name: 'Watcher' })
-    expect(within(pane).getByRole('textbox', { name: 'Watcher message' })).toHaveAttribute('data-placeholder', 'Watcher is working. Write a follow-up to queue it.')
+    const prompt = within(pane).getByRole('textbox', { name: 'Watcher message' })
+    expect(prompt.closest('form')?.getAttribute('data-quiet')).toBe(quiet ? 'true' : null)
+    expect(prompt).toHaveAttribute('data-placeholder', 'Watcher is working. Write a follow-up to queue it.')
     const queue = within(pane).getByRole('region', { name: 'Queued messages' })
     for (const text of texts) {
       expect(within(queue).getByText(text)).toBeInTheDocument()
       expect(within(within(pane).getByRole('log', { name: 'Thread transcript' })).queryByText(text)).not.toBeInTheDocument()
     }
     expect(within(pane).queryByLabelText('Queued message')).not.toBeInTheDocument()
+    setPromptText(prompt, 'Check the release too.')
+    fireEvent.click(within(pane).getByRole('button', { name: 'Queue prompt' }))
+    await waitFor(() => expect(command).toHaveBeenCalledWith(expect.objectContaining({ type: 'queue-followup', threadId: 'watcher', text: 'Check the release too.' })))
+    fireEvent.click(within(pane).getByRole('button', { name: 'Stop agent' }))
+    expect(command).toHaveBeenCalledWith({ type: 'interrupt', threadId: 'watcher' })
+  })
+
+  it.each([false, true])('cycles first-entry speed and keeps it through an effort change, worker roles %s', async workerRoles => {
+    const state = stateWithWatcher()
+    state.host.models = [{ id: 'claude:sonnet', provider: 'Claude Code', providerId: 'claude', name: 'Sonnet 4.5', ready: true,
+      reasoningEfforts: ['low', 'medium', 'high'], defaultReasoningEffort: 'medium',
+      speeds: [{ id: 'fast', name: 'Fast' }, { id: 'ultrafast', name: 'Ultra fast' }] }]
+    const updateSettings = vi.fn()
+    vi.mocked(useOptionalApp).mockReturnValue({ navigation: 'watcher', platform: 'win32', windowMaximized: false,
+      settings: { ...DEFAULT_SETTINGS, workerRoles: { orchestrating: { modelId: 'claude:sonnet', reasoningEffort: 'medium' } } },
+      update: { owlFeatures: { watcher: true, 'quiet-composer': true, 'worker-roles': workerRoles } },
+      actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings },
+    } as unknown as AppContextValue)
+    const command = mockAgents(state)
+    const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
+    render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
+    const dots = await screen.findByRole('slider', { name: 'Thread reasoning' })
+    expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Standard')
+    fireEvent.click(dots.querySelector('[data-level="1"]')!)
+    expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Fast')
+    fireEvent.keyDown(dots, { key: 'ArrowUp', altKey: true })
+    expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Ultra fast')
+    fireEvent.keyDown(dots, { key: 'ArrowUp', altKey: true })
+    expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Standard')
+    fireEvent.keyDown(dots, { key: 'ArrowDown', altKey: true })
+    expect(dots).toHaveAttribute('aria-valuetext', 'Medium · Ultra fast')
+    expect(dots).toHaveAttribute('aria-valuenow', '2')
+    if (workerRoles) expect(updateSettings).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: 'claude:sonnet', reasoningEffort: 'medium', speed: 'ultrafast' } } })
+    else expect(updateSettings).not.toHaveBeenCalled()
+    fireEvent.keyDown(dots, { key: 'ArrowRight' })
+    expect(dots).toHaveAttribute('aria-valuetext', 'High · Ultra fast')
+    if (workerRoles) expect(updateSettings).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: 'claude:sonnet', reasoningEffort: 'high', speed: 'ultrafast' } } })
+    else expect(updateSettings).not.toHaveBeenCalled()
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'configure-thread' }))
+    setPromptText(screen.getByRole('textbox', { name: 'Watcher message' }), 'Keep an eye on the footer links.')
+    fireEvent.click(screen.getByRole('button', { name: 'Start Watcher and send' }))
+    await waitFor(() => expect(bridge.open).toHaveBeenCalledWith({ provider: 'claude', modelId: 'claude:sonnet', reasoningEffort: 'high', speed: 'ultrafast' }))
+    expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread' }))
   })
 
   it('says main’s refusal in its own words and keeps the message in the composer', async () => {

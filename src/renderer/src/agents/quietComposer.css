@@ -1,5 +1,5 @@
 /* The quiet composer (ADR-0161, Owl): one pill holding attach, the prompt, the provider's mark and the model, effort as
-   dots in the provider's colour, the permissions shield and one disc. Answers, continuations and Watcher keep the
+   dots coloured by speed, the permissions shield and one disc. Answers and continuations keep the
    footer of ADR-0113. Colour comes only from theme roles. */
 .thread-prompt[data-quiet] { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 2px; padding: 6px 7px 6px 8px; border-radius: 24px; }
 .thread-prompt[data-quiet] .screenshot-input > :has(.prompt-editor) { grid-column: 2; grid-row: 2; min-width: 0; }
@@ -14,19 +14,29 @@
 
 /* The model keeps its mark and name and loses its chevron; permissions show only their shield, the words kept for
    assistive technology as ADR-0113 decision 2 keeps them in a narrow pane. */
-.thread-prompt[data-quiet] .thread-chip:not(.thread-fast) > svg:last-child { display: none; }
+.thread-prompt[data-quiet] .thread-chip > svg.lucide-chevron-down { display: none; }
+.thread-prompt[data-quiet] :is(.watcher-new__label, .watcher-new__separator) { display: none; }
 .thread-prompt[data-quiet] .thread-chip > .thread-chip__icon { display: inline-flex; }
 .thread-prompt[data-quiet] .thread-chip:has(> .thread-chip__icon) > .thread-chip__value { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
-/* Full access is the one mode that asks about nothing, so its shield takes the warning colour, filled. */
-.thread-prompt[data-quiet] .thread-options-bar[data-permission='full-access'] .thread-chip:has(> .thread-chip__icon) { color: var(--tt-warning-text, var(--tt-warning)); }
-.thread-prompt[data-quiet] .thread-options-bar[data-permission='full-access'] .thread-chip__icon svg { fill: color-mix(in oklab, currentcolor 28%, transparent); }
+/* The shield says the mode even before it opens. Full access takes the theme's gold, with a slow sheen. */
+.thread-prompt[data-quiet] .thread-chip[data-permission] { color: var(--tt-text-muted); }
+.thread-prompt[data-quiet] .thread-chip:is([data-permission='auto'], [data-permission='auto-accept-edits']) { color: var(--tt-accent); }
+.thread-prompt[data-quiet] .thread-chip[data-permission='full-access'] { color: var(--tt-chart-6); }
+.thread-prompt[data-quiet] .thread-chip[data-permission='full-access'] .thread-chip__icon { position: relative; filter: drop-shadow(0 0 3px color-mix(in oklab, var(--tt-chart-6) 40%, transparent)); }
+.thread-prompt[data-quiet] .thread-chip[data-permission='full-access'] svg { fill: color-mix(in oklab, var(--tt-chart-6) 28%, transparent); }
+.thread-prompt[data-quiet] .thread-chip[data-permission='full-access'] .thread-chip__icon::after { content: ''; position: absolute; inset: 1px; clip-path: polygon(50% 0, 94% 18%, 88% 64%, 50% 100%, 12% 64%, 6% 18%); background: linear-gradient(110deg, transparent 35%, color-mix(in oklab, var(--tt-text) 75%, var(--tt-chart-6)) 50%, transparent 65%) 180% 0 / 300% 100% no-repeat; pointer-events: none; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .thread-prompt[data-quiet] .thread-chip[data-permission='full-access'] .thread-chip__icon::after { animation: permission-gold-sheen 4.8s ease-in-out infinite; }
+}
+:root[data-window-hidden] .thread-prompt[data-quiet] .thread-chip[data-permission='full-access'] .thread-chip__icon::after { animation-play-state: paused; }
+@keyframes permission-gold-sheen { 0%, 30% { background-position: 180% 0; } 75%, 100% { background-position: -80% 0; } }
 
 /* One disc. Steer, while its modifier is held, is the accent with the ink made for it. */
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 50%; }
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc[data-face='steer'],
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc[data-face='steer']:hover { background: var(--tt-accent); color: var(--tt-on-accent); }
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__stop.thread-prompt__disc { background: transparent; color: var(--tt-text-muted); }
-/* Where the dots hold Stop, the pill's own Stop waits for the slim composer, which hides the dots (ADR-0125). There the
+/* Where Stop sits beside the dots, the pill's own Stop waits for the slim composer, which hides them (ADR-0125). There the
    disc a turn leaves with nothing to send steps aside, so the slim line keeps one disc. */
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__stop[data-beside-dots] { display: none; }
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__stop[data-beside-dots] { display: inline-flex; }
@@ -45,38 +55,27 @@
 .effort-dots[data-provider='cursor'] { --dots-ink: color-mix(in oklab, var(--tt-provider-cursor) 75%, var(--tt-text)); }
 .effort-dots[data-provider='muse'] { --dots-ink: color-mix(in oklab, var(--tt-provider-muse) 75%, var(--tt-text)); }
 .effort-dots[data-provider='deepseek'] { --dots-ink: color-mix(in oklab, var(--tt-provider-deepseek-badge) 75%, var(--tt-text)); }
+.effort-dots[data-speed='fast'] { --dots-ink: var(--tt-chart-5); }
+.effort-dots[data-speed='ultrafast'] { --dots-ink: color-mix(in oklab, var(--tt-chart-5) 78%, var(--tt-text)); }
+.effort-dots[data-speed='ultrafast'] i[data-lit]::before { box-shadow: 0 0 5px color-mix(in oklab, var(--tt-chart-5) 65%, transparent); }
 .effort-dots__track { display: inline-flex; align-items: center; height: 30px; padding: 0 3px; border-radius: 6px; cursor: pointer; }
 .effort-dots__track[aria-disabled='true'] { cursor: default; }
-.effort-dots__track > i { position: relative; display: grid; place-items: center; width: 11px; height: 30px; }
-.effort-dots__track > i::before { content: ''; width: 4.5px; height: 4.5px; border-radius: 50%; background: var(--dots-ink); opacity: .22; transition: opacity 160ms ease-out, transform 220ms cubic-bezier(.2, .9, .3, 1.3); }
+.effort-dots__track > i { position: relative; display: grid; place-items: center; width: 9px; height: 30px; }
+.effort-dots__track > i::before { content: ''; width: 5.4px; height: 5.4px; border-radius: 50%; background: var(--dots-ink); opacity: .22; transition: opacity 160ms ease-out; }
 .effort-dots__track > i[data-lit]::before { opacity: 1; }
-.effort-dots__track:not([aria-disabled='true']) > i:hover::before { opacity: .6; transform: scale(1.3); }
+.effort-dots__track:not([aria-disabled='true']) > i:hover::before { opacity: .6; }
 .effort-dots[data-pending] .effort-dots__track { opacity: .7; }
-/* A level the draft seems to want rings, and the ring pulses on transform alone. */
+/* A level the draft seems to want has a still ring. */
 .effort-dots__track > i[data-suggested]::before { opacity: .6; }
 .effort-dots__track > i[data-suggested]::after { content: ''; position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--dots-ink); pointer-events: none; }
-/* While a turn runs the lit dots bounce, one after another. */
-.thread-prompt[data-running] .effort-dots__track > i:nth-child(2)::before { animation-delay: 120ms; }
-.thread-prompt[data-running] .effort-dots__track > i:nth-child(3)::before { animation-delay: 240ms; }
-.thread-prompt[data-running] .effort-dots__track > i:nth-child(n + 4)::before { animation-delay: 360ms; }
-@media (prefers-reduced-motion: no-preference) {
-  :root:not([data-reduced-motion='on']) .effort-dots__track > i[data-suggested]::after { animation: effort-dot-ring 1.6s ease-in-out infinite; }
-  :root:not([data-reduced-motion='on']) .thread-prompt[data-running] .effort-dots__track > i[data-lit]::before { animation: effort-dot-bounce 900ms ease-in-out infinite; }
-}
-:root[data-window-hidden] .effort-dots__track > i::before, :root[data-window-hidden] .effort-dots__track > i::after { animation-play-state: paused; }
-@keyframes effort-dot-ring { 50% { transform: scale(1.35); } }
-@keyframes effort-dot-bounce { 30% { transform: translateY(-4px); } 60% { transform: none; } }
-
 /* The note a new suggestion brings for a moment. */
 .effort-dots__note { position: absolute; right: 52px; bottom: calc(100% + 6px); z-index: 2; padding: 3px 8px; border-radius: 6px; background: var(--tt-card); box-shadow: 0 0 0 1px var(--tt-hairline); color: var(--tt-text-muted); font-size: 11.5px; white-space: nowrap; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity 160ms ease-out, transform 200ms cubic-bezier(.2, .8, .2, 1); }
 .effort-dots__note[data-shown] { opacity: 1; transform: none; }
 .effort-dots__note:empty { display: none; }
 
-/* While a turn runs the dots hold Stop: pointing at them or reaching it with Tab shows it. */
-.effort-dots__stop { position: absolute; inset: 3px -2px; display: grid; place-items: center; padding: 0; border: 0; border-radius: 12px; background: var(--tt-pill); color: var(--tt-pill-ink); opacity: 0; cursor: pointer; transition: opacity 140ms ease-out; }
-.effort-dots__hold:hover > .effort-dots__stop, .effort-dots__stop:focus-visible { opacity: 1; }
+/* A small, steady Stop leaves every effort tooltip reachable while a turn runs. */
+.effort-dots__stop { display: grid; place-items: center; width: 22px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.effort-dots__stop:hover { background: var(--tt-pill); color: var(--tt-pill-ink); }
 .effort-dots__stop:disabled { cursor: default; }
-.effort-dots__hold:not(:has(> .effort-dots__track)) { width: 30px; }
-.effort-dots__hold:not(:has(> .effort-dots__track)) > .effort-dots__stop { opacity: 1; }
 /* A thread whose settings cannot change shows its model's name; the line saying so stays for assistive technology. */
 .thread-prompt[data-quiet] .thread-prompt__model small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

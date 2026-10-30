@@ -287,6 +287,11 @@ msgstr "{directory} has nothing to mention."
 msgid "{done} of {total} done"
 msgstr "{done} of {total} done"
 
+#. An effort dot's tooltip and value: {effort} is a reasoning effort level, such as High; {name} is the thread's speed, such as Fast or Standard.
+#: src/renderer/src/agents/EffortDots.tsx
+msgid "{effort} · {name}"
+msgstr "{effort} · {name}"
+
 #. {error} says why the answer was not sent; "It" is the answer.
 #. {error} says why the prompt was not queued; "It" is the prompt.
 #: src/renderer/src/agents/ThreadComposer.tsx
@@ -733,14 +738,17 @@ msgstr "{name} is checked out in another worktree. Start a new thread there to w
 msgid "{name} is now {installed}."
 msgstr "{name} is now {installed}."
 
+#. {name} and {next} are speeds, such as Fast; {cost} and {nextCost} are sentences about what they cost.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{name} is on for this thread. {cost}"
 msgstr "{name} is on for this thread. {cost}"
 
+#. {name} and {next} are speeds, such as Fast; {cost} and {nextCost} are sentences about what they cost.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{name} is on for this thread. {cost} Press for {next}: {nextCost}"
 msgstr "{name} is on for this thread. {cost} Press for {next}: {nextCost}"
 
+#. {name} and {next} are speeds, such as Fast; {cost} and {nextCost} are sentences about what they cost.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{name} is on for this thread. {cost} Press for Standard."
 msgstr "{name} is on for this thread. {cost} Press for Standard."
@@ -917,15 +925,18 @@ msgid "{provider} did not report this agent’s result."
 msgstr "{provider} did not report this agent’s result."
 
 #. {error} is the provider's or Sotto's own reason, shown as it came.
+#. {provider} is a provider's name or "The provider"; {wanted} is a thread speed, such as Fast; {error} is the provider's or Sotto's own reason, shown as it came.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} did not switch to {wanted}. {error}"
 msgstr "{provider} did not switch to {wanted}. {error}"
 
+#. {provider} is a provider's name or "The provider"; {wanted} is a thread speed, such as Fast; {model} is the model the thread is now on.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} did not switch to {wanted}. The thread is on {model} at Standard speed."
 msgstr "{provider} did not switch to {wanted}. The thread is on {model} at Standard speed."
 
 #. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are a model, effort or permission mode.
+#. {provider} is a provider's name or "The provider"; {wanted} and {inForce} are thread speeds, such as Fast or Standard.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} did not switch to {wanted}. The thread stays on {inForce}; nothing else changed."
 msgstr "{provider} did not switch to {wanted}. The thread stays on {inForce}; nothing else changed."
@@ -3221,8 +3232,8 @@ msgid "Created {subject}"
 msgstr "Created {subject}"
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
-msgid "Created on first send. Choose the workspace and branch under the composer."
-msgstr "Created on first send. Choose the workspace and branch under the composer."
+msgid "Created on first send. Choose the workspace and branch before sending."
+msgstr "Created on first send. Choose the workspace and branch before sending."
 
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Creates the repository on GitHub through the gh command and your own sign-in, adds it as origin, and pushes the current branch."
@@ -7452,8 +7463,8 @@ msgstr "Sotto did not get {provider}'s answer about {wanted}, so the chip shows 
 
 #. {provider} is a provider's name or "The provider".
 #: src/renderer/src/agents/ThreadOptions.tsx
-msgid "Sotto did not get {provider}'s answer about the speed, so the bolt shows what the thread last reported. Try again to send it once more."
-msgstr "Sotto did not get {provider}'s answer about the speed, so the bolt shows what the thread last reported. Try again to send it once more."
+msgid "Sotto did not get {provider}'s answer about the speed, so the speed control shows what the thread last reported. Try again to send it once more."
+msgstr "Sotto did not get {provider}'s answer about the speed, so the speed control shows what the thread last reported. Try again to send it once more."
 
 #. {name} is the name of a saved host.
 #: src/renderer/src/agents/HostUpdates.tsx
@@ -7558,6 +7569,7 @@ msgstr "Standard"
 msgid "Standard speed."
 msgstr "Standard speed."
 
+#. {name} and {next} are speeds, such as Fast; {cost} and {nextCost} are sentences about what they cost.
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Standard speed. Press for {next}: {nextCost}"
 msgstr "Standard speed. Press for {next}: {nextCost}"

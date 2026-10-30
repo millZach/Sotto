@@ -1,6 +1,6 @@
 # Thread and worker-role speed
 
-Drake asked for Fast and Ultra fast in Watcher's worker roles and both composers, then authorized a local Owl install before review and merge. This amends ADR-0143, ADR-0091 and ADR-0161.
+Drake asked for Fast and Ultra fast in Watcher's worker roles and both composers, then authorized a local Owl install before review and merge. After trying `.5`, he asked for a quieter pill shared with Watcher, still effort dots that also set speed, mode-colored permissions and branch controls in the pane header. This amends ADR-0143, ADR-0091 and ADR-0161.
 
 ## Live Codex catalog
 
@@ -45,3 +45,15 @@ Drake's revised build instruction was completed before the review and PR. Owl **
 The `finish.zsh` and `swap.zsh` recipe was copied from the `.3` swap directory into `/tmp/sotto-owl-0.1.41-owl.20261029.5-swap/`, with the build path and version changed. The detached swap quit `com.sotto.desktop`, installed and relaunched the app. It quit normally in two seconds; no termination signal was needed. The script retains SIGTERM after 60 seconds and never uses SIGKILL.
 
 The installed bundle reports `.5` and passes `codesign --verify --deep --strict`. Its `app.asar` matches the built bundle (SHA-256 `22cdba8ff40410c4afae239f0c7cda1c3b6a43f36bfbb70f5e7246dd63f4c21c`). The previous `.4` bundle remains at `/tmp/sotto-owl-0.1.41-owl.20261029.5-swap/old-Sotto.app` for rollback. The install and relaunch were authorized separately from the headless UI checks; no app-launched test journey was run.
+
+## Quiet pill refinement for Owl .6
+
+The quiet composer removes the machine/workspace/branch footer and the delegation Stop note. The existing branch and workspace controls move beside the folder in the pane header. The full composer remains available with the Owl switch off. Watcher uses the same pill and keeps its model, effort and speed shared with Orchestrating.
+
+Effort dots are 20% larger and closer together, with no running bounce or suggested-ring animation. Each names its effort and speed. Pressing the selected dot or Option/Alt+Up/Down cycles the catalog's speeds. Fast is purple; Ultrafast adds a brighter purple and soft glow. The permissions shield follows the selected mode; Full access has a slow gold sheen, disabled by reduced motion.
+
+The refinement passed typecheck, lint, 17 speed-control assertions, four interface-catalog assertions and 111 theme-token assertions. The theme check caught a capsule radius on the small Stop; its corners now use the standard six pixels. The structural delegation passed 150 assertions in five individually run files (`branchToolbar`, `threadDelegation`, `threadPaneMenu`, `threadWorkingCopy`, `watcherView`). The final headless captures include thread and Watcher pills at Standard, Fast, Ultrafast, running, queued and Full access, in both themes and all three window sizes. Computed styles confirm 5.4 px dots on 9 px centers, no dot or ring animation, and a 4.8-second gold sheen that becomes `none` with reduced motion. A small visible Stop keeps the dot tooltips reachable, as the brief permits.
+
+Selected refinement captures: [dark thread pill](../../artifacts/agent-speed/quiet-thread-dark.png), [light thread pill at minimum size](../../artifacts/agent-speed/quiet-thread-light.png), [dark Watcher pill](../../artifacts/agent-speed/quiet-watcher-dark.png), and [light Watcher pill at minimum size](../../artifacts/agent-speed/quiet-watcher-light.png). The Watcher sheets also show its first-message dots at each speed. New Watcher is a named glyph in the quiet pill. The temporary rendering harness was removed.
+
+The final Watcher checks passed 54 assertions in `watcherView` and 17 in `watcherNew`, including first-message speed cycling with worker roles both on and off, preserving speed through effort changes, and the named New Watcher glyph. Final typecheck and lint were clean.
