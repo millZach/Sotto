@@ -17,13 +17,13 @@ The rubric behind every "rubric §" reference is [`docs/research/ios-ui-good-pra
 
 Agreed with the [desktop review](2026-10-29-ui-hillclimb-desktop.md) so that one change can fix both apps. The desktop page uses the same words.
 
-- **A flat card with no stripe:** iPhone finding 5; desktop findings [12](2026-10-29-ui-hillclimb-desktop.md) and [14](2026-10-29-ui-hillclimb-desktop.md).
+- **A flat card with no stripe:** iPhone finding 5; desktop findings 12 (#1830) and 13 (#1831).
 - **Counts count threads:** iPhone finding 7. The desktop already does this.
-- **An error names its control:** iPhone finding 17; desktop finding [7](2026-10-29-ui-hillclimb-desktop.md).
-- **Reversible actions act at once with Undo:** iPhone finding 14; desktop finding [3](2026-10-29-ui-hillclimb-desktop.md). Watch already works this way on the iPhone.
-- **Content scrolls clear of a floating composer:** iPhone finding 2; desktop finding [2](2026-10-29-ui-hillclimb-desktop.md).
-- **Sentence case:** the iPhone already writes it everywhere; desktop finding [11](2026-10-29-ui-hillclimb-desktop.md).
-- **One type ramp and one radius scale, as tokens:** desktop finding [13](2026-10-29-ui-hillclimb-desktop.md). The iPhone's text already sits on its six-step ramp (`TextScale`); its icons don't (finding 13). Its corners use the four `Radius` tokens 40 times and literal radii 30 times, at ten values from 2 to 26. That tidy-up has nothing to show in a screenshot, so it is listed here rather than as a finding. The two apps can share the names without sharing the points, since iOS body text is 17.
+- **An error names its control:** iPhone finding 17; desktop finding 5 (#1823).
+- **Reversible actions act at once with Undo:** iPhone finding 14; desktop finding 8 (#1826). Watch already works this way on the iPhone.
+- **Content scrolls clear of a floating composer:** iPhone finding 2; desktop finding 2 (#1820).
+- **Sentence case:** the iPhone already writes it everywhere; desktop finding 11 (#1829).
+- **One type ramp and one radius scale, as tokens:** desktop finding 15 (#1833). The iPhone's text already sits on its six-step ramp (`TextScale`); its icons don't (finding 13). Its corners use the four `Radius` tokens 40 times and literal radii 30 times, at ten values from 2 to 26. That tidy-up has nothing to show in a screenshot, so it is listed here rather than as a finding. The two apps can share the names without sharing the points, since iOS body text is 17.
 
 ## Already right, and worth keeping
 
