@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
 import type { StoreWorker, StoreWorkerOptions, WorkerMessage } from '../../src/main/agents/storeWorker'
-import { READ_PIECE_RECORDS } from '../../src/main/agents/storeWorkerProtocol'
+import { READ_PIECE_RECORDS, type WireWrite } from '../../src/main/agents/storeWorkerProtocol'
 import { ThreadStore } from '../../src/main/agents/threadStore'
 import type { ThreadStoreWriter } from '../../src/main/agents/threadStoreWriter'
 import { WorkspaceHost } from '../../src/main/agents/workspace'
@@ -258,6 +258,36 @@ describe('a stored thread read back on the store worker', () => {
     expect(shownRecords[1]).toMatchObject({ sequence: 1, output: 'Changed' })
     expect(shownRecords.at(-1)).toMatchObject({ id: 'late', sequence: many.length })
     expect(f.provider.observed).toEqual([THREAD])
+  })
+
+  it('reads a stored thread no window looks at on the worker when its provider publishes a record, and saves it as what changed', async () => {
+    const saved = Array.from({ length: READ_PIECE_RECORDS + 20 }, (_, index) => record(`r${index}`, index))
+    const f = await stored(saved)
+    f.host.observeThreads([DOCS])
+    const read = vi.spyOn(ThreadStore.prototype, 'readActivities')
+    const wire = vi.spyOn(f.store.worker! as unknown as { wire(write: unknown, preserved: () => readonly string[]): WireWrite }, 'wire')
+    // A turn its provider runs out of view: the list it holds, one record longer.
+    f.provider.state.threads[0]!.activities = [...structuredClone(saved), record('turn', 0)]
+    f.provider.emit()
+    // The record waits for the list, read on the worker (#1645).
+    expect(readsInFlight(f.host).get(THREAD)?.held).toHaveLength(1)
+    expect(shown(f.host)!.activities).toBeUndefined()
+    await readsArrived(f.host)
+    expect(read).not.toHaveBeenCalled()
+    const ids = [...saved.map(item => item.id), 'turn']
+    expect(shown(f.host)!.activities!.map(item => item.id)).toEqual(ids)
+    expect(shown(f.host)!.activities!.at(-1)).toMatchObject({ id: 'turn', sequence: saved.length })
+    // Its next save sends the worker the one record that changed since the list it read, not the list whole.
+    await f.host.flush()
+    await f.writes.confirmed()
+    const entries = wire.mock.results.flatMap(({ value }) => {
+      const write = value as WireWrite
+      return write.kind === 'activities' ? write.entries : write.kind === 'activity-list' ? [write.entry] : []
+    }).filter(entry => entry.threadId === THREAD)
+    expect(entries).toHaveLength(1)
+    expect(entries[0]).toMatchObject({ base: expect.any(Number) as number, ids })
+    expect('changed' in entries[0]! ? entries[0].changed.map(item => item.id) : undefined).toEqual(['turn'])
+    expect(f.disk().map(item => [item.id, item.sequence])).toEqual(ids.map((id, sequence) => [id, sequence]))
   })
 
   it('reads on main when the worker goes between the pieces of a list', async () => {

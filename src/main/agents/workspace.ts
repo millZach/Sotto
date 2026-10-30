@@ -146,7 +146,7 @@ function settledHeadMoved(before: readonly AgentActivity[] | undefined, after: r
   return [...settledHeadMovers(after)].some(id => !settled.has(id))
 }
 
-/** A stored thread's records on their way back from the store worker for a window (`readBack`). */
+/** A stored thread's records on their way back from the store worker, for a window (`readBack`) or a record (`mergeActivities`). */
 interface ActivityRead {
   /** Each record the thread's provider published meanwhile, merged onto the list in the order it came once it is here. */
   readonly held: AgentThread[]
@@ -2875,11 +2875,20 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   private readBack(thread: AgentThread): void {
     if (this.activityReads.has(thread.id)) return
-    const answer = this.writes.readActivities?.(thread.id)
-    if (!answer) { this.holdActivities(thread); return }
-    const held: AgentThread[] = []
-    const read: ActivityRead = { held, done: answer.then(result => this.activitiesArrived(thread.id, read, result)).catch(() => { console.warn('thread-activity-read-back-failed') }) }
-    this.activityReads.set(thread.id, read)
+    if (!this.readOnWorker(thread.id)) this.holdActivities(thread)
+  }
+  /**
+   * Starts reading a stored thread's records back on the store worker, and answers the read; undefined where it cannot:
+   * with no worker, with writes waiting unsent that the read must follow, or while closing, whose last save must keep what
+   * the provider publishes now. The caller then reads on main.
+   */
+  private readOnWorker(threadId: string): ActivityRead | undefined {
+    if (this.stopping) return undefined
+    const answer = this.writes.readActivities?.(threadId)
+    if (!answer) return undefined
+    const read: ActivityRead = { held: [], done: answer.then(result => this.activitiesArrived(threadId, read, result)).catch(() => { console.warn('thread-activity-read-back-failed') }) }
+    this.activityReads.set(threadId, read)
+    return read
   }
   /**
    * A read that will not be used. The provider is told the observation once no observed thread's read is on its way: the
@@ -2933,10 +2942,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       const stored = 'activities' in result ? (): readonly AgentActivity[] => result.activities
         : 'unreadable' in result ? (): never => { throw new Error('Thread activity could not be read') } : undefined
       const before = this.holdActivities(thread, stored)
-      for (const record of read.held) {
-        const current = this.threadById(threadId)!
-        this.touched(current).activities = this.mergeActivities(record, current)
-      }
+      // Each record that comes out of the merge the same as the one read is that one, as from a read (`keepingHeld`), so the
+      // next save sends the store worker only what changed since its read (#1645).
+      this.mergingReadBack = true
+      try {
+        for (const record of read.held) {
+          const current = this.threadById(threadId)!
+          this.touched(current).activities = this.mergeActivities(record, current)
+        }
+      } finally { this.mergingReadBack = false }
       if (read.held.length) {
         // A record the provider settled while the list was on its way may have moved the thread's branch (`refreshIfHeadMoved`).
         if (settledHeadMoved(before, this.threadById(threadId)!.activities)) this.scheduleWorktreeRefresh(threadId)
@@ -4202,8 +4216,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (old.historyEpoch !== thread.historyEpoch) { this.storedActivity.delete(thread.id); this.letReadGo(thread.id) }
       else if (input !== undefined && input.length > 0 && this.storedInputs.get(thread.id) !== input) {
         // While the store worker reads the list back, the record waits to merge onto it (`activitiesArrived`); the same
-        // array published again is the same input.
-        if (reading) { if (reading.held.at(-1)?.activities !== input) reading.held.push(thread); return undefined }
+        // array published again is the same input. A thread no window looks at reads it there too, so a turn run out of
+        // view holds main for none of the read (#1645).
+        const read = reading ?? this.readOnWorker(thread.id)
+        if (read) { if (read.held.at(-1)?.activities !== input) read.held.push(thread); return undefined }
         this.heldForInput.set(thread.id, this.holdActivities(old))
       } else {
         // The array kept for this comparison is only ever the one the provider is still publishing, which it holds anyway.
@@ -4229,9 +4245,10 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const combined = old?.historyEpoch !== thread.historyEpoch ? input ?? [] : mergeAgentActivities(old?.activities, incoming)
     // A wordless Codex reasoning summary an earlier Sotto saved goes once the thread's activity is read again.
     const reconciled = combined.some(wordlessReasoningSummary) ? combined.filter(record => !wordlessReasoningSummary(record)) : combined
-    // A read's whole reconciliation makes each record again; one that comes out as the record held is the record held, so
-    // what the workspace keeps is what it always kept from a read, and nothing downstream sees an unchanged record as new.
-    const merged = this.acceptingRead && old?.activities?.length ? keepingHeld(reconciled, old.activities) : reconciled
+    // A read's whole reconciliation makes each record again, as does merging onto a list just read back from the store; one
+    // that comes out as the record held is the record held, so what the workspace keeps is what it always kept, and nothing
+    // downstream, the store worker's wire included, sees an unchanged record as new.
+    const merged = (this.acceptingRead || this.mergingReadBack) && old?.activities?.length ? keepingHeld(reconciled, old.activities) : reconciled
     // Legacy input cannot be reused on the next update. Keep its full reconciliation path
     // without adding an ownership copy that every subsequent publication must replace.
     const output = stable ? immutableActivities(merged) : merged
@@ -4433,6 +4450,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** A read's accept rather than a publication's: its activity is reconciled whole (`mergeActivities`). */
   private acceptingRead = false
+  /** Whether records published while a stored thread's list was on its way are being merged onto it (`activitiesArrived`). */
+  private mergingReadBack = false
   private acceptNow(snapshot: AgentHostSnapshot, fromPublication: boolean): void {
     const previousAcceptAt = this.acceptedAt
     this.acceptedAt = Date.now()

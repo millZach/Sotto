@@ -358,3 +358,21 @@ The workspace still reconciles every record a read brings, as it did when reads 
 take the merge it gave last time for the same certified list; at the record limit that would keep a different set of the
 oldest records. A read's record that comes out the same as the record held is the record held.
 
+## Amendment: a background turn reads its thread's records on the worker (October 30, 2026, #1645)
+
+This changes step 3's "What stays on main" above. A record a provider publishes for a stored thread no window looks at
+now reads the thread's list back on the store worker, as a window's read does. The record waits, and is merged onto the
+list once it arrives, in the order it came. Before, the list was read on main at once. That was every turn of a thread
+run out of view: worker swarms, delegated threads, Watcher's workers and babysat threads. At the owner's scale it held
+main about 12 ms a turn for a thread of 2,000 records (`docs/perf/2026-10-30-background-turn-readback.md`), and 0.61 s
+in the owner's recording of one such read. Nothing about the thread waits on the list but its records, which no pane
+shows. The other fields of what the provider published are taken in at once. While closing, and wherever the worker cannot
+read, the list is still read on main at once, so the last save keeps what was published.
+
+The worker keeps the list it read as the one it last holds for the thread. The thread's next save is sent as what
+changed since then, rather than whole. A merge onto a list just read back gives each record that comes out the same as
+the record read that record, as a read's merge does. A list saved, released or forgotten while a read is on its way
+replaces what the worker keeps, so main does not send changes against that read. What the store keeps is unchanged:
+each save still writes the list the workspace holds. The adapters' handoff, Watcher's recent activity and a start whose
+subagent words have not moved still read on main.
+
