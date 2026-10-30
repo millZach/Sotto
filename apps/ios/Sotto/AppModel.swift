@@ -67,13 +67,13 @@ extension AppModel {
         refs.formUnion(pending.map { ThreadRef(hostID: $0.hostID, threadID: $0.threadID).id })
         return refs
     }
-    /// The Threads tab's badge: the requests Needs you shows, and the Recent threads that finished while nothing showed
-    /// them and have not been opened on either device (ADR-0046). A delegated thread counts only through the row that
-    /// stands for it (ADR-0081).
+    /// The Threads tab's badge: the threads Needs you lists, as the desktop counts them, so a thread with two requests
+    /// counts once (ADR-0046, amended). A Recent thread that finished unseen keeps its dot and bold title without adding
+    /// to it. A delegated thread counts only through the row that stands for it (ADR-0081).
     var threadsBadge: Int {
         if let kept = listed.badge, kept.opened == selected { return kept.count }
         let groups = focusThreads(opened: selected)
-        let count = groups.requestCount + groups.unreadFinishedCount
+        let count = groups.questions.count
         listed.badge = (opened: selected, count: count)
         return count
     }

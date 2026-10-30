@@ -456,17 +456,22 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(model.focusThreads().questions.map(\.ref), [ref])
         XCTAssertEqual(model.focusThreads(query: "branch").questions.map(\.ref), [ref])
         XCTAssertTrue(model.focusThreads(query: "nowhere").isEmpty)
+        // Two requests in one thread are one thread that needs the user, as the desktop counts it.
+        try connection.push(.shell(changeShell(requests: [["id": "asked", "kind": "permission", "text": "Which branch?", "options": []],
+                                                          ["id": "also", "kind": "permission", "text": "Read the notes?", "options": []]])))
+        XCTAssertEqual(model.threadsBadge, 1, "The badge counts threads, not requests")
         try connection.push(.shell(changeShell()))
         XCTAssertEqual(model.threadsBadge, 0)
         XCTAssertTrue(model.focusThreads().questions.isEmpty)
         XCTAssertTrue(model.focusThreads(query: "branch").isEmpty)
-        // A thread that finished unseen counts, unless it is the one open here; another computer's filter shows nothing.
+        // A thread that finished unseen is marked on its row, unless it is the one open here, and doesn't add to the badge;
+        // another computer's filter shows nothing.
         var unseen = try XCTUnwrap(JSONSerialization.jsonObject(with: JSONEncoder().encode(HostConnection.shell)) as? [String: Any])
         var host = try XCTUnwrap(unseen["host"] as? [String: Any])
         var threads = try XCTUnwrap(host["threads"] as? [[String: Any]])
         threads[0]["finishedUnread"] = true; host["threads"] = threads; unseen["host"] = host
         try connection.push(.shell(JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: unseen))))
-        XCTAssertEqual(model.threadsBadge, 1)
+        XCTAssertEqual(model.threadsBadge, 0)
         XCTAssertEqual(model.focusThreads().unreadFinishedCount, 1)
         XCTAssertEqual(model.focusThreads(opened: ref).unreadFinishedCount, 0)
         XCTAssertFalse(model.focusThreads(show: .only(ref.hostID)).isEmpty)
