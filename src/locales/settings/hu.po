@@ -4180,6 +4180,10 @@ msgstr ""
 msgid "Reduced motion"
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Reload the window"
+msgstr ""
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Remote hosts"
@@ -6080,6 +6084,10 @@ msgstr ""
 #. Read between two version numbers: from one version to another.
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "to"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Toggle developer tools"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/themeLibrary.ts

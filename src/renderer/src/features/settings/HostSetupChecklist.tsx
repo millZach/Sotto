@@ -215,7 +215,7 @@ export function HostSetupChecklist({ name, summary, host, outcome, error, approv
               : t`${name} uses Tailscale SSH, which asks you to approve new connections in your browser. Sotto waits up to 5 minutes and carries on when you approve.`}</p>
             <div className="host-setup__actions">
               {approvalUrl ? <Button ref={approval} onClick={onOpenApproval}>{t`Open approval page`}</Button> : null}
-              <button type="button" className="host-setup__link tt-focusable" onClick={onOpenGuide}>{t`Why Tailscale asks`}</button>
+              <button type="button" className="host-setup__link tt-focusable" data-outside-link="" onClick={onOpenGuide}>{t`Why Tailscale asks`}</button>
             </div>
             {approvalError ? <p className={typeof approvalError === 'string' ? 'host-setup__problem' : 'host-setup__problem tt-paragraph'} role="alert">{shownWords(approvalError)}</p> : null}
           </div></div> : null}

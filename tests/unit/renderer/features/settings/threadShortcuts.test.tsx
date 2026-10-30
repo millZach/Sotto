@@ -88,7 +88,7 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     expect(onUpdateSettings).not.toHaveBeenCalled()
   })
 
-  it('lets a shortcut take the browser keys a shipped build no longer answers (#1825)', async () => {
+  it('lets a shortcut take Force Reload’s keys, which no menu answers now (#1825)', async () => {
     const { onUpdateSettings, user } = setup()
     await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Alt R' }))
     press('ControlLeft', 'ShiftLeft', 'KeyR')

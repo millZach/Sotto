@@ -27,10 +27,10 @@ describe('thread shortcut choices (ADR-0133)', () => {
       }
     }
     expect(chosenThreadChord(settings(), 'restore')).toBe('mod+alt+r')
-    // Sotto's own menu on every platform answers no browser keys in a shipped build (#1825): Close and Actual Size remain.
-    for (const chord of ['mod+shift+r', 'mod+r', 'mod+shift+i']) {
-      for (const platform of ['win32', 'linux'] as const) expect(menuOwnedChord(chord, platform), `${chord} on ${platform}`).toBeNull()
-    }
+    // Sotto's own menu on every platform has no Force Reload (#1825); an unpackaged run's Reload and developer tools stay refused.
+    for (const platform of ['win32', 'linux'] as const) expect(menuOwnedChord('mod+shift+r', platform), platform).toBeNull()
+    expect(menuOwnedChord('mod+r', 'win32')).toBe('ctrl+r')
+    expect(menuOwnedChord('mod+shift+i', 'linux')).toBe('ctrl+shift+i')
     expect(menuOwnedChord('mod+w', 'win32')).toBe('ctrl+w')
     expect(menuOwnedChord('ctrl+0', 'linux')).toBe('ctrl+0')
     expect(menuOwnedChord('mod+w', 'darwin')).toBe('mod+w')

@@ -18,7 +18,14 @@ describe('the pointer', () => {
 
   it('is the hand in one rule only, for links, in global.css', () => {
     const hands = sheets.flatMap(({ path, css }) => [...css.matchAll(/([^{}]*)\{[^{}]*cursor:\s*pointer/gu)].map(match => `${path}: ${match[1]!.replace(/\s+/gu, ' ').trim()}`))
-    expect(hands).toEqual(["src/renderer/src/styles/global.css: :where(a[href], [role='link'])"])
+    expect(hands).toEqual(["src/renderer/src/styles/global.css: :where(a[href], [role='link'], [data-outside-link])"])
+  })
+
+  it('keeps the hand on the text links that open a page outside Sotto', () => {
+    // Release notes from the update toast, and Tailscale's guide from host setup.
+    for (const file of ['src/renderer/src/App.tsx', 'src/renderer/src/features/settings/HostPhonesDialog.tsx', 'src/renderer/src/features/settings/HostSetupChecklist.tsx']) {
+      expect(readFileSync(join(process.cwd(), file), 'utf8'), file).toContain('data-outside-link=""')
+    }
   })
 
   it('is the arrow on every control, set once in global.css with no weight of its own', () => {

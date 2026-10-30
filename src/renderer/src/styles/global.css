@@ -65,7 +65,8 @@ summary,
 }
 
 /* The pointer (#1832). A control shows the arrow, as a desktop app's buttons, rows, tabs and toggles do; the hand is
-   only for a link that opens a page or a file, in a reply or out to the web; text keeps the I-beam. This is the one
+   only for a link that opens a page or a file, in a reply or out to the web, and for a text link drawn as a button
+   that opens a page outside Sotto, which says so with `data-outside-link`; text keeps the I-beam. This is the one
    place either is set: zero specificity, so a disabled, dragged or resizing control's own cursor still wins, and a
    choice drawn as a label or a row says `cursor: default` itself, since a label would hand it to a field inside. */
 :where(button, summary, select, [role='button'], [role='tab'], [role='switch'], [role='checkbox'], [role='radio'],
@@ -74,7 +75,7 @@ summary,
   cursor: default;
 }
 
-:where(a[href], [role='link']) {
+:where(a[href], [role='link'], [data-outside-link]) {
   cursor: pointer;
 }
 

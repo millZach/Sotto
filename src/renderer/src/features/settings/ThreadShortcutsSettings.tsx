@@ -29,6 +29,8 @@ export interface ThreadShortcutsSettingsProps {
 
 /** What the application menu calls each chord it owns (`menuOwnedChords`), for naming it in a refusal. */
 const MENU_OWNER_NAMES: Readonly<Record<string, MessageDescriptor>> = {
+  'ctrl+r': msg`Reload the window`,
+  'ctrl+shift+i': msg`Toggle developer tools`,
   'ctrl+w': msg`Close the window`,
   'mod+w': msg`Close the window`,
   'ctrl+0': msg`Actual size`,

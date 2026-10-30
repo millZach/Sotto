@@ -4180,6 +4180,10 @@ msgstr "Reduce motion"
 msgid "Reduced motion"
 msgstr "Reduced motion"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Reload the window"
+msgstr "Reload the window"
+
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Remote hosts"
@@ -6081,6 +6085,10 @@ msgstr "Threads, pairing and settings for this host live here."
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "to"
 msgstr "to"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Toggle developer tools"
+msgstr "Toggle developer tools"
 
 #: src/renderer/src/features/settings/themes/themeLibrary.ts
 msgid "Too many copies of \"{name}\"."
