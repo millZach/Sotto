@@ -6,6 +6,7 @@ export default tseslint.config(
     ignores: [
       'native/coreml-asr/.build/**',
       'artifacts/watcher-room-state/**',
+      'artifacts/worker-swarms/**',
       'artifacts/next-prompt-quiet-composer/**',
       'artifacts/watcher-picture-owls/**',
       'artifacts/certified-detail/**',

@@ -845,3 +845,22 @@ artifacts/next-prompt-quiet-composer/*
 !artifacts/next-prompt-quiet-composer/speed-thread.png
 !artifacts/next-prompt-quiet-composer/speed-watcher.png
 !artifacts/next-prompt-quiet-composer/checks.json
+
+# Worker swarms: only the headless captures cited by the verification note.
+artifacts/worker-swarms/*
+!artifacts/worker-swarms/settings-capacity-dark-1280x800.png
+!artifacts/worker-swarms/settings-capacity-dark-1600x1000.png
+!artifacts/worker-swarms/settings-capacity-dark-820x560.png
+!artifacts/worker-swarms/settings-capacity-light-1280x800.png
+!artifacts/worker-swarms/settings-capacity-light-1600x1000.png
+!artifacts/worker-swarms/settings-capacity-light-820x560.png
+!artifacts/worker-swarms/settings-roles-dark-1280x800.png
+!artifacts/worker-swarms/settings-roles-dark-1600x1000.png
+!artifacts/worker-swarms/settings-roles-dark-820x560.png
+!artifacts/worker-swarms/settings-roles-light-1280x800.png
+!artifacts/worker-swarms/settings-roles-light-1600x1000.png
+!artifacts/worker-swarms/settings-roles-light-820x560.png
+!artifacts/worker-swarms/sidebar-closed-dark.png
+!artifacts/worker-swarms/sidebar-closed-light.png
+!artifacts/worker-swarms/sidebar-dark.png
+!artifacts/worker-swarms/sidebar-light.png
