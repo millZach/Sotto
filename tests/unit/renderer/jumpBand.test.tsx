@@ -30,6 +30,12 @@ describe('the Jump to latest band', () => {
     expect(reachesJumpBand(transcript(500, 120, { top: 100, bottom: 300 }))).toBe(false)
   })
 
+  it('ignores the button’s own clear space when deciding whether a request reaches it', () => {
+    const scroller = transcript(500, 184, { top: 330, bottom: 360 })
+    scroller.style.setProperty('--thread-compose-cover', '120px')
+    expect(reachesJumpBand(scroller)).toBe(true)
+  })
+
   it('sits at the foot when the composer stacks', () => {
     expect(reachesJumpBand(transcript(500, 0, { top: 100, bottom: 460 }))).toBe(true)
     expect(reachesJumpBand(transcript(500, 0, { top: 100, bottom: 360 }))).toBe(false)

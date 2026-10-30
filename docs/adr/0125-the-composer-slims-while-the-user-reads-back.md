@@ -6,6 +6,8 @@ Accepted October 23, 2026, as an Owl feature (`composer-shrink`). The user picke
 
 Amended October 26, 2026, at the user's ask ("when I send a prompt it should not jump to the latest message from where I was at in the chat history"): a send, a queued follow-up or a steer from a user reading back leaves the transcript where it is. What it adds lands at the end unseen and lights **New messages**, as anything else arriving does; a send from the end still follows it. This holds on stable as well as Owl.
 
+Amended October 30, 2026, after the reported bottom clipping in Watcher and threads: the transcript keeps its scroll box, but its readable viewport ends above the visible composer and **Jump to latest**. Their measured heights set the inset. A composer or window resize keeps a reader at the end following; a reader above the end keeps their place. No composer styling or motion changes.
+
 ## Context
 
 The thread composer floats over the transcript's foot, so the thread runs on under it. A full composer is a card about 130 pixels tall with its options row and the line under it. While the user reads back through a long thread, that card covers the words they are reading for no reason: nothing is being written. T3 Code shrinks its composer to a slim line in the same situation.

@@ -113,9 +113,10 @@ h1[tabindex='-1']:focus {
 
 /* The platform scrollbar is dressed down to a hairline thumb on an empty
    track. The widget is excluded: it never scrolls and its styling is frozen. */
+:root { --tt-scrollbar-size: 10px; }
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: var(--tt-scrollbar-size);
+  height: var(--tt-scrollbar-size);
 }
 
 ::-webkit-scrollbar-track,

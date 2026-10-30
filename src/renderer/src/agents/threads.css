@@ -62,7 +62,7 @@
 .pane-menu__item:disabled { color: var(--tt-text-muted); cursor: default; }
 .pane-menu__item:disabled > svg { opacity: .55; }
 
-.thread-transcript { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.thread-transcript { --thread-jump-gap: 14px; position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
 /* Positioned so absolute content (a diagram's hidden text) scrolls inside the transcript instead of stretching the pane. */
 /* Scroll anchoring is on because the containment below gives an offscreen message an estimated height: without it,
    a message resolving to its true height as the reader scrolls back through the history moves the text under them
@@ -154,17 +154,23 @@
 .thread-pane > .thread-transcript { min-height: min(160px, 30%); }
 .thread-workspace__compose { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
 .thread-workspace__compose > * { flex: none; }
-/* The composer floats: the transcript runs on under it and its padding keeps the last line clear of the card. The strip
-   around the card lets presses through to the transcript beneath. A waiting question stacks the composer again, so the
-   questions keep their scroll above the message bar and nothing in the transcript hides under them. */
+/* Keep the scroll box steady, but stop its words above the composer, including the strips beside the card.
+   Padding brings the last line clear; clipping also protects every line while reading back. */
 .thread-pane:not([data-greeting], [data-questions]) { --thread-compose-height: var(--thread-compose-measured, 0px); }
 .thread-pane > .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose { position: relative; z-index: 2; margin-top: calc(-1 * var(--thread-compose-height, 0px)); pointer-events: none; }
 .thread-workspace__compose > * { pointer-events: auto; }
-.thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: var(--thread-compose-height, 0px); }
-/* Stacked under a waiting question, the transcript still runs on under the card's top edge and rounded corners rather than
-   stopping in a hard line above it. Only the scroller reaches down, so the pane keeps every size it had. */
-.thread-pane[data-questions] > .thread-transcript > .thread-workspace__transcript { --thread-compose-height: 26px; margin-bottom: -26px; }
-.thread-pane .thread-transcript__jump { bottom: calc(14px + var(--thread-compose-height, 0px)); }
+/* Leave the existing scrollbar gutter whole; only the conversation ends above the floating controls. */
+.thread-transcript__viewport {
+  --thread-compose-cover: var(--thread-compose-height, 0px); --thread-jump-band: 0px;
+  --thread-readable-bottom: calc(100% - var(--thread-compose-cover) - var(--thread-jump-band));
+  display: flex; flex: 1; min-height: 0;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, calc(100% - var(--tt-scrollbar-size)) 100%, calc(100% - var(--tt-scrollbar-size)) var(--thread-readable-bottom), 0 var(--thread-readable-bottom));
+}
+.thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: calc(var(--thread-compose-cover) + var(--thread-jump-band)); }
+.thread-transcript:has(> .thread-transcript__jump) > .thread-transcript__viewport { --thread-jump-band: calc(var(--thread-jump-height, 0px) + 2 * var(--thread-jump-gap)); }
+/* The question's existing 26px overlap gets the same readable edge as a floating composer. */
+.thread-pane[data-questions] > .thread-transcript > .thread-transcript__viewport { --thread-compose-height: 26px; margin-bottom: -26px; }
+.thread-pane .thread-transcript__jump { bottom: calc(var(--thread-jump-gap) + var(--thread-compose-height, 0px)); }
 /* The slim composer (ADR-0125; Owl only, the user's pick B of docs/prototypes/composer-shrink-prototype.html): while the
    user reads back, a floating composer with nothing in it is one line with its disc beside it. The options row steps
    away, and the branch toolbar and the row under the card hide but keep their place, so the card's foot never moves
@@ -186,11 +192,12 @@
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt__actions > * > .thread-prompt__word:has(+ .thread-prompt__key) { display: none; }
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt__actions > :has(> .thread-prompt__key) { padding: 0 4px; }
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt > .thread-prompt__footer { position: absolute; top: 50%; right: 10px; margin: 0; transform: translateY(-50%); }
-.thread-pane[data-slim] .thread-transcript__jump { bottom: calc(14px + var(--thread-compose-shown, var(--thread-compose-height, 0px))); }
-/* The composer, its card and the card's field take their size at once, slim or full: the pane lays the transcript out by
+.thread-pane[data-slim] .thread-transcript__jump { bottom: calc(var(--thread-jump-gap) + var(--thread-compose-shown, var(--thread-compose-height, 0px))); }
+.thread-pane[data-slim]:not(:has(> .thread-workspace__compose[data-slim-moving])) .thread-transcript__viewport { --thread-compose-cover: var(--thread-compose-shown, var(--thread-compose-height, 0px)); }
+/* The readable edge, composer, its card and the card's field take their size at once, slim or full: the pane lays the transcript out by
    the composer's measured height, and the 1ms transition reduced motion gives every property (global.css), which a window
    in the background never finishes, would leave that room a step behind the composer and the pane with room to scroll. */
-.thread-workspace__compose, .thread-workspace__compose > .thread-prompt, .thread-workspace__compose > .thread-prompt :is(textarea, .prompt-editor) { transition: none; }
+.thread-transcript__viewport, .thread-workspace__compose, .thread-workspace__compose > .thread-prompt, .thread-workspace__compose > .thread-prompt :is(textarea, .prompt-editor) { transition: none; }
 /* Text under the card that has no surface of its own keeps the pane's, so it never reads over the transcript beneath. */
 .thread-workspace__compose > .thread-pane__meta { background: var(--tt-canvas); }
 .thread-workspace__compose > .thread-followups { background: var(--followups-surface); }
