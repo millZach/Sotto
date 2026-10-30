@@ -175,6 +175,7 @@ export default tseslint.config(
       'artifacts/codex-images/**',
       'artifacts/shell-detail-visibility/**',
       'artifacts/issue-146/**',
+      'artifacts/filled-cards-and-setup-card/**',
       'artifacts/codex-connection-recovery/**',
       'artifacts/devin-local-provider/**',
       'artifacts/muse-provider/**',

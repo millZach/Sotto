@@ -256,6 +256,8 @@ artifacts/review-667/
 
 # Workspace menu layout verification
 artifacts/workspace-picker/
+# Filled cards and setup's card (#1831, #1824); the cited captures are committed
+artifacts/filled-cards-and-setup-card/
 artifacts/codex-restored-replies/
 
 # Native iPhone Focus verification captures; force-add only images cited by the note.

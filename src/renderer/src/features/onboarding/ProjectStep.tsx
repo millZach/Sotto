@@ -34,7 +34,8 @@ function AddProject({ state, command, another }: { readonly state: AgentState; r
   const { t } = useLingui()
   return (
     <>
-      <Button variant={another ? 'secondary' : 'primary'} disabled={addProject.adding} onClick={() => void addProject.add()}>
+      {/* Skip for now is the step's filled button until a project is added (#1824). */}
+      <Button variant="secondary" disabled={addProject.adding} onClick={() => void addProject.add()}>
         <FolderPlus aria-hidden="true" size={17} />
         {another ? t`Add another folder` : t`Choose a folder`}
       </Button>

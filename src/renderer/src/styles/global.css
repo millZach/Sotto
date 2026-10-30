@@ -669,17 +669,18 @@ textarea.tt-input {
 
 /* ---- onboarding ---- */
 
-/* The progress and the card fill the room. Every step fits the card from the 820x560 minimum up, so the card's
-   own scroll is only for an error or a pairing code on a window at its smallest. */
+/* The progress, then the card, from the top of the room so the progress stays put from step to step. The card is as
+   tall as its step, up to the room (#1824): a step too tall for the window scrolls its body as a whole, under the progress
+   and over the footer, which stays in view under it. */
 .onboarding-shell {
   display: flex;
   height: 100%;
   min-height: 0;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   overflow: hidden;
-  padding: 20px 24px 22px;
+  padding: clamp(20px, 7vh, 72px) 24px 22px;
   background:
     radial-gradient(circle at 50% 118%, color-mix(in srgb, var(--tt-activity) 12%, transparent), transparent 46%),
     var(--tt-canvas);
@@ -751,15 +752,18 @@ textarea.tt-input {
   font-weight: 600;
 }
 
+/* A card is a fill one step off the room, with no outline (ADR-0110). */
 .onboarding-card {
   display: flex;
   width: min(680px, 100%);
   min-height: 0;
-  flex: 0 1 600px;
+  flex: 0 1 auto;
   flex-direction: column;
   overflow: hidden;
+  border: 0;
+  background: var(--tt-card);
+  box-shadow: none;
   padding: 0;
-  box-shadow: var(--tt-shadow-lg);
 }
 
 .onboarding-card__body {
@@ -856,27 +860,24 @@ textarea.tt-input {
   margin: 0;
 }
 
-/* One row: the wave, the sentence, the button at the end; the button takes the next row when the card is narrow. */
-.onboarding-microphone-test,
-.settings-microphone-test {
+/* One row: the wave, the sentence, the button at the end; the button takes the next row when the card is narrow. A fill
+   on the card, with no outline (ADR-0110). */
+.onboarding-microphone-test {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px 16px;
-  border: 1px solid var(--tt-hairline);
   border-radius: var(--tt-radius-md);
-  background: var(--tt-surface-sunken);
+  background: var(--tt-card-inset);
   padding: 14px 16px;
 }
 
 /* The same wave the widget and the Dictate room show, resting until the test hears something. */
-.onboarding-microphone-test .voice-wave,
-.settings-microphone-test .voice-wave {
+.onboarding-microphone-test .voice-wave {
   flex: none;
 }
 
-.onboarding-microphone-test p,
-.settings-microphone-test p {
+.onboarding-microphone-test p {
   flex: 1 1 180px;
   min-width: 0;
   margin: 0;
@@ -893,11 +894,7 @@ textarea.tt-input {
   font-weight: 600;
 }
 
-/* Heard: the box takes the success colour and a check stands where the wave was. */
-.onboarding-microphone-test[data-state='heard'] {
-  border-color: color-mix(in srgb, var(--tt-success) 55%, var(--tt-hairline));
-  background: color-mix(in srgb, var(--tt-success) 8%, var(--tt-surface-sunken));
-}
+/* Heard: a check stands where the wave was, and the sentence says so. */
 
 /* While the microphone opens the button waits rather than disabling, so keyboard focus stays on it. */
 .onboarding-microphone-test .tt-button[aria-disabled='true'] {
@@ -916,8 +913,7 @@ textarea.tt-input {
   color: var(--tt-success);
 }
 
-.onboarding-microphone-test .tt-button,
-.settings-microphone-test .tt-button {
+.onboarding-microphone-test .tt-button {
   flex: none;
   margin-left: auto;
 }
@@ -927,37 +923,18 @@ textarea.tt-input {
   margin-left: 0;
 }
 
-/* The settings card sits in a control column about 240px wide, where the wave, the sentence and the button never
-   share a line: they stack, left-aligned, and the button takes the card's width. */
-.settings-microphone-test {
-  grid-template-columns: minmax(0, 1fr);
-  display: grid;
-  gap: 10px;
-}
-
-.settings-microphone-test .voice-wave {
-  justify-self: start;
-}
-
-.settings-microphone-test .tt-button {
-  width: 100%;
-  margin-left: 0;
-  justify-content: center;
-}
-
+/* Setup's notes are fills on the card, with no edge and no tint: their words say what went wrong (ADR-0110). */
 .onboarding-recovery,
 .onboarding-completion-error {
   margin: 0;
-  border-left: 2px solid var(--tt-warning);
-  background: color-mix(in srgb, var(--tt-warning) 9%, transparent);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card-inset);
   padding: 12px 14px;
   font-size: 13px;
 }
 
 .onboarding-completion-error {
   margin-top: 14px;
-  border-left-color: var(--tt-error);
-  background: color-mix(in srgb, var(--tt-error) 9%, transparent);
 }
 
 .onboarding-ready {
@@ -965,10 +942,10 @@ textarea.tt-input {
   align-items: center;
   gap: 11px;
   margin: 0;
-  border-left: 2px solid var(--tt-success);
-  background: color-mix(in srgb, var(--tt-success) 9%, transparent);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card-inset);
   padding: 14px;
-  color: var(--tt-success);
+  color: var(--tt-text);
   font-size: 13.5px;
 }
 
@@ -1045,9 +1022,8 @@ textarea.tt-input {
   justify-content: space-between;
   gap: 16px;
   margin: 0;
-  border: 1px solid var(--tt-hairline);
   border-radius: var(--tt-radius-md);
-  background: var(--tt-surface-sunken);
+  background: var(--tt-card-inset);
   padding: 14px 16px;
   color: var(--tt-text-muted);
   font-size: 13px;

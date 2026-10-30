@@ -10,7 +10,11 @@
 
 /* One provider: its mark and name, a state line with a dot, a detail line and one action. */
 .host-provider { display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 6px; min-width: 0; min-height: 132px; border: 1px solid transparent; border-radius: var(--tt-radius-md); background: var(--tt-card); padding: 12px; }
-.host-provider[data-kind='not-installed'] { border: 1px dashed var(--tt-hairline); background: transparent; }
+/* One not installed there has no fill and no dashed edge: its words say so, with the install guide (#1831). */
+.host-provider[data-kind='not-installed'] { background: transparent; }
+/* Under a host's row on the remote hosts card, a tile is the inset, as anything on a card is (ADR-0110). */
+.hosts-card .host-provider:not([data-kind='not-installed']) { background: var(--tt-card-inset); }
+.hosts-card .host-provider__mark { background: var(--tt-card); }
 .host-provider__top { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .host-provider__top h5 { margin: 0; overflow-wrap: anywhere; color: var(--tt-text); font-size: 14px; font-weight: 600; }
 .host-provider__mark { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; border-radius: var(--tt-radius-sm); background: var(--tt-card-inset); color: var(--tt-text-2); }
