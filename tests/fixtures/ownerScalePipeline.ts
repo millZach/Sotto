@@ -159,6 +159,8 @@ export interface OwnerScalePipelineOptions {
   creationRead?: () => void
   /** The thread-store writer the workspace runs over; absent, the one it makes itself (#1457). */
   storeWriter?: (store: ThreadStore) => ThreadStoreWriter
+  /** The built store worker the thread store writes and reads on (`builtStoreWorker`); absent, it writes on main. */
+  storeWorker?: string | undefined
 }
 
 export interface ThreadChangesReport {
@@ -397,7 +399,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
       muse: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('muse'),
       opencode: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('opencode'), cursor: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('cursor'), deepseek: owl ? new FakeProviderHost(structuredClone(EMPTY_AGENT_HOST)) : new HeldProviderHost('deepseek') } })
   shadows.tapSwitchChanges(native)
-  const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, held, owl, options.storeWriter)
+  const workspace = new WorkspaceHost(native, root, () => true, undefined, owl, held, owl, options.storeWriter, options.storeWorker)
   shadows.tapAccept(workspace)
   shadows.tapWorkspaceChanges(workspace)
   shadows.tap(workspace, 'workspace publication')

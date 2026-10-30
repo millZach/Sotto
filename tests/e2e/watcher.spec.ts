@@ -305,7 +305,7 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
     const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-glance__lead', '.watcher-glance__name', '.watcher-glance__why',
       '.watcher-pane .thread-chip', '.thread-options__caption', '.thread-chip-menu__options small', '.thread-chip-menu__foot', '.watched-note', '.watch-toggle', '.watch-toast > span',
       '.watcher-head__rooms button', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
-      '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro h2', '.watcher-first__intro p',
+      '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro p', '.watcher-first__how',
       '.watcher-beside .thread-workspace__head h2', '.watcher-own__words > strong', '.watcher-own__said', '.watcher-own__none', '.watcher-own__toggle', '.watcher-own__files code',
       '.watcher-handover__lead > p', '.watcher-handover__ledger', '.watcher-handover__read', '.watcher-handover__text', '.thread-prompt__send[data-wide]',
       '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose',
@@ -448,14 +448,15 @@ test.describe("Watcher's room on the built app", () => {
       await expect(page.locator('.watcher-glance')).toContainText('2 need you')
       const choice = page.getByRole('group', { name: 'Watcher’s model' })
       await expect(choice.getByRole('combobox', { name: 'Thread model' })).toHaveText(/Sonnet 4\.5/)
-      await expect(choice.getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveText('Ask for approval')
+      // On Owl the quiet composer draws the shield at the pill's start, outside the model's group (ADR-0161).
+      await expect(page.locator('.thread-prompt').getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveText('Ask for approval')
       // Devin is not offered for Watcher.
       await choice.getByRole('combobox', { name: 'Thread model' }).click()
       await expect(page.getByRole('dialog', { name: 'Choose model' }).getByRole('option', { name: /Devin/ })).toHaveCount(0)
       await page.keyboard.press('Escape')
       const send = page.getByRole('button', { name: 'Start Watcher and send' })
       await expect(send).toBeDisabled()
-      await expect(page.getByText('Your first message starts Watcher on Sonnet 4.5, with your own Claude Code account.')).toBeVisible()
+      await expect(page.getByText('On Sonnet 4.5, with your own Claude Code account.')).toBeVisible()
       for (const [width, height] of SIZES) {
         await resizeContentWindow(launched, width, height)
         await settle(page)
@@ -1607,7 +1608,7 @@ test.describe("Watcher's room on the built app", () => {
     })
   })
 
-  test('Move threads asks once in a sheet, and each move is a card in Watcher’s conversation (#1178 part 2, pick B)', async () => {
+  test('Move threads asks once in a sheet, nothing ticked, and each move is a card in Watcher’s conversation (#1178 parts 2 and 3)', async () => {
     const FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10', STUDIO = 'c5e2a1f8-9b3d-4e72-a6c1-3f8d2b5e9a07', LAB = '4e8a2c6f-1b7d-4a93-9e05-7c3f1d8b2a64'
     const now = new Date().toISOString()
     const moves = (hostId: string): NonNullable<WatcherStandInSeed['moves']> => {
@@ -1659,15 +1660,29 @@ test.describe("Watcher's room on the built app", () => {
         await settle(page)
         await captureInto(movesEvidence, launched, `moves-choose-${appearance}-1280x800.png`)
         await choose.getByRole('button', { name: 'forge', exact: true }).click()
-        const sheet = page.getByRole('dialog', { name: 'Move 3 threads to forge?' })
-        await expect(sheet).toBeVisible()
+        // Nothing starts ticked (Zach's pick, October 29): the sheet asks which threads, and Move waits for one.
+        await expect(page.getByRole('dialog', { name: 'Choose threads to move to forge' })).toBeVisible()
+        // Its title follows the ticks, so the sheet is found by its role from here on.
+        const sheet = page.getByRole('dialog')
         await expect(sheet.getByRole('button', { name: 'Cancel' })).toBeFocused()
+        await expect(sheet.getByRole('button', { name: 'Move threads' })).toBeDisabled()
         await expect(sheet).toContainText('Moves now 2')
         await expect(sheet).toContainText('Asks you first 1')
-        await expect(sheet).toContainText('Stays here 4')
+        await expect(sheet).toContainText('Stays where it is 4')
         await expect(sheet).toContainText('forge doesn’t have Claude Opus 4.7')
-        // Each row names its thread as the window does, with its provider and project.
+        // Each row names its thread as the window does, with where it is now, its provider and project.
         await expect(sheet.locator('.move-sheet__name')).toHaveText(['Grok voice previews', 'Thread routing', 'Benchmark rerun', 'Visual gate flake', 'Footer links', 'Notes cleanup', 'Watcher'])
+        await expect(sheet.locator('.move-sheet__where').first()).toHaveText('This computer')
+        // From the keyboard: Tab passes the Move it cannot press yet, to the lists and their first box; Space ticks it.
+        await page.keyboard.press('Tab')
+        await expect(sheet.getByRole('region', { name: 'What moves and what stays' })).toBeFocused()
+        await page.keyboard.press('Tab')
+        await expect(sheet.getByRole('checkbox', { name: 'Grok voice previews' })).toBeFocused()
+        await page.keyboard.press('Space')
+        await expect(page.getByRole('dialog', { name: 'Move 1 thread to forge?' })).toBeVisible()
+        await sheet.getByRole('checkbox', { name: 'Thread routing' }).check()
+        await sheet.getByRole('checkbox', { name: 'Benchmark rerun' }).check()
+        await expect(page.getByRole('dialog', { name: 'Move 3 threads to forge?' })).toBeVisible()
         for (const [width, height] of SIZES) {
           await resizeContentWindow(launched, width, height)
           await settle(page)
@@ -1677,22 +1692,17 @@ test.describe("Watcher's room on the built app", () => {
           await captureInto(movesEvidence, launched, `moves-sheet-${appearance}-${width}x${height}.png`)
           await contrastHolds(page, `moves-sheet-${appearance}-${width}x${height}`)
         }
-        // Tab goes on to the move and round to the lists, staying in the sheet; Escape puts it away with nothing moved,
-        // back to Move threads.
-        await page.keyboard.press('Tab')
-        await expect(sheet.getByRole('button', { name: 'Move 3 threads' })).toBeFocused()
-        await page.keyboard.press('Tab')
-        await expect(sheet.getByRole('region', { name: 'What moves and what stays' })).toBeFocused()
-        await page.keyboard.press('Shift+Tab')
-        await expect(sheet.getByRole('button', { name: 'Move 3 threads' })).toBeFocused()
+        // Escape puts it away with nothing moved, back to Move threads.
         await page.keyboard.press('Escape')
         await expect(sheet).toHaveCount(0)
         await expect(button).toBeFocused()
         await expect(page.locator('.move-card')).toHaveCount(0)
-        // Confirmed: Sotto runs the moves, and each is a card in Watcher's conversation.
+        // Confirmed: Sotto runs the moves ticked, and each is a card in Watcher's conversation.
         await resizeContentWindow(launched, 1280, 800)
         await button.click()
         await page.getByRole('dialog', { name: 'Move threads to which machine?' }).getByRole('button', { name: 'forge', exact: true }).click()
+        await expect(page.getByRole('dialog', { name: 'Choose threads to move to forge' })).toBeVisible()
+        for (const name of ['Grok voice previews', 'Thread routing', 'Benchmark rerun']) await page.getByRole('dialog').getByRole('checkbox', { name }).check()
         await page.getByRole('dialog', { name: 'Move 3 threads to forge?' }).getByRole('button', { name: 'Move 3 threads' }).click()
         await expect(page.getByRole('dialog')).toHaveCount(0)
         await expect(page.getByText('You asked to move 3 threads to forge. Sotto reports each move here.')).toBeVisible()
@@ -1712,6 +1722,112 @@ test.describe("Watcher's room on the built app", () => {
         await resizeContentWindow(launched, 1280, 800)
         await page.getByRole('button', { name: 'Move it on Allow edits' }).click()
         await expect(page.locator('.move-card').nth(2)).toContainText('Holding sends')
+      })
+    })
+  })
+
+  test('Watcher’s proposal from the user’s words is a card with a box per thread, Move and Not now (#1178 part 3, pick A)', async () => {
+    const FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10'
+    const now = new Date().toISOString()
+    const moves = (hostId: string): NonNullable<WatcherStandInSeed['moves']> => ({
+      machines: [{ hostId: FORGE, name: 'forge', connected: true }],
+      cards: [],
+      proposals: [{ id: randomUUID(), state: 'open', hostId: FORGE, machine: 'forge', at: now, updatedAt: now, threads: [
+        { threadId: hostEntityKey(hostId, 'grok-previews'), outcome: 'moves', model: { name: 'Claude Sonnet 4.6' }, source: { hostId, threadId: 'grok-previews' }, ticked: true },
+        { threadId: hostEntityKey(hostId, 'thread-routing'), outcome: 'moves', model: { name: 'Claude Sonnet 4.6', instead: 'Claude Opus 4.7' }, source: { hostId, threadId: 'thread-routing' }, ticked: true },
+        { threadId: hostEntityKey(hostId, 'footer-links'), outcome: 'stays', words: 'A turn is running. Move it once the turn ends, or stop it.', source: { hostId, threadId: 'footer-links' }, ticked: false }] }],
+      started: [{ id: randomUUID(), state: 'thread-started', source: { hostId, threadId: 'grok-previews' }, hostId: FORGE, machine: 'forge', model: { name: 'Claude Sonnet 4.6' }, at: now, updatedAt: now }],
+    })
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance, 'reduced'), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, moves })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        const card = page.getByRole('region', { name: 'Proposed moves to forge' })
+        await expect(card).toContainText('Watcher proposes moving 2 threads to forge. Nothing moves until you press Move.')
+        // Ticked as Watcher named them; the one that stays has no box and says why.
+        await expect(card.getByRole('checkbox', { name: 'Grok voice previews' })).toBeChecked()
+        await expect(card.getByRole('checkbox', { name: 'Thread routing' })).toBeChecked()
+        await expect(card.getByRole('checkbox')).toHaveCount(2)
+        await expect(card).toContainText('A turn is running.')
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await card.scrollIntoViewIfNeeded()
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `Watcher's proposal at ${width}x${height}` }).toEqual([])
+          await captureInto(movesEvidence, launched, `moves-proposal-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `moves-proposal-${appearance}-${width}x${height}`)
+        }
+        // From the keyboard: untick one, and Move moves the other only.
+        await resizeContentWindow(launched, 1280, 800)
+        await card.getByRole('checkbox', { name: 'Thread routing' }).focus()
+        await page.keyboard.press('Space')
+        await expect(card.getByRole('button', { name: 'Move 1 thread' })).toBeVisible()
+        await page.keyboard.press('Tab')
+        await expect(card.getByRole('button', { name: 'Move 1 thread' })).toBeFocused()
+        await page.keyboard.press('Enter')
+        await expect(card.getByText('You chose 1 of the threads Watcher proposed moving to forge.')).toBeVisible()
+        await expect(page.getByText('You asked to move 1 thread to forge. Sotto reports its move here.')).toHaveCount(1)
+        await expect(card.getByRole('checkbox')).toHaveCount(0)
+        await expect(page.locator('.move-card')).toHaveCount(1)
+        await settle(page)
+        await captureInto(movesEvidence, launched, `moves-proposal-moved-${appearance}-1280x800.png`)
+      })
+    })
+  })
+
+  test('Keep it here on a move waiting on its machine asks first on the card, then waits to call the move off (#1178 part 4)', async () => {
+    const FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10'
+    const now = new Date().toISOString()
+    const moves = (hostId: string): NonNullable<WatcherStandInSeed['moves']> => ({
+      machines: [{ hostId: FORGE, name: 'forge', connected: false }],
+      cards: [{ id: randomUUID(), state: 'thread-started', source: { hostId, threadId: 'grok-previews' }, moved: { hostId: FORGE, threadId: 'previews-there' }, hostId: FORGE,
+        machine: 'forge', model: { name: 'Claude Sonnet 4.6' }, waiting: true, waitingOn: 'forge', keepable: true, at: now, updatedAt: now }],
+    })
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance, 'reduced'), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, moves })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        const card = page.locator('.move-card')
+        await expect(card).toContainText('Waiting for forge')
+        await expect(card).toContainText('This thread is waiting for forge to answer about its move. Nothing was lost.')
+        // Forge made the new thread, so Keep it here asks first, on the card; Cancel takes focus and gives it back.
+        const keep = card.getByRole('button', { name: 'Keep it here' })
+        await keep.focus()
+        await page.keyboard.press('Enter')
+        const question = card.getByRole('group', { name: /Stop the new thread on forge and keep this one here\?/u })
+        await expect(question.getByRole('button', { name: 'Cancel' })).toBeFocused()
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await card.scrollIntoViewIfNeeded()
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `Keep it here's question at ${width}x${height}` }).toEqual([])
+          await captureInto(movesEvidence, launched, `moves-keep-question-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `moves-keep-question-${appearance}-${width}x${height}`)
+        }
+        await resizeContentWindow(launched, 1280, 800)
+        await question.getByRole('button', { name: 'Cancel' }).focus()
+        await page.keyboard.press('Escape')
+        await expect(question).toHaveCount(0)
+        await expect(keep).toBeFocused()
+        await page.keyboard.press('Enter')
+        await page.keyboard.press('Shift+Tab')
+        await expect(question.getByRole('button', { name: 'Stop it there and keep this one' })).toBeFocused()
+        await page.keyboard.press('Enter')
+        // Pressed while forge can't be reached: remembered, and the thread waits, fenced, for forge to call the move off.
+        await expect(card).toContainText('Keeping it here')
+        await expect(card).toContainText('You chose to keep this thread here. Sotto asks forge to call the move off')
+        await expect(card.getByRole('button')).toHaveCount(1)
+        await settle(page)
+        await captureInto(movesEvidence, launched, `moves-keeping-${appearance}-1280x800.png`)
+        await contrastHolds(page, `moves-keeping-${appearance}-1280x800`)
       })
     })
   })

@@ -61,14 +61,31 @@ describe('dock icon', () => {
   it('paints the tile, the owl and the transparent corners in the brand', () => {
     const png = paintDockIcon(coverage!, { tile: '#ff0000', glyph: '#0000ff' })
     expect(png.subarray(1, 4).toString('latin1')).toBe('PNG')
-    const scale = DOCK_COVERAGE_SIZE / 96
+    const coordinate = (value: number): number => 50 + Math.round(value * (DOCK_COVERAGE_SIZE - 100) / 96)
     // A corner outside the 22-unit radius, the tile below the owl and the owl's forehead.
-    expect(pixel(png, 0, 0)[3]).toBe(0)
-    expect(pixel(png, Math.round(48 * scale), Math.round(88 * scale))).toEqual([255, 0, 0, 255])
-    expect(pixel(png, Math.round(48 * scale), Math.round(30 * scale))).toEqual([0, 0, 255, 255])
+    expect(pixel(png, 50, 50)[3]).toBe(0)
+    expect(pixel(png, coordinate(48), coordinate(88))).toEqual([255, 0, 0, 255])
+    expect(pixel(png, coordinate(48), coordinate(30))).toEqual([0, 0, 255, 255])
     // The eyes are holes in the owl that show the tile, with the owl's pupils inside them.
-    expect(pixel(png, Math.round(26 * scale), Math.round(55 * scale))).toEqual([255, 0, 0, 255])
-    expect(pixel(png, Math.round(36 * scale), Math.round(48.96 * scale))).toEqual([0, 0, 255, 255])
+    expect(pixel(png, coordinate(26), coordinate(55))).toEqual([255, 0, 0, 255])
+    expect(pixel(png, coordinate(36), coordinate(48.96))).toEqual([0, 0, 255, 255])
+  })
+
+  it('keeps a 50px transparent margin around the macOS tile and owl', () => {
+    for (let y = 0; y < DOCK_COVERAGE_SIZE; y += 1) {
+      for (let x = 0; x < DOCK_COVERAGE_SIZE; x += 1) {
+        if (x >= 50 && x < 462 && y >= 50 && y < 462) continue
+        const offset = (y * DOCK_COVERAGE_SIZE + x) * 2
+        if (coverage![offset] !== 0 || coverage![offset + 1] !== 0) {
+          throw new Error(`Dock artwork reaches the margin at ${x},${y}`)
+        }
+      }
+    }
+    const png = paintDockIcon(coverage!, { tile: '#ff0000', glyph: '#0000ff' })
+    expect(pixel(png, 50, 256)).toEqual([255, 0, 0, 255])
+    expect(pixel(png, 461, 256)).toEqual([255, 0, 0, 255])
+    expect(pixel(png, 256, 50)).toEqual([255, 0, 0, 255])
+    expect(pixel(png, 256, 461)).toEqual([255, 0, 0, 255])
   })
 
   it('gives the Dock back the bundle\'s icon when a repaint fails, and paints again on the next change', () => {

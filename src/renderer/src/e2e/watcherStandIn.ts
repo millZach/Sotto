@@ -3,7 +3,7 @@ import { handoverCountsSchema } from '../../../shared/agents'
 import { watcherIdentitySchema, type WatcherRefusal, type WatcherThreadTarget } from '../../../shared/watcher'
 import { checkQueuesViewSchema, type CheckQueuesBridge } from '../../../shared/checkQueue'
 import type { HostsBridge, HostsState, HostStatus } from '../../../shared/hosts'
-import { threadMoveCardSchema, threadMovePrepareSchema, type ThreadMoveCard, type ThreadMovesBridge, type ThreadMovesView } from '../../../shared/threadMoves'
+import { threadMoveCardSchema, threadMoveProposalSchema, threadMovePrepareSchema, type ThreadMoveCard, type ThreadMovesBridge, type ThreadMovesView } from '../../../shared/threadMoves'
 import { stopAllRunning, watcherMachinesReadSchema, watcherRoomStateSchema, type WatcherBridge, type WatcherRoomState } from '../../../shared/watcherRoom'
 
 /** Where an end-to-end run leaves the projection the room should show, before it reloads the window. */
@@ -40,7 +40,9 @@ export const watcherStandInSeedSchema = z.object({
    * the cards main holds, and the cards it holds once the sheet's move is pressed. Without it, the window reads main's own.
    */
   moves: z.object({ machines: z.array(z.object({ hostId: z.uuid(), name: z.string().min(1), connected: z.boolean() }).strict()).max(8),
-    preview: threadMovePrepareSchema.optional(), cards: z.array(threadMoveCardSchema).max(50), started: z.array(threadMoveCardSchema).max(50).optional() }).strict().optional(),
+    preview: threadMovePrepareSchema.optional(), cards: z.array(threadMoveCardSchema).max(50), started: z.array(threadMoveCardSchema).max(50).optional(),
+    /** This computer's host ID, which the sheet offers among the machines (part 3), and Watcher's proposals from the user's words. */
+    localHostId: z.uuid().optional(), proposals: z.array(threadMoveProposalSchema).max(10).optional() }).strict().optional(),
   /**
    * Later projections, each published this long after the window first listens, so a run can watch the picture move:
    * a send delivered, a reply, a question for the user. Each replaces the parts of the projection it names.
@@ -72,17 +74,33 @@ export function createE2EThreadMovesStandIn(): { readonly moves: ThreadMovesBrid
   if (raw === null) return undefined
   const seeded = watcherStandInSeedSchema.parse(JSON.parse(raw)).moves
   if (seeded === undefined) return undefined
-  let view: ThreadMovesView = { cards: seeded.cards }
+  let view: ThreadMovesView = { cards: seeded.cards, ...seeded.proposals ? { proposals: seeded.proposals } : {} }
   const listeners = new Set<(next: ThreadMovesView) => void>()
-  const publish = (cards: readonly ThreadMoveCard[]): void => { view = { cards: [...cards] }; for (const listener of [...listeners]) listener(view) }
-  const hostsState = { localHostEnabled: true, localHostRunning: true, hosts: seeded.machines.map(machine => ({ id: machine.hostId, hostId: machine.hostId, name: machine.name,
+  const publish = (cards: readonly ThreadMoveCard[], proposals = view.proposals): void => {
+    view = { cards: [...cards], ...proposals ? { proposals: [...proposals] } : {} }
+    for (const listener of [...listeners]) listener(view)
+  }
+  const hostsState = { localHostEnabled: true, localHostRunning: true, ...seeded.localHostId ? { localHostId: seeded.localHostId } : {}, hosts: seeded.machines.map(machine => ({ id: machine.hostId, hostId: machine.hostId, name: machine.name,
     target: machine.name, identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: machine.connected ? 'connected' : 'disconnected', enabled: true }) as HostStatus) } as HostsState
   const moves: ThreadMovesBridge = {
     prepare: async () => seeded.preview ?? { status: 'refused', message: 'This test run moves no threads.' },
     start: async () => { publish([...view.cards, ...seeded.started ?? []]); return { status: 'ok', moves: [] } },
     read: async () => view,
-    answer: async ({ cardId, answer }) => {
+    answer: async request => {
       const at = new Date().toISOString()
+      if ('proposalId' in request) {
+        // Watcher's proposal: Move moves the threads ticked and shows the seeded cards; Not now ends it.
+        const proposals = (view.proposals ?? []).map(proposal => proposal.id !== request.proposalId ? proposal : request.answer === 'dismiss' ? { ...proposal, state: 'dismissed' as const, updatedAt: at }
+          : { ...proposal, state: 'moved' as const, threads: proposal.threads.map(item => ({ ...item, ticked: request.threadIds.includes(item.threadId) })), updatedAt: at })
+        publish(request.answer === 'move' ? [...view.cards, ...seeded.started ?? []] : view.cards, proposals)
+        return { status: 'ok' }
+      }
+      if ('moveId' in request) {
+        // Keep it here: the press is kept, and the move waits for its machine to call it off.
+        publish(view.cards.map(card => { if (card.id !== request.moveId) return card; const { keepable: _keepable, ...rest } = card; void _keepable; return threadMoveCardSchema.parse({ ...rest, keeping: true, updatedAt: at }) }))
+        return { status: 'ok' }
+      }
+      const { cardId, answer } = request
       publish(view.cards.map(card => card.id !== cardId ? card : answer === 'keep' ? { ...card, state: 'kept', updatedAt: at }
         : { ...card, state: 'fenced', updatedAt: at, words: undefined, startsOn: undefined }).map(card => threadMoveCardSchema.parse(JSON.parse(JSON.stringify(card)))))
       return { status: 'ok' }

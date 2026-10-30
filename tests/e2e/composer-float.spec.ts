@@ -7,7 +7,7 @@ import { evidenceDirectory } from '../fixtures/evidence'
 
 // #1391's composer floats over the transcript's foot. Its first rule nested one :has() in another, which is not valid CSS,
 // so the browser dropped it and nothing floated while every layout assertion still held. These journeys measure the float
-// itself in the built app: the transcript runs on under the composer, and a waiting question stacks them again.
+// itself in the built app: its scroll box stays put, but its words stop above the composer and Jump to latest.
 
 const evidence = evidenceDirectory('artifacts/composer-float')
 const hostKeys = hostKeysPerTest()
@@ -68,26 +68,29 @@ async function history(page: Page, threadId: string): Promise<void> {
 
 const paneOf = (page: Page, threadId: string): Locator => page.locator(`section.thread-pane[data-thread-id="${key(threadId)}"]`)
 
-interface Float { hit?: string | null; composeHeight: number; marginTop: number; overlap: number; logPadding: number; underStrip: boolean; lastClear: boolean }
+interface Float { hit?: string | null; composeHeight: number; marginTop: number; overlap: number; logPadding: number; underStrip: boolean; lastClear: boolean; clipped: boolean; scrollbarClear: boolean }
 
 /** How far the composer sits over the transcript, read after the transcript is scrolled to its end. */
 async function float(pane: Locator): Promise<Float> {
-  return pane.evaluate(element => {
+  return pane.evaluate(async element => {
     const compose = element.querySelector<HTMLElement>(':scope > .thread-workspace__compose')!
     const log = element.querySelector<HTMLElement>('[aria-label="Thread transcript"]')!
     log.scrollTop = log.scrollHeight
+    await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
     const composeBox = compose.getBoundingClientRect(), logBox = log.getBoundingClientRect()
-    // The strip beside the card lets presses through to the transcript running under it. The right of the card, since
-    // the message scrubber keeps the left margin.
+    // The strip beside the card used to expose the transcript underneath. Neither words nor hit targets belong here.
     const card = compose.querySelector('.thread-prompt')!.getBoundingClientRect()
     const strip = document.elementFromPoint((card.right + composeBox.right) / 2, card.top + 10)
     const content = log.querySelector('.thread-transcript__content')!.getBoundingClientRect()
+    const scrollbar = document.elementFromPoint(logBox.right - 1, logBox.bottom - 2)
     const last = [...log.querySelectorAll('.thread-transcript__content > *')].at(-1)?.getBoundingClientRect()
     return {
       composeHeight: compose.offsetHeight, marginTop: parseFloat(getComputedStyle(compose).marginTop),
       overlap: logBox.bottom - composeBox.top, logPadding: parseFloat(getComputedStyle(log).paddingBottom),
       underStrip: strip !== null && log.contains(strip), hit: strip ? `${strip.tagName}.${strip.className}` : null,
       lastClear: (last ?? content).bottom <= composeBox.top + 1,
+      clipped: getComputedStyle(log.parentElement!).clipPath !== 'none',
+      scrollbarClear: scrollbar !== null && log.contains(scrollbar),
     }
   })
 }
@@ -98,7 +101,9 @@ function expectFloating(layout: Float): void {
   expect(layout.marginTop, context).toBeCloseTo(-layout.composeHeight, 0)
   expect(layout.overlap, context).toBeGreaterThanOrEqual(layout.composeHeight - 1)
   expect(layout.logPadding, context).toBeGreaterThanOrEqual(layout.composeHeight)
-  expect(layout.underStrip, context).toBe(true)
+  expect(layout.underStrip, context).toBe(false)
+  expect(layout.clipped, context).toBe(true)
+  expect(layout.scrollbarClear, context).toBe(true)
   expect(layout.lastClear, context).toBe(true)
 }
 
@@ -159,7 +164,7 @@ test('a thread composer floats over its transcript, alone, side by side and in a
     const covered = await footer.evaluate(async element => {
       const log = element.querySelector<HTMLElement>('[aria-label="Thread transcript"]')!
       const frame = (): Promise<void> => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
-      const hits: number[] = []
+      const hits: number[] = [], obscured: number[] = []
       let shown = 0
       for (let top = log.scrollHeight - log.clientHeight; top >= 0; top -= 16) {
         log.scrollTop = top
@@ -168,13 +173,17 @@ test('a thread composer floats over its transcript, alone, side by side and in a
         const jump = element.querySelector('.thread-transcript__jump')?.getBoundingClientRect()
         if (!jump) continue
         shown++
+        const edge = log.getBoundingClientRect().bottom - parseFloat(getComputedStyle(log).scrollPaddingBottom)
+        const beside = document.elementFromPoint(jump.left - 8, jump.top + 8)
+        if (edge > jump.top - 13 || (beside !== null && log.contains(beside))) obscured.push(top)
         const card = log.querySelector('.agent-request')!.getBoundingClientRect()
         if (jump.bottom > card.top && jump.top < card.bottom && jump.right > card.left && jump.left < card.right) hits.push(top)
       }
-      return { hits, shown }
+      return { hits, obscured, shown }
     })
     expect(covered.shown, JSON.stringify(covered)).toBeGreaterThan(0)
     expect(covered.hits, JSON.stringify(covered)).toEqual([])
+    expect(covered.obscured, JSON.stringify(covered)).toEqual([])
 
     // A waiting question goes above the message bar, and the composer stacks under the transcript again.
     await emit(page, 'weekly-note', question)
@@ -183,10 +192,20 @@ test('a thread composer floats over its transcript, alone, side by side and in a
     const stacked = await weekly.evaluate(element => {
       const compose = element.querySelector<HTMLElement>(':scope > .thread-workspace__compose')!
       const transcript = element.querySelector<HTMLElement>(':scope > .thread-transcript')
-      return { marginTop: parseFloat(getComputedStyle(compose).marginTop), transcriptBottom: transcript?.getBoundingClientRect().bottom ?? null, composeTop: compose.getBoundingClientRect().top }
+      const log = element.querySelector<HTMLElement>('[aria-label="Thread transcript"]')!
+      const card = compose.querySelector('.thread-questions')!.getBoundingClientRect()
+      return {
+        marginTop: parseFloat(getComputedStyle(compose).marginTop), transcriptBottom: transcript?.getBoundingClientRect().bottom ?? null, composeTop: compose.getBoundingClientRect().top,
+        overlap: log.getBoundingClientRect().bottom - compose.getBoundingClientRect().top,
+        cover: parseFloat(getComputedStyle(log).getPropertyValue('--thread-compose-cover')),
+        corners: [card.left + 1, card.right - 1].map(x => log.contains(document.elementFromPoint(x, card.top + 1))),
+      }
     })
     expect(stacked.marginTop, JSON.stringify(stacked)).toBe(0)
     if (stacked.transcriptBottom !== null) expect(stacked.transcriptBottom, JSON.stringify(stacked)).toBeLessThanOrEqual(stacked.composeTop + 1)
+    expect(stacked.overlap, JSON.stringify(stacked)).toBeCloseTo(26, 0)
+    expect(stacked.cover, JSON.stringify(stacked)).toBe(0)
+    expect(stacked.corners, JSON.stringify(stacked)).toEqual([true, true])
     expectFloating(await float(footer))
   } finally { await closeSotto(launched) }
 })

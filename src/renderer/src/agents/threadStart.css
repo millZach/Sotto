@@ -4,13 +4,13 @@
 .thread-start-note > svg { flex: none; margin-top: 2px; color: var(--tt-text-2); }
 .thread-start-note > p { flex: 1 1 auto; min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .thread-start-note strong { color: var(--tt-text); font-weight: 600; }
-.thread-start-note__open { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.thread-start-note__open { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
 /* The handover, as Sotto's on the user's side, as Watcher's handover is (ADR-0073). */
 .thread-start-handover { margin-bottom: 10px; }
 .thread-start-handover__lead { margin: 0; color: var(--tt-text); font-size: 15px; line-height: 1.55; }
 .thread-start-handover__lead strong { font-weight: 600; }
 .thread-start-handover__ledger { margin: 4px 0 0; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
-.thread-start-handover__disclose { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 2px 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; font-size: 13px; cursor: pointer; }
+.thread-start-handover__disclose { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 2px 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; font-size: 13px; }
 .thread-start-handover__disclose:disabled { color: var(--tt-text-muted); cursor: progress; }
 .thread-start-handover__disclose > svg { transition: transform 150ms ease; }
 .thread-start-handover__disclose[aria-expanded='true'] > svg { transform: rotate(90deg); }
@@ -35,7 +35,7 @@
 
 /* Fork from here, in the transcript (#1028, E5b): the press under a reply, its card, and what the fork does not carry. */
 .thread-message__fork { position: absolute; right: 0; bottom: 0; display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm);
-  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease; }
+  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; opacity: 0; transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease; }
 .thread-message__fork:hover, .thread-message__fork[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .thread-message__fork:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-message__fork[aria-disabled='true'] { cursor: default; }

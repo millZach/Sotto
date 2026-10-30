@@ -4,6 +4,7 @@ import tseslint from 'typescript-eslint'
 export default tseslint.config(
   {
     ignores: [
+      'artifacts/macos-dock-icon-padding/**',
       'artifacts/agent-speed/**',
       'native/coreml-asr/.build/**',
       'artifacts/watcher-room-state/**',
@@ -175,14 +176,17 @@ export default tseslint.config(
       'artifacts/codex-images/**',
       'artifacts/shell-detail-visibility/**',
       'artifacts/issue-146/**',
+      'artifacts/filled-cards-and-setup-card/**',
       'artifacts/codex-connection-recovery/**',
       'artifacts/devin-local-provider/**',
       'artifacts/muse-provider/**',
+      'artifacts/plain-cards-sentence-case/**',
       'artifacts/opencode-provider/**',
       'artifacts/opencode-sign-in/**',
       'artifacts/opencode-model-menu/**',
       'artifacts/cursor-provider/**',
       'artifacts/starting-screen/**',
+      'artifacts/watcher-start-and-empty-rooms/**',
       'artifacts/unconfirmed-send/**',
       'artifacts/watcher-card-queue/**',
       'node_modules/**',

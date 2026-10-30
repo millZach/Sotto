@@ -18,11 +18,11 @@
 /* A short window keeps the list to three names, so the threads below keep their room; the rest scroll into view. */
 @media (max-height: 640px) { .restart-band__threads { max-height: 4.6em; } }
 .restart-band__thread { display: block; max-width: 100%; padding: 1px 0; overflow: hidden; border: 0; border-radius: 3px; background: transparent; color: var(--tt-text-2);
-  font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap; cursor: pointer;
+  font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap;
   transition: color 120ms ease; }
 .restart-band__thread:hover { color: var(--tt-text); text-decoration: underline; text-underline-offset: 2px; }
 .restart-band__cancel, .restart-strip__cancel { flex: none; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit;
-  text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+  text-decoration: underline; text-underline-offset: 3px; }
 .restart-band__cancel { margin: 6px 0 0 22px; }
 .restart-band__cancel[aria-disabled='true'], .restart-strip__cancel[aria-disabled='true'] { color: var(--tt-text-muted); cursor: progress; }
 .restart-band__error { margin: 6px 0 0 22px; color: var(--tt-error-text); }

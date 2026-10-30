@@ -29,7 +29,7 @@
 .host-setup__card--done { border-left-color: var(--tt-success); }
 .host-setup__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
 .host-setup__actions > .tt-button { min-height: 32px; padding: 0 14px; font-size: 13px; }
-.host-setup__link { border: 0; border-radius: var(--tt-radius-sm); background: none; padding: 2px 0; color: var(--tt-accent-text); font: inherit; font-size: 12.5px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
+.host-setup__link { border: 0; border-radius: var(--tt-radius-sm); background: none; padding: 2px 0; color: var(--tt-accent-text); font: inherit; font-size: 12.5px; text-decoration: underline; text-underline-offset: 2px; }
 .host-setup__link:hover { color: var(--tt-text); }
 .hosts-settings .host-setup__card .host-setup__quiet { color: var(--tt-text-muted); font-size: 12.5px; }
 /* Open approval page did not open: said on the card it belongs to, not as the connect's failure. */
@@ -44,7 +44,7 @@
 
 /* Two ways to add a machine (ADR-0035): native radios in bordered choices, the chosen one lit by the accent. */
 .host-setup__choices { display: grid; gap: 8px; }
-.host-setup__choice { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 3px 10px; min-width: 0; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); padding: 10px 12px; cursor: pointer; transition: border-color 120ms ease, background-color 120ms ease; }
+.host-setup__choice { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 3px 10px; min-width: 0; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); padding: 10px 12px; cursor: default; transition: border-color 120ms ease, background-color 120ms ease; }
 .host-setup__choice[data-checked] { border-color: var(--tt-accent); background: var(--tt-selected); }
 .host-setup__choice[data-disabled] { cursor: default; }
 .host-setup__choice > input { grid-row: 1 / span 2; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--tt-accent); }

@@ -6,7 +6,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { z } from 'zod'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { cloneHostSnapshot, clonePlainData } from './cloneHostSnapshot'
-import { ActivitySubscribers, immutableModels, immutableRecord, immutableUpdates, isImmutableModels, ownBuiltRecord, subscribeActivitySnapshots } from './activitySnapshots'
+import { ActivitySubscribers, cloneSnapshotSharingActivities, immutableModels, immutableRecord, immutableUpdates, isImmutableModels, ownBuiltRecord, subscribeActivitySnapshots } from './activitySnapshots'
 import { join, resolve } from 'node:path'
 import { EMPTY_AGENT_HOST, PROVIDER_LABELS, parsePublicProviderEntityId, providerIdSchema, publicProviderEntityId, type AgentCapabilities, type AgentHostSnapshot, type AgentModel, type AgentProviderStatus, type AgentThread, type ProviderId } from '../../shared/agents'
 import { restOf } from './adapterThreadChanges'
@@ -455,11 +455,13 @@ export class ConfiguredProviderHost implements AgentHost {
     this.markRest()
     this.changes.publishChanges((historyFromEvents, published) => this.switchChanges(historyFromEvents, published))
   }
+  /** Every thread of every provider as a caller is handed it: its own copy, with certified activity and catalogs shared. */
+  private handOut(): AgentHostSnapshot { return cloneSnapshotSharingActivities(this.aggregate()) }
   async connect(provider?: ProviderId): Promise<AgentHostSnapshot> {
     const requested = (provider ? [provider] : this.options.enabledProviders?.() ?? [this.options.provider()]).map(id => ({ id, epoch: this.slots.get(id)!.epoch }))
     await this.initialize()
     await Promise.all(requested.filter(({ id, epoch }) => this.slots.get(id)!.epoch === epoch).map(({ id }) => this.connectOne(id)))
-    return cloneHostSnapshot(this.aggregate())
+    return this.handOut()
   }
   private async connectOne(id: ProviderId): Promise<void> {
     const slot = this.slots.get(id)!
@@ -555,7 +557,7 @@ export class ConfiguredProviderHost implements AgentHost {
       try { const snapshot = await this.options.hosts[id].snapshot(); if (slot.epoch === epoch) this.accept(id, snapshot) }
       catch (error) { if (slot.epoch === epoch) this.failed(id, error) }
     }))
-    this.publish(); return cloneHostSnapshot(this.aggregate())
+    this.publish(); return this.handOut()
   }
   private owner(threadId: string): ProviderId {
     const durable = this.options.threadProvider?.(threadId)
@@ -599,7 +601,7 @@ export class ConfiguredProviderHost implements AgentHost {
     this.accept(id, whole ?? snapshot)
     // A read before a send that changed nothing publishes nothing (#765): every send makes one.
     if (!read?.beforeSend || !sameSnapshot(before.view, slot.view) || !sameSnapshot(before.threads, slot.threads.threads()) || !sameSnapshot(before.status, slot.status)) this.publish()
-    return cloneHostSnapshot(this.aggregate())
+    return this.handOut()
   }
   rollbackCapability(threadId: string) {
     const provider = this.providerForThread(threadId)
@@ -740,7 +742,7 @@ export class ConfiguredProviderHost implements AgentHost {
     const whole = await this.whole(id, settings.historyFromEvents === true).catch(() => null)
     if (whole === null || slot.epoch !== epoch) return result
     this.accept(id, whole ?? snapshot)
-    return { ...result, snapshot: cloneHostSnapshot(this.aggregate()) }
+    return { ...result, snapshot: this.handOut() }
   }
   /**
    * A read or settings result that left its messages out, because this connection's subscription asked for none

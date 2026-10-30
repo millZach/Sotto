@@ -1,8 +1,9 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
 import { REMOTE_COMMANDS, REMOTE_CONFIGURATION_FIELDS, REMOTE_HOST_UPDATE_ACTIONS, REMOTE_OPENCODE_SIGN_IN_OPERATIONS, REMOTE_SIGN_IN_OPERATIONS, REMOTE_USAGE_OPERATIONS, remoteCommandRefusal, remoteHostUpdateRefusal, remoteUsageRefusal } from '../../../src/host/remoteCommands'
 import { agentCommandSchema, type AgentCommand } from '../../../src/shared/agents'
-import { HOST_DESKTOP_FEATURES, HOST_FEATURES, HOST_UPDATE_REQUEST_ACTIONS, hostPushSchema, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
+import { HOST_DESKTOP_FEATURES, HOST_FEATURE_LIST_MAX, HOST_FEATURES, HOST_UPDATE_REQUEST_ACTIONS, hostHealthFeatures, hostPushSchema, hostRequestSchema, commandFromProtocolV1, protocolAgentCommandSchema } from '../../../src/shared/hostProtocol'
 import { CHECK_QUEUE_VIEW_MAX } from '../../../src/shared/checkQueue'
 import { watcherToolSchemas } from '../../../src/shared/watcher'
 
@@ -179,6 +180,16 @@ describe('remote command allow-list', () => {
       'pull-request-confirmation']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
+  })
+
+  it('reads the health of a host that lists every feature, and of a later one that lists many this build does not know', () => {
+    // A host that listed one feature past the old cap of 64 was read as another version of Sotto (October 30, 2026).
+    const health = (features: string[]) => hostHealthFeatures({ v: 1, status: 'ready', hostId: randomUUID(), pid: 1, port: 1, sottoVersion: '0.1.41', features })
+    expect(health([...HOST_FEATURES])?.features).toEqual([...HOST_FEATURES])
+    const later = [...HOST_FEATURES, ...Array.from({ length: 200 }, (_, index) => `later-feature-${index}`)]
+    expect(health(later)?.features).toHaveLength(later.length)
+    // Room for every feature to come for a long while: the list is read far past what any build lists.
+    expect(HOST_FEATURES.length).toBeLessThanOrEqual(HOST_FEATURE_LIST_MAX / 4)
   })
 
   it('carries a check on a Watcher start as a flag on watcher-control, no operation of its own, under watcher-check-queue (#1312)', () => {

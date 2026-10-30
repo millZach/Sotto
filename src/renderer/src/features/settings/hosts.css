@@ -13,9 +13,17 @@
 .hosts-local > div:last-child { min-width: 0; max-width: 270px; align-self: center; }
 .hosts-settings .tt-field__error { color: var(--tt-error); }
 
+/* A group of rows on a card (ADR-0110, #1831): a fill one step off the room with no outline, each row divided from the
+   next by a 2px line of the inset, the last with none. */
+.hosts-card { display: grid; padding: 2px 20px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
+.hosts-settings .hosts-card > * { padding: 16px 0; border: 0; border-bottom: 2px solid var(--tt-card-inset); }
+.hosts-settings .hosts-card > :last-child { border-bottom: 0; }
+.hosts-card .hosts-row__icon { background: var(--tt-card-inset); }
+.hosts-settings .hosts-card__note { margin: -10px 2px 0; font-size: 13px; }
+
 .hosts-list { display: grid; }
 .hosts-row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; min-width: 0; border-bottom: 1px solid var(--tt-hairline); padding: 14px 0; }
-.hosts-list > .hosts-row:first-child { border-top: 1px solid var(--tt-hairline); }
+.hosts-list:not(.hosts-card) > .hosts-row:first-child { border-top: 1px solid var(--tt-hairline); }
 .hosts-row__icon { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); color: var(--tt-accent-text); }
 .hosts-row__icon--local { color: var(--tt-text-muted); }
 .hosts-row__info { flex: 1 1 220px; min-width: 0; }
@@ -27,6 +35,7 @@
 .hosts-settings .hosts-row__error { margin-top: 4px; color: var(--tt-error-text); font-size: 13px; overflow-wrap: anywhere; }
 .hosts-row__actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-left: auto; }
 .hosts-empty { padding: 16px 0; border-block: 1px solid var(--tt-hairline); }
+.hosts-card > .hosts-empty { margin: 0; border: 0; }
 
 /* The On/Off switch: the word beside it is what the switch shows, the name is what a press does. */
 .hosts-switch { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: 13px; }
@@ -37,7 +46,7 @@
 .hosts-menu { position: relative; display: inline-flex; }
 .hosts-menu__list { position: absolute; z-index: 20; top: calc(100% + 4px); right: 0; display: grid; min-width: 184px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-overlay); padding: 4px; }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .hosts-menu__list { animation: tt-pop-down 120ms ease-out; } }
-.hosts-menu__list [role='menuitem'] { min-height: 32px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; padding: 6px 10px; color: var(--tt-text); font-size: 13px; text-align: left; cursor: pointer; }
+.hosts-menu__list [role='menuitem'] { min-height: 32px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; padding: 6px 10px; color: var(--tt-text); font-size: 13px; text-align: left; }
 .hosts-menu__list [role='menuitem']:hover, .hosts-menu__list [role='menuitem']:focus-visible { background: var(--tt-hover); }
 .hosts-menu__list [data-danger] { color: var(--tt-error-text); }
 
@@ -51,7 +60,7 @@
 .hosts-settings .hosts-dialog__fields .tt-field__description { margin: 0; font-size: 12px; }
 .hosts-dialog__pair { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 12px; }
 .hosts-dialog__optional { color: var(--tt-text-faint); font-weight: 400; }
-.hosts-dialog__advanced > summary { width: max-content; border-radius: var(--tt-radius-sm); padding: 2px 0; color: var(--tt-text-muted); font-size: 13px; cursor: pointer; }
+.hosts-dialog__advanced > summary { width: max-content; border-radius: var(--tt-radius-sm); padding: 2px 0; color: var(--tt-text-muted); font-size: 13px; }
 .hosts-dialog__advanced[open] > summary { margin-bottom: 10px; }
 .hosts-dialog__advanced > .tt-field + .tt-field { margin-top: 12px; }
 .hosts-settings .hosts-dialog__client { margin: 0; font-size: 12px; overflow-wrap: anywhere; }

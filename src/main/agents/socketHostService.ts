@@ -23,7 +23,8 @@ import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignm
 import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import { OPENCODE_HOST_ANSWERS, type OpenCodeHostAnswer, type OpenCodeHostCall } from '../../shared/opencodeSignIn'
-import type { AgentThread, ProviderId } from '../../shared/agents'
+import type { AgentModel, AgentThread, ProviderId } from '../../shared/agents'
+import { immutableModels } from './activitySnapshots'
 import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostFailureWords'
 import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
 import type { AgentActivity } from '../../shared/agentActivity'
@@ -201,8 +202,17 @@ export class SocketHostService implements HostService {
    * asked for the whole thread again, behind the same backlog.
    */
   private readonly lateDetails = new Map<string, string>()
-  /** The model catalog this connection was last sent whole, under the revision the host named (ADR-0028, October 3 amendment). */
-  private catalog: { revision: number; models: unknown } | undefined
+  /**
+   * The model catalog this connection was last sent whole, under the revision the host named (ADR-0028, October 3
+   * amendment), and once a shell naming it has been read, that reading frozen and owned (`certified`). A later shell naming
+   * the same revision is read without its catalog and handed the certified one, so no push or answer reads the catalog
+   * again or makes a new array of it, and everything downstream that compares catalogs meets the same array (#996).
+   */
+  private catalog: { revision: number; models: unknown; certified?: AgentModel[] } | undefined
+  /** Each raw shell `restoreCatalog` read with an empty catalog, by its `host`, and the catalog it is handed once read. */
+  private readonly readCatalogs = new WeakMap<object, AgentModel[]>()
+  /** The revision each raw shell `restoreCatalog` restored named, by its `host`, so its first reading can be kept. */
+  private readonly namedCatalogs = new WeakMap<object, number>()
   private cachedWatcher: WatcherHostProjection | undefined
   /** Native ownership is immutable; an omitted later shell must not reopen a held thread. */
   private readonly dormantProviderThreads = new Map<string, DormantProviderThread>()
@@ -439,7 +449,12 @@ export class SocketHostService implements HostService {
       if ('event' in message) {
         // hostPushSchema has already read the shell and the detail with their own schemas, catalog required; a shell or a
         // detail can be megabytes, so neither is read a second time.
-        if (message.event === 'shell') { if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() } this.publish(message.state as AgentState, true) }
+        if (message.event === 'shell') {
+          if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() }
+          const state = message.state as AgentState
+          this.adoptCatalog(field(raw, 'state'), state)
+          this.publish(state, true)
+        }
         else if (message.event === 'answer-receipt') { if (this.cacheAcceptedAnswer(message.acceptedAnswer) && this.cached) this.notifyState() }
         else if (message.event === 'watcher-state') {
           if (this.options.watcherEnabled === true && this.supportsWatcherReads && this.cached) {
@@ -507,17 +522,37 @@ export class SocketHostService implements HostService {
    * Puts a shell's model catalog back as the host wrote it. A shell naming the revision this connection was last sent
    * whole leaves `models` out; one carrying it is remembered. The revision itself is the wire's, and goes no further.
    * False for a shell naming a revision this connection was never sent.
+   *
+   * Once a catalog has been read, a shell naming its revision is read with an empty catalog instead and handed that
+   * reading afterwards (`adoptCatalog`), so no shell reads the catalog again and every one carries the same frozen array:
+   * a push, a command's answer and a `shell` read alike (#996). The raw `host` object is the key, for the schema reads it
+   * when the push arrives or when the caller reads the answer.
    */
   private restoreCatalog(shell: unknown): boolean {
     const host = field(shell, 'host')
     const revision = field(host, 'modelsRevision')
     if (typeof revision !== 'number') return true
     const wire = host as { models?: unknown; modelsRevision?: unknown }
-    if (wire.models !== undefined) this.catalog = { revision, models: wire.models }
+    // A revision names one content, so a catalog carried whole again under the revision already read keeps that reading.
+    if (wire.models !== undefined) this.catalog = { revision, models: wire.models, ...this.catalog?.revision === revision && this.catalog.certified ? { certified: this.catalog.certified } : {} }
+    else if (this.catalog?.revision === revision && this.catalog.certified) { wire.models = []; this.readCatalogs.set(wire, this.catalog.certified) }
     else if (this.catalog?.revision === revision) wire.models = this.catalog.models
     else return false
+    this.namedCatalogs.set(wire, revision)
     delete wire.modelsRevision
     return true
+  }
+  /**
+   * After a shell restored by `restoreCatalog` is read: the catalog already read for its revision in place of the empty
+   * one it was read with, or, the first time its revision is read, that reading, frozen and kept as the revision's.
+   */
+  private adoptCatalog(raw: unknown, read: unknown): void {
+    const wire = field(raw, 'host'), host = field(read, 'host') as AgentState['host'] | undefined
+    if (wire === null || typeof wire !== 'object' || !host) return
+    const held = this.readCatalogs.get(wire)
+    if (held) { host.models = held; return }
+    const revision = this.namedCatalogs.get(wire), catalog = this.catalog
+    if (revision !== undefined && catalog?.revision === revision) host.models = catalog.certified ??= immutableModels(host.models)
   }
   /** Whether the host runs another Sotto version than this client, by what it advertised. */
   private skewed(): boolean { return this.hostVersion !== undefined && this.hostVersion !== this.clientVersion }
@@ -552,7 +587,7 @@ export class SocketHostService implements HostService {
   /** Reads what the host answered; from a host of another version, an answer this client cannot read is named as skew. */
   private read<T>(schema: z.ZodType<T>, value: unknown): T {
     const parsed = schema.safeParse(value)
-    if (parsed.success) return parsed.data
+    if (parsed.success) { this.adoptCatalog(value, parsed.data); this.adoptCatalog(field(value, 'shell'), field(parsed.data, 'shell')); return parsed.data }
     if (this.skewed()) throw new HostConnectionError(this.mismatchWords(), 'version_mismatch')
     throw parsed.error
   }
@@ -681,8 +716,17 @@ export class SocketHostService implements HostService {
     this.notifyState()
     if (this.pushErrorThread === null) this.clearPushError()
   }
-  /** New acceptance evidence changes recovery, but does not mean an unreadable shell has arrived. */
-  private notifyState(): void { for (const listener of this.listeners) listener(this.state()) }
+  /**
+   * New acceptance evidence changes recovery, but does not mean an unreadable shell has arrived. Listeners are handed
+   * `view()`, read in place as a local host's broadcast is: the router, the only one, reads a few fields of it and builds
+   * what it publishes from its own read. A whole copy of the shell with every held detail laid over it was made on every
+   * push, up to twenty a second while anything on the host streamed (#996).
+   */
+  private notifyState(): void {
+    if (!this.listeners.size) return
+    const view = this.view()
+    for (const listener of this.listeners) listener(view)
+  }
   private clearPushError(): void { this.pushErrorThread = undefined; this.options.onPushErrorCleared?.() }
   private cacheDetail(threadId: string, detail: AgentThreadDetail | null): void {
     if (detail && detail.threadId !== threadId) throw new HostConnectionError(t`The host returned a different thread. Refresh before continuing.`, 'invalid_request')
@@ -836,7 +880,7 @@ export class SocketHostService implements HostService {
     this.requireCommandAvailable(command)
     const refusal = managementCommandRefusal(command)
     if (refusal) throw new HostConnectionError(refusal, 'forbidden')
-    if (this.shell().legacyManagement && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
+    if (this.view().legacyManagement && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
       throw new HostConnectionError(LEGACY_MANAGEMENT_UPDATE, 'forbidden')
     }
     this.recoveryError = undefined
@@ -852,8 +896,9 @@ export class SocketHostService implements HostService {
     }
     // Saves admitted before a command go onto the wire first. Send never waits for their replies.
     this.flushCompose()
-    const owner = admitted.type === 'send' ? admitted.draft?.threadId ?? this.shell().draftThreadId ?? this.shell().activeThreadId
-      : admitted.type === 'cancel-draft' ? this.shell().draftThreadId ?? this.shell().activeThreadId : undefined
+    const shown = admitted.type === 'send' || admitted.type === 'cancel-draft' ? this.view() : undefined
+    const owner = admitted.type === 'send' ? admitted.draft?.threadId ?? shown!.draftThreadId ?? shown!.activeThreadId
+      : admitted.type === 'cancel-draft' ? shown!.draftThreadId ?? shown!.activeThreadId : undefined
     let edit = owner ? this.retainedDrafts.get(this.retainedHostId(), owner) : undefined
     const priorAdmission = this.wireAdmission
     const generation = this.generation
@@ -991,7 +1036,7 @@ export class SocketHostService implements HostService {
     return hostId
   }
   private retainCompose(command: TargetedCompose, commandId?: string): RetainedDraft {
-    const state = this.shell(), previous = this.retainedDrafts.get(this.retainedHostId(), command.threadId)
+    const state = this.view(), previous = this.retainedDrafts.get(this.retainedHostId(), command.threadId)
     // A projected empty local edit is not evidence that a freshly visible question is a prompt.
     const saved = this.cached?.threadDrafts?.find(draft => draft.threadId === command.threadId)
     const thread = state.host.threads.find(item => item.id === command.threadId)
@@ -1101,7 +1146,7 @@ export class SocketHostService implements HostService {
     }
     if (command.type === 'observe-threads') { await this.observe(command.threadIds, this.shown); return this.state() }
     commandId ??= randomUUID()
-    const before = this.shell()
+    const before = this.view()
     const thread = command.type === 'answer' ? before.host.threads.find(item => item.id === command.threadId) : undefined
     const request = command.type === 'answer' ? thread?.requests.find(item => item.id === command.requestId) : undefined
     const questions = request ? requestDraftQuestions(request) : []
@@ -1126,7 +1171,7 @@ export class SocketHostService implements HostService {
     if (command.type === 'connect' && !state.error) {
       const text = providerConnectionNotice(state, command.provider)
       if (quietConnectGeneration === this.explicitConnectionGeneration) {
-        const previous = this.shell().notice
+        const previous = this.view().notice
         this.preserveConnectionFeedback(previous)
         this.quietConnectionNotices.set(text, previous)
       } else if (command.notice !== false && state.notice === text) {
@@ -1342,6 +1387,8 @@ export class SocketHostService implements HostService {
   get supportsThreadMove(): boolean { return this.features.includes('thread-move') }
   /** The host lists `thread-move-source`: its own threads can be a move's source (#1178 part 3). */
   get supportsThreadMoveSource(): boolean { return this.features.includes('thread-move-source') }
+  /** The host lists `thread-move-keep`: it calls off a move it was asked to start (#1178 part 4). */
+  get supportsThreadMoveKeep(): boolean { return this.features.includes('thread-move-keep') }
   /**
    * Asks the host to make a move's new thread and send its first prompt (`threadMoves.ts`), answered as the host gave it for the
    * caller to read. Making a thread and its first send are quick, so the wait is a branch move step's. A host that does not
@@ -1349,7 +1396,8 @@ export class SocketHostService implements HostService {
    */
   async threadMove(request: HostThreadMoveRequest): Promise<unknown> {
     this.offers('thread-move')
-    if (request.action !== 'start') this.offers('thread-move-source')
+    if (request.action === 'keep') this.offers('thread-move-keep')
+    else if (request.action !== 'start') this.offers('thread-move-source')
     return this.call({ op: 'thread-move', request }, undefined, undefined, 120_000)
   }
   /** The host lists `project-origins`: it names each of its projects' GitHub repository (#1032). An older host's cannot be matched. */

@@ -296,11 +296,6 @@ msgstr ""
 msgid "{done} of {total} done"
 msgstr ""
 
-#. An effort dot's tooltip and value: {effort} is a reasoning effort level, such as High; {name} is the thread's speed, such as Fast or Standard.
-#: src/renderer/src/agents/EffortDots.tsx
-msgid "{effort} · {name}"
-msgstr ""
-
 #. {error} says why the answer was not sent; "It" is the answer.
 #. {error} says why the prompt was not queued; "It" is the prompt.
 #: src/renderer/src/agents/ThreadComposer.tsx
@@ -591,8 +586,16 @@ msgstr ""
 
 #. A chip's tooltip: the setting's name, then its value.
 #. A chip's tooltip: the setting's name, then its value.
+#. A chip's tooltip: the setting's name, then its value.
+#: src/renderer/src/agents/SplitChipEffort.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{label}: {shown}"
+msgstr ""
+
+#. The effort chip's tooltip: {label} is the setting's name, {shown} a reasoning effort level such as High, {name} the thread's speed such as Fast.
+#. placeholder {0}: speed.name
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "{label}: {shown} · {0}"
 msgstr ""
 
 #. A diagram's kind, such as Flowchart, then its title.
@@ -1768,10 +1771,6 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Another provider’s model starts a new Watcher. This conversation stays in Watcher history, and you can send its handover with your first message."
-msgstr ""
-
-#: src/renderer/src/agents/requests/AgentRequestCard.tsx
-msgid "Answer draft saved."
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -3350,7 +3349,9 @@ msgid "default"
 msgstr ""
 
 #. A button that sets the model's own default reasoning effort.
+#. The quiet composer's effort word while the thread is on the model's own default reasoning effort.
 #: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/SplitChipEffort.tsx
 msgid "Default"
 msgstr ""
 
@@ -4731,10 +4732,6 @@ msgstr ""
 msgid "Loading providers…"
 msgstr ""
 
-#: src/renderer/src/agents/requests/AgentRequestCard.tsx
-msgid "Loading saved answer…"
-msgstr ""
-
 #: src/renderer/src/agents/SkillPicker.tsx
 msgid "Loading skills…"
 msgstr ""
@@ -5238,10 +5235,6 @@ msgstr ""
 msgid "No models were returned. Refresh this provider to check again."
 msgstr ""
 
-#: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "No open threads."
-msgstr ""
-
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "No preview for this file type"
 msgstr ""
@@ -5271,7 +5264,6 @@ msgid "No skills match “{query}”."
 msgstr ""
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
-#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "No threads yet."
 msgstr ""
 
@@ -6105,8 +6097,8 @@ msgstr ""
 
 #: src/renderer/src/agents/AgentAccountSettings.tsx
 #: src/renderer/src/agents/ContinueThread.tsx
-#: src/renderer/src/agents/EffortDots.tsx
 #: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/SplitChipEffort.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Provider default"
 msgstr ""
@@ -6305,6 +6297,7 @@ msgid "Reasoning"
 msgstr ""
 
 #: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/SplitChipEffort.tsx
 msgid "Reasoning effort"
 msgstr ""
 
@@ -6801,10 +6794,6 @@ msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Saved model servers"
-msgstr ""
-
-#: src/renderer/src/agents/requests/AgentRequestCard.tsx
-msgid "Saving answer…"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
@@ -7837,14 +7826,19 @@ msgstr ""
 msgid "Stopped. Nothing more will come of it."
 msgstr ""
 
+#. Beside a reasoning effort level the draft seems to want.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "Suggested for this draft"
+msgstr ""
+
 #. {ghostText} is the suggested prompt.
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Suggested next prompt: {ghostText}. Press Tab to take it, or Up for more."
 msgstr ""
 
 #. {suggested} is a reasoning effort level, such as High.
-#: src/renderer/src/agents/EffortDots.tsx
-msgid "Suggests {suggested}. Press a ringed dot to use it."
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "Suggests {suggested}. Choose it from the effort list."
 msgstr ""
 
 #. A step in the browser line; starts lowercase.

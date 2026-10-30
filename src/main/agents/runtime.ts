@@ -558,7 +558,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const threadMoves = crossMachine && options.runsAs !== 'headless-host' && watcher && branchMoves
     ? new ThreadMoveService(directory, { control: agentControl, workspace: agentHost, branches: branchMoves, watch: watcher,
       news: move => watcher.wakes.threadMoved(move), ...delegation ? { delegations: delegation } : {},
-      ...movesHere ? { here: { supportsThreadMove: true, threadMove: request => movesHere.handle(request, thisComputer) } } : {} }) : undefined
+      ...movesHere ? { here: { supportsThreadMove: true, supportsThreadMoveKeep: true, threadMove: request => movesHere.handle(request, thisComputer) } } : {} }) : undefined
   await threadMoves?.load()
   // A run that does not move threads, stable among them, still reads the record and keeps every move not finished fenced,
   // and its worktree kept: that thread may already work on another machine. Nothing steps, and nothing is shown.
@@ -568,7 +568,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (threadMoves) agentControl.onThreadsDeleted(threadIds => { threadMoves.forgetThreads(new Set(threadIds)) })
   if (watcher) {
     agentHost.setWatcherPrObserver(read => watcher.pullRequestObserved(read))
-    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired, swarms: options.workerSwarmsEnabled === true }); agentHost.useWatcherTools(watcherTools) }
+    if (options.runsAs !== 'headless-host') { watcherTools = new WatcherToolServer(watcher, { roles: options.workerRolesEnabled === true, machines: crossMachine, pullRequestNews: babysittingRetired, swarms: options.workerSwarmsEnabled === true, ...threadMoves ? { moves: threadMoves } : {} }); agentHost.useWatcherTools(watcherTools) }
   }
   agentHost.setPendingThreadWork(threadId => agentControl.hasPendingThreadWork(threadId), threadId => agentControl.pendingThreadWorkReason(threadId))
   // Reclaims worktrees only under the rules the user turned on (ADR-0041); every rule starts off. The desktop's

@@ -187,8 +187,7 @@ export function AgentRequestCard({ ownerId, ownerTitle, draftOwner, request, blo
       {status}
       {entry.saveError ? <div className="agent-request__error" role="alert"><p>{entry.saveError}</p>
         {!locked ? <Button variant="secondary" onClick={() => { void store.flush(entryOwner, request.id) }}><Trans>Save again</Trans></Button> : null}</div>
-        : draftQuestions.length > 0 && !locked ? <span className="agent-request__status" role="status">{entry.save === 'loading' ? t`Loading saved answer…`
-          : entry.save === 'saving' ? t`Saving answer…` : entry.revision > 0 ? t`Answer draft saved.` : ''}</span> : null}
+        : null}
     </div>
   </section>
 }

@@ -5,6 +5,7 @@
 // square and round launcher icons, plus Linux's 48, 128 and 256px hicolor icons.
 // Run after editing any SVG: node scripts/generate-brand-assets.mjs
 // On forge, regenerate only hicolor icons with --linux; the Windows sidebar needs its Windows fonts.
+// Use --dock to regenerate only the macOS Dock coverage on any platform.
 import { Buffer } from 'node:buffer'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { log } from 'node:console'
@@ -137,6 +138,11 @@ async function trayTemplate() {
 }
 
 const iconSvg = await readFile(path.join(buildDir, 'icon.svg'))
+if (process.argv.includes('--dock')) {
+  await dockCoverage()
+  log('Wrote resources/dock/mark-coverage.bin')
+  process.exit(0)
+}
 for (const size of [48, 128, 256]) {
   await sharp(iconSvg, { density: 768 }).resize(size, size).png()
     .toFile(path.join(repoRoot, 'apps/omarchy', `sotto-${size}.png`))
@@ -164,8 +170,14 @@ await trayTemplate()
 // tile's alpha, then the glyph's, deflated.
 async function dockCoverage() {
   const svg = iconSvg.toString('utf8')
-  const alpha = async (source) => sharp(Buffer.from(source), { density: (72 * DOCK_COVERAGE_SIZE) / 96 })
-    .resize(DOCK_COVERAGE_SIZE, DOCK_COVERAGE_SIZE).ensureAlpha().extractChannel(3).raw().toBuffer()
+  // Match native macOS tile proportions: 824px inside a 1024px canvas.
+  // AppKit displays the runtime Dock image with the padding we supply.
+  const inset = 50
+  const tileSize = DOCK_COVERAGE_SIZE - inset * 2
+  const alpha = async (source) => sharp(Buffer.from(source), { density: (72 * tileSize) / 96 })
+    .resize(tileSize, tileSize)
+    .extend({ top: inset, bottom: inset, left: inset, right: inset, background: { r: 0, g: 0, b: 0, alpha: 0 } })
+    .ensureAlpha().extractChannel(3).raw().toBuffer()
   const tile = await alpha(svg.replace(/<(path|circle)\b[^>]*\/>/g, ''))
   const glyph = await alpha(svg.replace(/<rect\b[^>]*\/>/g, ''))
   const coverage = Buffer.alloc(tile.length * 2)

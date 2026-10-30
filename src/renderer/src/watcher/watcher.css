@@ -22,7 +22,7 @@
 /* Watch in a thread's pane header: a pill, lit in the accent while Watcher watches the thread. Narrow panes keep the owl.
    The lit fill is the accent mixed into the surface under it, so it is solid and its text is measured against what shows. */
 .watch-toggle { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 6px;
-  background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer;
+  background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watch-toggle:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watch-toggle:active:not(:disabled):not([aria-pressed='true']) { border-color: var(--tt-border-faint); background: var(--tt-hover-strong); color: var(--tt-text); }
@@ -34,7 +34,7 @@
 .watcher-row:has(> .watcher-row__watch) { grid-template-columns: 10px minmax(0, 1fr) auto 30px; }
 .watcher-row:has(> .watcher-row__watch) > :is(.watcher-row__meta, .watcher-row__asks) { grid-column: 2 / 4; }
 .watcher-row__watch { position: relative; z-index: 1; grid-column: 4; grid-row: 1 / span 2; display: grid; place-items: center; width: 30px; height: 30px; padding: 0;
-  border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer;
+  border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text-muted);
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-row__watch:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watcher-row__watch:active:not(:disabled):not([aria-pressed='true']) { border-color: var(--tt-border-faint); background: var(--tt-hover-strong); color: var(--tt-text); }
@@ -51,10 +51,10 @@
 .watch-toast strong { color: var(--tt-text); font-weight: 600; }
 .watch-toast[data-tone='refused'] { border-color: var(--tt-warning); }
 .watch-toast[data-tone='refused'] > .watcher-owl { color: var(--tt-warning-text); }
-.watch-toast__undo { flex: none; height: 26px; padding: 0 11px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.watch-toast__undo { flex: none; height: 26px; padding: 0 11px; border: 1px solid var(--tt-field-border); border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watch-toast__undo:hover { background: var(--tt-hover); }
 .watch-toast__undo:active:not(:disabled) { background: var(--tt-hover-strong); }
-.watch-toast__dismiss { display: grid; flex: none; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.watch-toast__dismiss { display: grid; flex: none; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watch-toast__dismiss:hover { background: var(--tt-hover); color: var(--tt-text); }
 .watch-toast__dismiss:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 @media (prefers-reduced-motion: no-preference) {
@@ -111,7 +111,7 @@
 .watcher-head__tile { display: inline-grid; flex: none; place-items: center; width: 24px; height: 24px; margin-right: 6px; }
 .watcher-head h1 { flex: 0 1 auto; min-width: 3em; margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* All threads, beside Watcher's name: it opens the Overview over the room. */
-.watcher-head__list { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.watcher-head__list { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 8px 0 9px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-head__list:hover, .watcher-head__list[aria-expanded='true'] { border-color: var(--tt-hairline); background: var(--tt-hover); color: var(--tt-text); }
 .watcher-head__list:active:not(:disabled):not([aria-expanded='true']) { border-color: var(--tt-hairline); background: var(--tt-hover-strong); color: var(--tt-text); }
 .watcher-head__count { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
@@ -204,7 +204,7 @@
 /* The Sotto Owl tile once Watcher runs (#1189, pick C): a button, with a thin bar under it filling toward the point
    where Sotto compacts Watcher's conversation and a dot once it is close, that opens Watcher's context and state. */
 .watcher-context { position: relative; display: flex; flex: none; margin-right: 6px; -webkit-app-region: no-drag; }
-.watcher-head__tile.watcher-context__tile { position: relative; margin-right: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; cursor: pointer; transition: box-shadow 120ms ease; -webkit-app-region: no-drag; }
+.watcher-head__tile.watcher-context__tile { position: relative; margin-right: 0; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; transition: box-shadow 120ms ease; -webkit-app-region: no-drag; }
 .watcher-context__tile > svg { display: block; width: 24px; height: 24px; }
 .watcher-context__tile:hover { box-shadow: 0 0 0 4px var(--tt-hover); }
 .watcher-context__tile[aria-expanded='true'] { box-shadow: 0 0 0 4px var(--tt-hover-strong); }
@@ -253,7 +253,7 @@
 .watcher-glance__names > li { display: inline-flex; align-items: baseline; gap: 7px; min-width: 0; }
 .watcher-glance .watcher-row__ring { align-self: center; width: 8px; height: 8px; }
 .watcher-glance__name { display: inline-flex; min-width: 0; max-width: 260px; padding: 0; line-height: inherit; border: 0; border-radius: 3px; background: transparent; color: var(--tt-text); font: inherit; font-weight: 500; white-space: nowrap;
-  text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--tt-text) 30%, transparent); text-underline-offset: 3px; cursor: pointer; }
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--tt-text) 30%, transparent); text-underline-offset: 3px; }
 .watcher-glance__name:hover { text-decoration-color: currentColor; }
 .watcher-glance__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .watcher-glance__why { white-space: nowrap; }
@@ -278,7 +278,7 @@
 .watcher-machines__sep { padding: 0 7px; }
 .watcher-machines__name, .watcher-machines__more { display: inline; max-width: 260px; padding: 0; line-height: inherit; vertical-align: baseline; border: 0; border-radius: 3px; background: transparent;
   color: var(--tt-text); font: inherit; font-weight: 500; white-space: nowrap; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--tt-text) 30%, transparent);
-  text-underline-offset: 3px; cursor: pointer; }
+  text-underline-offset: 3px; }
 .watcher-machines__more { color: var(--tt-text-2); }
 .watcher-machines__name { display: inline-flex; max-width: min(260px, calc(100% - 12em)); vertical-align: top; }
 .watcher-machines__name > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
@@ -305,7 +305,7 @@
 .watcher-machine-panel__body { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .watcher-machine-panel__body > :last-child { margin-bottom: 0; }
 .watcher-machine-panel__body:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: 4px; }
-.watcher-machine-panel__close { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.watcher-machine-panel__close { position: absolute; top: 8px; right: 8px; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-machine-panel__close:hover { background: var(--tt-hover); color: var(--tt-text); }
 .watcher-machine-panel__close:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .watcher-machine-panel p { margin: 0 0 8px; color: var(--tt-text-2); }
@@ -322,7 +322,7 @@
 .watcher-machine-panel__wait { display: block; width: 9px; height: 9px; border: 1.5px dotted var(--tt-text-2); border-radius: 50%; }
 .watcher-machine-panel__foot { flex: none; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
 .watcher-machine-panel__link { padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-accent-text); font: inherit; font-weight: 500; text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; cursor: pointer; }
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; }
 .watcher-machine-panel__link:hover { text-decoration-color: currentColor; }
 
 /* ---------- The Overview over the room ---------- */
@@ -342,7 +342,7 @@
 .watcher-group { margin: 0 0 8px; }
 .watcher-group__label { display: flex; align-items: center; gap: 6px; margin: 0; padding: 6px 10px 2px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; }
 .watcher-group[data-tone='needs'] .watcher-group__label { color: var(--watcher-needs-ink); }
-.watcher-group__settled { display: flex; align-items: center; gap: 6px; width: calc(100% - 12px); min-height: 30px; margin: 2px 6px 0; padding: 0 10px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; text-align: left; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.watcher-group__settled { display: flex; align-items: center; gap: 6px; width: calc(100% - 12px); min-height: 30px; margin: 2px 6px 0; padding: 0 10px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-group__settled:hover { background: var(--tt-hover); color: var(--tt-text); }
 .watcher-group__settled:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .watcher-group__chevron { flex: none; color: var(--tt-text-muted); transition: transform 120ms ease; }
@@ -355,7 +355,7 @@
 .watcher-row { position: relative; display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; column-gap: 9px; row-gap: 4px; margin: 1px 0; padding: 8px 10px; border: 1px solid transparent; border-radius: 7px; }
 .watcher-row:hover { background: var(--tt-hover); }
 .watcher-row[data-current] { border-color: var(--tt-selected-border); background: var(--tt-selected); }
-.watcher-row__open { display: flex; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 13.5px; font-weight: 500; text-align: left; cursor: pointer; }
+.watcher-row__open { display: flex; min-width: 0; padding: 0; border: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 13.5px; font-weight: 500; text-align: left; }
 .watcher-row__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .watcher-row__open::after { position: absolute; inset: 0; border-radius: 7px; content: ''; }
 .watcher-row__open:focus-visible { outline: 0; box-shadow: none; }
@@ -372,7 +372,7 @@
 .watcher-row__asks { grid-column: 2 / -1; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
 .watcher-row__asks > span { min-width: 0; }
 /* Open to answer sits over the row's own press, so it is the one that answers there. */
-.watcher-answer { position: relative; z-index: 1; display: inline-flex; flex: none; align-items: center; min-height: 26px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--watcher-needs-ink) 55%, transparent); border-radius: 6px; background: transparent; color: var(--watcher-needs-ink); font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.watcher-answer { position: relative; z-index: 1; display: inline-flex; flex: none; align-items: center; min-height: 26px; padding: 0 10px; border: 1px solid color-mix(in srgb, var(--watcher-needs-ink) 55%, transparent); border-radius: 6px; background: transparent; color: var(--watcher-needs-ink); font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-answer:hover { border-color: var(--watcher-needs-ink); background: var(--tt-warning-surface); }
 /* Why a prototype could not open (ADR-0108), on a line of its own under Open the prototype. */
 .watcher-row__failure { flex-basis: 100%; color: var(--tt-text-muted); font-size: 12.5px; }
@@ -394,17 +394,18 @@
 :root[data-reduced-motion='on'] .watcher-group__chevron { transition: none; }
 
 /* ---------- The first time ---------- */
-/* The room as it will be: what Watcher is, just above Watcher's composer, which is ready to send its first message. */
+/* The room as it will be: what Watcher does in one sentence, left-aligned just above Watcher's composer, which is ready to
+   send its first message; How Watcher works opens Help at the rest (#1822). */
 .watcher-first { display: flex; flex-direction: column; }
-.watcher-first__intro { display: flex; flex-direction: column; align-items: center; margin: auto auto 0; padding-bottom: 6px; text-align: center; }
-.watcher-first__intro h2 { margin: 10px 0 8px; font-size: 18px; font-weight: 600; letter-spacing: -.2px; }
-.watcher-first__intro p { max-width: 470px; margin: 0 0 10px; color: var(--tt-text-2); font-size: 14px; line-height: 1.6; }
+.watcher-first__intro { display: flex; flex-direction: column; align-items: flex-start; margin: auto 0 0; padding-bottom: 6px; text-align: start; }
+.watcher-first__intro p { max-width: 640px; margin: 0 0 10px; color: var(--tt-text-2); font-size: 14px; line-height: 1.6; }
 .watcher-first__intro p:last-child { margin-bottom: 0; }
-.watcher-first__owl { color: var(--tt-text-2); }
+.watcher-first__how { display: inline; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-accent-text); font: inherit; font-weight: 500;
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; }
+.watcher-first__how:hover { text-decoration-color: currentColor; }
 .watcher-first__missing { color: var(--tt-text-2); }
 .watcher-first__error { margin: 0 0 8px; }
 @media (max-height: 760px) {
-  .watcher-first__intro h2 { margin: 6px 0 6px; }
   .watcher-first__intro p { font-size: 13.5px; line-height: 1.5; }
 }
 
@@ -418,7 +419,7 @@
 .watcher-own__words > strong { color: var(--tt-text); font-weight: 600; }
 .watcher-own__said { color: var(--tt-text-muted); }
 .watcher-own__none { color: var(--watcher-needs-ink); }
-.watcher-own__toggle { display: inline-flex; flex: none; align-items: center; gap: 3px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-accent-text); font: inherit; font-size: 13px; cursor: pointer; }
+.watcher-own__toggle { display: inline-flex; flex: none; align-items: center; gap: 3px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-accent-text); font: inherit; font-size: 13px; }
 .watcher-own__toggle:hover { text-decoration: underline; text-underline-offset: 3px; }
 .watcher-own__files { display: grid; gap: 4px; margin: 8px 0 0 6px; padding: 2px 0 2px 14px; border-left: 1px solid var(--tt-hairline); list-style: none; color: var(--tt-text-muted); font-size: 12.5px; }
 .watcher-own__files > li { display: flex; align-items: center; gap: 7px; min-width: 0; }
@@ -451,11 +452,11 @@
 .watcher-handover__lead > svg { flex: none; margin-top: 2px; color: var(--tt-accent-text); }
 .watcher-handover__lead > p { flex: 1 1 auto; min-width: 0; margin: 0; }
 .watcher-handover__lead strong { font-weight: 600; }
-.watcher-handover__dismiss { display: grid; flex: none; place-items: center; width: 26px; height: 26px; margin: -4px -5px -4px 0; padding: 0; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.watcher-handover__dismiss { display: grid; flex: none; place-items: center; width: 26px; height: 26px; margin: -4px -5px -4px 0; padding: 0; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-handover__dismiss:hover { background: var(--tt-hover); color: var(--tt-text); }
 .watcher-handover__dismiss:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .watcher-handover__ledger { margin: 6px 0 0 23px; color: var(--tt-text-2); }
-.watcher-handover__read { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; cursor: pointer; }
+.watcher-handover__read { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
 .watcher-handover__read:disabled { color: var(--tt-text-muted); cursor: progress; }
 .watcher-handover__error { margin: 6px 0 0 23px; color: var(--tt-error-text); }
 /* The words themselves, as the new Watcher receives them: a short scrolling block, so the composer keeps its room. */
@@ -468,7 +469,7 @@
 .watcher-handover-message { margin-bottom: 10px; }
 .watcher-handover-message__lead { margin: 0; color: var(--tt-text); font-size: 15px; line-height: 1.55; }
 .watcher-handover-message__ledger { margin: 4px 0 0; color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
-.watcher-handover__disclose { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 2px 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; font-size: 13px; cursor: pointer; }
+.watcher-handover__disclose { display: inline-flex; align-items: center; gap: 4px; margin-top: 8px; padding: 2px 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; font-size: 13px; }
 .watcher-handover__disclose > svg { transition: transform 150ms ease; }
 .watcher-handover__disclose[aria-expanded='true'] > svg { transform: rotate(90deg); }
 @media (prefers-reduced-motion: reduce) { .watcher-handover__disclose > svg { transition: none; } }
@@ -487,7 +488,7 @@
 .receipt-card__name { min-width: 0; overflow: hidden; color: var(--tt-text-2); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 /* A thread's name as a link: underlined in the text's own colour, as the needs-you line's names are. */
 .receipt-link { display: inline; min-width: 0; max-width: 100%; overflow: hidden; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-text); font: inherit; font-weight: 500; text-align: left;
-  text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-overflow: ellipsis; text-underline-offset: 3px; white-space: nowrap; cursor: pointer; }
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-overflow: ellipsis; text-underline-offset: 3px; white-space: nowrap; }
 .receipt-link:hover { text-decoration-color: currentColor; }
 .receipt-card__top > .receipt-link { flex: 0 1 auto; }
 .receipt-outcome { display: inline-flex; flex: none; align-items: center; gap: 6px; margin-left: auto; color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
@@ -536,10 +537,10 @@
 .watcher-ask__provider .thread-nav__mark { width: 12px; height: 12px; }
 .watcher-ask__machine[data-kind='remote'] > svg { color: var(--tt-accent-text); }
 .watcher-ask__kind { color: var(--watcher-needs-ink); }
-.watcher-ask__open { display: inline-flex; flex: none; align-items: center; min-height: 24px; margin-left: auto; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.watcher-ask__open { display: inline-flex; flex: none; align-items: center; min-height: 24px; margin-left: auto; padding: 0 10px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; font-weight: 500; white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-ask__open:hover { border-color: var(--tt-border); color: var(--tt-text); }
 .watcher-ask__said { padding-left: 16px; }
-.watcher-ask__toggle { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-accent-text); font: inherit; font-size: 13px; cursor: pointer; }
+.watcher-ask__toggle { display: inline-flex; align-items: center; gap: 3px; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-accent-text); font: inherit; font-size: 13px; }
 .watcher-ask__toggle:hover { text-decoration: underline; text-underline-offset: 3px; }
 .watcher-ask__said-body { margin: 6px 0 0; padding: 2px 0 2px 14px; border-left: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13.5px; }
 .watcher-ask__said-body > :first-child { margin-top: 0; }
@@ -555,7 +556,7 @@
    Watch, whose stop square takes the error ink only on hover, since a press asks first. Narrow panes keep the square. */
 .watcher-stop-all { position: relative; display: flex; }
 .watcher-stop-all__button { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 6px;
-  background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer;
+  background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-stop-all__button:hover, .watcher-stop-all__button[aria-expanded='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watcher-stop-all__button:active:not(:disabled):not([aria-expanded='true']) { border-color: var(--tt-border-faint); background: var(--tt-hover-strong); color: var(--tt-text); }
@@ -594,7 +595,7 @@
 /* Move threads, beside Stop all in Watcher's header while another machine is connected: Stop all's quiet outline, its
    label giving way before Stop all's does, since the room keeps its words for what stops work. */
 .watcher-move-threads { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; margin-right: 6px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border);
-  border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; -webkit-app-region: no-drag;
+  border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; -webkit-app-region: no-drag;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watcher-move-threads:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watcher-move-threads:hover > svg { color: var(--tt-accent-text); }
@@ -619,11 +620,33 @@
 .move-sheet__line { color: var(--tt-text-2); }
 .move-sheet__line[data-tone='needs'] { color: var(--watcher-needs-ink); }
 .move-sheet__note { flex: none; margin: 12px 0 16px; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+/* Part 3 (Zach's picks, October 29): each thread says where it is now, and one that can move has a box, none ticked but
+   what the user pointed at. A list with boxes keeps its names in one column, a row that stays leaving the box's place. */
+.move-sheet__where { display: inline-flex; align-items: center; gap: 4px; color: var(--tt-text-2); white-space: nowrap; }
+.move-sheet__where > svg { flex: none; color: var(--tt-accent-text); }
+.move-sheet__row[data-box] { grid-template-columns: 16px 16px minmax(0, 1fr); }
+.move-sheet__row[data-box] > :is(.move-sheet__meta, .move-sheet__line) { grid-column: 3; }
+.move-sheet__list[data-box] > .move-sheet__row:not([data-box]) { grid-template-columns: 16px 16px minmax(0, 1fr); }
+.move-sheet__list[data-box] > .move-sheet__row:not([data-box]) > :is(.move-sheet__meta, .move-sheet__line) { grid-column: 3; }
+.move-sheet__list[data-box] > .move-sheet__row:not([data-box])::before { content: ''; }
+.move-sheet__box { width: 15px; height: 15px; margin: 0; accent-color: var(--tt-accent); }
+.move-sheet__box:disabled { cursor: default; }
+label.move-sheet__name { cursor: default; }
+/* Watcher's proposal from the user's words (part 3, Zach's pick A): Sotto's line, then the preview as a card with its
+   boxes, Move and Not now, in Watcher's conversation. */
+.move-proposal { margin: 0 0 18px; }
+.move-proposal .sotto-line { margin-bottom: 10px; }
+.move-proposal__card { padding: 4px 14px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface); }
+.move-proposal__card h3 { display: flex; align-items: baseline; gap: 8px; margin: 12px 0 6px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; }
+.move-proposal__card h3 > span { color: var(--tt-text-muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.move-proposal__card h3[data-tone='needs'] { color: var(--watcher-needs-ink); }
+.move-proposal__changed { margin: 8px 0 0; color: var(--watcher-needs-ink); font-size: 12.5px; line-height: 1.5; }
+.move-proposal__card .move-card__actions { padding-left: 0; }
 .move-sheet__refused { color: var(--tt-error-text); }
 .move-sheet .tt-dialog__actions { flex: none; }
 .move-sheet__machines { display: grid; gap: 6px; margin: 14px 0 18px; padding: 0; list-style: none; }
 .move-sheet__machine { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 44px; padding: 0 14px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-sm);
-  background: transparent; color: var(--tt-text); font: inherit; font-size: 14px; text-align: left; cursor: pointer; }
+  background: transparent; color: var(--tt-text); font: inherit; font-size: 14px; text-align: left; }
 .move-sheet__machine:hover:not(:disabled) { border-color: var(--tt-border-faint); background: var(--tt-hover); }
 .move-sheet__machine > svg { flex: none; color: var(--tt-accent-text); }
 .move-sheet__machine:disabled { border-style: dashed; color: var(--tt-text-2); cursor: default; }
@@ -642,6 +665,12 @@
 .move-card__steps > li[data-done] { background: var(--tt-activity); }
 .move-card[data-tone='needs'] .move-card__steps > li[data-done] { background: var(--watcher-needs-ink); }
 .move-card__actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; padding-left: 23px; }
+/* Keep it here's question on the card (part 4, Zach's pick of October 30): what stops and what stays, before it does. */
+.move-card__confirm { margin: 8px 0 0 23px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--watcher-needs-ink) 45%, var(--tt-hairline)); border-radius: var(--tt-radius-sm);
+  color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.move-card__confirm p { margin: 0; }
+.move-card__confirm strong { color: var(--tt-text); font-weight: 600; }
+.move-card__confirm .move-card__actions { padding-left: 0; margin-top: 8px; }
 .move-card__actions .tt-button { min-height: 32px; padding: 0 12px; font-size: 13px; }
 .move-card__refused { color: var(--tt-error-text); }
 

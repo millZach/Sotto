@@ -27,7 +27,8 @@ vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => {
 const THREAD = 'grok-previews'
 
 /** One idle thread of the fixture, on its own, with a provider that can compact and a place to open beside. */
-function mount({ beside = true, state = threadsStateFixture() }: { readonly beside?: boolean; readonly state?: AgentState } = {}) {
+function mount({ beside = true, state = threadsStateFixture(), patch }: { readonly beside?: boolean; readonly state?: AgentState; readonly patch?: Partial<AgentState['host']['threads'][number]> } = {}) {
+  if (patch) Object.assign(state.host.threads.find(thread => thread.id === THREAD)!, patch)
   state.activeThreadId = THREAD
   state.host.capabilities = { ...state.host.capabilities, compact: true }
   const live = liveAgentState(state)
@@ -109,6 +110,15 @@ describe('Continue on another machine… (#1178 part 2, Owl Work across machines
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Continue on another machine…' }))
     expect(moveSheetStore.get()).toMatchObject({ kind: 'one', threadId: THREAD })
   })
+  it('is offered for a connected host’s thread, which can always come to This computer, naming its machine (part 3)', async () => {
+    offer('disconnected')
+    const LAB = '3f2a9c71-6e4b-4d18-9a52-7b1c0e8d6f24'
+    const view = mount({ patch: { remoteHost: true, hostId: LAB, hostLabel: 'lab' } })
+    await act(async () => { await Promise.resolve() })
+    const menu = openPaneMenu(view.head())
+    fireEvent.click(within(menu).getByRole('menuitem', { name: 'Continue on another machine…' }))
+    expect(moveSheetStore.get()).toMatchObject({ kind: 'one', threadId: THREAD, hostId: LAB })
+  })
   it('is left out while no other machine is connected', async () => {
     offer('disconnected')
     const view = mount()
@@ -166,7 +176,7 @@ describe('the manual composer', () => {
     expect(document.querySelector('.thread-workspace__compose')).toContainElement(toolbar)
   })
 
-  it('keeps quiet Stop after the shield and before the round Send, leaving the effort dots free', () => {
+  it('keeps quiet Stop after the split chip and before the round Send, with the shield at the start of the pill', () => {
     vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
     const state = threadsStateFixture()
     state.host.capabilities.configureThread = true
@@ -182,6 +192,7 @@ describe('the manual composer', () => {
     expect(stop.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(stop.parentElement).toHaveClass('thread-prompt__actions')
     expect(send).toHaveClass('thread-prompt__disc')
-    expect(document.querySelector('.effort-dots__stop')).toBeNull()
+    // The shield stands at the pill's start, after attach (ADR-0161).
+    expect(shield.closest('.thread-prompt__lead')).not.toBeNull()
   })
 })

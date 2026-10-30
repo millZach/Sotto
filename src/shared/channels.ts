@@ -66,6 +66,8 @@ export const UPDATE_DOWNLOAD = 'sotto:update:download' as const
 export const UPDATE_INSTALL = 'sotto:update:install' as const
 export const UPDATE_STATUS = 'sotto:update:status' as const
 export const UPDATE_CHECK_REQUESTED = 'sotto:update:check-requested' as const
+/** The application menu's Settings… (Cmd+, on a Mac, Ctrl+, elsewhere): the main window opens Settings. */
+export const SETTINGS_OPEN_REQUESTED = 'sotto:settings:open-requested' as const
 
 export const STARTUP_GET = 'sotto:startup:get' as const
 export const STARTUP_SET = 'sotto:startup:set' as const

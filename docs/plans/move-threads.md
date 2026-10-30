@@ -34,6 +34,12 @@ Zach, October 29, 2026, on the question card for part 3 (tag `prototype/move-thr
 - **Asking Watcher in words** puts the same preview in Watcher's conversation as Sotto's own card, with Move and Not now. Nothing moves until the press; the move cards then follow as before.
 - **Nothing in the sheet starts ticked.** Zach ticks each thread to move, and Move stays off until one is. This changes part 2's sheet, which moved every thread that could. Read here, and said on #1178: threads already pointed at start ticked, the one a thread's More menu opened the sheet for and those Watcher named from his words.
 
+Zach, October 30, 2026, on the question card for part 4 (tag `prototype/move-threads-reconcile`):
+
+- **Keep it here asks first, on the card,** when the other machine already made the new thread: "Stop the new thread on forge and keep this one here?", with **Stop it there and keep this one** and **Cancel**.
+- **Keep it here appears only while a move waits** on a machine that is not answering, as ADR-0105 says.
+- **A press while that machine can't be reached is remembered** and done as soon as it is back; the thread stays fenced until then.
+
 ## Build order
 
 1. **Core, This computer to a paired host.** The move record (`moves.json`, states fenced, branch sent, thread started, first turn ended, source settled, or given back, written before anything is sent, every step idempotent by the move's ID); the fence (the source refuses sends while it moves); eligibility with its plain words; the branch over the host socket (`DesktopBranchMoves`); the handover and facts block built here; an optional host-v1 feature that makes the new thread from the incoming ref and sends its first prompt, idempotent by move ID; confirmation, settling the source, and re-pointing Watcher's watch. Driven over IPC as a prepare/move pair modelled on Stop all. No UI yet.
@@ -132,4 +138,56 @@ After Sol's confirmation pass (October 29):
 - A hold whose fence cannot be saved is this step's error, never an unhandled rejection that would stop the host, and holds nothing.
 - A move not yet held waits for the machine it goes to before it asks the host its thread is on, and its card says so.
 - Left as it was: `delegatedThreadsBelow` copies a growing list as it walks a thread's delegated threads, which part 1's preview already did; not this part's to change.
+
+## Part 3b, as built (October 29, 2026)
+
+- `src/renderer/src/watcher/MoveThreads.tsx`: the sheet picks where threads go, This computer among the machines while another machine has a thread to bring here and the thread's own machine left out; it gathers every other connected machine's open threads (`movableThreadIds(state, target)`), each row saying where it is now, with a box for each that can move. Nothing starts ticked but the thread a More menu opened it for; Move counts the ticked and waits for one. The sheet waits for the paired machines before it goes straight to the only one. A connected host's thread has **Continue on another machine…** too (`ThreadPane.tsx`).
+- Watcher's proposal: `propose_moves` (`watcherTools.ts`), offered only where the move service runs, calls `ThreadMoveService.propose`; the proposal goes to the window with the cards and is drawn after the turn that made it (`WatcherMoveProposals`), with the threads Watcher named ticked, **Move** and **Not now**. Its press (`answer` with `proposalId`) plans the threads ticked again and moves them only while the plan says what the card showed.
+- The end-to-end journey ticks its threads, and a second journey presses Watcher's proposal; the stand-in takes This computer's host ID and proposals.
+
+Decisions made while building:
+
+- **Move threads** offers This computer only while another machine has an open thread to bring here, so with This computer's threads alone and one machine connected the sheet still goes straight to it.
+- A proposal holds no confirmation: its press asks for a fresh preview, since the card may wait longer than a minute. A thread whose outcome, words or permission changed moves nothing, and the card shows every thread as it is now.
+- A proposal is this run's and is not saved, as the cards that ask first are; Watcher hears of each move it led to, not of the proposal or of Not now.
+- Watcher's row in the sheet says it stays on This computer only for a move to another machine.
+
+After Sol's standards and spec reviews of part 3b (October 29):
+
+- A press on Watcher's proposal moves nothing when anything a thread would start on there changed since the card showed it, its model and its permission, a provider's own profile included, not only what the card says; main keeps what each would start on with the proposal. The sheet's confirmation holds to the same.
+- Shown again, a proposal is the same card with the ticks the user pressed with, so keyboard focus stays where it was and a box the user cleared stays clear. Its line after Move says the user asked to move the threads, since a move counts only once its new thread's first turn ends.
+- A proposal's thread on a machine no longer listed is named as a paired machine, never as This computer.
+- The sheet a More menu opens shows its thread's box too, ticked.
+
+## Part 4, as built (October 30, 2026)
+
+- `src/shared/threadMoves.ts`: `keep` in `thread-move` under `thread-move-keep`, its answer, the `kept` refusal of a start, the press (`{ moveId, answer: 'keep-here' }`), the card's `keeping`, and the words.
+- `src/main/agents/threadMovesHost.ts`: `keep` records the move as called off first (`kept` on the record), a record made then for a move never started, so every later start is refused; then it interrupts and settles the thread it made, if any. The coordinator's `commandFromMove` takes `interrupt` for it.
+- `src/main/agents/threadMoves.ts`: the press is saved in `moves.json` (`keeping`), apart from the move's record so a step under way never loses it; the move's next step calls it off (`callOff`), and only the machine's answer ends it in the new terminal state `kept` (`endKept`), Watcher's watch coming back if it had gone. A move never asked to start ends at once. Watcher hears of it as `kept`.
+- `src/renderer/src/watcher/MoveThreads.tsx`: **Keep it here** on a waiting move's card, asking first on the card when the new thread exists, focus going to Cancel and back; the keeping card while it waits.
+
+Decisions made while building:
+
+- "Reconciling" by an exact read after a restart, without the user's press, is what each step's idempotent retry already gives, so part 4 adds only Keep it here's read: the `keep` request is the exact, fencing read the ADR describes.
+- A refusal of `keep` proves nothing about a thread there, so the move stays fenced and asks again; only `kept` ends it.
+- A kept move with no thread there lets go of its incoming ref; one whose thread was stopped and settled keeps it, since that thread's worktree was made from it.
+
+After Sol's standards review of part 4 (October 30):
+
+- The machine a move went to says it kept the move only once the thread it made has stopped: a turn the interrupt did not stop fails the step, nothing settled, and the desktop asks again.
+- A press made while a step is under way is not lost: settling the source checks for it before and after Watcher's watch moves, and calls the move off instead.
+- A watch that had gone to the new thread is tried again a few times on its way back before the move ends without it.
+- Escape anywhere in the card's question puts it away.
+
+After Sol's spec review of part 4 (October 30):
+
+- A host asked to hold a thread may hold it whatever happens to its answer, so the move records that it asked (`holdAsked`) first, and a move given back or kept has that host let go of it unless the host refused outright. This also closes the same gap in part 3's give back.
+- The card asks first whenever the machine was asked to start the new thread, its answer heard or not ("…if it made one").
+- Watcher's watch comes back before the machine is asked to call the move off, while the new thread is still there to take it from.
+- A thread made there whose ID was never heard here still keeps the branch its worktree came from (`keptMade`).
+
+After Sol's confirmation pass on part 4 (October 30):
+
+- Main says when a move can be kept here (`keepable` on its card): it waits on a machine, with no step under way and not already ending or kept. A press during a step under way, settling the source among them, is refused as not waiting, so it never races the step.
+- Bringing Watcher's watch back has tries of its own, apart from the tries to carry it.
 

@@ -635,21 +635,27 @@ export function SettingsView({
                       })}
                     </Select>
                   </Field>
-                  <Field setting="microphone-test" label={t`Microphone test`} description={t`Check that Sotto can hear you. Access is asked for only while the test runs.`}>
-                    <div className="settings-microphone-test" data-state={microphoneState}>
+                  {/* A row on the Microphone card like the others (ADR-0110, #1831): the label over its description and what the
+                      test found, and the level and the button at the row's end. */}
+                  <div className="tt-field settings-microphone-test" data-state={microphoneState}>
+                    <p className="tt-field__label" id="settings-microphone-test-label">{t`Microphone test`}</p>
+                    <p className="tt-field__description tt-paragraph" id="settings-microphone-test-description">{t`Check that Sotto can hear you. Access is asked for only while the test runs.`}</p>
+                    <p className="settings-microphone-test__status tt-paragraph" role="status">
+                      {microphoneState === 'ready' ? t`Listening. Say something.` : null}
+                      {microphoneState === 'closed' ? microphonePeakRef.current > MICROPHONE_HEARD_LEVEL ? t`Sotto heard you. The microphone is closed.` : t`Sotto did not hear anything. Check that the microphone is not muted.` : null}
+                      {microphoneState === 'requesting' ? t`Waiting for microphone permission...` : null}
+                      {microphoneState === 'idle' && settings.microphoneSkipped ? t`No microphone is set up. Run this test to set one up.` : null}
+                      {microphoneState === 'denied' ? copy.settingsMicrophoneDenied : null}
+                      {microphoneState === 'missing' ? !microphoneKnown && microphones.length > 0 ? t`The chosen microphone is not connected. Plug it in or choose another.` : t`No microphone was found.` : null}
+                      {microphoneState === 'error' ? t`The microphone test could not start.` : null}
+                    </p>
+                    <div className="settings-microphone-test__controls">
                       {/* The wave the widget and the Dictate room show; it listens for as long as the test's stream runs. */}
                       <VoiceWave stage={microphoneState === 'requesting' || microphoneState === 'ready' ? 'listening' : 'idle'} value={microphoneLevel} label={t`Microphone level`} size="deck" holdSpeaking={microphoneState === 'ready'} />
-                      <p className="tt-paragraph" role="status">
-                        {microphoneState === 'ready' ? t`Listening. Say something.` : null}
-                        {microphoneState === 'closed' ? microphonePeakRef.current > MICROPHONE_HEARD_LEVEL ? t`Sotto heard you. The microphone is closed.` : t`Sotto did not hear anything. Check that the microphone is not muted.` : null}
-                        {microphoneState === 'requesting' ? t`Waiting for microphone permission...` : null}
-                        {microphoneState === 'idle' ? (settings.microphoneSkipped ? t`No microphone is set up. Run this test to set one up.` : t`Run a quick input-level test.`) : null}
-                        {microphoneState === 'denied' ? copy.settingsMicrophoneDenied : null}
-                        {microphoneState === 'missing' ? !microphoneKnown && microphones.length > 0 ? t`The chosen microphone is not connected. Plug it in or choose another.` : t`No microphone was found.` : null}
-                        {microphoneState === 'error' ? t`The microphone test could not start.` : null}
-                      </p>
                       <Button
-                        variant={microphoneState === 'closed' ? 'secondary' : 'primary'}
+                        data-setting="microphone-test"
+                        aria-describedby="settings-microphone-test-label settings-microphone-test-description"
+                        variant="secondary"
                         disabled={microphoneState === 'requesting'}
                         onClick={() => microphoneState === 'ready' ? stopMicrophoneTest() : void runMicrophoneTest()}
                       >
@@ -657,7 +663,7 @@ export function SettingsView({
                       </Button>
                       {microphoneState === 'denied' ? <OpenSystemSettingsButton platform={platform} pane="microphone" /> : null}
                     </div>
-                  </Field>
+                  </div>
                   </> : null}
                 </SettingsGroup>
                 {dictation ? <>
