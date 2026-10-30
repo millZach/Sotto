@@ -449,7 +449,7 @@ const V = [
   idea: 'What ships on Owl: one dot per level in a row under the name, lit up to the level, in the provider\'s colour at Standard, purple at Fast and brighter purple with a glow at Ultra fast.',
   effort: 'Count the lit dots.', speed: 'Colour alone: the provider\'s, then purple, then purple with a glow.',
   hover: 'A dot\'s tooltip names its level and the speed.', focus: 'The row is one slider. Arrows set effort and ⌥↑↓ sets speed.', click: 'A dot sets its level. The lit dot steps the speed.',
-  costs: 'Shown for comparison.',
+  costs: 'Today adds no width to the line because the dots sit underneath, so every direction on the line reads as less prompt here. That is the price of leaving the second row.',
   parts: c => ({ model: `<div class="v0">${modelBtn(c)}<span class="ctl v0d" role="slider" tabindex="0" data-sp="${c.sp}" ${ctlAttrs(c)}>${c.m.levels.map((l, k) => `<i data-act="set" data-i="${k}" ${k <= c.i ? 'data-lit' : ''}></i>`).join('')}</span></div>` }),
   ind: c => `<div class="v0" style="pointer-events:none">${modelBtn(c)}<span class="v0d" data-sp="${c.sp}">${c.m.levels.map((l, k) => `<i ${k <= c.i ? 'data-lit' : ''}></i>`).join('')}</span></div>` },
 
@@ -493,7 +493,7 @@ const V = [
   idea: 'Linear\'s status ring, wrapped around the provider\'s mark: the arc fills clockwise to the level. Effort and model become one object, with nothing added beside or under the name. An arrowhead at the end of the arc means Fast; two mean Ultra fast.',
   effort: 'How far the arc runs around the mark.', speed: 'One arrowhead at the arc\'s end at Fast, two at Ultra fast.',
   hover: 'The ring gets a hover fill. The tooltip names effort and speed.', focus: 'The ring is its own stop before the name. Arrows and ⌥↑↓ work there.', click: 'The ring opens the menu. The name still changes the model.',
-  costs: '15px more than today\'s mark. The arc gets hard to read past six levels.',
+  costs: '15px more than today\'s mark, and the mark shrinks to 11px. The arc gets hard to read past six levels, and at 28px the arrowheads are hard to see, so speed would need a clearer sign before it could ship.',
   parts: c => ({ model: `<span class="v6">${menuCtl(c, 'v6r', ring(c) + mark(c))}${modelBtn(c, `<span>${esc(c.m.name)}</span>`)}</span>` }),
   ind: c => `<span class="v6"><span class="v6r">${ring(c)}${mark(c)}</span><span class="mdl"><span>${esc(c.m.name)}</span></span></span>` },
 
