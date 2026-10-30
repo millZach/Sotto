@@ -64,8 +64,7 @@ struct WatcherView: View {
         .onChange(of: section) { _, _ in barAway = false }
         .onChange(of: voiceOver) { _, on in if on { barAway = false } }
         .sheet(item: $reviewing) { card in
-            RequestSheet(place: card.place, request: card.request)
-                .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+            RequestSheet(place: card.place, request: card.request).requestSheetDetents()
         }
         // Stop all asks in the middle of the screen, with Cancel beside Stop, as the design draws it. iOS 26 draws a
         // confirmation dialog as a menu from the page and leaves its Cancel out, so this is an alert.
@@ -720,7 +719,7 @@ private struct WatcherConversationPane: View {
                     // A fast send can begin and end before SwiftUI renders its sending state. The press itself
                     // resumes following, before the keyboard and the conversation change their layout.
                     resumeFollowing()
-                }).readingWidth().background(dockReader(proxy, newest: newest))
+                }).readingWidth().dockFade().background(dockReader(proxy, newest: newest))
             }
             // New words, the user's own or Watcher's, are scrolled to just above the box, for a reader who sees the newest
             // words or the page's end. Cards waiting on the user sit after the whole conversation, where the page opens,

@@ -42,6 +42,7 @@ struct PullRequestSheet: View {
             }
             .padding(.horizontal, Space.s3)
             .padding(.bottom, Space.s2)
+            .dockFade { SheetBackdrop(wash: false) }
         }
         .foregroundStyle(Palette.ink)
         .presentationDetents([.large])

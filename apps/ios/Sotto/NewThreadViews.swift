@@ -56,7 +56,7 @@ struct NewThreadSheet: View {
         .background { NewThreadBackground() }
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(busy)
-        .onAppear { model.creationFeedback = nil }
+        .onAppear { model.creationFeedback = nil; startOnTheOnlyComputer() }
         .onChange(of: modelID) { _, _ in resetOptions() }
     }
 
@@ -386,6 +386,15 @@ struct NewThreadSheet: View {
         withAnimation(reduceMotion ? .easeInOut(duration: 0.2) : .spring(response: 0.44, dampingFraction: 0.86)) { step = next }
     }
 
+    /// With one computer able to take the thread, the sheet opens on its projects: a first step with one live row decided
+    /// nothing (#1856). The computer's chip still opens the list.
+    private func startOnTheOnlyComputer() {
+        let online = model.computers.filter { model.online($0.hostID) }
+        guard step == .computer, hostID.isEmpty, online.count == 1, let only = online.first else { return }
+        hostID = only.hostID
+        step = .project
+    }
+
     private func chooseComputer(_ id: String) {
         if id != hostID { projectID = nil; folder = nil }
         hostID = id
@@ -635,6 +644,10 @@ private struct ComputerFolderPicker: View {
     @State private var path = ""
     @State private var loading = false
     @State private var problem: String?
+    /// The last read failed, rather than finding a folder missing or unreadable, so reading it again may work.
+    @State private var failed = false
+    /// The folder the last read asked for, which Try again reads again.
+    @State private var lastTarget: JSONValue?
     @State private var requestID = UUID()
     private enum Field: Hashable { case path, filter }
     @FocusState private var focusedField: Field?
@@ -649,8 +662,16 @@ private struct ComputerFolderPicker: View {
                     ProgressView("Reading folders…").font(.sotto(.small)).frame(maxWidth: .infinity).padding(.vertical, Space.s3)
                 }
                 if let problem {
-                    Text(problem).font(.sotto(.small)).foregroundStyle(Palette.warningText).fixedSize(horizontal: false, vertical: true)
-                        .paragraphDirection()
+                    VStack(alignment: .leading, spacing: Space.s2) {
+                        Text(problem).font(.sotto(.small)).foregroundStyle(Palette.warningText).fixedSize(horizontal: false, vertical: true)
+                            .paragraphDirection()
+                        // An error that says to try again has a button that does (#1862).
+                        if failed {
+                            Button("Try again") { read(lastTarget) }
+                                .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                                .accessibilityIdentifier("folders-try-again")
+                        }
+                    }
                 }
                 if let listing, !loading, problem == nil { folders(listing) }
             }
@@ -746,7 +767,7 @@ private struct ComputerFolderPicker: View {
 
     private func read(_ path: JSONValue?) { focusedField = nil; Task { await load(path) } }
     private func load(_ target: JSONValue?) async {
-        let current = UUID(); requestID = current; loading = true; problem = nil
+        let current = UUID(); requestID = current; loading = true; problem = nil; failed = false; lastTarget = target
         defer { if requestID == current { loading = false } }
         do {
             let result = try await model.folders(hostID, path: target)
@@ -756,7 +777,7 @@ private struct ComputerFolderPicker: View {
             case .missing: problem = String(localized: "This folder doesn’t exist. Nothing was added. Go Home or enter another path.")
             case .unreadable: problem = String(localized: "This folder can’t be read. Nothing was added. Go Home or choose another folder.")
             }
-        } catch { if requestID == current { problem = error.localizedDescription } }
+        } catch { if requestID == current { problem = error.localizedDescription; failed = true } }
     }
 }
 
