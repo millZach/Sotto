@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { appendFile, mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText, claudeUserText, firstUnread, type OriginBucket } from '../../../src/main/agents/claudeSessionLog'
 import { attachedFilesNote, browserFeedbackNote } from '../../../src/main/agents/attachedFiles'
 import { CLAUDE_MAX_FRAME_BYTES, type ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
@@ -103,6 +103,53 @@ describe('Claude session log cursor', () => {
     await reader.poll()
     expect(frames.map(frame => (frame.message as { content: string }).content)).toEqual(['After'])
     expect(reader.cursor()!.offset).toBe(Buffer.byteLength(huge + after))
+  })
+
+  it('counts a character a read cut in two only once it is whole, as a decoder does, at the frame limit', async () => {
+    const { home, cwd, session, path } = await transcript()
+    // Exactly the limit of bytes, then the first byte of a four-byte character: the read holds that byte back.
+    await appendFile(path, Buffer.concat([Buffer.alloc(CLAUDE_MAX_FRAME_BYTES, 0x78), Buffer.from([0xf0])]))
+    const frames: ClaudeFrame[] = []
+    const reader = new ClaudeSessionLog(home, cwd, session, frame => frames.push(frame))
+    await reader.poll()
+    // Its last bytes make the line too long to take: it is passed over, and the next line read.
+    await appendFile(path, Buffer.concat([Buffer.from([0x9f, 0x98, 0x80, 0x0a]), Buffer.from(entry(session, 'After'))]))
+    await reader.poll()
+    expect(frames.map(frame => (frame.message as { content: string }).content)).toEqual(['After'])
+  })
+
+  // The cursor is the byte after the last whole line in the file. A line holding a byte that is not UTF-8 counted the
+  // replacement character's three bytes for it, and a cursor saved there began the next read inside the next line.
+  it('keeps the cursor on the file\'s own bytes for a line holding a byte that is not UTF-8', async () => {
+    const { home, cwd, session, path } = await transcript()
+    const line = Buffer.concat([Buffer.from('{"text":"'), Buffer.from([0xff]), Buffer.from('"}\n')])
+    await appendFile(path, Buffer.concat([line, Buffer.from(entry(session, 'After'))]))
+    const frames: ClaudeFrame[] = []
+    const reader = new ClaudeSessionLog(home, cwd, session, frame => frames.push(frame))
+    await reader.poll()
+    expect(reader.cursor()!.offset).toBe(line.length + Buffer.byteLength(entry(session, 'After')))
+    expect(frames.at(-1)?.message).toMatchObject({ content: 'After' })
+  })
+
+  // Looking for each line's end in the whole of what was read so far cost the square of a line's length (#992). This
+  // counts the bytes searched for line ends in anything longer than one read, which grows with the line, not its square.
+  it('searches a long line for its end about once, not once for each read', async () => {
+    const { home, cwd, session, path } = await transcript()
+    const long = entry(session, 'x'.repeat(4_000_000))
+    await appendFile(path, long)
+    let searched = 0
+    const count = (receiver: { length: number }, from: unknown) => { if (receiver.length > 65_536) searched += receiver.length - (typeof from === 'number' ? from : 0) }
+    type Search = (this: { length: number }, ...args: unknown[]) => number
+    const strings = String.prototype.indexOf as unknown as Search, buffers = Buffer.prototype.indexOf as unknown as Search
+    const counted = (native: Search): Search => function (this: { length: number }, ...args: unknown[]) { count(this, args[1]); return native.apply(this, args) }
+    const stringSpy = vi.spyOn(String.prototype, 'indexOf').mockImplementation(counted(strings) as never)
+    const bufferSpy = vi.spyOn(Buffer.prototype, 'indexOf').mockImplementation(counted(buffers) as never)
+    try {
+      const frames: ClaudeFrame[] = []
+      await new ClaudeSessionLog(home, cwd, session, frame => frames.push(frame)).poll()
+      expect(frames).toHaveLength(1)
+    } finally { stringSpy.mockRestore(); bufferSpy.mockRestore() }
+    expect(searched).toBeLessThan(2 * long.length)
   })
 
   it('reads from the first byte again when the file is not the one the cursor names', async () => {

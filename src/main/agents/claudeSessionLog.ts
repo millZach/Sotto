@@ -120,6 +120,19 @@ function sameFile(cursor: ClaudeTranscriptCursor, identity: { ino?: string | und
 }
 
 /** Reads only a Sotto-created UUID in its known project; never discovers foreign history. */
+/** How many bytes at the end of `bytes` begin a UTF-8 character that has not ended yet. */
+function unfinishedCharacter(bytes: Buffer | undefined): number {
+  if (!bytes) return 0
+  for (let back = 1; back <= Math.min(3, bytes.length); back++) {
+    const byte = bytes[bytes.length - back]!
+    if ((byte & 0xc0) === 0x80) continue
+    // Lead bytes of two, three and four; any other byte decodes as a replacement at once, and is held for nothing.
+    const length = byte >= 0xf5 ? 1 : byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc2 ? 2 : 1
+    return length > back ? back : 0
+  }
+  return 0
+}
+
 export class ClaudeSessionLog {
   private offset = 0
   /** Bytes through the last complete line delivered: the only offset that is safe to store. */
@@ -196,7 +209,8 @@ export class ClaudeSessionLog {
           } catch { /* Unrelated/malformed native metadata is not user input. */ }
         }
         if (start < read.length) { this.parts.push(read.subarray(start)); this.partsLength += read.length - start }
-        if (this.partsLength > CLAUDE_MAX_FRAME_BYTES) throw new Error('Claude transcript entry exceeds the supported size.')
+        // A character a read cut in two is not counted until its last bytes arrive, as a decoder holds it back.
+        if (this.partsLength - unfinishedCharacter(this.parts.at(-1)) > CLAUDE_MAX_FRAME_BYTES) throw new Error('Claude transcript entry exceeds the supported size.')
       }
     } finally {
       try { await handle.close() } finally { if (delivered) this.onSettled?.() }
