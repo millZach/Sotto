@@ -1,26 +1,23 @@
-/* The quiet composer (ADR-0161, Owl): one pill holding attach, the prompt, the provider's mark and the model, effort as
-   dots coloured by speed, the permissions shield and one disc. Answers and continuations keep the
-   footer of ADR-0113. Colour comes only from theme roles. */
-.thread-prompt[data-quiet] { grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: 2px; padding: 6px 7px 6px 8px; border-radius: 24px; }
-.thread-prompt[data-quiet] .screenshot-input > :has(.prompt-editor) { grid-column: 2; grid-row: 2; min-width: 0; }
+/* The quiet composer (ADR-0161, Owl): one pill holding attach, the permissions shield, the prompt, one filled chip of
+   the model and its effort in words with a bolt for speed, and one disc. Answers and continuations keep the footer of
+   ADR-0113. Colour comes only from theme roles. */
+.thread-prompt[data-quiet] { grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; column-gap: 2px; padding: 6px 7px 6px 8px; border-radius: 24px; }
+.thread-prompt[data-quiet] .screenshot-input > :has(.prompt-editor) { grid-column: 3; grid-row: 2; min-width: 0; }
+.thread-prompt[data-quiet] > .thread-prompt__lead { grid-column: 2; grid-row: 2; display: flex; align-items: center; }
+.thread-prompt[data-quiet] > .thread-prompt__lead:empty { display: none; }
 .thread-prompt[data-quiet] .prompt-editor { min-height: 22.5px; max-height: 160px; padding: 4px 6px; resize: none; }
 .thread-prompt[data-quiet] .screenshot-input__tools > .tt-button { grid-column: 1; grid-row: 2; margin: 0; }
-.thread-prompt[data-quiet] > .thread-prompt__footer { grid-column: 3; grid-row: 2; align-self: center; margin: 0; }
+.thread-prompt[data-quiet] > .thread-prompt__footer { grid-column: 4; grid-row: 2; align-self: center; margin: 0; }
 /* What the user put in the prompt sits above the line; what Sotto says about it, below. */
 .thread-prompt[data-quiet] :is(.review-chips, .thread-prompt__notice) { grid-row: 1; }
 .thread-prompt[data-quiet] :is(.screenshot-previews, .attached-files, .screenshot-input__tools > small, .review-chips__note) { grid-row: 3; }
-.thread-prompt[data-quiet] > .thread-options-notices { grid-row: 4; }
+.thread-prompt[data-quiet] > .thread-options-notices { grid-column: 1 / -1; grid-row: 4; }
 .thread-prompt[data-quiet] :is(.thread-prompt__meta, .thread-options-bar, .thread-options--chips) { flex: none; flex-wrap: nowrap; gap: 0 2px; }
 .thread-prompt[data-quiet] .thread-prompt__actions { gap: 2px; }
 
-/* Model and effort share a 30px block, within Send's existing 32px axis. The shield spans both rows.
-   The first circle starts at the name: 8px inset + 13px mark + 5px gap, less the track's 4.8px inset. */
-.thread-prompt[data-quiet] .thread-options--chips:has(> .effort-dots) { display: grid; grid-template-columns: auto auto; grid-template-rows: 20px 10px; }
-.thread-prompt[data-quiet] .thread-options--chips:has(> .effort-dots) > .model-picker { grid-column: 1; grid-row: 1; }
-.thread-prompt[data-quiet] .thread-options--chips:has(> .effort-dots) .model-picker__trigger { height: 20px; min-height: 20px; }
-.thread-prompt[data-quiet] .thread-options--chips > .effort-dots { grid-column: 1; grid-row: 2; justify-self: start; height: 10px; margin-inline-start: 21.2px; }
-.thread-prompt[data-quiet] .thread-options--chips > .effort-dots :is(.effort-dots__hold, .effort-dots__track, i) { height: 10px; }
-.thread-prompt[data-quiet] .thread-options--chips:has(> .effort-dots) > .thread-chip-menu { grid-column: 2; grid-row: 1 / 3; align-self: center; }
+/* The model and its effort are one filled chip on the pill's line: the model's half, a hairline, then effort's half. */
+.thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort) { gap: 0; height: 28px; border-radius: 8px; background: color-mix(in oklab, var(--tt-text) 6%, var(--tt-card)); }
+.thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort) .model-picker__trigger { height: 28px; min-height: 28px; border-radius: 8px 0 0 8px; }
 
 /* The model keeps its mark and name and loses its chevron; permissions show only their shield, the words kept for
    assistive technology as ADR-0113 decision 2 keeps them in a narrow pane. */
@@ -48,41 +45,28 @@
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__stop { width: 22px; min-width: 22px; padding: 0; }
 /* A slim composer with nothing to send keeps Stop and lets the disabled Send step aside (ADR-0125). */
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt[data-quiet][data-running] .thread-prompt__actions > .thread-prompt__disc[data-face='send']:disabled { display: none; }
+/* The slim line hides attach and the options, so it hides the shield that stands beside attach too. */
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt[data-quiet] > .thread-prompt__lead { display: none; }
 
-/* The effort dots, in the provider's colour drawn toward the text so they read on either theme. */
-.effort-dots { display: inline-flex; align-items: center; height: 30px; flex: none; --dots-ink: var(--tt-text-2); }
-.effort-dots__hold { position: relative; display: inline-flex; align-items: center; height: 30px; }
-/* The note stands on the pill's top edge, so it never covers the prompt. */
-.thread-prompt[data-quiet] .thread-options-bar { position: static; }
-.effort-dots[data-provider='claude'] { --dots-ink: color-mix(in oklab, var(--tt-provider-claude) 75%, var(--tt-text)); }
-.effort-dots[data-provider='codex'] { --dots-ink: color-mix(in oklab, var(--tt-provider-codex) 75%, var(--tt-text)); }
-.effort-dots[data-provider='grok'] { --dots-ink: color-mix(in oklab, var(--tt-provider-grok) 75%, var(--tt-text)); }
-.effort-dots[data-provider='devin'] { --dots-ink: color-mix(in oklab, var(--tt-provider-devin) 75%, var(--tt-text)); }
-.effort-dots[data-provider='opencode'] { --dots-ink: color-mix(in oklab, var(--tt-provider-opencode) 75%, var(--tt-text)); }
-.effort-dots[data-provider='cursor'] { --dots-ink: color-mix(in oklab, var(--tt-provider-cursor) 75%, var(--tt-text)); }
-.effort-dots[data-provider='muse'] { --dots-ink: color-mix(in oklab, var(--tt-provider-muse) 75%, var(--tt-text)); }
-.effort-dots[data-provider='deepseek'] { --dots-ink: color-mix(in oklab, var(--tt-provider-deepseek-badge) 75%, var(--tt-text)); }
-.effort-dots[data-speed='fast'] { --dots-ink: var(--tt-chart-5); }
-.effort-dots[data-speed='ultrafast'] { --dots-ink: color-mix(in oklab, var(--tt-chart-5) 78%, var(--tt-text)); }
-.effort-dots[data-speed='ultrafast'] i[data-lit]::before { box-shadow: 0 0 5px color-mix(in oklab, var(--tt-chart-5) 65%, transparent); }
-.effort-dots__track { display: inline-flex; align-items: center; height: 30px; padding: 0 3px; border-radius: 6px; cursor: pointer; }
-.effort-dots__track[aria-disabled='true'] { cursor: default; }
-.effort-dots__track > i { position: relative; display: grid; place-items: center; width: 9px; height: 30px; }
-.effort-dots__track > i::before { content: ''; width: 5.4px; height: 5.4px; border-radius: 50%; background: var(--dots-ink); opacity: .22; transition: opacity 160ms ease-out; }
-.effort-dots__track > i[data-lit]::before { opacity: 1; }
-.effort-dots__track:not([aria-disabled='true']) > i:hover::before { opacity: .6; }
-.effort-dots[data-pending] .effort-dots__track { opacity: .7; }
-/* A level the draft seems to want has a still ring. */
-.effort-dots__track > i[data-suggested]::before { opacity: .6; }
-.effort-dots__track > i[data-suggested]::after { content: ''; position: absolute; top: 50%; left: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; box-shadow: 0 0 0 1.5px var(--dots-ink); pointer-events: none; }
+/* The effort chip: the level in words, then the speed's bolt. Its menu opens above it, like the shield's. */
+.split-chip-effort { position: relative; display: inline-flex; align-items: center; height: 28px; flex: none; }
+.split-chip-effort::before { content: ''; width: 1px; height: 14px; background: var(--tt-hairline); }
+.split-chip-effort__trigger { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; border: 0; border-radius: 0 8px 8px 0; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.split-chip-effort__trigger:hover:not([aria-disabled='true']), .split-chip-effort__trigger[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.split-chip-effort__trigger[aria-disabled='true'] { cursor: default; }
+.split-chip-effort[data-pending] .split-chip-effort__trigger { opacity: .7; }
+.split-chip-effort__bolts { display: inline-flex; align-items: center; color: var(--tt-text-2); }
+.split-chip-effort__bolts > svg + svg { margin-inline-start: -3px; }
+.split-chip-effort__bolts > svg[data-off] { opacity: .55; }
+.split-chip-effort__menu { right: 0; left: auto; }
+.split-chip-effort__speeds { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; margin: 6px 2px 0; padding: 2px; border-radius: 8px; background: color-mix(in oklab, var(--tt-text) 6%, transparent); }
+.split-chip-effort__speeds > button { height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.split-chip-effort__speeds > button:hover { color: var(--tt-text); }
+.split-chip-effort__speeds > button[aria-checked='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); font-weight: 600; box-shadow: 0 0 0 1px var(--tt-hairline); }
 /* The note a new suggestion brings for a moment. */
-.effort-dots__note { position: absolute; right: 52px; bottom: calc(100% + 6px); z-index: 2; padding: 3px 8px; border-radius: 6px; background: var(--tt-card); box-shadow: 0 0 0 1px var(--tt-hairline); color: var(--tt-text-muted); font-size: 11.5px; white-space: nowrap; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity 160ms ease-out, transform 200ms cubic-bezier(.2, .8, .2, 1); }
-.effort-dots__note[data-shown] { opacity: 1; transform: none; }
-.effort-dots__note:empty { display: none; }
+.split-chip-effort__note { position: absolute; right: 0; bottom: calc(100% + 14px); z-index: 2; padding: 3px 8px; border-radius: 6px; background: var(--tt-card); box-shadow: 0 0 0 1px var(--tt-hairline); color: var(--tt-text-muted); font-size: 11.5px; white-space: nowrap; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity 160ms ease-out, transform 200ms cubic-bezier(.2, .8, .2, 1); }
+.split-chip-effort__note[data-shown] { opacity: 1; transform: none; }
+.split-chip-effort__note:empty { display: none; }
 
-/* A small, steady Stop leaves every effort tooltip reachable while a turn runs. */
-.effort-dots__stop { display: grid; place-items: center; width: 22px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
-.effort-dots__stop:hover { background: var(--tt-pill); color: var(--tt-pill-ink); }
-.effort-dots__stop:disabled { cursor: default; }
 /* A thread whose settings cannot change shows its model's name; the line saying so stays for assistive technology. */
 .thread-prompt[data-quiet] .thread-prompt__model small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

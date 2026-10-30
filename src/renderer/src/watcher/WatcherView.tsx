@@ -20,7 +20,7 @@ import { threadChordCap } from '../agents/threadShortcuts'
 import { WayOffThePage } from '../agents/SidebarFrame'
 import { UpdateControl, type UpdateControlProps } from '../features/updates/UpdateControl'
 import { EffortPicker } from '../agents/EffortPicker'
-import { EffortDots } from '../agents/EffortDots'
+import { SplitChipEffort } from '../agents/SplitChipEffort'
 import { draftEffortScore, suggestedEffortIndex } from '../agents/effortSuggestion'
 import { EffortTrace } from '../agents/EffortTrace'
 import { ModelPicker } from '../agents/ModelPicker'
@@ -30,7 +30,7 @@ import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
 import { useShared } from '../agents/stateSharing'
 import { threadDescriber, useWordsRevision, type ThreadRow } from '../agents/threadFacts'
 import { useContinueEnabled } from '../agents/continuations'
-import { effortChoices, nextSpeed, offeredSpeeds, speedName, speedTitle, SpeedToggle } from '../agents/ThreadOptions'
+import { effortChoices, nextSpeed, offeredSpeeds, speedName, speedOptions, SpeedToggle } from '../agents/ThreadOptions'
 import { SPEED_STANDARD } from '../agents/pendingSettings'
 import { ThreadPane } from '../agents/ThreadPane'
 import { isThreadClosed } from '../../../shared/threadActivity'
@@ -183,6 +183,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const providerName = provider === null ? null : PROVIDER_LABELS[provider]
   const modelName = model?.name
   const accountProvider = providerName ?? model?.provider
+  const permissions = model === undefined ? null : <WatcherPermissionChip model={model} provider={providerName ?? model.provider} disabled={starting} noticeSlot={notices} />
   return <>
     <div className="thread-transcript" data-room-backdrop="">
       <div className="thread-workspace__transcript watcher-first" data-room-backdrop="">
@@ -202,6 +203,8 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
       {error ? <p className="agent-error watcher-first__error tt-paragraph" role="alert">{error}</p> : null}
       <form className="thread-prompt" data-quiet={quiet || undefined} onSubmit={event => { event.preventDefault(); void start() }}>
         <EffortTrace />
+        {/* The quiet pill draws the shield at its start, before the prompt (ADR-0161). */}
+        {quiet ? <div className="thread-prompt__lead">{permissions}</div> : null}
         <div className="screenshot-input"><div>
         <PromptEditor fieldRef={field} id={WATCHER_PROMPT_ID} text={text} skills={[]} sigils={[]} label={t`Watcher message`} editable={!starting}
           placeholder={t`Say what to start or check. Sending starts Watcher.`}
@@ -224,15 +227,15 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
                   saveOrchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, models, selectedSpeed)
                 }} />
                 {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={provider ?? undefined} value={speedValue} disabled={starting} pending={false} onChange={changeSpeed} />}
-                {quiet ? levels.length > 0 && <EffortDots levels={levels} value={reasoning} provider={provider ?? undefined} disabled={starting}
+                {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={starting}
                   suggestion={starting ? null : suggestedEffortIndex(draftEffortScore(text), levels.length, levels.indexOf(reasoning))}
                   speed={speeds.length === 0 ? undefined : { value: speedValue, name: speedName(speedValue, speeds),
-                    description: speedTitle(speeds, speedValue, provider ?? undefined, starting),
+                    options: speedOptions(speeds, provider ?? undefined), onChange: changeSpeed,
                     onStep: direction => changeSpeed(nextSpeed(speeds, speedValue, direction)) }}
                   onChange={changeEffort} />
                   : efforts.length > 0 ? <EffortPicker key={model.id} value={reasoning} options={efforts} disabled={starting} onChange={changeEffort}
                   defaultValue={model.defaultReasoningEffort} modelName={model.name} /> : null}
-                <WatcherPermissionChip model={model} provider={providerName ?? model.provider} disabled={starting} noticeSlot={notices} />
+                {quiet ? null : permissions}
               </div>
             </div>
             {starting ? <span className="thread-prompt__status" role="status"><Trans>Starting Watcher…</Trans></span> : null}
