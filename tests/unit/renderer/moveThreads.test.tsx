@@ -205,6 +205,17 @@ describe('Watcher’s proposal from the user’s words (#1178 part 3)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Move 1 thread' }))
     await waitFor(() => expect(moves.answer).toHaveBeenCalledWith({ proposalId: PROPOSAL, answer: 'move', threadIds: ['tray'] }))
   })
+  it('keeps focus where it was when main shows the proposal again as it is now, its boxes as main sent them', () => {
+    bridges()
+    const { rerender } = render(<WatcherMoveProposals proposals={[proposal()]} threads={threads} />)
+    const box = screen.getByRole('checkbox', { name: 'Linux tray menu spacing' })
+    box.focus()
+    rerender(<WatcherMoveProposals proposals={[proposal({ updatedAt: '2026-10-29T14:41:00.000Z', words: 'What these threads would do has changed.',
+      threads: proposal().threads.map(item => ({ ...item, ticked: item.threadId === 'tray' })) })]} threads={threads} />)
+    expect(document.activeElement).toBe(box)
+    expect(box).toHaveProperty('checked', false)
+    expect(screen.getByText('What these threads would do has changed.')).toBeTruthy()
+  })
   it('ends on Not now, and says why when a press moved nothing', async () => {
     const { moves } = bridges()
     vi.mocked(moves.answer).mockResolvedValueOnce({ status: 'refused', message: 'What these threads would do has changed since this card showed it, so nothing was moved.' })

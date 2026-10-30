@@ -187,6 +187,13 @@ function MoveRow({ planned, facts, machine, box }: { readonly planned: ThreadMov
   </li>
 }
 
+/** The ticked threads with one ticked or unticked. */
+const toggled = (ticked: ReadonlySet<string>, threadId: string, checked: boolean): ReadonlySet<string> => {
+  const next = new Set(ticked)
+  if (checked) next.add(threadId); else next.delete(threadId)
+  return next
+}
+
 /** The preview's three groups, each thread with its box: what moves now, what asks first, and what stays and why. */
 function MoveGroups({ threads, machine, facts, box, watcher }: { readonly threads: readonly ThreadMovePlanned[]; readonly machine: string
   readonly facts: (planned: ThreadMovePlanned) => RowFacts
@@ -317,7 +324,7 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
       : one !== null ? t`Move ${one} to ${named}?` : count === 0 ? t`Choose threads to move to ${named}`
         : plural(count, { one: `Move # thread to ${named}?`, other: `Move # threads to ${named}?` })
     const box = (planned: ThreadMovePlanned) => ({ checked: ticked.has(planned.threadId), disabled: phase.kind === 'starting',
-      onChange: (checked: boolean) => { setTicked(previous => { const next = new Set(previous); if (checked) next.add(planned.threadId); else next.delete(planned.threadId); return next }) } })
+      onChange: (checked: boolean) => { setTicked(previous => toggled(previous, planned.threadId, checked)) } })
     body = <>
       <p id={leadId} className="move-sheet__lead tt-paragraph">{going.length === 0 ? <Trans>Nothing moves: each thread says why it stays.</Trans>
         : one !== null ? <Trans>It continues on {named} as a new thread, in the same project, on the same provider, with a handover of the thread where it is. Its first turn starts at once. Watcher’s conversation reports the move.</Trans>
@@ -528,6 +535,13 @@ export function WatcherMoveCards({ cards, threads }: { readonly cards: readonly 
 function MoveProposalCard({ proposal, threads, answer }: { readonly proposal: ThreadMoveProposal; readonly threads: MoveCardThreads; readonly answer: ThreadMovesBridge['answer'] | undefined }): ReactNode {
   const { t } = useLingui()
   const [ticked, setTicked] = useState<ReadonlySet<string>>(() => new Set(proposal.threads.filter(item => item.ticked).map(item => item.threadId)))
+  // Shown again as it is now, the boxes start from what main sent, in the same card, so focus stays where it was.
+  const shownAt = useRef(proposal.updatedAt)
+  useEffect(() => {
+    if (shownAt.current === proposal.updatedAt) return
+    shownAt.current = proposal.updatedAt
+    setTicked(new Set(proposal.threads.filter(item => item.ticked).map(item => item.threadId)))
+  }, [proposal])
   const [pending, setPending] = useState(false)
   const [refusal, setRefusal] = useState<string | null>(null)
   const open = proposal.state === 'open'
@@ -540,7 +554,7 @@ function MoveProposalCard({ proposal, threads, answer }: { readonly proposal: Th
     return { title: described?.title ?? t`A thread no longer here`, providerId: described?.providerId, provider: described?.provider, project: described?.project, from: item?.from }
   }
   const box = (planned: ThreadMovePlanned) => ({ checked: ticked.has(planned.threadId), disabled: !open || pending,
-    onChange: (checked: boolean) => { setTicked(previous => { const next = new Set(previous); if (checked) next.add(planned.threadId); else next.delete(planned.threadId); return next }) } })
+    onChange: (checked: boolean) => { setTicked(previous => toggled(previous, planned.threadId, checked)) } })
   const press = async (request: Parameters<ThreadMovesBridge['answer']>[0]): Promise<void> => {
     if (answer === undefined || pending) return
     setPending(true); setRefusal(null)
@@ -551,7 +565,7 @@ function MoveProposalCard({ proposal, threads, answer }: { readonly proposal: Th
     setPending(false)
   }
   const machine = proposal.machine
-  const said = proposal.state === 'moved' ? plural(proposal.threads.filter(item => item.ticked).length, { one: `You moved # thread to ${machine}. Sotto reports its move here.`, other: `You moved # threads to ${machine}. Sotto reports each move here.` })
+  const said = proposal.state === 'moved' ? plural(proposal.threads.filter(item => item.ticked).length, { one: `You asked to move # thread to ${machine}. Sotto reports its move here.`, other: `You asked to move # threads to ${machine}. Sotto reports each move here.` })
     : proposal.state === 'dismissed' ? t`You chose not to move these threads to ${machine}. Nothing was moved.`
       : going.length === 0 ? t`Watcher proposed moving threads to ${machine}, but none can move now. Each says why.`
         : plural(going.length, { one: `Watcher proposes moving # thread to ${machine}. Nothing moves until you press Move.`, other: `Watcher proposes moving # threads to ${machine}. Nothing moves until you press Move.` })
@@ -580,7 +594,6 @@ function MoveProposalCard({ proposal, threads, answer }: { readonly proposal: Th
 /** Watcher's proposals after one message of its conversation, each a card of Sotto's. */
 export function WatcherMoveProposals({ proposals, threads }: { readonly proposals: readonly ThreadMoveProposal[]; readonly threads: MoveCardThreads }): ReactNode {
   const answer = useThreadMovesBridge()?.answer
-  // A proposal shown again as it is now starts from the boxes main sent with it.
-  return <>{proposals.map(proposal => <MoveProposalCard key={`${proposal.id}:${proposal.updatedAt}`} proposal={proposal} threads={threads} answer={answer} />)}</>
+  return <>{proposals.map(proposal => <MoveProposalCard key={proposal.id} proposal={proposal} threads={threads} answer={answer} />)}</>
 }
 

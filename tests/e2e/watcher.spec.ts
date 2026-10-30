@@ -1768,7 +1768,7 @@ test.describe("Watcher's room on the built app", () => {
         await page.keyboard.press('Tab')
         await expect(card.getByRole('button', { name: 'Move 1 thread' })).toBeFocused()
         await page.keyboard.press('Enter')
-        await expect(page.getByText('You moved 1 thread to forge. Sotto reports its move here.')).toBeVisible()
+        await expect(page.getByText('You asked to move 1 thread to forge. Sotto reports its move here.')).toBeVisible()
         await expect(card.getByRole('checkbox')).toHaveCount(0)
         await expect(page.locator('.move-card')).toHaveCount(1)
         await settle(page)

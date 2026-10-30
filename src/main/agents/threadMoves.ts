@@ -573,12 +573,13 @@ export class ThreadMoveService {
     const same = press.threadIds.every(threadId => {
       const was = shown.get(threadId)!, is = fresh.get(threadId)
       return is !== undefined && is.outcome === was.outcome && is.words === was.words && is.startsOn === was.startsOn
+        && is.model?.name === was.model?.name && is.model?.instead === was.model?.instead
     })
     if (!same) {
       this.confirmations.delete(preview.confirmationId)
-      // Shown again as it is now, each thread still ticked if it still can move.
+      // Shown again as it is now, ticked as the user pressed it, each thread that still can move.
       const plans = this.plansOf(proposal.threads.map(item => item.threadId), proposal.hostId)
-      const threads = proposal.threads.map(item => { const plan = plans?.get(item.threadId); return plan ? this.proposed(plan, item.source, item.ticked || press.threadIds.includes(item.threadId)) : item })
+      const threads = proposal.threads.map(item => { const plan = plans?.get(item.threadId); return plan ? this.proposed(plan, item.source, press.threadIds.includes(item.threadId)) : item })
       this.proposals.set(proposal.id, { ...proposal, threads, words: THREAD_MOVE_WORDS.proposalChanged, updatedAt: now() })
       this.changed()
       return { status: 'refused', message: THREAD_MOVE_WORDS.proposalChanged }

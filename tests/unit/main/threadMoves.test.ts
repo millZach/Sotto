@@ -859,6 +859,14 @@ describe('Watcher’s proposal from the user’s words (#1178 part 3, Zach’s p
     expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'move', threadIds: ['a'] })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.proposalChanged })
     expect(moves.list()).toEqual([])
     expect(moves.view().proposals![0]).toMatchObject({ state: 'open', words: THREAD_MOVE_WORDS.proposalChanged, threads: [{ threadId: 'a', outcome: 'stays', words: THREAD_MOVE_WORDS.running, ticked: false }] })
+    // A model the machine no longer has is a change too: nothing moves on a model the card did not show.
+    w.threads.find(thread => thread.id === 'a')!.status = 'idle'
+    const second = moves.propose({ threads: [{ hostId: HERE, threadId: 'a' }, { hostId: HERE, threadId: 'b' }], machine: FORGE }) as { proposalId: string }
+    w.threads.find(thread => thread.id === 'a')!.modelId = 'codex:other'
+    expect(await moves.answer({ proposalId: second.proposalId, answer: 'move', threadIds: ['a'] })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.proposalChanged })
+    // Shown again ticked as the user pressed it: b was not, and stays unticked.
+    expect(moves.view().proposals!.find(item => item.id === second.proposalId)).toMatchObject({ threads: [{ threadId: 'a', ticked: true }, { threadId: 'b', ticked: false }] })
+    expect(moves.list()).toEqual([])
     // A thread it does not offer to move is refused, and Not now ends it.
     expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'move', threadIds: ['b'] })).toEqual({ status: 'refused', message: THREAD_MOVE_WORDS.notProposed })
     expect(await moves.answer({ proposalId: proposed.proposalId, answer: 'dismiss' })).toEqual({ status: 'ok' })

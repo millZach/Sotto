@@ -48,8 +48,8 @@ msgstr "{0, plural, one {Watcher proposes moving # thread to {machine}. Nothing 
 
 #. placeholder {0}: proposal.threads.filter(item => item.ticked).length
 #: src/renderer/src/watcher/MoveThreads.tsx
-msgid "{0, plural, one {You moved # thread to {machine}. Sotto reports its move here.} other {You moved # threads to {machine}. Sotto reports each move here.}}"
-msgstr "{0, plural, one {You moved # thread to {machine}. Sotto reports its move here.} other {You moved # threads to {machine}. Sotto reports each move here.}}"
+msgid "{0, plural, one {You asked to move # thread to {machine}. Sotto reports its move here.} other {You asked to move # threads to {machine}. Sotto reports each move here.}}"
+msgstr "{0, plural, one {You asked to move # thread to {machine}. Sotto reports its move here.} other {You asked to move # threads to {machine}. Sotto reports each move here.}}"
 
 #. placeholder {0}: card.machine
 #. placeholder {1}: card.model.instead
