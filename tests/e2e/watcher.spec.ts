@@ -305,7 +305,7 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
     const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-glance__lead', '.watcher-glance__name', '.watcher-glance__why',
       '.watcher-pane .thread-chip', '.thread-options__caption', '.thread-chip-menu__options small', '.thread-chip-menu__foot', '.watched-note', '.watch-toggle', '.watch-toast > span',
       '.watcher-head__rooms button', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
-      '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro h2', '.watcher-first__intro p',
+      '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro p', '.watcher-first__how',
       '.watcher-beside .thread-workspace__head h2', '.watcher-own__words > strong', '.watcher-own__said', '.watcher-own__none', '.watcher-own__toggle', '.watcher-own__files code',
       '.watcher-handover__lead > p', '.watcher-handover__ledger', '.watcher-handover__read', '.watcher-handover__text', '.thread-prompt__send[data-wide]',
       '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose',
@@ -448,14 +448,15 @@ test.describe("Watcher's room on the built app", () => {
       await expect(page.locator('.watcher-glance')).toContainText('2 need you')
       const choice = page.getByRole('group', { name: 'Watcher’s model' })
       await expect(choice.getByRole('combobox', { name: 'Thread model' })).toHaveText(/Sonnet 4\.5/)
-      await expect(choice.getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveText('Ask for approval')
+      // On Owl the quiet composer draws the shield at the pill's start, outside the model's group (ADR-0161).
+      await expect(page.locator('.thread-prompt').getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveText('Ask for approval')
       // Devin is not offered for Watcher.
       await choice.getByRole('combobox', { name: 'Thread model' }).click()
       await expect(page.getByRole('dialog', { name: 'Choose model' }).getByRole('option', { name: /Devin/ })).toHaveCount(0)
       await page.keyboard.press('Escape')
       const send = page.getByRole('button', { name: 'Start Watcher and send' })
       await expect(send).toBeDisabled()
-      await expect(page.getByText('Your first message starts Watcher on Sonnet 4.5, with your own Claude Code account.')).toBeVisible()
+      await expect(page.getByText('On Sonnet 4.5, with your own Claude Code account.')).toBeVisible()
       for (const [width, height] of SIZES) {
         await resizeContentWindow(launched, width, height)
         await settle(page)

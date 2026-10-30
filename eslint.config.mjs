@@ -184,6 +184,7 @@ export default tseslint.config(
       'artifacts/opencode-model-menu/**',
       'artifacts/cursor-provider/**',
       'artifacts/starting-screen/**',
+      'artifacts/watcher-start-and-empty-rooms/**',
       'artifacts/unconfirmed-send/**',
       'artifacts/watcher-card-queue/**',
       'node_modules/**',

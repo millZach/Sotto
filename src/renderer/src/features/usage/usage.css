@@ -86,6 +86,7 @@
 
 /* ---------- Shared pieces ---------- */
 .usage-panel { padding-top: 40px; }
+.usage-panel[data-first] { padding-top: 22px; }
 .usage-loading, .usage-none { margin: 18px 0 0; color: var(--tt-text-muted); font-size: 13.5px; }
 .usage-note { margin: 16px 0 0; color: var(--tt-text-muted); font-size: 13px; }
 .usage-note b, .usage-when b, .usage-origin b, .usage-sub__activity b, .usage-models-summary b { color: var(--tt-text); font-weight: 550; font-variant-numeric: tabular-nums; }
@@ -282,6 +283,11 @@
 .usage-empty__art i { width: 10px; border-radius: 3px 3px 0 0; background: var(--usage-track); }
 .usage-empty h2 { margin: 0; font-size: 20px; font-weight: 500; letter-spacing: -.4px; }
 .usage-empty p { margin: 0; color: var(--tt-text-muted); }
+/* Before any usage is recorded: one card saying what will show here (#1834). */
+.usage-first { max-width: 620px; margin-top: 4px; padding: 18px 20px; border-radius: var(--tt-radius-lg); background: var(--tt-card); }
+.usage-glance + .usage-first { margin-top: 24px; }
+.usage-first h2 { margin: 0 0 4px; font-size: 15px; font-weight: 600; }
+.usage-first p { margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.55; }
 
 .usage-about { max-width: 760px; margin-top: 76px; }
 .usage-about summary { display: inline-flex; align-items: center; gap: 6px; margin-left: -4px; padding: 2px 4px; border-radius: 6px; color: var(--tt-text-muted); font-size: 13px; list-style: none; transition: color 120ms ease; }

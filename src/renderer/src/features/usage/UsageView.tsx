@@ -10,7 +10,7 @@ import { useHeldProviders } from '../../state/owlFeature'
 import { ConfirmationDialog } from '../../components/ConfirmationDialog'
 import { ActionMenu, ChoiceMenu, type ChoiceOption } from './UsageMenu'
 import { Models } from './UsageModels'
-import { EmptyUsage, Glance, NoHistory, Overview } from './UsageOverview'
+import { EmptyUsage, Glance, NoHistory, NoUsageYet, Overview } from './UsageOverview'
 import { Subscriptions } from './UsageSubscriptions'
 import type { UsagePage, UsageTab, UsageWhere } from './usagePage'
 import {
@@ -42,6 +42,9 @@ export interface UsageViewProps {
 const withoutHistory = (host: UsageHostRead): boolean => host.status === 'unsupported'
   || (host.status === 'ready' && (host.activity === undefined || (predatesHistory(host.activity) && host.activity.metadata.history === undefined && isEmptyActivity(host.activity.totals) && host.activity.metadata.clearedAt === undefined)))
 
+/** A computer whose read holds no activity, and that was never cleared, which says so itself. */
+const showsNothing = (host: UsageHostRead): boolean => host.status === 'ready' && host.activity !== undefined
+  && host.activity.metadata.clearedAt === undefined && isEmptyActivity(host.activity.totals)
 
 export function UsageView({ bridge = window.sotto?.usage, computers, now = currentDate, timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone }: UsageViewProps): ReactNode {
   const { t, i18n } = useLingui()
@@ -239,6 +242,25 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   }
 
   const noHistory = read.hosts.length > 0 && read.hosts.every(withoutHistory)
+  // Nothing recorded anywhere yet: one card in place of the tabs, the filters and the figures, under the gauges of the
+  // limits that have been read. Only with every computer chosen, so a filter the user set is never hidden from them, and
+  // not once a gauge has opened Subscriptions, which has limits to show (#1834). An empty range is not an empty record,
+  // so when the range shows nothing, one read without dates asks whether anything was ever recorded; it is asked again
+  // whenever a computer's record moves, and until it answers the page waits rather than drawing either way.
+  const rangeEmpty = usage.read !== null && !noHistory && hostId === 'all' && read.hosts.length > 0 && read.hosts.every(showsNothing)
+  const everKey = rangeEmpty ? `${targetKey}|${read.hosts.map(host => `${host.hostId}:${host.activity?.metadata.revision}`).join(',')}` : null
+  const [ever, setEver] = useState<{ readonly key: string; readonly recorded: boolean } | null>(null)
+  useEffect(() => {
+    if (everKey === null || bridge === undefined || ever?.key === everKey) return
+    let alive = true
+    void bridge.read({ timeZone, ...(targets.length > 0 ? { hostIds: [...targets] } : {}) })
+      .then(result => { if (alive) setEver({ key: everKey, recorded: !result.hosts.every(showsNothing) }) })
+      .catch(() => { if (alive) setEver({ key: everKey, recorded: true }) })
+    return () => { alive = false }
+  }, [everKey, bridge, timeZone, targets, ever?.key])
+  const everAnswered = ever !== null && ever.key === everKey
+  const noUsageYet = rangeEmpty && tab !== 'subscriptions' && (!everAnswered || !ever.recorded)
+  const askingEver = noUsageYet && !everAnswered
   const computerChoices: ChoiceOption<string>[] = [{ value: 'all', label: t`All computers` },
     ...[...new Set([...connections.map(item => item.hostId), ...read.hosts.map(host => host.hostId)])].map(value => ({ value, label: hostName(value) }))]
   const pendingNames = usage.read === null ? [] : usage.pending.filter(item => item !== EVERY_HOST && !read.hosts.some(host => host.hostId === item)).map(hostName)
@@ -255,6 +277,8 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
   else if (usage.read === null && usage.failed.length > 0 && !usage.loading) body = null
   else if (usage.read === null) body = <p className="usage-loading tt-paragraph" role="status"><Trans>Reading usage…</Trans></p>
   else if (invalidRange) body = null
+  else if (askingEver) body = <p className="usage-loading tt-paragraph" role="status"><Trans>Reading usage…</Trans></p>
+  else if (noUsageYet) body = <><Glance page={{ ...page, limits: limits.filter(item => item.primary.quota.status === 'available') }} /><NoUsageYet /></>
   else if (tab === 'subscriptions') body = <Subscriptions page={page} refreshing={refreshing} onReadAgain={providerId => void readAgain(providerId)} />
   else if (noHistory) body = <>{tab === 'overview' ? <Glance page={page} /> : null}<NoHistory names={read.hosts.map(host => hostName(host.hostId))} /></>
   else if (tab === 'models') body = <Models page={page} />
@@ -270,7 +294,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
           ...(clearable.length === 0 ? { hint: t`Nothing on the selected computers can be cleared.` } : {}), run: () => { setNotice(null); setClearRead(read) } }]} />
       </div>
       <p className="usage-subtitle tt-paragraph"><Trans>Your subscriptions, and the work on each computer, in Sotto and outside it.</Trans></p>
-      <div className="usage-bar">
+      {noUsageYet ? null : <div className="usage-bar">
         <div ref={tabs} className="usage-seg" role="tablist" aria-label={t`Usage views`}>{TABS.map((value, index) => <button key={value} type="button" role="tab" className="tt-focusable"
           id={`${id}-${value}`} aria-controls={`${id}-panel`} aria-selected={tab === value} tabIndex={tab === value ? 0 : -1}
           onClick={() => setTab(value)} onKeyDown={event => onTabKey(event, index)}>{i18n._(TAB_NAMES[value])}</button>)}</div>
@@ -280,7 +304,7 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
           <ChoiceMenu name={t`Computer`} value={hostId} options={computerChoices} onChoose={setHostId} />
           {activityFilters ? <ChoiceMenu name={t`Where`} value={where} options={places} onChoose={setWhere} /> : null}
         </div>
-      </div>
+      </div>}
       {range === 'custom' && activityFilters ? <div className="usage-dates">
         <label><Trans>From</Trans><input className="tt-focusable" type="date" value={customFrom} max={today} onChange={event => setCustomFrom(event.target.value)} /></label>
         <label><Trans>Through</Trans><input className="tt-focusable" type="date" value={customTo} max={today} onChange={event => setCustomTo(event.target.value)} /></label>
@@ -304,8 +328,9 @@ export function UsageView({ bridge = window.sotto?.usage, computers, now = curre
       {pendingNames.length > 0 ? <p className="usage-notice usage-notice--quiet tt-paragraph" role="status"><Trans>Still reading {pendingList}…</Trans></p> : null}
       {scanning.length > 0 && tab !== 'subscriptions' ? <p className="usage-notice usage-notice--quiet tt-paragraph"><Trans>Still reading {scanningList} history. The figures fill in as it reads.</Trans></p> : null}
     </div>
-    <div id={`${id}-panel`} className="usage-panel" role="tabpanel" aria-labelledby={`${id}-${tab}`} aria-busy={usage.loading || undefined}>
-      <div key={tab} className="usage-enter">{body}</div>
+    {/* With no tabs drawn, the panel is no tab's. */}
+    <div id={`${id}-panel`} className="usage-panel" data-first={noUsageYet || undefined} {...noUsageYet ? {} : { role: 'tabpanel', 'aria-labelledby': `${id}-${tab}` }} aria-busy={usage.loading || undefined}>
+      <div key={noUsageYet ? 'first' : tab} className="usage-enter">{body}</div>
     </div>
     <p className="tt-visually-hidden" aria-live="polite">{announcement}</p>
   </div></div>

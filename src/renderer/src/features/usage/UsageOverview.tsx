@@ -410,6 +410,17 @@ export function EmptyUsage({ title, detail, bars = [8, 14, 10, 22, 16, 6, 18] }:
   </div>
 }
 
+/**
+ * Before any computer has recorded usage: one card says what will show here, in place of the tabs, the filters and a
+ * page of empty figures (#1834). The room-left gauges above it stay, since limits are read before any prompt is.
+ */
+export function NoUsageYet(): ReactNode {
+  return <section className="usage-first" aria-labelledby="usage-first-title">
+    <h2 id="usage-first-title"><Trans>No usage yet</Trans></h2>
+    <p className="tt-paragraph"><Trans>Prompts you send from Sotto, and from your providers' own apps on this computer, show here with their tokens and limits. Filters appear once there is something to filter.</Trans></p>
+  </section>
+}
+
 export function NoHistory({ names }: { readonly names: readonly string[] }): ReactNode {
   const { t } = useLingui()
   const name = joinNames(names)
