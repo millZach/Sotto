@@ -15,8 +15,7 @@ minimum, with nothing out of bounds and text at 4.5:1 or better at every size.
 - Watcher had placed a start on forge, so the line read the machines once: "This computer 3 working, short on memory ·
   forge 0 working", forge with headroom for three more workers.
 - Under it: "This computer is short on memory, and forge has room. Move Grok voice previews there? It last worked 5 hr.
-  ago and is between turns." The stand-in's preview answered only for the threads it was asked about, and said only that
-  one would move now.
+  ago and is between turns." The stand-in's preview said only that one would move now.
 - From the keyboard, Tab went from **Move to forge** to **Choose threads…** to **Not now** in that order, each named for
   what it does ("Choose threads to move to forge", "Not now, until This computer reads fine again").
 - Enter on Move to forge started the move: its card, "Moving Grok voice previews", appeared in Watcher's conversation under
