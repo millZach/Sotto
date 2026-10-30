@@ -156,8 +156,8 @@ describe('speed bolt', () => {
   })
 })
 
-// The same setting and confirmation path, drawn in the quiet pill's effort dots.
-describe('speed in quiet effort dots', () => {
+// The same setting and confirmation path, drawn in the quiet pill's split chip.
+describe('speed in the quiet split chip', () => {
   function quiet(start = bothSpeeds(), unconfirmed = false) {
     const command = vi.fn()
     function LiveQuiet(): React.ReactElement {
@@ -190,10 +190,24 @@ describe('speed in quiet effort dots', () => {
     expect(effort()).toHaveAttribute('title', 'Thread reasoning: High · Fast')
     pick('Ultrafast')
     await waitFor(() => expect(effort()).toHaveTextContent('High, Ultrafast'))
-    expect(effort().closest('.effort-chip')).toHaveAttribute('data-speed', 'ultrafast')
+    expect(effort().closest('.split-chip-effort')).toHaveAttribute('data-speed', 'ultrafast')
     pick('Standard')
     await waitFor(() => expect(effort()).toHaveTextContent('High, Standard'))
     expect(command.mock.calls.map(call => call[0])).toEqual(['fast', 'ultrafast', null].map(speed => ({ type: 'configure-thread', threadId: 'thread', speed })))
+  })
+
+  it('keeps the speeds one Tab stop whose arrows move the choice, and Alt arrows working in the list', async () => {
+    const command = quiet()
+    fireEvent.click(effort())
+    const radios = screen.getAllByRole('radio')
+    expect(radios.map(radio => radio.tabIndex)).toEqual([0, -1, -1])
+    radios[0]!.focus()
+    fireEvent.keyDown(radios[0]!, { key: 'ArrowRight' })
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Fast' })).toHaveAttribute('aria-checked', 'true'))
+    expect(screen.getByRole('radio', { name: 'Fast' })).toHaveFocus()
+    fireEvent.keyDown(screen.getByRole('option', { name: 'High' }), { key: 'ArrowUp', altKey: true })
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Ultrafast' })).toHaveAttribute('aria-checked', 'true'))
+    expect(command.mock.calls.map(call => call[0])).toEqual(['fast', 'ultrafast'].map(speed => ({ type: 'configure-thread', threadId: 'thread', speed })))
   })
 
   it('uses Alt arrows for speed in either direction and plain arrows for effort', async () => {
@@ -211,7 +225,7 @@ describe('speed in quiet effort dots', () => {
 
   it('draws no bolt and offers no speeds for a model with no speed tiers', () => {
     const command = quiet(offering({}, model => ({ ...model, speeds: [], fastMode: undefined })))
-    expect(effort().closest('.effort-chip')).not.toHaveAttribute('data-speed')
+    expect(effort().closest('.split-chip-effort')).not.toHaveAttribute('data-speed')
     expect(effort()).toHaveTextContent(/^High$/u)
     expect(effort()).toHaveAttribute('title', 'Thread reasoning: High')
     fireEvent.click(effort())
@@ -222,7 +236,7 @@ describe('speed in quiet effort dots', () => {
 
   it('keeps speed fixed while running and exposes the selected permission for its shield', () => {
     const command = quiet(bothSpeeds({ speed: 'ultrafast', status: 'running', nativeSessionStarted: true, runtimeMode: 'full-access' }))
-    expect(effort()).toBeDisabled()
+    expect(effort()).toHaveAttribute('aria-disabled', 'true')
     expect(screen.getByRole('combobox', { name: 'Thread permissions' })).toHaveAttribute('data-permission', 'full-access')
     fireEvent.click(effort())
     expect(screen.queryByRole('radio')).toBeNull()
@@ -234,6 +248,6 @@ describe('speed in quiet effort dots', () => {
     quiet(bothSpeeds(), true)
     pick('Fast')
     await waitFor(() => expect(effort()).toHaveAccessibleDescription('Codex has not confirmed Fast. Until it does, a turn can still run on Standard.'))
-    expect(effort().closest('.effort-chip')).toHaveAttribute('data-pending', 'true')
+    expect(effort().closest('.split-chip-effort')).toHaveAttribute('data-pending', 'true')
   })
 })

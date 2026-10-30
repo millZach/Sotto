@@ -11,13 +11,13 @@
 /* What the user put in the prompt sits above the line; what Sotto says about it, below. */
 .thread-prompt[data-quiet] :is(.review-chips, .thread-prompt__notice) { grid-row: 1; }
 .thread-prompt[data-quiet] :is(.screenshot-previews, .attached-files, .screenshot-input__tools > small, .review-chips__note) { grid-row: 3; }
-.thread-prompt[data-quiet] > .thread-options-notices { grid-row: 4; }
+.thread-prompt[data-quiet] > .thread-options-notices { grid-column: 1 / -1; grid-row: 4; }
 .thread-prompt[data-quiet] :is(.thread-prompt__meta, .thread-options-bar, .thread-options--chips) { flex: none; flex-wrap: nowrap; gap: 0 2px; }
 .thread-prompt[data-quiet] .thread-prompt__actions { gap: 2px; }
 
 /* The model and its effort are one filled chip on the pill's line: the model's half, a hairline, then effort's half. */
-.thread-prompt[data-quiet] .thread-options--chips:has(> .effort-chip) { gap: 0; height: 28px; border-radius: 8px; background: color-mix(in oklab, var(--tt-text) 6%, var(--tt-card)); }
-.thread-prompt[data-quiet] .thread-options--chips:has(> .effort-chip) .model-picker__trigger { height: 28px; min-height: 28px; border-radius: 8px 0 0 8px; }
+.thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort) { gap: 0; height: 28px; border-radius: 8px; background: color-mix(in oklab, var(--tt-text) 6%, var(--tt-card)); }
+.thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort) .model-picker__trigger { height: 28px; min-height: 28px; border-radius: 8px 0 0 8px; }
 
 /* The model keeps its mark and name and loses its chevron; permissions show only their shield, the words kept for
    assistive technology as ADR-0113 decision 2 keeps them in a narrow pane. */
@@ -45,26 +45,28 @@
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__stop { width: 22px; min-width: 22px; padding: 0; }
 /* A slim composer with nothing to send keeps Stop and lets the disabled Send step aside (ADR-0125). */
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt[data-quiet][data-running] .thread-prompt__actions > .thread-prompt__disc[data-face='send']:disabled { display: none; }
+/* The slim line hides attach and the options, so it hides the shield that stands beside attach too. */
+.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt[data-quiet] > .thread-prompt__lead { display: none; }
 
 /* The effort chip: the level in words, then the speed's bolt. Its menu opens above it, like the shield's. */
-.effort-chip { position: relative; display: inline-flex; align-items: center; height: 28px; flex: none; }
-.effort-chip::before { content: ''; width: 1px; height: 14px; background: var(--tt-hairline); }
-.effort-chip__trigger { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; border: 0; border-radius: 0 8px 8px 0; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
-.effort-chip__trigger:hover:not(:disabled), .effort-chip__trigger[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
-.effort-chip__trigger:disabled { cursor: default; }
-.effort-chip[data-pending] .effort-chip__trigger { opacity: .7; }
-.effort-chip__bolts { display: inline-flex; align-items: center; color: var(--tt-text-2); }
-.effort-chip__bolts > svg + svg { margin-inline-start: -3px; }
-.effort-chip__bolts > svg[data-off] { opacity: .55; }
-.effort-chip__menu { right: 0; left: auto; }
-.effort-chip__speeds { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; margin: 6px 2px 0; padding: 2px; border-radius: 8px; background: color-mix(in oklab, var(--tt-text) 6%, transparent); }
-.effort-chip__speeds > button { height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
-.effort-chip__speeds > button:hover { color: var(--tt-text); }
-.effort-chip__speeds > button[aria-checked='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); font-weight: 600; box-shadow: 0 0 0 1px var(--tt-hairline); }
+.split-chip-effort { position: relative; display: inline-flex; align-items: center; height: 28px; flex: none; }
+.split-chip-effort::before { content: ''; width: 1px; height: 14px; background: var(--tt-hairline); }
+.split-chip-effort__trigger { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; border: 0; border-radius: 0 8px 8px 0; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap; cursor: pointer; }
+.split-chip-effort__trigger:hover:not([aria-disabled='true']), .split-chip-effort__trigger[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
+.split-chip-effort__trigger[aria-disabled='true'] { cursor: default; }
+.split-chip-effort[data-pending] .split-chip-effort__trigger { opacity: .7; }
+.split-chip-effort__bolts { display: inline-flex; align-items: center; color: var(--tt-text-2); }
+.split-chip-effort__bolts > svg + svg { margin-inline-start: -3px; }
+.split-chip-effort__bolts > svg[data-off] { opacity: .55; }
+.split-chip-effort__menu { right: 0; left: auto; }
+.split-chip-effort__speeds { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; margin: 6px 2px 0; padding: 2px; border-radius: 8px; background: color-mix(in oklab, var(--tt-text) 6%, transparent); }
+.split-chip-effort__speeds > button { height: 26px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; white-space: nowrap; cursor: pointer; }
+.split-chip-effort__speeds > button:hover { color: var(--tt-text); }
+.split-chip-effort__speeds > button[aria-checked='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); font-weight: 600; box-shadow: 0 0 0 1px var(--tt-hairline); }
 /* The note a new suggestion brings for a moment. */
-.effort-chip__note { position: absolute; right: 0; bottom: calc(100% + 14px); z-index: 2; padding: 3px 8px; border-radius: 6px; background: var(--tt-card); box-shadow: 0 0 0 1px var(--tt-hairline); color: var(--tt-text-muted); font-size: 11.5px; white-space: nowrap; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity 160ms ease-out, transform 200ms cubic-bezier(.2, .8, .2, 1); }
-.effort-chip__note[data-shown] { opacity: 1; transform: none; }
-.effort-chip__note:empty { display: none; }
+.split-chip-effort__note { position: absolute; right: 0; bottom: calc(100% + 14px); z-index: 2; padding: 3px 8px; border-radius: 6px; background: var(--tt-card); box-shadow: 0 0 0 1px var(--tt-hairline); color: var(--tt-text-muted); font-size: 11.5px; white-space: nowrap; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity 160ms ease-out, transform 200ms cubic-bezier(.2, .8, .2, 1); }
+.split-chip-effort__note[data-shown] { opacity: 1; transform: none; }
+.split-chip-effort__note:empty { display: none; }
 
 /* A thread whose settings cannot change shows its model's name; the line saying so stays for assistive technology. */
 .thread-prompt[data-quiet] .thread-prompt__model small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

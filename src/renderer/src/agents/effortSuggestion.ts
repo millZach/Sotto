@@ -1,6 +1,6 @@
 /**
  * How much thought a draft seems to ask for, read from its own words in the window (ADR-0161). It only ever suggests:
- * the effort dots ring the levels above the one set, and nothing changes until the user presses a dot (ADR-0004).
+ * the split chip marks the levels above the one set in its list, and nothing changes until the user chooses one (ADR-0004).
  * Nothing leaves the computer for it.
  */
 const HARD_WORDS = /\b(?:refactor|debug|why|investigate|redesign|architecture|migrate)\b/giu

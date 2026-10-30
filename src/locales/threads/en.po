@@ -587,14 +587,14 @@ msgstr "{label} source"
 #. A chip's tooltip: the setting's name, then its value.
 #. A chip's tooltip: the setting's name, then its value.
 #. A chip's tooltip: the setting's name, then its value.
-#: src/renderer/src/agents/EffortChip.tsx
+#: src/renderer/src/agents/SplitChipEffort.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{label}: {shown}"
 msgstr "{label}: {shown}"
 
 #. The effort chip's tooltip: {label} is the setting's name, {shown} a reasoning effort level such as High, {name} the thread's speed such as Fast.
 #. placeholder {0}: speed.name
-#: src/renderer/src/agents/EffortChip.tsx
+#: src/renderer/src/agents/SplitChipEffort.tsx
 msgid "{label}: {shown} · {0}"
 msgstr "{label}: {shown} · {0}"
 
@@ -3353,9 +3353,9 @@ msgid "default"
 msgstr "default"
 
 #. A button that sets the model's own default reasoning effort.
-#. A button that sets the model's own default reasoning effort.
-#: src/renderer/src/agents/EffortChip.tsx
+#. The quiet composer's effort word while the thread is on the model's own default reasoning effort.
 #: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/SplitChipEffort.tsx
 msgid "Default"
 msgstr "Default"
 
@@ -6110,8 +6110,8 @@ msgstr "Prototype ready for review"
 
 #: src/renderer/src/agents/AgentAccountSettings.tsx
 #: src/renderer/src/agents/ContinueThread.tsx
-#: src/renderer/src/agents/EffortChip.tsx
 #: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/SplitChipEffort.tsx
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "Provider default"
 msgstr "Provider default"
@@ -6309,8 +6309,8 @@ msgstr "Ready when you are."
 msgid "Reasoning"
 msgstr "Reasoning"
 
-#: src/renderer/src/agents/EffortChip.tsx
 #: src/renderer/src/agents/EffortPicker.tsx
+#: src/renderer/src/agents/SplitChipEffort.tsx
 msgid "Reasoning effort"
 msgstr "Reasoning effort"
 
@@ -7844,7 +7844,7 @@ msgid "Stopped. Nothing more will come of it."
 msgstr "Stopped. Nothing more will come of it."
 
 #. Beside a reasoning effort level the draft seems to want.
-#: src/renderer/src/agents/EffortChip.tsx
+#: src/renderer/src/agents/SplitChipEffort.tsx
 msgid "Suggested for this draft"
 msgstr "Suggested for this draft"
 
@@ -7854,7 +7854,7 @@ msgid "Suggested next prompt: {ghostText}. Press Tab to take it, or Up for more.
 msgstr "Suggested next prompt: {ghostText}. Press Tab to take it, or Up for more."
 
 #. {suggested} is a reasoning effort level, such as High.
-#: src/renderer/src/agents/EffortChip.tsx
+#: src/renderer/src/agents/SplitChipEffort.tsx
 msgid "Suggests {suggested}. Choose it from the effort list."
 msgstr "Suggests {suggested}. Choose it from the effort list."
 

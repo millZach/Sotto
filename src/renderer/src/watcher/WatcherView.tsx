@@ -20,7 +20,7 @@ import { threadChordCap } from '../agents/threadShortcuts'
 import { WayOffThePage } from '../agents/SidebarFrame'
 import { UpdateControl, type UpdateControlProps } from '../features/updates/UpdateControl'
 import { EffortPicker } from '../agents/EffortPicker'
-import { EffortChip } from '../agents/EffortChip'
+import { SplitChipEffort } from '../agents/SplitChipEffort'
 import { draftEffortScore, suggestedEffortIndex } from '../agents/effortSuggestion'
 import { EffortTrace } from '../agents/EffortTrace'
 import { ModelPicker } from '../agents/ModelPicker'
@@ -203,6 +203,8 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
       {error ? <p className="agent-error watcher-first__error tt-paragraph" role="alert">{error}</p> : null}
       <form className="thread-prompt" data-quiet={quiet || undefined} onSubmit={event => { event.preventDefault(); void start() }}>
         <EffortTrace />
+        {/* The quiet pill draws the shield at its start, before the prompt (ADR-0161). */}
+        {quiet ? <div className="thread-prompt__lead">{permissions}</div> : null}
         <div className="screenshot-input"><div>
         <PromptEditor fieldRef={field} id={WATCHER_PROMPT_ID} text={text} skills={[]} sigils={[]} label={t`Watcher message`} editable={!starting}
           placeholder={t`Say what to start or check. Sending starts Watcher.`}
@@ -214,8 +216,6 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
           }} />
         </div></div>
         <label className="tt-visually-hidden" htmlFor={WATCHER_PROMPT_ID} onClick={() => field.current?.focus()}>{t`Watcher message`}</label>
-        {/* The quiet pill draws the shield at its start (ADR-0161). */}
-        {quiet ? <div className="thread-prompt__lead">{permissions}</div> : null}
         <div className="thread-prompt__footer">
           <div className="thread-prompt__meta">
             <div className="thread-options-bar" data-permission={quiet ? room.state?.runtimeMode ?? 'approval-required' : undefined}>
@@ -227,7 +227,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
                   saveOrchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, models, selectedSpeed)
                 }} />
                 {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={provider ?? undefined} value={speedValue} disabled={starting} pending={false} onChange={changeSpeed} />}
-                {quiet ? levels.length > 0 && <EffortChip levels={levels} value={reasoning} disabled={starting}
+                {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={starting}
                   suggestion={starting ? null : suggestedEffortIndex(draftEffortScore(text), levels.length, levels.indexOf(reasoning))}
                   speed={speeds.length === 0 ? undefined : { value: speedValue, name: speedName(speedValue, speeds),
                     options: speedOptions(speeds, provider ?? undefined), onChange: changeSpeed,

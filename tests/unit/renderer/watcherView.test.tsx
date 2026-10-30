@@ -148,13 +148,13 @@ describe("Watcher's room", () => {
     expect(command).not.toHaveBeenCalledWith(expect.objectContaining({ type: 'create-thread' }))
     if (quiet) {
       const effort = screen.getByRole('combobox', { name: 'Thread reasoning' })
-      expect(effort.closest('.effort-chip')).not.toHaveAttribute('data-speed')
+      expect(effort.closest('.split-chip-effort')).not.toHaveAttribute('data-speed')
       expect(effort).toHaveTextContent(/^Medium$/u)
       fireEvent.keyDown(effort, { key: 'End' })
       expect(effort).toHaveTextContent(/^High$/u)
       expect(screen.getByRole('combobox', { name: 'Watcher’s permissions' }).closest('.thread-prompt__lead')).not.toBeNull()
     } else {
-      expect(document.querySelector('.effort-chip')).toBeNull()
+      expect(document.querySelector('.split-chip-effort')).toBeNull()
       fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))
       fireEvent.change(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { target: { value: '2' } })
       fireEvent.keyDown(screen.getByRole('slider', { name: 'Thread reasoning effort' }), { key: 'Escape' })

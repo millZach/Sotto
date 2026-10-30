@@ -14,7 +14,7 @@ import { ModelPicker, type UnavailablePickerProvider } from './ModelPicker'
 import { useOwnServersBridge } from './OwnModelServers'
 import { localHostId } from '../features/onboarding/localAgents'
 import { EffortPicker, effortLabel } from './EffortPicker'
-import { EffortChip, type SpeedOption } from './EffortChip'
+import { SplitChipEffort, type SpeedOption } from './SplitChipEffort'
 import { suggestedEffortIndex } from './effortSuggestion'
 import { ultracodeLevel } from './ultracodeLevel'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
@@ -610,9 +610,9 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   const caption = pendingPermission === null || permissionUnconfirmed ? '' : permissionInForceCaption(provider, usesProviderModes(confirmedModel)
     ? { providerModeName: valueName('permissions', drawn.permissions, confirmedModel) } : { runtimeMode: (drawn.permissions || undefined) as AgentRuntimeMode | undefined })
   const retry = (kind: SettingKind): void => {
-    // The speed control is either the bolt or the quiet effort slider.
+    // The speed control is either the bolt or the split chip's effort half.
     // The quiet pill draws the shield outside the bar, at its start, so the chip is looked for in the whole composer.
-    if (pendingSettingsStore.retry(thread.id, kind, command, drawn)) (bar.current?.closest('form') ?? bar.current)?.querySelector<HTMLElement>(kind === 'fast' ? '.thread-fast, .effort-chip__trigger' : `[aria-label="${OPTION_CHIP_NAMES[kind]}"]`)?.focus()
+    if (pendingSettingsStore.retry(thread.id, kind, command, drawn)) (bar.current?.closest('form') ?? bar.current)?.querySelector<HTMLElement>(kind === 'fast' ? '.thread-fast, .split-chip-effort__trigger' : `[aria-label="${OPTION_CHIP_NAMES[kind]}"]`)?.focus()
   }
   const kinds: readonly SettingKind[] = ['model', 'effort', 'permissions', 'fast']
   const unconfirmedIds: Readonly<Record<SettingKind, string>> = { model: unconfirmedModelId, effort: unconfirmedEffortId, permissions: unconfirmedId, fast: unconfirmedFastId }
@@ -669,7 +669,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       }} />
       {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={speedProvider} value={speed} disabled={fixed} pending={settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={unconfirmedFastId}
         onChange={changeSpeed} />}
-      {quiet ? levels.length > 0 && <EffortChip levels={levels} value={reasoning} disabled={fixed || modelDisabled}
+      {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={fixed || modelDisabled}
         pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={effortDescription}
         speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), options: speedOptions(speeds, speedProvider), onChange: changeSpeed, onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
         suggestion={thread.status === 'running' ? null : suggestedEffortIndex(quiet.effortScore, levels.length,

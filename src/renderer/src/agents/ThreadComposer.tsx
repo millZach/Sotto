@@ -521,6 +521,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         onHighlight={index => setNextList({ ...nextList, index })} onChoose={chooseNext} /> : null}
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span><Trans>This answer was for a question that is no longer pending.</Trans></span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}><Trans>Discard answer</Trans></Button></div> : null}
+      {/* Before the prompt in the Tab order, as the shield is before it on the line. */}
+      {quiet ? <div ref={setShieldSlot} className="thread-prompt__lead" /> : null}
       <ThreadComposerEditor key={threadId} row={row} state={state} command={command} store={store} composerId={composerId}
         editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering} attachable={!answering} watcher={watcher}
         field={field} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
@@ -553,7 +555,6 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         {answering && (comments.length > 0 || quotes.length > 0) ? <p className="review-chips__note tt-paragraph">{heldNote(comments.length > 0, quotes.length > 0)}</p> : null}
         <label className="tt-visually-hidden" htmlFor={composerId} onClick={() => field.current?.focus()}>{fieldLabel}</label>
       </ThreadComposerEditor>
-      {quiet ? <div ref={setShieldSlot} className="thread-prompt__lead" /> : null}
       <div className="thread-prompt__footer">
         <div className="thread-prompt__meta" id={statusId}>
           {/* Every composer belongs to a thread that already exists on its host, so the host is shown here, not chosen.
