@@ -208,7 +208,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'watcher-compact-at', label: msg`Compact Watcher at`, section: 'settings-watcher', words: 'compaction context tokens conversation size cost', gate: 'watcher' },
     { id: 'new-workers', label: msg`Where new workers start`, section: 'settings-new-workers', words: 'machine computer host forge default worker placement', gate: 'cross-machine-work' },
     { id: 'worker-roles', label: msg`Worker roles`, section: 'settings-watcher', words: 'model building research review', gate: 'worker-roles' },
-    { id: 'worker-counts', label: msg`Workers`, section: 'settings-watcher', words: 'swarm angles usual up to how many count research parallel', gate: 'worker-swarms' },
+    { id: 'worker-counts', label: msg`Workers`, section: 'settings-watcher', words: 'swarm angles usual up to how many count research parallel', fallback: 'worker-roles', gate: 'worker-swarms' },
     { id: 'worker-ceiling', label: msg`Most working at once`, section: 'settings-watcher', words: 'worker capacity ceiling limit queue wait concurrent machine', gate: 'worker-swarms' },
 
     { id: 'own-model-servers', label: msg`Your own model servers`, section: 'settings-providers', words: 'local self-hosted ollama lm studio vllm sglang llama.cpp tailnet opencode add server', gate: 'own-model-servers' },
