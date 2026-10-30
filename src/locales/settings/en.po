@@ -4431,10 +4431,6 @@ msgstr "Resume threads after a restart"
 msgid "Room the preview shows"
 msgstr "Room the preview shows"
 
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Run a quick input-level test."
-msgstr "Run a quick input-level test."
-
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Run the local host"

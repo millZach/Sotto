@@ -102,6 +102,13 @@ const STEPS: readonly SetupStep[] = [
   { id: 'phone', group: 'elsewhere', title: 'iPhone' },
 ]
 const GROUPS = [...new Set(STEPS.map(step => step.group))]
+/**
+ * The optional steps after dictation, the Agents and Elsewhere groups: the coding agents connect on their own, a project
+ * can be added from the sidebar any time, and one computer needs no other. Until their task has started, Skip for now is
+ * the filled button there and the step's own action is secondary (#1824). The dictation steps are Sotto's first job, so
+ * their test and their choice stay the filled button; the iPhone step ends in Finish setup.
+ */
+const SKIP_FIRST: ReadonlySet<StepId> = new Set(['agents', 'project', 'computers'])
 const LINUX_STEPS: readonly SetupStep[] = [STEPS[0]!, { id: 'omarchy', group: 'start', title: 'Omarchy' }, ...STEPS.slice(1)]
 
 /**
@@ -533,7 +540,7 @@ export function Onboarding({
         <footer className="onboarding-actions">
           {index > 0 ? <Button variant="ghost" onClick={goBack} disabled={finishing || step.id === 'omarchy' && omarchy.busy}><Trans>Back</Trans></Button> : <span />}
           {step.id === 'welcome' ? <Button onClick={advance}><Trans>Get started</Trans></Button> : null}
-          {step.id !== 'welcome' && !last ? <Button variant={done ? 'primary' : 'secondary'} disabled={step.id === 'omarchy' && omarchy.busy} onClick={advance}>{done ? t`Continue` : t`Skip for now`}</Button> : null}
+          {step.id !== 'welcome' && !last ? <Button variant={done || SKIP_FIRST.has(step.id) ? 'primary' : 'secondary'} disabled={step.id === 'omarchy' && omarchy.busy} onClick={advance}>{done ? t`Continue` : t`Skip for now`}</Button> : null}
           {last ? (
             <Button onClick={() => void finish()} disabled={(microphoneState !== 'ready' && !microphoneSkipped) || finishing}>
               {finishing ? t`Saving setup...` : t`Finish setup`}
