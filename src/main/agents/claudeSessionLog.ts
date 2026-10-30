@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import { open, readdir, stat } from 'node:fs/promises'
 import { join } from 'node:path'
-import { StringDecoder } from 'node:string_decoder'
 import { CLAUDE_MAX_FRAME_BYTES, object, type ClaudeFrame } from './claudeProtocol'
 import { claudeNarration } from './claudeThinking'
 import { carriesAttachedFiles, isAttachedFilesNote, stripAppendedNotes, stripAttachedFilesNote, type RecordedAttachments } from './attachedFiles'
@@ -121,14 +120,32 @@ function sameFile(cursor: ClaudeTranscriptCursor, identity: { ino?: string | und
 }
 
 /** Reads only a Sotto-created UUID in its known project; never discovers foreign history. */
+/** How many bytes at the end of `bytes` begin a UTF-8 character that has not ended yet. */
+function unfinishedCharacter(bytes: Buffer | undefined): number {
+  if (!bytes) return 0
+  for (let back = 1; back <= Math.min(3, bytes.length); back++) {
+    const byte = bytes[bytes.length - back]!
+    if ((byte & 0xc0) === 0x80) continue
+    // Lead bytes of two, three and four; any other byte decodes as a replacement at once, and is held for nothing.
+    const length = byte >= 0xf5 ? 1 : byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc2 ? 2 : 1
+    return length > back ? back : 0
+  }
+  return 0
+}
+
 export class ClaudeSessionLog {
   private offset = 0
   /** Bytes through the last complete line delivered: the only offset that is safe to store. */
   private line = 0
   private identity: { size: number; ino?: string | undefined; birthtimeMs?: number | undefined } | undefined
   private resumeFrom: ClaudeTranscriptCursor | undefined
-  private remainder = ''
-  private decoder = new StringDecoder('utf8')
+  /**
+   * The bytes of the line still being written, as the reads brought them. Each read looks for a line's end in its own
+   * bytes only and decodes a line once, when it is whole: joining every read into one string and searching it all again
+   * cost the square of a line's length, 0.9 s for a 14 MB line, and a screenshot's line is 1-4 MB (#992).
+   */
+  private parts: Buffer[] = []
+  private partsLength = 0
   private pending: Promise<void> = Promise.resolve()
   private path: string | undefined
   /** `onSettled` runs once after each read that delivered entries, so a long catch-up costs one publish, not one per line. */
@@ -169,23 +186,31 @@ export class ClaudeSessionLog {
       this.identity = { size, ...(stats.ino ? { ino: String(stats.ino) } : {}), ...(Number.isFinite(stats.birthtimeMs) ? { birthtimeMs: stats.birthtimeMs } : {}) }
       const resume = this.resumeFrom; this.resumeFrom = undefined
       if (resume && resume.offset <= size && size >= resume.size && sameFile(resume, this.identity)) { this.offset = resume.offset; this.line = resume.offset }
-      if (size < this.offset) { this.offset = 0; this.line = 0; this.remainder = ''; this.decoder = new StringDecoder('utf8') }
+      if (size < this.offset) { this.offset = 0; this.line = 0; this.parts = []; this.partsLength = 0 }
       while (this.offset < size) {
         const bytes = Buffer.alloc(Math.min(64 * 1024, size - this.offset))
         const { bytesRead } = await handle.read(bytes, 0, bytes.length, this.offset)
         if (!bytesRead) break
-        this.offset += bytesRead; this.remainder += this.decoder.write(bytes.subarray(0, bytesRead))
-        let newline: number
-        while ((newline = this.remainder.indexOf('\n')) >= 0) {
-          const line = this.remainder.slice(0, newline); this.remainder = this.remainder.slice(newline + 1)
-          this.line += Buffer.byteLength(line) + 1
-          if (Buffer.byteLength(line) > CLAUDE_MAX_FRAME_BYTES) continue
+        this.offset += bytesRead
+        const read = bytes.subarray(0, bytesRead)
+        let start = 0
+        for (let newline = read.indexOf(10); newline >= 0; newline = read.indexOf(10, start)) {
+          const end = read.subarray(start, newline), length = this.partsLength + end.length
+          start = newline + 1
+          this.line += length + 1
+          const parts = this.parts
+          this.parts = []; this.partsLength = 0
+          if (length > CLAUDE_MAX_FRAME_BYTES) continue
+          // A line's end byte is never inside a character, so a line whole is whole characters.
+          const line = (parts.length ? Buffer.concat([...parts, end], length) : end).toString('utf8')
           try {
             const entry = object(JSON.parse(line))
             if (entry && (!entry.sessionId || entry.sessionId === this.sessionId)) { this.onEntry(entry); delivered = true }
           } catch { /* Unrelated/malformed native metadata is not user input. */ }
         }
-        if (Buffer.byteLength(this.remainder) > CLAUDE_MAX_FRAME_BYTES) throw new Error('Claude transcript entry exceeds the supported size.')
+        if (start < read.length) { this.parts.push(read.subarray(start)); this.partsLength += read.length - start }
+        // A character a read cut in two is not counted until its last bytes arrive, as a decoder holds it back.
+        if (this.partsLength - unfinishedCharacter(this.parts.at(-1)) > CLAUDE_MAX_FRAME_BYTES) throw new Error('Claude transcript entry exceeds the supported size.')
       }
     } finally {
       try { await handle.close() } finally { if (delivered) this.onSettled?.() }

@@ -127,6 +127,44 @@ describe('the slim composer in a thread pane', () => {
     }
   })
 
+  it('keeps following when the composer or window resizes, but leaves a reader in place', () => {
+    const observers: Array<{ targets: Set<Element>; resize: () => void }> = []
+    vi.stubGlobal('ResizeObserver', class {
+      readonly targets = new Set<Element>()
+      constructor(resize: () => void) { observers.push({ targets: this.targets, resize }) }
+      observe(target: Element): void { this.targets.add(target) }
+      unobserve(target: Element): void { this.targets.delete(target) }
+      disconnect(): void { this.targets.clear() }
+    })
+    try {
+      const view = mount()
+      let height = 3_000
+      let viewport = 600
+      let top = 0
+      Object.defineProperty(view.log, 'scrollHeight', { configurable: true, get: () => height })
+      Object.defineProperty(view.log, 'clientHeight', { configurable: true, get: () => viewport })
+      Object.defineProperty(view.log, 'scrollTop', { configurable: true, get: () => top, set: (value: number) => { top = Math.max(0, Math.min(value, height - viewport)) } })
+      act(() => { view.log.scrollTop = 2_400; fireEvent.scroll(view.log) })
+      // Extra composer padding changes the scroll box without resizing the message content.
+      const resize = (): void => { for (const observer of observers) if (observer.targets.has(view.log)) observer.resize() }
+      height += 180
+      act(resize)
+      expect(view.log.scrollTop).toBe(2_580)
+      viewport -= 100
+      act(resize)
+      expect(view.log.scrollTop).toBe(2_680)
+      act(() => { view.log.scrollTop -= 500; fireEvent.scroll(view.log) })
+      const readingAt = view.log.scrollTop
+      height += 80
+      act(resize)
+      expect(view.log.scrollTop).toBe(readingAt)
+      fireEvent.click(screen.getByRole('button', { name: /Jump to latest|New messages/u }))
+      expect(view.log.scrollTop).toBe(height - viewport)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('keeps the full room while the card moves, and moves the card only by what steps away under it', () => {
     // The card stands at the composer's foot. Slim it is one line, and the row under it (23 pixels) has stepped away.
     const box = (top: number, height: number) => ({ top, bottom: top + height, left: 0, right: 600, width: 600, height, x: 0, y: top, toJSON: () => ({}) }) as DOMRect

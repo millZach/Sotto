@@ -773,8 +773,9 @@ export class AgentControl {
    * guard, asked again as it dispatches, and is never taken for the user's own command, so it answers nothing and changes
    * no permission.
    */
-  commandFromMove(command: Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'settle-thread' }>, guard: () => void): Promise<AgentState> {
-    if (!['create-thread', 'manual-send', 'settle-thread'].includes(command.type)) throw new Error('A move cannot answer requests or change permissions.')
+  commandFromMove(command: Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'interrupt' | 'settle-thread' }>, guard: () => void): Promise<AgentState> {
+    // A move called off with Keep it here (#1178 part 4) stops and settles the thread it made.
+    if (!['create-thread', 'manual-send', 'interrupt', 'settle-thread'].includes(command.type)) throw new Error('A move cannot answer requests or change permissions.')
     const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard })
     return this.admitCommandShell(parsed)
   }

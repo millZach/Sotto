@@ -192,7 +192,7 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
           <p className="tt-paragraph"><Trans>Waiting for your approval in Tailscale. {name} uses Tailscale SSH, which asks you to approve this connection in your browser. The dialog fills in once you approve. Sotto waits up to 5 minutes.</Trans></p>
           <span className="host-phones-approval__actions">
             {host.tailscale?.url ? <Button aria-label={t`Open the Tailscale approval page for ${name}`} onClick={() => void bridge.command({ type: 'open-approval', id }).catch(() => undefined)}>{t`Open approval page`}</Button> : null}
-            <button type="button" className="host-setup__link tt-focusable" onClick={() => void window.sotto?.openExternalLink?.(TAILSCALE_GUIDE_URL)}>{t`Why Tailscale asks`}</button>
+            <button type="button" className="host-setup__link tt-focusable" data-outside-link="" onClick={() => void window.sotto?.openExternalLink?.(TAILSCALE_GUIDE_URL)}>{t`Why Tailscale asks`}</button>
           </span>
         </div>
       </div> : null}

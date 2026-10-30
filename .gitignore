@@ -239,6 +239,8 @@ artifacts/git-settings/
 artifacts/question-message-links/
 artifacts/question-prototype-pages/
 artifacts/prototype-ready/
+# Plain cards and sentence-case labels (#1830, #1829); the cited captures are committed
+artifacts/plain-cards-sentence-case/
 artifacts/phase-three-themes/
 artifacts/thread-browser-player/
 artifacts/new-thread-defaults/
@@ -329,6 +331,8 @@ artifacts/linux-hyprland-paste/*
 artifacts/voice-control-removal/merged-setup/
 # Raw benchmark measures; no replies or protocol bodies.
 artifacts/watcher-benchmark/
+# Watcher's start and empty rooms (#1822, #1834); the cited captures are committed
+artifacts/watcher-start-and-empty-rooms/
 artifacts/omarchy-shell-plugin/*
 !artifacts/omarchy-shell-plugin/bar-on-the-left.png
 !artifacts/omarchy-shell-plugin/desktop-catppuccin-latte.png

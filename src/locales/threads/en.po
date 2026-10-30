@@ -5235,10 +5235,6 @@ msgstr "No model source matches “{typed}”."
 msgid "No models were returned. Refresh this provider to check again."
 msgstr "No models were returned. Refresh this provider to check again."
 
-#: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "No open threads."
-msgstr "No open threads."
-
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "No preview for this file type"
 msgstr "No preview for this file type"
@@ -5268,7 +5264,6 @@ msgid "No skills match “{query}”."
 msgstr "No skills match “{query}”."
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
-#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "No threads yet."
 msgstr "No threads yet."
 

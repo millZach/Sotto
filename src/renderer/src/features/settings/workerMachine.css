@@ -5,7 +5,7 @@
 .worker-machine__choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; min-width: 0; margin: 0; padding: 0; border: 0; container-type: inline-size; }
 @container (width < 560px) { .worker-machine__choices > .worker-machine { grid-column: 1 / -1; } }
 .worker-machine { --worker-machine-warn: color-mix(in oklab, var(--tt-warning-text) 78%, var(--tt-text));
-  display: grid; align-content: start; gap: 6px; min-width: 0; padding: 13px 15px; border: 0; border-radius: 12px; background: var(--tt-card); cursor: pointer; transition: background-color 120ms ease; }
+  display: grid; align-content: start; gap: 6px; min-width: 0; padding: 13px 15px; border: 0; border-radius: 12px; background: var(--tt-card); cursor: default; transition: background-color 120ms ease; }
 .worker-machine[data-checked] { background: var(--tt-card-selected); }
 .worker-machine__head { display: flex; align-items: center; gap: 9px; min-width: 0; color: var(--tt-text-2); }
 .worker-machine__head > input { flex: none; width: 16px; height: 16px; margin: 0; accent-color: var(--tt-accent); }
@@ -19,5 +19,5 @@
 .worker-machine__note { margin-top: 2px; padding: 6px 10px; border-left: 2px solid var(--tt-warning); background: var(--tt-canvas); color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
 .worker-machine__alone { max-width: 68ch; margin: 0 0 10px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.55; }
 .worker-machine__link { display: inline; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-accent-text); font: inherit; font-weight: 500; text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; cursor: pointer; }
+  text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; }
 .worker-machine__link:hover { text-decoration-color: currentColor; }

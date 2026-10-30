@@ -64,6 +64,21 @@ summary,
   user-select: none;
 }
 
+/* The pointer (#1832). A control shows the arrow, as a desktop app's buttons, rows, tabs and toggles do; the hand is
+   only for a link that opens a page or a file, in a reply or out to the web, and for a text link drawn as a button
+   that opens a page outside Sotto, which says so with `data-outside-link`; text keeps the I-beam. This is the one
+   place either is set: zero specificity, so a disabled, dragged or resizing control's own cursor still wins, and a
+   choice drawn as a label or a row says `cursor: default` itself, since a label would hand it to a field inside. */
+:where(button, summary, select, [role='button'], [role='tab'], [role='switch'], [role='checkbox'], [role='radio'],
+  [role='menuitem'], [role='menuitemradio'], [role='menuitemcheckbox'], [role='option'], [role='slider'], [role='treeitem'],
+  input:is([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit'], [type='color'], [type='file'])) {
+  cursor: default;
+}
+
+:where(a[href], [role='link'], [data-outside-link]) {
+  cursor: pointer;
+}
+
 /* Native Windows popups can use a light background even for a dark select.
    Keep the option surface and text paired instead of inheriting only the ink. */
 select option,
@@ -113,9 +128,10 @@ h1[tabindex='-1']:focus {
 
 /* The platform scrollbar is dressed down to a hairline thumb on an empty
    track. The widget is excluded: it never scrolls and its styling is frozen. */
+:root { --tt-scrollbar-size: 10px; }
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: var(--tt-scrollbar-size);
+  height: var(--tt-scrollbar-size);
 }
 
 ::-webkit-scrollbar-track,
@@ -182,7 +198,6 @@ h1[tabindex='-1']:focus {
   padding: 0 14px;
   background: var(--tt-surface);
   color: var(--tt-text-2);
-  cursor: pointer;
   font-size: 13.5px;
   font-weight: 500;
   line-height: 1.2;
@@ -376,7 +391,6 @@ textarea.tt-input {
   border: 0;
   background: transparent;
   padding: 2px 0;
-  cursor: pointer;
   text-align: left;
 }
 
@@ -682,11 +696,9 @@ textarea.tt-input {
   display: block;
   margin-bottom: 8px;
   color: var(--tt-text-muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 12.5px;
+  font-weight: 500;
   text-align: center;
-  text-transform: uppercase;
 }
 
 /* One bar per step, gathered under its group's name; each group is as wide as it has steps. */
@@ -781,15 +793,6 @@ textarea.tt-input {
 .onboarding-card .tt-input,
 .onboarding-card .tt-select {
   font-size: 13.5px;
-}
-
-.onboarding-eyebrow {
-  margin: 0 0 -4px;
-  color: var(--tt-text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
 }
 
 .onboarding-card h1 {
@@ -1002,7 +1005,7 @@ textarea.tt-input {
   min-height: 44px;
   align-items: start;
   gap: 8px;
-  cursor: pointer;
+  cursor: default;
 }
 
 .onboarding-consent input {
@@ -1283,7 +1286,6 @@ textarea.tt-input {
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
-  cursor: pointer;
   transition: background-color 200ms ease, color 200ms ease, gap 250ms ease, padding 250ms ease;
 }
 
@@ -1447,7 +1449,6 @@ textarea.tt-input {
   border-radius: 6px;
   background: transparent;
   color: var(--tt-text-faint);
-  cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
   -webkit-app-region: no-drag;
 }
@@ -1553,7 +1554,6 @@ textarea.tt-input {
   font: inherit;
   text-decoration: underline dotted;
   text-underline-offset: 4px;
-  cursor: pointer;
   transition: color 120ms ease;
 }
 
@@ -1935,7 +1935,7 @@ textarea.tt-input {
   min-height: 44px;
   align-items: center;
   gap: 9px;
-  cursor: pointer;
+  cursor: default;
 }
 
 .settings-download-dialog input {
@@ -1973,7 +1973,6 @@ textarea.tt-input {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 16px;
-  cursor: pointer;
   list-style: none;
   transition: background-color 120ms ease, color 120ms ease;
 }

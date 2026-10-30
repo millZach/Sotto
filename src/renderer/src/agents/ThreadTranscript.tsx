@@ -656,11 +656,13 @@ const JUMP_BAND_PX = 60
 /** Whether a request card reaches the button's band, which rides above a floating composer by the composer's height. */
 export function reachesJumpBand(scroller: HTMLElement): boolean {
   const view = scroller.getBoundingClientRect()
-  // The transcript's scroll padding is the floating composer's height, and nothing while the composer stacks. A slim
-  // composer (ADR-0125) keeps that padding, and the button rides above what shows of it instead.
+  // Scroll padding also includes the button while it shows. A question's 26px corner overlap is not clipped,
+  // but still extends below the button's anchor, so include it when checking whether a request reaches the band.
   const pane = scroller.closest<HTMLElement>('.thread-pane')
   const shown = pane?.hasAttribute('data-slim') ? parseFloat(getComputedStyle(pane).getPropertyValue('--thread-compose-shown')) : Number.NaN
-  const bottom = view.bottom - (Number.isFinite(shown) ? shown : parseFloat(getComputedStyle(scroller).scrollPaddingBottom) || 0)
+  const style = getComputedStyle(scroller)
+  const inset = style.getPropertyValue(pane?.hasAttribute('data-questions') ? '--thread-compose-height' : '--thread-compose-cover')
+  const bottom = view.bottom - (Number.isFinite(shown) ? shown : parseFloat(inset || style.scrollPaddingBottom) || 0)
   return [...scroller.querySelectorAll('.agent-request')].some(card => {
     const box = card.getBoundingClientRect()
     return box.bottom > bottom - JUMP_BAND_PX && box.top < bottom
@@ -705,6 +707,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const streamText = useAgents().responseStreaming !== 'complete'
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
+  const jump = useRef<HTMLButtonElement>(null)
   const following = useRef(true)
   /** Where the scroll stood when last heard or set to the end, so a reader moving up from the end is told apart from the end moving away. */
   const lastTop = useRef(0)
@@ -716,6 +719,16 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const [away, setAway] = useState(false)
   const [unseen, setUnseen] = useState(false)
   const [requestUnderJump, setRequestUnderJump] = useState(false)
+  const showJump = (away || unseen) && !requestUnderJump
+  useLayoutEffect(() => {
+    const button = jump.current, element = scroller.current?.parentElement
+    if (button === null || !element || typeof ResizeObserver === 'undefined') return
+    const measure = (): void => { element.style.setProperty('--thread-jump-height', `${button.getBoundingClientRect().height}px`) }
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(button)
+    return () => { observer.disconnect(); element.style.removeProperty('--thread-jump-height') }
+  }, [showJump])
   // Whether the reader is far enough above the end for the composer to slim, kept off React's state: the pane hears of a
   // crossing and nothing here draws again for it.
   const readingBack = useRef(false)
@@ -898,7 +911,8 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     else if (arrived) setUnseen(true)
   }, [lastMessageId, pendingKey, hidden, followSignal, thread.historyStatus, toEnd])
 
-  // Late layout (wrapped text, images, rich blocks) keeps a following reader at the end.
+  // Late content layout, composer padding and window resizing keep a following reader at the end. Observe the
+  // scroll box's content size too: a taller floating composer changes its padding without resizing the messages.
   useEffect(() => {
     const element = content.current
     if (element === null || typeof ResizeObserver === 'undefined') return
@@ -907,6 +921,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
       if (scroller.current) { setRequestUnderJump(reachesJumpBand(scroller.current)); noteReading(scroller.current) }
     })
     observer.observe(element)
+    if (scroller.current) observer.observe(scroller.current)
     return () => observer.disconnect()
   }, [noteReading])
 
@@ -1062,7 +1077,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   return <div className="thread-transcript" data-room-backdrop="">
     {marks.length >= SCRUBBER_FEWEST ? <MessageScrubber marks={marks} scroller={scroller} content={content} moreAbove={hidden > 0 || thread.earlierAvailable === true || marksHeld}
       who={watcher ? 'Watcher' : row.provider} running={thread.status === 'running'} requests={thread.requests} onJump={jumpTo} onReaderWheel={onReaderInput} /> : null}
-    <div className="thread-workspace__transcript" data-room-backdrop="" ref={scroller} onScroll={onScroll} onWheel={onReaderInput} onTouchStart={onReaderInput}
+    <div className="thread-transcript__viewport" data-room-backdrop=""><div className="thread-workspace__transcript" data-room-backdrop="" ref={scroller} onScroll={onScroll} onWheel={onReaderInput} onTouchStart={onReaderInput}
       onPointerDown={onReaderInput} onKeyDown={onTranscriptKey} tabIndex={0} role="log" aria-live="off"
       aria-label={t`Thread transcript`} aria-busy={thread.historyStatus === 'loading'}>
       <div className="thread-transcript__content" data-room-backdrop="" ref={content}><OwnServerTurnContext.Provider value={ownServerTurns}><BrowserLinesContext.Provider value={browserStore}>
@@ -1095,12 +1110,12 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {recovery.map(item => <PendingMessage key={item.draftId} draftId={item.draftId} status={item.status} row={row} state={state} command={command} store={store} />)}
         {children}
       </BrowserLinesContext.Provider></OwnServerTurnContext.Provider></div>
-    </div>
+    </div></div>
     {greets && greetingSlot ? createPortal(<ThreadGreeting row={row} state={state} />, greetingSlot) : null}
     {/* A request's choices and text are never covered: while a card reaches the button's band, the button steps aside. */}
     {/* Add to prompt over words selected in a reply (ADR-0129; Owl only). */}
     {quoting ? <ReplyQuoteButton threadId={thread.id} scroller={scroller} onAdded={onQuoted} /> : null}
-    {(away || unseen) && !requestUnderJump ? <button type="button" className="thread-transcript__jump tt-focusable" data-unseen={unseen || undefined} onClick={toEnd}>
+    {showJump ? <button ref={jump} type="button" className="thread-transcript__jump tt-focusable" data-unseen={unseen || undefined} onClick={toEnd}>
       <ArrowDown size={16} aria-hidden="true" />{unseen ? t`New messages` : t`Jump to latest`}
     </button> : null}
   </div>

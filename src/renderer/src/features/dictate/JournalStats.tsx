@@ -16,10 +16,20 @@ import {
  * The Journal's stats column: today against your usual pace, speed over the last 30 days, the streak and its
  * 13-week calendar, where the words went, and this month's time saved and busiest hour. Every chart carries a
  * text alternative. Below 900 pixels of room the column becomes a row of the two figure sections and the charts
- * (the sections marked wide) step aside.
+ * (the sections marked wide) step aside. Before two days of dictation it is one sentence under "Your numbers".
  */
 export const JournalStats = memo(function JournalStats({ stats, typingWpm }: { readonly stats: Stats; readonly typingWpm: number }): ReactNode {
   const { t, i18n } = useLingui()
+  if (!stats.dictatedOnTwoDays) {
+    return (
+      <aside className="journal-stats" data-empty="" aria-label={t`Your dictation`}>
+        <section className="journal-stats__section">
+          <StatsHeading><Trans>Your numbers</Trans></StatsHeading>
+          <p className="journal-stats__quiet tt-paragraph"><Trans>Words, speed, streak and where your words went show here once you have dictated on two days.</Trans></p>
+        </section>
+      </aside>
+    )
+  }
   const { today, usual, month } = stats
   const todayPace = today.wpm === null
     ? usual === null ? { value: '0', label: t`wpm today` } : { value: String(usual), label: t`wpm, your usual` }
