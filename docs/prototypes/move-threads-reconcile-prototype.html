@@ -1,0 +1,267 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not wired to anything. Three calls for Zach, part 4 of #1178 (a move whose machine
+  stopped answering, and Keep it here; ADR-0105 decision 7, "Reconciling"):
+    1. Whether Keep it here asks first when the other machine has already made the new thread (A, B).
+    2. Which moves offer Keep it here (A, B).
+    3. What Keep it here does while the other machine can't be reached (A, B).
+  Fixed by ADR-0105 decision 7 and Zach's picks of October 29: a move whose machine does not answer keeps the thread
+  fenced and says "This thread is waiting for forge to answer about its move. Nothing was lost." Keep it here asks the
+  other machine to fence the move and to stop and settle any thread it made for it; the thread here takes sends again
+  only once that machine answers that it holds no thread for the move, or that it stopped and settled the one it had.
+  Picked (Zach, 2026-10-30, on the question card): 1 A, Keep it here asks first on the card when the other machine made the
+  new thread; 2 A, Keep it here appears only while a move waits on a machine that is not answering; 3 A, a press while
+  that machine can't be reached is remembered and done as soon as it is back, the thread here staying fenced until then.
+  Palette and words follow watcher.css and MoveThreads.tsx on main at dcb1b2323 (October 29, 2026).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sotto - a move whose machine stopped answering, three questions</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265); --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-hover: oklch(0.2 0.01 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092); --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-success: oklch(0.79 0.13 165); --tt-warning: oklch(0.83 0.14 80);
+  --tt-message: oklch(0.2 0.01 265);
+  --tt-scrim: rgb(0 0 0 / 52%);
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-provider-claude: oklch(0.74 0.12 45);
+  --needs: color-mix(in oklab, var(--tt-warning) 80%, var(--tt-text));
+  --ready: color-mix(in oklab, var(--tt-success) 80%, var(--tt-text));
+  --font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85); --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-hover: oklch(0.93 0.008 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-hairline: oklch(0.86 0.012 80); --tt-field-border: oklch(0.8 0.016 80);
+  --tt-accent: oklch(0.5 0.09 183); --tt-accent-text: oklch(0.42 0.08 183);
+  --tt-success: oklch(0.5 0.12 160); --tt-warning: oklch(0.55 0.13 70);
+  --tt-message: oklch(0.94 0.006 85);
+  --tt-scrim: rgb(30 28 24 / 28%);
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+  --tt-provider-claude: oklch(0.55 0.14 45);
+}
+* { box-sizing: border-box; }
+html { background: var(--tt-canvas); color: var(--tt-text); font: 15px/1.5 var(--font); -webkit-text-size-adjust: 100%; }
+body { margin: 0; padding: 0 0 calc(40px + env(safe-area-inset-bottom)); }
+button { font: inherit; color: inherit; }
+:where(button, a, [tabindex]):focus-visible { outline: 3px solid var(--tt-accent); outline-offset: 2px; }
+p { text-wrap: pretty; }
+.page { max-width: 680px; margin: 0 auto; padding: 0 16px; }
+.top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); font-size: 13px; }
+.top b { font-weight: 600; } .top span { flex: 1; color: var(--tt-text-muted); }
+.top button, .tabs button { min-height: 36px; padding: 0 12px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: transparent; color: var(--tt-text-2); cursor: pointer; }
+h1 { margin: 22px 0 6px; font-size: 22px; letter-spacing: -.2px; }
+.intro { margin: 0 0 6px; color: var(--tt-text-2); }
+.q { margin: 34px 0 0; padding-top: 22px; border-top: 1px solid var(--tt-hairline); }
+.q h2 { margin: 0 0 4px; font-size: 18px; }
+.q > p { margin: 0 0 12px; color: var(--tt-text-2); }
+.tabs { display: flex; gap: 8px; margin: 0 0 12px; }
+.tabs button { flex: 1 1 0; min-height: 44px; font-weight: 600; }
+.tabs button[aria-pressed='true'] { border-color: var(--tt-accent); background: var(--tt-surface-elevated); color: var(--tt-accent-text); }
+.variant { display: none; } .variant.on { display: block; }
+.variant > h3 { margin: 0 0 2px; font-size: 16px; }
+.variant > .say { margin: 0 0 12px; color: var(--tt-text-2); }
+.variant > .say b { color: var(--tt-text); }
+.cost { margin: 12px 0 0; padding: 10px 12px; border-left: 3px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13.5px; }
+.cost b { color: var(--tt-text); }
+.label { margin: 16px 0 6px; color: var(--tt-text-muted); font-size: 12.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
+
+/* the window bits */
+.win { position: relative; padding: 16px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-canvas); overflow: hidden; }
+.win--dim::before { content: ''; position: absolute; inset: 0; background: var(--tt-scrim); }
+.sheet { position: relative; padding: 18px 18px 14px; border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); }
+.sheet h4 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+.lead { margin: 0 0 6px; color: var(--tt-text-2); font-size: 13px; }
+.sec { display: flex; align-items: center; gap: 6px; margin: 14px 0 4px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; }
+.sec span { color: var(--tt-text-muted); font-weight: 400; }
+.sec[data-tone='needs'] { color: var(--needs); }
+.sec--machine { margin-top: 16px; padding-bottom: 4px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text); font-size: 13.5px; }
+ul.rows { margin: 0; padding: 0; list-style: none; }
+.row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 9px; align-items: center; padding: 6px 0; font-size: 13.5px; }
+.row > svg, .row > .mk { justify-self: center; }
+.name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.row--box { grid-template-columns: 18px 18px minmax(0, 1fr) auto; }
+.row--box .meta, .row--box .line { grid-column: 3 / -1; }
+.row--box input { width: 16px; height: 16px; margin: 0; accent-color: var(--tt-accent); }
+.nobox { justify-self: center; width: 13px; height: 13px; border: 1.5px dashed var(--tt-text-muted); border-radius: 3px; }
+.btn[aria-disabled='true'] { border-style: dashed; border-color: var(--tt-field-border); background: transparent; color: var(--tt-text-muted); }
+.meta, .line { grid-column: 2 / -1; margin: 1px 0 0; font-size: 12.5px; line-height: 1.45; }
+.meta { display: flex; flex-wrap: wrap; color: var(--tt-text-muted); }
+.meta > :not(:first-child)::before { content: '·'; margin: 0 6px; }
+.line { color: var(--tt-text-2); } .line[data-tone='needs'] { color: var(--needs); }
+.where { display: inline-flex; align-items: center; gap: 4px; color: var(--tt-text-2); white-space: nowrap; }
+.where svg { color: var(--tt-accent-text); }
+.tag { justify-self: end; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 11.5px; white-space: nowrap; }
+.tag[data-tone='moves'] { border-color: color-mix(in srgb, var(--tt-success) 45%, var(--tt-hairline)); color: var(--ready); }
+.tag[data-tone='needs'] { border-color: color-mix(in srgb, var(--needs) 45%, var(--tt-hairline)); color: var(--needs); }
+.note { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 12.5px; }
+.acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 14px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: transparent; color: var(--tt-text); font-size: 13.5px; font-weight: 500; }
+.btn--primary { border-color: var(--tt-text); background: var(--tt-text); color: var(--tt-canvas); }
+.btn--small { min-height: 30px; padding: 0 11px; font-size: 12.5px; }
+.mk { display: inline-grid; place-items: center; width: 15px; height: 15px; }
+.mk[data-p='claude'] { color: var(--tt-provider-claude); } .mk[data-p='codex'] { color: var(--tt-text-2); }
+.pick { display: grid; gap: 2px; margin: 4px 0 0; padding: 0; list-style: none; }
+.pick li { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; column-gap: 9px; min-height: 40px; padding: 4px 10px; border-radius: 8px; font-size: 14px; }
+.pick li[aria-current='true'] { background: color-mix(in oklab, var(--tt-accent) 14%, var(--tt-surface-elevated)); outline: 1px solid color-mix(in srgb, var(--tt-accent) 40%, var(--tt-hairline)); }
+.pick li[aria-disabled='true'] { color: var(--tt-text-muted); }
+.pick small { color: var(--tt-text-muted); font-size: 12.5px; }
+.pick svg { color: var(--tt-text-2); }
+.picks2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 460px) { .picks2 { grid-template-columns: 1fr; } }
+
+/* Watcher's conversation */
+.convo { display: grid; gap: 14px; }
+.msg header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg header b { color: var(--tt-text-2); font-weight: 500; }
+.msg[data-role='user'] { margin-left: 14%; padding: 12px 15px; border-radius: 14px 14px 4px 14px; background: var(--tt-message); }
+.msg p { margin: 0; font-size: 14.5px; line-height: 1.55; }
+.msg[data-role='watcher'] p { color: var(--tt-text-2); }
+.sline { display: flex; align-items: flex-start; gap: 7px; margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.sline svg { flex: none; margin-top: 3px; }
+.card { display: grid; gap: 3px; padding: 11px 14px 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface); }
+.card[data-tone='needs'] { border-color: color-mix(in srgb, var(--needs) 45%, var(--tt-hairline)); }
+.card__top { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; }
+.card__top .lead2 { flex: none; color: var(--tt-text-2); }
+.card[data-tone='needs'] .card__top .lead2, .card[data-tone='needs'] .card__top svg { color: var(--needs); }
+.card__top u { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
+.card .meta, .card .line { padding-left: 23px; }
+.card .acts { justify-content: flex-start; padding-left: 23px; margin-top: 6px; }
+.ring { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; margin: 0 2px; }
+.ring[data-tone='working'] { background: conic-gradient(var(--tt-accent-text) 0 32%, color-mix(in srgb, var(--tt-accent-text) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, #000 42%); }
+.ring[data-tone='ready'] { background: var(--tt-success); }
+.ring[data-tone='needs'] { border: 2px solid var(--needs); }
+.plan { padding: 13px 15px 12px; border: 1px solid color-mix(in srgb, var(--tt-accent) 40%, var(--tt-hairline)); border-radius: 12px; background: var(--tt-surface); }
+.plan h4 { margin: 0 0 4px; font-size: 15px; }
+.composer { margin-top: 4px; padding: 10px 14px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-muted); font-size: 13.5px; }
+.overlay { position: relative; z-index: 2; margin: -96px 4px 0; }
+.room { position: relative; }
+.room[data-under] .convo { opacity: .45; }
+</style>
+<style>
+.steps { display: flex; gap: 4px; margin: 6px 0 0 23px; padding: 0; list-style: none; }
+.steps li { width: 22px; height: 4px; border-radius: 2px; background: var(--tt-hairline); }
+.steps li[data-done] { background: var(--tt-accent-text); }
+.confirm { margin: 8px 0 0 23px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--needs) 45%, var(--tt-hairline)); border-radius: 8px; font-size: 13px; color: var(--tt-text-2); }
+.confirm b { color: var(--tt-text); }
+.card .acts.left { justify-content: flex-start; }
+</style>
+</head>
+<body>
+<div class="top"><b>Sotto · a move whose machine stopped answering</b><span>Prototype, part 4 of #1178</span><button id="theme" type="button" aria-pressed="false">Light</button></div>
+<main class="page">
+  <h1>When a move's machine stops answering</h1>
+  <p class="intro">Part 4 handles a move whose other machine went away or lost its answer mid-move. The thread here stays
+    fenced, since forge may already be running the new thread, and its card says so with <b>Keep it here</b>
+    (ADR-0105). Keep it here asks forge to stop and settle any thread it made for the move; this thread takes sends again
+    once forge answers. Three calls are yours. Tap A or B under each.</p>
+
+  <section class="q" id="q1">
+    <h2>1. Keep it here when forge already made the new thread</h2>
+    <p>Forge said it made the new thread and its first turn is running, then stopped answering. Keep it here would stop
+      that thread there. Does the press ask first?</p>
+    <div class="tabs" role="group" aria-label="Question 1 answers"><button type="button" data-q="1" data-v="a" aria-pressed="true">A</button><button type="button" data-q="1" data-v="b" aria-pressed="false">B</button></div>
+    <div class="variant" data-q="1" data-v="a"></div>
+    <div class="variant" data-q="1" data-v="b"></div>
+  </section>
+
+  <section class="q" id="q2">
+    <h2>2. Which moves offer Keep it here</h2>
+    <p>The ADR offers it on a move waiting on a machine that is not answering. A move going normally has no way back today.</p>
+    <div class="tabs" role="group" aria-label="Question 2 answers"><button type="button" data-q="2" data-v="a" aria-pressed="true">A</button><button type="button" data-q="2" data-v="b" aria-pressed="false">B</button></div>
+    <div class="variant" data-q="2" data-v="a"></div>
+    <div class="variant" data-q="2" data-v="b"></div>
+  </section>
+
+  <section class="q" id="q3">
+    <h2>3. Keep it here while forge can't be reached</h2>
+    <p>Forge is off. Sotto can't ask it anything until it is back, and the thread here must stay fenced until forge answers.</p>
+    <div class="tabs" role="group" aria-label="Question 3 answers"><button type="button" data-q="3" data-v="a" aria-pressed="true">A</button><button type="button" data-q="3" data-v="b" aria-pressed="false">B</button></div>
+    <div class="variant" data-q="3" data-v="a"></div>
+    <div class="variant" data-q="3" data-v="b"></div>
+  </section>
+</main>
+<script>
+'use strict'
+const P = {
+  move: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
+  laptop: '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
+  server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/>',
+}
+const icon = (n, s = 14) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`
+const steps = n => `<ol class="steps" aria-hidden="true">${[0,1,2,3,4].map(i => `<li ${i < n ? 'data-done' : ''}></li>`).join('')}</ol>`
+const meta = `<p class="meta"><span class="where">${icon('laptop', 12)}This computer → ${icon('server', 12)}forge</span><span>GPT-5.5 there</span><span>Sotto</span></p>`
+const card = ({ tone = '', lead, short, line, n, acts = '', extra = '' }) => `<div class="win"><div class="card" ${tone ? `data-tone="${tone}"` : ''}>
+  <div class="card__top">${icon('move', 15)}<span class="lead2">${lead}</span><u>Tray icon at night</u><span class="tag" ${tone ? 'data-tone="needs"' : ''}>${short}</span></div>
+  ${meta}${n !== undefined ? steps(n) : ''}${line ? `<p class="line" ${tone ? `data-tone="${tone}"` : ''}>${line}</p>` : ''}${extra}${acts ? `<div class="acts left">${acts}</div>` : ''}</div></div>`
+const waitLine = 'This thread is waiting for forge to answer about its move. Nothing was lost.'
+const keep = '<span class="btn btn--small">Keep it here</span>'
+
+const Q1 = {
+  a: `<h3>A · Ask first, on the card (Recommended)</h3>
+    <p class="say">Keep it here opens a short question in the card itself: what stops and what stays, with <b>Stop it there and keep this one</b> and <b>Cancel</b>.</p>
+    <div class="label">Waiting</div>${card({ tone: 'needs', lead: 'Moving', short: 'Waiting for forge', line: waitLine, n: 3, acts: keep })}
+    <div class="label">After Keep it here</div>${card({ tone: 'needs', lead: 'Moving', short: 'Waiting for forge', line: waitLine, n: 3,
+      extra: '<div class="confirm"><b>Stop the new thread on forge and keep this one here?</b> Its first turn there is still running. Sotto stops it and settles it on forge, and this thread takes sends again once forge says so.</div>',
+      acts: '<span class="btn btn--small btn--primary">Stop it there and keep this one</span><span class="btn btn--small">Cancel</span>' })}
+    <p class="cost"><b>Trade-off:</b> one more press, and work there is never stopped by a stray click.</p>`,
+  b: `<h3>B · Act at once</h3>
+    <p class="say">Keep it here asks forge right away; the card says what it is doing.</p>
+    <div class="label">Waiting</div>${card({ tone: 'needs', lead: 'Moving', short: 'Waiting for forge', line: waitLine, n: 3, acts: keep })}
+    <div class="label">After Keep it here</div>${card({ tone: 'needs', lead: 'Keeping it here', short: 'Asking forge', line: 'Sotto asked forge to stop the new thread and settle it. This thread takes sends again once forge answers. Nothing was lost.', n: 3 })}
+    <p class="cost"><b>Trade-off:</b> quickest, but a misclick stops a thread that was working.</p>`,
+}
+const Q2 = {
+  a: `<h3>A · Only while a move waits on its machine (Recommended, as the ADR says)</h3>
+    <p class="say">A move going normally shows its steps and nothing to press. Keep it here appears only once the move is waiting on a machine that is not answering.</p>
+    <div class="label">Going normally</div>${card({ lead: 'Moving', short: 'Started on forge', line: 'The new thread on forge is working from its handover. This one is settled once that first turn ends.', n: 3 })}
+    <div class="label">Waiting on forge</div>${card({ tone: 'needs', lead: 'Moving', short: 'Waiting for forge', line: waitLine, n: 3, acts: keep })}
+    <p class="cost"><b>Trade-off:</b> the card stays quiet while things go well; changing your mind about a working move means waiting for it to finish.</p>`,
+  b: `<h3>B · On every move until it finishes</h3>
+    <p class="say">Every move's card has Keep it here until the thread here is settled, so you can call a move off at any step.</p>
+    <div class="label">Going normally</div>${card({ lead: 'Moving', short: 'Started on forge', line: 'The new thread on forge is working from its handover. This one is settled once that first turn ends.', n: 3, acts: keep })}
+    <div class="label">Waiting on forge</div>${card({ tone: 'needs', lead: 'Moving', short: 'Waiting for forge', line: waitLine, n: 3, acts: keep })}
+    <p class="cost"><b>Trade-off:</b> a way back at every step, and a button on every card while moves run.</p>`,
+}
+const Q3 = {
+  a: `<h3>A · Remember the press, and do it when forge is back (Recommended)</h3>
+    <p class="say">Sotto records the press. The card says the thread will stay here as soon as forge answers; the thread stays fenced until then, as the ADR requires.</p>
+    <div class="label">After Keep it here, forge still off</div>${card({ tone: 'needs', lead: 'Keeping it here', short: 'Waiting for forge', line: 'You chose to keep this thread here. Sotto asks forge to stop and settle the new thread as soon as forge is back. This thread takes no sends until forge answers. Nothing was lost.', n: 3 })}
+    <p class="cost"><b>Trade-off:</b> one press and done; the thread still waits on forge, but nothing more is asked of you.</p>`,
+  b: `<h3>B · Keep it here waits until forge is back</h3>
+    <p class="say">The button is off while forge can't be reached, saying why; you press it once forge answers again.</p>
+    <div class="label">Forge off</div>${card({ tone: 'needs', lead: 'Moving', short: 'Waiting for forge', line: waitLine + ' Keep it here works once forge is connected again.', n: 3,
+      acts: '<span class="btn btn--small" aria-disabled="true">Keep it here</span>' })}
+    <p class="cost"><b>Trade-off:</b> nothing happens behind your back, but you have to come back and press it.</p>`,
+}
+for (const [q, set] of [['1', Q1], ['2', Q2], ['3', Q3]]) for (const [v, h] of Object.entries(set)) document.querySelector(`.variant[data-q="${q}"][data-v="${v}"]`).innerHTML = h
+const params = new URLSearchParams(location.search)
+const show = (q, v) => {
+  document.querySelectorAll(`.tabs button[data-q="${q}"]`).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)))
+  document.querySelectorAll(`.variant[data-q="${q}"]`).forEach(d => d.classList.toggle('on', d.dataset.v === v))
+}
+document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => show(b.dataset.q, b.dataset.v)))
+for (const q of ['1', '2', '3']) show(q, params.get('q' + q) ?? 'a')
+const theme = document.getElementById('theme')
+const setTheme = light => { document.documentElement.dataset.theme = light ? 'light' : 'dark'; theme.setAttribute('aria-pressed', String(light)); theme.textContent = light ? 'Dark' : 'Light' }
+theme.addEventListener('click', () => setTheme(document.documentElement.dataset.theme !== 'light'))
+setTheme(params.get('theme') === 'light')
+</script>
+</body>
+</html>
