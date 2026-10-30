@@ -37,7 +37,7 @@ function fixture() {
   native.fromWebContents.mockReturnValue(parent)
   native.showOpenDialog.mockResolvedValue({ canceled: false, filePaths: ['D:\\Existing Folder\\project'] })
   const workingCopyOptions = vi.fn(async () => ({ isGit: true, currentBranch: 'main', branches: ['main'], worktrees: [] }))
-  const dispose = registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt, workingCopyOptions })
+  const dispose = registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt, encodeThreadChangesReceipt: new AgentStateBroadcaster().encodeThreadChangesReceipt, workingCopyOptions })
   disposables.push(dispose)
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
   const invoke = async (source = event, ...args: unknown[]) => registry.invoke(AGENT_CHOOSE_PROJECT_DIRECTORY, args, source)

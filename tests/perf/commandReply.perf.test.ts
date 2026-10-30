@@ -94,7 +94,7 @@ describe.skipIf(!PERF_BENCH)("command reply cost (timing benchmark; requires SOT
     router.add({ hostId: HOST_ID, name: 'This computer', kind: 'local', service: new LocalHostService({ control: live }),
       detail: threadId => live.threadDetail(threadId), preview: () => null })
     const registry = ipcRegistry({ mainUrl: 'file:///main.html' })
-    const unregister = registerAgentIpc(registry.ipc, router, router, () => [registry.main], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt })
+    const unregister = registerAgentIpc(registry.ipc, router, router, () => [registry.main], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt, encodeThreadChangesReceipt: new AgentStateBroadcaster().encodeThreadChangesReceipt })
     dispose = () => { unregister(); registry.dispose(); router.dispose() }
     const send = (command: AgentCommand) =>
       registry.invoke(AGENT_COMMAND, [command]) as Promise<AgentState>

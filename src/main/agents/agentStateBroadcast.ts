@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { clientCatalogKey, hostCatalogKey } from '../../shared/agents'
 import { threadsReplacedSince } from '../../shared/threadListPatches'
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
-import type { AgentClientHost, AgentCommandReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, AgentThread, AgentThreadsBroadcast } from '../../shared/agents'
+import type { AgentClientHost, AgentCommandReceipt, AgentCommandThreadChangesReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, AgentThread, AgentThreadsBroadcast } from '../../shared/agents'
 
 type EncodedClientHost<Catalog> = Omit<AgentClientHost, 'models'> & { models: Catalog }
 type EncodedState<Catalog> = Omit<AgentState, 'host'> & {
@@ -204,6 +204,12 @@ export class ThreadRecordsBroadcast {
   /** The next broadcast lists every record: the window holds none it can measure from. */
   reset(): void { this.base = null; this.resets++ }
 
+  /**
+   * `threads` measured from what the window was last sent, as a broadcast would be, for a command's reply: nothing is
+   * made the base, so the next broadcast is measured from the same place and carries the same changes (#1330's shape).
+   */
+  peek(threads: readonly AgentThread[], host?: object): AgentThreadsBroadcast { return this.encode(threads, host).payload }
+
   /** Verifying mode: a broadcast read in part, against the whole walk from the same base. */
   private verifyPatched(threads: readonly AgentThread[], base: ThreadBase, payload: AgentThreadsBroadcast): void {
     this.verifiedEncodes++
@@ -332,6 +338,19 @@ export class AgentStateBroadcaster {
    */
   readonly encodeReceipt = (state: AgentState): AgentCommandReceipt =>
     this.encode(state, (key, models): AgentModelCatalogRevision => ({ revision: this.revisionFor(key, models), omitted: true }))
+
+  /**
+   * A command's reply to a window that asked for its threads as changes (ADR-0028, October 30 amendment): `encodeReceipt`'s,
+   * with the thread records that changed since the last broadcast the window was sent in place of every one. The window
+   * puts the whole array back from that broadcast's records; one that holds another broadcast reads the whole state.
+   * Nothing is recorded as sent, so the next broadcast is measured from the same broadcast and carries the same changes.
+   *
+   * An arrow property, so `registerAgentIpc` can be handed it on its own.
+   */
+  readonly encodeThreadChangesReceipt = (state: AgentState): AgentCommandThreadChangesReceipt => {
+    const receipt = this.encodeReceipt(state)
+    return { ...receipt, host: { ...receipt.host, threads: this.threads.peek(state.host.threads, state.host) } }
+  }
 
   /** `state` with `host.models` and every `host.clientHosts[].models` replaced by what `catalog` makes of it. */
   private encode<Catalog>(state: AgentState, catalog: (key: string, models: readonly AgentModel[]) => Catalog): EncodedState<Catalog> {

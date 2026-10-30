@@ -21,14 +21,25 @@ interface HeldThreads {
  *
  * Nothing downstream writes into a state it is handed, so a held record is handed out as it is, without a copy.
  */
-export function createThreadReassembly(): (wire: unknown) => AgentThread[] | undefined {
+export interface ThreadReassembly {
+  /** A broadcast's threads put back, which this then holds; undefined when they cannot be, holding what it held. */
+  (wire: unknown): AgentThread[] | undefined
+  /**
+   * A command reply's threads put back the same way, measured from the broadcast held (ADR-0028, October 30 amendment),
+   * holding what it held: main moves nothing for a reply, so the next broadcast is measured from the same one.
+   */
+  peek(wire: unknown): AgentThread[] | undefined
+}
+
+export function createThreadReassembly(): ThreadReassembly {
   let held: HeldThreads | null = null
-  return wire => {
+  const apply = (wire: unknown): AgentThread[] | undefined => {
     const next = resolve(held, wire)
     if (next === undefined) return undefined
     held = next
     return [...next.list]
   }
+  return Object.assign(apply, { peek: (wire: unknown): AgentThread[] | undefined => { const next = resolve(held, wire); return next === undefined ? undefined : [...next.list] } })
 }
 
 function resolve(held: HeldThreads | null, wire: unknown): HeldThreads | undefined {

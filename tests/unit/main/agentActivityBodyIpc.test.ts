@@ -17,7 +17,7 @@ function fixture(activityBody?: (request: { threadId: string; activityId: string
   const registry = ipcRegistry()
   const { ipc, main, widget } = registry
   const control = { get: vi.fn<() => AgentState>(), shell: vi.fn<() => AgentState>(), threadDetail: vi.fn(() => null), attachmentPreview: vi.fn(() => null), ...(activityBody ? { activityBody } : {}) }
-  disposables.push(registerAgentIpc(ipc, control, { command: vi.fn() }, () => [main, widget], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
+  disposables.push(registerAgentIpc(ipc, control, { command: vi.fn() }, () => [main, widget], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt, encodeThreadChangesReceipt: new AgentStateBroadcaster().encodeThreadChangesReceipt }))
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
   const fromWidget: IpcInvocationEvent = { sender: widget.webContents, senderFrame: widget.webContents.mainFrame }
   return { invoke: (source: IpcInvocationEvent, payload: unknown) => registry.invoke(AGENT_ACTIVITY_BODY, [payload], source), event, fromWidget }

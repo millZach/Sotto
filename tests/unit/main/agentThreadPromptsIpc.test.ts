@@ -18,7 +18,7 @@ function fixture(threadPrompts?: (request: AgentThreadPromptsRequest) => Promise
   const registry = ipcRegistry()
   const { ipc, main, widget } = registry
   const control = { get: vi.fn<() => AgentState>(), shell: vi.fn<() => AgentState>(), threadDetail: vi.fn(() => null), attachmentPreview: vi.fn(() => null), ...(threadPrompts ? { threadPrompts } : {}) }
-  disposables.push(registerAgentIpc(ipc, control, { command: vi.fn() }, () => [main, widget], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
+  disposables.push(registerAgentIpc(ipc, control, { command: vi.fn() }, () => [main, widget], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt, encodeThreadChangesReceipt: new AgentStateBroadcaster().encodeThreadChangesReceipt }))
   const event: IpcInvocationEvent = { sender: main.webContents, senderFrame: main.webContents.mainFrame }
   const fromWidget: IpcInvocationEvent = { sender: widget.webContents, senderFrame: widget.webContents.mainFrame }
   return { invoke: (source: IpcInvocationEvent, payload: unknown) => registry.invoke(AGENT_THREAD_PROMPTS, [payload], source), event, fromWidget }

@@ -222,7 +222,7 @@ describe('typed preload bridge', () => {
       expect(Object.isFrozen(surface)).toBe(true)
     }
     expect(Object.keys(bridge.memory!).sort()).toEqual(['command', 'get', 'onChanged'])
-    expect(Object.keys(bridge.agents!).sort()).toEqual(['activityBody', 'attachmentContent', 'attachmentPreview', 'chooseProjectDirectory', 'command', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitRefs', 'hostFolders', 'onState', 'onThreadDetail', 'stageAttachment', 'startHandover', 'threadDetail', 'threadPrompts', 'workingCopyOptions'])
+    expect(Object.keys(bridge.agents!).sort()).toEqual(['activityBody', 'attachmentContent', 'attachmentPreview', 'chooseProjectDirectory', 'command', 'commandWithThreadChanges', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitRefs', 'hostFolders', 'onState', 'onThreadDetail', 'stageAttachment', 'startHandover', 'threadDetail', 'threadPrompts', 'workingCopyOptions'])
   })
 
   it('creates a frozen widget surface without private settings, dictation history, or audio processing', async () => {
@@ -692,7 +692,7 @@ it('leaves retired voice channels unregistered while keeping dictation IPC avail
     const harness = createIpcHarness()
     const removeAgents = registerAgentIpc(harness.ipc, {
       get: vi.fn(), shell: vi.fn(), threadDetail: () => null, attachmentPreview: () => null,
-    }, { command: vi.fn() }, () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }], { encodeReceipt: vi.fn() })
+    }, { command: vi.fn() }, () => [{ role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl }], { encodeReceipt: vi.fn(), encodeThreadChangesReceipt: vi.fn() })
     try {
       for (const channel of ['sotto:agents:speech', 'sotto:agents:speech-cancel', 'sotto:agents:grok-voices', 'sotto:agents:voice-model', 'sotto:agents:wake']) {
         expect(harness.ipc.handlers.has(channel)).toBe(false)

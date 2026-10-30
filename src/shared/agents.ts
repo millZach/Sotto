@@ -1162,6 +1162,22 @@ export const agentCommandReceiptSchema = agentStateSchema.extend({
 export type AgentCommandReceipt = z.infer<typeof agentCommandReceiptSchema>
 
 /**
+ * `host.threads` as a command's reply carries it to a page that asked for thread changes (ADR-0028, October 30 amendment):
+ * the shape of a broadcast's (`AgentThreadsBroadcast`), measured from the last broadcast the window was sent and moving
+ * nothing, so the page puts the whole array back from the records it holds. Unlike a broadcast's, the preload checks it,
+ * each changed record against the thread schema, as it checked every record of a whole reply.
+ */
+export const agentThreadChangesSchema = z.object({ revision: z.number().int().nonnegative(), base: z.number().int().nonnegative().nullable(),
+  changed: z.array(agentThreadSchema), removed: z.array(z.string()).optional(), order: z.array(z.string()).optional() }).strict()
+/** A command receipt whose threads are the changes since the window's last broadcast (`agentThreadChangesSchema`). */
+export const agentCommandThreadChangesReceiptSchema = agentCommandReceiptSchema.extend({
+  host: agentCommandReceiptSchema.shape.host.extend({ threads: agentThreadChangesSchema }),
+})
+export type AgentCommandThreadChangesReceipt = z.infer<typeof agentCommandThreadChangesReceiptSchema>
+/** What a page may ask of a command's reply, beside the command: `threadChanges` for its threads as changes. */
+export const agentCommandReplyOptionsSchema = z.object({ threadChanges: z.literal(true) }).strict()
+
+/**
  * One viewed thread's history, pushed and fetched apart from the shell stream: its messages and the
  * activity beside them. Activity is the larger half by far — a working thread reports hundreds of
  * records — and, like the messages, only the open pane draws it.
@@ -1541,6 +1557,11 @@ export type AgentStartHandover = z.infer<typeof agentStartHandoverSchema>
  */
 export interface AgentWireBridge extends Omit<AgentBridge, 'command' | 'onState'> {
   command(command: AgentCommand): Promise<AgentCommandReceipt>
+  /**
+   * The command, answered with its threads as the changes since the window's last broadcast, for a page that holds that
+   * broadcast's records and puts the whole array back (ADR-0028, October 30 amendment).
+   */
+  commandWithThreadChanges?(command: AgentCommand): Promise<AgentCommandThreadChangesReceipt>
   onState(listener: (state: AgentStateBroadcast) => void): () => void
 }
 

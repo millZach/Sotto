@@ -59,7 +59,7 @@ async function fixture() {
 
   const registry = ipcRegistry()
   const { ipc, main } = registry
-  disposables.push(registerAgentIpc(ipc, router, router, () => [main], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
+  disposables.push(registerAgentIpc(ipc, router, router, () => [main], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt, encodeThreadChangesReceipt: new AgentStateBroadcaster().encodeThreadChangesReceipt }))
   const send = (command: AgentCommand) =>
     registry.invoke(AGENT_COMMAND, [command]) as Promise<AgentState>
   return { control, send }

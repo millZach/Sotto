@@ -23,7 +23,7 @@ function fixture() {
   const stageAttachment = vi.fn(async () => handle)
   const attachmentContent = vi.fn(async () => ({ mimeType: 'image/png' as const, bytes: new Uint8Array([1]) }))
   const control = { get: () => ({} as AgentState), shell: () => ({} as AgentState), threadDetail: () => null, command: vi.fn<AgentControl['command']>(), attachmentPreview, stageAttachment, attachmentContent }
-  disposables.push(registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
+  disposables.push(registerAgentIpc(ipc, control, { command: command => control.command(command) }, () => [main, widget], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt, encodeThreadChangesReceipt: new AgentStateBroadcaster().encodeThreadChangesReceipt }))
   const invoke = async (payload: unknown, source = main) =>
     registry.invoke(AGENT_ATTACHMENT_PREVIEW, [payload], registry.event(source))
   const call = async (channel: string, payload: unknown, source = main) =>
