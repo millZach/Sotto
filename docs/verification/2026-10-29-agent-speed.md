@@ -1,6 +1,6 @@
 # Thread and worker-role speed
 
-Drake asked for Fast and Ultra fast in Watcher's worker roles and both composers, then a local Owl rebuild after merge. This amends ADR-0143, ADR-0091 and ADR-0161.
+Drake asked for Fast and Ultra fast in Watcher's worker roles and both composers, then authorized a local Owl install before review and merge. This amends ADR-0143, ADR-0091 and ADR-0161.
 
 ## Live Codex catalog
 
@@ -19,7 +19,7 @@ Claude native agent definitions have no per-agent speed field in the [Agent SDK 
 
 ## Verification
 
-The app was not launched. Full CI gates and integration suites run on GitHub.
+The checks were windowless. Full CI gates and integration suites run on GitHub.
 
 - `npm run typecheck` and `npm run lint`: clean on Node 24.22.1.
 - Individually run unit files: 134 assertions passed across `workspaceFastMode`, `remoteCommands`, `threadOptionsFastMode`, shared `workerRoles` and `subagentRoleTable`, main `subagentRoles` and `workerRoleTools`, `agentSettingsLightPath`, renderer `threadFastMode`, `workerRolesSettings`, `workerRolesOrchestrating`, `unusedNewThread` and `pendingSettings`, and `interfaceCatalogs`.
@@ -32,3 +32,16 @@ Headless captures render the real React composer and `WorkerRolesSettings`, with
 - [Dark worker roles](../../artifacts/agent-speed/roles-dark.png), [light worker roles at minimum size](../../artifacts/agent-speed/roles-light.png).
 
 The coordinator also compares an older client's Fast-off command against the effective speed, so an Ultrafast thread cannot confirm Standard prematurely. When a command carries both fields, the named speed alone is dispatched.
+
+## Local Owl install
+
+Drake's revised build instruction was completed before the review and PR. Owl **0.1.41-owl.20261029.5** was built from the following commits on the throwaway `chore/local-owl-speed-5` branch:
+
+- Main: `e0f88cba5a57fa5072305d7d791c89df550e4246`.
+- Speed: `42add48944b188bc7630326488277008b49dc0ee`.
+- PR #1806's focused-pane hairline fix: `dee8531c2939a22dd919801f79759531bf34c311`.
+- Combined build: `c9f2fdec07ea5b278d5d110362969d75867c9098`.
+
+The `finish.zsh` and `swap.zsh` recipe was copied from the `.3` swap directory into `/tmp/sotto-owl-0.1.41-owl.20261029.5-swap/`, with the build path and version changed. The detached swap quit `com.sotto.desktop`, installed and relaunched the app. It quit normally in two seconds; no termination signal was needed. The script retains SIGTERM after 60 seconds and never uses SIGKILL.
+
+The installed bundle reports `.5` and passes `codesign --verify --deep --strict`. Its `app.asar` matches the built bundle (SHA-256 `22cdba8ff40410c4afae239f0c7cda1c3b6a43f36bfbb70f5e7246dd63f4c21c`). The previous `.4` bundle remains at `/tmp/sotto-owl-0.1.41-owl.20261029.5-swap/old-Sotto.app` for rollback. The install and relaunch were authorized separately from the headless UI checks; no app-launched test journey was run.
