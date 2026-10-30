@@ -195,7 +195,6 @@
   border-radius: 6px;
   background: transparent;
   color: var(--tt-text-muted);
-  cursor: pointer;
   translate: 0 -50%;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
@@ -218,7 +217,6 @@
   font: inherit;
   font-size: 12.5px;
   white-space: nowrap;
-  cursor: pointer;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
@@ -277,7 +275,6 @@
   border: 0;
   border-radius: 4px;
   background: none;
-  cursor: pointer;
 }
 
 .journal-entry__toggle:focus-visible { outline-offset: 3px; }

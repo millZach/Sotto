@@ -15,7 +15,7 @@
 .pane-terminal .terminal-view { overflow: clip; }
 .pane-terminal .terminal-bar { min-height: 36px; }
 /* The drawer's icon buttons look the way the Tools panel's do, a little smaller for its shorter bar. */
-.pane-terminal .files-icon { display: grid; place-items: center; flex: none; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.pane-terminal .files-icon { display: grid; place-items: center; flex: none; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); }
 .pane-terminal .files-icon:hover { background: var(--tools-hover); color: var(--tt-text); }
 .pane-terminal .files-icon:disabled { opacity: .5; cursor: default; }
 .pane-terminal .terminal-tabs__tab { min-height: 28px; border-radius: 6px; font-size: 13px; }

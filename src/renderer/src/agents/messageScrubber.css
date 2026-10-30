@@ -8,7 +8,7 @@
 
 .message-scrubber { position: absolute; z-index: 2; top: 0; height: var(--scrubber-height); left: var(--scrubber-left); width: var(--scrubber-lane); opacity: .35; }
 .message-scrubber:hover, .message-scrubber:focus-within, .message-scrubber[data-active] { opacity: 1; }
-.message-scrubber__tick { position: absolute; left: 0; width: 100%; height: var(--scrubber-hit); min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; background: transparent; cursor: pointer; transform: translateY(-50%);
+.message-scrubber__tick { position: absolute; left: 0; width: 100%; height: var(--scrubber-hit); min-width: 0; min-height: 0; margin: 0; padding: 0; border: 0; background: transparent; transform: translateY(-50%);
   --rest: 10px; --peak: 24px; }
 .message-scrubber[data-narrow] .message-scrubber__tick { --rest: 8px; --peak: 14px; }
 /* The column's ends fade at rest: the lane's own edges are well past a centred column, so the fade counts ticks. */
@@ -30,7 +30,7 @@
 
 /* What a tick leads to: the message, then the start of the reply or the question it asked. */
 .message-scrubber__card { position: absolute; z-index: 5; margin: 0; padding: 0; border: 1px solid var(--tt-border);
-  border-radius: 6px; background: var(--tt-surface-elevated); box-shadow: 0 14px 36px -14px var(--tt-shadow-color); color: var(--tt-text); font-size: 13px; line-height: 1.45; cursor: pointer; }
+  border-radius: 6px; background: var(--tt-surface-elevated); box-shadow: 0 14px 36px -14px var(--tt-shadow-color); color: var(--tt-text); font-size: 13px; line-height: 1.45; cursor: default; }
 .message-scrubber__head { display: flex; gap: 8px; padding: 7px 12px; border-bottom: 1px solid var(--tt-border); color: var(--tt-text-muted); font-size: 12px; }
 .message-scrubber__head b { color: var(--tt-text-2); font-weight: 600; }
 .message-scrubber__head span:last-child { margin-left: auto; }

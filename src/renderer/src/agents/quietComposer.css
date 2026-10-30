@@ -65,7 +65,7 @@
 .effort-dots[data-speed='fast'] { --dots-ink: var(--tt-chart-5); }
 .effort-dots[data-speed='ultrafast'] { --dots-ink: color-mix(in oklab, var(--tt-chart-5) 78%, var(--tt-text)); }
 .effort-dots[data-speed='ultrafast'] i[data-lit]::before { box-shadow: 0 0 5px color-mix(in oklab, var(--tt-chart-5) 65%, transparent); }
-.effort-dots__track { display: inline-flex; align-items: center; height: 30px; padding: 0 3px; border-radius: 6px; cursor: pointer; }
+.effort-dots__track { display: inline-flex; align-items: center; height: 30px; padding: 0 3px; border-radius: 6px; }
 .effort-dots__track[aria-disabled='true'] { cursor: default; }
 .effort-dots__track > i { position: relative; display: grid; place-items: center; width: 9px; height: 30px; }
 .effort-dots__track > i::before { content: ''; width: 5.4px; height: 5.4px; border-radius: 50%; background: var(--dots-ink); opacity: .22; transition: opacity 160ms ease-out; }
@@ -81,7 +81,7 @@
 .effort-dots__note:empty { display: none; }
 
 /* A small, steady Stop leaves every effort tooltip reachable while a turn runs. */
-.effort-dots__stop { display: grid; place-items: center; width: 22px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.effort-dots__stop { display: grid; place-items: center; width: 22px; height: 24px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); }
 .effort-dots__stop:hover { background: var(--tt-pill); color: var(--tt-pill-ink); }
 .effort-dots__stop:disabled { cursor: default; }
 /* A thread whose settings cannot change shows its model's name; the line saying so stays for assistive technology. */

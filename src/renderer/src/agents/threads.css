@@ -44,7 +44,7 @@
 .thread-workspace__error { margin: 12px 24px 0; }
 
 /* The header's icon buttons: the Tools toggle, the More menu, and anything a pane adds beside them. */
-.pane-action { display: grid; place-items: center; width: 30px; height: 30px; flex: none; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+.pane-action { display: grid; place-items: center; width: 30px; height: 30px; flex: none; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .pane-action:hover:not(:disabled), .pane-action[aria-pressed='true'], .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .pane-action:active:not(:disabled):not([aria-pressed='true']):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .pane-action:disabled { opacity: .5; cursor: default; }
@@ -54,7 +54,7 @@
 .pane-menu__list { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; display: grid; min-width: 212px; padding: 6px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .pane-menu__list { animation: tt-pop-down 120ms ease-out; } }
 .pane-menu__list hr { margin: 6px 0; border: 0; border-top: 1px solid var(--tt-hairline); }
-.pane-menu__item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
+.pane-menu__item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; }
 .pane-menu__item > svg { flex: none; color: var(--tt-text-muted); }
 .pane-menu__item:hover:not(:disabled), .pane-menu__item:focus-visible { background: var(--tt-hover); outline: none; }
 .pane-menu__item[data-tone='danger'], .pane-menu__item[data-tone='danger'] > svg { color: var(--tt-error-text); }
@@ -72,7 +72,7 @@
 .thread-workspace__transcript:focus-visible { outline: 2px solid var(--tt-focus-ring, var(--threads-field-focus)); outline-offset: -2px; }
 .thread-transcript__earlier { display: flex; justify-content: center; margin: 0 0 20px; }
 .thread-transcript__earlier .tt-button { font-size: 13px; }
-.thread-transcript__jump { position: absolute; bottom: 14px; left: 50%; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--threads-field-border); border-radius: 6px; background: var(--threads-field); box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: 14px; cursor: pointer; transform: translateX(-50%); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease; }
+.thread-transcript__jump { position: absolute; bottom: 14px; left: 50%; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--threads-field-border); border-radius: 6px; background: var(--threads-field); box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: 14px; transform: translateX(-50%); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease; }
 .thread-transcript__jump:hover { border-color: var(--threads-field-focus); }
 .thread-transcript__jump:active { filter: brightness(.96); }
 .thread-transcript__jump[data-unseen] { border-color: var(--threads-field-focus); }
@@ -97,7 +97,7 @@
 /* Watcher's reply to news carries its turn's work in its header instead of on a line above it. */
 .thread-message__work {
   display: inline-flex; align-items: center; gap: 4px; min-height: 24px; margin: -2px 0 -2px -4px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm);
-  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; font-variant-numeric: tabular-nums; cursor: pointer;
+  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; font-variant-numeric: tabular-nums;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .thread-message__work:hover { background: var(--tt-hover); color: var(--tt-text-2); }
@@ -108,7 +108,7 @@
 /* The copy control sits in the message's bottom-left corner and appears while the message is hovered,
    holds focus, or is mid-confirmation. A message that has one keeps room for it under its last line:
    replies line its icon up with their text, user bubbles pin it inside their padding. */
-.thread-message__copy { position: absolute; bottom: 0; left: -5px; display: inline-flex; align-items: center; gap: 5px; min-width: 28px; height: 28px; min-height: 28px; padding: 0 5px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; cursor: pointer; opacity: 0; transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease; }
+.thread-message__copy { position: absolute; bottom: 0; left: -5px; display: inline-flex; align-items: center; gap: 5px; min-width: 28px; height: 28px; min-height: 28px; padding: 0 5px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; opacity: 0; transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease; }
 .thread-message__copy:hover { background: var(--tt-hover); color: var(--tt-text); }
 .thread-message__copy:active { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-message__copy[data-copied] { color: var(--tt-success); }
@@ -234,7 +234,7 @@
 .thread-prompt__model small { color: var(--tt-text-muted); font-size: 12px; }
 .thread-prompt__status { min-width: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
 .thread-prompt__status[data-tone='warning'] { color: var(--threads-warning-text); }
-.thread-prompt__link { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; cursor: pointer; }
+.thread-prompt__link { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; }
 .thread-prompt__actions { display: flex; flex: none; align-items: center; gap: 6px; }
 /* The composer's keys (ADR-0153): each button is its glyph and the key that does the same (Drake's pick 2.2 of
    docs/prototypes/prompt-send-refine-2.html). The one filled button is always what Enter does, the theme's own ink on its
@@ -329,7 +329,7 @@
 .thread-greeting__where > span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .thread-greeting__where svg { flex: none; }
 .thread-greeting__project { min-width: 0; max-width: 100%; }
-.pane-menu__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin: -2px -6px; padding: 2px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.pane-menu__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin: -2px -6px; padding: 2px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .pane-menu__trigger:hover, .pane-menu__trigger[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .pane-menu__trigger:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-greeting__project-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }

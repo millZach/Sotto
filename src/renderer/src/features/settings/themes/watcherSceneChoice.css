@@ -7,7 +7,7 @@
 .watcher-scene-choice .theme-settings__subheading { margin: 0 0 10px; }
 .watcher-scene-choice .theme-settings__assignment-hint { margin-bottom: 12px; }
 .watcher-scene-choice__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-.watcher-scene-option { display: grid; grid-template-columns: minmax(0, 11fr) minmax(0, 9fr); grid-template-rows: auto auto; align-content: center; column-gap: 12px; row-gap: 2px; min-width: 0; padding: 8px; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease; }
+.watcher-scene-option { display: grid; grid-template-columns: minmax(0, 11fr) minmax(0, 9fr); grid-template-rows: auto auto; align-content: center; column-gap: 12px; row-gap: 2px; min-width: 0; padding: 8px; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); color: var(--tt-text); font: inherit; text-align: left; transition: background-color 120ms ease, border-color 120ms ease; }
 .watcher-scene-option > .watcher-scene-option__picture { grid-row: 1 / span 2; margin: 0; }
 .watcher-scene-option__name { align-self: end; }
 .watcher-scene-option__words { align-self: start; }

@@ -22,7 +22,7 @@
 /* When the scene steps away, it fades out, and then it is gone. */
 .watcher-scene[data-leaving] { opacity: 0; }
 .watcher-scene[data-leaving] .watcher-scene__owl { pointer-events: none; }
-.watcher-scene__owl { position: absolute; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; pointer-events: auto; }
+.watcher-scene__owl { position: absolute; padding: 0; border: 0; border-radius: 6px; background: transparent; pointer-events: auto; }
 .watcher-scene__owl:hover { background: color-mix(in srgb, var(--tt-text) 7%, transparent); }
 /* A thread owl's name and what its thread is doing, above it, while the pointer rests on it. */
 .watcher-scene__tip { position: absolute; z-index: 5; display: flex; flex-direction: column; gap: 1px; max-width: 240px; padding: 6px 10px 7px;
