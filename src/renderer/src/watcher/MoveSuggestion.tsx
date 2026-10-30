@@ -8,8 +8,6 @@ import { agoWords, machineName } from './machineWords'
 import { moveSheetStore, useMovesOffered } from './MoveThreads'
 import { moveSuggestionCandidates, moveSuggestionNotNow, moveSuggestionPlan, plainlyHeld, type MoveSuggestionSource } from './moveSuggestionPlan'
 
-/** What a reading's previews found: the thread to name and the machine it is on, or nothing that would move now. */
-interface Answer { readonly reading: string; readonly named: { readonly source: MoveSuggestionSource; readonly threadId: string } | null }
 /** A press under way or refused, for the reading it was pressed on. */
 type Phase = { readonly kind: 'moving'; readonly reading: string } | { readonly kind: 'refused'; readonly reading: string; readonly message: string }
 
@@ -40,35 +38,48 @@ export function WatcherMoveSuggestion({ entries, threads, now }: {
   useEffect(() => { moveSuggestionNotNow.settle(entries) }, [entries])
   // From the machines alone, so a thread's update does no work here.
   const plan = useMemo(() => bridge === undefined ? null : moveSuggestionPlan(entries, notNow), [bridge, entries, notNow])
-  const [answer, setAnswer] = useState<Answer | null>(null)
+  // Each machine reading's answer, by `MoveSuggestionSource.reading`: the thread to name there, or null when none would
+  // move now. Kept by that machine's own reading, so an answer that comes late fills only its own, never a newer one's.
+  const answers = useRef(new Map<string, string | null>())
+  const asking = useRef(new Set<string>())
+  const [answered, setAnswered] = useState(0)
   // A reading whose suggestion was pressed: it says nothing more until the next reading.
   const [handled, setHandled] = useState<string | null>(null)
   const [phase, setPhase] = useState<Phase | null>(null)
   const threadsRef = useRef(threads)
   threadsRef.current = threads
-  // Each reading asks main once which threads would move now, a troubled machine at a time until one has a thread to
-  // name; the same reading never asks again, whatever the threads do under it or however often the line draws.
-  const asked = useRef<string | null>(null)
+  // Each machine's reading asks main once which of its threads would move now, a troubled machine at a time until one has
+  // a thread to name. The same reading never asks again, whatever the threads do under it, however often the line draws,
+  // and whatever another machine reads or the user says Not now to.
   useEffect(() => {
-    if (bridge === undefined || plan === null || asked.current === plan.reading) return
-    asked.current = plan.reading
-    const asking = plan
+    if (bridge === undefined || plan === null) return
+    for (const key of answers.current.keys()) if (!plan.troubled.some(source => source.reading === key)) answers.current.delete(key)
+    const next = plan.troubled.find(source => answers.current.get(source.reading) !== null)
+    if (next === undefined || answers.current.has(next.reading) || asking.current.has(next.reading)) return
+    asking.current.add(next.reading)
+    const target = plan.to.machine!.hostId
     void (async () => {
-      for (const source of asking.troubled) {
-        const ids = moveSuggestionCandidates(threadsRef.current, source.from)
-        if (ids.length === 0) continue
-        try {
-          const preview = await bridge.prepare({ threadIds: [...ids], hostId: asking.to.machine!.hostId })
+      let named: string | null = null
+      try {
+        for (const page of moveSuggestionCandidates(threadsRef.current, next.from)) {
+          const preview = await bridge.prepare({ threadIds: [...page], hostId: target })
           const moves = new Set(preview.status === 'ok' ? preview.threads.filter(item => item.outcome === 'moves').map(item => item.threadId) : [])
-          const first = ids.find(id => moves.has(id))
-          if (first !== undefined) { setAnswer({ reading: asking.reading, named: { source, threadId: first } }); return }
-        } catch { /* That machine's threads go unnamed this reading; the next machine may still have one. */ }
-      }
-      setAnswer({ reading: asking.reading, named: null })
+          named = page.find(id => moves.has(id)) ?? null
+          if (named !== null) break
+        }
+      } catch { /* That machine's threads go unnamed this reading; the next machine may still have one. */ }
+      answers.current.set(next.reading, named)
+      asking.current.delete(next.reading)
+      setAnswered(count => count + 1)
     })()
-  }, [bridge, plan])
+  }, [bridge, plan, answered])
   const labelId = useId()
-  const named = plan !== null && answer?.reading === plan.reading ? answer.named : null
+  let named: { readonly source: MoveSuggestionSource; readonly threadId: string } | null = null
+  for (const source of plan?.troubled ?? []) {
+    const answer = answers.current.get(source.reading)
+    if (answer === undefined) break
+    if (answer !== null) { named = { source, threadId: answer }; break }
+  }
   const thread = named === null ? undefined : threads.find(item => item.id === named.threadId)
   if (bridge === undefined || plan === null || named === null || thread === undefined || plainlyHeld(thread) || handled === plan.reading) return null
   const { to, reading } = plan

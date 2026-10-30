@@ -18,10 +18,18 @@ export interface MoveSuggestionPlan {
   readonly troubled: readonly MoveSuggestionSource[]
   /** The machine with room. */
   readonly to: MachineEntry
-  /** Which reading this is, so a new reading asks again and the same one never does. */
+  /** Which reading this is: each troubled machine's, so the line says nothing more once this one was pressed. */
   readonly reading: string
 }
-export interface MoveSuggestionSource { readonly from: MachineEntry; readonly problems: readonly LoadProblem[] }
+export interface MoveSuggestionSource {
+  readonly from: MachineEntry
+  readonly problems: readonly LoadProblem[]
+  /**
+   * This machine's reading, toward the machine with room: what main is asked about once, and its answer kept by, so
+   * another machine's reading, or Not now on another machine, never asks about this one again.
+   */
+  readonly reading: string
+}
 
 const PROBLEMS = ['busy', 'short'] as const
 type LoadProblem = typeof PROBLEMS[number]
@@ -44,26 +52,31 @@ export function moveSuggestionPlan(entries: readonly MachineEntry[], notNow: Rea
   const to = roomy[0]
   if (to === undefined) return null
   const troubled = entries.filter(entry => entry.connected && entry.machine !== null && loadProblems(entry).length > 0 && !notNow.has(entry.machine.hostId))
-    .map(from => ({ from, problems: loadProblems(from) }))
+    .map(from => ({ from, problems: loadProblems(from), reading: `${from.machine!.hostId}:${from.machine!.load?.observedAt ?? ''}:${to.machine!.hostId}` }))
   if (troubled.length === 0) return null
-  const reading = [...troubled.map(({ from }) => `${from.machine!.hostId}:${from.machine!.load?.observedAt ?? ''}`), to.machine!.hostId].join(',')
-  return { troubled, to, reading }
+  return { troubled, to, reading: troubled.map(source => source.reading).join(',') }
 }
 
 /**
- * Whether the window can see that a thread is not at a clean point: a turn running, a question or permission card, put
- * away, delegated, or Watcher's own. Uncommitted work, background work and sends on their way are main's to say, in its
- * preview, which a press asks again.
+ * Whether the window can see that a thread is not at a clean point: a turn running, a question or permission card,
+ * uncommitted work as its host last read its folder, put away, delegated, or Watcher's own. Background work, sends on
+ * their way and work uncommitted since that read are main's to say, in its preview, which a press asks again.
  */
 export function plainlyHeld(thread: AgentThread): boolean {
   return isPutAway(thread) || thread.kind === 'watcher' || thread.kind === 'watcher-history' || thread.clientConnected === false
     || thread.delegatedBy !== undefined || isThreadTurnRunning(thread) || thread.requests.length > 0
+    || thread.worktree?.dirty === true || thread.worktree?.git?.dirty === true
 }
 
-/** A machine's threads that might move, most recently worked first, up to the hundred a preview takes. Once a reading. */
-export function moveSuggestionCandidates(threads: readonly AgentThread[], from: MachineEntry): readonly string[] {
-  return threads.filter(thread => onMachine(thread, from) && !plainlyHeld(thread))
-    .sort((a, b) => worked(b) - worked(a)).slice(0, THREAD_MOVE_THREADS_MAX).map(thread => thread.id)
+/**
+ * A machine's threads that might move, most recently worked first, in the hundreds a preview takes at a time, so a hundred
+ * that would not move never hide one that would. Worked out once a reading.
+ */
+export function moveSuggestionCandidates(threads: readonly AgentThread[], from: MachineEntry): readonly (readonly string[])[] {
+  const ids = threads.filter(thread => onMachine(thread, from) && !plainlyHeld(thread)).sort((a, b) => worked(b) - worked(a)).map(thread => thread.id)
+  const pages: string[][] = []
+  for (let at = 0; at < ids.length; at += THREAD_MOVE_THREADS_MAX) pages.push(ids.slice(at, at + THREAD_MOVE_THREADS_MAX))
+  return pages
 }
 
 /**
