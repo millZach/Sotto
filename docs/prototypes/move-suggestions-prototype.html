@@ -1,0 +1,302 @@
+<!doctype html>
+<!--
+  PROTOTYPE - throwaway. Not shipped, not wired to anything. Four calls for Zach on #1309, suggesting a move to a machine
+  with room (part of #1023, after #1178):
+    1. When Sotto reads machines' load for a suggestion (A, B).
+    2. Where the suggestion shows (A, B, C).
+    3. Which threads it names (A, B).
+    4. What Not now does (A, B, C).
+  Fixed already (Zach, October 21, 2026): Sotto only suggests and nothing moves on its own, at any setting; only threads at
+  a clean point are suggested, the same ones Move threads would move now. The press goes through #1178's move, so a move
+  that would start narrower still asks first. Palette and words follow watcher.css, WatcherMachines.tsx and MoveThreads.tsx
+  on main at c390145cb (October 30, 2026).
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sotto - suggesting a move to a machine with room, four questions</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; font-display: swap; src: url('../../src/shared/fonts/figtree-latin.woff2') format('woff2'); }
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265); --tt-surface: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265); --tt-surface-sunken: oklch(0.155 0.008 265);
+  --tt-hover: oklch(0.2 0.01 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265); --tt-field-border: oklch(0.375 0.024 265);
+  --tt-accent: oklch(0.714403 0.104089 183.092); --tt-accent-text: oklch(0.83 0.08 183);
+  --tt-success: oklch(0.79 0.13 165); --tt-warning: oklch(0.83 0.14 80);
+  --tt-message: oklch(0.2 0.01 265);
+  --tt-scrim: rgb(0 0 0 / 52%);
+  --tt-shadow-overlay: 0 24px 72px -20px rgb(0 0 0 / 90%);
+  --tt-provider-claude: oklch(0.74 0.12 45);
+  --needs: color-mix(in oklab, var(--tt-warning) 80%, var(--tt-text));
+  --ready: color-mix(in oklab, var(--tt-success) 80%, var(--tt-text));
+  --font: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85); --tt-surface: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.955 0.006 85); --tt-surface-sunken: oklch(0.945 0.008 85);
+  --tt-hover: oklch(0.93 0.008 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: color-mix(in oklab, oklch(0.235 0.014 75) 55%, oklch(0.5 0.014 75));
+  --tt-text-muted: color-mix(in oklab, oklch(0.5 0.014 75) 85%, oklch(0.235 0.014 75));
+  --tt-hairline: oklch(0.86 0.012 80); --tt-field-border: oklch(0.8 0.016 80);
+  --tt-accent: oklch(0.5 0.09 183); --tt-accent-text: oklch(0.42 0.08 183);
+  --tt-success: oklch(0.5 0.12 160); --tt-warning: oklch(0.55 0.13 70);
+  --tt-message: oklch(0.94 0.006 85);
+  --tt-scrim: rgb(30 28 24 / 28%);
+  --tt-shadow-overlay: 0 24px 64px -24px rgb(0 0 0 / 45%);
+  --tt-provider-claude: oklch(0.55 0.14 45);
+}
+* { box-sizing: border-box; }
+html { background: var(--tt-canvas); color: var(--tt-text); font: 15px/1.5 var(--font); -webkit-text-size-adjust: 100%; }
+body { margin: 0; padding: 0 0 calc(40px + env(safe-area-inset-bottom)); }
+button { font: inherit; color: inherit; }
+:where(button, a, [tabindex]):focus-visible { outline: 3px solid var(--tt-accent); outline-offset: 2px; }
+p { text-wrap: pretty; }
+.page { max-width: 680px; margin: 0 auto; padding: 0 16px; }
+.top { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); font-size: 13px; }
+.top b { font-weight: 600; } .top span { flex: 1; color: var(--tt-text-muted); }
+.top button, .tabs button { min-height: 36px; padding: 0 12px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: transparent; color: var(--tt-text-2); cursor: pointer; }
+h1 { margin: 22px 0 6px; font-size: 22px; letter-spacing: -.2px; }
+.intro { margin: 0 0 6px; color: var(--tt-text-2); }
+.q { margin: 34px 0 0; padding-top: 22px; border-top: 1px solid var(--tt-hairline); }
+.q h2 { margin: 0 0 4px; font-size: 18px; }
+.q > p { margin: 0 0 12px; color: var(--tt-text-2); }
+.tabs { display: flex; gap: 8px; margin: 0 0 12px; }
+.tabs button { flex: 1 1 0; min-height: 44px; font-weight: 600; }
+.tabs button[aria-pressed='true'] { border-color: var(--tt-accent); background: var(--tt-surface-elevated); color: var(--tt-accent-text); }
+.variant { display: none; } .variant.on { display: block; }
+.variant > h3 { margin: 0 0 2px; font-size: 16px; }
+.variant > .say { margin: 0 0 12px; color: var(--tt-text-2); }
+.variant > .say b { color: var(--tt-text); }
+.cost { margin: 12px 0 0; padding: 10px 12px; border-left: 3px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13.5px; }
+.cost b { color: var(--tt-text); }
+.label { margin: 16px 0 6px; color: var(--tt-text-muted); font-size: 12.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
+
+/* the window bits */
+.win { position: relative; padding: 16px; border: 1px solid var(--tt-field-border); border-radius: 12px; background: var(--tt-canvas); overflow: hidden; }
+.win--dim::before { content: ''; position: absolute; inset: 0; background: var(--tt-scrim); }
+.sheet { position: relative; padding: 18px 18px 14px; border: 1px solid var(--tt-hairline); border-radius: 14px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); }
+.sheet h4 { margin: 0 0 6px; font-size: 16px; font-weight: 600; }
+.lead { margin: 0 0 6px; color: var(--tt-text-2); font-size: 13px; }
+.sec { display: flex; align-items: center; gap: 6px; margin: 14px 0 4px; color: var(--tt-text-2); font-size: 12.5px; font-weight: 600; }
+.sec span { color: var(--tt-text-muted); font-weight: 400; }
+.sec[data-tone='needs'] { color: var(--needs); }
+.sec--machine { margin-top: 16px; padding-bottom: 4px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text); font-size: 13.5px; }
+ul.rows { margin: 0; padding: 0; list-style: none; }
+.row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 9px; align-items: center; padding: 6px 0; font-size: 13.5px; }
+.row > svg, .row > .mk { justify-self: center; }
+.name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.row--box { grid-template-columns: 18px 18px minmax(0, 1fr) auto; }
+.row--box .meta, .row--box .line { grid-column: 3 / -1; }
+.row--box input { width: 16px; height: 16px; margin: 0; accent-color: var(--tt-accent); }
+.nobox { justify-self: center; width: 13px; height: 13px; border: 1.5px dashed var(--tt-text-muted); border-radius: 3px; }
+.btn[aria-disabled='true'] { border-style: dashed; border-color: var(--tt-field-border); background: transparent; color: var(--tt-text-muted); }
+.meta, .line { grid-column: 2 / -1; margin: 1px 0 0; font-size: 12.5px; line-height: 1.45; }
+.meta { display: flex; flex-wrap: wrap; color: var(--tt-text-muted); }
+.meta > :not(:first-child)::before { content: '·'; margin: 0 6px; }
+.line { color: var(--tt-text-2); } .line[data-tone='needs'] { color: var(--needs); }
+.where { display: inline-flex; align-items: center; gap: 4px; color: var(--tt-text-2); white-space: nowrap; }
+.where svg { color: var(--tt-accent-text); }
+.tag { justify-self: end; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 11.5px; white-space: nowrap; }
+.tag[data-tone='moves'] { border-color: color-mix(in srgb, var(--tt-success) 45%, var(--tt-hairline)); color: var(--ready); }
+.tag[data-tone='needs'] { border-color: color-mix(in srgb, var(--needs) 45%, var(--tt-hairline)); color: var(--needs); }
+.note { margin: 12px 0 0; padding-top: 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 12.5px; }
+.acts { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; margin-top: 12px; }
+.btn { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 14px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: transparent; color: var(--tt-text); font-size: 13.5px; font-weight: 500; }
+.btn--primary { border-color: var(--tt-text); background: var(--tt-text); color: var(--tt-canvas); }
+.btn--small { min-height: 30px; padding: 0 11px; font-size: 12.5px; }
+.mk { display: inline-grid; place-items: center; width: 15px; height: 15px; }
+.mk[data-p='claude'] { color: var(--tt-provider-claude); } .mk[data-p='codex'] { color: var(--tt-text-2); }
+.pick { display: grid; gap: 2px; margin: 4px 0 0; padding: 0; list-style: none; }
+.pick li { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; column-gap: 9px; min-height: 40px; padding: 4px 10px; border-radius: 8px; font-size: 14px; }
+.pick li[aria-current='true'] { background: color-mix(in oklab, var(--tt-accent) 14%, var(--tt-surface-elevated)); outline: 1px solid color-mix(in srgb, var(--tt-accent) 40%, var(--tt-hairline)); }
+.pick li[aria-disabled='true'] { color: var(--tt-text-muted); }
+.pick small { color: var(--tt-text-muted); font-size: 12.5px; }
+.pick svg { color: var(--tt-text-2); }
+.picks2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 460px) { .picks2 { grid-template-columns: 1fr; } }
+
+/* Watcher's conversation */
+.convo { display: grid; gap: 14px; }
+.msg header { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg header b { color: var(--tt-text-2); font-weight: 500; }
+.msg[data-role='user'] { margin-left: 14%; padding: 12px 15px; border-radius: 14px 14px 4px 14px; background: var(--tt-message); }
+.msg p { margin: 0; font-size: 14.5px; line-height: 1.55; }
+.msg[data-role='watcher'] p { color: var(--tt-text-2); }
+.sline { display: flex; align-items: flex-start; gap: 7px; margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.sline svg { flex: none; margin-top: 3px; }
+.card { display: grid; gap: 3px; padding: 11px 14px 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface); }
+.card[data-tone='needs'] { border-color: color-mix(in srgb, var(--needs) 45%, var(--tt-hairline)); }
+.card__top { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 14px; }
+.card__top .lead2 { flex: none; color: var(--tt-text-2); }
+.card[data-tone='needs'] .card__top .lead2, .card[data-tone='needs'] .card__top svg { color: var(--needs); }
+.card__top u { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
+.card .meta, .card .line { padding-left: 23px; }
+.card .acts { justify-content: flex-start; padding-left: 23px; margin-top: 6px; }
+.ring { display: inline-block; flex: none; width: 10px; height: 10px; border-radius: 50%; margin: 0 2px; }
+.ring[data-tone='working'] { background: conic-gradient(var(--tt-accent-text) 0 32%, color-mix(in srgb, var(--tt-accent-text) 22%, transparent) 32% 100%); mask: radial-gradient(circle, transparent 38%, #000 42%); }
+.ring[data-tone='ready'] { background: var(--tt-success); }
+.ring[data-tone='needs'] { border: 2px solid var(--needs); }
+.plan { padding: 13px 15px 12px; border: 1px solid color-mix(in srgb, var(--tt-accent) 40%, var(--tt-hairline)); border-radius: 12px; background: var(--tt-surface); }
+.plan h4 { margin: 0 0 4px; font-size: 15px; }
+.composer { margin-top: 4px; padding: 10px 14px; border: 1px solid var(--tt-hairline); border-radius: 999px; color: var(--tt-text-muted); font-size: 13.5px; }
+.overlay { position: relative; z-index: 2; margin: -96px 4px 0; }
+.room { position: relative; }
+.room[data-under] .convo { opacity: .45; }
+</style>
+<style>
+.glance { display: flex; align-items: center; gap: 8px; padding: 2px 0 4px; color: var(--tt-text-2); font-size: 13.5px; }
+.machines { padding: 3px 0 10px; box-shadow: inset 0 -1px 0 var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; line-height: 1.6; }
+.machines u { color: var(--tt-text); text-decoration-color: color-mix(in srgb, currentColor 40%, transparent); text-underline-offset: 3px; }
+.machines .sep { padding: 0 7px; } .machines .w { color: var(--needs); }
+.suggest { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; padding: 8px 0 10px; box-shadow: inset 0 -1px 0 var(--tt-hairline); font-size: 13px; color: var(--tt-text-2); }
+.suggest p { flex: 1 1 260px; margin: 0; } .suggest b { color: var(--tt-text); font-weight: 500; }
+.suggest .acts { margin: 0; }
+.panel { margin: 10px 0 0 auto; width: min(100%, 340px); padding: 14px 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-overlay); font-size: 13px; }
+.panel h4 { margin: 0 0 8px; font-size: 15px; }
+.panel dl { display: grid; grid-template-columns: auto 1fr; gap: 2px 12px; margin: 0 0 8px; } .panel dt { color: var(--tt-text-muted); } .panel dd { margin: 0; }
+.panel dd[data-warn] { color: var(--needs); }
+.panel .sugg { margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); }
+.panel .sugg p { margin: 0 0 8px; } .panel .sugg b { color: var(--tt-text); font-weight: 500; }
+.link { color: var(--tt-accent-text); text-decoration: underline; text-underline-offset: 3px; }
+.time { display: grid; grid-template-columns: 64px 1fr; gap: 6px 12px; margin: 0; font-size: 13px; color: var(--tt-text-2); }
+.time dt { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; } .time dd { margin: 0; } .time dd b { color: var(--tt-text); font-weight: 500; }
+.card .acts.left { justify-content: flex-start; }
+</style>
+</head>
+<body>
+<div class="top"><b>Sotto · suggesting a move to a machine with room</b><span>Prototype, #1309</span><button id="theme" type="button" aria-pressed="false">Light</button></div>
+<main class="page">
+  <h1>When a machine is short on memory or busy</h1>
+  <p class="intro">Here forge is short on memory with six threads working, and This computer has room. Sotto suggests
+    moving a thread at a clean point there, and the press goes through the same move as <b>Move threads</b>. Nothing moves
+    on its own (your call of October 21). Four calls are yours. Tap a letter under each.</p>
+
+  <section class="q" id="q1">
+    <h2>1. When Sotto looks</h2>
+    <p>Today the machines line reads load only when Watcher places work or you open a machine's panel, never on a timer
+      (your call of October 23). A suggestion can only come from a reading.</p>
+    <div class="tabs" role="group" aria-label="Question 1 answers"><button type="button" data-q="1" data-v="a" aria-pressed="true">A</button><button type="button" data-q="1" data-v="b" aria-pressed="false">B</button></div>
+    <div class="variant" data-q="1" data-v="a"></div>
+    <div class="variant" data-q="1" data-v="b"></div>
+  </section>
+
+  <section class="q" id="q2">
+    <h2>2. Where the suggestion shows</h2>
+    <p>The machines line already says "short on memory" in warning ink. The suggestion goes away once forge reads fine.</p>
+    <div class="tabs" role="group" aria-label="Question 2 answers"><button type="button" data-q="2" data-v="a" aria-pressed="true">A</button><button type="button" data-q="2" data-v="b" aria-pressed="false">B</button><button type="button" data-q="2" data-v="c" aria-pressed="false">C</button></div>
+    <div class="variant" data-q="2" data-v="a"></div>
+    <div class="variant" data-q="2" data-v="b"></div>
+    <div class="variant" data-q="2" data-v="c"></div>
+  </section>
+
+  <section class="q" id="q3">
+    <h2>3. Which threads it names</h2>
+    <p>Sotto can't tell how much memory each thread uses. It knows which threads are at a clean point and when each last worked.</p>
+    <div class="tabs" role="group" aria-label="Question 3 answers"><button type="button" data-q="3" data-v="a" aria-pressed="true">A</button><button type="button" data-q="3" data-v="b" aria-pressed="false">B</button></div>
+    <div class="variant" data-q="3" data-v="a"></div>
+    <div class="variant" data-q="3" data-v="b"></div>
+  </section>
+
+  <section class="q" id="q4">
+    <h2>4. What Not now does</h2>
+    <p>You press Not now while forge is still short on memory.</p>
+    <div class="tabs" role="group" aria-label="Question 4 answers"><button type="button" data-q="4" data-v="a" aria-pressed="true">A</button><button type="button" data-q="4" data-v="b" aria-pressed="false">B</button><button type="button" data-q="4" data-v="c" aria-pressed="false">C</button></div>
+    <div class="variant" data-q="4" data-v="a"></div>
+    <div class="variant" data-q="4" data-v="b"></div>
+    <div class="variant" data-q="4" data-v="c"></div>
+  </section>
+</main>
+<script>
+'use strict'
+const P = {
+  move: '<path d="m16 3 4 4-4 4"/><path d="M20 7H4"/><path d="m8 21-4-4 4-4"/><path d="M4 17h16"/>',
+  laptop: '<path d="M20 16V7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9m16 0H4m16 0 1.28 2.55a1 1 0 0 1-.9 1.45H3.62a1 1 0 0 1-.9-1.45L4 16"/>',
+  server: '<rect width="20" height="8" x="2" y="2" rx="2"/><rect width="20" height="8" x="2" y="14" rx="2"/><path d="M6 6h.01M6 18h.01"/>',
+  claude: '<path d="M12 2v20M2 12h20M5 5l14 14M19 5 5 19"/>',
+}
+const icon = (n, s = 14) => `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[n]}</svg>`
+const glance = '<div class="glance"><span class="ring" data-tone="ready"></span>Nothing needs you.</div>'
+const line = (shortWords = true) => `<div class="machines"><u>This computer</u> 1 working<span class="sep">·</span><u>forge</u> 6 working${shortWords ? ', <span class="w">short on memory</span>' : ''}</div>`
+const named = '<b>Tray icon at night</b>'
+const why = 'It last worked on forge 4 minutes ago and is between turns.'
+const ask = `forge is short on memory, and This computer has room. Move ${named} there? ${why}`
+const btns = (choose = true, move = true) => `<div class="acts left">${move ? '<span class="btn btn--small btn--primary">Move to This computer</span>' : ''}${choose ? '<span class="btn btn--small">Choose threads…</span>' : ''}<span class="btn btn--small">Not now</span></div>`
+const suggestLine = (text = ask, choose = true, move = true) => `<div class="suggest"><p>${text}</p>${btns(choose, move)}</div>`
+const convo = extra => `<div class="convo" style="margin-top:12px"><div class="msg" data-role="user"><p>Keep the tray work going and start the settings review.</p></div>
+  <div class="msg" data-role="watcher"><header><b>Watcher</b></header><p>Started the settings review on forge. The tray thread is between turns.</p></div>${extra ?? ''}</div>`
+const room = (top, extra) => `<div class="win">${glance}${line()}${top ?? ''}${convo(extra)}<div class="composer" style="margin-top:14px">Ask Watcher…</div></div>`
+const sheetNote = '<p class="cost"><b>Choose threads…</b> opens Move threads with This computer chosen and nothing ticked, the sheet you have today.</p>'
+
+const Q1 = {
+  a: `<h3>A · Only from readings Sotto takes now</h3>
+    <p class="say">No new reads. A suggestion shows when Watcher places work or you open a machine's panel and the reading says a machine is short or busy.</p>
+    <dl class="time"><dt>10:02</dt><dd>Watcher places a start; forge reads <b>short on memory</b>. The suggestion shows.</dd>
+      <dt>10:40</dt><dd>forge fills up again while nothing new starts. <b>Nothing shows</b> until the next start or until you open forge's panel.</dd></dl>
+    <p class="cost"><b>Trade-off:</b> keeps your October 23 call and costs nothing, but a machine that fills up between starts goes unsaid.</p>`,
+  b: `<h3>B · Also every 5 minutes while Watcher's room is on screen (Recommended)</h3>
+    <p class="say">While the room is showing and threads work on two or more machines, Sotto reads each machine's load every 5 minutes. A machine has to read short or busy twice in a row before anything shows.</p>
+    <dl class="time"><dt>10:35</dt><dd>forge reads short on memory once. Nothing shows yet.</dd>
+      <dt>10:40</dt><dd>forge reads short again. <b>The suggestion shows</b>, and the machines line says so too.</dd>
+      <dt>11:00</dt><dd>Room off screen, or everything on one machine: <b>no reads</b>.</dd></dl>
+    <p class="cost"><b>Trade-off:</b> the suggestion comes when forge fills up, at the cost of one small reading per machine every 5 minutes while you're looking. It changes your October 23 call for that case only.</p>`,
+}
+const Q2 = {
+  a: `<h3>A · Under the machines line (Recommended)</h3>
+    <p class="say">One line under the line that says what is wrong, going away when forge reads fine.</p>
+    ${room(suggestLine())}
+    <p class="cost"><b>Trade-off:</b> it sits next to the problem it fixes and doesn't add to Watcher's conversation; it takes a line at the top of the room while it shows.</p>`,
+  b: `<h3>B · A card in Watcher's conversation</h3>
+    <p class="say">Sotto's own card at the end of the conversation, like a move proposal, with the same buttons.</p>
+    ${room('', `<div class="card" data-tone="needs"><div class="card__top">${icon('move', 15)}<span class="lead2">Room on This computer</span></div><p class="line">${ask}</p>${btns()}</div>`)}
+    <p class="cost"><b>Trade-off:</b> where move cards already are, but it lands in the conversation without either of you asking, and scrolls away as Watcher talks.</p>`,
+  c: `<h3>C · Only in forge's panel</h3>
+    <p class="say">The line stays as it is. Opening forge from it shows the suggestion under forge's numbers.</p>
+    <div class="win">${glance}${line()}<div class="panel"><h4>forge</h4><dl><dt>CPU</dt><dd>41% over 5 s</dd><dt>Memory</dt><dd data-warn>1.4 GiB free of 32 GiB, short</dd><dt>Read</dt><dd>just now</dd></dl>
+      <b>6 working</b><div class="sugg"><p>This computer has room. Move ${named} there? ${why}</p>${btns()}</div></div></div>
+    <p class="cost"><b>Trade-off:</b> the quietest, but you only see it if you open forge.</p>`,
+}
+const Q3 = {
+  a: `<h3>A · One named thread, and Choose threads… for others (Recommended)</h3>
+    <p class="say">The thread at a clean point that worked most recently, since its next turns are likeliest to come soon. One press moves it.</p>
+    ${room(suggestLine())}${sheetNote}
+    <p class="cost"><b>Trade-off:</b> one press does it, and the pick is Sotto's best guess, not a measurement.</p>`,
+  b: `<h3>B · No named thread, only Choose threads…</h3>
+    <p class="say">The line says forge is short and This computer has room, and opens the sheet for you to pick.</p>
+    ${room(suggestLine('forge is short on memory, and This computer has room. 4 threads there can move now.', true, false))}${sheetNote}
+    <p class="cost"><b>Trade-off:</b> no guessing on Sotto's part, but always at least two presses and a tick.</p>`,
+}
+const Q4 = {
+  a: `<h3>A · Gone until forge reads fine and then fills up again (Recommended)</h3>
+    <p class="say">Not now hides it for this time forge is short. Once forge has read fine, the next time it reads short it can suggest again.</p>
+    <p class="cost"><b>Trade-off:</b> one press quiets it for as long as the problem lasts; a machine that stays short all day never asks twice.</p>`,
+  b: `<h3>B · Gone for an hour</h3>
+    <p class="say">Not now hides it for an hour, then it shows again if forge is still short.</p>
+    <p class="cost"><b>Trade-off:</b> a reminder if forge stays full, and a repeat you may not want.</p>`,
+  c: `<h3>C · As A, plus a switch in Settings</h3>
+    <p class="say">As A, and Settings gets <b>Suggest moves to a machine with room</b>, on by default, under Work across machines.</p>
+    <p class="cost"><b>Trade-off:</b> a way to turn it off for good, and one more setting.</p>`,
+}
+const sets = { 1: Q1, 2: Q2, 3: Q3, 4: Q4 }
+for (const [q, set] of Object.entries(sets)) for (const [v, h] of Object.entries(set)) document.querySelector(`.variant[data-q="${q}"][data-v="${v}"]`).innerHTML = h
+const params = new URLSearchParams(location.search)
+const show = (q, v) => {
+  document.querySelectorAll(`.tabs button[data-q="${q}"]`).forEach(b => b.setAttribute('aria-pressed', String(b.dataset.v === v)))
+  document.querySelectorAll(`.variant[data-q="${q}"]`).forEach(d => d.classList.toggle('on', d.dataset.v === v))
+}
+document.querySelectorAll('.tabs button').forEach(b => b.addEventListener('click', () => show(b.dataset.q, b.dataset.v)))
+for (const q of Object.keys(sets)) show(q, params.get('q' + q) ?? (q === '1' ? 'b' : 'a'))
+const theme = document.getElementById('theme')
+const setTheme = light => { document.documentElement.dataset.theme = light ? 'light' : 'dark'; theme.setAttribute('aria-pressed', String(light)); theme.textContent = light ? 'Dark' : 'Light' }
+theme.addEventListener('click', () => setTheme(document.documentElement.dataset.theme !== 'light'))
+setTheme(params.get('theme') === 'light')
+</script>
+</body>
+</html>
