@@ -53,9 +53,15 @@ function ownerKeys(owners: readonly RequestDraftOwner[] | undefined): ReadonlyMa
   if (!keys) ownerKeyLists.set(owners, keys = new Map(owners.map(owner => [requestDraftOwnerKey(owner), owner])))
   return keys
 }
-/** A list a commit made from owners it had keyed, in the same order: its keys are those, made again by nothing. */
-function keyedOwners(owners: readonly RequestDraftOwner[] | undefined, keys: readonly string[]): void {
-  if (owners && owners.length === keys.length) ownerKeyLists.set(owners, new Map(owners.map((owner, index) => [keys[index]!, owner])))
+/**
+ * A list a commit read from the owners it had keyed, in their order: it takes their keys rather than making them again.
+ * Each owner is checked against the one it was read from, and a list that does not match is keyed afresh when asked.
+ */
+function keyedOwners(owners: readonly RequestDraftOwner[] | undefined, keyed: ReadonlyMap<string, RequestDraftOwner>): void {
+  if (!owners || owners.length !== keyed.size) return
+  const entries = [...keyed]
+  const same = owners.every((owner, index) => { const from = entries[index]![1]; return owner.kind === from.kind && owner.ownerId === from.ownerId && owner.providerId === from.providerId })
+  if (same) ownerKeyLists.set(owners, new Map(owners.map((owner, index) => [entries[index]![0], owner])))
 }
 export const requestQuestionsDigest = (questions: NonNullable<AgentRequest['questions']>): string => createHash('sha256').update(requestQuestionsSignature(questions)).digest('hex')
 
@@ -256,7 +262,7 @@ export class RequestDraftService {
     try { await this.store.write(next, this.savedText(next)) } catch { throw new Error(saveFailed) }
     this.saved = next
     if (!kept) this.ledger()
-    keyedOwners(next.watcherOwners, [...watchers.keys()]); keyedOwners(next.unclassifiedOwners, [...unclassified.keys()])
+    keyedOwners(next.watcherOwners, watchers); keyedOwners(next.unclassifiedOwners, unclassified)
     for (const owner of changed.values()) for (const listener of this.listeners) {
       // A failed window notification cannot turn a successful durable write into a failed save.
       try { listener(owner) } catch { /* the window lists again when it mounts */ }

@@ -70,7 +70,7 @@ Pressing the dictation shortcut again while the microphone is connecting cancels
 
 Settings → Threads sets the working-copy default for new threads. Expand **Project defaults** to choose a different default for one project. Previously saved project choices are kept when Sotto updates.
 
-Saved question answers clear when the computer running the thread confirms receiving them. If **Check again** confirms acceptance, the answer stays sent; it does not become an editable draft again. An unconfirmed answer stays available for recovery and is never sent again automatically. Remote confirmation requires an updated desktop and host. The composer sends its draft in one action. If the host needs an update to save or send that draft, its text stays only in the current window. Update the host before closing the window.
+A question's answer is saved quietly as you write it, and only a failed save says so. Saved question answers clear when the computer running the thread confirms receiving them. If **Check again** confirms acceptance, the answer stays sent; it does not become an editable draft again. An unconfirmed answer stays available for recovery and is never sent again automatically. Remote confirmation requires an updated desktop and host. The composer sends its draft in one action. If the host needs an update to save or send that draft, its text stays only in the current window. Update the host before closing the window.
 
 If a provider asks the same question again after restarting, its earlier receipt does not answer the new request. **Check again** reads the provider before allowing a fresh answer. It sends nothing; you choose and send again yourself. An older remote host may need an update to support this check.
 

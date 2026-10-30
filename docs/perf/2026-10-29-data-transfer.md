@@ -92,6 +92,12 @@ them, and the file is written compact with the ledger's text made once for each 
 | Characters serialized, each later save | 94,885 | 6,914 |
 | `request-drafts.json` written and fsynced | 88,569 bytes | 65,728 bytes |
 
-`ownerScaleWorkBudget.perf.test.ts` holds it: serializations per save fall from 911 to 140 on Owl and from 824 to 33 on
-stable, both `KNOWN_HISTORY_GROWTH` entries for the save are gone, and stable's save is flat along the history. The file
-is still written whole at each save, because a retired answer and its draft change together in one atomic write.
+`ownerScaleWorkBudget.perf.test.ts` holds the count: serializations per save fall from 911 to 140 on Owl and from 824 to 33
+on stable, and the save's `KNOWN_HISTORY_GROWTH` entries are gone. The same keys flatten stable's answer-recovery pass
+while the user types or opens a thread, so its entry goes too (typing 20 to 13, opening a thread 31 to 17).
+`requestDraftSaveCost.test.ts` holds the volume: a later save serializes the same characters with 64 answered questions
+as with 256, and hands the file compact text equal to what it saved.
+
+The file is still written whole at each save, 65,728 bytes here, because a retired answer and its draft change together
+in one atomic write. Splitting the ledger into a file of its own would take a save down to the drafts alone, at the cost
+of ordering two writes; that is left for later.

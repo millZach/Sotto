@@ -63,6 +63,11 @@ let tally = fresh()
 let on = false
 let hookMs = 0
 
+/** Where the caller is, as its nearest `depth` frames in Sotto's source. */
+function sourceFrames(depth: number): string {
+  return (new Error().stack ?? '').split('\n').filter(line => line.includes('/src/')).slice(0, depth)
+    .map(line => line.trim().replace(/.*\/src\//u, 'src/').replace(/\)$/u, '')).join(' <- ')
+}
 function sized(value: unknown): { bytes: number; ms: number } {
   const started = realNow()
   let bytes: number
@@ -164,7 +169,7 @@ function install(): void {
       if (process.env.SOTTO_AUDIT_STACKS === '1') {
         const bytes = serialize(wired).byteLength
         if (bytes > 1_000_000) {
-          const where = (new Error().stack ?? '').split('\n').filter(line => line.includes('/src/')).slice(0, 8).map(line => line.trim().replace(/.*\/src\//u, 'src/')).join(' <- ')
+          const where = sourceFrames(8)
           tally.bigPosts[where] = (tally.bigPosts[where] ?? 0) + bytes
         }
       }
@@ -183,7 +188,7 @@ function install(): void {
       const text = nativeStringify(...args)
       tally.stringify.calls++; tally.stringify.chars += text?.length ?? 0; tally.stringify.ms += realNow() - started
       if (STRINGIFY_SITES) {
-        const where = (new Error().stack ?? '').split('\n').filter(line => line.includes('/src/')).slice(0, 3).map(line => line.trim().replace(/.*\/src\//u, 'src/').replace(/\)$/u, '')).join(' <- ')
+        const where = sourceFrames(3)
         tally.stringifySites[where] = (tally.stringifySites[where] ?? 0) + 1
       }
       return text
