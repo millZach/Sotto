@@ -68,7 +68,9 @@ test('a thread waiting on a permission opens with its choices above the composer
   const { page } = launched
   try {
     await prepare(launched)
-    await resizeContentWindow(launched, 820, 560)
+    // The window's own minimum drops a little below the request, so a frame that rounds the content to 820x562, as Windows
+    // can, still reaches the exact size.
+    await resizeContentWindow(launched, 820, 560, [800, 540])
     const pane = page.locator(`section.thread-pane[data-thread-id="${hostKeys.key('visual-gate')}"]`)
     const allow = pane.getByRole('button', { name: 'Allow', exact: true })
 
@@ -80,6 +82,13 @@ test('a thread waiting on a permission opens with its choices above the composer
       await settle(page)
       for (const name of CHOICES) expectClear(await clearance(pane, name))
     }
+    // The empty composer's placeholder in both appearances (#1819), above it the card's choices.
+    for (const appearance of ['dark', 'light'] as const) {
+      await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode }), appearance)
+      await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
+      await page.screenshot({ path: join(evidence, `opened-820x560-${appearance}.png`), animations: 'disabled' })
+    }
+    await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
     // A composer that grows under a reader at the end, with a draft of several lines, keeps the choices clear of it, and
     // so does opening the thread again on that draft.
     const prompt = promptField(pane)
@@ -96,12 +105,7 @@ test('a thread waiting on a permission opens with its choices above the composer
     await expect(allow).toBeVisible()
     await settle(page)
     for (const name of CHOICES) expectClear(await clearance(pane, name))
-    for (const appearance of ['dark', 'light'] as const) {
-      await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode }), appearance)
-      await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
-      await page.screenshot({ path: join(evidence, `opened-820x560-${appearance}.png`), animations: 'disabled' })
-    }
-    await page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
+    await page.screenshot({ path: join(evidence, 'reopened-on-draft-820x560-dark.png'), animations: 'disabled' })
 
     // Each choice reached by Tab while it sits under the composer comes clear of it. The reader first scrolls the choice
     // under the card, then focus moves onto it from the control before it in the tab order.
