@@ -177,6 +177,37 @@ it('lets a ready prompt of the user\'s go first, and goes on the next free turn'
   expect(sends(f.host)[1]!.hiddenWakeUp).toBe(true)
 })
 
+it('keeps a card-held user message ahead of hidden news and preserves the news admission hold', async () => {
+  const f = await fixture()
+  let admitted = false
+  const newsReady = vi.fn(() => admitted)
+  f.control.useDelegation({ userCommand: () => undefined, observe: () => undefined, observedThreadIds: () => [], messageIdFor: () => undefined,
+    guardFor: () => undefined, newsReady })
+  f.host.update('workshop', { status: 'idle', lastTurn: undefined,
+    requests: [{ id: 'question', kind: 'question', text: 'Which option?', options: [] }] })
+  await f.control.deliverWakeUp('workshop', delegation(), { tool: false })
+  expect((await f.control.command({ type: 'manual-send', threadId: 'workshop', draftId: randomUUID(), text: 'User follow-up' })).error).toBeNull()
+  expect(stored(f.control).map(item => [item.wakeUp ? 'news' : item.text, item.status])).toEqual([
+    ['User follow-up', 'queued'], ['news', 'queued'],
+  ])
+  expect(sends(f.host)).toEqual([])
+  expect(f.host.state.threads.find(thread => thread.id === 'workshop')!.requests[0]!.id).toBe('question')
+
+  // Clearing the card releases the user's message, without spending the swarm synthesis slot.
+  f.host.update('workshop', { requests: [], status: 'idle', lastTurn: { id: randomUUID(), status: 'completed' } })
+  await expect.poll(() => sends(f.host).length).toBe(1)
+  expect(sends(f.host)[0]!.text).toBe('User follow-up')
+  end(f.host)
+  await expect.poll(() => newsReady.mock.calls.length).toBeGreaterThan(0)
+  expect(sends(f.host)).toHaveLength(1)
+
+  admitted = true
+  f.control.resumeDelegationNews()
+  await expect.poll(() => sends(f.host).length).toBe(2)
+  expect(sends(f.host)[1]!).toMatchObject({ wakeUp: true, hiddenWakeUp: true })
+  await expect.poll(() => stored(f.control)).toEqual([])
+})
+
 it('is not held by a set-aside prompt, which still holds other news', async () => {
   const f = await fixture()
   end(f.host)

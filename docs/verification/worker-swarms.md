@@ -65,3 +65,11 @@ For `bc2bcdb26`, [Tests (Windows, 5/6)](https://github.com/millZach/Sotto/action
 The test waited for the in-memory `given-back` state, which is published before the move record's save completes. The source's send fence is deliberately lifted only after that save succeeds. The test now waits for both the state and the cleared fence before making its single manual send. Production ordering and the send assertion are unchanged. Main `144e54619` carries neither a fix nor changes to this path, and a merge-tree check found no conflict.
 
 `npm run typecheck`, focused ESLint on the integration file, and all 33 tests in the existing `tests/unit/main/threadMoves.test.ts` passed. The integration file was not run locally; GitHub CI will exercise it. No app was launched.
+
+### Merge the queued-card send feature
+
+Merged main `38490d5a5`, including #1813's queued messages while a request card waits and #1815's question-card layout. Runtime code merged without a conflict. The conflicts were the evidence allow-lists in `.gitignore` and all 32 thread catalogs. Both evidence sets remain allowed. The catalogs retain main's queued-card strings and the swarm strings, including “Waiting its turn”, while removing main's obsolete “Waiting on the request above.” label. Extraction preserved all active translations from both parents.
+
+The merged coordinator accepts desktop and phone user messages into the queue while a card waits, without answering the card or treating a delegation's send as a user message. Swarm synthesis still passes its admission check. A regression in `delegationNewsHidden` combines a pending card, a user follow-up and a hidden delegation wake-up: the card holds both, the user's message goes first once the card clears, and the hidden news still waits for admission before sending.
+
+`npm run typecheck`, `npm run lint` and `npm run i18n:extract` passed. The selected 24 unit files passed 612 tests: swarm/delegation lifecycle, remote and relay paths, Watcher tools and wake-ups, worker roles and settings, queued desktop/phone messages, archive storage, sidebar grouping, composer recovery and interface catalogs. The existing windowless `tests/integration/watcherArchive.test.ts` also passed all six tests, including the archived-start follow-up send. Total: 618 tests in 25 files. No app, full suite, e2e spec or design gate was launched locally.
