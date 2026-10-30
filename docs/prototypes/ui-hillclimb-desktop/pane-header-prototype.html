@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<!-- PROTOTYPE, throwaway. Question (#1828): how few controls can a pane's header carry so that, in a split, its title
+     stops truncating and nothing moves under the pointer when the divider is dragged? Variants (?variant=now|A|B|C, ← →):
+     today; A Watch + Layout menu; B Watch + one ··· menu; C only the focused pane shows its controls. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pane header (prototype)</title>
+<style>
+:root{--room:#040507;--side:#111316;--card:#16191c;--hover:#1f2327;--text:#e8eaee;--muted:#adb1b9;--faint:#8b9098;--accent:#47b8a9;--edge:#2b3035}
+*{box-sizing:border-box}
+body{margin:0;background:#0b0c0d;color:var(--text);font:14px/1.45 Figtree,system-ui,-apple-system,"Segoe UI",sans-serif}
+.controls{max-width:1600px;margin:16px auto 8px;padding:0 12px;display:flex;gap:14px;align-items:center;flex-wrap:wrap;color:#b9bec4;font-size:13px}
+.controls .seg{display:inline-flex;background:#1b1e21;border-radius:6px;padding:3px;gap:3px}
+.controls .seg button{border:0;background:transparent;color:#c9cdd2;font:inherit;padding:3px 10px;border-radius:4px;cursor:default}
+.controls .seg button[aria-pressed=true]{background:#2c3135;color:#fff}
+.win{margin:0 auto;background:var(--room);border-radius:10px;overflow:hidden;display:flex;height:430px;transition:width 200ms}
+.sb{width:270px;flex:none;background:var(--side);padding:12px;color:var(--muted);font-size:13px}
+.panes{flex:1;display:flex;min-width:0}
+.pane{min-width:0;display:flex;flex-direction:column;border-right:1px solid #15181b}
+.pane.focused .hd{box-shadow:inset 0 -2px 0 var(--accent)}
+.hd{display:flex;align-items:center;gap:8px;height:44px;padding:0 12px;min-width:0}
+.ttl{display:flex;align-items:baseline;gap:8px;min-width:0;flex:1;overflow:hidden;white-space:nowrap}
+.ttl b{font-weight:600;font-size:15px;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;min-width:40px}
+.ttl .proj,.ttl .fold{color:var(--muted);font-size:13.5px;overflow:hidden;text-overflow:ellipsis;flex:0 10 auto;min-width:0}
+.ctl{display:flex;align-items:center;gap:4px;flex:none}
+.wc{display:flex;flex:none;margin-left:6px}.wc span{width:46px;text-align:center;color:var(--muted)}
+.i{height:30px;min-width:32px;border:0;border-radius:6px;background:transparent;color:var(--muted);font:inherit;font-size:13.5px;padding:0 8px;cursor:default}
+.i:hover{background:var(--hover);color:var(--text)}
+.i.box{border:1px solid var(--edge);color:var(--text)}
+.body{flex:1;padding:16px 20px;color:#cfd3d8;overflow:hidden}
+.body p{margin:0 0 10px;max-width:560px}
+.divider{width:6px;flex:none;background:#0b0d0f;cursor:col-resize}
+.divider:hover{background:#1c2f2c}
+.menu{position:fixed;background:#202428;border-radius:8px;padding:4px;box-shadow:0 10px 30px rgba(0,0,0,.6);min-width:200px;z-index:5}
+.menu div{padding:6px 10px;border-radius:5px;font-size:13px;display:flex;justify-content:space-between}
+.menu div:hover{background:#2c3237}
+.menu kbd{color:var(--faint);font:12px system-ui}
+.menu hr{border:0;border-top:1px solid #30353a;margin:4px 0}
+.info{max-width:1200px;margin:16px auto 90px;padding:0 12px;display:grid;grid-template-columns:1.2fr 1fr;gap:18px}
+.info h2{font-size:17px;margin:0 0 6px}
+.info p,.info li{color:#b9bec4}
+.state{background:#0f1215;border-radius:8px;padding:10px 12px;font:12.5px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#cfd4d9;white-space:pre-wrap}
+.switcher{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:#fff;color:#111;border-radius:999px;padding:6px 10px;box-shadow:0 6px 24px rgba(0,0,0,.45);font:600 13px system-ui;z-index:9}
+.switcher button{border:0;background:#111;color:#fff;border-radius:999px;width:28px;height:28px;font-size:14px}
+</style>
+</head>
+<body>
+<div class="controls">Window width
+  <span class="seg" id="widths"><button data-w="1600" aria-pressed="true">1600</button><button data-w="1280">1280</button><button data-w="820">820</button></span>
+  <span>Drag the divider between the panes, and watch whether any control moves. Click a pane to focus it. Sizes follow the app; the right pane carries Windows' window controls.</span>
+</div>
+<div class="win" id="win">
+  <div class="sb">Thread sidebar</div>
+  <div class="panes" id="panes"></div>
+</div>
+<div class="info">
+  <div><h2 id="vt"></h2><p id="vl"></p><ul id="vn"></ul></div>
+  <div><h2>What moved</h2><div class="state" id="state"></div></div>
+</div>
+<div class="switcher" role="group" aria-label="Prototype variants"><button id="prev" aria-label="Previous variant">←</button><span id="label"></span><button id="next" aria-label="Next variant">→</button></div>
+<script>
+const PANES = [
+  { title: 'Streaming WAV stall', proj: 'workshop', fold: 'Project folder', git: true, body: 'The length marker fix still fails the same playback test. I do not have an approach that differs from the last three.' },
+  { title: 'Footer links', proj: 'sotto-site', fold: 'Project folder', git: false, body: 'Fixing the footer links that point at the old docs path. Editing site/help.html now; the 404 on the help page is next.' },
+]
+const VARIANTS = [
+  { key: 'now', name: 'Today', lede: 'Watch (outlined), Initialize Git (outlined, only in a folder without Git), split, bottom panel, ···, a drag handle, maximize and close. In a split the title, project and folder truncate first, and the controls shift as the header narrows.',
+    notes: ['Up to eight controls per header, twice in a split.', 'Dragging the divider reflowed the header; Terra pressed Initialize Git while aiming for the panel button.'] },
+  { key: 'A', name: 'Watch and a Layout menu', lede: 'The title, project and folder; then Watch, a Layout menu (Open beside, Bottom panel, Maximize, Move pane), ··· for the thread’s own actions (Initialize Git, Rename, Settle) and close.',
+    notes: ['Four controls, always the same four, pinned right: nothing moves when the divider does.', 'Layout keeps its own button, so splitting stays one press plus one.', 'The title is the drag handle: the ⋮⋮ grip goes.'] },
+  { key: 'B', name: 'Watch and one ··· menu', lede: 'The title, project and folder; then Watch, one ··· menu holding everything else (layout and the thread’s own actions, in groups, with their shortcuts), and close.',
+    notes: ['Three controls. The quietest header.', 'Layout costs one more press than A; the shortcuts (Ctrl+Enter beside, Ctrl+J panel, Ctrl+Shift+M zoom) are in the menu to learn.', 'The title is the drag handle.'] },
+  { key: 'C', name: 'Only the focused pane shows its controls', lede: 'The focused pane shows Watch, ··· and close; the other pane’s header is its title alone, with close. Focus follows a click or Ctrl+Tab between panes.',
+    notes: ['Half the chrome in a split, and the idle pane’s title gets the whole width.', 'Risk: a control that appears only on focus is a hover-only affordance in another form; the focused pane’s accent line makes the rule visible.', 'One pane alone always shows its controls.', 'On Windows the idle pane\u2019s close sits beside the window\u2019s own close; it would need a gap or a different glyph.'] },
+]
+let v = Math.max(0, VARIANTS.findIndex(x => x.key === new URLSearchParams(location.search).get('variant')))
+let width = 1600, split = 0.5, focused = 0, menu = null, log = []
+const $ = id => document.getElementById(id)
+function controls(p, i) {
+  const K = VARIANTS[v].key
+  if (K === 'now') return `<button class="i box">◉ Watch</button>${p.git ? '<button class="i box">⎇ Initialize Git</button>' : ''}<button class="i" title="Open beside">▯▯</button><button class="i" title="Bottom panel">▭</button><button class="i" data-menu="more">···</button><button class="i" title="Move">⋮⋮</button><button class="i" title="Maximize">⤢</button><button class="i" title="Close">×</button>`
+  if (K === 'A') return `<button class="i box">◉ Watch</button><button class="i" data-menu="layout">Layout ▾</button><button class="i" data-menu="more">···</button><button class="i" title="Close">×</button>`
+  if (K === 'B') return `<button class="i box">◉ Watch</button><button class="i" data-menu="all">···</button><button class="i" title="Close">×</button>`
+  return i === focused ? `<button class="i box">◉ Watch</button><button class="i" data-menu="all">···</button><button class="i" title="Close">×</button>` : `<button class="i" title="Close">×</button>`
+}
+function render() {
+  $('win').style.width = `${width}px`
+  const panes = $('panes'), narrow = width <= 820
+  const shown = narrow ? [PANES[focused]] : PANES
+  panes.innerHTML = shown.map((p, k) => { const i = narrow ? focused : k; const w = narrow ? 1 : (k === 0 ? split : 1 - split)
+    return `<section class="pane ${i === focused && !narrow ? 'focused' : ''}" data-i="${i}" style="flex:${w} 1 0"><div class="hd"><div class="ttl"><b>${p.title}</b><span class="proj">/ ${p.proj}</span><span class="fold">🗀 ${p.fold}</span></div><div class="ctl">${controls(p, i)}</div>${(narrow || k === shown.length - 1) ? '<div class="wc" title="Window controls (Windows)"><span>–</span><span>□</span><span>×</span></div>' : ''}</div><div class="body"><p><strong>You</strong> · 12:38 pm</p><p>${p.body}</p></div></section>${k === 0 && !narrow ? '<div class="divider" id="div" title="Resize panes"></div>' : ''}` }).join('')
+  if (narrow) panes.insertAdjacentHTML('afterbegin', '')
+  const div = $('div'); if (div) div.onmousedown = e => { e.preventDefault(); const box = panes.getBoundingClientRect(); const before = snapshot()
+    const mv = ev => { split = Math.min(0.75, Math.max(0.25, (ev.clientX - box.left) / box.width)); render() }
+    const up = () => { removeEventListener('mousemove', mv); removeEventListener('mouseup', up); const after = snapshot(); const moved = before.filter((b, j) => Math.abs(b - after[j]) > 1).length; log.unshift(`Dragged the divider to ${Math.round(split * 100)}%: ${moved} of ${before.length} controls moved on screen`); paint() }
+    addEventListener('mousemove', mv); addEventListener('mouseup', up) }
+  paint()
+}
+function snapshot() { return [...document.querySelectorAll('.pane:first-of-type .ctl .i')].map(b => b.getBoundingClientRect().left) }
+function truncated() { return [...document.querySelectorAll('.ttl b,.ttl .proj,.ttl .fold')].filter(el => el.scrollWidth > el.clientWidth + 1).length }
+function paint() { const n = document.querySelectorAll('.ctl .i').length; $('state').textContent = `Variant ${VARIANTS[v].key}, window ${width}\nControls on screen: ${n}\nTitle parts cut off: ${truncated()}\n\n${log.slice(0, 6).join('\n')}` }
+document.addEventListener('mousedown', e => { if (menu && !e.target.closest('.menu')) { menu.remove(); menu = null } })
+document.addEventListener('click', e => {
+  const pane = e.target.closest('.pane'); const mb = e.target.closest('[data-menu]')
+  if (mb) { menu?.remove(); const r = mb.getBoundingClientRect(); menu = document.createElement('div'); menu.className = 'menu'; menu.style.left = `${Math.min(r.left, innerWidth - 220)}px`; menu.style.top = `${r.bottom + 4}px`
+    const layout = '<div>Open beside<kbd>Ctrl+Enter</kbd></div><div>Bottom panel<kbd>Ctrl+J</kbd></div><div>Maximize<kbd>Ctrl+Shift+M</kbd></div><div>Move pane</div>'
+    const own = '<div>Initialize Git</div><div>Rename<kbd>F2</kbd></div><div>Settle<kbd>Ctrl+Shift+E</kbd></div><div>Copy link</div>'
+    menu.innerHTML = mb.dataset.menu === 'layout' ? layout : mb.dataset.menu === 'more' ? own : layout + '<hr>' + own
+    document.body.append(menu); log.unshift(`Opened ${mb.textContent.trim()}`); paint(); return }
+  if (pane && Number(pane.dataset.i) !== focused) { focused = Number(pane.dataset.i); log.unshift(`Focused ${PANES[focused].title}`); render() }
+})
+$('widths').addEventListener('click', e => { const b = e.target.closest('button'); if (!b) return; width = Number(b.dataset.w); $('widths').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', String(x === b))); render() })
+addEventListener('keydown', e => { if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') setVariant(v + (e.key === 'ArrowLeft' ? -1 : 1)); if (e.key === 'Escape' && menu) { menu.remove(); menu = null } })
+function setVariant(i) { v = (i + VARIANTS.length) % VARIANTS.length; const V = VARIANTS[v]; $('label').textContent = `${V.key} · ${V.name}`; $('vt').textContent = `${V.key} · ${V.name}`; $('vl').textContent = V.lede; $('vn').innerHTML = V.notes.map(n => `<li>${n}</li>`).join(''); history.replaceState(null, '', `?variant=${V.key}`); log = []; render() }
+$('prev').onclick = () => setVariant(v - 1); $('next').onclick = () => setVariant(v + 1)
+setVariant(v)
+</script>
+</body>
+</html>

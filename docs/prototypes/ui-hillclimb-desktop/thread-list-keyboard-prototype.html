@@ -1,0 +1,155 @@
+<!doctype html>
+<html lang="en">
+<!-- PROTOTYPE, throwaway. Question (#1827): what should the keyboard path through the Threads page be?
+     Today every row's five hover actions are Tab stops and F6 does nothing. Variants (?variant=now|A|B|C, ← → when
+     focus is outside the list): A roving list with a row menu, B one stop per row with a row menu, C roving grid
+     (arrows walk into a row's actions). Every variant: F6 / Shift+F6 cycle sidebar → pane → composer. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Threads keyboard path (prototype)</title>
+<style>
+:root{--room:#040507;--side:#111316;--card:#16191c;--hover:#1a1d20;--sel:#17302c;--text:#e8eaee;--muted:#adb1b9;--faint:#8b9098;--accent:#47b8a9;--warn:#ffb900;--ok:#6fd3b8}
+*{box-sizing:border-box}
+body{margin:0;background:#0b0c0d;color:var(--text);font:14px/1.45 Figtree,system-ui,-apple-system,"Segoe UI",sans-serif}
+.app{display:grid;grid-template-columns:270px 1fr;max-width:1180px;margin:20px auto 0;border-radius:10px;overflow:hidden;height:560px;background:var(--room)}
+aside{background:var(--side);padding:10px 8px;display:flex;flex-direction:column;gap:6px}
+:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+.search{background:#0d1014;border:1px solid #23272b;border-radius:6px;padding:6px 10px;color:var(--text);font:inherit;width:100%}
+.needs{background:var(--card);border-radius:10px;padding:8px 10px}
+.needs .h{font-size:13px;font-weight:600;margin-bottom:4px}
+.b{font:inherit;font-size:13px;padding:5px 12px;border-radius:6px;border:1px solid #2b3035;background:transparent;color:var(--text);cursor:default}
+.b.primary{background:#f2f3f5;color:#0b0c0e;border-color:transparent;font-weight:600}
+.folder{padding:6px 6px 2px;font-weight:500}
+[role=listbox],[role=list],[role=grid]{list-style:none;margin:0;padding:0}
+.row{position:relative;border-radius:8px;padding:6px 10px 6px 24px;min-height:46px}
+.row:hover,.row.cur{background:var(--hover)}
+.row[aria-selected=true]{background:var(--sel)}
+.row .ring{position:absolute;left:8px;top:10px;width:9px;height:9px;border-radius:50%;border:2px solid var(--muted)}
+.row .ring.warn{border-color:var(--warn)} .row .ring.work{border-color:var(--ok);border-right-color:transparent}
+.row .top{display:flex;justify-content:space-between}
+.row .time{color:var(--muted);font-size:12px}
+.row .st{font-size:12px;color:var(--muted);text-align:right}
+.row .st.warn{color:var(--warn)} .row .st.work{color:var(--ok)}
+.row .acts{position:absolute;right:6px;bottom:4px;display:none;gap:2px;background:inherit}
+.row:hover .acts,.row:focus-within .acts,.row.cur .acts{display:flex}
+.icon{width:24px;height:22px;border:0;border-radius:5px;background:transparent;color:var(--muted);font-size:12px;cursor:default}
+.menu{position:fixed;background:#202428;border-radius:8px;padding:4px;box-shadow:0 10px 30px rgba(0,0,0,.6);min-width:190px;z-index:5}
+.menu [role=menuitem]{display:flex;justify-content:space-between;padding:6px 10px;border-radius:5px;font-size:13px}
+.menu [role=menuitem]:focus{background:#2c3237;outline:none}
+.menu kbd{color:var(--faint);font:12px system-ui}
+section.pane{display:flex;flex-direction:column}
+.ph{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid #15181b}
+.ph .t{font-weight:600;margin-right:auto}
+.tx{flex:1;padding:14px 22px;overflow:auto}
+.msg{color:#d7dade;margin:0 0 12px;max-width:620px}
+.req{background:var(--card);border-radius:14px;padding:12px 14px;max-width:620px}
+.req .code{background:var(--room);border-radius:6px;padding:7px 10px;font:12.5px ui-monospace,Menlo,Consolas,monospace;margin:8px 0}
+.comp{margin:0 22px 14px;background:var(--card);border-radius:14px;padding:8px 10px;display:flex;gap:8px;align-items:center}
+.comp input{flex:1;background:transparent;border:0;color:var(--text);font:inherit;outline:none}
+.comp .tb{border:0;background:transparent;color:var(--muted);font:inherit;font-size:13px;padding:4px 8px;border-radius:5px;cursor:default}
+.region-hint{outline:2px dashed #47b8a955;outline-offset:-2px}
+.panel{max-width:1180px;margin:14px auto 90px;display:grid;grid-template-columns:1.1fr 1fr;gap:18px;padding:0 4px}
+.panel h2{font-size:17px;margin:0 0 6px}
+.panel p,.panel li{color:#b9bec4}
+.state{background:#0f1215;border-radius:8px;padding:10px 12px;font:12.5px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#cfd4d9;white-space:pre-wrap}
+.switcher{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:#fff;color:#111;border-radius:999px;padding:6px 10px;box-shadow:0 6px 24px rgba(0,0,0,.45);font:600 13px system-ui;z-index:9}
+.switcher button{border:0;background:#111;color:#fff;border-radius:999px;width:28px;height:28px;font-size:14px}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside id="sidebar" aria-label="Thread sidebar">
+    <input class="search" id="search" placeholder="Search threads" aria-label="Search threads">
+    <div class="needs"><div class="h">Needs you 1</div><div style="font-size:13px">Visual gate flake <span style="color:var(--warn)">· Needs your approval</span></div><div style="text-align:right;margin-top:4px"><button class="b" id="open-answer">Open to answer</button></div></div>
+    <div class="folder">▾ 🗀 workshop</div>
+    <ul id="list"></ul>
+  </aside>
+  <section class="pane" id="pane" aria-label="Visual gate flake">
+    <div class="ph"><span class="t">✳ Visual gate flake</span><button class="b" id="watch">Watch</button><button class="b" aria-label="More">···</button></div>
+    <div class="tx"><p class="msg">Found the cause. The listening bars animate from a CSS loop, so the frame depended on where the screenshot landed.</p>
+      <div class="req"><strong>Run a command in workshop</strong><div class="code">npm test -- --run tests/unit/agents</div><button class="b">Deny</button> <button class="b primary">Allow</button></div></div>
+    <div class="comp" id="composer"><span>📎</span><input aria-label="Message" placeholder="Queued until you answer the card"><button class="tb">Sonnet 4.5 ▾</button></div>
+  </section>
+</div>
+<div class="panel">
+  <div><h2 id="vt"></h2><p id="vl"></p><ul id="vn"></ul>
+    <p><strong>Try it:</strong> click in Search threads, then use only the keyboard: Tab, Shift+Tab, ↑ ↓ ← →, Enter, Shift+F10 (or the menu key), Escape, F6 and Shift+F6. The counter shows how many Tabs it took to reach the composer.</p></div>
+  <div><h2>What the keyboard did</h2><div class="state" id="state"></div></div>
+</div>
+<div class="switcher" role="group" aria-label="Prototype variants"><button id="prev" aria-label="Previous variant">←</button><span id="label"></span><button id="next" aria-label="Next variant">→</button></div>
+<script>
+const THREADS = [
+  { title: 'Visual gate flake', time: '12:41 pm', st: 'Needs your approval', k: 'warn' },
+  { title: 'Grok voice previews', time: '7:58 am', st: 'Done', k: '' },
+  { title: 'Streaming WAV stall', time: '10:02 am', st: 'Done', k: '' },
+  { title: 'Footer links', time: '3m 00s', st: 'Working', k: 'work' },
+  { title: 'Weekly note', time: '10m 00s', st: 'Working', k: 'work' },
+]
+const ACTIONS = ['Open beside', 'Rename', 'Regenerate title', 'Watch', 'Settle']
+const KEYS = { 'Open beside': 'Ctrl+Enter', 'Settle': 'Ctrl+Shift+E', 'Rename': 'F2' }
+const VARIANTS = [
+  { key: 'now', name: 'Today', lede: 'Each row is a button, and each of its five hover actions is its own Tab stop. F6 does nothing.', notes: ['About 30 Tabs from Search threads to the composer with five threads.', 'Every stop shows a clear ring, which is good.'] },
+  { key: 'A', name: 'Roving list, row menu', lede: 'The list is one Tab stop. ↑ ↓ move between threads, Home and End jump, Enter opens. Shift+F10, the menu key or a right-click opens the row’s actions as a menu, in words, with their shortcuts.', notes: ['Matches Windows’ list pattern and the Mac’s.', 'The hover icons stay for the mouse; the menu is their keyboard and right-click twin (#1821’s row menu).', 'F6 / Shift+F6 cycle sidebar, pane, composer.'] },
+  { key: 'B', name: 'One stop per row, row menu', lede: 'Each thread is one Tab stop, without its inner actions. Shift+F10, the menu key or a right-click opens the actions.', notes: ['Closest to today: Tab still walks thread by thread.', 'Five threads cost five Tabs instead of thirty.', 'F6 / Shift+F6 cycle sidebar, pane, composer.'] },
+  { key: 'C', name: 'Roving grid, arrows into actions', lede: 'One Tab stop for the list. ↑ ↓ move between threads; → walks into the row’s action icons and ← back out; Enter presses the one in focus.', notes: ['No menu: the actions you see are the ones you reach.', 'The icons must name themselves when focused (tooltip and accessible name).', 'F6 / Shift+F6 cycle sidebar, pane, composer.'] },
+]
+let v = Math.max(0, VARIANTS.findIndex(x => x.key === new URLSearchParams(location.search).get('variant')))
+let cur = 0, col = -1, tabs = 0, reached = null, log = [], menu = null
+const $ = id => document.getElementById(id)
+function say(s) { log.unshift(s); log = log.slice(0, 8); paint() }
+function name(el) { return el?.getAttribute?.('aria-label') || el?.dataset?.name || el?.textContent?.trim().slice(0, 40) || el?.tagName }
+function build() {
+  const V = VARIANTS[v].key, list = $('list'); list.innerHTML = ''
+  list.setAttribute('role', V === 'C' ? 'grid' : V === 'now' ? 'list' : 'listbox'); list.setAttribute('aria-label', 'Threads in workshop')
+  THREADS.forEach((t, i) => {
+    const li = document.createElement('li'); li.className = 'row'; li.dataset.i = i; li.dataset.name = t.title
+    li.innerHTML = `<span class="ring ${t.k}"></span><div class="top"><span>${t.title}</span><span class="time">${t.time}</span></div><div class="st ${t.k}">${t.st}</div><div class="acts">${ACTIONS.map((a, j) => `<button class="icon" data-j="${j}" aria-label="${a} ${t.title}" title="${a}">${'⧉✎✦◉⌫'[j]}</button>`).join('')}</div>`
+    if (V === 'now') { li.tabIndex = 0; li.setAttribute('role', 'listitem') }
+    else { li.setAttribute('role', V === 'C' ? 'row' : 'option'); li.tabIndex = (V === 'B' || i === cur) ? 0 : -1; li.querySelectorAll('.icon').forEach(b => b.tabIndex = -1) }
+    list.append(li)
+  })
+  paint()
+}
+function rowsEls() { return [...document.querySelectorAll('#list .row')] }
+function focusRow(i) { const r = rowsEls(); cur = (i + r.length) % r.length; col = -1; if (VARIANTS[v].key !== 'B') r.forEach((el, j) => el.tabIndex = j === cur ? 0 : -1); r[cur].focus() }
+function openMenu(li) {
+  closeMenu(); const rect = li.getBoundingClientRect(); menu = document.createElement('div'); menu.className = 'menu'; menu.setAttribute('role', 'menu'); menu.style.left = `${rect.left + 30}px`; menu.style.top = `${rect.bottom - 4}px`
+  menu.innerHTML = ['Open', ...ACTIONS].map(a => `<div role="menuitem" tabindex="-1">${a}<kbd>${KEYS[a] ?? (a === 'Open' ? 'Enter' : '')}</kbd></div>`).join('')
+  document.body.append(menu); menu.opener = li; menu.querySelector('[role=menuitem]').focus(); say(`Opened the row menu for ${li.dataset.name}`)
+}
+function closeMenu(back = true) { if (!menu) return; const o = menu.opener; menu.remove(); menu = null; if (back) o.focus() }
+document.addEventListener('keydown', e => {
+  const V = VARIANTS[v].key, li = e.target.closest?.('#list .row')
+  if (menu) { const items = [...menu.querySelectorAll('[role=menuitem]')]; let i = items.indexOf(document.activeElement)
+    if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length].focus() }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus() }
+    else if (e.key === 'Escape') { e.preventDefault(); say('Escape closed the menu; focus went back to its row'); closeMenu() }
+    else if (e.key === 'Enter') { e.preventDefault(); say(`Chose "${document.activeElement.firstChild.textContent}" for ${menu.opener.dataset.name}`); closeMenu() }
+    else if (e.key === 'Tab') e.preventDefault()
+    return }
+  if (e.key === 'F6') { e.preventDefault(); if (V === 'now') { say('F6: nothing (today)'); return }
+    const regions = [() => focusRow(cur), () => $('watch').focus(), () => $('composer').querySelector('input').focus()]
+    const at = e.target.closest('#composer') ? 2 : e.target.closest('#pane') ? 1 : 0
+    const to = (at + (e.shiftKey ? -1 : 1) + 3) % 3; regions[to](); say(`${e.shiftKey ? 'Shift+F6' : 'F6'}: to the ${['sidebar', 'pane', 'composer'][to]}`); return }
+  if (e.key === 'Tab') { tabs++; setTimeout(() => { if (document.activeElement?.closest('#composer') && reached === null) reached = tabs; say(`Tab ${tabs}: ${name(document.activeElement)}`) }); return }
+  if (!li) { if (!e.target.closest('input') && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) setVariant(v + (e.key === 'ArrowLeft' ? -1 : 1)); return }
+  if (V === 'now') return
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); focusRow(Number(li.dataset.i) + (e.key === 'ArrowDown' ? 1 : -1)); say(`${e.key === 'ArrowDown' ? '↓' : '↑'}: ${name(document.activeElement)}`) }
+  else if (e.key === 'Home' || e.key === 'End') { e.preventDefault(); focusRow(e.key === 'Home' ? 0 : THREADS.length - 1) }
+  else if ((e.key === 'F10' && e.shiftKey) || e.key === 'ContextMenu') { e.preventDefault(); if (V === 'C') say('This variant has no menu: use → to reach the actions'); else openMenu(li) }
+  else if (V === 'C' && (e.key === 'ArrowRight' || e.key === 'ArrowLeft')) { e.preventDefault(); const row = rowsEls()[cur], icons = [...row.querySelectorAll('.icon')]
+    col = Math.max(-1, Math.min(icons.length - 1, col + (e.key === 'ArrowRight' ? 1 : -1))); row.classList.add('cur')
+    if (col < 0) { row.focus(); say('←: back to the thread') } else { icons[col].tabIndex = -1; icons[col].focus(); say(`→: ${icons[col].getAttribute('aria-label')}`) } }
+  else if (e.key === 'Enter') { e.preventDefault(); const a = document.activeElement; say(a.classList.contains('icon') ? `Pressed ${a.getAttribute('aria-label')}` : `Opened ${li.dataset.name}`) }
+})
+document.addEventListener('contextmenu', e => { const li = e.target.closest('#list .row'); if (li && ['A', 'B'].includes(VARIANTS[v].key)) { e.preventDefault(); openMenu(li) } })
+document.addEventListener('mousedown', e => { if (menu && !e.target.closest('.menu')) closeMenu(false) })
+function paint() { $('state').textContent = `Variant: ${VARIANTS[v].key} · ${VARIANTS[v].name}\nTabs pressed: ${tabs}\nTabs to reach the composer: ${reached ?? 'not yet'}\nFocus: ${name(document.activeElement)}\n\n${log.join('\n')}` }
+function setVariant(i) { v = (i + VARIANTS.length) % VARIANTS.length; const V = VARIANTS[v]; $('label').textContent = `${V.key} · ${V.name}`; $('vt').textContent = `${V.key} · ${V.name}`; $('vl').textContent = V.lede; $('vn').innerHTML = V.notes.map(n => `<li>${n}</li>`).join(''); history.replaceState(null, '', `?variant=${V.key}`); tabs = 0; reached = null; log = []; cur = 0; closeMenu(false); build() }
+$('prev').onclick = () => setVariant(v - 1); $('next').onclick = () => setVariant(v + 1)
+$('search').addEventListener('focus', () => { tabs = 0; reached = null; paint() })
+setVariant(v)
+</script>
+</body>
+</html>

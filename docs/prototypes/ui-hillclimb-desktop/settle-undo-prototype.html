@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="en">
+<!-- PROTOTYPE, throwaway. Question (#1826): after Settle, where does Undo live, and how do we keep the next row's Settle
+     from landing under a still pointer? Three variants, switchable with the bottom bar or ← →, ?variant=A|B|C. -->
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settle and Undo (prototype)</title>
+<style>
+:root{--room:#040507;--side:#111316;--card:#16191c;--sel:#17302c;--hover:#1a1d20;--text:#e8eaee;--muted:#adb1b9;--faint:#8b9098;--accent:#47b8a9;--warn:#ffb900;--ok:#6fd3b8}
+*{box-sizing:border-box}
+body{margin:0;background:#0b0c0d;color:var(--text);font:14px/1.45 Figtree,system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{display:grid;grid-template-columns:280px 1fr;gap:0;max-width:1180px;margin:24px auto;border-radius:10px;overflow:hidden;min-height:620px;background:var(--room)}
+aside{background:var(--side);padding:10px 8px;position:relative;display:flex;flex-direction:column}
+.search{background:#0d1014;border:1px solid #23272b;border-radius:6px;padding:6px 10px;color:var(--faint);margin:0 2px 10px}
+.folder{display:flex;align-items:center;gap:6px;padding:8px 8px 4px;color:var(--text);font-weight:500}
+.folder .n{margin-left:auto;color:var(--muted);font-size:12px}
+ul{list-style:none;margin:0;padding:0}
+li.row{position:relative;border-radius:8px;padding:7px 10px 7px 26px;height:54px;transition:height 160ms ease-out,opacity 120ms,padding 160ms;overflow:hidden}
+li.row:hover,li.row:focus-within{background:var(--hover)}
+li.row.closing{height:0;padding-top:0;padding-bottom:0;opacity:0}
+li.row .ring{position:absolute;left:9px;top:11px;width:9px;height:9px;border-radius:50%;border:2px solid var(--muted)}
+li.row .ring.warn{border-color:var(--warn)} li.row .ring.work{border-color:var(--ok);border-right-color:transparent}
+li.row .top{display:flex;justify-content:space-between}
+li.row .time{color:var(--muted);font-size:12.5px}
+li.row .bot{display:flex;justify-content:space-between;margin-top:3px;font-size:12px;color:var(--muted)}
+li.row .status.warn{color:var(--warn)} li.row .status.work{color:var(--ok)}
+li.row .actions{position:absolute;right:6px;bottom:5px;display:none;gap:2px;background:var(--hover)}
+li.row:hover .actions,li.row:focus-within .actions{display:flex}
+.icon{width:26px;height:24px;border:0;border-radius:5px;background:transparent;color:var(--muted);font-size:13px;cursor:default}
+.icon:hover{background:#2a2f33;color:var(--text)}
+.icon:focus-visible,.undo:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+li.row.settled-a{background:#121c1a}
+li.row.settled-a .bar{display:flex;align-items:center;justify-content:space-between;height:100%;color:var(--muted)}
+.undo{border:0;background:transparent;color:var(--accent);font:inherit;font-weight:600;padding:4px 8px;border-radius:5px;cursor:default}
+.undo:hover{background:#1e2a28}
+li.row.gap{height:54px;background:transparent}
+li.row.gap>*{visibility:hidden}
+.shelf{margin-top:auto;padding:8px;border-top:1px solid #22262a;display:flex;align-items:center;gap:8px;color:var(--muted);transition:background 300ms}
+.shelf.flash{background:#14211f}
+.shelf .what{font-size:12.5px;color:var(--text)}
+.toast{position:absolute;left:10px;right:10px;bottom:52px;background:#22272b;color:var(--text);border-radius:10px;padding:9px 12px;display:flex;justify-content:space-between;align-items:center;box-shadow:0 8px 24px rgba(0,0,0,.5);font-size:13px}
+main{padding:22px 26px}
+main h1{font-size:20px;margin:0 0 6px}
+main p{color:#b8bdc3;margin:6px 0;max-width:640px}
+.state{margin-top:16px;background:#0f1215;border-radius:8px;padding:12px 14px;font:12.5px/1.6 ui-monospace,Menlo,Consolas,monospace;color:#cfd4d9;white-space:pre-wrap;max-width:640px}
+.notes{margin-top:14px;max-width:640px}
+.notes li{margin:4px 0;color:#c7ccd1}
+.switcher{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);display:flex;align-items:center;gap:10px;background:#fff;color:#111;border-radius:999px;padding:6px 10px;box-shadow:0 6px 24px rgba(0,0,0,.45);font:600 13px system-ui;z-index:9}
+.switcher button{border:0;background:#111;color:#fff;border-radius:999px;width:28px;height:28px;font-size:14px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <aside id="side" aria-label="Thread sidebar">
+    <div class="search">Search threads</div>
+    <div class="folder">▾ 🗀 workshop <span class="n" id="count">4</span></div>
+    <ul id="list"></ul>
+    <div class="shelf" id="shelf">▸ <span>Settled</span> <span class="what" id="shelf-what"></span></div>
+  </aside>
+  <main>
+    <h1 id="title"></h1>
+    <p id="lede"></p>
+    <ul class="notes" id="notes"></ul>
+    <p><strong>Try it:</strong> point at a row, press its Settle button (⌫, the last one), then click again <em>without moving the mouse</em>. Today that second click settles the next thread. Or focus a row with Tab and press Ctrl+Shift+E; Ctrl+Z undoes the last settle in every variant.</p>
+    <div class="state" id="state"></div>
+  </main>
+</div>
+<div class="switcher" role="group" aria-label="Prototype variants"><button id="prev" aria-label="Previous variant">←</button><span id="label"></span><button id="next" aria-label="Next variant">→</button></div>
+<script>
+const THREADS = [
+  { id: 'vgf', title: 'Visual gate flake', time: '12:41 pm', status: 'Needs your approval', kind: 'warn' },
+  { id: 'gvp', title: 'Grok voice previews', time: '7:58 am', status: 'Done', kind: '' },
+  { id: 'wav', title: 'Streaming WAV stall', time: '10:02 am', status: 'Done', kind: '' },
+  { id: 'fl', title: 'Footer links', time: '3m 00s', status: 'Working', kind: 'work' },
+  { id: 'wn', title: 'Weekly note', time: '10m 00s', status: 'Working', kind: 'work' },
+]
+const VARIANTS = [
+  { key: 'A', name: 'Hold the slot, Undo in place', lede: 'The settled row keeps its height and becomes one line: "Settled" with Undo where the Settle button was. A second click on the same spot undoes instead of settling the next thread. The gap closes once the pointer leaves the list, or six seconds after.',
+    notes: ['Nothing moves under a still pointer.', 'Undo is exactly where the eye and pointer already are.', 'Cost: a row-height placeholder stands for a few seconds.'] },
+  { key: 'B', name: 'Hold the gap, Undo in a toast', lede: 'The row disappears but leaves an empty gap until the pointer leaves the list. A toast at the foot of the sidebar says "Settled Grok voice previews" with Undo, for six seconds.',
+    notes: ['Nothing moves under a still pointer; a second click lands on empty space.', 'Undo is away from the pointer, in a toast, the way most mail apps do it.', 'Cost: a toast, which Sotto otherwise keeps for background news.'] },
+  { key: 'C', name: 'Fly to the shelf, Undo on the shelf', lede: 'The row slides into the Settled shelf at the bottom, which lights and reads "Grok voice previews · Undo". The rows above the pointer close up only once the pointer leaves the list.',
+    notes: ['Shows where the thread went: the shelf is where you would look for it.', 'Undo stays on the shelf until the next settle, not on a timer.', 'Cost: the shelf line gets a second job.'] },
+]
+let v = Math.max(0, VARIANTS.findIndex(x => x.key === new URLSearchParams(location.search).get('variant')))
+let rows = [], settled = [], last = 'Nothing pressed yet.', pending = [], timers = []
+const $ = id => document.getElementById(id)
+function reset() { rows = THREADS.map(t => ({ ...t, state: 'open' })); settled = []; pending = []; timers.forEach(clearTimeout); timers = []; $('shelf-what').textContent = ''; document.querySelector('.toast')?.remove(); render() }
+function render() {
+  const list = $('list'); list.innerHTML = ''
+  for (const r of rows) {
+    if (r.state === 'gone') continue
+    const li = document.createElement('li'); li.className = 'row'; li.dataset.id = r.id; li.tabIndex = 0
+    if (r.state === 'held' && VARIANTS[v].key === 'A') { li.classList.add('settled-a'); li.innerHTML = `<div class="bar"><span>Settled</span><button class="undo" data-undo="${r.id}">Undo</button></div>` }
+    else if (r.state === 'held') { li.classList.add('gap'); li.innerHTML = '<span></span>' }
+    else li.innerHTML = `<span class="ring ${r.kind}"></span><div class="top"><span>${r.title}</span><span class="time">${r.time}</span></div><div class="bot"><span>✳</span><span class="status ${r.kind}">${r.status}</span></div>
+      <div class="actions"><button class="icon" title="Open beside">⧉</button><button class="icon" title="Rename">✎</button><button class="icon" title="Regenerate title">✦</button><button class="icon" title="Watch">◉</button><button class="icon" title="Settle" data-settle="${r.id}">⌫</button></div>`
+    list.append(li)
+  }
+  $('count').textContent = rows.filter(r => r.state === 'open').length
+  $('state').textContent = `Variant ${VARIANTS[v].key}: ${VARIANTS[v].name}\nOpen: ${rows.filter(r => r.state === 'open').map(r => r.title).join(', ') || 'none'}\nSettled: ${settled.map(id => THREADS.find(t => t.id === id).title).join(', ') || 'none'}\nLast press: ${last}`
+}
+function settle(id) {
+  const r = rows.find(x => x.id === id); if (!r || r.state !== 'open') return
+  settled.push(id); r.state = 'held'; pending.push(id); last = `Settled ${r.title}.`
+  const k = VARIANTS[v].key
+  if (k === 'B') { document.querySelector('.toast')?.remove(); const t = document.createElement('div'); t.className = 'toast'; t.innerHTML = `<span>Settled ${r.title}</span><button class="undo" data-undo="${id}">Undo</button>`; $('side').append(t); timers.push(setTimeout(() => t.remove(), 6000)) }
+  if (k === 'C') { r.state = 'gone'; const sh = $('shelf'); sh.classList.add('flash'); $('shelf-what').innerHTML = `· ${r.title} <button class="undo" data-undo="${id}">Undo</button>`; timers.push(setTimeout(() => sh.classList.remove('flash'), 900)); }
+  if (k !== 'C') timers.push(setTimeout(() => { if (!$('side').matches(':hover')) close() }, 6000))
+  render()
+}
+function close() { for (const id of pending) { const r = rows.find(x => x.id === id); if (r && r.state === 'held') r.state = 'gone' } pending = []; render() }
+function undo(id) { const r = rows.find(x => x.id === id); if (!r) return; r.state = 'open'; settled = settled.filter(x => x !== id); pending = pending.filter(x => x !== id); last = `Undid settling ${r.title}.`; document.querySelector('.toast')?.remove(); if (VARIANTS[v].key === 'C') $('shelf-what').textContent = ''; render() }
+$('side').addEventListener('click', e => { const s = e.target.closest('[data-settle]'), u = e.target.closest('[data-undo]'); if (s) settle(s.dataset.settle); else if (u) undo(u.dataset.undo); else if (e.target.closest('li.row.gap')) { last = 'Clicked empty space; nothing happened.'; render() } })
+$('side').addEventListener('mouseleave', () => { if (pending.length) close() })
+addEventListener('keydown', e => {
+  const k = e.key.toLowerCase()
+  if (e.ctrlKey && e.shiftKey && k === 'e') { const li = document.activeElement?.closest('li.row'); if (li) { e.preventDefault(); settle(li.dataset.id) } }
+  else if (e.ctrlKey && k === 'z' && settled.length) { e.preventDefault(); undo(settled[settled.length - 1]) }
+  else if (!e.target.closest('input,textarea,[contenteditable]') && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) setVariant(v + (e.key === 'ArrowLeft' ? -1 : 1))
+})
+function setVariant(i) { v = (i + VARIANTS.length) % VARIANTS.length; const V = VARIANTS[v]; $('label').textContent = `${V.key} · ${V.name}`; $('title').textContent = `${V.key} · ${V.name}`; $('lede').textContent = V.lede; $('notes').innerHTML = V.notes.map(n => `<li>${n}</li>`).join(''); history.replaceState(null, '', `?variant=${V.key}`); reset() }
+$('prev').onclick = () => setVariant(v - 1); $('next').onclick = () => setVariant(v + 1)
+setVariant(v)
+</script>
+</body>
+</html>
