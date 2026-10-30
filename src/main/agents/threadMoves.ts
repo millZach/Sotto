@@ -121,6 +121,10 @@ const recordSchema = z.object({
   sourceHostId: z.uuid().optional(),
   /** That machine's name when the move began, for the words of a move from it. */
   from: z.string().min(1).max(200).optional(),
+  /** The source's machine was asked to hold it, so it may hold it, fenced there, even when its answer was lost. */
+  holdAsked: z.literal(true).optional(),
+  /** Called off with Keep it here, the machine it went to had made a thread for it, though its ID was never heard here. */
+  keptMade: z.literal(true).optional(),
   /** The source's machine held it for this move, fenced there by its own record. */
   held: z.literal(true).optional(),
   /** The move ends as given back or stayed once the source's machine has let go of it; until then it waits on that machine. */
@@ -468,7 +472,7 @@ export class ThreadMoveService {
         ...record.threadId ? { moved: { hostId: record.targetHostId, threadId: record.threadId } } : {}, hostId: record.targetHostId, machine: record.machine,
         ...record.from ? { from: record.from } : {}, ...record.targetHostId === here ? { here: true as const } : {},
         ...record.givenBack ? { words: record.givenBack } : {}, model, ...waiting.has(record.id) ? { waiting: true as const, waitingOn: this.waitingOn(record) } : {},
-        ...this.keeping.has(record.id) ? { keeping: true as const } : {},
+        ...this.keeping.has(record.id) ? { keeping: true as const } : {}, ...record.startAsked && !record.threadId ? { startAsked: true as const } : {},
         ...record.watchMoved === true ? { watched: true as const } : {}, at: this.placedAt.get(record.id) ?? record.createdAt, updatedAt: record.updatedAt }
     })
     const run = [...this.runCards.values()].map((card): ThreadMoveCard => ({ id: card.id, state: card.state, source: card.source, hostId: card.hostId, machine: card.machine,
@@ -1012,11 +1016,13 @@ export class ThreadMoveService {
     if (!host || !this.targets?.snapshot(sourceHost)) return false
     if (!host.supportsThreadMoveSource) return this.giveBack(record, THREAD_MOVE_WORDS.olderSource(from))
     let raw: unknown
+    // Recorded first: once asked, the host may hold it whatever happens to its answer, and only its release lets go.
+    if (!record.holdAsked) record = await this.update(record, { holdAsked: true })
     try { raw = await host.threadMove({ action: 'hold', moveId: record.id, threadId: record.sourceThreadId, machine: record.machine }) } catch { this.later(record.id); return false }
     const answer = threadMoveSourceAnswerSchema.safeParse(raw)
     if (!answer.success || answer.data.type === 'refused' && THREAD_MOVE_SOURCE_UNDECIDED.has(answer.data.reason)) { this.later(record.id); return false }
-    // Refused, the host fenced nothing: the move is given back in the host's own words.
-    if (answer.data.type === 'refused') return this.giveBack(record, answer.data.message)
+    // Refused, the host fenced nothing: the move is given back in the host's own words, with nothing to let go of there.
+    if (answer.data.type === 'refused') return this.giveBack(record, answer.data.message, true)
     if (answer.data.type !== 'held') { this.later(record.id); return false }
     return this.update(record, { held: true })
   }
@@ -1127,9 +1133,9 @@ export class ThreadMoveService {
    * landed there is let go of. A record that cannot be saved keeps the source fenced, and the step is tried again. A host's
    * thread it held is let go of by that host first (`end`).
    */
-  private async giveBack(record: MoveRecord, why: string): Promise<boolean> {
+  private async giveBack(record: MoveRecord, why: string, nothingHeld = false): Promise<boolean> {
     const words = THREAD_MOVE_WORDS.givenBack(why, this.fromName(record)).slice(0, 1_200)
-    if (record.sourceHostId && record.held) return this.end(await this.update(record, { ending: 'given-back', givenBack: words }))
+    if (record.sourceHostId && !nothingHeld && (record.held || record.holdAsked)) return this.end(await this.update(record, { ending: 'given-back', givenBack: words }))
     await this.update(record, { state: 'given-back', givenBack: words }, true)
     if (!record.sourceHostId) this.lift(record.sourceThreadId)
     await this.forgetBranch(record)
@@ -1147,7 +1153,7 @@ export class ThreadMoveService {
     void _ending
     // A write that fails keeps the move ending, as its record still says, and the step is tried again.
     try { await this.update(rest, { state }, true) } catch (error) { this.records.set(record.id, record); throw error }
-    if (state === 'given-back' || state === 'kept' && !record.threadId) await this.forgetBranch(record)
+    if (state === 'given-back' || state === 'kept' && !record.threadId && !record.keptMade) await this.forgetBranch(record)
     return true
   }
   /**
@@ -1160,17 +1166,9 @@ export class ThreadMoveService {
     if (!record.startAsked) return this.endKept(record, false)
     const host = this.moveHost(record.targetHostId)
     if (!host || !this.snapshotOf(record.targetHostId) || !host.supportsThreadMoveKeep) return false
-    let raw: unknown
-    try { raw = await host.threadMove({ action: 'keep', moveId: record.id }) } catch { this.later(record.id); return false }
-    const answer = threadMoveKeepAnswerSchema.safeParse(raw)
-    // A refusal proves nothing about a thread there: the move waits, fenced, and is asked again.
-    if (!answer.success || answer.data.type !== 'kept') { this.later(record.id); return false }
-    return this.endKept(record, answer.data.made)
-  }
-  /** The move is called off: Watcher's watch comes back if it went, and the thread here, or on its host, takes sends again. */
-  private async endKept(record: MoveRecord, made: boolean): Promise<boolean> {
+    // Watcher's watch comes back first, while the new thread is still there to take it from: settled there, its watch
+    // would end with it. Tried a few times before the move goes on without it.
     const here = this.options.control.hostId()
-    // A watch that had gone to the new thread comes back, tried again a few times before the move ends without it.
     if (record.watchMoved === true && record.threadId && here && this.options.watch) {
       const back = await this.options.watch.moveWatch({ hostId: record.targetHostId, threadId: record.threadId }, { hostId: record.sourceHostId ?? here, threadId: record.sourceThreadId }).catch(() => false)
       if (back) record = await this.update(record, { watchMoved: false })
@@ -1180,11 +1178,24 @@ export class ThreadMoveService {
         if (tries < WATCH_TRIES) { this.later(record.id); return false }
       }
     }
+    let raw: unknown
+    try { raw = await host.threadMove({ action: 'keep', moveId: record.id }) } catch { this.later(record.id); return false }
+    const answer = threadMoveKeepAnswerSchema.safeParse(raw)
+    // A refusal proves nothing about a thread there: the move waits, fenced, and is asked again.
+    if (!answer.success || answer.data.type !== 'kept') { this.later(record.id); return false }
+    return this.endKept(record, answer.data.made)
+  }
+  /**
+   * The move is called off: the thread here, or on its host, takes sends again. A thread made there keeps the branch its
+   * worktree came from, its ID known here or not.
+   */
+  private async endKept(record: MoveRecord, made: boolean): Promise<boolean> {
     const words = THREAD_MOVE_WORDS.kept(record.machine, made, this.fromName(record)).slice(0, 1_200)
-    if (record.sourceHostId && record.held) return this.end(await this.update(record, { ending: 'kept', givenBack: words }))
-    await this.update(record, { state: 'kept', givenBack: words }, true)
+    const ended = { givenBack: words, ...made && !record.threadId ? { keptMade: true as const } : {} }
+    if (record.sourceHostId && (record.held || record.holdAsked)) return this.end(await this.update(record, { ending: 'kept', ...ended }))
+    await this.update(record, { state: 'kept', ...ended }, true)
     if (!record.sourceHostId) this.lift(record.sourceThreadId)
-    if (!record.threadId) await this.forgetBranch(record)
+    if (!made && !record.threadId) await this.forgetBranch(record)
     return true
   }
   /**

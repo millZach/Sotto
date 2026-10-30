@@ -179,3 +179,10 @@ After Sol's standards review of part 4 (October 30):
 - A watch that had gone to the new thread is tried again a few times on its way back before the move ends without it.
 - Escape anywhere in the card's question puts it away.
 
+After Sol's spec review of part 4 (October 30):
+
+- A host asked to hold a thread may hold it whatever happens to its answer, so the move records that it asked (`holdAsked`) first, and a move given back or kept has that host let go of it unless the host refused outright. This also closes the same gap in part 3's give back.
+- The card asks first whenever the machine was asked to start the new thread, its answer heard or not ("…if it made one").
+- Watcher's watch comes back before the machine is asked to call the move off, while the new thread is still there to take it from.
+- A thread made there whose ID was never heard here still keeps the branch its worktree came from (`keptMade`).
+

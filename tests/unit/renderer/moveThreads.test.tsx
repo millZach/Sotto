@@ -316,6 +316,12 @@ describe('Each move’s card in Watcher’s conversation', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Stop it there and keep this one' }))
     await waitFor(() => expect(moves.answer).toHaveBeenCalledWith({ moveId: CARD, answer: 'keep-here' }))
   })
+  it('asks first too when forge was asked to start the thread but its answer never came', () => {
+    bridges()
+    render(<WatcherMoveCards cards={[card({ state: 'branch-sent', waiting: true, waitingOn: 'forge', startAsked: true })]} threads={threads} />)
+    fireEvent.click(screen.getByRole('button', { name: 'Keep it here' }))
+    expect(screen.getByRole('group', { name: /Stop the new thread on forge if it made one, and keep this one here\?/u })).toBeTruthy()
+  })
   it('keeps a move with no thread there at one press, then says it waits to call the move off', async () => {
     const { moves } = bridges()
     const { rerender } = render(<WatcherMoveCards cards={[card({ state: 'branch-sent', waiting: true, waitingOn: 'forge' })]} threads={threads} />)

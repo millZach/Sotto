@@ -65,7 +65,7 @@ function world() {
     forget: vi.fn(async (input: { readonly moveId: string }) => { forgotten.push(input.moveId) }),
   }
   // The machine: it makes one thread per move, and answers the same one when asked again.
-  const remote = { connected: true, mayAnswer: true, supports: true, keepSupported: true, keeps: [] as string[], threads: [] as AgentThread[], made: new Map<string, string>(), requests: [] as HostThreadMoveStart[],
+  const remote = { connected: true, mayAnswer: true, supports: true, keepSupported: true, keeps: [] as string[], loseStart: false, threads: [] as AgentThread[], made: new Map<string, string>(), requests: [] as HostThreadMoveStart[],
     fail: undefined as Error | undefined, answer: undefined as unknown, listeners: new Set<(hostId?: string) => void>(), updates: new Set<() => void>(),
     /** Each push makes a new snapshot, as the router does; between pushes the same one is read. */
     version: 0, snapshot: undefined as { version: number; snapshot: AgentHostSnapshot } | undefined,
@@ -83,26 +83,34 @@ function world() {
       if (remote.fail) throw remote.fail
       if (remote.answer !== undefined) return remote.answer
       let threadId = remote.made.get(request.moveId)
+      const lose = remote.loseStart
       if (!threadId) {
         threadId = randomUUID(); remote.made.set(request.moveId, threadId)
         remote.threads.push({ id: threadId, title: request.title, projectId: request.projectId, modelId: request.modelId, providerId: 'codex', status: 'running', requests: [], messages: [],
           lastUserMessageId: randomUUID(), ...request.runtimeMode ? { runtimeMode: request.runtimeMode } : {} })
       }
       remote.version++
+      // Made there, and the answer lost on the way back.
+      if (lose) throw new Error('The connection dropped.')
       return { type: 'started', moveId: request.moveId, threadId, ...request.runtimeMode ? { runtimeMode: request.runtimeMode } : {}, sent: true }
     }),
   }
   // A second paired host, lab, whose own threads move (part 3): it holds one for a move, gives its handover, and settles
   // or lets go of it, each answered the same when asked again.
   const lab = { connected: true, supportsSource: true, threads: [source('lab-1')] as AgentThread[], asked: [] as HostThreadMoveSource[], fences: new Set<string>(),
-    holdAnswer: undefined as unknown }
+    holdAnswer: undefined as unknown, loseHold: false }
   const labHost: ThreadMoveHost = {
     supportsThreadMove: true, get supportsThreadMoveSource() { return lab.supportsSource },
     threadMove: vi.fn(async (asked: HostThreadMoveRequest) => {
       if (asked.action === 'start' || asked.action === 'keep') throw new Error('Nothing moves to lab here.')
       lab.asked.push(asked)
       switch (asked.action) {
-        case 'hold': if (lab.holdAnswer !== undefined) return lab.holdAnswer; lab.fences.add(asked.threadId); return { type: 'held', moveId: asked.moveId }
+        case 'hold':
+          if (lab.holdAnswer !== undefined) return lab.holdAnswer
+          lab.fences.add(asked.threadId)
+          // Held there, and the answer lost on the way back.
+          if (lab.loseHold) throw new Error('The connection dropped.')
+          return { type: 'held', moveId: asked.moveId }
         case 'handover': return { type: 'handover', moveId: asked.moveId, text: 'The handover of lab-1.', counts: { total: 2, carried: 2, tooLong: 0, notCarried: 0, images: 0, files: 0, visuals: 0, toolRecords: 0, historyKept: true, answered: false } }
         default: lab.fences.clear(); return { type: 'done', moveId: asked.moveId }
       }
@@ -928,6 +936,32 @@ describe('Keep it here on a move waiting on its machine (#1178 part 4)', () => {
     await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('kept'))
     expect(w.remote.keeps).toEqual([moveId]); expect(w.settled).toEqual([])
     await vi.waitFor(() => expect(w.fences.has('a')).toBe(false))
+    moves.close()
+  })
+  it('has a host let go of its thread when its hold was saved but its answer lost, and the move is kept', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.lab.loseHold = true
+    const labKey = hostEntityKey(LAB, 'lab-1')
+    const prepared = moves.prepare({ threadIds: [labKey], hostId: FORGE }) as Extract<ThreadMovePrepare, { status: 'ok' }>
+    const moveId = ((await moves.move({ confirmationId: prepared.confirmationId, threadIds: [labKey], allowNarrower: [] })) as Extract<ThreadMoveStart, { status: 'ok' }>).moves[0]!.moveId!
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true }))
+    expect(w.lab.fences.has('lab-1')).toBe(true); expect(moves.list()[0]).toMatchObject({ holdAsked: true })
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'ok' })
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('kept'))
+    expect(w.lab.asked.at(-1)).toEqual({ action: 'release', moveId })
+    expect(w.lab.fences.size).toBe(0)
+    moves.close()
+  })
+  it('keeps the branch of a thread forge made though its answer never came', async () => {
+    const w = world(), moves = w.service(); moves.useTargets(w.targets)
+    w.remote.loseStart = true
+    const moveId = (await confirmed(w, moves, ['a'])).moves[0]!.moveId!
+    await vi.waitFor(() => expect(moves.view().cards[0]).toMatchObject({ id: moveId, waiting: true, startAsked: true }))
+    expect(moves.list()[0]!.threadId).toBeUndefined()
+    expect(await moves.answer({ moveId, answer: 'keep-here' })).toEqual({ status: 'ok' })
+    await vi.waitFor(() => expect(stateOf(moves, moveId)).toBe('kept'))
+    expect(moves.list()[0]).toMatchObject({ keptMade: true, givenBack: THREAD_MOVE_WORDS.kept('forge', true) })
+    expect(w.forgotten).toEqual([])
     moves.close()
   })
   it('ends a move never asked to start there at once, made nothing, with nothing asked of the machine', async () => {

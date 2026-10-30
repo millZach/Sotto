@@ -121,6 +121,8 @@ export const threadMoveCardSchema = z.object({
   waitingOn: machineName.optional(),
   /** The user pressed Keep it here (part 4): the move waits for the machine to call it off, then ends as `kept`. */
   keeping: z.literal(true).optional(),
+  /** The machine was asked to start the new thread but its answer never came, so it may have made one. */
+  startAsked: z.literal(true).optional(),
   /** Whether Watcher watches the new thread now. */
   watched: z.literal(true).optional(),
   /** When the user confirmed it, where the card goes in Watcher's conversation; and when it last changed. */

@@ -516,14 +516,16 @@ function MoveCard({ card, threads, answer }: { readonly card: ThreadMoveCard; re
     </div> : null}
     {keepable && confirming ? <div className="move-card__confirm" role="group" aria-labelledby={`${card.id}-confirm`}
       onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setConfirming(false) } }}>
-      <p id={`${card.id}-confirm`} className="tt-paragraph"><strong>{card.from === undefined ? t`Stop the new thread on ${card.machine} and keep this one here?` : t`Stop the new thread on ${card.machine} and keep this one on ${card.from}?`}</strong>{' '}
+      <p id={`${card.id}-confirm`} className="tt-paragraph"><strong>{card.moved === undefined
+        ? card.from === undefined ? t`Stop the new thread on ${card.machine} if it made one, and keep this one here?` : t`Stop the new thread on ${card.machine} if it made one, and keep this one on ${card.from}?`
+        : card.from === undefined ? t`Stop the new thread on ${card.machine} and keep this one here?` : t`Stop the new thread on ${card.machine} and keep this one on ${card.from}?`}</strong>{' '}
         {t`Sotto stops it and settles it on ${card.machine}, and this thread takes sends again once ${card.machine} says so.`}</p>
       <div className="move-card__actions">
         <Button variant="primary" disabled={pending || answer === undefined} onClick={() => void press('keep-here')}>{card.from === undefined ? t`Stop it there and keep this one` : t`Stop it there and keep this one on ${card.from}`}</Button>
         <Button ref={cancelRef} variant="secondary" disabled={pending} onClick={() => setConfirming(false)}><Trans>Cancel</Trans></Button>
       </div>
     </div> : keepable ? <div className="move-card__actions">
-      <Button ref={keepRef} variant="secondary" disabled={pending || answer === undefined} onClick={() => { if (card.moved) setConfirming(true); else void press('keep-here') }}>
+      <Button ref={keepRef} variant="secondary" disabled={pending || answer === undefined} onClick={() => { if (card.moved || card.startAsked) setConfirming(true); else void press('keep-here') }}>
         {card.from === undefined ? <Trans>Keep it here</Trans> : <Trans>Keep it on {card.from}</Trans>}</Button>
     </div> : null}
     {refusal !== null ? <p className="receipt-card__placement move-card__refused tt-paragraph" role="alert">{refusal}</p> : null}

@@ -5192,6 +5192,17 @@ msgstr ""
 msgid "Stop the new thread on {0} and keep this one on {1}?"
 msgstr ""
 
+#. placeholder {0}: card.machine
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop the new thread on {0} if it made one, and keep this one here?"
+msgstr ""
+
+#. placeholder {0}: card.machine
+#. placeholder {1}: card.from
+#: src/renderer/src/watcher/MoveThreads.tsx
+msgid "Stop the new thread on {0} if it made one, and keep this one on {1}?"
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherStopAll.tsx
 msgid "Stop the threads Watcher started?"
 msgstr ""

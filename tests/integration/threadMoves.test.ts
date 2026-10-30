@@ -229,7 +229,13 @@ describe('calling a move off on the host with Keep it here (#1178 part 4)', () =
     await vi.waitFor(() => expect(m.record(moveId)?.state).toBe('thread-started'), { timeout: 30_000 })
     const made = m.record(moveId)!.threadId!
     await vi.waitFor(() => expect(m.hostThread(made)).toBeDefined(), { timeout: 30_000 })
-    expect(await m.socket.threadMove({ action: 'keep', moveId })).toEqual({ type: 'kept', moveId, made: true })
+    // Its first turn is running there: forge says it kept the move only once that turn has stopped, so the first ask fails.
+    await expect(m.socket.threadMove({ action: 'keep', moveId })).rejects.toThrow()
+    // A real provider reports the interrupted turn's end; this fake does not, so the test reports it, and the desktop's
+    // next ask, as this one, keeps the move.
+    const nativeId = (await remote.native.snapshot()).threads.find(item => item.title === 'WAV preview stall')!.id
+    remote.native.event({ type: 'ready', threadId: nativeId, text: 'Stopped.' })
+    await vi.waitFor(async () => expect(await m.socket.threadMove({ action: 'keep', moveId }).catch(() => null)).toEqual({ type: 'kept', moveId, made: true }), { timeout: 30_000 })
     await vi.waitFor(() => expect(m.hostThread(made)?.workspaceSettledAt).toEqual(expect.any(String)), { timeout: 30_000 })
     // The same move's start is refused for good, and a move forge never saw is fenced before it says so.
     const again = await m.socket.threadMove({ action: 'start', moveId, projectId: m.forgeProject.id, title: 'WAV preview stall', modelId: m.hostThread(made)!.modelId,
