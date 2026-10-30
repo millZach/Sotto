@@ -102,13 +102,6 @@ const STEPS: readonly SetupStep[] = [
   { id: 'phone', group: 'elsewhere', title: 'iPhone' },
 ]
 const GROUPS = [...new Set(STEPS.map(step => step.group))]
-/**
- * The optional steps after dictation, the Agents and Elsewhere groups: the coding agents connect on their own, a project
- * can be added from the sidebar any time, and one computer needs no other. Until their task has started, Skip for now is
- * the filled button there and the step's own action is secondary (#1824). The dictation steps are Sotto's first job, so
- * their test and their choice stay the filled button; the iPhone step ends in Finish setup.
- */
-const SKIP_FIRST: ReadonlySet<StepId> = new Set(['agents', 'project', 'computers'])
 const LINUX_STEPS: readonly SetupStep[] = [STEPS[0]!, { id: 'omarchy', group: 'start', title: 'Omarchy' }, ...STEPS.slice(1)]
 
 /**
@@ -119,6 +112,14 @@ const HEARD_MS = 300
 const LEVEL_READ_MS = 50
 /** How long the test listens before it says it has heard nothing yet. */
 const NOTHING_HEARD_MS = 6000
+
+/**
+ * The optional steps after dictation, the Agents and Elsewhere groups: the coding agents connect on their own, a project
+ * can be added from the sidebar any time, and one computer needs no other. Until their task has started, Skip for now is
+ * the filled button there and the step's own action is secondary (#1824). The dictation steps are Sotto's first job, so
+ * their test and their choice stay the filled button; the iPhone step ends in Finish setup.
+ */
+const SKIP_FIRST: ReadonlySet<StepId> = new Set(['agents', 'project', 'computers'])
 
 const openInBrowser = async (url: string): Promise<boolean> => {
   const result = await window.sotto?.openExternalLink?.(url).catch(() => null)

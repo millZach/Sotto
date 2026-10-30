@@ -205,8 +205,6 @@ artifacts/ultracode-effort/
 artifacts/question-choices/
 # Floating composer verification captures; the cited ones are committed
 artifacts/composer-float/
-# Filled cards and setup's card (#1831, #1824); the cited captures are committed
-artifacts/filled-cards-and-setup-card/
 # Slim composer and Watcher column verification captures; the cited ones are committed
 artifacts/composer-shrink/
 artifacts/needs-you-queue/
@@ -256,6 +254,8 @@ artifacts/review-667/
 
 # Workspace menu layout verification
 artifacts/workspace-picker/
+# Filled cards and setup's card (#1831, #1824); the cited captures are committed
+artifacts/filled-cards-and-setup-card/
 artifacts/codex-restored-replies/
 
 # Native iPhone Focus verification captures; force-add only images cited by the note.
