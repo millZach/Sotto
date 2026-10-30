@@ -249,7 +249,7 @@ struct ThreadsView: View {
         let threads = count == 1 ? String(localized: "1 thread") : String(localized: "\(count) threads")
         return Button { settledExpanded.toggle() } label: {
             HStack(spacing: Space.s2) {
-                Image(systemName: "chevron.right").font(.system(size: 12, weight: .semibold))
+                Image(systemName: "chevron.right").iconFont(12, weight: .semibold)
                     .rotationEffect(.degrees(settledExpanded ? 90 : 0))
                     .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: settledExpanded)
                 Text("Settled", comment: "The heading over threads the user has put aside.")
@@ -389,7 +389,7 @@ private struct ComputerMenu: View {
             HStack(spacing: Space.s2) {
                 if case .only(let id) = model.show { ComputerDot(status: model.status(id)) } else { Light(tone: .accent) }
                 Text(title).lineLimit(1).minimumScaleFactor(0.8)
-                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold))
+                Image(systemName: "chevron.down").iconFont(11, weight: .semibold)
             }
             .font(.sotto(.small, .semibold))
             .foregroundStyle(Palette.ink)

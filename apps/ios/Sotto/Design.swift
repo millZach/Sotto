@@ -275,6 +275,25 @@ extension UIFont {
     }
 }
 
+/// An SF Symbol's size that grows with the text size, as a symbol does when it takes a text style, so an icon beside
+/// words keeps step with them (#1858). At the default text size it is the size given. Glyphs drawn inside a control
+/// or a tile of fixed size, such as Send, a close button or a row's round mark, keep a fixed font instead.
+private struct IconFont: ViewModifier {
+    @ScaledMetric private var size: CGFloat
+    private let weight: Font.Weight
+    init(size: CGFloat, weight: Font.Weight, relativeTo style: Font.TextStyle) {
+        _size = ScaledMetric(wrappedValue: size, relativeTo: style)
+        self.weight = weight
+    }
+    func body(content: Content) -> some View { content.font(.system(size: size, weight: weight)) }
+}
+
+extension View {
+    func iconFont(_ size: CGFloat, weight: Font.Weight = .regular, relativeTo style: Font.TextStyle = .body) -> some View {
+        modifier(IconFont(size: size, weight: weight, relativeTo: style))
+    }
+}
+
 /// The spacing scale.
 enum Space {
     static let s1: CGFloat = 4

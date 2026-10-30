@@ -229,7 +229,7 @@ private struct WatcherHero: View {
         } label: {
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 subtitleText
-                Image(systemName: "chevron.up.chevron.down").font(.system(size: 9, weight: .semibold)).foregroundStyle(Palette.muted)
+                Image(systemName: "chevron.up.chevron.down").iconFont(9, weight: .semibold).foregroundStyle(Palette.muted)
                     .accessibilityHidden(true)
             }
         }
@@ -489,6 +489,9 @@ private struct SectionSwitch: View {
         .background(Palette.fillSoft, in: Capsule())
         .overlay(Capsule().strokeBorder(Palette.hairline, lineWidth: 1))
         .sensoryFeedback(.selection, trigger: picks)
+        // A segmented control keeps its size, as the system's does; at the accessibility sizes a long press shows the
+        // large content viewer. Grown with the text, both names were cut to "Conver…" and "Watc…" on a small iPhone.
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
     }
     private func option(_ value: WatcherView.Pane, _ title: String, count: Int?, id: String) -> some View {
         let chosen = section == value
@@ -515,6 +518,7 @@ private struct SectionSwitch: View {
         .buttonStyle(PressStyle())
         .accessibilityLabel(spoken(title, count: count))
         .accessibilityAddTraits(chosen ? [.isSelected] : [])
+        .accessibilityShowsLargeContentViewer { Text(spoken(title, count: count)) }
         .accessibilityIdentifier(id)
     }
     /// "Watched, 3 threads", for VoiceOver.
@@ -1028,7 +1032,7 @@ private struct WatcherFollowupLine: View {
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
             Image(systemName: "clock")
-                .font(.system(size: 13, weight: .semibold))
+                .iconFont(13, weight: .semibold)
                 .foregroundStyle(Palette.muted)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
@@ -1167,7 +1171,7 @@ private struct ReceiptRow: View {
             }
             Spacer(minLength: Space.s2)
             if opens {
-                Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
+                Image(systemName: "chevron.right").iconFont(13, weight: .semibold).foregroundStyle(Palette.muted)
                     .padding(.top, 8).accessibilityHidden(true)
             }
         }
@@ -1213,7 +1217,7 @@ private struct WatcherOwnChangeLine: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: Space.s2) {
                 Image(systemName: "square.and.pencil")
-                    .font(.system(size: 13, weight: .semibold))
+                    .iconFont(13, weight: .semibold)
                     .foregroundStyle(Palette.warningText)
                     .accessibilityHidden(true)
                 words.fixedSize(horizontal: false, vertical: true)
@@ -1224,7 +1228,7 @@ private struct WatcherOwnChangeLine: View {
                 Button { withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { open.toggle() } } label: {
                     HStack(spacing: 4) {
                         Text(WatcherWords.ownChangeToggle(count, open: open))
-                        Image(systemName: open ? "chevron.up" : "chevron.down").font(.system(size: 11, weight: .semibold))
+                        Image(systemName: open ? "chevron.up" : "chevron.down").iconFont(11, weight: .semibold)
                             .accessibilityHidden(true)
                     }
                     .font(.sotto(.small, .semibold))
@@ -1262,7 +1266,7 @@ private struct WatcherOwnChangeLine: View {
             VStack(alignment: .leading, spacing: Space.s1) {
                 ForEach(change.files, id: \.self) { file in
                     HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Image(systemName: "doc").font(.system(size: 12)).foregroundStyle(Palette.muted).accessibilityHidden(true)
+                        Image(systemName: "doc").iconFont(12).foregroundStyle(Palette.muted).accessibilityHidden(true)
                         Text(file).font(.mono).foregroundStyle(Palette.ink).lineLimit(2).truncationMode(.middle)
                             .textSelection(.enabled)
                     }
@@ -1688,10 +1692,10 @@ private struct WatcherPermissionChip: View {
         return Button { choosing = true } label: {
             HStack(spacing: 6) {
                 if busy { ProgressView().controlSize(.mini) } else {
-                    Image(systemName: "shield").font(.system(size: 13, weight: .semibold)).accessibilityHidden(true)
+                    Image(systemName: "shield").iconFont(13, weight: .semibold).accessibilityHidden(true)
                 }
                 Text(WatcherPermissions.name(mode)).lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).accessibilityHidden(true)
+                Image(systemName: "chevron.down").iconFont(11, weight: .semibold).accessibilityHidden(true)
             }
             .font(.sotto(.small, .semibold))
             .foregroundStyle(Palette.ink)
@@ -1788,7 +1792,7 @@ private struct WatcherPermissionSheet: View {
                 }
                 Spacer(minLength: Space.s2)
                 if chosen {
-                    Image(systemName: "checkmark").font(.system(size: 15, weight: .semibold)).foregroundStyle(Palette.accentText)
+                    Image(systemName: "checkmark").iconFont(15, weight: .semibold).foregroundStyle(Palette.accentText)
                         .accessibilityHidden(true)
                 }
             }
