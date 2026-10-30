@@ -44,7 +44,7 @@ Within an impact level, smaller effort comes first. Boxes on the captures mark t
 
 ### 1. A request sheet opens on its own, even when this iPhone can't answer it
 
-**Impact:** High (it confuses or slows on a page people use daily). **Effort:** small. **Tags:** interaction, simplicity.
+**Impact:** High (it confuses or slows on a page people use daily). **Effort:** small. **Tags:** interaction, simplicity. **Issue:** #1846.
 
 ![A question sheet whose only button is Not now](../../artifacts/ui-hillclimb-ios/request-sheet.jpg)
 
@@ -72,7 +72,7 @@ Size the sheet to what it holds: a measured `.height` detent, with `.large` for 
 
 ### 2. Words under the floating reply box show through its gaps
 
-**Impact:** High (it confuses or slows on a page people use daily). **Effort:** small. **Tags:** vibe-coded tell, accessibility. **Desktop and iPhone.**
+**Impact:** High (it confuses or slows on a page people use daily). **Effort:** small. **Tags:** vibe-coded tell, accessibility. **Desktop and iPhone.** **Issue:** #1847.
 
 ![A thread with the keyboard up and text beside the reply box](../../artifacts/ui-hillclimb-ios/composer.jpg)
 
@@ -104,7 +104,7 @@ Keep the box floating (ADR-0051, October 29, pick A) and add a short fade in the
 
 ### 3. At accessibility text sizes on a small iPhone, a thread is cut off at both edges
 
-**Impact:** High (it confuses or slows on a page people use daily). **Effort:** small. **Tags:** accessibility.
+**Impact:** High (it confuses or slows on a page people use daily). **Effort:** small. **Tags:** accessibility. **Issue:** #1848.
 
 ![A thread with the first letters of every line cut off](../../artifacts/ui-hillclimb-ios/thread-clipped.jpg)
 
@@ -130,7 +130,7 @@ Let the chip row wrap: a small flow layout, or `ViewThatFits` that falls back to
 
 ### 4. On a small iPhone, Threads shows five rows of controls before the first thread
 
-**Impact:** High (it confuses or slows on a page people use daily). **Effort:** small. **Tags:** simplicity.
+**Impact:** High (it confuses or slows on a page people use daily). **Effort:** small. **Tags:** simplicity. **Issue:** #1849.
 
 ![Threads with a banner and an unreachable computer above the first card](../../artifacts/ui-hillclimb-ios/threads-header.jpg)
 
@@ -156,7 +156,7 @@ Drop the counts line; the section headings count already. Put the computer menu 
 
 ### 5. Every card is four layers and a glow, and a failed one gets the edge stripe
 
-**Impact:** High (it confuses or slows on a page people use daily). **Effort:** medium. **Tags:** vibe-coded tell, consistency. **Desktop and iPhone.**
+**Impact:** High (it confuses or slows on a page people use daily). **Effort:** medium. **Tags:** vibe-coded tell, consistency. **Desktop and iPhone.** **Issue:** #1850.
 
 ![A glowing Needs you card above two glowing working cards](../../artifacts/ui-hillclimb-ios/working-card.jpg)
 
@@ -188,7 +188,7 @@ Drop the stripe in both apps in one change. The card's own words (Can't reach it
 
 ### 6. On every tab page, scrolled text runs under the clock
 
-**Impact:** Medium (it confuses or slows less often). **Effort:** small. **Tags:** vibe-coded tell, consistency.
+**Impact:** Medium (it confuses or slows less often). **Effort:** small. **Tags:** vibe-coded tell, consistency. **Issue:** #1851.
 
 ![Threads scrolled, with Needs you under the clock](../../artifacts/ui-hillclimb-ios/status-bar.jpg)
 
@@ -214,7 +214,7 @@ Make the existing fade cover the full status bar height plus a little. On iOS 26
 
 ### 7. The badge, the counts line and the card count different things
 
-**Impact:** Medium (it confuses or slows less often). **Effort:** small. **Tags:** consistency.
+**Impact:** Medium (it confuses or slows less often). **Effort:** small. **Tags:** consistency. **Issue:** #1852.
 
 ![Threads with four counts marked](../../artifacts/ui-hillclimb-ios/counts.jpg)
 
@@ -236,7 +236,7 @@ Count one thing everywhere: threads that need you. A thread that finished unseen
 
 ### 8. Sotto's own tab bar drops two things the system's gives for free
 
-**Impact:** Medium (it confuses or slows less often). **Effort:** small. **Tags:** interaction, accessibility.
+**Impact:** Medium (it confuses or slows less often). **Effort:** small. **Tags:** interaction, accessibility. **Issue:** #1853.
 
 ![Four tab names run together at accessibility-large](../../artifacts/ui-hillclimb-ios/tab-bar.jpg)
 
@@ -258,7 +258,7 @@ On a press of the chosen tab, pop its navigation path to the root; on a second p
 
 ### 9. A working card says it's working three times
 
-**Impact:** Medium (it confuses or slows less often). **Effort:** small. **Tags:** simplicity.
+**Impact:** Medium (it confuses or slows less often). **Effort:** small. **Tags:** simplicity. **Issue:** #1854.
 
 ![A working card with three lines marked](../../artifacts/ui-hillclimb-ios/working-card.jpg)
 
@@ -278,7 +278,7 @@ Show the third line only when it adds something: background agents, the step run
 
 ### 10. The permission sheet leads with who is asking, not with what it asks
 
-**Impact:** Medium (it confuses or slows less often). **Effort:** small. **Tags:** simplicity, consistency.
+**Impact:** Medium (it confuses or slows less often). **Effort:** small. **Tags:** simplicity, consistency. **Issue:** #1855.
 
 ![A permission sheet with its headline and its request marked](../../artifacts/ui-hillclimb-ios/permission-headline.jpg)
 
@@ -298,7 +298,7 @@ Make the request the headline ("Allow reading the release checklist?") and put w
 
 ### 11. New thread asks where to run when only one computer can take it
 
-**Impact:** Medium (it confuses or slows less often). **Effort:** small. **Tags:** simplicity.
+**Impact:** Medium (it confuses or slows less often). **Effort:** small. **Tags:** simplicity. **Issue:** #1856.
 
 ![Step 1 of 3 with one reachable computer](../../artifacts/ui-hillclimb-ios/sheet-close-3.jpg)
 
@@ -318,7 +318,7 @@ When only one computer can take a new thread, open on the project step with it c
 
 ### 12. At accessibility sizes, side-by-side rows collide or cut words to a few letters
 
-**Impact:** Medium (it confuses or slows less often). **Effort:** medium. **Tags:** accessibility.
+**Impact:** Medium (it confuses or slows less often). **Effort:** medium. **Tags:** accessibility. **Issue:** #1857.
 
 ![New thread header with Cancel under the title](../../artifacts/ui-hillclimb-ios/large-text-rows.jpg)
 
@@ -346,7 +346,7 @@ At `isAccessibilitySize`, stack: the value under its label in Settings, the kind
 
 ### 13. Icons stay the same size while the words beside them grow
 
-**Impact:** Medium (it confuses or slows less often). **Effort:** medium. **Tags:** accessibility, consistency.
+**Impact:** Medium (it confuses or slows less often). **Effort:** medium. **Tags:** accessibility, consistency. **Issue:** #1858.
 
 ![New thread step 2 at the default size](../../artifacts/ui-hillclimb-ios/icons.jpg)
 
@@ -372,7 +372,7 @@ Put icons on the type scale: `.font(.sotto(.small, .semibold))`, or a system tex
 
 ### 14. Thread rows have no swipe actions, and Settle is only on the thread's own page
 
-**Impact:** Medium (it confuses or slows less often). **Effort:** medium. **Tags:** interaction.
+**Impact:** Medium (it confuses or slows less often). **Effort:** medium. **Tags:** interaction. **Issue:** #1859.
 
 ![Recent rows](../../artifacts/ui-hillclimb-ios/meta-line.jpg)
 
@@ -392,7 +392,7 @@ Give Recent rows a trailing swipe to **Settle**, and Settled rows **Restore**, w
 
 ### 15. Sheets close four different ways
 
-**Impact:** Low (it looks unfinished). **Effort:** small. **Tags:** consistency.
+**Impact:** Low (it looks unfinished). **Effort:** small. **Tags:** consistency. **Issue:** #1860.
 
 ![Agents sheet with Done](../../artifacts/ui-hillclimb-ios/sheet-close.jpg)
 
@@ -424,7 +424,7 @@ Sheets that only show things (Agents, the pull request, a machine, Watcher's per
 
 ### 16. The line under a title has three grammars
 
-**Impact:** Low (it looks unfinished). **Effort:** small. **Tags:** consistency. **Desktop and iPhone.**
+**Impact:** Low (it looks unfinished). **Effort:** small. **Tags:** consistency. **Desktop and iPhone.** **Issue:** #1861.
 
 ![Meta lines in different orders](../../artifacts/ui-hillclimb-ios/meta-line.jpg)
 
@@ -444,7 +444,7 @@ One order everywhere, in both apps: provider · project · computer. State words
 
 ### 17. An error says "Try again" but gives nothing to press
 
-**Impact:** Low (it looks unfinished). **Effort:** small. **Tags:** interaction. **Desktop and iPhone.**
+**Impact:** Low (it looks unfinished). **Effort:** small. **Tags:** interaction. **Desktop and iPhone.** **Issue:** #1862.
 
 ![A folder read timed out](../../artifacts/ui-hillclimb-ios/error-control.jpg)
 
@@ -466,7 +466,7 @@ The desktop has the same gap: "Action failed. Thread 'Visual gate flake' is wait
 
 ### 18. Computers nests tiles inside each card, and one of them holds nothing
 
-**Impact:** Low (it looks unfinished). **Effort:** small. **Tags:** vibe-coded tell, simplicity.
+**Impact:** Low (it looks unfinished). **Effort:** small. **Tags:** vibe-coded tell, simplicity. **Issue:** #1863.
 
 ![Computer cards with tiles inside](../../artifacts/ui-hillclimb-ios/computers.jpg)
 
@@ -486,7 +486,7 @@ One card per computer, with plain lines: its name and state, then "Can't answer 
 
 ### 19. Settings is a stack of cards, each with a heading of its own
 
-**Impact:** Low (it looks unfinished). **Effort:** medium. **Tags:** vibe-coded tell, simplicity.
+**Impact:** Low (it looks unfinished). **Effort:** medium. **Tags:** vibe-coded tell, simplicity. **Issue:** #1864.
 
 ![Settings with a Look label over separate cards](../../artifacts/ui-hillclimb-ios/settings.jpg)
 
