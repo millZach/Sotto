@@ -312,9 +312,13 @@ node "${hold.replaceAll('\\', '/')}" "${directory.replaceAll('\\', '/')}"
     await expect(committing).resolves.toBeNull()
     await expect.poll(async () => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === id)?.gitAction?.status, holder)).toBe('done')
     const previous = await page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === id)?.gitAction, holder)
-    const refusalCopy = 'Thread "Sibling sender" has queued follow-ups that did not send. Resume or remove them, then try again.'
-    const refused = await page.evaluate(async threadId => (await window.sotto!.agents!.command({ type: 'git-action', threadId, actionId: crypto.randomUUID(), action: 'commit' })).error, holder)
-    expect(refused).toBe(refusalCopy)
+    const refusalCopy = 'Thread "Sibling sender" has queued follow-ups that did not send. Nothing was changed. Resume or remove them, then try again.'
+    const refused = await page.evaluate(async threadId => {
+      const reply = await window.sotto!.agents!.command({ type: 'git-action', threadId, actionId: crypto.randomUUID(), action: 'commit' })
+      return { error: reply.error, hold: reply.checkoutHold ?? null }
+    }, holder)
+    // The reply names the thread holding the folder, as the window's own key, so the notice offers to open it (#1823).
+    expect(refused).toEqual({ error: refusalCopy, hold: { threadId: sibling } })
     expect(await page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === id)?.gitAction, holder)).toEqual(previous)
     for (const [width, height, appearance] of [[1600, 1000, 'dark'], [1600, 1000, 'light'], [1280, 800, 'dark'], [1280, 800, 'light'], [820, 560, 'dark'], [820, 560, 'light']] as const) {
       await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)

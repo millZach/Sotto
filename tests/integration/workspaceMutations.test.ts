@@ -11,16 +11,16 @@ import { GitActions } from '../../src/main/agents/gitActions'
 import { WorktreeCleanup } from '../../src/main/agents/worktreeCleanup'
 import { DEFAULT_WORKTREE_CLEANUP } from '../../src/shared/settings'
 import { GitStatusReader } from '../../src/main/agents/gitStatus'
-import { CheckoutMutations } from '../../src/main/agents/checkoutMutations'
+import { CheckoutHeldRefusal, CheckoutMutations } from '../../src/main/agents/checkoutMutations'
 import type { AgentThread } from '../../src/shared/agents'
 
 it.each([
-  ['waiting-answer', 'Thread "b" is waiting for your answer. Answer it, then try again.'],
-  ['history-error', 'Thread "b" could not load its history. Open it to retry, or archive it, then try again.'],
-  ['history-loading', 'Thread "b" is loading its history. Try again in a moment.'],
-  ['failed-followups', 'Thread "b" has queued follow-ups that did not send. Resume or remove them, then try again.'],
-  ['paused-followups', 'Thread "b" has paused follow-ups. Resume or remove them, then try again.'],
-  ['uncertain-send', 'Thread "b" has a message whose delivery is unconfirmed. Open it and refresh to check whether it was sent, then try again.'],
+  ['waiting-answer', 'Thread "b" is waiting for your answer. Nothing was changed. Answer it, then try again.'],
+  ['history-error', 'Thread "b" could not load its history. Nothing was changed. Open it to retry, or archive it, then try again.'],
+  ['history-loading', 'Thread "b" is loading its history. Nothing was changed. Try again in a moment.'],
+  ['failed-followups', 'Thread "b" has queued follow-ups that did not send. Nothing was changed. Resume or remove them, then try again.'],
+  ['paused-followups', 'Thread "b" has paused follow-ups. Nothing was changed. Resume or remove them, then try again.'],
+  ['uncertain-send', 'Thread "b" has a message whose delivery is unconfirmed. Nothing was changed. Open it and refresh to check whether it was sent, then try again.'],
 ] as const)('names the sibling reason %s and how to release it', async (reason, copy) => {
   const f = await fixture()
   try {
@@ -32,7 +32,11 @@ it.each([
     else if (reason === 'waiting-answer') sibling.requests = [{ id: 'answer', kind: 'question', text: 'Choose', options: [] } satisfies AgentThread['requests'][number]]
     else f.host.setPendingThreadWork(id => id === 'b', () => reason)
     f.adapters.codex.emit()
-    await expect(f.host.pullThreadBranch('a')).rejects.toThrow(copy)
+    const refusal = await f.host.pullThreadBranch('a').then(() => null, (error: unknown) => error)
+    expect(refusal).toBeInstanceOf(CheckoutHeldRefusal)
+    expect((refusal as CheckoutHeldRefusal).message).toBe(copy)
+    // The window is told which thread holds the folder, so it can offer to open it (#1823).
+    expect((refusal as CheckoutHeldRefusal).threadId).toBe('b')
     expect(await f.host.isCheckoutMutating('a')).toBe(false)
   } finally { await f.stop(); await f.remove() }
 })
@@ -62,7 +66,7 @@ it('names a shell startup reservation and refuses another startup during removal
   let release: (() => void) | undefined
   try {
     release = await f.host.acquireTerminalStart(f.project.path)
-    await expect(f.host.acquireCheckoutMutation('a')).rejects.toThrow('Sotto is starting a terminal in this folder. Try again in a moment.')
+    await expect(f.host.acquireCheckoutMutation('a')).rejects.toThrow('Sotto is starting a terminal in this folder. Nothing was changed. Try again in a moment.')
     release(); release = undefined
     release = await f.host.acquireCheckoutMutation('a', { kind: 'remove-folder' })
     await expect(f.host.acquireTerminalStart(f.project.path)).rejects.toThrow('Sotto is removing this folder')
@@ -74,7 +78,7 @@ it('names a post-turn checkpoint read when a sibling tries to change Git', async
   let release: (() => void) | undefined
   try {
     release = await f.host.acquireCheckoutRead('b')
-    await expect(f.host.pullThreadBranch('a')).rejects.toThrow('Sotto is saving a checkpoint in this folder. Try again in a moment.')
+    await expect(f.host.pullThreadBranch('a')).rejects.toThrow('Sotto is saving a checkpoint in this folder. Nothing was changed. Try again in a moment.')
     release(); release = undefined
     const mutation = await f.host.acquireCheckoutMutation('a'); mutation()
   } finally { release?.(); await f.stop(); await f.remove() }
