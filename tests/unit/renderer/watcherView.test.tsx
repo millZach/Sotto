@@ -114,17 +114,29 @@ beforeEach(() => { vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents
 afterEach(() => { cleanup(); localStorage.clear(); sessionStorage.clear() })
 
 describe("Watcher's room", () => {
+  it('says once, in one sentence above the composer, that the first message starts Watcher, and leaves the rest to Help (#1822)', async () => {
+    const { navigate } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
+    await screen.findByRole('heading', { level: 2, name: 'Start Watcher' })
+    const intro = document.querySelector('.watcher-first__intro')!
+    expect(intro).toHaveTextContent(/^Start WatcherWatcher starts your other threads, briefs them and keeps an eye on them while they work\. Your first message starts it\. How Watcher works$/u)
+    // The providers and permissions paragraph lives in Help now, and "starts it" is said nowhere else.
+    expect(screen.queryByText(/only you answer a thread’s questions and permissions/u)).toBeNull()
+    expect(screen.getByRole('textbox', { name: 'Watcher message' })).toHaveAttribute('data-placeholder', 'Say what to start or check.')
+    expect(document.body.textContent?.match(/starts (it|Watcher)\b/gu)).toEqual(['starts it'])
+    fireEvent.click(screen.getByRole('button', { name: 'How Watcher works' }))
+    expect(navigate).toHaveBeenCalledWith('help', 'help-watcher')
+  })
+
   it('starts on Watcher’s own composer the first time, and the first message starts Watcher and goes to it without selecting anything', async () => {
     const { bridge, command } = renderRoom(stateWithWatcher(), roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
     expect(await screen.findByRole('heading', { level: 2, name: 'Start Watcher' })).toBeInTheDocument()
-    expect(screen.getByText(/only you answer a thread’s questions and permissions/)).toBeInTheDocument()
     // No actions before Watcher runs.
     expect(screen.queryByRole('button', { name: 'More Watcher actions' })).toBeNull()
     const chosen = screen.getByRole('group', { name: 'Watcher’s model' })
     expect(within(chosen).getByRole('combobox', { name: 'Thread model' })).toHaveTextContent('Sonnet 4.5')
     // What it may do without asking is chosen here too, and a new Watcher starts on Ask for approval.
     expect(within(chosen).getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveTextContent('Ask for approval')
-    expect(screen.getByText('Your first message starts Watcher on Sonnet 4.5, with your own Claude Code account.')).toBeInTheDocument()
+    expect(screen.getByText('On Sonnet 4.5, with your own Claude Code account.')).toBeInTheDocument()
     const send = screen.getByRole('button', { name: 'Start Watcher and send' })
     expect(send).toBeDisabled()
     setPromptText(screen.getByRole('textbox', { name: 'Watcher message' }), 'Keep an eye on the footer links.')
@@ -375,7 +387,7 @@ describe("Watcher's room", () => {
     mockAgents(state)
     const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
     render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)
-    expect(await screen.findByText(/your own Codex, Claude Code, Grok Build or Muse account/)).toBeInTheDocument()
+    expect(await screen.findByText('On Fixture Muse, with your own Muse account.')).toBeInTheDocument()
     setPromptText(await screen.findByRole('textbox', { name: 'Watcher message' }), 'Keep an eye on the footer links.')
     fireEvent.click(screen.getByRole('button', { name: 'Start Watcher and send' }))
     await waitFor(() => expect(bridge.open).toHaveBeenCalledWith(expect.objectContaining({ provider: 'muse', modelId: 'muse:fixture' })))

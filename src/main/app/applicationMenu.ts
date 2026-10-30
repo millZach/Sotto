@@ -99,8 +99,9 @@ function editMenu(): ApplicationMenuItem {
   }
 }
 
-// Zoom and full screen match the View menu Electron gives the Windows build by default.
-function viewMenu(includeDeveloperTools: boolean, onShowTurnRecords?: () => void): ApplicationMenuItem {
+// A packaged build's View menu is zoom alone, with full screen on a Mac. Reload and developer tools come only with
+// `includeDeveloperTools`, which main sets for an unpackaged run, so no browser key reaches a shipped build.
+function viewMenu(includeDeveloperTools: boolean, fullScreen: boolean, onShowTurnRecords?: () => void): ApplicationMenuItem {
   return {
     label: t`View`,
     submenu: [
@@ -117,8 +118,7 @@ function viewMenu(includeDeveloperTools: boolean, onShowTurnRecords?: () => void
       { role: 'resetZoom' },
       { role: 'zoomIn' },
       { role: 'zoomOut' },
-      separator(),
-      { role: 'togglefullscreen' },
+      ...(fullScreen ? [separator(), { role: 'togglefullscreen' as const }] : []),
     ],
   }
 }
@@ -136,22 +136,36 @@ function windowMenu(): ApplicationMenuItem {
 }
 
 /**
- * Builds macOS's application menu in the interface language shown now; main builds it again when that
- * changes (ADR-0123). Role items take their words from Electron and macOS, and the app menu keeps the
- * app's name. Windows and Linux return null so the caller retains Electron's default menu and its zoom
- * and developer-tool accelerators.
+ * Windows and Linux: a menu the frameless window never shows, there only for its keys (#1825). Electron's default
+ * menu, kept until then, answered Ctrl+R, Ctrl+Shift+R and Ctrl+Shift+I in a shipped build. This one keeps the zoom
+ * keys and Close on Ctrl+W, adds Settings on Ctrl+, as the Mac has it on Cmd+, and gives developer tools only to the
+ * same option the Mac's menu follows. Edit roles are left out: Chromium answers a text field's own keys off a Mac.
  */
-export function buildApplicationMenuTemplate(
-  options: ApplicationMenuTemplateOptions,
-): ApplicationMenuItem[] | null {
-  if (options.platform !== 'darwin') {
-    return null
-  }
+function hiddenMenu(options: ApplicationMenuTemplateOptions): ApplicationMenuItem[] {
+  return [
+    {
+      label: options.appName,
+      submenu: [
+        { label: t`Settings…`, accelerator: 'Control+,', click: options.onShowSettings },
+        separator(),
+        { role: 'close' },
+      ],
+    },
+    viewMenu(options.includeDeveloperTools, false),
+  ]
+}
 
+/**
+ * Builds the application menu in the interface language shown now; main builds it again when that changes
+ * (ADR-0123). Role items take their words from Electron and the system, and the first menu keeps the app's name.
+ * A Mac shows its menu; Windows and Linux get one only for its keys.
+ */
+export function buildApplicationMenuTemplate(options: ApplicationMenuTemplateOptions): ApplicationMenuItem[] {
+  if (options.platform !== 'darwin') return hiddenMenu(options)
   return [
     appMenu(options.appName, options.onShowSettings, options.onCheckForUpdates),
     editMenu(),
-    viewMenu(options.includeDeveloperTools, options.onShowTurnRecords),
+    viewMenu(options.includeDeveloperTools, true, options.onShowTurnRecords),
     windowMenu(),
   ]
 }

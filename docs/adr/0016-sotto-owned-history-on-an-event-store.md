@@ -358,3 +358,53 @@ The workspace still reconciles every record a read brings, as it did when reads 
 take the merge it gave last time for the same certified list; at the record limit that would keep a different set of the
 oldest records. A read's record that comes out the same as the record held is the record held.
 
+## Amendment: a background turn reads its thread's records on the worker (October 30, 2026, #1645)
+
+This changes step 3's "What stays on main" above. A record a provider publishes for a stored thread no window looks at
+now reads the thread's list back on the store worker, as a window's read does. The record waits, and is merged onto the
+list once it arrives, in the order it came. Each merges as it did when the list was read on main at once: a record a read
+brought reconciles whole, as a read's does, and only the same certified list published again counts once. A window's
+read keeps its own rule, the same array counting once whatever brought it. Before, the list was read on main at once. That was every turn of a thread
+run out of view: worker swarms, delegated threads, Watcher's workers and babysat threads. At the owner's scale it held
+main about 12 ms a turn for a thread of 2,000 records (`docs/perf/2026-10-30-background-turn-readback.md`), and 0.61 s
+in the owner's recording of one such read. Nothing about the thread waits on the list but its records, which no pane
+shows. The other fields of what the provider published are taken in at once. While closing, and wherever the worker cannot
+read, the list is still read on main at once, so the last save keeps what was published.
+
+The worker keeps the list it read as the one it last holds for the thread. The thread's next save is sent as what
+changed since then, rather than whole. A merge onto a list just read back gives each record that comes out the same as
+the record read that record, as a read's merge does. A list saved, released or forgotten while a read is on its way
+replaces what the worker keeps, so main does not send changes against that read. What the store keeps is unchanged:
+each save still writes the list the workspace holds. The adapters' handoff, Watcher's recent activity and a start whose
+subagent words have not moved still read on main.
+
+## Amendment: Claude reads a transcript each second only while its thread is in use (October 30, 2026, #992)
+
+Zach decided on October 29, 2026: check every second only threads open in a pane, working, or watched by Watcher. Every
+other thread, settled or not, catches up when it is opened or sent to, with no slower sweep. A thread he comes back to
+must not open slower.
+
+Claude's adapter opened and read every saved thread's transcript every second, whether anyone used the thread or not.
+At 132 saved threads that was 3.4 to 3.8 ms of main's CPU a second on forge, at 264 it was 7.1 to 7.6 ms, and #992
+measured 18.8 ms at 132 on Windows (`docs/perf/2026-10-30-claude-transcript-poll.md`).
+
+**The poll reads only the threads in use.** Each second it reads the transcript of each thread the coordinator observes,
+which covers a pane, the active thread, a draft, Watcher's watched threads, a delegation, the follow-up queue and the
+outbox. It also reads each thread that is working: a turn, a request waiting, a live watch, background work, a
+compaction or a command mid-dispatch. And it reads each thread whose CLI did anything since the last tick, so a turn begun
+and ended between two ticks is read too. A thread that leaves those is read once more on the next tick, so the last
+lines of its turn land. A read that fails, or that finds the transcript and cannot open it, is tried again on the next
+tick, as every read was, and one that keeps failing holds up no other thread's read. A transcript nothing was written to
+since its last read is not opened: one stat says so.
+
+**Every other thread catches up from its cursor.** Its transcript is read as soon as the thread comes into view, when it
+is sent to, since a send reads the thread before anything else, and at connect, which still reads every saved thread
+once. That connect read keeps each thread's transcript cursor current, so opening a thread reads only what was written
+since. An untouched thread opens as before, reading nothing. One with work done in Claude Code outside Sotto reads that
+work as it comes into view, and shows twenty such entries 2 to 4 ms later.
+
+**What this changes for the user.** Work done in Claude Code outside Sotto on a thread nobody looks at, that Watcher does
+not watch and that is not working, shows when the thread is opened or sent to, or at the next start, rather than within
+a second. Sidebar rows of such threads show it then too. Nothing of it is lost. A send still reads the thread before it writes, so takeover refusal is unchanged. A
+whole read of the adapter, which a send's read after the prompt asks for, still reads every transcript, as before. A
+subagent's model, read from its own transcript, is read when its thread's transcript is.

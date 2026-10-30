@@ -177,6 +177,7 @@ describe('typed preload bridge', () => {
         'onKeyListenerPermission',
         'onRecoveryNotice',
         'onSettingsChanged',
+        'onSettingsRequested',
         'onSpeechModelStatus',
         'onUpdateCheckRequested',
         'onUpdateStatus',

@@ -59,7 +59,7 @@ struct ThreadView: View {
         .onDisappear { Task { if model.selected == ref { await model.select(nil) } } }
         .onChange(of: thread?.requests.map(\.id)) { _, _ in offer() }
         .sheet(item: $open, onDismiss: { if let shown { setAside.insert(shown) }; shown = nil; offer() }) { request in
-            RequestSheet(ref: ref, request: request).presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+            RequestSheet(ref: ref, request: request).requestSheetDetents()
         }
         .agentsSheet(ref: ref, open: $agentsOpen, covered: $agentsCovered) { offer() }
     }
@@ -81,9 +81,12 @@ struct ThreadView: View {
                         reachable: model.status(ref.hostID) != .unreachable)
     }
 
-    /// Opens the thread's waiting request once; after "Not now" it waits in the reply box.
+    /// Opens the thread's waiting request once, where this iPhone can answer it; after "Not now" it waits in the reply
+    /// box. One this iPhone can't answer waits there from the start, behind the button that opens it: rising on its own
+    /// it only said so, and every such thread first asked for a press to clear it away (#1846).
     private func offer() {
-        guard open == nil, !agentsOpen, !agentsCovered, let request = thread?.requests.first(where: { !setAside.contains($0.id) }) else { return }
+        guard open == nil, !agentsOpen, !agentsCovered,
+              let request = thread?.requests.first(where: { !setAside.contains($0.id) && model.canAnswer($0, in: ref) }) else { return }
         shown = request.id
         open = request
     }
@@ -374,6 +377,7 @@ private struct Conversation: View {
                 ReplyDock(ref: ref, openRequest: openRequest)
                     .equatable()
                     .readingWidth()
+                    .dockFade()
                     .background(dockReader(proxy))
             }
             .onChange(of: tail) { _, _ in
@@ -2247,6 +2251,20 @@ private struct FollowupCard: View {
 }
 
 // MARK: - Question and permission sheet
+
+extension View {
+    /// A request sheet's heights: half or full, and only full at the accessibility text sizes, where half the screen cut
+    /// the sheet's words off and hid its buttons on a small iPhone.
+    func requestSheetDetents() -> some View { modifier(RequestSheetDetents()) }
+}
+
+private struct RequestSheetDetents: ViewModifier {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    func body(content: Content) -> some View {
+        let heights: Set<PresentationDetent> = typeSize.isAccessibilitySize ? [.large] : [.medium, .large]
+        return content.presentationDetents(heights).presentationDragIndicator(.visible)
+    }
+}
 
 /// The whole request: its context and every choice, on glass with a warm wash. Nothing is chosen for the user, and a
 /// question is sent only when they press Send answer. It answers the request where it waits: in its own thread, or as a

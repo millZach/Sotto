@@ -1,4 +1,4 @@
-.browser-review-link { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 3px 6px; border: 0; border-radius: 5px; font: inherit; font-size: 14px; color: var(--tt-text); background: transparent; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.browser-review-link { display: inline-flex; align-items: center; gap: 5px; min-height: 30px; padding: 3px 6px; border: 0; border-radius: 5px; font: inherit; font-size: 14px; color: var(--tt-text); background: transparent; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .browser-review-link:hover { background: var(--tt-hover); }
 .browser-review-link:active { background: var(--tt-hover-strong); }
 .browser-review-problem { color: var(--tt-error); font-size: 14px; margin: 8px 12px; }
@@ -6,7 +6,7 @@
 .browser-task__line { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .browser-task__line > span { min-width: 0; overflow-wrap: anywhere; }
 .browser-task__evidence { color: var(--tt-text-muted); margin-top: 4px; }
-.browser-task__evidence summary { cursor: pointer; padding: 5px 0; }
+.browser-task__evidence summary { padding: 5px 0; }
 .browser-task__evidence ol { margin: 6px 0; padding-left: 24px; }
 .browser-task__evidence li { padding: 4px 0; }
 .browser-task__evidence li > span { display: block; overflow-wrap: anywhere; }

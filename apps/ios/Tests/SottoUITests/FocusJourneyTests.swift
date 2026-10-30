@@ -281,12 +281,15 @@ import UIKit
     func testCreateThreadInAKnownProject() {
         launch(Self.fixture)
         app.buttons["new-thread"].tap()
+        // With only the laptop online, New thread starts on its projects (#1856); the computer's chip still opens the list.
+        let project = app.buttons["new-thread-project-sotto"]
+        XCTAssertTrue(project.waitForExistence(timeout: 5), "With one computer online, New thread opens on its projects")
+        app.buttons["new-thread-change-computer"].tap()
         let offline = app.buttons["new-thread-computer-22222222-2222-4222-8222-222222222222"]
         XCTAssertTrue(offline.waitForExistence(timeout: 5))
         XCTAssertFalse(offline.isEnabled)
         capture("new-thread-computers-dark")
         app.buttons["new-thread-computer-\(laptop)"].tap()
-        let project = app.buttons["new-thread-project-sotto"]
         XCTAssertTrue(project.waitForExistence(timeout: 5))
         project.tap()
         let open = app.buttons["open-new-thread"]
@@ -325,8 +328,8 @@ import UIKit
         app.buttons["setting-light"].tap()
         app.tab("Threads").tap()
         app.buttons["new-thread"].tap()
-        app.buttons["new-thread-computer-\(laptop)"].tap()
         let browse = app.buttons["browse-project-folder"]
+        XCTAssertTrue(browse.waitForExistence(timeout: 5), "With one computer online, New thread opens on its projects")
         reveal(browse); browse.tap()
         let filter = app.textFields["folder-filter"]
         XCTAssertTrue(filter.waitForExistence(timeout: 5))
@@ -457,27 +460,25 @@ import UIKit
         let release = row("release")
         reveal(release)
         release.tap()
-        XCTAssertTrue(app.buttons["Not now"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.staticTexts["Which release should I prepare?"].exists)
+        // This iPhone can't answer on the laptop, so the thread's requests wait in the reply box's place rather than
+        // rising over the conversation on their own (#1846).
+        let requests = app.buttons["thread-requests"]
+        XCTAssertTrue(requests.waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["Not now"].waitForExistence(timeout: 2), "A request this iPhone can't answer doesn't open on its own")
+        capture("thread-requests-waiting")
+        requests.tap()
+        app.buttons["Which release should I prepare?"].tap()
+        XCTAssertTrue(app.staticTexts["Which release should I prepare?"].waitForExistence(timeout: 5))
         capture("thread-question")
         reveal(app.buttons["Not now"])
         app.buttons["Not now"].tap()
         let permission = "Allow reading the release checklist?"
-        XCTAssertTrue(app.staticTexts[permission].waitForExistence(timeout: 5), "Deferring the first request exposes the second")
-        capture("thread-second-request")
-        reveal(app.buttons["Not now"])
-        app.buttons["Not now"].tap()
-        let requests = app.buttons["thread-requests"]
-        XCTAssertTrue(requests.waitForExistence(timeout: 5))
-        requests.tap()
-        app.buttons["Which release should I prepare?"].tap()
-        XCTAssertTrue(app.staticTexts["Which release should I prepare?"].waitForExistence(timeout: 5))
-        reveal(app.buttons["Not now"])
-        app.buttons["Not now"].tap()
+        XCTAssertFalse(app.staticTexts[permission].waitForExistence(timeout: 2), "Not now doesn't raise the next request either")
         XCTAssertTrue(requests.waitForExistence(timeout: 5))
         requests.tap()
         app.buttons[permission].tap()
         XCTAssertTrue(app.staticTexts[permission].waitForExistence(timeout: 5), "Both unanswered requests remain reachable from the composer")
+        capture("thread-second-request")
         reveal(app.buttons["Not now"])
         app.buttons["Not now"].tap()
         back()
@@ -1871,9 +1872,6 @@ import UIKit
     func testNewThreadFieldsOpenFromTheirWholeBox() {
         launch(Self.fixture)
         app.buttons["new-thread"].tap()
-        let computer = app.buttons["new-thread-computer-\(laptop)"]
-        XCTAssertTrue(computer.waitForExistence(timeout: 5))
-        computer.tap()
         let project = app.buttons["new-thread-project-sotto"]
         XCTAssertTrue(project.waitForExistence(timeout: 5))
         project.tap()
@@ -2071,13 +2069,14 @@ import UIKit
                 app.tab("Threads").tap()
             }
             app.buttons["new-thread"].tap()
-            app.buttons["new-thread-computer-\(laptop)"].tap()
             let browse = app.buttons["browse-project-folder"]
+            XCTAssertTrue(browse.waitForExistence(timeout: 5))
             reveal(browse); browse.tap()
             let problem = app.staticTexts["Sotto did not answer in time. Try again."]
             XCTAssertTrue(problem.waitForExistence(timeout: 5))
             reveal(problem)
             XCTAssertFalse(app.staticTexts["Delivery is unconfirmed. Check the thread before sending again."].exists)
+            XCTAssertTrue(app.buttons["folders-try-again"].exists, "A read that timed out has a Try again button")
             capture("folder-read-timeout-" + appearance)
             app.buttons["Home"].tap()
             XCTAssertTrue(problem.waitForExistence(timeout: 5))

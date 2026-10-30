@@ -558,7 +558,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const threadMoves = crossMachine && options.runsAs !== 'headless-host' && watcher && branchMoves
     ? new ThreadMoveService(directory, { control: agentControl, workspace: agentHost, branches: branchMoves, watch: watcher,
       news: move => watcher.wakes.threadMoved(move), ...delegation ? { delegations: delegation } : {},
-      ...movesHere ? { here: { supportsThreadMove: true, threadMove: request => movesHere.handle(request, thisComputer) } } : {} }) : undefined
+      ...movesHere ? { here: { supportsThreadMove: true, supportsThreadMoveKeep: true, threadMove: request => movesHere.handle(request, thisComputer) } } : {} }) : undefined
   await threadMoves?.load()
   // A run that does not move threads, stable among them, still reads the record and keeps every move not finished fenced,
   // and its worktree kept: that thread may already work on another machine. Nothing steps, and nothing is shown.

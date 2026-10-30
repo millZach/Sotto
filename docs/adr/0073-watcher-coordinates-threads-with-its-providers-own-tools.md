@@ -758,3 +758,14 @@ Sotto's own rule settled the perf thread 4c343f94 four times on October 29 (18:1
 - **A settle finishes before its watch ends.** The look that ends a settled thread's watch could run between `settle_thread` writing the settle and recording its outcome, fail the operation as `REQUEST_NOT_ACTIVE`, and answer Watcher refused for a thread it had settled. The look now waits for Watcher's own settle of a thread still under way and ends that watch on its next look.
 
 This supersedes October 20's "Main does it, not Watcher's model", its definition of done as the trigger, "Quiet", "Once per turn" and "Turning it on settles what already qualifies", and October 21's pending settles. A thread Watcher settles is still settled the way `settle_thread` always settled one, and on a paired host through Watcher's ordinary operation, not the user's Settle.
+
+## Amended October 30, 2026: the first entry says it once
+
+From the desktop UI review (#1822). Before Watcher starts, its room said that the first message starts it three times: in the last of three centred paragraphs, in the placeholder ("Sending starts Watcher.") and in the footnote. Zach picked A, one sentence, from `look-fixes-prototype.html` on the tag `prototype/ui-hillclimb-desktop`:
+
+- Above the composer, left-aligned with it, one sentence: "Watcher starts your other threads, briefs them and keeps an eye on them while they work. Your first message starts it." It is followed by **How Watcher works**, which opens Help at its Watcher topic. With no model to start it on, the sentence ends before "Your first message starts it", and the line to connect a provider and Open Settings follow as before.
+- Help's Watcher topic, **How Watcher works**, holds what the paragraphs said: what Watcher is, that it runs on the user's own provider account with that provider's tools, hands changes to the threads rather than making them itself, and that only the user answers a thread's questions and permissions. It shows only where Watcher does (ADR-0072).
+- The placeholder is "Say what to start or check." and the footnote under the composer names the model and the account alone: "On Sonnet 4.5, with your own Claude Code account."
+- The heading "Start Watcher" stays for assistive technology, which finds the room by it, and is no longer drawn. The owl over it is gone; the night scene is unchanged.
+
+The first entry is still the room as it will be, with no separate start screen.

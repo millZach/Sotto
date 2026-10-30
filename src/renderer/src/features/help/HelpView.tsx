@@ -1,4 +1,4 @@
-import React, { type ReactNode } from 'react'
+import React, { useEffect, useRef, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 
@@ -6,7 +6,11 @@ import type { SottoPlatform } from '../../../../shared/platform'
 import { releaseTrackName, type ReleaseTrack } from '../../../../shared/releaseTrack'
 import { ShortcutKey } from '../../components/ShortcutKey'
 import { platformCopy } from '../../platformCopy'
+import { useWatcherEnabled } from '../../state/watcherFeature'
+import { useWatcherProviderWords } from '../../watcher/watcherProviders'
 import { linuxKeyWords } from '../omarchy/linuxKeys'
+import { dismissDisclosure } from '../usage/UsageCharts'
+import type { HelpRequest, HelpTopicId } from './helpTopics'
 
 export interface HelpViewProps {
   readonly shortcut: string
@@ -17,16 +21,21 @@ export interface HelpViewProps {
   readonly version?: string | undefined
   /** The running build's track, which names it in the About line; stable when unknown. */
   readonly releaseTrack?: ReleaseTrack | undefined
+  /** A topic another page asked Help to open at, such as Watcher's room's How Watcher works. */
+  readonly openTopic?: HelpRequest | null | undefined
 }
 
 interface Topic {
   readonly title: string
   readonly body: ReactNode
+  /** Set on a topic another page can open Help at. */
+  readonly id?: HelpTopicId
 }
 
 function TopicList({ topics }: { readonly topics: readonly Topic[] }): ReactNode {
   return topics.map((topic) => (
-    <details className="help-topic" key={topic.title} open>
+    // Escape folds an open topic and leaves focus on its title, as Usage's disclosures do.
+    <details className="help-topic" key={topic.title} id={topic.id} open onKeyDown={dismissDisclosure}>
       <summary>
         <h2>{topic.title}</h2>
         <ChevronDown size={16} aria-hidden="true" />
@@ -36,8 +45,22 @@ function TopicList({ topics }: { readonly topics: readonly Topic[] }): ReactNode
   ))
 }
 
-export function HelpView({ shortcut, holdShortcut, platform, version, releaseTrack = 'stable' }: HelpViewProps): ReactNode {
+export function HelpView({ shortcut, holdShortcut, platform, version, releaseTrack = 'stable', openTopic = null }: HelpViewProps): ReactNode {
   const { t } = useLingui()
+  const watcher = useWatcherEnabled()
+  const providers = useWatcherProviderWords()
+  const view = useRef<HTMLDivElement>(null)
+  // A topic asked for comes into view with focus on its title, once for each request.
+  const opened = useRef<number | null>(null)
+  useEffect(() => {
+    if (openTopic === null || opened.current === openTopic.key) return
+    opened.current = openTopic.key
+    const topic = view.current?.querySelector<HTMLDetailsElement>(`#${openTopic.topic}`)
+    if (!topic) return
+    topic.open = true
+    topic.scrollIntoView?.({ block: 'start' })
+    topic.querySelector<HTMLElement>('summary')?.focus({ preventScroll: true })
+  }, [openTopic])
   const copy = platformCopy(platform)
   const name = releaseTrackName(releaseTrack)
   // An Owl version is one word on the line, never broken at its hyphen; a stable version has none to break at.
@@ -63,6 +86,13 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
       : { title: t`Shortcut conflicts`, body: <p className="tt-paragraph"><Trans>If another application owns a shortcut, Sotto keeps your previous working shortcut active. In Settings › Dictation, press the shortcut, then hold the keys you want instead and let go.</Trans></p> },
     { title: t`Transcription`, body: <p className="tt-paragraph"><Trans>A speech model transcribes your speech on this computer. Choose it in Settings → Dictation, under Speech model: Parakeet Ultra, by Moondream, which setup suggests, or Parakeet v3 or v2, by NVIDIA, each downloaded once (about 670 MB) when you choose it, and on an Apple silicon Mac the Core ML models FluidAudio keeps are offered too. Settings shows whether the chosen one is ready.</Trans></p> },
   ]
+  const watcherTopics: Topic[] = [
+    { id: 'help-watcher', title: t`How Watcher works`, body: <>
+      <p className="tt-paragraph"><Trans>Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work.</Trans></p>
+      <p className="tt-paragraph"><Trans>It runs on your own {providers} account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions.</Trans></p>
+      <p className="tt-paragraph"><Trans>In Watcher’s room, pick its model and what it may do without asking in its composer, then send what you want done first. That message starts it.</Trans></p>
+    </> },
+  ]
   const privacy: Topic[] = [
     { title: t`Privacy`, body: <p className="tt-paragraph"><Trans>Audio you dictate never leaves this computer. AI cleanup, when it is on, sends the transcript text to OpenRouter on your key. Agent prompts go to the connected coding provider. Transcripts and the numbers the Dictate room counts stay on this computer.</Trans></p> },
   ]
@@ -74,12 +104,14 @@ export function HelpView({ shortcut, holdShortcut, platform, version, releaseTra
   ]
 
   return (
-    <div className="management-view help-view">
+    <div ref={view} className="management-view help-view">
       <h1><Trans>Help</Trans></h1>
       <div className="help-grid">
         <div className="tt-panel help-topics">
           <p className="tt-instrument help-topics__group"><Trans>Getting started</Trans></p>
           <TopicList topics={gettingStarted} />
+          {watcher ? <><p className="tt-instrument help-topics__group">Watcher</p>
+          <TopicList topics={watcherTopics} /></> : null}
           <p className="tt-instrument help-topics__group"><Trans>Privacy</Trans></p>
           <TopicList topics={privacy} />
           <p className="tt-instrument help-topics__group"><Trans>Troubleshooting</Trans></p>

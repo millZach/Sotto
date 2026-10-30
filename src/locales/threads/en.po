@@ -5235,10 +5235,6 @@ msgstr "No model source matches “{typed}”."
 msgid "No models were returned. Refresh this provider to check again."
 msgstr "No models were returned. Refresh this provider to check again."
 
-#: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "No open threads."
-msgstr "No open threads."
-
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "No preview for this file type"
 msgstr "No preview for this file type"
@@ -5268,7 +5264,6 @@ msgid "No skills match “{query}”."
 msgstr "No skills match “{query}”."
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
-#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "No threads yet."
 msgstr "No threads yet."
 
@@ -5471,6 +5466,11 @@ msgstr "on {date} at {clock}"
 msgid "On {hostName}"
 msgstr "On {hostName}"
 
+#. Leads a Git action refused because another thread or Sotto holds the folder. Nothing failed and nothing was changed.
+#: src/renderer/src/agents/GitActionButton.tsx
+msgid "On hold"
+msgstr "On hold"
+
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
 msgstr "On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
@@ -5523,6 +5523,8 @@ msgstr "Open {sourceTitle}"
 msgid "Open {threadTitle}"
 msgstr "Open {threadTitle}"
 
+#. {title} is the title of the thread that holds this folder. Opens that thread.
+#: src/renderer/src/agents/checkoutHold.ts
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "Open {title}"
 msgstr "Open {title}"

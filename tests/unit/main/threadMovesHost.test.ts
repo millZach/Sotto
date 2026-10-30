@@ -20,17 +20,26 @@ afterEach(async () => { await rm(directory, { recursive: true, force: true }) })
 
 /**
  * A host's coordinator: commands dispatch after `gate` opens, asking their guard as they go, as the real one does; a
- * guard that refuses leaves nothing made or sent.
+ * guard that refuses leaves nothing made or sent. `atGate` hears a command arrive at the gate, its guard asked once.
  */
 function host() {
-  const threads: AgentThread[] = [], sent: string[] = []
-  const state = { mayAnswer: true, gate: Promise.resolve() as Promise<void>, linkFails: 0 }
+  const threads: AgentThread[] = [], sent: string[] = [], stopped: string[] = []
+  const state = { mayAnswer: true, gate: Promise.resolve() as Promise<void>, atGate: undefined as (() => void) | undefined, linkFails: 0, interruptFails: false }
   const control = {
     watcherSnapshot: () => ({ ...EMPTY_AGENT_HOST, models: [model], projects: [{ id: 'project', title: 'Sotto', path: '/forge/sotto' }], threads }),
-    commandFromMove: async (command: Extract<AgentCommand, { type: 'create-thread' | 'manual-send' }>, guard: () => void): Promise<AgentState> => {
+    commandFromMove: async (command: Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'interrupt' | 'settle-thread' }>, guard: () => void): Promise<AgentState> => {
       guard()
+      state.atGate?.()
       await state.gate
       try { guard() } catch (error) { return { error: (error as Error).message } as AgentState }
+      // Keep it here (part 4) stops and settles the thread a move made.
+      if (command.type === 'interrupt') {
+        stopped.push(command.threadId)
+        if (state.interruptFails) return { error: 'The turn did not stop.' } as AgentState
+        threads.find(item => item.id === command.threadId)!.status = 'idle'
+        return { error: null } as AgentState
+      }
+      if (command.type === 'settle-thread') { threads.find(item => item.id === command.threadId)!.workspaceSettledAt = new Date().toISOString(); return { error: null } as AgentState }
       if (command.type === 'create-thread') {
         threads.push({ id: command.threadId!, projectId: command.projectId, title: command.title, modelId: command.modelId, status: 'idle', requests: [], messages: [],
           ...command.runtimeMode ? { runtimeMode: command.runtimeMode } : {} })
@@ -42,7 +51,7 @@ function host() {
   }
   const workspace = { setContinuedFrom: async () => { if (state.linkFails > 0) { state.linkFails--; throw new Error('The record could not be saved.') } } }
   const moves = new HostThreadMoves(directory, { control, workspace, mayAnswer: () => state.mayAnswer })
-  return { threads, sent, state, moves }
+  return { threads, sent, stopped, state, moves }
 }
 const request = (moveId = randomUUID(), runtimeMode: HostThreadMoveStart['runtimeMode'] = 'full-access'): HostThreadMoveStart => ({ action: 'start', moveId, projectId: 'project',
   title: 'WAV preview stall', modelId: model.id, runtimeMode, from: { threadId: 'source', provider: 'codex', hostId: randomUUID() }, prompt: 'The handover and the facts.',
@@ -98,8 +107,11 @@ describe('the answers grant, read as each command dispatches (ADR-0004)', () => 
     const h = host()
     let open!: () => void
     h.state.gate = new Promise(done => { open = done })
+    // The grant goes once the thread's making waits at the gate, after its record was written and the grant first read
+    // (#1886): taken away any sooner, the start reads it gone and is held to Ask for approval instead.
+    const waiting = new Promise<void>(done => { h.state.atGate = done })
     const asked = h.moves.handle(request(), desktop)
-    await new Promise(done => setTimeout(done, 10))
+    await waiting
     h.state.mayAnswer = false; open()
     expect(await asked).toEqual({ type: 'refused', reason: 'failed', message: HOST_THREAD_MOVE_WORDS.grantGone })
     expect(h.threads).toEqual([]); expect(h.sent).toEqual([])
@@ -263,5 +275,40 @@ describe('this host’s own thread as a move’s source (#1178 part 3)', () => {
       .toEqual({ type: 'refused', reason: 'unreadable', message: HOST_THREAD_MOVE_WORDS.unreadable })
     expect([...s.fences.keys()]).toEqual(['busy'])
     expect(s.held.keepsWorktree('anything')).toBe(true)
+  })
+})
+
+describe('calling a move off here with Keep it here (#1178 part 4)', () => {
+  it('fences a move never started here, so a late start makes nothing', async () => {
+    const h = host(), ask = request()
+    expect(await h.moves.handle({ action: 'keep', moveId: ask.moveId }, desktop)).toEqual({ type: 'kept', moveId: ask.moveId, made: false })
+    expect(await h.moves.handle(ask, desktop)).toEqual({ type: 'refused', reason: 'kept', message: HOST_THREAD_MOVE_WORDS.kept })
+    expect(h.threads).toEqual([]); expect(h.sent).toEqual([])
+    // Asked again, the same answer; another desktop cannot call it off.
+    expect(await h.moves.handle({ action: 'keep', moveId: ask.moveId }, desktop)).toEqual({ type: 'kept', moveId: ask.moveId, made: false })
+    expect(await h.moves.handle({ action: 'keep', moveId: ask.moveId }, { ...desktop, clientId: 'other' })).toMatchObject({ type: 'refused', reason: 'move-differs' })
+  })
+  it('stops and settles the thread a move made, and sends it nothing more', async () => {
+    const h = host(), ask = request()
+    const started = await h.moves.handle(ask, desktop) as { threadId: string }
+    h.threads.find(thread => thread.id === started.threadId)!.status = 'running'
+    expect(await h.moves.handle({ action: 'keep', moveId: ask.moveId }, desktop)).toEqual({ type: 'kept', moveId: ask.moveId, made: true })
+    expect(h.stopped).toEqual([started.threadId])
+    expect(h.threads.find(thread => thread.id === started.threadId)?.workspaceSettledAt).toEqual(expect.any(String))
+    expect(await h.moves.handle(ask, desktop)).toMatchObject({ type: 'refused', reason: 'kept' })
+    expect(h.sent).toHaveLength(1)
+    expect(JSON.parse(await readFile(join(directory, 'thread-moves.json'), 'utf8')).moves[0]).toMatchObject({ moveId: ask.moveId, kept: true })
+  })
+  it('says nothing is kept while the thread it made is still running, and settles nothing until it stops', async () => {
+    const h = host(), ask = request()
+    const started = await h.moves.handle(ask, desktop) as { threadId: string }
+    h.threads.find(thread => thread.id === started.threadId)!.status = 'running'
+    h.state.interruptFails = true
+    await expect(h.moves.handle({ action: 'keep', moveId: ask.moveId }, desktop)).rejects.toThrow('has not stopped yet')
+    expect(h.threads.find(thread => thread.id === started.threadId)?.workspaceSettledAt).toBeUndefined()
+    // Its start is refused already, and once the turn stops, the next ask keeps it.
+    expect(await h.moves.handle(ask, desktop)).toMatchObject({ type: 'refused', reason: 'kept' })
+    h.state.interruptFails = false
+    expect(await h.moves.handle({ action: 'keep', moveId: ask.moveId }, desktop)).toEqual({ type: 'kept', moveId: ask.moveId, made: true })
   })
 })

@@ -32,7 +32,7 @@ process.on('exit', finish)
 let preserved: ReadonlySet<string> = new Set()
 const store = new ThreadStore(data.path, threadId => preserved.has(threadId), null)
 
-/** The list last committed for each thread, as sent: what the next list, sent as what changed, is rebuilt from. */
+/** The list last committed or read back for each thread: what the next list, sent as what changed, is rebuilt from. */
 const lists = new Map<string, { readonly version: number; readonly activities: readonly AgentActivity[] }>()
 
 class StaleList extends Error {
@@ -113,13 +113,15 @@ function apply(write: WireWrite): ThreadStoreWriteOutcome & { memory?: true } {
 const readsLeft = new Map<number, { readonly activities: readonly AgentActivity[]; readonly from: number }>()
 
 /**
- * A stored thread's records read back for a window: the query, the parse and the schema check run here, and main receives
- * the records a piece at a time. The store keeps them, as main's did, so the thread's next save compares with them; a
- * release lets them go.
+ * A stored thread's records read back: the query, the parse and the schema check run here, and main receives the records a
+ * piece at a time. The store keeps them, as main's did, so the thread's next save compares with them; a release lets them
+ * go. They are also the list main's next save of the thread is sent as changes to (#1645): what the store holds is the
+ * list main now holds, record for record.
  */
 function readBack(request: Extract<WorkerRequest, { kind: 'read-activities' }>): WorkerReadAnswer {
   let activities: readonly AgentActivity[]
   try { activities = store.readActivities(request.threadId, { shared: true }) } catch { return { read: request.read } }
+  lists.set(request.threadId, { version: request.version, activities })
   return piece(request.read, activities, 0)
 }
 

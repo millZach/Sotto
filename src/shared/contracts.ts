@@ -516,6 +516,8 @@ export interface SottoBridge {
   onUpdateStatus(listener: (status: UpdateStatus) => void): Unsubscribe
   /** The application menu's "Check for Updates…": the window runs the same check its own control would. */
   onUpdateCheckRequested(listener: () => void): Unsubscribe
+  /** The application menu's Settings… (Cmd+, on a Mac, Ctrl+, elsewhere): the window opens Settings. */
+  onSettingsRequested(listener: () => void): Unsubscribe
 
   getStartup(): Promise<StartupState>
   setStartup(enabled: boolean): Promise<StartupState>

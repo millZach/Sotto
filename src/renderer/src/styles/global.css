@@ -64,6 +64,21 @@ summary,
   user-select: none;
 }
 
+/* The pointer (#1832). A control shows the arrow, as a desktop app's buttons, rows, tabs and toggles do; the hand is
+   only for a link that opens a page or a file, in a reply or out to the web, and for a text link drawn as a button
+   that opens a page outside Sotto, which says so with `data-outside-link`; text keeps the I-beam. This is the one
+   place either is set: zero specificity, so a disabled, dragged or resizing control's own cursor still wins, and a
+   choice drawn as a label or a row says `cursor: default` itself, since a label would hand it to a field inside. */
+:where(button, summary, select, [role='button'], [role='tab'], [role='switch'], [role='checkbox'], [role='radio'],
+  [role='menuitem'], [role='menuitemradio'], [role='menuitemcheckbox'], [role='option'], [role='slider'], [role='treeitem'],
+  input:is([type='checkbox'], [type='radio'], [type='range'], [type='button'], [type='submit'], [type='color'], [type='file'])) {
+  cursor: default;
+}
+
+:where(a[href], [role='link'], [data-outside-link]) {
+  cursor: pointer;
+}
+
 /* Native Windows popups can use a light background even for a dark select.
    Keep the option surface and text paired instead of inheriting only the ink. */
 select option,
@@ -113,9 +128,10 @@ h1[tabindex='-1']:focus {
 
 /* The platform scrollbar is dressed down to a hairline thumb on an empty
    track. The widget is excluded: it never scrolls and its styling is frozen. */
+:root { --tt-scrollbar-size: 10px; }
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: var(--tt-scrollbar-size);
+  height: var(--tt-scrollbar-size);
 }
 
 ::-webkit-scrollbar-track,
@@ -182,7 +198,6 @@ h1[tabindex='-1']:focus {
   padding: 0 14px;
   background: var(--tt-surface);
   color: var(--tt-text-2);
-  cursor: pointer;
   font-size: 13.5px;
   font-weight: 500;
   line-height: 1.2;
@@ -376,7 +391,6 @@ textarea.tt-input {
   border: 0;
   background: transparent;
   padding: 2px 0;
-  cursor: pointer;
   text-align: left;
 }
 
@@ -655,17 +669,18 @@ textarea.tt-input {
 
 /* ---- onboarding ---- */
 
-/* The progress and the card fill the room. Every step fits the card from the 820x560 minimum up, so the card's
-   own scroll is only for an error or a pairing code on a window at its smallest. */
+/* The progress, then the card, from the top of the room so the progress stays put from step to step. The card is as
+   tall as its step, up to the room (#1824): a step too tall for the window scrolls its body as a whole, under the progress
+   and over the footer, which stays in view under it. */
 .onboarding-shell {
   display: flex;
   height: 100%;
   min-height: 0;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   overflow: hidden;
-  padding: 20px 24px 22px;
+  padding: clamp(20px, 7vh, 72px) 24px 22px;
   background:
     radial-gradient(circle at 50% 118%, color-mix(in srgb, var(--tt-activity) 12%, transparent), transparent 46%),
     var(--tt-canvas);
@@ -681,11 +696,9 @@ textarea.tt-input {
   display: block;
   margin-bottom: 8px;
   color: var(--tt-text-muted);
-  font-size: 11.5px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-size: 12.5px;
+  font-weight: 500;
   text-align: center;
-  text-transform: uppercase;
 }
 
 /* One bar per step, gathered under its group's name; each group is as wide as it has steps. */
@@ -739,15 +752,18 @@ textarea.tt-input {
   font-weight: 600;
 }
 
+/* A card is a fill one step off the room, with no outline (ADR-0110). */
 .onboarding-card {
   display: flex;
   width: min(680px, 100%);
   min-height: 0;
-  flex: 0 1 600px;
+  flex: 0 1 auto;
   flex-direction: column;
   overflow: hidden;
+  border: 0;
+  background: var(--tt-card);
+  box-shadow: none;
   padding: 0;
-  box-shadow: var(--tt-shadow-lg);
 }
 
 .onboarding-card__body {
@@ -777,15 +793,6 @@ textarea.tt-input {
 .onboarding-card .tt-input,
 .onboarding-card .tt-select {
   font-size: 13.5px;
-}
-
-.onboarding-eyebrow {
-  margin: 0 0 -4px;
-  color: var(--tt-text-muted);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
 }
 
 .onboarding-card h1 {
@@ -853,27 +860,24 @@ textarea.tt-input {
   margin: 0;
 }
 
-/* One row: the wave, the sentence, the button at the end; the button takes the next row when the card is narrow. */
-.onboarding-microphone-test,
-.settings-microphone-test {
+/* One row: the wave, the sentence, the button at the end; the button takes the next row when the card is narrow. A fill
+   on the card, with no outline (ADR-0110). */
+.onboarding-microphone-test {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 12px 16px;
-  border: 1px solid var(--tt-hairline);
   border-radius: var(--tt-radius-md);
-  background: var(--tt-surface-sunken);
+  background: var(--tt-card-inset);
   padding: 14px 16px;
 }
 
 /* The same wave the widget and the Dictate room show, resting until the test hears something. */
-.onboarding-microphone-test .voice-wave,
-.settings-microphone-test .voice-wave {
+.onboarding-microphone-test .voice-wave {
   flex: none;
 }
 
-.onboarding-microphone-test p,
-.settings-microphone-test p {
+.onboarding-microphone-test p {
   flex: 1 1 180px;
   min-width: 0;
   margin: 0;
@@ -890,11 +894,7 @@ textarea.tt-input {
   font-weight: 600;
 }
 
-/* Heard: the box takes the success colour and a check stands where the wave was. */
-.onboarding-microphone-test[data-state='heard'] {
-  border-color: color-mix(in srgb, var(--tt-success) 55%, var(--tt-hairline));
-  background: color-mix(in srgb, var(--tt-success) 8%, var(--tt-surface-sunken));
-}
+/* Heard: a check stands where the wave was, and the sentence says so. */
 
 /* While the microphone opens the button waits rather than disabling, so keyboard focus stays on it. */
 .onboarding-microphone-test .tt-button[aria-disabled='true'] {
@@ -913,8 +913,7 @@ textarea.tt-input {
   color: var(--tt-success);
 }
 
-.onboarding-microphone-test .tt-button,
-.settings-microphone-test .tt-button {
+.onboarding-microphone-test .tt-button {
   flex: none;
   margin-left: auto;
 }
@@ -924,37 +923,18 @@ textarea.tt-input {
   margin-left: 0;
 }
 
-/* The settings card sits in a control column about 240px wide, where the wave, the sentence and the button never
-   share a line: they stack, left-aligned, and the button takes the card's width. */
-.settings-microphone-test {
-  grid-template-columns: minmax(0, 1fr);
-  display: grid;
-  gap: 10px;
-}
-
-.settings-microphone-test .voice-wave {
-  justify-self: start;
-}
-
-.settings-microphone-test .tt-button {
-  width: 100%;
-  margin-left: 0;
-  justify-content: center;
-}
-
+/* Setup's notes are fills on the card, with no edge and no tint: their words say what went wrong (ADR-0110). */
 .onboarding-recovery,
 .onboarding-completion-error {
   margin: 0;
-  border-left: 2px solid var(--tt-warning);
-  background: color-mix(in srgb, var(--tt-warning) 9%, transparent);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card-inset);
   padding: 12px 14px;
   font-size: 13px;
 }
 
 .onboarding-completion-error {
   margin-top: 14px;
-  border-left-color: var(--tt-error);
-  background: color-mix(in srgb, var(--tt-error) 9%, transparent);
 }
 
 .onboarding-ready {
@@ -962,10 +942,10 @@ textarea.tt-input {
   align-items: center;
   gap: 11px;
   margin: 0;
-  border-left: 2px solid var(--tt-success);
-  background: color-mix(in srgb, var(--tt-success) 9%, transparent);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card-inset);
   padding: 14px;
-  color: var(--tt-success);
+  color: var(--tt-text);
   font-size: 13.5px;
 }
 
@@ -1025,7 +1005,7 @@ textarea.tt-input {
   min-height: 44px;
   align-items: start;
   gap: 8px;
-  cursor: pointer;
+  cursor: default;
 }
 
 .onboarding-consent input {
@@ -1042,9 +1022,8 @@ textarea.tt-input {
   justify-content: space-between;
   gap: 16px;
   margin: 0;
-  border: 1px solid var(--tt-hairline);
   border-radius: var(--tt-radius-md);
-  background: var(--tt-surface-sunken);
+  background: var(--tt-card-inset);
   padding: 14px 16px;
   color: var(--tt-text-muted);
   font-size: 13px;
@@ -1307,7 +1286,6 @@ textarea.tt-input {
   font-size: 13px;
   font-weight: 500;
   white-space: nowrap;
-  cursor: pointer;
   transition: background-color 200ms ease, color 200ms ease, gap 250ms ease, padding 250ms ease;
 }
 
@@ -1471,7 +1449,6 @@ textarea.tt-input {
   border-radius: 6px;
   background: transparent;
   color: var(--tt-text-faint);
-  cursor: pointer;
   transition: background-color 120ms ease, color 120ms ease;
   -webkit-app-region: no-drag;
 }
@@ -1577,7 +1554,6 @@ textarea.tt-input {
   font: inherit;
   text-decoration: underline dotted;
   text-underline-offset: 4px;
-  cursor: pointer;
   transition: color 120ms ease;
 }
 
@@ -1959,7 +1935,7 @@ textarea.tt-input {
   min-height: 44px;
   align-items: center;
   gap: 9px;
-  cursor: pointer;
+  cursor: default;
 }
 
 .settings-download-dialog input {
@@ -1997,7 +1973,6 @@ textarea.tt-input {
   justify-content: space-between;
   gap: 12px;
   padding: 10px 16px;
-  cursor: pointer;
   list-style: none;
   transition: background-color 120ms ease, color 120ms ease;
 }

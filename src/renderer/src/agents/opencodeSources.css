@@ -33,7 +33,7 @@
 .oc-search input::placeholder { color: var(--tt-text-faint); }
 .oc-pick { flex: 1; min-height: 0; overflow-y: auto; margin: 10px -12px 0; padding: 0 12px 4px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .oc-group-head { position: sticky; top: 0; z-index: 1; margin: 0 -12px; padding: 10px 22px 4px; background: var(--tt-surface-elevated); color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
-.oc-opt { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; text-align: left; cursor: pointer; scroll-margin: 32px 0 4px; }
+.oc-opt { display: flex; align-items: center; gap: 12px; width: 100%; min-height: 40px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; text-align: left; scroll-margin: 32px 0 4px; }
 .oc-opt:hover, .oc-opt:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
 .oc-opt:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 .oc-opt[aria-disabled='true'] { cursor: default; }
@@ -42,13 +42,13 @@
 .oc-opt:hover .oc-opt__how, .oc-opt:focus-visible .oc-opt__how { color: var(--tt-text-2); }
 .oc-opt[aria-disabled='true'] .oc-opt__how { display: inline-flex; align-items: center; gap: 5px; color: var(--tt-activity); }
 .oc-none { margin: 0; padding: 14px 10px; color: var(--tt-text-muted); font-size: 13.5px; }
-.oc-back { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; height: 30px; margin: 0 0 10px -10px; padding: 0 10px 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.oc-back { display: inline-flex; align-items: center; gap: 4px; align-self: flex-start; height: 30px; margin: 0 0 10px -10px; padding: 0 10px 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .oc-back:hover { background: var(--tt-hover); color: var(--tt-text); }
 .oc-back:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .oc-back:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
 .oc-methods { display: grid; gap: 8px; margin: 16px 0 0; padding: 0; border: 0; min-width: 0; }
 .oc-methods legend { margin-bottom: 8px; padding: 0; color: var(--tt-text); font-size: 13.5px; font-weight: 600; }
-.oc-method { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 2px 10px; padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; color: var(--tt-text); cursor: pointer; }
+.oc-method { display: grid; grid-template-columns: 18px minmax(0, 1fr); gap: 2px 10px; padding: 10px 12px; border: 1px solid var(--tt-hairline); border-radius: 10px; color: var(--tt-text); cursor: default; }
 .oc-method:has(input:checked) { border-color: var(--tt-text-faint); background: var(--tt-surface-overlay); }
 .oc-method:has(input:focus-visible) { outline: 2px solid var(--tt-focus-ring); outline-offset: 1px; }
 .oc-method input { width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--tt-accent); }

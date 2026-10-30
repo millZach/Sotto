@@ -829,6 +829,29 @@ extension View {
     func pageGround() -> some View {
         background { PageGround().ignoresSafeArea().accessibilityHidden(true) }
     }
+
+    /// The page's ground behind a bar floating at the bottom of a page, such as the reply box: clear `reach` points above
+    /// the bar, solid from its top down to the screen's edge. What scrolls under the bar fades out before it reaches it,
+    /// instead of showing in the gaps between + and the box (#1847).
+    func dockFade(reach: CGFloat = Space.s4) -> some View { dockFade(reach: reach) { PageGround() } }
+
+    /// `dockFade` on a ground of the caller's, for a sheet whose surface isn't the page's.
+    func dockFade<Ground: View>(reach: CGFloat = Space.s4, @ViewBuilder ground: () -> Ground) -> some View {
+        let fill = ground()
+        return background(alignment: .top) {
+            fill
+                .mask {
+                    VStack(spacing: 0) {
+                        LinearGradient(colors: [.clear, .black], startPoint: .top, endPoint: .bottom).frame(height: reach)
+                        Rectangle()
+                    }
+                }
+                .padding(.top, -reach)
+                .ignoresSafeArea(edges: .bottom)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
 }
 
 /// Frosted glass: a material with a translucent tint of the surface and a hairline highlight. Under Reduce
