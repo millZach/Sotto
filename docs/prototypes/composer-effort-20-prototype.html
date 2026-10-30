@@ -113,6 +113,7 @@ section.dir[data-current] { box-shadow: inset 3px 0 0 #ecebe6; }
 section.dir header { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin: 0 0 4px; }
 section.dir h2 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: -.005em; }
 section.dir header b { display: inline-grid; place-items: center; min-width: 28px; height: 22px; padding: 0 5px; border-radius: 5px; background: #ecebe6; color: #121211; font-size: 12px; font-variant-numeric: tabular-nums; }
+section.dir[data-follow] header b { background: #f2d024; color: #121211; }
 section.dir[data-id='0'] header b { background: #3a3a3d; color: #ecebe6; }
 section.dir header .fam { color: #8f8e88; font-size: 12.5px; }
 section.dir header .wd { margin-left: auto; color: #8f8e88; font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -277,6 +278,8 @@ svg.i { width: 15px; height: 15px; fill: none; stroke: currentcolor; stroke-widt
 /* 11 split chip */
 .v11 { display: inline-flex; align-items: center; height: 28px; border-radius: 8px; background: color-mix(in oklab, var(--tt-text) 6%, var(--tt-card)); }
 .v11 .mdl { border-radius: 8px 0 0 8px; padding-right: 8px; }
+.v11 .v11s { border-radius: 8px 0 0 8px; width: 30px; }
+.v11 .v11s + .dv + .mdl { border-radius: 0; padding-left: 8px; }
 .v11 .dv { width: 1px; height: 14px; background: var(--tt-hairline); }
 .v11 .wordbtn { border-radius: 0 8px 8px 0; color: var(--tt-text-2); padding: 0 8px; gap: 5px; }
 
@@ -441,6 +444,7 @@ const chev = c => !c.speeds || c.sp === 'standard' ? '' : `<span class="glyph" a
 const ctlAttrs = (c, extra = '') => `data-fk="ctl" aria-label="Effort and speed" aria-valuemin="1" aria-valuemax="${c.n}" aria-valuenow="${c.i + 1}" aria-valuetext="${esc(valueText(c))}"${c.speeds ? ' aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"' : ''} ${extra}`
 const sliderCtl = (c, cls, inner, extra = '') => `<span class="ctl ${cls}" role="slider" tabindex="0" ${ctlAttrs(c, extra)}>${inner}</span>`
 const menuCtl = (c, cls, inner, extra = '') => `<button type="button" class="ctl ${cls}" data-act="menu" aria-haspopup="dialog" data-fk="ctl" aria-label="Effort and speed: ${esc(valueText(c))}"${c.speeds ? ' aria-keyshortcuts="ArrowLeft ArrowRight Alt+ArrowUp Alt+ArrowDown"' : ' aria-keyshortcuts="ArrowLeft ArrowRight"'} ${extra}>${inner}</button>`
+const shieldBtn = (cls = '') => `<button type="button" class="ib sh ${cls}" data-fk="shield" data-tip="Permissions: Full access" aria-label="Permissions, Full access">${ico(P.shield)}</button>`
 const modelBtn = (c, inner) => `<button type="button" class="mdl" data-act="model" data-fk="model" data-tip="Thread model: ${esc(c.m.name)}" aria-label="Thread model, ${esc(c.m.name)}">${inner ?? mark(c) + `<span>${esc(c.m.name)}</span>`}</button>`
 
 /* ---------- the twenty, and today ---------- */
@@ -534,6 +538,30 @@ const V = [
   ind: c => `<span class="v11"><span class="mdl">${mark(c)}<span>${esc(c.m.name)}</span></span><i class="dv"></i><span class="wordbtn"><span>${c.effort}</span>${bolts(c)}</span></span>`,
   parts: c => ({ model: `<span class="v11">${modelBtn(c)}<i class="dv"></i>${menuCtl(c, 'wordbtn', `<span>${c.effort}</span>${bolts(c)}`)}</span>` }) },
 
+{ num: '11a', name: 'Split chip, shield first inside', fam: 'Drake\'s follow-up to 11 · the shield opens the chip', words: true,
+  idea: 'Drake asked to see 11 with the shield on the left. In this take the shield joins the chip as its first part: permissions, then model, then effort, in one filled control with hairlines between. Everything about how the next message runs sits together, and the pill\'s right end is only the chip and Send.',
+  effort: 'A word in the chip\'s last part.', speed: 'A bolt in the chip, as in 02.',
+  hover: 'Each part highlights on its own, and each has its own tooltip.', focus: 'Three stops: permissions, model, effort. Arrows and ⌥↑↓ on effort.', click: 'The shield opens permissions, the model changes the model, and effort opens the effort and speed menu.',
+  costs: 'The longest chip of the three takes. The shield loses the space around it that made it read as its own control.',
+  parts: c => ({ shield: '', model: `<span class="v11">${shieldBtn('v11s')}<i class="dv"></i>${modelBtn(c)}<i class="dv"></i>${menuCtl(c, 'wordbtn', `<span>${c.effort}</span>${bolts(c)}`)}</span>` }),
+  ind: c => `<span class="v11"><span class="ib sh v11s">${ico(P.shield)}</span><i class="dv"></i><span class="mdl">${mark(c)}<span>${esc(c.m.name)}</span></span><i class="dv"></i><span class="wordbtn"><span>${c.effort}</span>${bolts(c)}</span></span>` },
+
+{ num: '11b', name: 'Split chip, shield just before it', fam: 'Drake\'s follow-up to 11 · the shield leads the chip', words: true,
+  idea: 'The shield moves from after the chip to just before it and stays its own bare control. The pill reads permissions, then model and effort, then Send. The shield keeps its gold and its outline, and the chip stays two parts.',
+  effort: 'A word in the chip\'s right half.', speed: 'A bolt in the chip, as in 02.',
+  hover: 'The shield and each half of the chip highlight on their own.', focus: 'Permissions, then model, then effort.', click: 'As in 11. The shield opens permissions.',
+  costs: 'The same width as 11. Send is no longer next to the shield, so the bare shield sits between the prompt and the chip.',
+  parts: c => ({ shield: '', model: `${shieldBtn()}<span class="v11">${modelBtn(c)}<i class="dv"></i>${menuCtl(c, 'wordbtn', `<span>${c.effort}</span>${bolts(c)}`)}</span>` }),
+  ind: c => `<span style="display:inline-flex;align-items:center;gap:2px"><span class="ib sh">${ico(P.shield)}</span><span class="v11"><span class="mdl">${mark(c)}<span>${esc(c.m.name)}</span></span><i class="dv"></i><span class="wordbtn"><span>${c.effort}</span>${bolts(c)}</span></span></span>` },
+
+{ num: '11c', name: 'Split chip, shield at the pill\'s start', fam: 'Drake\'s follow-up to 11 · the shield beside attach', words: true,
+  idea: 'The shield goes to the far left of the pill, after attach: before you type, you see who the message may touch. The right end keeps only the chip and Send. The two settings sit apart, and permissions get the first word.',
+  effort: 'A word in the chip\'s right half.', speed: 'A bolt in the chip, as in 02.',
+  hover: 'As in 11. The shield\'s tooltip names the permissions.', focus: 'Attach, permissions, the prompt, model, effort, Send.', click: 'As in 11. The shield opens permissions.',
+  costs: 'The same width as 11. The shield moves away from the other settings, and the prompt starts 28px further right.',
+  parts: c => ({ shield: '', left: shieldBtn(), model: `<span class="v11">${modelBtn(c)}<i class="dv"></i>${menuCtl(c, 'wordbtn', `<span>${c.effort}</span>${bolts(c)}`)}</span>` }),
+  ind: c => `<span style="display:inline-flex;align-items:center;gap:6px"><span class="ib">${ico(P.clip)}</span><span class="ib sh">${ico(P.shield)}</span><span style="width:26px;height:1px;background:var(--tt-hairline)"></span><span class="v11"><span class="mdl">${mark(c)}<span>${esc(c.m.name)}</span></span><i class="dv"></i><span class="wordbtn"><span>${c.effort}</span>${bolts(c)}</span></span></span>` },
+
 { name: 'Speed tile', fam: 'Chip · its fill is the speed', words: true,
   idea: 'The effort word sits in a small tile, and the tile\'s fill is the speed: no tile at Standard, a quiet accent wash at Fast, solid accent at Ultra fast. It is the only colour-coded direction, and it uses the theme\'s accent rather than purple, so Citrine shows yellow and Sotto teal.',
   effort: 'A word.', speed: 'The tile: none, an accent wash, solid accent. The tooltip says it in words too.',
@@ -604,6 +632,8 @@ const V = [
   parts: c => ({ after: sliderCtl(c, 'v20', rank(c) + chev(c), 'data-act="track" data-axis="y"') }) },
 ]
 
+const num = k => V[k].num ?? String(V.slice(0, k + 1).filter(v => !v.num).length - 1).padStart(2, '0')
+
 /* ---------- drawn parts ---------- */
 function ring(c) {
   const r = 10, cx = 14, cy = 14, a = c.frac * 2 * Math.PI - Math.PI / 2
@@ -664,7 +694,7 @@ function rank(c) {
 /* ---------- a frame: the pane header, the last line, and the pill ---------- */
 function frame(v, id, c, theme) {
   const p = v.parts(c), draft = S.drafts[id] ?? ''
-  const shield = p.shield ?? `<button type="button" class="ib sh" data-fk="shield" data-tip="Permissions: Full access" aria-label="Permissions, Full access">${ico(P.shield)}</button>`
+  const shield = p.shield ?? shieldBtn()
   const disc = p.disc ?? `<button type="button" class="disc" data-fk="send" data-tip="Send" aria-label="Send">${ico(P.up)}</button>`
   return `<div class="pane t-${theme}" data-provider="${c.m.provider}" style="--cw:${S.cw}px">
   <div class="ph"><span class="ph__t">Fix the login flicker</span><span class="ph__c">sotto<i>/</i>main</span><span class="ph__x">${p.header ?? ''}<button type="button" class="ph__w" data-tip="Watch this thread">${ico(P.eye)}Watch</button></span></div>
@@ -681,8 +711,8 @@ function section(v, id) {
     const cs = ctx({ sp, speed: SPEED[sp] })
     return `<div class="sw t-${t}" data-provider="${c.m.provider}"><div class="in" inert>${v.ind ? v.ind(cs) : (v.parts(cs).after ?? '')}</div><small>${SPEED[sp]}</small></div>`
   })).join('')
-  return `<section class="dir" id="d${id}" data-id="${id}" ${S.cur === id ? 'data-current' : ''} aria-labelledby="h${id}">
-  <header><b>${String(id).padStart(2, '0')}</b><h2 id="h${id}">${v.name}</h2><span class="fam">${v.fam}${v.words ? ' · uses words' : ''}</span><span class="wd" data-measure="${id}"></span></header>
+  return `<section class="dir" id="d${id}" data-id="${id}" ${v.num ? 'data-follow' : ''} ${S.cur === id ? 'data-current' : ''} aria-labelledby="h${id}">
+  <header><b>${num(id)}</b><h2 id="h${id}">${v.name}</h2><span class="fam">${v.fam}${v.words ? ' · uses words' : ''}</span><span class="wd" data-measure="${id}"></span></header>
   <p class="idea">${v.idea}</p>
   <dl class="spec"><dt>Effort</dt><dd>${v.effort}</dd><dt>Speed</dt><dd>${v.speed}</dd><dt>Hover</dt><dd>${v.hover}</dd><dt>Focus and keys</dt><dd>${v.focus}</dd><dt>Press</dt><dd>${v.click}</dd><dt>Costs</dt><dd>${v.costs}</dd></dl>
   <div class="frames">${themes.map(t => frame(v, id, c, t)).join('')}</div>
@@ -712,7 +742,7 @@ function measure() {
 }
 function hud() {
   const v = V[S.cur], c = ctx()
-  hudEl.innerHTML = `<span class="n">${String(S.cur).padStart(2, '0')} · ${v.name}</span>
+  hudEl.innerHTML = `<span class="n">${num(S.cur)} · ${v.name}</span>
   <span class="st"><i>Effort</i> ${c.effort} (${c.i + 1} of ${c.n}) &nbsp; <i>Speed</i> ${c.speeds ? c.speed : 'Standard only'} &nbsp; <i>Model</i> ${esc(c.m.name)} &nbsp; <i>Theme</i> ${S.theme === 'both' ? 'Dark and light' : S.theme === 'dark' ? 'Dark' : 'Light'} &nbsp; <i>Composer</i> ${S.cw}px${S.rm ? ' &nbsp; <i>Motion</i> Reduced' : ''}</span>
   <span class="nav"><button type="button" data-nav="-1" aria-label="Previous direction">‹</button><button type="button" data-nav="1" aria-label="Next direction">›</button></span>
   <span class="how"><b>Hover:</b> ${v.hover} &nbsp; <b>Focus:</b> ${v.focus} &nbsp; <b>Press:</b> ${v.click}</span>`
@@ -730,8 +760,8 @@ function bar() {
   seg('c-speed', ['standard', 'fast', 'ultrafast'].map(s => [s, SPEED[s], !offered(m).includes(s)]), c.sp, v => setSpeed(v))
   seg('c-width', [['760', '760px'], ['560', '560px']], String(S.cw), v => { S.cw = +v; render() })
   seg('c-motion', [['0', 'Normal'], ['1', 'Reduced']], S.rm ? '1' : '0', v => { S.rm = v === '1'; render() })
-  seg('c-view', [['all', 'All 21'], ['one', 'One at a time']], S.view, v => { S.view = v; render(); if (v === 'all') go(S.cur) })
-  document.getElementById('c-jump').innerHTML = V.map((v, k) => `<a href="#d${k}" data-go="${k}" title="${v.name}">${String(k).padStart(2, '0')}</a>`).join('')
+  seg('c-view', [['all', 'All 24'], ['one', 'One at a time']], S.view, v => { S.view = v; render(); if (v === 'all') go(S.cur) })
+  document.getElementById('c-jump').innerHTML = V.map((v, k) => `<a href="#d${k}" data-go="${k}" title="${v.name}">${num(k)}</a>`).join('')
 }
 function setCur(id) { if (S.cur === id) return; S.cur = id; for (const s of main.querySelectorAll('section.dir')) s.toggleAttribute('data-current', +s.dataset.id === id); hud() }
 function go(id) { S.cur = (id + V.length) % V.length; if (S.view === 'one') render(); else { setCur(S.cur); hud(); document.getElementById(`d${S.cur}`)?.scrollIntoView({ block: 'start' }) } }
