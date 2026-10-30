@@ -311,14 +311,14 @@ describe('the tip under a working thread’s working line', () => {
   })
 })
 
-describe('Settings › Show tips while threads work', () => {
+describe('Settings › Show tips', () => {
   it('saves the switch, counts hidden tips and shows them again', () => {
     const store = createTipsSetAsideStore(memory())
     store.setAside('sotto.dictate')
     store.setAside('skills:claude')
     const onSave = vi.fn()
     render(<ThreadTipsSetting checked onSave={onSave} store={store} />)
-    fireEvent.click(screen.getByRole('switch', { name: 'Show tips while threads work' }))
+    fireEvent.click(screen.getByRole('switch', { name: 'Show tips' }))
     expect(onSave).toHaveBeenCalledWith({ threadTips: false })
     expect(screen.getByText('2 tips hidden or used.')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Show hidden tips again' }))

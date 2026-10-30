@@ -3381,10 +3381,6 @@ msgstr ""
 msgid "No tips are hidden."
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "No tips under a working thread or Watcher."
-msgstr ""
-
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "None of them can go yet."
 msgstr ""
@@ -3587,10 +3583,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "One restart, now"
-msgstr ""
-
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "One short tip under a working thread, and under Watcher while it works, about Sotto and the thread’s provider. A tip you hide or use does not come back."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -4718,7 +4710,7 @@ msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "Show tips while threads work"
+msgid "Show tips"
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx

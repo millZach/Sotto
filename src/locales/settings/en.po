@@ -3381,10 +3381,6 @@ msgstr "No supported open-source themes found. Try a broader search."
 msgid "No tips are hidden."
 msgstr "No tips are hidden."
 
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "No tips under a working thread or Watcher."
-msgstr "No tips under a working thread or Watcher."
-
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "None of them can go yet."
 msgstr "None of them can go yet."
@@ -3588,10 +3584,6 @@ msgstr "One client updates at a time. Your threads keep working, and move to the
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "One restart, now"
 msgstr "One restart, now"
-
-#: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "One short tip under a working thread, and under Watcher while it works, about Sotto and the thread’s provider. A tip you hide or use does not come back."
-msgstr "One short tip under a working thread, and under Watcher while it works, about Sotto and the thread’s provider. A tip you hide or use does not come back."
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "One word or name per line, so AI cleanup spells them your way."
@@ -4718,8 +4710,8 @@ msgstr "Show thread {thread}"
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/ThreadTipsSetting.tsx
-msgid "Show tips while threads work"
-msgstr "Show tips while threads work"
+msgid "Show tips"
+msgstr "Show tips"
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Show Watcher’s room"

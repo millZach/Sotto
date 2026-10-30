@@ -1,4 +1,4 @@
-/* Show tips while threads work, and Show hidden tips again under it (ThreadTipsSetting.tsx). The switch draws its own row's
+/* Show tips, and Show hidden tips again under it (ThreadTipsSetting.tsx). The switch draws its own row's
    padding, so the wrapper adds none above it, only the row's foot under the button. The switch sits at the row's end, so
    the button lines up with the row's words at its start. */
 .settings-view .settings-rows > .thread-tips-setting { min-height: 0; padding: 0 0 17px; }
