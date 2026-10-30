@@ -466,8 +466,13 @@ const id = z.string().min(1).max(512)
 export const hostAnswerTargetSchema = z.object({ threadId: id, providerId: providerIdSchema, requestId: id,
   questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u) }).strict()
 export type HostAnswerTarget = z.infer<typeof hostAnswerTargetSchema>
-/** Feature names are read leniently, so a name this build does not know is ignored rather than refused. */
-const featureList = z.array(z.string().min(1).max(64)).max(64)
+/**
+ * Feature names are read leniently, so a name this build does not know is ignored rather than refused. The list holds
+ * many more than any build lists: a host whose list went past an older cap of 64 was read as another version of Sotto
+ * (October 30, 2026), and a later host lists names this build has never heard of.
+ */
+export const HOST_FEATURE_LIST_MAX = 512
+const featureList = z.array(z.string().min(1).max(64)).max(HOST_FEATURE_LIST_MAX)
 const sottoVersion = z.string().min(1).max(64)
 const base = { v: z.literal(1), id, session: z.string().min(1).max(2048) }
 /** An image as it crosses the socket: base64 inside one frame, at most 10 MiB of bytes. */
