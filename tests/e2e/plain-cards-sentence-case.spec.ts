@@ -6,7 +6,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { populatedHistory, withSotto } from '../fixtures/designCaptureProfile'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { pageBoundProblems } from './support/designCapture'
-import { openPage, openThreads } from './support/sottoLaunch'
+import { openPage, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { resizeContentWindow } from './support/sottoWindow'
 
 // #1830 and #1829, from the desktop UI review: a card says its status in words, with no coloured stripe down its left
@@ -29,6 +29,18 @@ async function shoot(page: Page, name: string, { bounds = true } = {}): Promise<
   await page.evaluate(() => new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))))
   if (bounds) expect(await pageBoundProblems(page), `${name} has clipped or overflowing controls`).toEqual([])
   await page.screenshot({ path: join(shots, name), animations: 'disabled', caret: 'hide' })
+}
+
+/**
+ * The nested desktop can hand a new window its first size back once after a resize, so the size is asked for until it
+ * holds for a moment.
+ */
+async function resize(launched: LaunchedSotto, width: number, height: number): Promise<void> {
+  await expect(async () => {
+    await resizeContentWindow(launched, width, height, [820, 560])
+    await launched.page.waitForTimeout(250)
+    expect(await launched.page.evaluate(() => [innerWidth, innerHeight])).toEqual([width, height])
+  }).toPass()
 }
 
 /** The words on the page a stylesheet turns into capitals; none should be. */
@@ -59,7 +71,7 @@ test.describe('plain cards and sentence-case labels (#1830, #1829)', () => {
         await expect(page.getByText('Welcome to Sotto', { exact: true })).toHaveCount(0)
         expect(await capitalised(page)).toEqual([])
         for (const [width, height] of SIZES) {
-          await resizeContentWindow(launched, width, height, [820, 560])
+          await resize(launched, width, height)
           await shoot(page, `setup-welcome-${name}-${width}x${height}.png`)
         }
       })
@@ -74,7 +86,7 @@ test.describe('plain cards and sentence-case labels (#1830, #1829)', () => {
         await expect(page.getByRole('region', { name: 'Today' })).toBeVisible()
         await expect(page.getByRole('heading', { name: 'This month', exact: true })).toBeVisible()
         for (const [width, height] of SIZES) {
-          await resizeContentWindow(launched, width, height, [820, 560])
+          await resize(launched, width, height)
           expect(await capitalised(page)).toEqual([])
           await shoot(page, `dictate-${name}-${width}x${height}.png`)
         }
@@ -96,7 +108,7 @@ test.describe('plain cards and sentence-case labels (#1830, #1829)', () => {
         const sides = await edges(card)
         expect(sides.left, JSON.stringify(sides)).toBe(sides.top)
         for (const [width, height] of SIZES) {
-          await resizeContentWindow(launched, width, height, [820, 560])
+          await resize(launched, width, height)
           await card.scrollIntoViewIfNeeded()
           await shoot(page, `permission-${name}-${width}x${height}.png`, { bounds: false })
         }
