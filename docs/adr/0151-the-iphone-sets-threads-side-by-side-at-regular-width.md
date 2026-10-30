@@ -12,6 +12,8 @@ Amended October 28, 2026: the rail did not show on Drake's iPhone Duo (TestFligh
 
 Amended October 28, 2026: iOS 27.1 moves a page's trailing bar items into the vertical bar beside it, so on Drake's Duo a thread's state, Watch and ••• went into the strip as one item too wide for it and overlapped. A thread marks that group horizontal-only: it stays in the bar over the thread's column, folded and unfolded, and the strip holds only iOS's own Back button under the page dots. An upright iPhone has no vertical bar and is unchanged.
 
+Amended October 29, 2026: on Drake's folded Duo a thread's bar squeezed its own words. Where a bar is short, iOS gives its trailing group the smallest size the group can take, so Agents lost its word and its count and Watch was cut to one letter. At compact width, the Duo folded and any iPhone upright, Agents is its mark and count and Watch the owl alone, as they already were at the largest text sizes, and the thread's state leaves out how long the turn has run. The group keeps its own width at every width and the title takes the rest; at regular width Agents, Watch and the time keep their words.
+
 ## Context
 
 The iPhone Duo folds. Folded, its cover screen gives the app 382×644 points at compact width, and Sotto looks as it does on any iPhone. Unfolded, the inner screen is landscape, 951×669 points. Beside the tab bar, which iOS 27.1 draws as a floating rail at the right edge, the app gets 867×635 points at regular width. The client had no layout for regular width, so every page stretched to the full 867 points: a thread's lines ran to about 140 characters and its tables spread across the screen.
