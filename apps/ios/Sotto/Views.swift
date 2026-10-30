@@ -276,6 +276,12 @@ struct FeedbackBanner: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, Space.s3)
                         .paragraphDirection()
+                    if model.shelfUndo != nil {
+                        Button("Undo") { Task { await model.undoShelf() } }
+                            .buttonStyle(PillButtonStyle(kind: .soft, compact: true))
+                            .padding(.top, Space.s2)
+                            .accessibilityIdentifier("feedback-undo")
+                    }
                     Button { model.feedback = nil } label: {
                         Image(systemName: "xmark").font(.system(size: 13, weight: .semibold)).foregroundStyle(Palette.muted)
                             .frame(width: 44, height: 44).contentShape(Rectangle())
