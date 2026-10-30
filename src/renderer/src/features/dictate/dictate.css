@@ -464,6 +464,8 @@
 
   .journal-stats__section + .journal-stats__section { padding-top: 0; border-top: 0; }
   .journal-stats [data-wide] { display: none; }
+  /* Before two days of dictation the row is one sentence, across the room. */
+  .journal-stats[data-empty] { grid-template-columns: minmax(0, 1fr); }
 }
 
 @container dictate-room (max-width: 600px) {

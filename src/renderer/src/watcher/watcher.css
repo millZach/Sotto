@@ -394,17 +394,18 @@
 :root[data-reduced-motion='on'] .watcher-group__chevron { transition: none; }
 
 /* ---------- The first time ---------- */
-/* The room as it will be: what Watcher is, just above Watcher's composer, which is ready to send its first message. */
+/* The room as it will be: what Watcher does in one sentence, left-aligned just above Watcher's composer, which is ready to
+   send its first message; How Watcher works opens Help at the rest (#1822). */
 .watcher-first { display: flex; flex-direction: column; }
-.watcher-first__intro { display: flex; flex-direction: column; align-items: center; margin: auto auto 0; padding-bottom: 6px; text-align: center; }
-.watcher-first__intro h2 { margin: 10px 0 8px; font-size: 18px; font-weight: 600; letter-spacing: -.2px; }
-.watcher-first__intro p { max-width: 470px; margin: 0 0 10px; color: var(--tt-text-2); font-size: 14px; line-height: 1.6; }
+.watcher-first__intro { display: flex; flex-direction: column; align-items: flex-start; margin: auto 0 0; padding-bottom: 6px; text-align: start; }
+.watcher-first__intro p { max-width: 640px; margin: 0 0 10px; color: var(--tt-text-2); font-size: 14px; line-height: 1.6; }
 .watcher-first__intro p:last-child { margin-bottom: 0; }
-.watcher-first__owl { color: var(--tt-text-2); }
+.watcher-first__how { display: inline; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-accent-text); font: inherit; font-weight: 500;
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; }
+.watcher-first__how:hover { text-decoration-color: currentColor; }
 .watcher-first__missing { color: var(--tt-text-2); }
 .watcher-first__error { margin: 0 0 8px; }
 @media (max-height: 760px) {
-  .watcher-first__intro h2 { margin: 6px 0 6px; }
   .watcher-first__intro p { font-size: 13.5px; line-height: 1.5; }
 }
 

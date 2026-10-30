@@ -1,11 +1,21 @@
 import React from 'react'
-import { cleanup, render, screen } from '@testing-library/react'
-import { afterEach, describe, expect, it } from 'vitest'
+import { cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import { HelpView } from '../../../src/renderer/src/features/help/HelpView'
 import { platformCopy } from '../../../src/renderer/src/platformCopy'
+import { useOptionalApp, type AppContextValue } from '../../../src/renderer/src/state/AppContext'
 
-afterEach(cleanup)
+vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
+  ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(),
+  useOptionalApp: vi.fn(),
+}))
+
+afterEach(() => { cleanup(); vi.mocked(useOptionalApp).mockReset() })
+
+function withWatcher(enabled: boolean): void {
+  vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { watcher: enabled, muse: false } } } as unknown as AppContextValue)
+}
 
 describe('HelpView', () => {
   it('names Linux and explains button dictation, manual paste and the Wayland shortcut limit', () => {
@@ -66,5 +76,26 @@ describe('HelpView', () => {
     expect(screen.getByRole('heading', { level: 2, name: 'Paste permissions' })).toBeVisible()
     expect(screen.getByText(copy.accessibilityHelp ?? '')).toBeVisible()
     expect(screen.getAllByLabelText('Control+Shift+Space')[0]).toBeVisible()
+  })
+
+  it('explains Watcher under its own topic, which Watcher’s room opens with focus on its title (#1822)', () => {
+    withWatcher(true)
+    const { rerender } = render(<HelpView shortcut="CommandOrControl+Shift+Space" platform="win32" />)
+    const topic = screen.getByRole('heading', { level: 2, name: 'How Watcher works' }).closest('details')!
+    expect(topic).toHaveAttribute('id', 'help-watcher')
+    expect(topic).toHaveTextContent('It runs on your own Codex, Claude Code or Grok Build account, with that provider’s own tools.')
+    expect(topic).toHaveTextContent('only you answer a thread’s questions and permissions')
+    rerender(<HelpView shortcut="CommandOrControl+Shift+Space" platform="win32" openTopic={{ topic: 'help-watcher', key: 1 }} />)
+    expect(topic.querySelector('summary')).toHaveFocus()
+    // Escape folds it and leaves focus on its title (AGENTS.md: anything that opens answers Escape).
+    fireEvent.keyDown(topic.querySelector('summary')!, { key: 'Escape' })
+    expect(topic).not.toHaveAttribute('open')
+    expect(topic.querySelector('summary')).toHaveFocus()
+  })
+
+  it('leaves Watcher out where Watcher is not on (ADR-0072)', () => {
+    withWatcher(false)
+    render(<HelpView shortcut="CommandOrControl+Shift+Space" platform="win32" openTopic={{ topic: 'help-watcher', key: 1 }} />)
+    expect(screen.queryByRole('heading', { name: 'How Watcher works' })).toBeNull()
   })
 })

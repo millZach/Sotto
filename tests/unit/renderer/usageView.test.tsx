@@ -290,6 +290,41 @@ describe('Usage page', () => {
     expect(refresh).toHaveBeenCalledWith({ hostIds: ['laptop'], providerIds: ['claude'], background: true })
   })
 
+  it('shows one card and no views or filters before any computer has recorded usage, keeping the room-left gauges (#1834)', async () => {
+    const empty = activityRow(0, 0, 0, tokens())
+    const fresh = localActivity(1)
+    const host = { ...localHost(), activity: { ...fresh, metadata: { ...fresh.metadata, history: { status: 'complete' as const } },
+      totals: empty, providers: [], models: [], modelCount: 0, daily: [], hourly: [], clients: [] } }
+    const bridge = fixtureBridge(dashboard(host))
+    render(<UsageView {...props} bridge={bridge} />)
+    const card = await screen.findByRole('region', { name: 'No usage yet' })
+    // The range showed nothing, so one read without dates asked whether anything was ever recorded.
+    expect(bridge.reads.some(query => query.from === undefined && query.to === undefined && query.includeDaily === undefined)).toBe(true)
+    expect(card).toHaveTextContent('Filters appear once there is something to filter.')
+    expect(screen.queryByRole('tablist', { name: 'Usage views' })).toBeNull()
+    expect(screen.queryByRole('tabpanel')).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Date range/u })).toBeNull()
+    expect(screen.queryByRole('button', { name: /^Computer/u })).toBeNull()
+    // Only limits that were read keep a gauge; one that says nothing yet is left out (Devin's here).
+    expect(screen.queryByRole('button', { name: /^Devin/u })).toBeNull()
+    // A gauge still opens Subscriptions, which has limits to show, with the views to go back by.
+    await userEvent.setup().click(screen.getByRole('button', { name: /Claude Code/u }))
+    expect(await screen.findByRole('tab', { name: 'Subscriptions', selected: true })).toBeVisible()
+  })
+
+  it('keeps the views and filters once anything is recorded, even with nothing in the range', async () => {
+    const empty = activityRow(0, 0, 0, tokens())
+    const quiet = localActivity(4)
+    const host = { ...localHost(), activity: { ...quiet, totals: empty, providers: [], models: [], modelCount: 0, daily: [], hourly: [], clients: [] } }
+    const ranged = fixtureBridge(dashboard(host)), allTime = fixtureBridge(dashboard())
+    // The dated read finds nothing in the last 30 days; the dateless one finds the older work.
+    const bridge = { ...ranged, read: (query: UsageQuery) => query.from === undefined ? allTime.read(query) : ranged.read(query) }
+    render(<UsageView {...props} bridge={bridge} />)
+    await waitFor(() => expect(allTime.reads).toHaveLength(1))
+    await waitFor(() => expect(screen.getByRole('tablist', { name: 'Usage views' })).toBeVisible())
+    expect(screen.queryByRole('region', { name: 'No usage yet' })).toBeNull()
+  })
+
   it('says nothing is recorded yet once usage was cleared, keeping the room-left gauges', async () => {
     const empty = activityRow(0, 0, 0, tokens())
     const cleared = localActivity(9)

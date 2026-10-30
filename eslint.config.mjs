@@ -132,6 +132,7 @@ export default tseslint.config(
       'apps/android/**/build/**',
       'artifacts/question-choices/**',
       'artifacts/composer-float/**',
+      'artifacts/watcher-start-and-empty-rooms/**',
       'artifacts/composer-shrink/**',
       'artifacts/needs-you-queue/**',
       'artifacts/watcher-column/**',
