@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { open, readFile, stat } from 'node:fs/promises'
+import { open, readFile, rm, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { CodexSessionLogWatcher } from '../../src/main/agents/codexSessionLog'
@@ -68,4 +68,48 @@ it('reads a thread\'s rollout after a restart only once the thread is in use, an
   await expect.poll(async () => (await f.adapter.refreshThread(threadId)).threads.find(thread => thread.id === threadId)?.messages.map(message => message.text))
     .toContain('Typed in Codex while Sotto was closed')
   expect(read.bytes()).toBe(appended)
+})
+
+it('waits on no rollout at the first connect without saved positions, and catches each up on the timer instead', async () => {
+  let f = fixture = await codexFixture(undefined, false, 2000, { pollIntervalMs: 3_600_000 })
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Rollouts', path: f.root })
+  const threadId = randomUUID()
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, title: 'Rollouts', modelId: f.modelId })
+  for (const index of [1, 2]) await f.typeUnseen(threadId, `Typed in Codex ${index}`)
+  const codexThreadId = await f.realId(threadId)
+  const path = join(f.root, 'home', 'sessions', '2026', '09', '10', `rollout-2026-09-10-${codexThreadId}.jsonl`)
+  f.adapter.disconnect(); await f.adapter.closed()
+  // As the first run with saved positions finds it: none saved.
+  await rm(join(f.root, 'codex-rollouts'), { recursive: true, force: true })
+  f = fixture = await codexFixture(f.root, false, 2000, { pollIntervalMs: 3_600_000 })
+  const read = await bytesReadFrom(path)
+  await f.host.connect()
+  expect(read.bytes()).toBe(0)
+  await (f.adapter as unknown as { watcher: CodexSessionLogWatcher }).watcher.tick()
+  expect(read.bytes()).toBe((await stat(path)).size)
+})
+
+it('reads a thread coming back into view to its rollout\'s end at once, while its session still runs', async () => {
+  const f = fixture = await codexFixture(undefined, false, 2000, { pollIntervalMs: 3_600_000 })
+  await f.host.connect()
+  await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Rollouts', path: f.root })
+  const threadId = randomUUID()
+  await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, title: 'Rollouts', modelId: f.modelId })
+  await f.typeUnseen(threadId, 'Typed in Codex first')
+  f.host.observeThreads?.([threadId])
+  await expect.poll(async () => (await f.adapter.refreshThread(threadId)).threads.find(thread => thread.id === threadId)?.messages.map(message => message.text)).toContain('Typed in Codex first')
+  // The pane closes; the session keeps running until the reaper finds it idle.
+  f.host.observeThreads?.([])
+  await f.typeUnseen(threadId, 'Typed in Codex while the pane was closed')
+  // Seen as the adapter says it: no tick and no read of the provider runs meanwhile.
+  const said: string[] = []
+  const off = f.adapter.subscribeEvents(({ threadId: id, event }) => { if (id === threadId && event.kind === 'message-added') said.push(event.message.text) })
+  const ticks = vi.spyOn(CodexSessionLogWatcher.prototype, 'tick'), polls = vi.spyOn(CodexSessionLogWatcher.prototype, 'pollInUse')
+  try {
+    f.host.observeThreads?.([threadId])
+    await expect.poll(() => said).toContain('Typed in Codex while the pane was closed')
+  } finally { off() }
+  expect(ticks).not.toHaveBeenCalled()
+  expect(polls).not.toHaveBeenCalled()
 })

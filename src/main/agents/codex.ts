@@ -1304,8 +1304,12 @@ export class CodexAppServerHost implements AgentHost {
   observeThreads(sessionIds: readonly string[]): void {
     const generation = this.generation
     const watched = new Set(sessionIds.filter(id => this.aliases[id]?.kind !== 'personal'))
+    const before = new Set(this.observed)
     this.observed.clear(); for (const id of watched) this.observed.add(id)
     this.log.observe([...this.observed])
+    // A thread coming into view reads its rollout to the end at once, from where it was left, even when its session is
+    // still running and opening it reads nothing more (#992).
+    if (this.state.connected) for (const id of this.observed) if (this.aliases[id] && !before.has(id)) void this.watcher?.pollThread(this.aliases[id]!.codexThreadId)
     if (this.state.connected) for (const id of this.observed) if (this.aliases[id]) void this.open(id).catch(() => {
       if (generation !== this.generation) return
       this.ensureThread(id).status = 'error'; this.emit()

@@ -27,13 +27,16 @@ thread catches up when it is opened or sent to, and a thread he comes back to mu
 
 - Each tick reads only the rollouts in use: those of the threads the coordinator observes, of the threads working, and of
   the threads whose app-server did anything since the last tick. A rollout that leaves those is read once more, and a
-  failed read is tried again. The adapter's whole read, its snapshot, reads the same set.
+  failed read is tried again. The adapter's own reads, at connect and for its snapshot, read the rollouts in use and any
+  whose read failed. A thread coming into view reads its rollout to the end at once, even while its session still runs.
 - Each tail saves its rollout position: the start of the first line it has not read whole, the file's identity, the user
   messages it reported and each turn's identity rows up to there. A later run reads on from it, so opening a thread reads
   only what was written since. Positions are saved at most twice a minute while a rollout grows, and when the adapter
   stops.
-- A thread with no position yet, as every thread has on the first run with this change, is caught up once in the
-  background, as every connect did before.
+- A thread with no position yet, as every thread has on the first run with this change, is caught up once by the timer,
+  as every connect did before; the connect waits on none of it.
+- A rollout gone from where it was is looked for again, and keeps its position where it is the same file. A line read
+  after the adapter stopped is left out of the position, so input it never reported is read again.
 
 ## Before and after
 
@@ -56,6 +59,14 @@ itself. The open is mostly the fake app-server starting, and its time is the sam
 The saved positions took 4.8 MB on disk for 92 MB of rollouts and 9.7 MB for 184 MB, about 5%. The owner's 394 MB would
 take about 20 MB in the app's data folder.
 
+Taking up a position at a thread's first read costs a fraction of reading its rollout from the first byte, which every
+run did before. The same benchmark times both for one thread, the median of three, two runs:
+
+| One thread's rollout | Its position | Taking it up | Reading the rollout from the first byte |
+| ---: | ---: | ---: | ---: |
+| 2 MB | 105 KB | 0.7-1.0 ms | 6.9-11.9 ms |
+| 20 MB | 1.0 MB | 5.0-5.2 ms | 67.4-69.2 ms |
+
 ## The guards
 
 - `tests/unit/main/codexSessionLog.test.ts`, "a Codex rollout read on from a saved position", in the default suite:
@@ -64,10 +75,18 @@ take about 20 MB in the app's data folder.
     hold the same identity rows for every turn, native IDs included, as one that read the rollout from its first byte;
   - a saved position is not trusted for a file shorter than it read, or another file put in its place;
   - each tick reads only the tails in use, once more after one leaves them, a tail with no saved position until it
-    catches up, and a failed read again; a whole read still reads every tail.
-- `tests/integration/codexRolloutPositions.test.ts`: quitting saves the position at the rollout's end. After a restart,
-  neither connecting nor a tick reads the rollout of a thread nobody looks at. Opening it reads exactly the bytes typed
-  outside Sotto meanwhile, and shows them.
+    catches up, and a failed read again; the read a connect or a snapshot makes catches none up; a whole read still
+    reads every tail;
+  - a watcher stopped while a read of the rollout is on its way saves no position past the lines it read after
+    stopping, so the next run reports them;
+  - a rollout moved from where its position was saved is found again and read on from there.
+- `tests/integration/codexRolloutPositions.test.ts`:
+  - quitting saves the position at the rollout's end; after a restart, neither connecting nor a tick reads the rollout of
+    a thread nobody looks at, and opening it reads exactly the bytes typed outside Sotto meanwhile, and shows them;
+  - the first connect without saved positions reads no rollout, and the timer's tick catches it up;
+  - a thread coming back into view while its session still runs shows work typed outside Sotto at once, with no tick.
+
+Each fails without its part of the change.
 
 ## What it leaves
 

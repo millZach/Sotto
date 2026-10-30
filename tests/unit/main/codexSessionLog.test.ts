@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { appendFile, mkdir, mkdtemp, readdir, rename, rm, writeFile } from 'node:fs/promises'
+import { appendFile, mkdir, mkdtemp, open, readdir, rename, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -355,8 +355,11 @@ describe('a Codex rollout read on from a saved position (#992)', () => {
     const inUse = new Set<string>()
     const second = watcher(root, [], { positions, inUse: () => inUse }); second.observe('saved')
     const read = vi.spyOn(second, 'pollThread')
-    const tick = async (): Promise<string[]> => { read.mockClear(); await second.pollInUse(); return read.mock.calls.map(([id]) => id).sort() }
-    // The tail with no saved position catches up; the one with a saved position waits.
+    const tick = async (): Promise<string[]> => { read.mockClear(); await second.tick(); return read.mock.calls.map(([id]) => id).sort() }
+    // A read for a connect or a snapshot reads only the tails in use, and waits on none catching up.
+    read.mockClear(); await second.pollInUse()
+    expect(read.mock.calls).toEqual([])
+    // The tick reads the tail with no saved position until it catches up; the one with a saved position waits.
     expect(await tick()).toEqual(['thread'])
     expect(await tick()).toEqual([])
     inUse.add('saved')
@@ -372,5 +375,49 @@ describe('a Codex rollout read on from a saved position (#992)', () => {
     await mkdir(join(dirname(path), 'rollout-saved.jsonl'))
     inUse.add('saved'); await tick(); inUse.delete('saved')
     expect(await tick()).toEqual(['saved'])
+  })
+
+  it('saves no position past a line it read after stopping, so input it never reported is read again', async () => {
+    const { root, path } = await rollout()
+    const positions = new MemoryPositions()
+    await writeFile(path, turn(1) + turn(2))
+    const messages: AgentMessage[] = []
+    const first = watcher(root, messages, { positions })
+    // Stopped while a read of the rollout's bytes is on its way: the read is held until the watcher has stopped.
+    const probe = await open(path, 'r')
+    const handles = Object.getPrototypeOf(probe) as { read(...args: unknown[]): Promise<unknown> }
+    await probe.close()
+    const { promise: entered, resolve: enter } = deferred<void>()
+    const { promise: held, resolve: release } = deferred<void>()
+    const native = handles.read
+    vi.spyOn(handles, 'read').mockImplementationOnce(async function (this: unknown, ...args: unknown[]) { enter(); await held; return native.apply(this, args) })
+    const reading = first.pollThread('thread')
+    await entered
+    const stopping = first.stop()
+    release()
+    await reading; await stopping
+    const reported = messages.map(message => message.id)
+    const again: AgentMessage[] = []
+    const second = watcher(root, again, { positions })
+    await second.pollThread('thread')
+    expect([...reported, ...again.map(message => message.id)]).toEqual(['user-1', 'user-2'])
+  })
+
+  it('looks for a rollout moved from where its position was saved, and reads on there when it is the same file', async () => {
+    const { root, path } = await rollout()
+    const positions = new MemoryPositions()
+    await writeFile(path, turn(1))
+    const first = watcher(root, [], { positions })
+    await first.pollThread('thread')
+    await first.stop()
+    const moved = join(dirname(path), '2026', 'rollout-thread.jsonl')
+    await mkdir(dirname(moved), { recursive: true })
+    await rename(path, moved)
+    await appendFile(moved, turn(2))
+    const messages: AgentMessage[] = []
+    const second = watcher(root, messages, { positions })
+    await second.pollThread('thread')
+    await second.pollThread('thread')
+    expect(messages.map(message => message.id)).toEqual(['user-2'])
   })
 })

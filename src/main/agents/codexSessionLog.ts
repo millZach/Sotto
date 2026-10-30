@@ -109,6 +109,7 @@ export class CodexSessionLogWatcher {
   private timer: ReturnType<typeof setInterval> | undefined
   private polling: Promise<void> | undefined
   private wholePoll: Promise<void> | undefined
+  private inUsePoll: Promise<void> | undefined
   private readonly reading = new Map<string, Promise<void>>()
   private stopped = false
   /** The threads with a saved position, listed once. */
@@ -143,11 +144,13 @@ export class CodexSessionLogWatcher {
   /** A deleted thread (ADR-0140): stop tailing its rollout, drop any read in flight for it, and forget where it had read to. */
   drop(threadId: string): void {
     this.tails.delete(threadId); this.reading.delete(threadId)
-    void this.options.positions?.remove(threadId).catch(() => undefined)
+    // Behind any save under way, so a save that began before the thread went cannot put its position back.
+    const positions = this.options.positions
+    if (positions) this.saving = this.saving.then(() => positions.remove(threadId)).catch(() => undefined)
   }
   start(): void {
     if (this.timer || this.stopped) return
-    this.timer = setInterval(() => { void this.pollInUse() }, this.options.pollIntervalMs ?? 1000)
+    this.timer = setInterval(() => { void this.tick() }, this.options.pollIntervalMs ?? 1000)
     this.timer.unref()
   }
   async stop(): Promise<void> {
@@ -159,13 +162,22 @@ export class CodexSessionLogWatcher {
   /** A read of every tail, after any tick under way, as a whole read of the provider asks. */
   poll(): Promise<void> {
     if (this.stopped) return Promise.resolve()
-    this.wholePoll ??= (this.polling ?? Promise.resolve()).then(() => this.readAll(false)).finally(() => { this.wholePoll = undefined })
+    this.wholePoll ??= (this.polling ?? Promise.resolve()).then(() => this.readAll('all')).finally(() => { this.wholePoll = undefined })
     return this.wholePoll
   }
-  /** One tick: the tails in use and those `readAll` reads besides them. A tick under way stands for this one. */
+  /**
+   * A read of the tails in use and of any whose last read failed, as a read of the provider asks: at connect, or for a
+   * snapshot. It waits on no tail catching up, so it costs the same however many threads are saved.
+   */
   pollInUse(): Promise<void> {
     if (this.stopped) return Promise.resolve()
-    this.polling ??= this.readAll(true).finally(() => { this.polling = undefined })
+    this.inUsePoll ??= (this.polling ?? Promise.resolve()).then(() => this.readAll('in-use')).finally(() => { this.inUsePoll = undefined })
+    return this.inUsePoll
+  }
+  /** What the timer does each second (`readAll`). A tick under way stands for this one. */
+  tick(): Promise<void> {
+    if (this.stopped) return Promise.resolve()
+    this.polling ??= this.readAll('tick').finally(() => { this.polling = undefined })
     return this.polling
   }
   /** Queue a fresh read behind this tail only; a guarded send cannot reuse a pre-origin read. */
@@ -178,19 +190,21 @@ export class CodexSessionLogWatcher {
     return work
   }
   /**
-   * Every tail, or for a tick each in use, each that left them since the last tick, once, so the last lines of its turn
-   * land, each whose last read failed, and each still catching up to the end of a rollout it has no saved position for.
+   * `all` reads every tail. `in-use` reads each tail in use and each whose last read failed. A `tick` reads those, each
+   * that left the tails in use since the last tick, once, so the last lines of its turn land, and each still catching up
+   * to the end of a rollout it has no saved position for, a megabyte a tick.
    */
-  private async readAll(inUseOnly: boolean): Promise<void> {
+  private async readAll(mode: 'all' | 'in-use' | 'tick'): Promise<void> {
     const saved = await this.savedPositions()
-    const inUse = inUseOnly ? this.options.inUse?.() : undefined
+    const inUse = mode === 'all' ? undefined : this.options.inUse?.()
     const ids: string[] = []
     for (const [id, tail] of this.tails) {
       this.classify(id, tail, saved)
-      if (!inUse || inUse.has(id) || this.lastInUse.has(id) || tail.retry || !tail.caughtUp) ids.push(id)
+      if (!inUse || inUse.has(id) || tail.retry || mode === 'tick' && (this.lastInUse.has(id) || !tail.caughtUp)) ids.push(id)
     }
-    if (inUseOnly) this.lastInUse = new Set(inUse)
-    for (const id of ids) await this.pollThread(id, false)
+    if (mode === 'tick') this.lastInUse = new Set(inUse)
+    // A thread let go meanwhile is not read, which would take up its tail again.
+    for (const id of ids) if (this.tails.has(id)) await this.pollThread(id, false)
   }
   private savedPositions(): Promise<ReadonlySet<string>> {
     return this.savedThreads ??= this.options.positions?.list().catch(() => new Set<string>()) ?? Promise.resolve(new Set<string>())
@@ -299,7 +313,9 @@ export class CodexSessionLogWatcher {
                 tail.buffer = []; tail.bufferedBytes = 0; tail.discarding = true
               }
             }
-            if (newline < 0) break
+            // Stopped, a line is left unread, so the position saved for the next run comes before it rather than past input
+            // that was never reported.
+            if (newline < 0 || this.stopped) break
             if (!tail.discarding) this.consume(threadId, tail, Buffer.concat(tail.buffer, tail.bufferedBytes).toString('utf8'))
             tail.buffer = []; tail.bufferedBytes = 0; tail.discarding = false
             start = newline + 1
@@ -310,8 +326,13 @@ export class CodexSessionLogWatcher {
       } finally { await file.close() }
       tail.retry = false
       if (tail.lineStart !== lineStart) { tail.dirty = true; this.scheduleSave() }
-    } catch {
-      // A rollout may not exist yet, rotate, or be temporarily locked by Codex; the next tick reads it again.
+    } catch (error) {
+      // A rollout may not exist yet, rotate, or be temporarily locked by Codex; the next tick reads it again. One gone from
+      // where it was is looked for again, and its saved position kept only if it is the same file somewhere else.
+      if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT' && tail.path) {
+        tail.path = undefined; tail.locateAfter = 0; tail.locateBackoffMs = INITIAL_LOCATE_BACKOFF_MS
+        if (tail.file) tail.check = true
+      }
       tail.retry = true
     }
   }

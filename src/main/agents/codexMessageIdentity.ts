@@ -18,8 +18,8 @@ export type CodexMessageIdentity = z.infer<typeof codexMessageIdentitySchema>
 export type CodexOrigin = { messageId: string; commandId: string; digest: string; createdAt: string; turnId?: string | undefined;
   itemId?: string | undefined; clientIdentity?: boolean | undefined }
 export type IdentityItem = { id: string; role: 'user' | 'assistant'; digest: string; clientId?: string | null | undefined }
-export type RolloutIdentity = { role: 'user' | 'assistant'; digest: string; nativeId?: string | undefined; clientId?: string | undefined; eventId?: string | undefined }
 const rolloutIdentitySchema = z.object({ role: z.enum(['user', 'assistant']), digest: z.string(), nativeId: z.string().optional(), clientId: z.string().optional(), eventId: z.string().optional() })
+export type RolloutIdentity = z.infer<typeof rolloutIdentitySchema>
 /** What `CodexRolloutIdentities` has read, saved: each turn's rows, the turn under way and its assistant row awaiting its native ID. */
 export const rolloutIdentitiesStateSchema = z.object({ turn: z.string().optional(), pending: z.number().int().nonnegative().optional(),
   turns: z.array(z.tuple([z.string(), z.array(rolloutIdentitySchema)])) })

@@ -181,23 +181,29 @@ open slower.
 **Each tick reads only the rollouts in use.** Those are the rollouts of the threads the coordinator observes, of the
 threads that are working by the reaper's rule, and of the threads whose app-server did anything since the last tick. A
 rollout that leaves those is read once more on the next tick, so the last lines of its turn land, and a read that failed
-is tried again on the next tick. A whole read of the adapter, its snapshot, reads the same set: another thread's rollout
-could only fill the messages that wait for it to be opened, and opening reads it.
+is tried again on the next tick. The adapter's own reads, at connect and for its snapshot, read the rollouts in use and
+any whose read failed, and wait on no other: another thread's rollout could only fill the messages that wait for it to
+be opened, and opening reads it. A thread coming into view reads its rollout to the end at once, even while its session
+still runs from an earlier look and opening it reads nothing more.
 
 **A thread's rollout is read on from where it was left.** Each tail saves a rollout position: the start of the first line
 it has not read whole, the file's identity, and what reading up to there gave. That is the user messages it already
 reported and each turn's identity rows, the turn under way included. A tail restored from it holds exactly what one that
 read the rollout from its first byte to there holds, so identity corroboration and takeover are unchanged. A position is
-trusted only for the same file at no shorter a length; otherwise the rollout is read from its first byte again. Opening
-or sending to a thread reads on from its position, as its whole read before resuming always did, so it reads only what
-was written since.
+trusted only for the same file at no shorter a length; otherwise the rollout is read from its first byte again. A rollout
+gone from where it was is looked for again, and keeps its position where it is the same file. Opening or sending to a
+thread reads on from its position, as its whole read before resuming always did, so it reads only what was written
+since. Taking up a position costs a fraction of the read it replaces: 5 ms for a 20 MB rollout's position of 1 MB,
+against 67 to 69 ms to read the rollout, and opening a thread reads its turns from Codex besides.
 
 Positions are kept in `codex-rollouts/` in the app's data folder, one compact file for each thread, named by its Codex
 thread ID. They are saved at most twice a minute while a rollout grows, and when the adapter stops, and deleted with the
-thread. A position saved late costs only a re-read of what came after it at the next start. They hold digests and native
+thread. A position saved late costs only a re-read of what came after it at the next start, and a line read after the
+adapter stopped is left out of it, so input it never reported is read again. They hold digests and native
 IDs, as `codex-threads.json` does, never message text. They take about 5% of the rollouts they stand for: 4.8 MB for
 92 MB in the benchmark. A thread with no position yet, as every thread has on the first run with this change, is caught
-up in the background once, as every connect did before, and its position is saved then.
+up once by the timer, a megabyte a tick as every connect did before, and its position is saved then; the connect waits
+on none of it.
 
 Measured on forge with 46 and 92 saved threads of 2 MB rollouts, a restart connected in 35 to 39 ms against 454 to
 1,221 ms, read no rollout bytes against 92 to 184 MB, and spent 9 to 11 ms of main's CPU against 0.65 to 1.5 s.

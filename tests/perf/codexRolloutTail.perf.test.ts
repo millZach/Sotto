@@ -16,7 +16,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 import { afterAll, expect, it } from 'vitest'
-import { CodexSessionLogWatcher } from '../../src/main/agents/codexSessionLog'
+import { CodexSessionLogWatcher, RolloutPositionFiles } from '../../src/main/agents/codexSessionLog'
 import { codexFixture } from '../fixtures/codexFixture'
 import { median, PERF_BENCH } from '../fixtures/perfBench'
 
@@ -133,3 +133,39 @@ it.skipIf(!PERF_BENCH)('times Codex\'s rollout reads at a restart, and opening a
   console.log(`CODEX-TAIL ${JSON.stringify(report)}`)
   expect(Object.keys(report)).toHaveLength(2)
 }, 900_000)
+
+/**
+ * What taking up a saved position costs the first read of a long thread, which an open waits for, against reading its
+ * rollout from the first byte as every run did before: one thread of `bytes`, the median of three.
+ */
+it.skipIf(!PERF_BENCH)('times taking up a long thread\'s saved position against reading its rollout from the first byte', async () => {
+  const report: Record<string, unknown> = {}
+  for (const size of [2_000_000, 20_000_000]) {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-codex-tail-')); roots.push(root)
+    const folder = join(root, 'sessions'); await mkdir(folder, { recursive: true })
+    let text = line(0, 'session_meta', { id: 'thread' })
+    for (let index = 0; Buffer.byteLength(text) < size; index++) text += turn(index)
+    await writeFile(join(folder, 'rollout-thread.jsonl'), text)
+    const positions = new RolloutPositionFiles(join(root, 'positions'))
+    const fromStart: number[] = [], restoring: number[] = []
+    for (let run = 0; run < 3; run++) {
+      const reader = new CodexSessionLogWatcher({ codexHome: root, onMessage: () => undefined, positions })
+      reader.observe('thread')
+      const at = performance.now()
+      await reader.pollThread('thread')
+      fromStart.push(performance.now() - at)
+      await reader.stop()
+      const restored = new CodexSessionLogWatcher({ codexHome: root, onMessage: () => undefined, positions })
+      restored.observe('thread')
+      const then = performance.now()
+      await restored.pollThread('thread')
+      restoring.push(performance.now() - then)
+      await restored.stop()
+      if (run < 2) await positions.remove('thread')
+    }
+    const positionBytes = (await stat(join(root, 'positions', 'thread.json'))).size
+    report[`${size} B rollout`] = { readFromFirstByteMs: Math.round(median(fromStart) * 10) / 10, positionBytes, restoreMs: Math.round(median(restoring) * 10) / 10 }
+  }
+  console.log(`CODEX-RESTORE ${JSON.stringify(report)}`)
+  expect(Object.keys(report)).toHaveLength(2)
+}, 600_000)
