@@ -703,3 +703,14 @@ label.move-sheet__name { cursor: default; }
 .watcher-new-note__carried { display: flex; flex-direction: column; width: min(460px, 100%); margin: 4px 0 0; padding: 0; list-style: none; text-align: left; font-size: 13px; color: var(--tt-text-2); }
 .watcher-new-note__carried li { padding: 7px 0; border-top: 1px solid var(--tt-hairline); overflow-wrap: anywhere; }
 .watcher-new-note__carried strong { color: var(--tt-text); font-weight: 600; }
+
+/* A move suggestion under the machines line (#1309): what is wrong, which machine has room and the one thread to move,
+   then Move, Choose threads… and Not now. It sits at the line's measure, under its rule, and is gone once pressed. */
+.watcher-move-suggestion { position: relative; z-index: 5; display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 max(24px, calc((100% - 760px) / 2));
+  padding: 8px 0 10px; box-shadow: inset 0 -1px 0 var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.watcher-move-suggestion__text { flex: 1 1 280px; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.watcher-move-suggestion__text b { color: var(--tt-text); font-weight: 500; }
+.watcher-move-suggestion__refused { flex: 1 1 100%; order: 2; margin: 0; color: var(--watcher-needs-ink); }
+.watcher-move-suggestion__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.watcher-move-suggestion__actions .tt-button { min-height: 30px; padding: 0 11px; font-size: 12.5px; }
+@media (max-width: 980px) { .watcher-move-suggestion { margin: 0 18px; } }

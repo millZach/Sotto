@@ -83,7 +83,9 @@ export function createE2EThreadMovesStandIn(): { readonly moves: ThreadMovesBrid
   const hostsState = { localHostEnabled: true, localHostRunning: true, ...seeded.localHostId ? { localHostId: seeded.localHostId } : {}, hosts: seeded.machines.map(machine => ({ id: machine.hostId, hostId: machine.hostId, name: machine.name,
     target: machine.name, identityFile: '', installPath: '/opt/sotto', dataDirectory: '/data', phase: machine.connected ? 'connected' : 'disconnected', enabled: true }) as HostStatus) } as HostsState
   const moves: ThreadMovesBridge = {
-    prepare: async () => seeded.preview ?? { status: 'refused', message: 'This test run moves no threads.' },
+    // As main's does, the preview answers only for the threads it was asked about.
+    prepare: async request => seeded.preview === undefined ? { status: 'refused', message: 'This test run moves no threads.' }
+      : seeded.preview.status !== 'ok' ? seeded.preview : { ...seeded.preview, threads: seeded.preview.threads.filter(item => request.threadIds.includes(item.threadId)) },
     start: async () => { publish([...view.cards, ...seeded.started ?? []]); return { status: 'ok', moves: [] } },
     read: async () => view,
     answer: async request => {

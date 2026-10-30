@@ -81,10 +81,11 @@ export function useMoveMachines(offered: boolean, bridge: HostsBridge | undefine
 
 /**
  * What the sheet was opened for: threads on every machine from Watcher's header, or one thread from its More menu, with
- * the machine it is on when that is not This computer.
+ * the machine it is on when that is not This computer. A move suggestion's Choose threads… names the machine with room,
+ * so the sheet goes straight to it (#1309).
  */
 export type MoveSheetRequest =
-  | { readonly kind: 'all' }
+  | { readonly kind: 'all'; readonly hostId?: string | undefined }
   | { readonly kind: 'one'; readonly threadId: string; readonly title: string; readonly hostId?: string | undefined }
 class MoveSheetStore {
   private request: MoveSheetRequest | null = null
@@ -229,7 +230,7 @@ export function MoveThreadsSheetHost(): ReactNode {
   const request = useSyncExternalStore(moveSheetStore.subscribe, moveSheetStore.get)
   const bridge = useThreadMovesBridge()
   if (request === null || bridge === undefined) return null
-  return <MoveThreadsSheet key={request.kind === 'one' ? request.threadId : 'all'} request={request} bridge={bridge} />
+  return <MoveThreadsSheet key={request.kind === 'one' ? request.threadId : `all:${request.hostId ?? ''}`} request={request} bridge={bridge} />
 }
 
 function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequest; readonly bridge: ThreadMovesBridge }): ReactNode {
@@ -273,7 +274,9 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
     } catch { setPhase({ kind: 'refused', message: t`Sotto could not check which threads can move. Nothing was moved. Try again.` }) }
   }
   // One machine to choose, once the paired machines are known: the sheet goes straight to it, as there is nothing to choose.
-  const only = hosts !== null && connected.length === 1 ? connected[0]! : null
+  // So it does to the machine a move suggestion named, once that machine is among them.
+  const named = request.kind === 'all' && request.hostId !== undefined ? connected.find(machine => machine.hostId === request.hostId) ?? null : null
+  const only = named ?? (hosts !== null && connected.length === 1 ? connected[0]! : null)
   const started = useRef(false)
   useEffect(() => {
     if (started.current || phase.kind !== 'choose' || only === null) return

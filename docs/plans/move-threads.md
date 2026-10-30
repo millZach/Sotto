@@ -191,3 +191,21 @@ After Sol's confirmation pass on part 4 (October 30):
 - Main says when a move can be kept here (`keepable` on its card): it waits on a machine, with no step under way and not already ending or kept. A press during a step under way, settling the source among them, is refused as not waiting, so it never races the step.
 - Bringing Watcher's watch back has tries of its own, apart from the tries to carry it.
 
+
+## Move suggestions, #1309, as built (October 30, 2026)
+
+Zach's picks on the question card, October 30 (tag `prototype/move-suggestions`):
+
+1. **When Sotto looks: A, no new reads.** A suggestion comes only from the readings the machines line already takes, when Watcher places work or the user opens a machine's panel. His October 23 call that nothing reads machines on a timer stands.
+2. **Where: A, under the machines line.** One line under the line that says what is wrong, gone once the machine reads fine.
+3. **Which threads: A, one named thread, and Choose threads….** The thread at a clean point that worked most recently, with one press to move it, and Choose threads… for the sheet.
+4. **Not now: A.** It hides the suggestion until that machine reads fine again.
+
+As built:
+
+- The window alone (`MoveSuggestion.tsx`, the plan in `moveSuggestionPlan.ts`). Main and the host protocol do not change: the line uses the sheet's own `prepare` and `start`.
+- The machine with room is the one with the most headroom (`headroom` in `list_machines`, #1694), This computer first among equals. A machine whose headroom is null never has room, so a Mac, whose memory reads unknown, is never offered as one.
+- The candidates are the ten most recently worked threads on the short or busy machine that are not running a turn, put away, delegated or Watcher's. Main's preview says which of them would move now, and the first of those is named. The preview is asked once per reading, keyed by the machine and its reading's time, never as threads update, so a working thread's updates send main nothing.
+- Move asks for a fresh preview of that thread and starts it. One that would start narrower opens the sheet for that thread, where it asks first. A refusal shows on the line. A pressed reading says nothing more until the next one.
+- Choose threads… opens the sheet with the machine named (`{ kind: 'all', hostId }`), which goes straight to it, nothing ticked.
+- Not now is held by the window while it lives, not saved; a reading that shows the machine connected and neither busy, short nor unknown forgets it.
