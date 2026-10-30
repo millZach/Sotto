@@ -8,12 +8,13 @@ import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext
 import { WorkerRolesSettings } from '../../../src/renderer/src/features/settings/WorkerRolesSettings'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { firstMessage } from '../../../src/renderer/src/watcher/watcherFirstMessage'
-import { useHeldProviders } from '../../../src/renderer/src/state/owlFeature'
+import { useHeldProviders, useOwlFeature } from '../../../src/renderer/src/state/owlFeature'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: vi.fn() }))
 // Muse is held to Owl unless a test says otherwise, as on a run whose Owl answer for it is off.
+// Worker swarms is off, as on stable, unless a test turns it on.
 vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/owlFeature')>(),
-  useHeldProviders: vi.fn(() => new Set(['muse'])) }))
+  useHeldProviders: vi.fn(() => new Set(['muse'])), useOwlFeature: vi.fn(() => false) }))
 
 const caps = { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true }
 const MODES = ['approval-required', 'auto-accept-edits', 'auto', 'full-access'] as const
@@ -42,7 +43,7 @@ function show(workerRoles: AppSettings['workerRoles'] = {}, claudeReady = true, 
   return { update, open }
 }
 const card = (name: string) => screen.getByRole('article', { name })
-afterEach(() => { cleanup(); vi.clearAllMocks(); firstMessage.clear(); vi.mocked(useHeldProviders).mockImplementation(() => new Set(['muse'])) })
+afterEach(() => { cleanup(); vi.clearAllMocks(); firstMessage.clear(); vi.mocked(useHeldProviders).mockImplementation(() => new Set(['muse'])); vi.mocked(useOwlFeature).mockImplementation(() => false) })
 
 describe('Settings, under Watcher: worker roles (#1041)', () => {
   it('shows each role on its default with its defaults in order', () => {
@@ -130,5 +131,75 @@ describe('Settings, under Watcher: worker roles (#1041)', () => {
     fireEvent.click(screen.getByRole('option', { name: 'GPT-6.1 Sol' }))
     expect(update).toHaveBeenLastCalledWith({ workerRoles: { orchestrating: { modelId: publicProviderEntityId('codex', 'model', 'gpt-6.1-sol'), reasoningEffort: 'medium' } } })
     expect(firstMessage.get()).toMatchObject({ modelId: '', effort: null })
+  })
+})
+
+describe('Settings, under Watcher: Workers on each role (worker swarms, ADR-0162)', () => {
+  const swarms = (): void => { vi.mocked(useOwlFeature).mockImplementation(id => id === 'worker-swarms') }
+  const SONNET = publicProviderEntityId('claude', 'model', 'sonnet')
+  const usual = (role: string) => within(card(role)).getByRole('spinbutton', { name: `Usual number of ${role} workers for one request` })
+  const upTo = (role: string) => within(card(role)).getByRole('spinbutton', { name: `Most ${role} workers Watcher starts for one request on its own` })
+
+  it('shows no Workers on stable, and each role’s own on Owl, never on Orchestrating', () => {
+    show()
+    expect(screen.queryByRole('spinbutton')).toBeNull()
+    cleanup()
+    swarms()
+    show()
+    expect([usual('Research'), upTo('Research')].map(input => (input as HTMLInputElement).value)).toEqual(['1', '8'])
+    expect((upTo('Code review') as HTMLInputElement).value).toBe('4')
+    expect([usual('Computer use'), upTo('Computer use')].map(input => (input as HTMLInputElement).value)).toEqual(['1', '1'])
+    expect(within(card('Orchestrating')).queryByRole('spinbutton')).toBeNull()
+  })
+
+  it('saves counts in the role’s row, moves the other number so Usual never passes Up to, and puts back anything but a whole number', () => {
+    swarms()
+    const { update } = show()
+    fireEvent.change(upTo('Building'), { target: { value: '3' } })
+    fireEvent.blur(upTo('Building'))
+    expect(update).toHaveBeenLastCalledWith({ workerRoles: { building: { modelId: publicProviderEntityId('claude', 'model', 'opus'), reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits', workers: { usual: 1, upTo: 3 } } } })
+    update.mockClear()
+    fireEvent.change(usual('Research'), { target: { value: '12' } })
+    fireEvent.keyDown(usual('Research'), { key: 'Enter' })
+    expect(update.mock.calls.at(-1)?.[0].workerRoles?.research?.workers).toEqual({ usual: 12, upTo: 12 })
+    expect((upTo('Research') as HTMLInputElement).value).toBe('12')
+    update.mockClear()
+    fireEvent.change(usual('UI'), { target: { value: '0' } })
+    fireEvent.blur(usual('UI'))
+    expect(update).not.toHaveBeenCalled()
+    expect((usual('UI') as HTMLInputElement).value).toBe('1')
+    fireEvent.change(upTo('UI'), { target: { value: '1001' } })
+    fireEvent.blur(upTo('UI'))
+    expect((upTo('UI') as HTMLInputElement).value).toBe('2')
+    expect(upTo('UI')).toHaveAttribute('max', '1000')
+  })
+
+  it('keeps a row’s counts through a model change, and Reset and Undo take them with the row', () => {
+    swarms()
+    const row = { modelId: SONNET, reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' as const, workers: { usual: 2, upTo: 4 } }
+    const { update } = show({ building: row })
+    fireEvent.click(within(card('Building')).getByRole('combobox', { name: /model/u }))
+    fireEvent.click(screen.getByRole('option', { name: 'Opus 5.5' }))
+    expect(update).toHaveBeenLastCalledWith({ workerRoles: { building: { ...row, modelId: publicProviderEntityId('claude', 'model', 'opus') } } })
+    fireEvent.click(within(card('Building')).getByRole('button', { name: /^Reset Building to its default/u }))
+    expect(update).toHaveBeenLastCalledWith({ workerRoles: {} })
+    fireEvent.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(update).toHaveBeenLastCalledWith({ workerRoles: { building: row } })
+  })
+
+  it('saves no counts once they are back on the role’s defaults', () => {
+    swarms()
+    const { update } = show({ building: { modelId: SONNET, reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits', workers: { usual: 1, upTo: 3 } } })
+    fireEvent.change(upTo('Building'), { target: { value: '2' } })
+    fireEvent.blur(upTo('Building'))
+    expect(update).toHaveBeenLastCalledWith({ workerRoles: { building: { modelId: SONNET, reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' } } })
+  })
+
+  it('keeps saved counts whole on stable when another setting of the row changes', () => {
+    const row = { modelId: SONNET, reasoningEffort: 'xhigh', runtimeMode: 'auto-accept-edits' as const, workers: { usual: 3, upTo: 6 } }
+    const { update } = show({ research: row })
+    fireEvent.click(within(card('Research')).getByRole('combobox', { name: /model/u }))
+    fireEvent.click(screen.getByRole('option', { name: 'Opus 5.5' }))
+    expect(update.mock.calls.at(-1)?.[0].workerRoles?.research?.workers).toEqual({ usual: 3, upTo: 6 })
   })
 })

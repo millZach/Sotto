@@ -61,6 +61,11 @@ msgstr ""
 msgid "{0, plural, one {Show {label} models, # model} other {Show {label} models, # models}}"
 msgstr ""
 
+#. placeholder {0}: needs.length
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "{0, plural, other {# needs you}}"
+msgstr ""
+
 #. {about} is a sentence saying where the sign-in is; {host} is the name of a saved host.
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 msgid "{about} Sotto’s OpenCode on {host} reads it there, and Sotto keeps no copy."
@@ -141,6 +146,10 @@ msgstr ""
 
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{commands, plural, one {ran {commandCount} command} other {ran {commandCount} commands}}"
+msgstr ""
+
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "{count, plural, one {{done} of # angle done} other {{done} of # angles done}}"
 msgstr ""
 
 #: src/renderer/src/agents/gitActionButton.logic.ts
@@ -302,6 +311,10 @@ msgstr ""
 #. {error} says why the answer was not sent.
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "{error} Your newer draft is in the composer."
+msgstr ""
+
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "{failed, plural, other {# failed}}"
 msgstr ""
 
 #. How many delegated threads failed.
@@ -1057,6 +1070,10 @@ msgstr ""
 msgid "{questionCount, plural, one {Skip question} other {Skip questions}}"
 msgstr ""
 
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "{queued, plural, other {# waiting}}"
+msgstr ""
+
 #. {reason} says why the page is not shown; {fallbackHint} says where else to look.
 #: src/renderer/src/agents/InteractiveVisual.tsx
 msgid "{reason} Try again to start it from the top. {fallbackHint}"
@@ -1370,6 +1387,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "{working, plural, other {{workingThreads} working}}"
+msgstr ""
+
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "{working, plural, other {# working}}"
 msgstr ""
 
 #. {working} is how many threads are working.
@@ -1743,6 +1764,12 @@ msgstr ""
 
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "and {more} more"
+msgstr ""
+
+#. {title} is the title of the thread that leads a swarm.
+#. {title} is the title of the thread that leads a swarm.
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "Angles of {title}"
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -5052,6 +5079,7 @@ msgstr ""
 
 #. A provider's status.
 #: src/renderer/src/agents/ProvidersSettings.tsx
+#: src/renderer/src/agents/SwarmAngles.tsx
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Needs attention"
 msgstr ""
@@ -5067,10 +5095,12 @@ msgctxt "delegated work"
 msgid "Needs you"
 msgstr ""
 
+#: src/renderer/src/agents/SwarmAngles.tsx
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Needs your answer"
 msgstr ""
 
+#: src/renderer/src/agents/SwarmAngles.tsx
 #: src/renderer/src/agents/threadFacts.ts
 msgid "Needs your approval"
 msgstr ""
@@ -7773,7 +7803,12 @@ msgstr ""
 
 #. Button on the line of a turn that is waiting on the user’s own model server: stops the turn.
 #: src/renderer/src/agents/ownServerTurnWords.ts
+#: src/renderer/src/agents/SwarmAngles.tsx
 msgid "Stop"
+msgstr ""
+
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "Stop {title}"
 msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
@@ -7858,6 +7893,11 @@ msgstr ""
 
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "Sync ref"
+msgstr ""
+
+#. A swarm lead has written its synthesis of the angles.
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "Synthesis written"
 msgstr ""
 
 #. Who wrote a message: the system.
@@ -9197,6 +9237,11 @@ msgstr ""
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Waiting in {waitingIn}"
+msgstr ""
+
+#. A swarm angle that has not started: its machine is at its ceiling, or its lead has not planned it yet.
+#: src/renderer/src/agents/SwarmAngles.tsx
+msgid "Waiting its turn"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx

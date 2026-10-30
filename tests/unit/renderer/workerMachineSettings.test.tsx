@@ -4,13 +4,15 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_SETTINGS, type SettingsPatch } from '../../../src/shared/settings'
 import type { WatcherMachine, WatcherMachinesRead } from '../../../src/shared/watcherRoom'
 import { useOptionalAgents } from '../../../src/renderer/src/agents/AgentContext'
-import { WorkerMachineSettings } from '../../../src/renderer/src/features/settings/WorkerMachineSettings'
+import { WorkerCapacitySettings, WorkerMachineSettings } from '../../../src/renderer/src/features/settings/WorkerMachineSettings'
+import { useOwlFeature } from '../../../src/renderer/src/state/owlFeature'
 import { useWatcherRoom } from '../../../src/renderer/src/watcher/watcherRoom'
 import { hostsBridgeFixture, hostsState, hostStatus } from '../../fixtures/renderer/hostBridges'
 
 vi.mock('../../../src/renderer/src/watcher/watcherRoom', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/watcher/watcherRoom')>(), useWatcherRoom: vi.fn() }))
 vi.mock('../../../src/renderer/src/agents/AgentContext', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/agents/AgentContext')>(), useOptionalAgents: vi.fn() }))
-afterEach(() => { cleanup(); vi.clearAllMocks() })
+vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => ({ ...await importOriginal<typeof import('../../../src/renderer/src/state/owlFeature')>(), useOwlFeature: vi.fn(() => false) }))
+afterEach(() => { cleanup(); vi.clearAllMocks(); vi.mocked(useOwlFeature).mockImplementation(() => false) })
 
 const NOW = Date.now()
 const LOCAL = '7d1c8a52-5f0a-4d55-9a38-1f9b7a2a0c11', FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10'
@@ -110,5 +112,42 @@ describe('Settings, under Watcher: Where new workers start (#1032)', () => {
     expect(group().getAllByRole('radio').map(radio => radio.getAttribute('value'))).toEqual(['this-computer'])
     fireEvent.click(screen.getByRole('button', { name: 'Hosts & phones' }))
     expect(openHosts).toHaveBeenCalled()
+  })
+})
+
+describe('Settings, under Watcher: Worker capacity (worker swarms, ADR-0162)', () => {
+  function capacity(options: { crossMachine?: boolean; ceilings?: Record<string, number> } = {}) {
+    vi.mocked(useOwlFeature).mockImplementation(id => id === 'cross-machine-work' && options.crossMachine === true)
+    const hosts = hostsBridgeFixture({ initial: hostsState({ localHostId: LOCAL, hosts: [{ hostId: LOCAL, name: 'This PC' }, { hostId: FORGE, name: 'forge' }].map(hostStatus) }) })
+    const update = vi.fn<(patch: SettingsPatch) => Promise<boolean>>(async () => true)
+    render(<WorkerCapacitySettings settings={{ ...DEFAULT_SETTINGS, workerMachineCeilings: options.ceilings ?? {} }} onUpdateSettings={update} hosts={hosts.bridge} />)
+    return { update }
+  }
+
+  it('saves how many may work at once here, ten by default, and says so when the number is not one it takes', () => {
+    const { update } = capacity()
+    const field = screen.getByRole('textbox', { name: 'Most working at once' })
+    expect(field).toHaveValue('10')
+    expect(screen.queryByRole('textbox', { name: 'forge' })).toBeNull()
+    fireEvent.change(field, { target: { value: '0' } })
+    fireEvent.blur(field)
+    expect(update).not.toHaveBeenCalled()
+    expect(screen.getByText('Enter a whole number, 1 or more. Nothing was changed.')).toBeInTheDocument()
+    fireEvent.change(field, { target: { value: '6' } })
+    fireEvent.keyDown(field, { key: 'Enter' })
+    expect(update).toHaveBeenLastCalledWith({ workerCeiling: 6 })
+  })
+
+  it('with Work across machines on, lets each paired machine ask for its own by its host ID, and empty puts it back on the page’s', async () => {
+    const { update } = capacity({ crossMachine: true, ceilings: { [FORGE]: 16 } })
+    const forgeField = await screen.findByRole('textbox', { name: 'forge' })
+    expect(forgeField).toHaveValue('16')
+    expect(screen.queryByRole('textbox', { name: 'This PC' })).toBeNull()
+    fireEvent.change(forgeField, { target: { value: '12' } })
+    fireEvent.blur(forgeField)
+    expect(update).toHaveBeenLastCalledWith({ workerMachineCeilings: { [FORGE]: 12 } })
+    fireEvent.change(forgeField, { target: { value: '' } })
+    fireEvent.blur(forgeField)
+    expect(update).toHaveBeenLastCalledWith({ workerMachineCeilings: {} })
   })
 })
