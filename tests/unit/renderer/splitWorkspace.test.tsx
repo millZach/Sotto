@@ -266,6 +266,7 @@ describe('split thread workspace', () => {
       paneWorkingCopy: pane => <span data-testid="crumb">{pane.row.thread.id}</span>,
       paneNotice: pane => <button type="button" onClick={pane.focusPrompt}>Notice for {pane.row.thread.id}</button>,
       paneTools: true,
+      paneTerminal: pane => pane.row.thread.id === 'wav-stall',
     } })
     expect(reported).toEqual([['grok-previews']])
     await act(async () => { fireEvent.click(openBesideButton('Streaming WAV stall')) })
@@ -277,6 +278,9 @@ describe('split thread workspace', () => {
     // dot (ADR-0163). Opening another pane's menu focuses that pane first.
     expect(view.pane('Streaming WAV stall').querySelector('[data-opens="tools"]')).toHaveAccessibleName('More actions')
     expect(view.pane('Grok voice previews').querySelector('[data-opens="tools"]')).toBeNull()
+    // A pane with a Terminal drawer says so in its header, where the drawer's keys look for it.
+    expect(view.pane('Streaming WAV stall').querySelector('header')).toHaveAttribute('data-terminal-drawer')
+    expect(view.pane('Grok voice previews').querySelector('header')).not.toHaveAttribute('data-terminal-drawer')
     fireEvent.click(within(view.pane('Grok voice previews')).getByRole('button', { name: 'Notice for grok-previews' }))
     expect(view.prompt('Grok voice previews')).toHaveFocus()
     // Narrow focus hides a pane but it is still on screen for this purpose; the list is unchanged and nothing is selected.

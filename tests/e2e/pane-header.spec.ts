@@ -5,7 +5,8 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { ownedE2EProfile } from './support/e2eProfile'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, paneMenuToggle, type LaunchedSotto } from './support/sottoLaunch'
+import { promptField } from './support/prompt'
 import { holdContentSize } from './support/sottoWindow'
 
 // A pane's header (ADR-0163, #1828): the title, project and folder, then pinned to the right in a fixed order the Git
@@ -96,6 +97,16 @@ test('a pane header carries the Git action, Watch, one ··· menu and close, an
     await page.keyboard.press('Escape')
     await expect(menu).toHaveCount(0)
     await expect(more).toBeFocused()
+
+    // The drawer's keys still find the pane though its button is a menu row now, and the row is ticked while it shows.
+    await promptField(pane(page, 'wav-stall')).focus()
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+KeyJ' : 'Control+KeyJ')
+    await expect(pane(page, 'wav-stall').locator('.pane-terminal')).toBeVisible()
+    await more.click()
+    await expect(menu.getByRole('menuitemcheckbox', { name: 'Terminal drawer' })).toHaveAttribute('aria-checked', 'true')
+    await page.keyboard.press('Escape')
+    await paneMenuToggle(pane(page, 'wav-stall'), 'Terminal drawer')
+    await expect(pane(page, 'wav-stall').locator('.pane-terminal')).toHaveCount(0)
 
     // Dragging the divider moves the left pane's edge and its controls with it, and moves nothing in either header against
     // its own pane's right edge: the right pane's controls stay where they were on screen.

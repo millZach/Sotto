@@ -413,7 +413,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     focusAnswerComposer()
   }
   return <>
-    {ownPane ? watcherHeader : <header className="thread-workspace__head">
+    {/* The header says the pane has its own Terminal drawer, for the drawer's keys to find it (paneTerminalShortcut.ts). */}
+    {ownPane ? watcherHeader : <header className="thread-workspace__head" data-terminal-drawer={terminal || undefined}>
       {/* The title, project and folder; while panes stand side by side it is the handle that moves the pane (ADR-0163).
           A press on a control inside it, such as the working copy, stays that control's. */}
       <div className="thread-workspace__title" data-pane-handle={handle ? '' : undefined} draggable={handle && !renaming ? true : undefined}
@@ -432,8 +433,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         </span>
         <span className="thread-workspace__branches" ref={setBranchSlot} />
       </div>
-      {/* Pinned to the right in a fixed order, so nothing here moves as the pane narrows: the Git action (only while
-          there is something to commit, push or open), Watch, the ··· menu and, in a split, close (ADR-0163). */}
+      {/* Pinned to the right in a fixed order, so nothing here moves as the pane narrows: the Git action (once the host
+          has read a repository's status), Watch, the ··· menu and, in a split, close (ADR-0163). */}
       <div className="thread-workspace__actions">
         {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
         {!closed ? <GitActionButton ref={gitAction} thread={thread} state={state} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}

@@ -374,9 +374,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
         style={{ left: offset(pane.x), top: offset(pane.y), width: extent(pane.x), height: extent(pane.y) }}
         onDrop={(threadId, target) => {
           setMoving(null)
-          if (target.kind !== 'pane') return
-          const name = title(threadId), position = target.index + 1, count = layout.panes.length
-          change(movePane(layout, layout.panes.indexOf(threadId), target.index), t({ message: `${name} moved to pane ${{ position: shownCount(position) }} of ${{ count: shownCount(count) }}`, comment: '{name} is a thread\'s title.' }))
+          if (target.kind === 'pane') movePaneTo(threadId, target.index)
         }} />)}
     </div>
     : dragging === null ? null
