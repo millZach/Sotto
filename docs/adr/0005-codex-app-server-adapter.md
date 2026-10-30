@@ -189,8 +189,9 @@ still runs from an earlier look and opening it reads nothing more.
 **A thread's rollout is read on from where it was left.** Each tail saves a rollout position: the start of the first line
 it has not read whole, the file's identity, and what reading up to there gave. That is the user messages it already
 reported and each turn's identity rows, the turn under way included. A tail restored from it holds exactly what one that
-read the rollout from its first byte to there holds, so identity corroboration and takeover are unchanged. A position is
-trusted only for the same file at no shorter a length; otherwise the rollout is read from its first byte again. A rollout
+read the rollout from its first byte to there holds, so identity corroboration and takeover are unchanged. What a tail
+holds stands for one file at no shorter a length: another file found in its place, while Sotto runs or at a later start,
+or one that shrank, is read from its first byte again. A rollout
 gone from where it was is looked for again, and keeps its position where it is the same file. Opening or sending to a
 thread reads on from its position, as its whole read before resuming always did, so it reads only what was written
 since. Taking up a position costs a fraction of the read it replaces: 5 ms for a 20 MB rollout's position of 1 MB,

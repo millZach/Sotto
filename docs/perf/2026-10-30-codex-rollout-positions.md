@@ -79,7 +79,10 @@ run did before. The same benchmark times both for one thread, the median of thre
     reads every tail;
   - a watcher stopped while a read of the rollout is on its way saves no position past the lines it read after
     stopping, so the next run reports them;
-  - a rollout moved from where its position was saved is found again and read on from there.
+  - a rollout moved from where its position was saved is found again and read on from there;
+  - a rollout replaced by another file while the watcher runs is read from its first byte, and the position saved after
+    holds what that read holds;
+  - a read queued for a thread let go while it waited ends quietly, and does not take the thread up again.
 - `tests/integration/codexRolloutPositions.test.ts`:
   - quitting saves the position at the rollout's end; after a restart, neither connecting nor a tick reads the rollout of
     a thread nobody looks at, and opening it reads exactly the bytes typed outside Sotto meanwhile, and shows them;

@@ -420,4 +420,48 @@ describe('a Codex rollout read on from a saved position (#992)', () => {
     await second.pollThread('thread')
     expect(messages.map(message => message.id)).toEqual(['user-2'])
   })
+
+  it('reads a rollout replaced while it runs from its first byte, and saves what that read holds', async () => {
+    const { root, path } = await rollout()
+    const positions = new MemoryPositions()
+    await writeFile(path, turn(1))
+    const messages: AgentMessage[] = []
+    const first = watcher(root, messages, { positions })
+    await first.pollThread('thread')
+    // Another file put in its place, longer than the one read: it is not read on from the old place.
+    await writeFile(`${path}.new`, turn(7) + turn(8))
+    await rename(`${path}.new`, path)
+    await first.pollThread('thread')
+    await first.stop()
+    const reference = watcher(root, [])
+    await reference.pollThread('thread')
+    for (const index of [7, 8]) expect(first.identities('thread', `turn-${index}`)).toEqual(reference.identities('thread', `turn-${index}`))
+    expect(messages.map(message => message.id)).toEqual(['user-1', 'user-7', 'user-8'])
+    const restored = watcher(root, [], { positions })
+    await restored.pollThread('thread')
+    for (const index of [7, 8]) expect(restored.identities('thread', `turn-${index}`)).toEqual(reference.identities('thread', `turn-${index}`))
+  })
+
+  it('ends a read queued for a thread let go while it waited, without taking the thread up again', async () => {
+    const { root, path } = await rollout()
+    const positions = new MemoryPositions()
+    await writeFile(path, turn(1))
+    const reader = watcher(root, [], { positions })
+    const probe = await open(path, 'r')
+    const handles = Object.getPrototypeOf(probe) as { read(...args: unknown[]): Promise<unknown> }
+    await probe.close()
+    const { promise: entered, resolve: enter } = deferred<void>()
+    const { promise: held, resolve: release } = deferred<void>()
+    const native = handles.read
+    vi.spyOn(handles, 'read').mockImplementationOnce(async function (this: unknown, ...args: unknown[]) { enter(); await held; return native.apply(this, args) })
+    const reading = reader.pollThread('thread')
+    await entered
+    // A second read waits behind the first; the thread is let go before it starts.
+    const queued = reader.pollThread('thread')
+    reader.drop('thread')
+    release()
+    await reading; await queued
+    await reader.stop()
+    expect(positions.kept.has('thread')).toBe(false)
+  })
 })

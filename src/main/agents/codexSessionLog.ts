@@ -27,14 +27,15 @@ const userEvent = z.object({ type: z.string(), id: z.string().optional(), messag
 type Tail = { path?: string | undefined; locateAfter: number; locateBackoffMs: number; locateGeneration: number; offset: number; buffer: Buffer[]; bufferedBytes: number; discarding: boolean; own: Map<string, string>; files: Set<string>; seen: Set<string>; identities: CodexRolloutIdentities
   /** Where the line being read began: everything before it has been read whole, and is what a saved position stands for. */
   lineStart: number
-  /** The rollout's identity when it was last read, so a saved position is trusted only for the same file. */
+  /**
+   * The rollout's identity when it was last read. What the tail holds stands for that file only: one found in its place,
+   * restored from a saved position or not, is read from its first byte.
+   */
   file?: FileIdentity | undefined
   /** Whether the tail has read its rollout to the end once, or holds a saved position that had. */
   caughtUp: boolean
   /** Its saved position: not looked for yet, to be read before the tail first reads, or dealt with. */
   saved: 'unknown' | 'pending' | 'settled'
-  /** A saved position was just restored, so the next read checks it is the same file before trusting it. */
-  check: boolean
   /** Read past its saved position, so it is saved again. */
   dirty: boolean
   /** The last read failed, so the next tick reads it again. */
@@ -127,7 +128,7 @@ export class CodexSessionLogWatcher {
     inUse?: (() => ReadonlySet<string>) | undefined; positions?: RolloutPositions | undefined; saveDelayMs?: number | undefined }) {}
   observe(threadId: string): void {
     if (!this.tails.has(threadId)) this.tails.set(threadId, { locateAfter: 0, locateBackoffMs: INITIAL_LOCATE_BACKOFF_MS, locateGeneration: 0, offset: 0, buffer: [], bufferedBytes: 0, discarding: false, own: new Map(), files: new Set(), seen: new Set(), identities: new CodexRolloutIdentities(),
-      lineStart: 0, caughtUp: false, saved: this.options.positions ? 'unknown' : 'settled', check: false, dirty: false, retry: false })
+      lineStart: 0, caughtUp: false, saved: this.options.positions ? 'unknown' : 'settled', dirty: false, retry: false })
   }
   identities(threadId: string, turnId: string): readonly RolloutIdentity[] { return this.tails.get(threadId)?.identities.get(turnId) ?? [] }
   /** A prompt Sotto sent, by its words' digest; `files` when it carried an attached file, and so the note (ADR-0131). */
@@ -226,7 +227,6 @@ export class CodexSessionLogWatcher {
     tail.file = { ...(position.ino === undefined ? {} : { ino: position.ino }), ...(position.birthtimeMs === undefined ? {} : { birthtimeMs: position.birthtimeMs }) }
     for (const id of position.seen) tail.seen.add(id)
     tail.identities = CodexRolloutIdentities.restore(position.identities)
-    tail.check = true
   }
   /** Back to the first byte, as for a rollout that shrank or is not the one a saved position named. */
   private reset(tail: Tail): void {
@@ -261,8 +261,9 @@ export class CodexSessionLogWatcher {
     }
   }
   private async read(threadId: string, complete: boolean): Promise<void> {
-    const tail = this.tails.get(threadId)!
-    if (this.stopped) return
+    // A thread let go while this read waited its turn has nothing to read.
+    const tail = this.tails.get(threadId)
+    if (!tail || this.stopped) return
     try {
       if (tail.saved === 'unknown') this.classify(threadId, tail, await this.savedPositions())
       if (tail.saved === 'pending') await this.restore(threadId, tail)
@@ -290,8 +291,7 @@ export class CodexSessionLogWatcher {
         const stats = await file.stat()
         const size = stats.size
         // A saved position is trusted only for the file it was taken from, and only while that file is not shorter.
-        if (tail.check && !sameFile(tail.file ?? {}, identityOf(stats))) this.reset(tail)
-        tail.check = false
+        if (tail.file && !sameFile(tail.file, identityOf(stats))) this.reset(tail)
         tail.file = identityOf(stats)
         if (size < tail.offset) this.reset(tail)
         // Background polls stay bounded. A guarded target read reaches the captured
@@ -331,7 +331,6 @@ export class CodexSessionLogWatcher {
       // where it was is looked for again, and its saved position kept only if it is the same file somewhere else.
       if ((error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT' && tail.path) {
         tail.path = undefined; tail.locateAfter = 0; tail.locateBackoffMs = INITIAL_LOCATE_BACKOFF_MS
-        if (tail.file) tail.check = true
       }
       tail.retry = true
     }
