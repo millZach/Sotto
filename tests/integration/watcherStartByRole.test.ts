@@ -1,5 +1,5 @@
 // @vitest-environment node
-// #1041: Watcher's start_thread names a worker role, and main fills the model, effort and permission from the user's
+// #1041: Watcher's start_thread names a worker role, and main fills the model, effort, speed and permission from the user's
 // Settings for that role, once, when the start is asked; never wider than the new-thread default.
 import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it } from 'vitest'
@@ -55,7 +55,7 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
     return result
   }
   const workers = () => f.control.shell().host.threads.filter(thread => !existing.has(thread.id))
-  // The fake provider keeps only the model, so how a worker started is read from the command it was sent.
+  // The fake provider keeps the model and speed, so effort and permission are read from the command it was sent.
   const created = (threadId: string) => {
     const sessionId = workspace.registry.byThread(threadId)!.sessionId
     const command = workspace.adapters.codex.commands.find(item => item.type === 'create-thread' && item.threadId === sessionId)
@@ -67,7 +67,7 @@ async function fixture(options: { roles?: boolean; newThread?: AgentRuntimeMode;
     setChoices: (next: WorkerRoleChoices) => { choices = next }, reads: () => reads }
 }
 
-it('starts a worker on its role\'s chosen model, effort and permission, reading Settings once for the start', async () => {
+it('starts a worker on its role\'s chosen model, effort, speed and permission, reading Settings once for the start', async () => {
   const f = await fixture({ newThread: 'full-access' })
   f.setChoices({ building: { modelId: f.other.id, reasoningEffort: 'high', speed: 'ultrafast', runtimeMode: 'auto' } })
   const reads = f.reads()
@@ -85,6 +85,7 @@ it('starts a worker on its role\'s chosen model, effort and permission, reading 
   f.service.state()
   expect(f.reads()).toBe(reads + 1)
   const standard = f.ok(await f.call(f.start({ role: 'building', speed: null })))
+  expect(standard.effectiveChoices.speed).toBeNull()
   expect(f.created(standard.target.threadId).speed).toBeNull()
   expect(standard.role).toMatchObject({ named: ['speed'], speed: null })
 })

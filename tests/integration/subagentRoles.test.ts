@@ -65,9 +65,9 @@ describe('Claude Code threads', () => {
     expect(initialize!.agents!.sotto_research).not.toHaveProperty('effort')
     const prompt = flag((((await launches())[0]!.params!.frame) as { args: string[] }).args, '--append-system-prompt')!
     expect(prompt.startsWith(`${questionInstructions('AskUserQuestion', false)}\n\n`)).toBe(true)
-    expect(prompt).toContain('- Building (synthetic work): use the Agent tool with subagent_type "sotto_building" (Synthetic fixture-model at high effort).')
-    expect(prompt).toContain('- Research (synthetic work): use the Agent tool with subagent_type "sotto_research" (Synthetic fixture-second-model).')
-    expect(prompt).toContain('- Code review (synthetic work): Synthetic gpt-synthetic at xhigh effort on Codex, another provider: call delegate with work "code-review".')
+    expect(prompt).toContain('- Building (synthetic work): use the Agent tool with subagent_type "sotto_building" (Synthetic fixture-model at high effort, Standard speed).')
+    expect(prompt).toContain('- Research (synthetic work): use the Agent tool with subagent_type "sotto_research" (Synthetic fixture-second-model, Standard speed).')
+    expect(prompt).toContain('- Code review (synthetic work): Synthetic gpt-synthetic at xhigh effort, Standard speed on Codex, another provider: call delegate with work "code-review".')
   })
 
   it('starts the CLI again when the thread narrows below what its agents were given', async () => {
@@ -85,7 +85,7 @@ describe('Claude Code threads', () => {
   it('tells a thread that cannot delegate to do another provider\'s work itself', async () => {
     const { launches } = await claude(TABLE, false)
     const prompt = flag((((await launches())[0]!.params!.frame) as { args: string[] }).args, '--append-system-prompt')!
-    expect(prompt).toContain('- Code review (synthetic work): Synthetic gpt-synthetic at xhigh effort on Codex, which this thread cannot start: do that work yourself.')
+    expect(prompt).toContain('- Code review (synthetic work): Synthetic gpt-synthetic at xhigh effort, Standard speed on Codex, which this thread cannot start: do that work yourself.')
     expect(prompt).not.toContain('call delegate')
   })
 
@@ -129,11 +129,11 @@ describe('Codex threads', () => {
     expect(computerUse).not.toContain('Synthetic first')
     const instructions = start!.params!.developerInstructions as string
     expect(instructions.startsWith('Synthetic project developer instructions')).toBe(true)
-    expect(instructions).toContain('- Computer use (synthetic work): call spawn_agent with agent_type "sotto_computer_use" (Synthetic fixture-model at high effort).')
-    expect(instructions).toContain('- Code review (synthetic work): call spawn_agent with agent_type "sotto_code_review" (Synthetic fixture-second-model at low effort).')
-    expect(instructions).toContain('- Building (synthetic work): Synthetic opus at xhigh effort on Claude Code, another provider: call delegate with work "building".')
-    // A model Codex does not list as ready gets no role file; the thread is told the model to ask for instead.
-    expect(instructions).toContain('- Research (synthetic work): call spawn_agent with model "retired-model" and reasoning_effort "low".')
+    expect(instructions).toContain('- Computer use (synthetic work): call spawn_agent with agent_type "sotto_computer_use" (Synthetic fixture-model at high effort, Standard speed).')
+    expect(instructions).toContain('- Code review (synthetic work): call spawn_agent with agent_type "sotto_code_review" (Synthetic fixture-second-model at low effort, Standard speed).')
+    expect(instructions).toContain('- Building (synthetic work): Synthetic opus at xhigh effort, Standard speed on Claude Code, another provider: call delegate with work "building".')
+    // A model Codex does not list as ready gets no role file; delegation applies the role's speed independently.
+    expect(instructions).toContain('- Research (synthetic work): Synthetic retired-model at low effort, Standard speed: call delegate with work "research" so it starts at the role\'s speed.')
     expect(log).not.toHaveBeenCalled()
   })
 
@@ -273,11 +273,11 @@ describe('Codex threads', () => {
     await expect.poll(() => f.sessions.stopped(id)).toBe(true)
   })
 
-  it('tells a thread on a Codex too old for roles to name the model and effort instead', async () => {
+  it('tells a thread on a Codex too old for roles to delegate so the role\'s speed is applied', async () => {
     const { loads, agents } = await codex(TABLE, 'auto', { version: 'codex/0.161.0' })
     const [start] = await loads('thread/start')
     expect(agents(start!)).toBeUndefined()
-    expect(start!.params!.developerInstructions).toContain('- Computer use (synthetic work): call spawn_agent with model "fixture-model" and reasoning_effort "high".')
+    expect(start!.params!.developerInstructions).toContain('- Computer use (synthetic work): Synthetic fixture-model at high effort, Standard speed: call delegate with work "computer-use" so it starts at the role\'s speed.')
     expect(start!.params!.developerInstructions).not.toContain('agent_type')
   })
 
@@ -310,8 +310,8 @@ describe('Grok Build threads', () => {
     const start = (await f.driver.requests()).find(record => record.method === 'session/new' && (record.params!._meta as { rules?: string } | undefined)?.rules)!
     const rules = (start.params!._meta as { rules: string }).rules
     expect(rules.startsWith(`${questionInstructions('ask_user_question', false)}\n\n`)).toBe(true)
-    expect(rules).toContain('- Research (synthetic work): start your sub-agent on fixture-model at high effort when you can choose its model.')
-    expect(rules).toContain('- Building (synthetic work): Synthetic opus at xhigh effort on Claude Code, another provider: call delegate with work "building".')
+    expect(rules).toContain('- Research (synthetic work): Synthetic fixture-model at high effort, Standard speed: call delegate with work "research" so it starts at the role\'s speed.')
+    expect(rules).toContain('- Building (synthetic work): Synthetic opus at xhigh effort, Standard speed on Claude Code, another provider: call delegate with work "building".')
     expect(rules).not.toContain('agent_type')
   })
 })

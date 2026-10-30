@@ -5,13 +5,22 @@
 .thread-prompt[data-quiet] .screenshot-input > :has(.prompt-editor) { grid-column: 2; grid-row: 2; min-width: 0; }
 .thread-prompt[data-quiet] .prompt-editor { min-height: 22.5px; max-height: 160px; padding: 4px 6px; resize: none; }
 .thread-prompt[data-quiet] .screenshot-input__tools > .tt-button { grid-column: 1; grid-row: 2; margin: 0; }
-.thread-prompt[data-quiet] > .thread-prompt__footer { grid-column: 3; grid-row: 2; align-self: end; margin: 0; }
+.thread-prompt[data-quiet] > .thread-prompt__footer { grid-column: 3; grid-row: 2; align-self: center; margin: 0; }
 /* What the user put in the prompt sits above the line; what Sotto says about it, below. */
 .thread-prompt[data-quiet] :is(.review-chips, .thread-prompt__notice) { grid-row: 1; }
 .thread-prompt[data-quiet] :is(.screenshot-previews, .attached-files, .screenshot-input__tools > small, .review-chips__note) { grid-row: 3; }
 .thread-prompt[data-quiet] > .thread-options-notices { grid-row: 4; }
 .thread-prompt[data-quiet] :is(.thread-prompt__meta, .thread-options-bar, .thread-options--chips) { flex: none; flex-wrap: nowrap; gap: 0 2px; }
 .thread-prompt[data-quiet] .thread-prompt__actions { gap: 2px; }
+
+/* Model and effort share a 30px block, within Send's existing 32px axis. The shield spans both rows.
+   The first circle starts at the name: 8px inset + 13px mark + 5px gap, less the track's 4.8px inset. */
+.thread-prompt[data-quiet] .thread-options--chips:has(> .effort-dots) { display: grid; grid-template-columns: auto auto; grid-template-rows: 20px 10px; }
+.thread-prompt[data-quiet] .thread-options--chips:has(> .effort-dots) > .model-picker { grid-column: 1; grid-row: 1; }
+.thread-prompt[data-quiet] .thread-options--chips:has(> .effort-dots) .model-picker__trigger { height: 20px; min-height: 20px; }
+.thread-prompt[data-quiet] .thread-options--chips > .effort-dots { grid-column: 1; grid-row: 2; justify-self: start; height: 10px; margin-inline-start: 21.2px; }
+.thread-prompt[data-quiet] .thread-options--chips > .effort-dots :is(.effort-dots__hold, .effort-dots__track, i) { height: 10px; }
+.thread-prompt[data-quiet] .thread-options--chips:has(> .effort-dots) > .thread-chip-menu { grid-column: 2; grid-row: 1 / 3; align-self: center; }
 
 /* The model keeps its mark and name and loses its chevron; permissions show only their shield, the words kept for
    assistive technology as ADR-0113 decision 2 keeps them in a narrow pane. */

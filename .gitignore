@@ -853,6 +853,14 @@ artifacts/agent-speed/*
 !artifacts/agent-speed/final-thread-light.png
 !artifacts/agent-speed/final-watcher-dark.png
 !artifacts/agent-speed/final-watcher-light.png
+!artifacts/agent-speed/stacked-thread-dark-1x.png
+!artifacts/agent-speed/stacked-thread-dark-2x.png
+!artifacts/agent-speed/stacked-thread-light-1x.png
+!artifacts/agent-speed/stacked-thread-light-2x.png
+!artifacts/agent-speed/stacked-watcher-dark-1x.png
+!artifacts/agent-speed/stacked-watcher-dark-2x.png
+!artifacts/agent-speed/stacked-watcher-light-1x.png
+!artifacts/agent-speed/stacked-watcher-light-2x.png
 
 # Headless composer evidence; retain only the captures and checks cited by the verification note.
 artifacts/next-prompt-quiet-composer/*
