@@ -1,4 +1,4 @@
-import { promptText } from './helpers/promptEditor'
+import { promptText, setPromptText } from './helpers/promptEditor'
 import React from 'react'
 import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -20,6 +20,7 @@ import { WatcherView } from '../../../src/renderer/src/watcher/WatcherView'
 import { agentContextFixture } from '../../fixtures/agentContext'
 import { threadsStateFixture } from '../../fixtures/agentState'
 
+const owl = vi.hoisted(() => ({ quiet: false }))
 vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
   ...await importOriginal<typeof import('../../../src/renderer/src/state/AppContext')>(),
   useOptionalApp: vi.fn(),
@@ -27,7 +28,7 @@ vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn(), useOptionalAgents: vi.fn() }))
 vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../src/renderer/src/state/owlFeature')>()
-  return { ...actual, useOwlFeature: (id: string) => id === 'next-prompt' || actual.useOwlFeature(id as never) }
+  return { ...actual, useOwlFeature: (id: string) => id === 'quiet-composer' ? owl.quiet : id === 'next-prompt' || actual.useOwlFeature(id as never) }
 })
 
 /**
@@ -43,7 +44,8 @@ const PROMPT: NextPrompt = {
   suggestions: [{ intent: 'continue', label: 'Open the first', text: 'Open the first thread that waits' }], answers: [],
 }
 
-function renderRoom(settings: AppSettings = DEFAULT_SETTINGS) {
+function renderRoom(settings: AppSettings = DEFAULT_SETTINGS, quiet = false) {
+  owl.quiet = quiet
   const thread: AgentThread = { id: WATCHER, kind: 'watcher', title: 'Watcher', projectId: 'workshop', modelId: 'claude:sonnet', providerId: 'claude', hostId: HOST, status: 'idle', requests: [], messages: said }
   const state: AgentState = threadsStateFixture()
   state.hostId = HOST
@@ -71,20 +73,29 @@ const prompt = async () => within(await screen.findByRole('region', { name: 'Wat
 const ghost = (): HTMLElement | null => document.querySelector('.prompt-editor__ghost')
 
 beforeEach(() => {
+  owl.quiet = false
   vi.mocked(useAgents).mockReset(); vi.mocked(useOptionalAgents).mockReset(); vi.mocked(useOptionalApp).mockReset()
   localStorage.clear(); roomView.set({ besideId: null, share: 0.5 })
 })
 afterEach(() => { cleanup(); localStorage.clear(); nextPromptStore.sent(WATCHER, '\u0000') })
 
 describe('the next prompt in Watcher’s composer', () => {
-  it('shows the next prompt after Watcher’s reply, and Tab takes it into the message', async () => {
-    renderRoom()
+  it.each([false, true])('shows the ghost, opens its list and completes it with quiet composer %s', async quiet => {
+    renderRoom(DEFAULT_SETTINGS, quiet)
     const field = await prompt()
     expect(ghost()).toHaveTextContent('Show me the first oneTab')
     field.focus()
+    expect(fireEvent.keyDown(field, { key: 'ArrowUp' })).toBe(false)
+    expect(screen.getByRole('listbox', { name: 'Next prompts' })).toBeInTheDocument()
+    expect(ghost()).toBeNull()
+    fireEvent.keyDown(field, { key: 'Escape' })
+    expect(screen.queryByRole('listbox', { name: 'Next prompts' })).toBeNull()
+    setPromptText(field, 'show me')
+    expect(ghost()!.firstChild!.textContent).toBe(' the first one')
     expect(fireEvent.keyDown(field, { key: 'Tab' })).toBe(false)
     expect(promptText(field)).toBe('Show me the first one')
     expect(ghost()).toBeNull()
+    expect(field).toHaveFocus()
   })
 
   it('offers nothing while Suggest a next prompt after each turn is off', async () => {

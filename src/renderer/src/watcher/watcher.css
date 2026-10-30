@@ -87,8 +87,8 @@
 .watcher-room[data-beside] .thread-pane.watcher-pane { right: auto; width: calc((100% - 9px) * var(--watcher-share)); }
 .watcher-room .thread-panes__divider.watcher-split__divider { top: 0; left: calc((100% - 9px) * var(--watcher-share)); width: 9px; height: 100%; }
 .watcher-room .thread-pane.watcher-beside { left: calc((100% - 9px) * var(--watcher-share) + 9px); }
-/* As in a split on the Threads page: the focused pane carries the accent along its top edge, and the other's title steps back. */
-.watcher-room[data-beside] .thread-pane[data-focused] { box-shadow: inset 0 2px 0 var(--tt-activity); }
+/* As in a split on the Threads page: the focused pane carries the accent hairline along its top edge, and the other's title steps back. */
+.watcher-room[data-beside] .thread-pane[data-focused] { box-shadow: var(--threads-pane-edge); }
 .watcher-room[data-beside] .thread-pane:not([data-focused]) .thread-workspace__head :is(h1, h2) { color: var(--tt-text-2); }
 
 /* The night sky in the room's corner: the accent glowing behind the tile, the night across that corner of the header,

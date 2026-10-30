@@ -767,7 +767,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const generation = this.generation
     const profile = await this.watcherProfile(id)
     this.checkProfileContinuation(id, generation)
-    if (profile || this.aliases[id]?.kind === 'personal') return null
+    if ((profile && prompt.purpose !== 'next-prompt') || this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
     if (!this.state.connected || !alias || !this.executable) return null
     const effort = sideWritingEffort(this.state.models, alias.modelId)

@@ -7,6 +7,7 @@ export default tseslint.config(
       'artifacts/agent-speed/**',
       'native/coreml-asr/.build/**',
       'artifacts/watcher-room-state/**',
+      'artifacts/next-prompt-quiet-composer/**',
       'artifacts/watcher-picture-owls/**',
       'artifacts/certified-detail/**',
       'artifacts/watcher-phone-wire/**',

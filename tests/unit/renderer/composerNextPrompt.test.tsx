@@ -11,11 +11,11 @@ import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
 import { ghostRest, NextPromptStore, nextPromptStore, withNextText } from '../../../src/renderer/src/agents/nextPrompts'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
-const owl = vi.hoisted(() => ({ next: true }))
+const owl = vi.hoisted(() => ({ next: true, quiet: false }))
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 vi.mock('../../../src/renderer/src/state/owlFeature', async importOriginal => {
   const actual = await importOriginal<typeof import('../../../src/renderer/src/state/owlFeature')>()
-  return { ...actual, useOwlFeature: (id: string) => id === 'next-prompt' ? owl.next : actual.useOwlFeature(id as never) }
+  return { ...actual, useOwlFeature: (id: string) => id === 'next-prompt' ? owl.next : id === 'quiet-composer' ? owl.quiet : actual.useOwlFeature(id as never) }
 })
 
 const THREAD = 'grok-previews'
@@ -32,7 +32,8 @@ const PROMPT: NextPrompt = {
 }
 
 let anchor = ''
-function mount(options: { running?: boolean; prompt?: NextPrompt; afterUserMessageId?: string } = {}) {
+function mount(options: { quiet?: boolean; running?: boolean; prompt?: NextPrompt; afterUserMessageId?: string } = {}) {
+  owl.quiet = options.quiet ?? false
   const state: AgentState = threadsStateFixture()
   state.activeThreadId = THREAD
   if (options.running) state.host = { ...state.host, threads: state.host.threads.map(thread => thread.id === THREAD ? { ...thread, status: 'running' as const } : thread) }
@@ -49,12 +50,13 @@ const sends = (live: ReturnType<typeof liveAgentState>): Extract<AgentCommand, {
 const ghost = (): HTMLElement | null => document.querySelector('.prompt-editor__ghost')
 const list = (): HTMLElement | null => screen.queryByRole('listbox', { name: 'Next prompts' })
 
-beforeEach(() => { owl.next = true; vi.mocked(useAgents).mockReset() })
+beforeEach(() => { owl.next = true; owl.quiet = false; vi.mocked(useAgents).mockReset() })
 afterEach(() => { cleanup(); nextPromptStore.sent(THREAD, '\u0000') })
 
 describe('the next prompt in an empty composer', () => {
-  it('shows the next prompt as a ghost with a Tab keycap, describes it, and Tab takes it', () => {
-    const { prompt } = mount()
+  it.each([false, true])('shows and describes the ghost, and Tab takes it with quiet composer %s', quiet => {
+    const { prompt } = mount({ quiet })
+    expect(prompt().closest('.thread-prompt')!.hasAttribute('data-quiet')).toBe(quiet)
     expect(ghost()).toHaveTextContent('Open the pull request for this fixTab')
     expect(ghost()).toHaveAttribute('aria-hidden', 'true')
     const described = prompt().getAttribute('aria-describedby')!.split(' ').map(id => document.getElementById(id)?.textContent).join(' ')
@@ -64,10 +66,11 @@ describe('the next prompt in an empty composer', () => {
     expect(tab).toBe(false)
     expect(promptText(prompt())).toBe('Open the pull request for this fix')
     expect(ghost()).toBeNull()
+    expect(prompt()).toHaveFocus()
   })
 
-  it('keeps the rest ghosted after a prefix in any case, and leaves Tab alone once the text leaves it', () => {
-    const { prompt } = mount()
+  it.each([false, true])('completes a prefix and leaves unrelated text alone with quiet composer %s', quiet => {
+    const { prompt } = mount({ quiet })
     setPromptText(prompt(), 'open the')
     expect(ghost()!.firstChild!.textContent).toBe(' pull request for this fix')
     fireEvent.keyDown(prompt(), { key: 'Tab' })
@@ -106,8 +109,8 @@ describe('the next prompt in an empty composer', () => {
 })
 
 describe('the Next list', () => {
-  it('opens on Up in an empty prompt over the composer, headed by the headline, and moves with the arrows', () => {
-    const { prompt } = mount()
+  it.each([false, true])('opens and navigates the Next list with quiet composer %s', quiet => {
+    const { prompt } = mount({ quiet })
     prompt().focus()
     fireEvent.keyDown(prompt(), { key: 'ArrowUp' })
     const opened = list()!
@@ -124,6 +127,7 @@ describe('the Next list', () => {
     fireEvent.keyDown(prompt(), { key: 'Enter' })
     expect(list()).toBeNull()
     expect(promptText(prompt())).toBe('Do the same for the light theme')
+    expect(prompt()).toHaveFocus()
   })
 
   it('picks a suggestion by its digit, and Escape closes it with nothing written', () => {

@@ -1133,7 +1133,7 @@ export class CodexAppServerHost implements AgentHost {
    */
   async writeShortText(id: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     const generation = this.generation
-    if (await this.checkLaunchProfile(id)) return null
+    if (await this.checkLaunchProfile(id) && prompt.purpose !== 'next-prompt') return null
     if (generation !== this.generation) throw new Error('Codex connection changed.')
     if (this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]

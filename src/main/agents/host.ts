@@ -195,7 +195,13 @@ export interface ThreadReadPurpose {
  */
 /** Where a rename came from: by hand, written by the thread's own provider, or a first-message title. */
 export type ThreadRenameSource = 'user' | 'generated' | 'first-message'
-export interface ShortTextPrompt { readonly instruction: string; readonly material: string }
+export type ShortTextPurpose = 'thread-title' | 'thread-branch' | 'commit-message' | 'pull-request-text' | 'next-prompt'
+export interface ShortTextPrompt {
+  readonly instruction: string
+  readonly material: string
+  /** Internal routing purpose, never part of the model's prompt. */
+  readonly purpose?: ShortTextPurpose
+}
 export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string }
 /** One thread's messages as the workspace still holds them, handed back before a connection reads history. */
 export interface RestoredThreadHistory {

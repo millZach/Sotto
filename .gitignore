@@ -853,3 +853,11 @@ artifacts/agent-speed/*
 !artifacts/agent-speed/final-thread-light.png
 !artifacts/agent-speed/final-watcher-dark.png
 !artifacts/agent-speed/final-watcher-light.png
+
+# Headless composer evidence; retain only the captures and checks cited by the verification note.
+artifacts/next-prompt-quiet-composer/*
+!artifacts/next-prompt-quiet-composer/main-thread.png
+!artifacts/next-prompt-quiet-composer/main-watcher.png
+!artifacts/next-prompt-quiet-composer/speed-thread.png
+!artifacts/next-prompt-quiet-composer/speed-watcher.png
+!artifacts/next-prompt-quiet-composer/checks.json
