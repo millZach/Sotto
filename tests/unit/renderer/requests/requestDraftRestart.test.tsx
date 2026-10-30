@@ -44,7 +44,9 @@ it('restores a legacy choice for a thread and sends only its original option ID'
   const card = () => <AgentRequestCard ownerId="owner" ownerTitle="Owner" draftOwner={owner} request={request} blocked={null} onSubmit={send} store={new RequestAnswerStore(() => bridge)} />
   const first = render(card())
   await userEvent.setup().click(screen.getByRole('radio', { name: /Coast/u }))
-  await screen.findByText('Answer draft saved.')
+  await waitFor(() => expect(saved.size).toBe(1))
+  // A save says nothing: only a failed one shows (October 29, 2026).
+  expect(screen.queryByRole('status')).toBeNull()
   first.unmount()
   render(card())
   await waitFor(() => expect(screen.getByRole('radio', { name: /Coast/u })).toBeChecked())
