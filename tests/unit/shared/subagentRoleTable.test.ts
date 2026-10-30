@@ -56,8 +56,12 @@ describe('the instructions a thread carries', () => {
   })
 
   it('tells a Codex thread to name its role in spawn_agent', () => {
-    expect(lines({ provider: 'codex', agents: new Set(['computer-use']), agentTool: 'codex', canDelegate: true })[5])
-      .toBe('- Computer use (clicking and typing in apps and the browser): call spawn_agent with agent_type "sotto_computer_use" (GPT-6 Astra at medium effort, Standard speed).')
+    for (const canDelegate of [true, false]) {
+      expect(lines({ provider: 'codex', agents: new Set(['computer-use']), agentTool: 'codex', canDelegate })[5])
+        .toBe('- Computer use (clicking and typing in apps and the browser): call spawn_agent with agent_type "sotto_computer_use" (GPT-6 Astra at medium effort, Standard speed).')
+    }
+    expect(lines({ provider: 'codex', agents: new Set(), agentTool: 'codex', canDelegate: false })[5])
+      .toBe('- Computer use (clicking and typing in apps and the browser): call spawn_agent with model "gpt-6-astra" and reasoning_effort "medium" (Standard speed).')
   })
 
   it('gives a provider without role agents the model to ask for, and a thread that cannot delegate its own work back', () => {
@@ -72,15 +76,31 @@ describe('the instructions a thread carries', () => {
     const fast = { ...CODEX[0]!, speeds: [{ id: 'ultrafast' as const, name: 'Ultrafast' }] }
     const selected = subagentRoleTable({ building: { modelId: fast.id, reasoningEffort: 'high', speed: 'ultrafast' } }, [fast])
     expect(selected.find(role => role.kind === 'building')?.speed).toBe('ultrafast')
-    expect(subagentRoleInstructions(selected, { provider: 'codex', agents: new Set(['building']), agentTool: 'codex', canDelegate: true }))
+    expect(subagentRoleInstructions(selected, { provider: 'codex', agents: new Set(['building']), agentTool: 'codex', canDelegate: false }))
       .toContain('sotto_building" (GPT-6.1 Sol at high effort, Ultrafast speed)')
     expect(subagentRoleInstructions(selected, { provider: 'codex', agents: new Set(), agentTool: 'codex', canDelegate: true }))
       .toContain('Ultrafast speed: call delegate with work "building"')
+    for (const speed of ['fast', 'ultrafast'] as const) {
+      const role = { ...selected.find(item => item.kind === 'building')!, speed, speedName: speed === 'fast' ? 'Fast' : 'Ultrafast' }
+      expect(subagentRoleInstructions([role], { provider: 'codex', agents: new Set(), agentTool: 'codex', canDelegate: false })!.split('\n')[1])
+        .toBe(`- Building (writing and changing code): GPT-6.1 Sol at high effort, ${role.speedName} speed, which this thread cannot start: do that work yourself.`)
+    }
+    const opus = { ...CLAUDE[0]!, speeds: [{ id: 'fast' as const, name: 'Fast' }] }
+    for (const speed of [null, 'fast'] as const) {
+      const claude = subagentRoleTable({ building: { modelId: opus.id, reasoningEffort: 'high', speed } }, [opus])
+      const on = `Opus 5.5 at high effort, ${speed ? 'Fast' : 'Standard'} speed`
+      expect(subagentRoleInstructions(claude, { provider: 'claude', agents: new Set(), agentTool: 'claude', canDelegate: true }))
+        .toContain(`${on}: call delegate with work "building" so it starts at the role's speed.`)
+      expect(subagentRoleInstructions(claude, { provider: 'claude', agents: new Set(), agentTool: 'claude', canDelegate: false })!.split('\n')[1])
+        .toBe(`- Building (writing and changing code): ${on}, which this thread cannot start: do that work yourself.`)
+    }
   })
 
   it('names no agent the launch did not get', () => {
     // A role without a native definition uses delegate, which can apply its speed independently.
     expect(lines({ provider: 'claude', agents: new Set(), agentTool: 'claude', canDelegate: true })[1])
       .toBe('- Building (writing and changing code): Opus 5.5 at xhigh effort, Standard speed: call delegate with work "building" so it starts at the role\'s speed.')
+    expect(lines({ provider: 'claude', agents: new Set(['research']), agentTool: 'claude', canDelegate: false })[4])
+      .toBe('- Research (reading code, docs and the web, and reporting back): use the Agent tool with subagent_type "sotto_research" (Haiku 5.5, Standard speed).')
   })
 })

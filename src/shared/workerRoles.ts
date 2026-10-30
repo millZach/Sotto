@@ -411,6 +411,7 @@ function reachLine(role: SubagentRole, reach: SubagentReach): string {
     ? `call spawn_agent with agent_type "${name}" (${on}).`
     : `use the Agent tool with subagent_type "${name}" (${on}).`
   if (role.provider === reach.provider && reach.canDelegate) return `${on}: call delegate with work "${role.kind}" so it starts at the role's speed.`
+  if (role.provider === reach.provider && (role.provider === 'claude' || role.provider === 'codex' && role.speed)) return `${on}, which this thread cannot start: do that work yourself.`
   if (role.provider === reach.provider) return reach.agentTool === 'codex'
     ? `call spawn_agent with model "${role.model}"${role.reasoningEffort ? ` and reasoning_effort "${role.reasoningEffort}"` : ''} (${speed}).`
     : `start your sub-agent on ${role.model}${atEffort(role.reasoningEffort)}, ${speed} when you can choose its model.`
