@@ -6,9 +6,9 @@ import { isThreadProviderConnected, lastUserMessageIdOf, providerIdSchema, threa
 import { resolveModel } from '../../shared/modelCatalog'
 import { withoutUltracode } from '../../shared/ultracode'
 import { resolveNewThreadPermission, RUNTIME_MODE_ORDER } from '../../shared/newThreadDefaults'
-import { capRuntimeMode, fitSpeed, roleInForce, roleStartNote, startFromRole, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
+import { capRuntimeMode, fitSpeed, roleInForce, roleStartNote, startFromRole, workerCounts, WORKER_KINDS, type HeldPermission, type RoleField, type RoleStart, type WorkerRoleChoices } from '../../shared/workerRoles'
 import { isThreadClosed, isThreadTurnRunning } from '../../shared/threadActivity'
-import { countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning } from '../../shared/workingThreads'
+import { countWorkingThreads, machineWorkingThreadsWarning, workingThreadsWarning, THIS_COMPUTER } from '../../shared/workingThreads'
 import { workerMachineHostId, type WorkerMachineSetting, type WorkerPlacementReceipt } from '../../shared/workerMachine'
 import type { WatcherRefusal } from '../../shared/watcher'
 import { HOST_CEILING_HOLD_WORDS, type HostCeilingHold } from '../../shared/desktopDefaults'
@@ -32,6 +32,9 @@ import { DELEGATION_RELAY_ANSWER_GRACE_MS, DELEGATION_RELAY_WAIT_MAX_MS, type Re
 import { parseHostEntityKey } from '../../shared/clientIdentity'
 import type { WorktreeMadeFrom } from '../../shared/bringChangesBack'
 import { REMOTE_AWAY, type DesktopRemoteDelegations } from './delegationRemoteDesktop'
+import { workerSwarmSchema, swarmMemberTerminal, type WorkerSwarm, type SwarmReceipt, type SwarmThreadView } from '../../shared/workerSwarms'
+import { swarmLeadPrompt, swarmReady, swarmReceipt } from './workerSwarms'
+import type { WorkerAdmission } from './workerAdmission'
 
 /** The commands delegation sends on a thread's behalf: create the delegated thread, send it a brief, stop it. */
 export type DelegationCommand = Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'interrupt' }>
@@ -62,6 +65,8 @@ export interface DelegationControlHooks {
    * record: an answered delegation's reply labelled as the delegated thread's words, and why a brief was never sent.
    */
   newsText?(threadId: string, news: readonly DelegationNews[]): string | undefined
+  /** A saved swarm completion takes its machine slot again before its queue may dispatch it. */
+  newsReady?(threadId: string, news: readonly DelegationNews[]): boolean
 }
 /** The coordinator as delegation uses it: its threads, its commands, the user's composer and its wake-ups. */
 export interface DelegationCoordinator {
@@ -78,6 +83,9 @@ export interface DelegationCoordinator {
   reopenSettledForWork?(threadId: string): Promise<void>
   refreshDelegationObservation(): void
   deliverWakeUp(threadId: string, news: DelegationNews, options: { readonly tool: boolean }): Promise<void>
+  /** Whether this delegation news is already saved in the thread's wake-up queue, including an unresolved send. */
+  hasQueuedDelegationNews?(threadId: string, delegationIds: ReadonlySet<string>): boolean
+  resumeDelegationNews?(): void
 }
 export interface DelegationHost {
   setDelegatedBy(threadId: string, delegatingThreadId: string): Promise<void>
@@ -98,6 +106,8 @@ export interface DelegationServiceOptions {
    * permission come from its kind of work unless the call names them. Read once per `delegate` call, in admission.
    */
   readonly roles?: () => WorkerRoleChoices
+  /** Owl worker-swarms: one machine admission owner and identity-only group updates. */
+  readonly swarms?: { readonly admission: WorkerAdmission; readonly changed?: (swarm: WorkerSwarm) => void }
   /**
    * Where a delegated thread starts (#1032), present only while the Owl feature `cross-machine-work` is on and Watcher runs:
    * the machine list a delegating thread reads, the placement a start that names a machine or a system asks for, a
@@ -388,7 +398,8 @@ const STOPS_KEPT = 20
 /** The most ready models of one provider an answer lists. */
 const MODELS_LISTED = 20
 const fileSchema = z.object({ version: z.literal(1), delegations: z.array(recordSchema).max(RECORDS_MAX * 2), links: z.array(linkSchema).max(RECORDS_MAX),
-  roots: z.array(z.object({ threadId: id, rootUserMessageId: id }).strict()).max(RECORDS_MAX), refusals: z.array(refusedSchema).max(REFUSALS_MAX).optional() }).strict()
+  roots: z.array(z.object({ threadId: id, rootUserMessageId: id }).strict()).max(RECORDS_MAX), refusals: z.array(refusedSchema).max(REFUSALS_MAX).optional(),
+  swarms: z.array(workerSwarmSchema).optional() }).strict()
 type DelegationFile = z.infer<typeof fileSchema>
 
 class Refusal extends Error {
@@ -530,6 +541,21 @@ export class DelegationService {
   private lettingGo: Promise<void> = Promise.resolve()
   /** The checks waiting their turn, with what each starts with; never saved, so a restart starts none of them. */
   private readonly waitingChecks = new Map<string, WaitingCheck>()
+  private readonly waitingWorkers = new Map<string, WaitingCheck & { readonly ticket?: string }>()
+  private readonly swarms = new Map<string, WorkerSwarm>()
+  private readonly swarmByLead = new Map<string, WorkerSwarm>()
+  private readonly swarmByLeadKey = new Map<string, WorkerSwarm>()
+  private readonly swarmByMember = new Map<string, { readonly swarm: WorkerSwarm; readonly index: number }>()
+  private readonly swarmByDelegation = new Map<string, { readonly swarm: WorkerSwarm; readonly index: number }>()
+  private readonly swarmByRetry = new Map<string, WorkerSwarm>()
+  private readonly activeSwarms = new Map<string, WorkerSwarm>()
+  private readonly swarmPlans = new Map<string, DelegateInput>()
+  private readonly startingSwarms = new Map<string, Promise<unknown>>()
+  private readonly planningSwarms = new Map<string, Promise<void>>()
+  /** A synthesis reservation or delivery in this process; never saved as proof that the wake-up landed. */
+  private readonly sendingSwarmCompletions = new Set<string>()
+  private readonly recoveringSwarmCompletions = new Set<string>()
+  private readonly swarmCounts = new WeakMap<WorkerSwarm, { done: number; failed: number; queued: number }>()
   /** Briefs a Stop fenced while they were on their way: their guard refuses them at the writer. */
   private readonly fenced = new Set<string>()
   /**
@@ -588,6 +614,20 @@ export class DelegationService {
     this.refusals = file.refusals ?? []
     for (const link of file.links) this.links.set(link.threadId, link)
     for (const root of file.roots) this.roots.set(root.threadId, root.rootUserMessageId)
+    // A saved delegation may exist before its member was linked. Recover by its retry key before deciding a plan was unsent.
+    for (const swarm of file.swarms ?? []) {
+      if (this.options.swarms) {
+        for (const member of swarm.members) if (!swarmMemberTerminal(member.state)) {
+          const record = member.delegationId ? this.byId.get(member.delegationId) : this.retried(swarm.leadThreadId ?? '', member.key)
+          if (record) {
+            member.threadId = record.delegatedThreadId; member.delegationId = record.id; member.state = this.outcomeOf(record)
+          } else if (member.state !== 'planned') member.state = 'unknown'
+        }
+        swarm.planned = !swarm.stopped && swarm.members.some(member => member.state === 'planned')
+        if (!swarm.synthesisDone && !swarm.stopped && (swarm.completionSent || swarm.synthesisStarted)) this.recoveringSwarmCompletions.add(swarm.id)
+      }
+      this.indexSwarm(swarm)
+    }
     // A link whose thread record lost it, as when Sotto stopped between the two writes, is put back.
     const threads = new Map(this.options.control.watcherSnapshot().threads.map(thread => [thread.id, thread]))
     for (const link of this.links.values()) {
@@ -614,6 +654,14 @@ export class DelegationService {
         return record ? () => this.guardSend(record.id) : undefined
       },
       newsText: (threadId, news) => this.newsText(threadId, news),
+      newsReady: (threadId, news) => {
+        const swarm = this.swarmByLead.get(threadId)
+        if (!this.options.swarms || !swarm || !news.some(item => item.items.some(part => part.delegationId === swarm.id
+          || this.swarmByDelegation.get(part.delegationId)?.swarm === swarm))) return true
+        if (swarm.stopped || !swarmReady(swarm)) return false
+        return this.options.swarms.admission.join(`swarm-synthesis:${swarm.id}`, THIS_COMPUTER,
+          () => this.options.control.resumeDelegationNews?.(), threadId) === 'working'
+      },
     })
     await this.persist()
     // What a restart left unknown is news, told once; it never moves again and nothing is resent (decision 7).
@@ -627,6 +675,12 @@ export class DelegationService {
     // started from now, rather than leave its incoming ref behind (#1312).
     const waiting = [...this.waitingChecks]
     this.waitingChecks.clear()
+    for (const [id, pending] of this.waitingWorkers) {
+      this.options.swarms?.admission.leave(id)
+      void this.letGo(pending.branch)
+    }
+    this.waitingWorkers.clear()
+    this.swarmPlans.clear()
     for (const [delegationId] of waiting) this.leaveQueue(delegationId)
     for (const held of this.reservations.values()) { clearTimeout(held.timer); this.options.checks?.leave(held.ticket) }
     this.reservations.clear()
@@ -656,7 +710,9 @@ export class DelegationService {
    * The delegation a caller's call with this retry key made, from the record admission saves before anything is sent
    * (#1316): how the desktop relay finds what a relayed start made after its answer was lost, or after a restart.
    */
-  retriedDelegation(callerId: string, retryKey: string): string | undefined { return this.retried(callerId, retryKey)?.id ?? this.options.remote?.retried(callerId, retryKey) }
+  retriedDelegation(callerId: string, retryKey: string): string | undefined {
+    return this.retried(callerId, retryKey)?.id ?? this.swarmByRetry.get(retryIndex(callerId, retryKey))?.leadDelegationId ?? this.options.remote?.retried(callerId, retryKey)
+  }
   /** Whether a delegation is still open, or a thread has one open: what the relay's record keeps whatever its size (#1316). */
   isOpen(delegationId: string): boolean { const record = this.record(delegationId); return record !== undefined ? this.open(record) : this.options.remote?.isOpen(delegationId) === true }
   hasOpen(delegatingThreadId: string): boolean {
@@ -666,6 +722,289 @@ export class DelegationService {
   admits(threadId: string): boolean {
     if (this.closed) return false
     try { this.caller(threadId, this.snapshot()); return true } catch { return false }
+  }
+
+  private indexSwarm(swarm: WorkerSwarm): void {
+    this.swarmCounts.delete(swarm)
+    this.swarms.set(swarm.id, swarm)
+    this.swarmByLeadKey.set(swarm.leadKey, swarm)
+    this.swarmByRetry.set(retryIndex(swarm.ownerThreadId, swarm.retryKey), swarm)
+    if (swarm.leadThreadId) this.swarmByLead.set(swarm.leadThreadId, swarm)
+    if (!swarm.synthesisDone && !swarm.stopped) this.activeSwarms.set(swarm.id, swarm)
+    for (const member of swarm.members) {
+      const entry = { swarm, index: member.index }
+      if (member.threadId) this.swarmByMember.set(member.threadId, entry)
+      if (member.delegationId) this.swarmByDelegation.set(member.delegationId, entry)
+    }
+  }
+
+  private newSwarm(ownerThreadId: string, input: DelegateInput, rootUserMessageId: string, identity: string = randomUUID()): WorkerSwarm {
+    const counts = workerCounts(input.work, this.options.roles?.() ?? {})
+    const start = roleInForce(input.work, this.options.roles?.() ?? {}, this.snapshot().models).start
+    return { id: identity, ownerThreadId, rootUserMessageId, retryKey: input.retry_key ?? randomUUID(), digest: digest(input),
+      work: input.work, count: input.count!, ...counts, effort: input.effort ?? start?.reasoningEffort ?? null,
+      createdAt: now(), leadKey: randomUUID(), members: Array.from({ length: input.count! }, (_, index) => ({ index, key: randomUUID(), state: 'planned' as const })),
+      planned: true }
+  }
+
+  /** Watcher has already admitted this lead. Its original request roots all angle starts; it grants no new permission. */
+  async startSwarmForLead(leadId: string, input: DelegateInput,
+    identity: { readonly id: string; readonly ownerThreadId: string; readonly retryKey: string; readonly rootUserMessageId: string }): Promise<SwarmReceipt> {
+    if (!this.options.swarms) throw new Error('Worker swarms are available in Sotto Owl.')
+    let swarm = this.swarms.get(identity.id)
+    if (swarm && (swarm.digest !== digest(input) || swarm.leadThreadId !== leadId)) throw new Error('This swarm retry belongs to another request.')
+    if (!swarm) {
+      swarm = this.newSwarm(identity.ownerThreadId, input, identity.rootUserMessageId, identity.id)
+      swarm.retryKey = identity.retryKey; swarm.leadThreadId = leadId
+      this.roots.set(leadId, identity.rootUserMessageId)
+      this.indexSwarm(swarm)
+      await this.save()
+    }
+    if (input.prompts && swarm.planned) await this.fillSwarm(swarm, input)
+    this.options.swarms.changed?.(swarm)
+    return swarmReceipt(swarm)!
+  }
+
+  swarmReceiptForLead(leadId: string): SwarmReceipt | undefined {
+    const swarm = this.options.swarms ? this.swarmByLead.get(leadId) : undefined
+    return swarm ? swarmReceipt(swarm) : undefined
+  }
+
+  private async swarmResult(swarm: WorkerSwarm): Promise<Record<string, unknown>> {
+    const lead = swarm.leadDelegationId ? this.byId.get(swarm.leadDelegationId) : undefined
+    return { ...lead ? await this.result(lead) : { status: 'ok' }, ...swarmReceipt(swarm) }
+  }
+
+  /** Planning is not the final answer. Only the confirmed completion wake-up's turn can supply the synthesis. */
+  swarmOutcome(leadId: string, thread: AgentThread): { readonly pending: boolean; readonly messageId?: string } | undefined {
+    const swarm = this.options.swarms ? this.swarmByLead.get(leadId) : undefined
+    if (!swarm) return undefined
+    if (swarm.stopped) return { pending: false }
+    if (!swarmReady(swarm) || !swarm.synthesisStarted) return { pending: true }
+    if (!swarm.synthesisMessageId) {
+      const head = nativeHead(thread)
+      if (head && head !== swarm.synthesisAfterMessageId && (thread.hiddenWakeUpMessageIds?.includes(head)
+        || thread.messages.some(message => message.id === head && message.hiddenWakeUp === true))) {
+        swarm.synthesisMessageId = head
+        void this.persist()
+      }
+    }
+    return swarm.synthesisMessageId ? { pending: false, messageId: swarm.synthesisMessageId } : { pending: true }
+  }
+
+  swarmForThread(threadId: string): SwarmThreadView | undefined {
+    if (!this.options.swarms) return undefined
+    const member = this.swarmByMember.get(threadId), swarm = member?.swarm ?? this.swarmByLead.get(threadId)
+    if (!swarm?.leadThreadId) return undefined
+    let counts = this.swarmCounts.get(swarm)
+    if (!counts) {
+      counts = { done: 0, failed: 0, queued: 0 }
+      for (const angle of swarm.members) {
+        if (angle.state === 'answered') counts.done++
+        else if (angle.state === 'failed' || angle.state === 'refused') counts.failed++
+        else if (angle.state === 'queued') counts.queued++
+      }
+      this.swarmCounts.set(swarm, counts)
+    }
+    return { threadId, id: swarm.id, leadThreadId: swarm.leadThreadId, count: swarm.count, ...counts,
+      synthesisDone: swarm.synthesisDone === true, stopped: swarm.stopped === true,
+      ...member ? { index: member.index, state: swarm.members[member.index]!.state } : {} }
+  }
+
+  swarmRows(): readonly SwarmThreadView[] {
+    if (!this.options.swarms) return []
+    return [...this.swarmByLead.keys(), ...this.swarmByMember.keys()].flatMap(threadId => {
+      const row = this.swarmForThread(threadId)
+      return row ? [row] : []
+    })
+  }
+
+  /** Existing settlement still checks questions, background work, delivery and pull requests for each thread. */
+  canSettle(threadId: string): boolean {
+    if (!this.options.swarms) return true
+    const swarm = this.swarmByLead.get(threadId)
+    if (swarm) return swarm.stopped === true || swarmReady(swarm) && swarm.synthesisDone === true
+    const member = this.swarmByMember.get(threadId)
+    return !member || swarmMemberTerminal(member.swarm.members[member.index]!.state)
+  }
+
+  /** A queued angle has a stable thread ID before its provider starts. Stop removes exactly that reservation. */
+  cancelQueued(threadId: string): boolean {
+    const record = (this.byDelegated.get(threadId) ?? []).findLast(item => this.waitingWorkers.has(item.id) || this.waitingChecks.has(item.id))
+    if (!record) return false
+    this.fenced.add(record.id)
+    this.fail(record.id, 'stopped')
+    void this.persist()
+    return true
+  }
+
+  /** Stop a lead's planned angles as well as the concrete threads the existing cascade can already see. */
+  stopSwarm(leadId: string): void {
+    const swarm = this.options.swarms ? this.swarmByLead.get(leadId) : undefined
+    if (!swarm) return
+    swarm.stopped = true; swarm.planned = false; this.activeSwarms.delete(swarm.id); this.swarmPlans.delete(swarm.id)
+    for (const member of swarm.members) if (member.state === 'planned') member.state = 'stopped'
+    this.swarmCounts.delete(swarm)
+    this.options.swarms!.admission.leave(`swarm-synthesis:${swarm.id}`)
+    this.options.swarms!.changed?.(swarm)
+    void this.persist()
+  }
+
+  private async delegateSwarm(threadId: string, input: DelegateInput, context: DelegateContext): Promise<unknown> {
+    const caller = this.caller(threadId, this.snapshot())
+    const own = this.swarmByLead.get(threadId)
+    if (own) {
+      if (own.work !== input.work || own.count !== input.count || input.retry_key !== own.retryKey || !input.prompts)
+        return delegationRefusal('INVALID_INPUT', 'Fill this lead’s reserved swarm with its original role, count, retry_key and one prompt per angle. Nothing was started.')
+      await this.fillSwarm(own, input)
+      return await this.swarmResult(own)
+    }
+    if ((this.options.relayedCallers?.caller(threadId)?.levels ?? this.levelOf(threadId, this.snapshot().threads)) + 2 > DELEGATION_LEVELS_MAX)
+      return delegationRefusal('LEVEL_LIMIT', 'A swarm needs a lead and its angles within the two delegation levels. This thread cannot start another swarm. Nothing was started.')
+    if (input.thread) return delegationRefusal('INVALID_INPUT', 'A swarm starts new angle threads. Leave thread out. Nothing was sent.')
+    const key = input.retry_key ?? randomUUID()
+    let swarm = this.swarmByRetry.get(retryIndex(caller.id, key))
+    if (swarm && swarm.digest !== digest(input)) return delegationRefusal('RETRY_KEY_CONFLICT', 'This retry key belongs to another swarm. Nothing was started.')
+    if (swarm?.leadThreadId) {
+      if (input.prompts && swarm.planned) await this.fillSwarm(swarm, input)
+      return await this.swarmResult(swarm)
+    }
+    if (!swarm) {
+      const retried = input.retry_key ? this.options.remote?.retried(threadId, input.retry_key) : undefined
+      if (retried) return await this.options.remote!.read(threadId, retried)
+      const placed = context.placement ? { elsewhere: context.placement } : await this.place(threadId, input)
+      if (placed === RELAYED) return await this.relayStart(threadId, input, context)
+      if (placed && 'elsewhere' in placed) return await this.remoteStart(threadId, input, context, placed.elsewhere)
+      if (placed && 'status' in placed) return placed
+      swarm = this.newSwarm(caller.id, input, this.rootOf(caller)); swarm.retryKey = key
+      this.indexSwarm(swarm)
+      await this.save()
+    }
+    const pending = this.startingSwarms.get(swarm.id)
+    if (pending) return await pending
+    const start = this.startDelegatedSwarm(swarm, input, context)
+    this.startingSwarms.set(swarm.id, start)
+    try { return await start } finally { this.startingSwarms.delete(swarm.id) }
+  }
+
+  private async startDelegatedSwarm(swarm: WorkerSwarm, input: DelegateInput, context: DelegateContext): Promise<unknown> {
+    const { count, prompts, ...single } = input
+    void count
+    if (prompts) this.swarmPlans.set(swarm.id, input)
+    const lead = await this.delegate(swarm.ownerThreadId, { ...single, retry_key: swarm.leadKey, wait_seconds: 0,
+      working_copy: 'independent', title: `${input.title ?? DELEGATION_WORK_TITLES[input.work]} lead`.slice(0, 120),
+      brief: swarmLeadPrompt(input.brief, swarm.count, swarm.retryKey, prompts, input.work) }, { ...context, waitMs: 0 }) as
+      { readonly status: string; readonly delegation?: DelegationRead }
+    if (lead.status !== 'ok' || !lead.delegation?.thread) return lead
+    swarm.leadThreadId = lead.delegation.thread; swarm.leadDelegationId = lead.delegation.id
+    this.roots.set(swarm.leadThreadId, swarm.rootUserMessageId)
+    this.indexSwarm(swarm)
+    await this.save()
+    if (prompts) {
+      if (this.snapshot().threads.some(thread => thread.id === swarm.leadThreadId)) await this.fillSwarm(swarm, input)
+      else this.swarmPlans.set(swarm.id, input)
+    }
+    this.options.swarms?.changed?.(swarm)
+    return await this.swarmResult(swarm)
+  }
+
+  private async fillSwarm(swarm: WorkerSwarm, input: DelegateInput): Promise<void> {
+    const pending = this.planningSwarms.get(swarm.id)
+    if (pending) return await pending
+    const planning = this.fillSwarmOnce(swarm, input)
+    this.planningSwarms.set(swarm.id, planning)
+    try { await planning } finally { this.planningSwarms.delete(swarm.id) }
+  }
+
+  private async fillSwarmOnce(swarm: WorkerSwarm, input: DelegateInput): Promise<void> {
+    const planDigest = digest(input.prompts)
+    if (swarm.planDigest && swarm.planDigest !== planDigest) throw new Refusal(delegationRefusal('RETRY_KEY_CONFLICT', 'These angle prompts differ from the swarm’s accepted plan. Nothing was started.'))
+    if (!swarm.planned) return
+    swarm.planDigest = planDigest
+    await this.save()
+    const leadId = swarm.leadThreadId!
+    const { count, prompts, thread, ...single } = input
+    void count; void thread
+    // Resolve the role once. A provider connecting while the fan-out is admitted cannot change later angles' model.
+    const lead = this.snapshot().threads.find(item => item.id === leadId)
+    if (!lead) { this.swarmPlans.set(swarm.id, input); return }
+    for (const member of swarm.members) {
+      if (swarm.stopped || member.delegationId || member.state !== 'planned') continue
+      const answer = await this.delegate(leadId, { ...single, model: lead.modelId, provider: lead.providerId,
+        speed: lead.speed !== undefined ? lead.speed : lead.fastMode ? 'fast' : null,
+        ...(lead.reasoningEffort ? { effort: lead.reasoningEffort } : {}),
+        brief: prompts![member.index], retry_key: member.key, wait_seconds: 0, working_copy: 'independent',
+        title: `${input.title ?? DELEGATION_WORK_TITLES[input.work]} · angle ${member.index + 1}`.slice(0, 120) }, { waitMs: 0 }) as
+        { readonly status: string; readonly delegation?: DelegationRead }
+      if (answer.status !== 'ok' || !answer.delegation?.thread) member.state = 'refused'
+      else {
+        member.threadId = answer.delegation.thread; member.delegationId = answer.delegation.id
+        this.indexSwarm(swarm)
+        this.syncSwarmMember(member.delegationId)
+      }
+      this.swarmCounts.delete(swarm)
+      await this.save()
+    }
+    swarm.planned = false
+    this.swarmPlans.delete(swarm.id)
+    this.options.swarms?.changed?.(swarm)
+    this.sendSwarmCompletion(swarm)
+    await this.persist()
+  }
+
+  private syncSwarmMember(delegationId: string): void {
+    const entry = this.swarmByDelegation.get(delegationId), record = this.byId.get(delegationId)
+    if (!entry || !record) return
+    const member = entry.swarm.members[entry.index]!
+    const state = this.waitingWorkers.has(delegationId) || this.waitingChecks.has(delegationId) ? 'queued' : this.outcomeOf(record)
+    if (member.state !== state) {
+      member.state = state
+      this.swarmCounts.delete(entry.swarm)
+      this.options.swarms?.changed?.(entry.swarm)
+    }
+    this.sendSwarmCompletion(entry.swarm)
+  }
+
+  private sendSwarmCompletion(swarm: WorkerSwarm): void {
+    if (!this.options.swarms || !swarmReady(swarm) || !swarm.leadThreadId || swarm.stopped) return
+    if (this.recoveringSwarmCompletions.has(swarm.id)) {
+      const lead = this.snapshot().threads.find(thread => thread.id === swarm.leadThreadId)
+      if (!lead) return
+      if (this.swarmOutcome(lead.id, lead)?.messageId) {
+        swarm.completionSent = true; this.recoveringSwarmCompletions.delete(swarm.id)
+      } else if (this.options.control.hasQueuedDelegationNews?.(lead.id, new Set(swarm.members.flatMap(member => member.delegationId ? [member.delegationId] : [swarm.id])))) {
+        swarm.completionSent = true; swarm.synthesisStarted = true
+        return
+      } else if (this.options.control.hasPendingThreadWork(lead.id) || isThreadTurnRunning(lead)) return
+      else {
+        swarm.completionSent = false; swarm.synthesisStarted = false
+        this.recoveringSwarmCompletions.delete(swarm.id)
+      }
+    }
+    // A failed delivery can retry once recovery proves it never landed, however long the provider was unavailable.
+    if (swarm.completionSent || this.sendingSwarmCompletions.has(swarm.id)) return
+    this.sendingSwarmCompletions.add(swarm.id)
+    const tell = () => { void (async () => {
+      if (this.closed || swarm.stopped) return
+      const lead = this.snapshot().threads.find(thread => thread.id === swarm.leadThreadId)
+      swarm.synthesisAfterMessageId = lead ? nativeHead(lead) ?? undefined : undefined
+      swarm.synthesisStarted = true
+      // The pre-send head is durable before delivery. A restart can prove a later wake-up landed, or retry an unsent one.
+      await this.save()
+      if (this.closed || swarm.stopped) return
+      const records = swarm.members.flatMap(member => { const record = member.delegationId ? this.byId.get(member.delegationId) : undefined; return record ? [record] : [] })
+      const items = records.slice(0, 50).map(record => ({ delegationId: record.id, threadId: record.delegatedThreadId, outcome: this.outcomeOf(record) }))
+      await this.options.control.deliverWakeUp(swarm.leadThreadId!, { source: 'delegation', items: items.length ? items
+        : [{ delegationId: swarm.id, threadId: swarm.leadThreadId!, outcome: 'answered' }] }, { tool: this.options.tool?.(swarm.leadThreadId!) ?? false })
+      swarm.completionSent = true
+      for (const record of records) record.told = this.outcomeOf(record)
+      await this.persist()
+    })().catch(() => {
+      swarm.completionSent = false; this.recoveringSwarmCompletions.add(swarm.id)
+      this.options.swarms!.admission.leave(`swarm-synthesis:${swarm.id}`); void this.persist()
+    }).finally(() => { this.sendingSwarmCompletions.delete(swarm.id) }) }
+    const admitted = this.options.swarms.admission.join(`swarm-synthesis:${swarm.id}`, THIS_COMPUTER, tell, swarm.leadThreadId)
+    if (admitted === 'working') tell()
   }
 
   /**
@@ -679,6 +1018,15 @@ export class DelegationService {
         : delegationRefusal('NOT_ADMITTED', NOT_ADMITTED)
     }
     const input = parsed.data
+    if (input.count !== undefined || input.prompts !== undefined) {
+      if (!this.options.swarms) return delegationRefusal('INVALID_INPUT', 'Worker swarms are available in Sotto Owl. Nothing was started.')
+      if (input.prompts && (input.count === undefined || input.prompts.length !== input.count)) return delegationRefusal('INVALID_INPUT', 'Give exactly one prompt per angle and the same count. Nothing was started.')
+      if ((input.count ?? 1) > 1) {
+        try { return await this.delegateSwarm(threadId, input, context) }
+        catch (error) { return error instanceof Refusal ? error.result : delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start the swarm. Read its receipt before retrying.') }
+      }
+      if (input.prompts) input.brief = input.prompts[0]!
+    }
     // A thread on another machine is sent its brief there: through the desktop that relays, or by the paired host it runs on (#1316).
     if (input.thread !== undefined && this.options.relay?.holdsThread(threadId, input.thread)) return await this.elsewhereSend(threadId, input, context, 'relay')
     if (input.thread !== undefined && this.options.remote?.holdsThread(threadId, input.thread)) return await this.elsewhereSend(threadId, input, context, 'remote')
@@ -763,7 +1111,8 @@ export class DelegationService {
     // A check waits for this machine's check ahead of it, in the order asked, before its thread is made (#1312). One
     // stopped while it was admitted holds no place, brief or snapshot: it goes on as any stopped start, which makes nothing.
     const live = this.record(record.id)?.deliveryState === 'queued'
-    const waiting = start !== undefined && live && ticket !== undefined && this.queueCheck(record, input.brief, start, branch, ticket)
+    const waiting = start !== undefined && live && (ticket !== undefined && this.queueCheck(record, input.brief, start, branch, ticket)
+      || this.queueWorker(record, input.brief, start, branch))
     this.calling.add(record.id)
     try {
       if (!waiting) await this.execute(record, input.brief, start)
@@ -775,11 +1124,11 @@ export class DelegationService {
       // new thread counts as working while its first brief is on its way or its turn has not ended, whatever its status
       // says yet; one whose brief failed, or whose turn already ended, counts only if it is working.
       const started = this.record(record.id)
-      const pending = started !== undefined && !this.waitingChecks.has(started.id) && (started.deliveryState === 'queued' || started.deliveryState === 'dispatching'
+      const pending = started !== undefined && !this.waitingChecks.has(started.id) && !this.waitingWorkers.has(started.id) && (started.deliveryState === 'queued' || started.deliveryState === 'dispatching'
         || started.deliveryState === 'uncertain' || started.deliveryState === 'accepted' && started.outcomeAt === undefined)
       const working = admitted.start ? countWorkingThreads(this.snapshot().threads, pending ? record.delegatedThreadId : undefined) : 0
       const named = admitted.start ? this.namedHere(threadId) : undefined
-      const warning = !admitted.start ? undefined : named !== undefined ? machineWorkingThreadsWarning(working, named) : (this.options.warning ?? workingThreadsWarning)(working)
+      const warning = this.options.swarms || !admitted.start ? undefined : named !== undefined ? machineWorkingThreadsWarning(working, named) : (this.options.warning ?? workingThreadsWarning)(working)
       const waitMs = Math.max(0, Math.min((input.wait_seconds ?? DELEGATION_WAIT_MAX_SECONDS) * 1000,
         context.waitMs === undefined ? Infinity : context.waitMs - 2_000))
       if (this.open(this.record(record.id)!)) {
@@ -958,6 +1307,8 @@ export class DelegationService {
     try {
       const snapshot = this.snapshot(), caller = this.caller(threadId, snapshot)
       if (parsed.data.delegation === undefined) return this.listing(caller, snapshot)
+      const swarm = this.options.swarms ? this.swarms.get(parsed.data.delegation) : undefined
+      if (swarm && (swarm.ownerThreadId === caller.id || swarm.leadThreadId === caller.id)) return await this.swarmResult(swarm)
       const refused = this.refusedOf(caller.id, parsed.data.delegation)
       if (refused) return this.refusedResult(refused)
       // One relayed to another machine is read there, exactly, while the desktop is connected (#1316).
@@ -965,6 +1316,8 @@ export class DelegationService {
       // One on a paired host is read there, exactly, while it is connected (#1316 part 2).
       if (this.options.remote?.holds(caller.id, parsed.data.delegation)) return await this.options.remote.read(caller.id, parsed.data.delegation)
       const record = this.owned(caller.id, parsed.data.delegation)
+      const lead = this.options.swarms ? this.swarmByLead.get(record.delegatedThreadId) : undefined
+      if (lead?.leadDelegationId === record.id) return await this.swarmResult(lead)
       return await this.result(record, true)
     } catch (error) { return error instanceof Refusal ? error.result : delegationRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not read this delegation just now. Nothing was changed.') }
   }
@@ -974,6 +1327,20 @@ export class DelegationService {
     if (!parsed.success) return delegationRefusal('INVALID_INPUT', 'Name the delegation to cancel by its ID. Nothing was stopped.')
     try {
       const caller = this.caller(threadId, this.snapshot())
+      const namedRecord = this.record(parsed.data.delegation)
+      const lead = namedRecord ? this.swarmByLead.get(namedRecord.delegatedThreadId) : undefined
+      const swarm = this.options.swarms ? this.swarms.get(parsed.data.delegation)
+        ?? (lead?.leadDelegationId === parsed.data.delegation ? lead : undefined) : undefined
+      if (swarm && (swarm.ownerThreadId === caller.id || swarm.leadThreadId === caller.id)) {
+        swarm.stopped = true; swarm.planned = false; this.activeSwarms.delete(swarm.id); this.swarmPlans.delete(swarm.id)
+        for (const member of swarm.members) if (member.state === 'planned') member.state = 'stopped'
+        this.swarmCounts.delete(swarm)
+        if (swarm.leadThreadId) await this.stopThreads([swarm.leadThreadId], new Set([caller.id]))
+        this.options.swarms!.admission.leave(`swarm-synthesis:${swarm.id}`)
+        this.options.swarms!.changed?.(swarm)
+        await this.persist()
+        return await this.swarmResult(swarm)
+      }
       const refused = this.refusedOf(caller.id, parsed.data.delegation)
       if (refused) return { ...this.refusedResult(refused), note: REFUSED_CANCEL }
       if (this.options.relay?.holds(caller.id, parsed.data.delegation)) return await this.options.relay.cancel(caller.id, parsed.data.delegation)
@@ -981,7 +1348,8 @@ export class DelegationService {
       const record = this.owned(caller.id, parsed.data.delegation)
       if (!this.open(record)) return { ...(await this.result(record)), note: 'This delegation had already ended. Nothing was stopped.' }
       // A stop it asked for is not news to it, however it lands. A check still waiting its turn leaves the queue.
-      const queued = this.waitingChecks.has(record.id)
+      const queuedCheck = this.waitingChecks.has(record.id)
+      const queued = queuedCheck || this.waitingWorkers.has(record.id)
       this.update(record.id, saved => { saved.told = 'stopped' })
       // A brief on its way is fenced as a Stop fences it: the writer refuses it, or it landed and its turn is stopped below.
       if (record.deliveryState === 'queued' || record.deliveryState === 'dispatching') this.fenced.add(record.id)
@@ -994,7 +1362,9 @@ export class DelegationService {
         if (thread && isThreadTurnRunning(thread) && this.answering(current, thread)) { await this.stopThreads([current.delegatedThreadId], new Set([caller.id])); stopping = true }
       }
       const answer = await this.result(this.record(record.id)!)
-      if (queued) return { ...answer, note: `It was waiting for its turn among ${this.options.checks!.machine}'s checks, and Sotto took it out of the queue. Nothing was started.` }
+      if (queued) return { ...answer, note: queuedCheck
+        ? `It was waiting for its turn among ${this.options.checks!.machine}'s checks, and Sotto took it out of the queue. Nothing was started.`
+        : 'It was waiting for its turn, and Sotto took it out of the queue. Nothing was started.' }
       if (!stopping || !this.open(current)) return answer
       this.update(current.id, saved => { saved.told = 'stopped' })
       await this.persist()
@@ -1395,7 +1765,8 @@ export class DelegationService {
     return this.records.filter(record => record.delegatingThreadId === callerId && record.rootUserMessageId === root && record.delegatedThreadId === threadId && record.charged).length
   }
   private limits(record?: DelegationRecord) {
-    return { ...(record ? { prompts: this.prompts(record.delegatingThreadId, record.rootUserMessageId, record.delegatedThreadId) } : {}), promptLimit: DELEGATION_PROMPTS_PER_THREAD }
+    return { ...(record ? { prompts: this.prompts(record.delegatingThreadId, record.rootUserMessageId, record.delegatedThreadId) } : {}), promptLimit: DELEGATION_PROMPTS_PER_THREAD,
+      ...this.options.swarms ? { ceiling: this.options.swarms.admission.ceiling(THIS_COMPUTER), waiting: this.options.swarms.admission.waiting(THIS_COMPUTER) } : {} }
   }
   /**
    * The permission a delegated thread may have: no wider than the narrower of the delegating thread's own and the user's
@@ -1596,6 +1967,14 @@ export class DelegationService {
         if (created.error || !created.host.threads.some(thread => thread.id === record.delegatedThreadId)) { this.fail(record.id, 'provider', true); await this.persist(); return }
         // Linked on the thread's own record before its first send, so its first launch already knows its level.
         await this.options.host.setDelegatedBy(record.delegatedThreadId, record.delegatingThreadId)
+        const swarm = this.swarmByLead.get(record.delegatedThreadId) ?? (record.retryKey ? this.swarmByLeadKey.get(record.retryKey) : undefined)
+        if (swarm) {
+          swarm.leadThreadId = record.delegatedThreadId; swarm.leadDelegationId = record.id
+          this.roots.set(record.delegatedThreadId, swarm.rootUserMessageId)
+          this.indexSwarm(swarm)
+        }
+        const plan = swarm ? this.swarmPlans.get(swarm.id) : undefined
+        if (swarm && plan) void this.fillSwarm(swarm, plan).catch(() => undefined)
       } catch { this.fail(record.id, 'provider', true); await this.persist(); return }
       finally { this.creating.delete(record.id) }
     }
@@ -1608,6 +1987,32 @@ export class DelegationService {
       // Queued work restores a settled thread now, not once it goes; its send restores it then if this could not.
       if (thread) await this.options.control.reopenSettledForWork?.(thread.id).catch(() => undefined)
       this.options.control.refreshDelegationObservation()
+    }
+  }
+  /** Reserve capacity before creation. Brief text stays in memory, following the existing queued-check policy. */
+  private queueWorker(record: DelegationRecord, brief: string, start: DelegatedStart, branch: LandedBranch | undefined): boolean {
+    const admission = this.options.swarms?.admission
+    if (!admission) return false
+    const state = admission.join(record.id, THIS_COMPUTER, () => { void this.runWorker(record.id).catch(() => undefined) }, record.delegatedThreadId)
+    if (state !== 'queued') return false
+    this.waitingWorkers.set(record.id, { brief, start, branch })
+    return true
+  }
+  private async runWorker(delegationId: string): Promise<void> {
+    const waiting = this.waitingWorkers.get(delegationId)
+    if (!waiting) return
+    this.waitingWorkers.delete(delegationId)
+    const record = this.byId.get(delegationId)
+    if (!record || this.closed || record.deliveryState !== 'queued') {
+      this.options.swarms?.admission.leave(delegationId)
+      await this.letGo(waiting.branch)
+      return
+    }
+    this.syncSwarmMember(delegationId)
+    try { await this.execute(record, waiting.brief, waiting.start) }
+    finally {
+      if (!this.snapshot().threads.some(thread => thread.id === record.delegatedThreadId)) await this.letGo(waiting.branch)
+      this.touched(record)
     }
   }
   /**
@@ -1650,7 +2055,7 @@ export class DelegationService {
       await this.letGo(waiting.branch)
       return
     }
-    try { await this.execute(record, waiting.brief, waiting.start) }
+    try { if (!this.queueWorker(record, waiting.brief, waiting.start, waiting.branch)) await this.execute(record, waiting.brief, waiting.start) }
     finally {
       if (!this.snapshot().threads.some(thread => thread.id === record.delegatedThreadId)) await this.letGo(waiting.branch)
       this.touched(record)
@@ -1807,6 +2212,7 @@ export class DelegationService {
       this.options.control.refreshDelegationObservation()
     }
     if (command.type === 'interrupt') {
+      this.stopSwarm(threadId)
       const stopping = this.stopThreads(this.below(threadId), new Set([threadId])).catch((): StopLeft[] => [])
       this.stops.delete(threadId); this.stops.set(threadId, stopping)
       if (this.stops.size > STOPS_KEPT) this.stops.delete(this.stops.keys().next().value!)
@@ -1823,6 +2229,7 @@ export class DelegationService {
    */
   private async stopThreads(threadIds: readonly string[], above: ReadonlySet<string>): Promise<StopLeft[]> {
     const targets = [...new Set(threadIds.flatMap(threadId => [threadId, ...this.below(threadId)]))]
+    for (const target of targets) this.stopSwarm(target)
     // What these threads delegated to on other machines is stopped there too, through the asks each delegation already makes
     // there, and each is a stop it asked for, so it is not news to them either (#1316 part 3, Owl `cross-machine-work`). A
     // thread whose delegated threads are all on other machines has none here to stop.
@@ -1882,6 +2289,24 @@ export class DelegationService {
    */
   private observe(snapshot: AgentHostSnapshot, view?: HostThreadsView): void {
     if (this.closed) return
+    this.options.swarms?.admission.refresh(THIS_COMPUTER)
+    if (this.options.swarms && this.activeSwarms.size) {
+      let listedLeads: Map<string, AgentThread> | undefined
+      for (const swarm of this.activeSwarms.values()) {
+        const lead = swarm.leadThreadId ? view?.thread(swarm.leadThreadId) ?? (listedLeads ??= new Map(snapshot.threads.map(thread => [thread.id, thread]))).get(swarm.leadThreadId) : undefined
+        if (!lead) continue
+        this.sendSwarmCompletion(swarm)
+        const progress = this.swarmOutcome(lead.id, lead)
+        if (!progress?.messageId) continue
+        const synthesis = watcherTurnOutcome({ messageId: progress.messageId, delivery: 'now' }, lead, messageId => isWakeUpOf(lead, messageId))
+        if (synthesis && swarmMemberTerminal(synthesis.outcome)) {
+          swarm.synthesisDone = true; this.activeSwarms.delete(swarm.id)
+          this.options.swarms.admission.leave(`swarm-synthesis:${swarm.id}`)
+          this.options.swarms.changed?.(swarm)
+          void this.persist()
+        }
+      }
+    }
     const open = this.records.filter(record => this.open(record))
     if (this.untold.size) this.scheduleNews()
     if (!open.length && !this.paused.size) return
@@ -1920,7 +2345,10 @@ export class DelegationService {
         }
         continue
       }
-      const seen = watcherTurnOutcome({ messageId: record.messageId, delivery: 'now', ...(record.outcome ? { outcome: record.outcome } : {}) }, thread, messageId => briefs.has(messageId))
+      const swarm = this.swarmOutcome(thread.id, thread)
+      let seen = watcherTurnOutcome({ messageId: swarm?.messageId ?? record.messageId, delivery: 'now', ...(record.outcome ? { outcome: record.outcome } : {}) }, thread, messageId => briefs.has(messageId) || isWakeUpOf(thread, messageId))
+      if (seen && seen.outcome !== 'working' && !isThreadTurnRunning(thread)) this.options.swarms?.admission.leave(record.id)
+      if (seen?.outcome === 'answered' && swarm?.pending) seen = { ...seen, outcome: 'background' }
       if (!seen || seen.outcome === record.outcome && seen.turnMessageId === record.turnMessageId && seen.replyMessageId === record.replyMessageId) continue
       this.update(record.id, saved => {
         saved.outcome = seen.outcome; saved.outcomeAt = now(); delete saved.releasedAt; delete saved.releaseTold
@@ -1980,9 +2408,19 @@ export class DelegationService {
     const record = this.record(delegationId)
     if (!record) return
     this.releaseCheck(record)
+    if (!this.open(record)) {
+      const waiting = this.waitingWorkers.get(record.id)
+      if (waiting) { this.waitingWorkers.delete(record.id); this.creating.delete(record.id); void this.letGo(waiting.branch) }
+      this.options.swarms?.admission.leave(record.id)
+    }
+    this.syncSwarmMember(delegationId)
     const outcome = this.outcomeOf(record)
     if (!this.open(record)) this.waiters.get(record.id)?.forEach(wake => wake())
     if (this.calling.has(record.id) || outcome === 'working' || outcome === record.told && this.heldMinutes(record) === undefined) return
+    const swarm = this.swarmByDelegation.get(delegationId)?.swarm
+    if (swarm) return
+    const lead = this.swarmByLead.get(record.delegatedThreadId)
+    if (lead && !lead.synthesisDone && !lead.stopped) return
     const pending = this.untold.get(record.delegatingThreadId) ?? { ids: new Set<string>(), attempts: 0 }
     pending.ids.add(record.id); this.untold.set(record.delegatingThreadId, pending)
     this.scheduleNews()
@@ -2060,6 +2498,9 @@ export class DelegationService {
       ...(latest && head !== null && head !== latest.messageId ? { userSentSince: true } : {}),
       ...(record.failure === 'target-changed' ? { refusal: 'TARGET_CHANGED' as const } : record.failure === 'paused' ? { refusal: 'PAUSED' as const } : {}) }
     const ticket = this.waitingChecks.has(record.id) ? this.checkTickets.get(record.id) : undefined
+    const workerQueue = this.waitingWorkers.has(record.id) ? this.options.swarms?.admission.view(record.id) : undefined
+    if (workerQueue) read.queue = { state: 'queued', ahead: workerQueue.ahead, waiting: workerQueue.waiting,
+      note: `${workerQueue.waiting} waiting for this machine's worker ceiling. ${workerQueue.ahead} queued ahead. Stop removes this angle before it starts.` }
     const ahead = ticket !== undefined ? this.options.checks?.ahead(ticket) : undefined
     if (ahead !== undefined) read.check = { ahead, note: checkWaitingWords(this.options.checks!.machine, ahead) }
     else if (this.checkTickets.has(record.id) && this.options.checks) {
@@ -2135,7 +2576,10 @@ export class DelegationService {
         details.set(record.id, { ...reply ? { lastReply: reply.text } : {}, ...held?.laterTurn ? { laterTurn: true as const } : {} })
       }
     }
-    return delegationNewsText(folded, details)
+    const group = this.options.swarms ? this.swarmByLead.get(threadId) : undefined
+    const summary = group ? swarmReceipt(group) : undefined
+    return [summary ? `Swarm ${summary.swarmId}: ${summary.note} Read the swarm receipt with read_delegation for every angle, including missing and refused ones. Write the synthesis only after reading their results.` : '',
+      delegationNewsText(folded, details)].filter(Boolean).join('\n\n')
   }
   private listing(caller: AgentThread, snapshot: AgentHostSnapshot) {
     // The newest twenty, refused ones among them, oldest first.
@@ -2154,6 +2598,9 @@ export class DelegationService {
     // On a headless host (#1310), the new-thread default it holds starts to, and why when it holds them to Ask for approval.
     const hold = this.options.newThreadCeiling?.()
     return { status: 'ok' as const, delegations: own, ...(elsewhere.length ? { onOtherMachines: elsewhere } : {}), models: ready, ...(this.options.roles ? { roles: this.roles(caller, snapshot, this.options.roles()) } : {}),
+      ...this.options.swarms ? { swarms: [...this.swarms.values()].filter(swarm => swarm.ownerThreadId === caller.id || swarm.leadThreadId === caller.id).flatMap(swarm => {
+        const receipt = swarmReceipt(swarm); return receipt ? [receipt] : []
+      }) } : {},
       ...(hold ? { newThreadDefault: { permission: hold.mode, ...(hold.held ? { note: HOST_CEILING_HOLD_WORDS[hold.held] } : {}) } } : {}), limits: this.limits() }
   }
   /**
@@ -2177,7 +2624,8 @@ export class DelegationService {
       if (!start) return []
       let permission: AgentRuntimeMode | undefined
       try { permission = start.runtimeMode ? this.heldToCeiling(start.runtimeMode, start.model, caller, snapshot.models)?.mode : undefined } catch { permission = undefined }
-      return [{ work, provider: start.model.providerId, model: start.modelId, speed: start.speed, ...(start.reasoningEffort ? { effort: start.reasoningEffort } : {}), ...(permission ? { permission } : {}) }]
+      return [{ work, provider: start.model.providerId, model: start.modelId, speed: start.speed, ...(start.reasoningEffort ? { effort: start.reasoningEffort } : {}), ...(permission ? { permission } : {}),
+        ...this.options.swarms ? { workers: workerCounts(work, choices) } : {} }]
     })
   }
   /** Whether the thread's running turn is this brief's own. */
@@ -2218,12 +2666,24 @@ export class DelegationService {
       if (this.roots.delete(threadId)) changed = true
       this.queuedBriefs.delete(threadId); this.paused.delete(threadId); this.untold.delete(threadId); this.lastWorking.delete(threadId); this.viewsChanged.delete(threadId)
     }
+    for (const [id, swarm] of this.swarms) {
+      if (!(swarm.synthesisDone || swarm.stopped) || !threadIds.has(swarm.ownerThreadId) && !(swarm.leadThreadId && threadIds.has(swarm.leadThreadId))) continue
+      this.swarms.delete(id); this.activeSwarms.delete(id); this.swarmByLeadKey.delete(swarm.leadKey)
+      this.swarmByRetry.delete(retryIndex(swarm.ownerThreadId, swarm.retryKey))
+      if (swarm.leadThreadId) this.swarmByLead.delete(swarm.leadThreadId)
+      for (const member of swarm.members) {
+        if (member.threadId) this.swarmByMember.delete(member.threadId)
+        if (member.delegationId) this.swarmByDelegation.delete(member.delegationId)
+      }
+      changed = true
+    }
     return changed ? this.persist() : Promise.resolve()
   }
   /** Writes the record as it is now; rejects when it could not be saved. */
   private save(): Promise<void> {
     return this.store.writeLatest(() => ({ version: 1, delegations: this.records.slice(-RECORDS_MAX * 2), links: [...this.links.values()].slice(-RECORDS_MAX),
-      roots: [...this.roots].slice(-RECORDS_MAX).map(([threadId, rootUserMessageId]) => ({ threadId, rootUserMessageId })), refusals: this.refusals.slice(-REFUSALS_MAX) }))
+      roots: [...this.roots].slice(-RECORDS_MAX).map(([threadId, rootUserMessageId]) => ({ threadId, rootUserMessageId })), refusals: this.refusals.slice(-REFUSALS_MAX),
+      ...this.swarms.size ? { swarms: [...this.swarms.values()] } : {} }))
   }
   /** Writes the record where a failed write changes nothing already decided: the next write carries it. */
   private persist(): Promise<void> { return this.save().catch(() => undefined) }

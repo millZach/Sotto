@@ -3,6 +3,7 @@ import { agentRuntimeModeSchema, agentSpeedSchema, providerIdSchema, type AgentS
 import { WATCHER_OUTCOMES, WATCHER_REPLY_BYTES_MAX, watcherOutcomeSchema } from './watcher'
 import { workerKindSchema } from './workerRoles'
 import { workerSystemSchema } from './workerMachine'
+import { swarmCountSchema, SWARM_ANGLES_MAX } from './workerSwarms'
 
 /**
  * Delegation between threads (ADR-0081): an ordinary thread hands work to a thread it starts, through the scoped
@@ -38,6 +39,9 @@ const id = z.string().min(1).max(512)
 export const delegateInputSchema = z.object({
   work: delegationWorkSchema.describe('The kind of work: building, ui, code-review, research or computer-use.'),
   brief: z.string().trim().min(1).max(DELEGATION_BRIEF_MAX).describe('What the delegated thread should do, in full: it sees nothing of this thread.'),
+  count: swarmCountSchema.optional().describe('Angle workers in a swarm, in addition to its lead. Leave out for the existing single-worker start. A named count overrides the role; extras queue at the machine ceiling.'),
+  prompts: z.array(z.string().trim().min(1).max(DELEGATION_BRIEF_MAX)).min(1).max(SWARM_ANGLES_MAX).optional()
+    .describe('One complete, distinct brief per angle, in count order. Leave out for the lead to plan the angles.'),
   thread: id.optional().describe('A thread this thread delegated to before, to send it another brief. Leave it out to start a new thread.'),
   provider: providerIdSchema.optional().describe('For a new thread: claude, codex, grok, muse or devin. Call read_delegation with no delegation to see what is ready.'),
   model: z.string().min(1).max(512).optional().describe('For a new thread: a ready model ID of that provider, as read_delegation lists it.'),
@@ -117,6 +121,7 @@ export interface DelegationRead {
    * the words saying so. Its outcome stays `working` meanwhile; nothing is started until its turn.
    */
   readonly check?: { readonly ahead: number; readonly note: string }
+  readonly queue?: { readonly state: 'queued'; readonly ahead: number; readonly waiting: number; readonly note: string }
   /**
    * Why it was refused: for a `refused` delegation, the rule that turned it down, with `note` in plain words; for a `paused`
    * one, the user's newer message (`TARGET_CHANGED`) or their turn (`PAUSED`) in the delegated thread, before delivery.

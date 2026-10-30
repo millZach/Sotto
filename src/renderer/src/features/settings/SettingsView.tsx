@@ -71,7 +71,7 @@ import { ProjectThreadDefaults } from './ProjectThreadDefaults'
 import { ClearThreadsSettings } from './ClearThreadsSettings'
 import { ThreadTipsSetting } from './ThreadTipsSetting'
 import { WorkerRolesSettings } from './WorkerRolesSettings'
-import { WorkerMachineSettings } from './WorkerMachineSettings'
+import { WorkerCapacitySettings, WorkerMachineSettings } from './WorkerMachineSettings'
 import { PerformanceSettings } from '../performance/PerformanceSettings'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
 import { VoiceWave } from '../../components/VoiceWave'
@@ -453,6 +453,8 @@ export function SettingsView({
   const [reveal, setReveal] = useState<{ readonly group: string | null; readonly settings: readonly string[]; readonly key: number } | null>(null)
   // Settings, under Watcher, exists only while the Owl list turns Watcher on; its worker roles, only while they are on too.
   const watcherOn = useOwlFeature('watcher'), workerRolesOn = useOwlFeature('worker-roles'), crossMachineOn = useOwlFeature('cross-machine-work')
+  const workerSwarmsOn = useOwlFeature('worker-swarms')
+  const workerSwarms = watcherOn && workerSwarmsOn
   const workerRoles = watcherOn && workerRolesOn
   // Where new workers start (#1032), part of the Owl feature Work across machines, inside Watcher's page.
   const workerMachine = watcherOn && crossMachineOn
@@ -484,7 +486,7 @@ export function SettingsView({
   const ownCleanup = ownServerCleanupOn && ownServersBridge ? window.sotto?.ownServerCleanup : undefined
   const keepMainCurrent = useOwlFeature('keep-main-current')
   const notificationsShown = useDesktopNotifications() !== undefined
-  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, 'thread-tips': threadTipsOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn }
+  const gates: Record<SettingGate, boolean> = { dictation, 'dictation-off': dictationSwitch, watcher: watcherOn, 'worker-roles': workerRoles, 'worker-swarms': workerSwarms, 'cross-machine-work': workerMachine, 'main-freeze': performanceOn, 'resume-after-restart': resumeAfterRestart && !restartStopped, 'restart-stopped-threads': restartStopped, babysitting: !restartStopped, 'next-prompt': nextPromptOn, 'thread-tips': threadTipsOn, muse: !museHeld, 'menu-bar-owl': menuBarOwlOn, 'night-falls': nightFallsOn, notifications: notificationsShown, 'creature-toggle': creatureToggle, 'cleanup-model': dictation && cleanupModelOn, 'cloud-dictation': dictation && cloudDictationOn, 'own-model-servers': ownServersOn, 'keep-main-current': keepMainCurrent, 'clear-threads': clearThreadsOn, 'click-effect': clickEffect, usage: usageOn }
   // Find a setting reaches only what the page shows now. While it holds text it reads the mounted pages: a setting
   // whose page is not showing it (Providers with the local host off, say) is left out, and what the page says about
   // each one is matched as well as its name.
@@ -805,6 +807,7 @@ export function SettingsView({
                 </SettingsGroup>
                 {workerMachine ? <WorkerMachineSettings settings={settings} onUpdateSettings={onUpdateSettings}
                   onOpenHosts={() => { selectSection('settings-hosts'); document.getElementById('tab-settings-hosts')?.focus() }} /> : null}
+                {workerSwarms ? <WorkerCapacitySettings settings={settings} onUpdateSettings={onUpdateSettings} /> : null}
                 {workerRoles ? <WorkerRolesSettings settings={settings} platform={platform} onUpdateSettings={onUpdateSettings}
                   onOpenSection={id => { selectSection(id); document.getElementById(`tab-${id}`)?.focus() }} /> : null}</Card> : null}
 

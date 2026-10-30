@@ -1371,6 +1371,7 @@ export class SocketHostService implements HostService {
    * desktop sends (#1310). An older or stable host takes none, and a desktop never sends it any.
    */
   get supportsHostDelegation(): boolean { return this.features.includes('host-delegation') }
+  get supportsWorkerSwarms(): boolean { return this.features.includes('worker-swarms') }
   async desktopDefaults(defaults: DesktopDefaultsInput): Promise<DesktopDefaultsReceipt> {
     this.offers('host-delegation')
     return this.read(desktopDefaultsReceiptSchema, await this.call({ op: 'desktop-defaults', defaults }, undefined, undefined, 10000))

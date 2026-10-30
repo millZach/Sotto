@@ -200,7 +200,11 @@ describe('moving a thread from This computer to a paired host (#1178)', () => {
     await writeFile(join(m.local.path, 'scratch.txt'), 'not committed\n')
     const threadsBefore = m.socket.shell().host.threads.length
     const moveId = (await m.move([sourceId])).moves[0]!.moveId!
-    await vi.waitFor(() => expect(m.record(moveId)?.state).toBe('given-back'), { timeout: 30_000 })
+    // The record becomes visible before its save finishes and lifts the send fence.
+    await vi.waitFor(() => {
+      expect(m.record(moveId)?.state).toBe('given-back')
+      expect(m.control.moveFenceOf(sourceId)).toBeUndefined()
+    }, { timeout: 30_000 })
     expect(m.record(moveId)!.givenBack).toBe(THREAD_MOVE_WORDS.givenBack(branchMoveWords.uncommitted))
     expect(git(m.forgePath, 'for-each-ref', 'refs/sotto')).toBe('')
     expect(m.socket.shell().host.threads).toHaveLength(threadsBefore)

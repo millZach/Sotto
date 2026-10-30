@@ -1,5 +1,16 @@
 import { z } from 'zod'
 import { hostOsFamilySchema, type HostOsFamily } from './hostFacts'
+import { THIS_COMPUTER, WORKING_THREADS_QUIET_MAX } from './workingThreads'
+
+/** A machine ceiling bounds concurrent starts, never how many angles a request may queue. */
+export const workerCeilingSchema = z.number().int().positive().max(Number.MAX_SAFE_INTEGER)
+export const workerMachineCeilingsSchema = z.record(z.union([z.literal(THIS_COMPUTER), z.uuid()]), workerCeilingSchema)
+export type WorkerMachineCeilings = z.infer<typeof workerMachineCeilingsSchema>
+export const DEFAULT_WORKER_CEILING = WORKING_THREADS_QUIET_MAX
+export function workerMachineCeiling(settings: { readonly workerCeiling: number; readonly workerMachineCeilings: WorkerMachineCeilings },
+  machine = THIS_COMPUTER): number {
+  return settings.workerMachineCeilings[machine] ?? settings.workerCeiling
+}
 
 /**
  * Where new workers start (#1032, Owl `cross-machine-work`): the machine a new worker starts on when the request that

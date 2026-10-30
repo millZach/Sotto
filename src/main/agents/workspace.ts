@@ -4938,6 +4938,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         const below = new Set(delegatedThreadsBelow(this.state.snapshot.threads, id))
         for (const thread of this.state.snapshot.threads) {
           if (!below.has(thread.id) || thread.projectId !== projectId) continue
+          if (settled && this.swarmCanSettle?.(thread.id) === false) continue
           const own = thread.workspaceSettledAt ?? null
           if (settled ? own !== null : own !== previous) continue
           delegated.set(thread.id, own); this.touched(thread).workspaceSettledAt = entity.workspaceSettledAt
@@ -5225,6 +5226,9 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** Delegation is on (the Owl list's `thread-delegation`), so settling a thread settles the threads it delegated to. */
   private delegationEnabled = false
   enableDelegation(): void { this.delegationEnabled = true }
+  /** A swarm lead settles only its finished angles; other delegated threads keep their existing cascade. */
+  private swarmCanSettle?: (threadId: string) => boolean
+  useSwarmSettlements(canSettle: (threadId: string) => boolean): void { this.swarmCanSettle = canSettle }
   executeFromWatcher(command: AgentHostCommand, guard: () => void): Promise<AgentHostResult> {
     if (!this.watcherEnabled && !this.delegationGuards) throw new Error(WATCHER_DISABLED)
     this.watcherDispatchGuards.set(command, guard); guard(); return this.execute(command)

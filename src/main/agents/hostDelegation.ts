@@ -4,7 +4,7 @@ import type { AgentRuntimeMode, AgentThread } from '../../shared/agents'
 import { agentRuntimeModeSchema } from '../../shared/agents'
 import { readDesktopDefaults, type DesktopDefaults, type DesktopDefaultsInput, type DesktopDefaultsReceipt, type HostCeilingHold } from '../../shared/desktopDefaults'
 import { parseWorkerRoleChoices, type WorkerRoleChoices } from '../../shared/workerRoles'
-import { WORKER_SYSTEM_WORDS } from '../../shared/workerMachine'
+import { DEFAULT_WORKER_CEILING, workerCeilingSchema, WORKER_SYSTEM_WORDS } from '../../shared/workerMachine'
 import type { WatcherRefusal } from '../../shared/watcher'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { hostMachineReport, type HostFactsSource } from './hostFacts'
@@ -17,6 +17,7 @@ const keptSchema = z.object({
   clientId: z.string().min(1).max(512),
   newThreadRuntimeMode: agentRuntimeModeSchema.nullable(),
   workerRoles: z.unknown().optional(),
+  workerCeiling: workerCeilingSchema.optional().catch(undefined),
   /** When they came, by this host's clock: returned in the receipt and never used to order them, as a clock can move back. */
   receivedAt: z.iso.datetime(),
   /** The order they came in: one more than the newest kept when they were received. The last sent is the highest. */
@@ -41,6 +42,7 @@ export type DesktopCounts = (clientId: string) => boolean
  * counting at once and after a restart alike, and the most recent defaults from a desktop that still counts apply instead
  * (ADR-0074 decision 3: a wider start needs a desktop that may answer there). When none counts, every start is held to
  * Ask for approval with the roles' own defaults; a host never told says so.
+ * Capacity is separate: a paired, recorded desktop's worker ceiling applies even without an answers grant.
  */
 export class DesktopDefaultsStore {
   private readonly store: AtomicJsonStore<DesktopDefaultsFile>
@@ -61,7 +63,8 @@ export class DesktopDefaultsStore {
       const file = await this.store.read().catch((): DesktopDefaultsFile => ({ version: 1, desktops: [] }))
       // Newest first by the order they came in, never by the clock, so the last sent stays the last after a restart.
       this.kept = file.desktops.map(saved => ({ clientId: saved.clientId, receivedAt: saved.receivedAt, sequence: saved.sequence, newThreadRuntimeMode: saved.newThreadRuntimeMode,
-        ...(saved.workerRoles !== undefined ? { workerRoles: parseWorkerRoleChoices(saved.workerRoles) } : {}) }))
+        ...(saved.workerRoles !== undefined ? { workerRoles: parseWorkerRoleChoices(saved.workerRoles) } : {}),
+        ...(saved.workerCeiling !== undefined ? { workerCeiling: saved.workerCeiling } : {}) }))
         .sort((a, b) => b.sequence - a.sequence).slice(0, KEPT_DESKTOP_DEFAULTS)
     })
   }
@@ -74,9 +77,14 @@ export class DesktopDefaultsStore {
     return this.serialized(async () => {
       // The newest kept is first and is never dropped, so the next number is always above every number on record.
       const receivedAt = this.now().toISOString(), sequence = (this.kept[0]?.sequence ?? 0) + 1
-      const next = [{ clientId, receivedAt, sequence, ...defaults }, ...this.kept.filter(item => item.clientId !== clientId)].slice(0, KEPT_DESKTOP_DEFAULTS)
+      const priorCeiling = this.kept.find(item => item.clientId === clientId)?.workerCeiling
+      const next = [{ clientId, receivedAt, sequence,
+        // A stable desktop sends no swarm fields; it must not erase the saved choice for the next Owl connection.
+        ...priorCeiling === undefined ? {} : { workerCeiling: priorCeiling }, ...defaults },
+      ...this.kept.filter(item => item.clientId !== clientId)].slice(0, KEPT_DESKTOP_DEFAULTS)
       await this.store.write({ version: 1, desktops: next.map(item => ({ clientId: item.clientId, newThreadRuntimeMode: item.newThreadRuntimeMode,
-        ...(item.workerRoles ? { workerRoles: item.workerRoles } : {}), receivedAt: item.receivedAt, sequence: item.sequence })) })
+        ...(item.workerRoles ? { workerRoles: item.workerRoles } : {}), ...(item.workerCeiling === undefined ? {} : { workerCeiling: item.workerCeiling }),
+        receivedAt: item.receivedAt, sequence: item.sequence })) })
       this.kept = next
       return { receivedAt }
     })
@@ -104,6 +112,8 @@ export class DesktopDefaultsStore {
   }
   /** The worker roles of the defaults that apply now, or the roles' own defaults when they carry none or none apply. */
   roles(counts: DesktopCounts): WorkerRoleChoices { return this.current(counts)?.workerRoles ?? {} }
+  /** Capacity eligibility needs a paired, recorded desktop; this limit grants no permission. */
+  workerCeiling(counts: DesktopCounts): number { return this.current(counts)?.workerCeiling ?? DEFAULT_WORKER_CEILING }
 }
 
 
@@ -128,7 +138,7 @@ export type HostRelayMachines = Pick<HostDelegationRelay, 'reachable' | 'awayWor
  * recorded, as before.
  */
 export function hostDelegationMachines(hostId: () => string | undefined, facts: HostFactsSource, threads: () => readonly Pick<AgentThread, 'id' | 'status'>[],
-  relay?: HostRelayMachines): NonNullable<DelegationServiceOptions['machines']> {
+  relay?: HostRelayMachines, swarm?: () => { readonly workerCeiling: number; readonly workerQueued: number }): NonNullable<DelegationServiceOptions['machines']> {
   const here = (id: string) => ({ hostId: id, projectId: '', receipt: { hostId: id, name: THIS_MACHINE, awayFromDefault: false } })
   const elsewhere = (ask: PlacementAsk, project: { readonly projectId: string }, why: string): WorkerPlacement | WatcherRefusal => {
     if (!relay) return refusal(why)
@@ -141,6 +151,7 @@ export function hostDelegationMachines(hostId: () => string | undefined, facts: 
       let report: Awaited<ReturnType<typeof hostMachineReport>> | undefined
       try { report = await hostMachineReport(facts, () => ({ threads: threads() }), false) } catch { report = undefined }
       const self = { hostId: id, name: THIS_MACHINE, thisComputer: true, connected: true,
+        ...swarm?.(),
         ...report ? { factsState: 'reported', facts: report.facts, runningThreads: report.runningThreads }
           : { factsState: 'unknown', facts: null, note: 'This machine\'s facts could not be read just now. Nothing was changed. Ask again.', runningThreads: null } }
       if (relay) {

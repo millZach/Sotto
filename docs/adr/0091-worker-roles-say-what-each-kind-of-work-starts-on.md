@@ -4,6 +4,8 @@
 
 Accepted by Zach on October 14, 2026, in the Watcher engine ticket map (#1023): worker roles are an Owl feature with E4 to E10 (decision 12), every role's picker offers any model from any connected provider and Computer use defaults to GPT-6 Astra (decision 13), and Settings uses variant C of the prototype at `prototype/watcher-worker-roles`, with Computer use on Full access, still capped by the new-thread default (decision 15). Built with [#1041](https://github.com/millZach/Sotto/issues/1041) (E13). It amends [ADR-0073](0073-watcher-coordinates-threads-with-its-providers-own-tools.md) and [ADR-0081](0081-a-thread-may-delegate-work-to-threads-it-starts.md), and it is the Owl feature `worker-roles` ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)).
 
+Amended October 29, 2026 by [ADR-0162](0162-worker-swarms-give-each-angle-a-worktree-and-one-lead.md): the Owl feature `worker-swarms` adds per-role Workers, queued machine ceilings and one-call swarms with an independent worktree per angle and one lead. The behavior below remains in force with that feature off.
+
 ## Context
 
 Watcher's `start_thread` and a thread's `delegate` each named a model, an effort and a permission for every start. The agent picked them, so the right model for the work was whichever one the agent thought of: Opus for a review that Zach runs on Muse, a reasoning level nobody asked for, a permission the ceiling then refused. Zach already knows what each kind of work should run on, and wanted to say it once, in Settings, with defaults that follow the providers he has connected.

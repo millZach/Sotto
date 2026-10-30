@@ -4,6 +4,8 @@
 
 Accepted by Zach on October 14, 2026. It is built with #1029 (ticket E6). Zach settled the shape on October 14 in the Watcher engine ticket map (#1023): ordinary threads can start threads, sharing Watcher's starts limit, with the user's typing pausing it (decision 2), and later that day that delegation goes two levels deep (decision 11), and the word is **delegation**, with its **outcome** (decision 3). This record settles the rest. It amends [ADR-0073](0073-watcher-coordinates-threads-with-its-providers-own-tools.md)'s start authority and keeps [ADR-0004](0004-authority-in-policy-records.md) whole. It is an Owl feature ([ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md)).
 
+Amended October 29, 2026 by [ADR-0162](0162-worker-swarms-give-each-angle-a-worktree-and-one-lead.md): the Owl feature `worker-swarms` adds per-role Workers, queued machine ceilings and one-call swarms with an independent worktree per angle and one lead. The behavior below remains in force with that feature off.
+
 ## Context
 
 Zach already hands work from one agent to another by hand. The `code-review` skill runs `codex exec -s read-only`; `crew` runs `claude -p --resume` and `grok -p`. Sotto sees none of it. There is no thread to open, no request card when the second agent asks something, nothing stops when the first thread stops, and the results land in temporary files that only the first agent reads.

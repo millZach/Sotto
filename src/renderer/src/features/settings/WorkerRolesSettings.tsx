@@ -1,4 +1,4 @@
-import React, { useId, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
+import React, { useEffect, useId, useMemo, useRef, useState, type ComponentType, type ReactNode } from 'react'
 import { ArrowLeftRight, BookOpen, FileSearch, Hammer, MousePointer2, Palette, RotateCcw, Users, Zap } from 'lucide-react'
 import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural, t } from '@lingui/core/macro'
@@ -8,8 +8,8 @@ import { chosenModelId, resolveModel } from '../../../../shared/modelCatalog'
 import { RUNTIME_MODE_ORDER } from '../../../../shared/newThreadDefaults'
 import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
-import { capRuntimeMode, defaultModel, fitEffort, fitRuntimeMode, fitSpeed, roleInForce, watcherProvidersInWords, withRoleRow, WORKER_ROLES,
-  type RoleInForce, type WorkerRoleChoice, type WorkerRoleChoices, type WorkerRoleId } from '../../../../shared/workerRoles'
+import { capRuntimeMode, defaultModel, fitEffort, fitRuntimeMode, fitSpeed, roleInForce, watcherProvidersInWords, withRoleRow, WORKER_COUNT_MAX, WORKER_COUNTS, WORKER_ROLES, workerCounts,
+  type RoleInForce, type WorkerCount, type WorkerRoleChoice, type WorkerRoleChoices, type WorkerRoleId } from '../../../../shared/workerRoles'
 import { useOptionalAgents, type AgentConnection } from '../../agents/AgentContext'
 import { shownWords, type LaterWords } from './laterWords'
 import { EffortPicker, effortLabel } from '../../agents/EffortPicker'
@@ -19,7 +19,7 @@ import { pendingSettingsStore, settingValues, speedPatch, SPEED_STANDARD, usePen
 import { ProviderMark } from '../../agents/ProviderMark'
 import { ChoiceChip, effortChoices, offeredSpeeds, RUNTIME_LABELS, speedChoices, speedName, watcherPermissionFixedReason } from '../../agents/ThreadOptions'
 import { useOptionalApp } from '../../state/AppContext'
-import { useHeldProviders } from '../../state/owlFeature'
+import { useHeldProviders, useOwlFeature } from '../../state/owlFeature'
 import { WatcherOwl } from '../../watcher/WatcherOwl'
 import { WatcherPermissionChip } from '../../watcher/WatcherPermissionChip'
 import { useWatcherRoom } from '../../watcher/watcherRoom'
@@ -41,7 +41,7 @@ type RowStatus = 'chosen' | 'away' | 'moved' | 'default' | 'none'
 /** A model, effort and speed, as Watcher runs on them and as Orchestrating saves them. */
 interface WatcherChoice { readonly modelId: string; readonly reasoningEffort: string | null; readonly speed: AgentSpeed | null }
 /** A row's change from a card: any of its settings, the rest kept. */
-interface RowPatch { readonly modelId?: string; readonly reasoningEffort?: string | null; readonly speed?: AgentSpeed | null; readonly runtimeMode?: AgentRuntimeMode }
+interface RowPatch { readonly modelId?: string; readonly reasoningEffort?: string | null; readonly speed?: AgentSpeed | null; readonly runtimeMode?: AgentRuntimeMode; readonly workers?: WorkerCount }
 /** What a line under the heading says was done, and what Undo puts back: the saved rows, and Watcher as it was. */
 interface Said { readonly text: LaterWords; readonly undo: WorkerRoleChoices; readonly watcher: WatcherChoice | null }
 const WATCHER_NOT_STARTED = msg`Sotto could not start a new Watcher. Nothing was changed. Try again, or check the provider in Settings, under Providers.`
@@ -94,6 +94,8 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
 }): ReactNode {
   const { t } = useLingui()
   const headingId = useId()
+  // Worker counts are part of Worker swarms (Owl): stable shows none, and keeps a row's saved counts whole.
+  const swarms = useOwlFeature('worker-swarms')
   // This computer's catalog: the roles, like the new-thread defaults, are this computer's own (ADR-0074).
   const catalog = useMemo(() => newThreadDefaultsCatalog(state), [state])
   const choices = settings.workerRoles
@@ -159,11 +161,15 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
     const model = resolveModel(catalog, modelId)
     const reasoningEffort = patch.reasoningEffort !== undefined ? patch.reasoningEffort : patch.modelId ? fitEffort(shown.reasoningEffort, model) : shown.reasoningEffort
     const runtimeMode = patch.runtimeMode ?? (patch.modelId ? fitRuntimeMode(shown.runtimeMode ?? read.role.permission, model) ?? shown.runtimeMode : shown.runtimeMode)
-    // A speed stays through a change of model, as a thread's does; on a model without it the role starts at Standard (ADR-0091).
+    const id = read.role.id
+    // A speed stays through a change of model; unsupported models use Standard (ADR-0091).
     const speed = patch.speed !== undefined ? patch.speed : shown.speed
-    const row: WorkerRoleChoice = { modelId, reasoningEffort, ...(speed ? { speed } : {}), ...(read.role.id === 'orchestrating' || runtimeMode === undefined ? {} : { runtimeMode }) }
-    save(withRoleRow(choices, read.role.id, row, catalog))
-    if (read.role.id === 'orchestrating') void applyToWatcher({ modelId, reasoningEffort, speed })
+    // A row keeps its counts through any other change, and saves none while they are the role's defaults.
+    const workers = id === 'orchestrating' ? undefined : patch.workers ?? read.choice?.workers
+    const counted = workers === undefined || id === 'orchestrating' || (workers.usual === WORKER_COUNTS[id].usual && workers.upTo === WORKER_COUNTS[id].upTo) ? {} : { workers }
+    const row: WorkerRoleChoice = { modelId, reasoningEffort, ...(speed ? { speed } : {}), ...(id === 'orchestrating' || runtimeMode === undefined ? {} : { runtimeMode }), ...counted }
+    save(withRoleRow(choices, id, row, catalog))
+    if (id === 'orchestrating') void applyToWatcher({ modelId, reasoningEffort, speed })
   }
   const reset = (read: RoleInForce): void => {
     const next: WorkerRoleChoices = { ...choices }
@@ -209,7 +215,8 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
         onClick={resetAll}>
         <RotateCcw size={14} aria-hidden="true" /><Trans>Reset all to defaults</Trans></button>
     </div>
-    <p className="worker-roles__lead tt-paragraph"><Trans>Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it.</Trans></p>
+    <p className="worker-roles__lead tt-paragraph"><Trans>Each kind of work starts on its own model, effort and permissions. Watcher names the role when it starts a worker, and a thread names it when it delegates. Defaults come from the providers you have connected; a choice you make here stays until you reset it.</Trans>
+      {swarms ? <>{' '}<Trans>Workers is how many Watcher starts for one request: usually the first number, never more than Up to unless you name a count.</Trans></> : null}</p>
     {said ? <p className="worker-roles__said tt-paragraph" role="status"><span>{shownWords(said.text)}</span>
       <button type="button" className="tt-focusable" onClick={() => undo(said)}><Trans>Undo</Trans></button></p> : null}
     {!anyConnected ? <div className="worker-roles__empty">
@@ -223,7 +230,7 @@ function Roles({ state, command, settings, platform, onUpdateSettings, onOpenSec
       <div className="worker-roles__grid">
         {orchestrating ? <OrchestratingCard read={orchestrating} state={state} watcher={watcher} chosen={watcherChosen} refusal={watcherRefusal} catalog={catalog} providerOf={providerOf}
           onRow={patch => setRow(orchestrating, patch)} onReset={() => reset(orchestrating)} /> : null}
-        {workers.map(read => <RoleCard key={read.role.id} read={read} catalog={catalog} providerOf={providerOf} ceiling={ceiling} platform={platform}
+        {workers.map(read => <RoleCard key={read.role.id} read={read} catalog={catalog} providerOf={providerOf} ceiling={ceiling} platform={platform} swarms={swarms} counts={read.role.id === 'orchestrating' ? undefined : workerCounts(read.role.id, choices)}
           onRow={patch => setRow(read, patch)} onReset={() => reset(read)} onOpenAgents={() => onOpenSection('settings-agents')} />)}
       </div>
     </>}
@@ -314,9 +321,13 @@ function Defaults({ read, catalog, providerOf }: { readonly read: RoleInForce; r
 }
 
 /** One worker role: a model, an effort and a permission, the notes that hold, and its defaults in order. */
-function RoleCard({ read, catalog, providerOf, ceiling, platform, onRow, onReset, onOpenAgents }: {
+function RoleCard({ read, catalog, providerOf, ceiling, platform, swarms, counts, onRow, onReset, onOpenAgents }: {
   readonly read: RoleInForce; readonly catalog: readonly AgentModel[]; readonly providerOf: (id: ProviderId) => ProviderState
   readonly ceiling: AgentRuntimeMode; readonly platform: SottoPlatform
+  /** Worker swarms is on, so the card offers its Workers counts. */
+  readonly swarms: boolean
+  /** How many workers a request starts in this role: saved, or the role's defaults. */
+  readonly counts: WorkerCount | undefined
   readonly onRow: (patch: RowPatch) => void
   readonly onReset: () => void; readonly onOpenAgents: () => void
 }): ReactNode {
@@ -376,6 +387,7 @@ function RoleCard({ read, catalog, providerOf, ceiling, platform, onRow, onReset
             disabled={false} pending={false} flip foot={t`A worker never starts wider than your new-thread default, “${ceilingName}”, and a delegated thread never wider than the thread that delegates.`}
             onChange={mode => onRow({ runtimeMode: mode as AgentRuntimeMode })} />}
       </div>
+      {swarms && counts ? <WorkerCounts roleName={roleName} counts={counts} onSave={workers => onRow({ workers })} /> : null}
     </div> : <p className="worker-role__none tt-paragraph"><Trans>No connected provider can do this work.</Trans></p>}
     {notes.map(note => <p key={note} className="worker-role__note tt-paragraph" data-kind="moved">{note}</p>)}
     {fit ? <p className="worker-role__note tt-paragraph">{fit}</p> : null}
@@ -389,6 +401,34 @@ function RoleCard({ read, catalog, providerOf, ceiling, platform, onRow, onReset
         : defaultMode ? t`Reset ${roleName} to its default, ${defaultModelName} with ${defaultMode}`
         : t`Reset ${roleName} to its default, ${defaultModelName}`}><Trans>Reset to default</Trans></button></footer> : null}
   </article>
+}
+
+/**
+ * A role's Workers (Worker swarms, Owl): how many workers Watcher usually starts for one request in this role, and the
+ * most it starts on its own. Each number saves when it is left or Enter is pressed; one that would cross the other moves
+ * it too, so Usual never passes Up to, and anything but a whole number from 1 puts the saved one back.
+ */
+function WorkerCounts({ roleName, counts, onSave }: { readonly roleName: string; readonly counts: WorkerCount; readonly onSave: (next: WorkerCount) => void }): ReactNode {
+  const { t } = useLingui()
+  const [usual, setUsual] = useState(String(counts.usual))
+  const [upTo, setUpTo] = useState(String(counts.upTo))
+  useEffect(() => { setUsual(String(counts.usual)); setUpTo(String(counts.upTo)) }, [counts.usual, counts.upTo])
+  const commit = (field: keyof WorkerCount, text: string): void => {
+    const typed = /^\d+$/u.test(text.trim()) && Number.isSafeInteger(Number(text)) ? Number(text) : 0
+    const next = typed < 1 || typed > WORKER_COUNT_MAX ? counts : field === 'usual' ? { usual: typed, upTo: Math.max(typed, counts.upTo) } : { usual: Math.min(counts.usual, typed), upTo: typed }
+    setUsual(String(next.usual)); setUpTo(String(next.upTo))
+    if (next.usual !== counts.usual || next.upTo !== counts.upTo) onSave(next)
+  }
+  const input = (field: keyof WorkerCount, value: string, set: (text: string) => void, name: string): ReactNode =>
+    <input className="worker-role__count tt-focusable" type="number" inputMode="numeric" min={1} max={WORKER_COUNT_MAX} step={1} value={value} aria-label={name}
+      onChange={event => set(event.currentTarget.value)} onBlur={event => commit(field, event.currentTarget.value)}
+      onKeyDown={event => { if (event.key === 'Enter') commit(field, event.currentTarget.value) }} />
+  return <div className="worker-role__field worker-role__field--full" data-setting="worker-counts"><span aria-hidden="true">{t({ message: 'Workers', comment: 'A worker role field: how many workers one request starts' })}</span>
+    <div className="worker-role__counts">
+      <label>{t({ message: 'Usual', comment: 'How many workers a request usually starts in a role' })}{input('usual', usual, setUsual, t`Usual number of ${roleName} workers for one request`)}</label>
+      <label>{t({ message: 'Up to', comment: 'The most workers a request starts in a role unless the user names a count' })}{input('upTo', upTo, setUpTo, t`Most ${roleName} workers Watcher starts for one request on its own`)}</label>
+    </div>
+  </div>
 }
 
 /**

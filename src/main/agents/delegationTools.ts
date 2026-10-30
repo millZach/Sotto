@@ -37,6 +37,12 @@ const CHECKS_HOST = `Set test_run for any thread that is there to run tests, whi
 const FROM_BRANCH_FIELDS = { from_my_branch: true, test_run: true } as const
 /** What Work across machines adds to a delegation (#1032, #1033), none of it offered while that is off. */
 const ACROSS_MACHINES = { machine: true, os: true, ...FROM_BRANCH_FIELDS } as const
+const delegateSingleByRoleSchema = delegateByRoleSchema.omit({ count: true, prompts: true })
+const delegateSingleSchema = delegateInputSchema.omit({ count: true, prompts: true })
+const delegateRoleHereSchema = delegateByRoleSchema.omit(ACROSS_MACHINES)
+const delegateHereSchema = delegateInputSchema.omit(ACROSS_MACHINES)
+const delegateSingleRoleHereSchema = delegateSingleByRoleSchema.omit(ACROSS_MACHINES)
+const delegateSingleHereSchema = delegateSingleSchema.omit(ACROSS_MACHINES)
 /** A thread on a headless host (#1310) delegates only on its own machine until #1316. */
 const WHERE_HOST = `A new thread starts on this machine, the one this thread runs on. A thread here delegates only to threads on this machine for now, so a machine or os (windows, macos or linux) other than this machine's own is refused. The result's placement says where it started.`
 /** With the desktop relay (#1316), a thread on a headless host may start a thread on This computer too, while it is connected. */
@@ -50,20 +56,24 @@ export type DelegationPlace = 'this-computer' | 'this-machine'
  * Work across machines on (#1032), a new thread may name a machine or a system, and the machines can be listed. On a
  * headless host (`this-machine`, #1310), the words say this machine, and only this machine is listed.
  */
-export function delegationToolDefinitions(roles: boolean, machines = false, place: DelegationPlace = 'this-computer', relay = false): readonly ThreadToolDefinition[] {
-  const delegate = roles ? delegateByRoleSchema : delegateInputSchema
+export function delegationToolDefinitions(roles: boolean, machines = false, place: DelegationPlace = 'this-computer', relay = false, swarms = false): readonly ThreadToolDefinition[] {
+  const delegate = roles
+    ? swarms ? machines ? delegateByRoleSchema : delegateRoleHereSchema : machines ? delegateSingleByRoleSchema : delegateSingleRoleHereSchema
+    : swarms ? machines ? delegateInputSchema : delegateHereSchema : machines ? delegateSingleSchema : delegateSingleHereSchema
   const here = place === 'this-machine' ? 'this machine' : 'this computer'
   return [
-    { name: DELEGATE_TOOL, inputSchema: schema(!machines ? delegate.omit(ACROSS_MACHINES) : delegate), description: [
+    { name: DELEGATE_TOOL, inputSchema: schema(delegate), description: [
       `Hand work to another thread on ${here}: start a new Sotto thread on any provider with your brief, or send another brief to a thread you delegated to.`,
       'The thread is the user\'s to open, answer and stop. It asks the user, never you, for any permission or answer, and nothing you send approves anything.',
       roles ? NEW_THREAD_BY_ROLE : NEW_THREAD_BY_NAME,
       `It waits up to wait_seconds (at most ${DELEGATION_WAIT_MAX_SECONDS}) for the outcome and returns the reply once answered. When the wait ends first it returns working, and Sotto sends this thread a wake-up, with the reply once answered, when the outcome changes: end your turn or carry on, and do not poll.`,
-      `Sotto starts any number of threads. When more than ${WORKING_THREADS_QUIET_MAX} threads are working on ${here} after a start, the result carries a warning: tell the user what it says. Each thread takes ${DELEGATION_PROMPTS_PER_THREAD} briefs per user message to this thread; retries and wake-ups renew nothing.`,
+      swarms ? `Count starts that many distinct angle workers and one lead on the role's model. Each angle has its own worktree. Name prompts for the angles, or let the lead plan them. Read each role's usual and up-to counts in read_delegation: use Usual unless distinct angles help, and stay within Up to unless the user names a count, which overrides them. The machine ceiling queues extras in order; the receipt says how many wait and gives the cost shape, count × effort plus the lead. Reuse one retry_key for the whole swarm. Leave count out for one worker.`
+        : `Sotto starts any number of threads. When more than ${WORKING_THREADS_QUIET_MAX} threads are working on ${here} after a start, the result carries a warning: tell the user what it says.`,
+      `Each thread takes ${DELEGATION_PROMPTS_PER_THREAD} briefs per user message to this thread; retries and wake-ups renew nothing.`,
       ...machines ? place === 'this-machine' ? [relay ? WHERE_HOST_RELAY : WHERE_HOST, FROM_MY_BRANCH, CHECKS_HOST] : [WHERE, FROM_MY_BRANCH, CHECKS] : [],
     ].join(' ') },
     { name: READ_DELEGATION_TOOL, inputSchema: schema(readDelegationInputSchema), description:
-      `Read one of this thread's delegations: its outcome (working, background, answered, failed, stopped, paused, unknown, or refused when Sotto turned it down as it was asked for) and, once answered, the delegated thread's reply, labelled as its own words. With no delegation, list this thread's delegations, the ready models it can delegate to, ${roles ? 'what each kind of work starts on now, ' : ''}and the limits. Reading charges nothing.`,
+      `Read one of this thread's delegations: its outcome (working, background, answered, failed, stopped, paused, unknown, or refused when Sotto turned it down as it was asked for) and, once answered, the delegated thread's reply, labelled as its own words. With no delegation, list this thread's delegations, the ready models it can delegate to, ${roles ? 'what each kind of work starts on now, ' : ''}and the limits.${swarms ? ' Each role includes its usual and up-to worker counts; limits includes this machine’s ceiling and waiting starts. Swarm results carry all angle receipts plus the lead and its synthesis.' : ''} Reading charges nothing.`,
     annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } },
     { name: CANCEL_DELEGATION_TOOL, inputSchema: schema(cancelDelegationInputSchema), description:
       'Cancel one of this thread\'s delegations: a brief still waiting is dropped, and a delegated thread working on it is stopped, with any thread it delegated to. Nothing is deleted.' },
@@ -90,9 +100,9 @@ export class DelegationToolServer implements ScopedThreadTools {
   /** Above the longest wait, so the call returns working before Codex's and Claude Code's clients give up on it (decision 8). */
   readonly timeoutMs = (DELEGATION_WAIT_MAX_SECONDS + 30) * 1000
   private readonly server: ThreadToolServer
-  constructor(private readonly service: DelegationService, options: { roles?: boolean; machines?: boolean; place?: DelegationPlace; relay?: boolean } = {}) {
+  constructor(private readonly service: DelegationService, options: { roles?: boolean; machines?: boolean; place?: DelegationPlace; relay?: boolean; swarms?: boolean } = {}) {
     const roles = options.roles === true, machines = options.machines === true, place = options.place ?? 'this-computer'
-    this.definitions = roles || machines || place !== 'this-computer' ? delegationToolDefinitions(roles, machines, place, options.relay === true) : DELEGATION_TOOL_DEFINITIONS
+    this.definitions = roles || machines || place !== 'this-computer' || options.swarms ? delegationToolDefinitions(roles, machines, place, options.relay === true, options.swarms === true) : DELEGATION_TOOL_DEFINITIONS
     this.server = new ThreadToolServer({ name: DELEGATE_MCP_SERVER, serverName: 'sotto-delegate', instructions: instructions(place),
       unavailable: 'Sotto\'s delegation tools are unavailable. Nothing was started.', failed: 'Sotto could not complete this delegation call. Call read_delegation to see where it stands before trying again.',
       maxRequestBytes: 256 * 1024 },

@@ -3,6 +3,7 @@ import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentMessage, AgentState, AgentThread } from '../../../src/shared/agents'
+import { clientAgentState, hostEntityKey } from '../../../src/shared/clientIdentity'
 import type { DelegatedView, DelegationsBridge, DelegationsChanged, DelegationView, RefusedView } from '../../../src/shared/delegation'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
@@ -15,6 +16,7 @@ import { MessageList, type ActivityContext } from '../../../src/renderer/src/age
 import { placeActivities } from '../../../src/renderer/src/agents/threadActivityView'
 import { describeThreads, organizeWorkspace, type ThreadRow } from '../../../src/renderer/src/agents/threadFacts'
 import { ThreadsView } from '../../../src/renderer/src/agents/ThreadsView'
+import { swarmAnglesByLead } from '../../../src/renderer/src/agents/SwarmAngles'
 import { SplitLayoutStore } from '../../../src/renderer/src/agents/splitLayout'
 import { useOptionalApp, type AppContextValue } from '../../../src/renderer/src/state/AppContext'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
@@ -190,6 +192,23 @@ describe('delegated threads in the sidebar', () => {
     // With the Owl switch off nothing changes: they list as ordinary rows, in activity order, with no nesting.
     expect(ids(state, '', false)).toEqual(expect.arrayContaining([PARENT, CHILD, GRANDCHILD]))
     expect(folderOf(state, '', false).listedAs).toBeUndefined()
+  })
+
+  it.each([undefined, '33333333-3333-4333-8333-333333333333'])('lists a delegated swarm lead and its angles for host %s only with swarms on', hostId => {
+    const source = delegatingState()
+    const swarm = { id: 'swarm', leadThreadId: CHILD, count: 1, done: 0, failed: 0, queued: 0 }
+    source.host.threads.find(thread => thread.id === CHILD)!.swarm = swarm
+    source.host.threads.find(thread => thread.id === GRANDCHILD)!.swarm = { ...swarm, index: 0, state: 'working' }
+    source.hostId = hostId
+    const state = clientAgentState(source)
+    const parent = hostEntityKey(hostId, PARENT), lead = hostEntityKey(hostId, CHILD), angle = hostEntityKey(hostId, GRANDCHILD)
+    const organized = organizeWorkspace(state, describeThreads(state, NOW), '', null, true, NOW, true)
+    const rows = [...organized.open, ...organized.settled].flatMap(folder => folder.rows)
+    expect(rows.map(row => row.thread.id)).toEqual(expect.arrayContaining([parent, lead]))
+    expect(rows.map(row => row.thread.id)).not.toContain(angle)
+    expect(organized.listedAs).toEqual(new Map([[angle, lead]]))
+    expect(swarmAnglesByLead(state.host.threads, organized.listedAs).get(lead)?.map(thread => thread.id)).toEqual([angle])
+    expect(ids(state)).not.toContain(lead)
   })
 
   it('keeps a delegated thread whose delegating thread is gone, and hides the one it delegated in turn', () => {

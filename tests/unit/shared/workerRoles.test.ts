@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { publicProviderEntityId, type AgentModel, type AgentRuntimeMode, type ProviderId } from '../../../src/shared/agents'
-import { capRuntimeMode, fitEffort, fitSpeed, isRoleDefault, parseWorkerRoleChoices, roleCanUse, roleInForce, roleStartNote, startFromRole, watcherProvidersInWords, withRoleRow, WORKER_ROLE_IDS,
+import { capRuntimeMode, fitEffort, fitSpeed, isRoleDefault, parseWorkerRoleChoices, roleCanUse, roleInForce, roleStartNote, startFromRole, watcherProvidersInWords, withRoleRow, workerCounts, WORKER_COUNTS, WORKER_ROLE_IDS,
   type WorkerRoleChoices, type WorkerRoleId } from '../../../src/shared/workerRoles'
 
 const ALL: readonly AgentRuntimeMode[] = ['approval-required', 'auto-accept-edits', 'auto', 'full-access']
@@ -30,6 +30,28 @@ function table(models: readonly AgentModel[], choices: WorkerRoleChoices = {}): 
 }
 
 describe('worker roles', () => {
+  it('keeps counts with the role, and a count-only change keeps a chosen row until Reset', () => {
+    expect(WORKER_COUNTS).toEqual({ research: { usual: 1, upTo: 8 }, 'code-review': { usual: 1, upTo: 4 },
+      building: { usual: 1, upTo: 2 }, ui: { usual: 1, upTo: 2 }, 'computer-use': { usual: 1, upTo: 1 } })
+    const row = { modelId: id('claude', 'haiku'), reasoningEffort: null, workers: { usual: 4, upTo: 12 } }
+    const chosen = withRoleRow({}, 'research', row, CLAUDE)
+    expect(chosen.research).toEqual(row)
+    expect(workerCounts('research', chosen)).toEqual({ usual: 4, upTo: 12 })
+    expect(roleInForce('research', chosen, CODEX).choice?.workers).toEqual({ usual: 4, upTo: 12 })
+    expect(withRoleRow(chosen, 'research', { ...row, workers: { usual: 1, upTo: 8 } }, CLAUDE)).toEqual({})
+  })
+
+  it('drops damaged counts without dropping the row and never gives Orchestrating counts', () => {
+    const row = { modelId: 'chosen', reasoningEffort: 'high', runtimeMode: 'auto' }
+    for (const workers of [{ usual: 0, upTo: 8 }, { usual: 3, upTo: 2 }, { usual: 1.5, upTo: 8 }, { usual: 1, upTo: 1_001 }, 'damaged']) {
+      const parsed = parseWorkerRoleChoices({ research: { ...row, workers } })
+      expect(parsed.research).toEqual(row)
+      expect(workerCounts('research', parsed)).toEqual({ usual: 1, upTo: 8 })
+    }
+    expect(parseWorkerRoleChoices({ orchestrating: { ...row, workers: { usual: 2, upTo: 8 } } }))
+      .toEqual({ orchestrating: { modelId: 'chosen', reasoningEffort: 'high' } })
+  })
+
   it('gives Zach his defaults with Claude Code, Codex, Muse and Grok Build connected', () => {
     expect(table([...CLAUDE, ...CODEX, ...MUSE, ...GROK])).toEqual({
       orchestrating: ['opus', 'high', undefined],
@@ -172,6 +194,10 @@ describe('worker roles', () => {
     expect(roleStartNote(standard, [fast])).toContain('Its speed is Standard.')
     expect(withRoleRow({}, 'building', choices.building!, [fast])).toEqual(choices)
     expect(withRoleRow(choices, 'building', { ...choices.building!, speed: null }, [fast])).toEqual({})
+    const counted = { ...choices.building!, workers: { usual: 2, upTo: 4 } }
+    expect(withRoleRow({}, 'building', { ...counted, speed: null }, [fast])).toEqual({ building: { ...counted, speed: null } })
+    expect(withRoleRow({}, 'building', { ...counted, workers: WORKER_COUNTS.building }, [fast])).toEqual({ building: { ...counted, workers: WORKER_COUNTS.building } })
+    expect(withRoleRow({}, 'building', { ...counted, speed: null, workers: WORKER_COUNTS.building }, [fast])).toEqual({})
     const orchestrating = { modelId: fast.id, reasoningEffort: 'high', speed: 'fast' as const }
     expect(withRoleRow({}, 'orchestrating', orchestrating, [fast])).toEqual({ orchestrating })
     expect(withRoleRow({ orchestrating }, 'orchestrating', { ...orchestrating, speed: null }, [fast])).toEqual({})

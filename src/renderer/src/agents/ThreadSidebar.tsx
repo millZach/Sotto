@@ -29,6 +29,7 @@ import { shownCount } from '../state/interfaceNumbers'
 import { entryFailure, NeedsYouCard, NeedsYouQueue, popWords } from './NeedsYouQueue'
 import { useOwlFeature } from '../state/owlFeature'
 import { RestartBands, useRestartStopped } from './RestartStopped'
+import { SwarmAngles, swarmAnglesByLead } from './SwarmAngles'
 import './workingThreadsLine.css'
 
 export { useAddProject } from './addProject'
@@ -126,13 +127,15 @@ function StatusRing({ row, finished, background }: { readonly row: ThreadRow; re
  * row whose thread the update did not touch keeps every prop it had and does not re-render. Its props stay
  * cheap to compare — no object or array is built for it here.
  */
-const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, liveClock, onOpen, command, panes, settle }: {
+const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, liveClock, onOpen, command, panes, settle, angles }: {
   readonly row: ThreadRow; readonly current: boolean; readonly open: boolean; readonly onOpen: (threadId: string) => void; readonly command: Command
   /** This thread's own lane is running a command. Another thread's work leaves this row's actions live. */
   readonly busy: boolean
   readonly liveClock: boolean
   readonly panes: PaneActions
   readonly settle: ReturnType<typeof useSettleThread>['settle']
+  /** This thread leads a swarm (Owl `worker-swarms`): its angles, listed under its row. */
+  readonly angles?: readonly AgentThread[] | undefined
 }): ReactNode {
   const { t } = useLingui()
   const title = row.thread.title
@@ -164,13 +167,14 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   // A row that says it needs you for a thread it delegated names that thread (ADR-0081, October 17, 2026).
   const waitingIn = row.waitingIn
   const copyDetails = [...new Set([waitingIn ? t({ message: `Waiting in ${waitingIn}`, comment: '{waitingIn} is the title of a thread this one delegated to.' }) : undefined, row.thread.hostLabel, row.model?.name, branchName, copyLabel, watched ? WATCHED_BY_WATCHER : undefined].filter(Boolean))].join(', ')
-  if (renaming) return <li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
+  const swarm = angles === undefined ? null : <SwarmAngles lead={row.thread} angles={angles} currentThreadId={panes.currentThreadId} onOpen={onOpen} command={command} />
+  if (renaming) return <><li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <span className="thread-nav__item thread-nav__item--renaming">
       <ThreadNameField title={title} label={t`Rename ${title}`} className="thread-nav__rename tt-focusable"
         onRename={next => void command({ type: 'rename-thread', threadId: row.thread.id, title: next })} onDone={restore => { restoreRenameFocus.current = restore; setRenaming(false) }} />
     </span>
-  </li>
-  return <li className="thread-nav__row thread-nav__row--details" data-current={current || undefined} data-open={open && !current ? true : undefined}>
+  </li>{swarm}</>
+  return <><li className="thread-nav__row thread-nav__row--details" data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <button type="button" className="thread-nav__item tt-focusable" aria-label={title} title={title} aria-describedby={[statusId, timeId, detailsId].join(' ')} aria-current={current ? 'page' : undefined} draggable
       aria-keyshortcuts={besideAvailable ? panes.openBesideChord?.label.keys : undefined}
       onClick={event => { if (besideAvailable && (event.ctrlKey || event.metaKey)) panes.onOpenBeside(row.thread.id); else onOpen(row.thread.id) }}
@@ -210,7 +214,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
           ? <button type="button" className="thread-nav__action tt-focusable" aria-label={t`Restore ${title}`} title={panes.restoreShortcut ? `${t`Restore thread`} ${panes.restoreShortcut.suffix}` : t`Restore thread`} aria-keyshortcuts={panes.currentThreadId === row.thread.id ? panes.restoreShortcut?.keys : undefined} disabled={busy} onClick={() => void command({ type: 'restore-thread', threadId: row.thread.id })}><ArchiveRestore size={16} aria-hidden="true" /></button>
           : null}
     </span>
-  </li>
+  </li>{swarm}</>
 })
 
 /** A folder's key in the sidebar's toggled set; a project can appear in both sections. */
@@ -259,8 +263,10 @@ const PEEK_DELAY_MS = 350
 const PEEK_GRACE_MS = 300
 
 /** One project folder and its rows. Memoised for the same reason a row is: its folder is shared across updates. */
-const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut, peekEnabled, indicatorsHidden, mainCheckout }: {
+const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut, peekEnabled, indicatorsHidden, mainCheckout, swarmAngles }: {
   readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
+  /** Each swarm lead's angles (Owl `worker-swarms`); absent while the feature is off. */
+  readonly swarmAngles?: ReadonlyMap<string, readonly AgentThread[]> | undefined
   /** Keep main up to date's line for this project, when it has one (ADR-0142). */
   readonly mainCheckout?: ProjectMainCheckout | undefined
   /** The host the project is on, once a remote host is connected; its badge tells same-named projects apart. */
@@ -339,7 +345,7 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
     return typeof window.matchMedia !== 'function' || window.matchMedia('(hover: hover) and (pointer: fine)').matches
   }
   const renderRows = (open: (threadId: string) => void, rowPanes: PaneActions): ReactNode => folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={listed === row.thread.id} open={rowPanes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
-    liveClock={liveClock} onOpen={open} command={command} panes={rowPanes} settle={settle} />)
+    liveClock={liveClock} onOpen={open} command={command} panes={rowPanes} settle={settle} angles={swarmAngles?.get(row.thread.id)} />)
   return <div ref={rootRef} className="thread-folder" data-section={section} data-active={activeProjectId === folder.id || undefined}
     onPointerEnter={event => { if (fineHover(event.pointerType)) { hoverRef.current = true; schedulePreview('hover') } }}
     onPointerLeave={() => { hoverRef.current = false; scheduleHide('hover') }}
@@ -482,6 +488,11 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const { settle, dialog: settleDialog } = useSettleThread(command, settledButton)
   const [isFolderOpen, toggle] = useFolderToggles()
   const folderPeek = useOwlFeature('folder-peek')
+  // Worker swarms (Owl, ADR-0162): each lead's angles under its row. Off, nothing is read and no row changes.
+  const swarmsOn = useOwlFeature('worker-swarms')
+  const hostThreads = state.host.threads
+  const listedAs = organization.listedAs
+  const swarmAngles = useMemo(() => swarmsOn ? swarmAnglesByLead(hostThreads, listedAs) : undefined, [swarmsOn, hostThreads, listedAs])
   const { collapsed } = useSidebarSize()
   const app = useOptionalApp()
   const platform: SottoPlatform = app?.platform ?? 'win32'
@@ -561,7 +572,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     return <FolderView key={key} folder={folder} section={section} panes={panes} activeProjectId={state.activeProjectId} liveClock={liveClock}
       host={hosts.find(item => item.hostId === hostId)} newThreadShortcut={newThreadShortcut} peekEnabled={folderPeek}
       mainCheckout={section === 'open' && mainCheckout.size ? mainCheckout.get(projectWorkingCopyDefaultKey(state, folder.id)) : undefined}
-      expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settle} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} indicatorsHidden={queueOn} />
+      expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settle} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} indicatorsHidden={queueOn}
+      swarmAngles={swarmAngles} />
   }
   const { open, settled } = organization
   // The collapsed rail's threads: every open one, and the focused one even once settled.

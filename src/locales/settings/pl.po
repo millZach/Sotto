@@ -2282,6 +2282,14 @@ msgstr ""
 msgid "Enter a whole number between 10 and 100000."
 msgstr ""
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Enter a whole number, 1 or more, or leave it empty. Nothing was changed."
+msgstr ""
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Enter a whole number, 1 or more. Nothing was changed."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Enter an SSH host or alias, such as forge or user@server."
 msgstr ""
@@ -2977,6 +2985,10 @@ msgstr ""
 msgid "Leave a commit message empty and the thread's own model writes it from the staged diff, recent commits and AGENTS.md. Off, it reads “Update project files”."
 msgstr ""
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Leave it empty to use {ceiling}. The machine keeps to its own number when that is lower."
+msgstr ""
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Let agents babysit pull requests"
@@ -3197,12 +3209,21 @@ msgstr ""
 msgid "More for {name}"
 msgstr ""
 
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Most {roleName} workers Watcher starts for one request on its own"
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Most downloaded"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Most relevant"
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Most working at once"
 msgstr ""
 
 #. A card on Settings > Appearance: reduced motion and night falls
@@ -3822,6 +3843,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Panes"
+msgstr ""
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Past this many threads working on a machine, new workers and delegated threads wait their turn and start in order. Your own threads count toward it and always start. Lowering it stops nothing that is running."
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
@@ -6044,6 +6069,14 @@ msgstr ""
 msgid "Threads that go"
 msgstr ""
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Threads with a turn running here, on this computer."
+msgstr ""
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Threads with a turn running on each machine, unless you set its own number below."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Threads, pairing and settings for this host live here."
 msgstr ""
@@ -6216,6 +6249,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ClearThreadsSettings.tsx
 msgid "Untitled thread"
+msgstr ""
+
+#. The most workers a request starts in a role unless the user names a count
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Up to"
 msgstr ""
 
 #. A button that updates one agent client on a host.
@@ -6447,6 +6485,15 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Uses the OpenRouter key saved for AI cleanup. Change it in Settings → Cleanup."
+msgstr ""
+
+#. How many workers a request usually starts in a role
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Usual"
+msgstr ""
+
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Usual number of {roleName} workers for one request"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -6735,13 +6782,31 @@ msgstr ""
 msgid "Why Tailscale asks"
 msgstr ""
 
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Worker capacity"
+msgstr ""
+
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "Worker roles"
 msgstr ""
 
+#. A worker role field: how many workers one request starts
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Workers"
+msgstr ""
+
+#: src/renderer/src/features/settings/WorkerMachineSettings.tsx
+msgid "Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request."
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "Workers are threads Watcher starts. Name a machine in your message to start one somewhere else for that request. Nothing is refused for how many are working; above ten on a machine, Sotto warns."
+msgstr ""
+
+#: src/renderer/src/features/settings/WorkerRolesSettings.tsx
+msgid "Workers is how many Watcher starts for one request: usually the first number, never more than Up to unless you name a count."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx

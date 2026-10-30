@@ -42,6 +42,12 @@
 .worker-role__field[data-away='true'] .thread-chip { border-style: dashed; border-color: var(--tt-field-border); }
 .worker-role__field .thread-chip-menu__list:not(.thread-chip-menu__list--foot) { min-width: 100%; width: max-content; max-width: min(320px, calc(100vw - 24px)); }
 .worker-role__field .thread-options__caption:not(:empty) { margin-top: 2px; }
+/* Workers (Worker swarms, Owl): Usual and Up to, two small numbers on one line under the role's other fields. */
+.worker-role__counts { display: flex; flex-wrap: wrap; gap: 8px 18px; }
+.worker-role__counts > label { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-2); font-size: 13px; }
+.worker-role__count { width: 64px; height: 34px; padding: 0 10px; border: 1px solid transparent; border-radius: 6px; background: var(--tt-card-inset); color: var(--tt-text); font: inherit; font-size: 13.5px; font-variant-numeric: tabular-nums; appearance: textfield; }
+.worker-role__count:hover { border-color: var(--tt-border); }
+.worker-role__count::-webkit-inner-spin-button, .worker-role__count::-webkit-outer-spin-button { margin: 0; appearance: none; }
 .worker-role__none { display: flex; align-items: center; min-height: 34px; padding: 0 11px; border: 1px dashed var(--tt-hairline); border-radius: 8px; color: var(--tt-text-muted); font-size: 13px; }
 p.worker-role__none { margin: 0; }
 
