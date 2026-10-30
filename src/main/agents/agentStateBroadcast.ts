@@ -2,7 +2,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { clientCatalogKey, hostCatalogKey } from '../../shared/agents'
 import { threadsReplacedSince } from '../../shared/threadListPatches'
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
-import type { AgentClientHost, AgentCommandReceipt, AgentCommandThreadChangesReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, AgentThread, AgentThreadsBroadcast } from '../../shared/agents'
+import type { AgentClientHost, AgentCommandReceipt, AgentCommandChangedThreadRecordsReceipt, AgentModel, AgentModelCatalogBroadcast, AgentModelCatalogRevision, AgentState, AgentStateBroadcast, AgentThread, AgentThreadsBroadcast } from '../../shared/agents'
 
 type EncodedClientHost<Catalog> = Omit<AgentClientHost, 'models'> & { models: Catalog }
 type EncodedState<Catalog> = Omit<AgentState, 'host'> & {
@@ -340,14 +340,14 @@ export class AgentStateBroadcaster {
     this.encode(state, (key, models): AgentModelCatalogRevision => ({ revision: this.revisionFor(key, models), omitted: true }))
 
   /**
-   * A command's reply to a window that asked for its threads as changes (ADR-0028, October 30 amendment): `encodeReceipt`'s,
+   * A command's reply to a window that asked for its threads as changed thread records (ADR-0028, October 30 amendment): `encodeReceipt`'s,
    * with the thread records that changed since the last broadcast the window was sent in place of every one. The window
    * puts the whole array back from that broadcast's records; one that holds another broadcast reads the whole state.
    * Nothing is recorded as sent, so the next broadcast is measured from the same broadcast and carries the same changes.
    *
    * An arrow property, so `registerAgentIpc` can be handed it on its own.
    */
-  readonly encodeThreadChangesReceipt = (state: AgentState): AgentCommandThreadChangesReceipt => {
+  readonly encodeChangedThreadRecordsReceipt = (state: AgentState): AgentCommandChangedThreadRecordsReceipt => {
     const receipt = this.encodeReceipt(state)
     return { ...receipt, host: { ...receipt.host, threads: this.threads.peek(state.host.threads, state.host) } }
   }

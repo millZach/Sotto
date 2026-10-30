@@ -124,12 +124,12 @@ describe('AgentStateBroadcaster thread records (#1330)', () => {
     const { sent, deliver } = recorder()
     const first = threads()
     // No broadcast yet: the reply lists every thread, as a complete broadcast does.
-    expect(broadcaster.encodeThreadChangesReceipt(shell(first)).host.threads).toMatchObject({ base: null, changed: first })
+    expect(broadcaster.encodeChangedThreadRecordsReceipt(shell(first)).host.threads).toMatchObject({ base: null, changed: first })
     broadcaster.send(shell(first), deliver)
     const held = sent[0]!.host.threads.revision
     const changed = rebuilt(first)
     changed[2] = { ...changed[2]!, status: 'error' }
-    const reply = broadcaster.encodeThreadChangesReceipt(shell(changed))
+    const reply = broadcaster.encodeChangedThreadRecordsReceipt(shell(changed))
     expect(reply.host.threads).toMatchObject({ base: held, changed: [changed[2]] })
     expect(reply.host.threads.removed).toBeUndefined()
     expect(reply.host.threads.order).toBeUndefined()
@@ -138,7 +138,7 @@ describe('AgentStateBroadcaster thread records (#1330)', () => {
     expect(sent[1]!.host.threads).toMatchObject({ base: held, changed: [changed[2]] })
     // After the window read the whole state, a reply lists every thread again.
     broadcaster.windowRead()
-    expect(broadcaster.encodeThreadChangesReceipt(shell(changed)).host.threads).toMatchObject({ base: null, changed })
+    expect(broadcaster.encodeChangedThreadRecordsReceipt(shell(changed)).host.threads).toMatchObject({ base: null, changed })
   })
 })
 

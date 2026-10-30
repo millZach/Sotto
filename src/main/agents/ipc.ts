@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { app, BrowserWindow, dialog, type WebContents } from 'electron'
 import { isAbsolute } from 'node:path'
 import { stat } from 'node:fs/promises'
-import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsRequestSchema, agentWorkingCopyOptionsSchema, type AgentWorkingCopyOptions, type AgentCommand, type AgentCommandReceipt, type AgentCommandThreadChangesReceipt, type AgentState } from '../../shared/agents'
+import { AGENT_CHOOSE_PROJECT_DIRECTORY, AGENT_WORKING_COPY_OPTIONS, agentWorkingCopyOptionsRequestSchema, agentWorkingCopyOptionsSchema, type AgentWorkingCopyOptions, type AgentCommand, type AgentCommandReceipt, type AgentCommandChangedThreadRecordsReceipt, type AgentState } from '../../shared/agents'
 import { AGENT_GIT_REFS, gitRefsRequestSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
 import { AGENT_GIT_CHANGED_FILES, gitChangedFilesRequestSchema, type GitChangedFiles, type GitChangedFilesRequest } from '../../shared/gitChangedFiles'
 import { AGENT_GIT_PULL_REQUEST, gitPullRequestRequestSchema, type GitPullRequestRead, type GitPullRequestRequest } from '../../shared/gitPullRequests'
@@ -25,9 +25,9 @@ export interface AgentIpcOptions {
   /** Encodes a command's reply as a command receipt (issue #323): `AgentStateBroadcaster.encodeReceipt`,
    * so the receipt names each catalog by the revision the broadcast uses. */
   readonly encodeReceipt: (state: AgentState) => AgentCommandReceipt
-  /** Encodes the reply for a window that asked for its threads as changes: `AgentStateBroadcaster.encodeThreadChangesReceipt`,
+  /** Encodes the reply for a window that asked for its threads as changed thread records: `AgentStateBroadcaster.encodeChangedThreadRecordsReceipt`,
    * from the same broadcaster, so the changes are measured from what the window was last broadcast. */
-  readonly encodeThreadChangesReceipt: (state: AgentState) => AgentCommandThreadChangesReceipt
+  readonly encodeChangedThreadRecordsReceipt: (state: AgentState) => AgentCommandChangedThreadRecordsReceipt
   /** The working-copy choices for a project; without it the window is told they are unavailable. */
   readonly workingCopyOptions?: (projectId: string) => Promise<AgentWorkingCopyOptions>
   /** Told when the window reads the whole state, before it is read: `AgentStateBroadcaster.windowRead`, so the next
@@ -41,7 +41,7 @@ export interface AgentIpcOptions {
  * the client that sent it, which is the line a remote client would cross (ADR-0016).
  */
 export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl, 'get' | 'shell'> & { threadDetail: (id: string) => ReturnType<AgentControl['threadDetail']> | Promise<ReturnType<AgentControl['threadDetail']>>; attachmentPreview: (request: AgentAttachmentPreviewRequest) => AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>; gitRefs?: (request: GitRefsRequest) => Promise<GitRefsPage>; gitChangedFiles?: (request: GitChangedFilesRequest) => Promise<GitChangedFiles>; gitPullRequest?: (request: GitPullRequestRequest) => Promise<GitPullRequestRead>; hostFolders?: (request: HostFoldersClientRequest) => Promise<HostFoldersResult>; startHandover?: (threadId: string) => Promise<AgentStartHandover | null>; activityBody?: (request: AgentActivityBodyRequest) => Promise<AgentActivity | null>; threadPrompts?: (request: AgentThreadPromptsRequest) => Promise<AgentThreadPrompts | null>; stageAttachment?: (request: AgentAttachmentStageRequest) => Promise<AgentAttachmentHandle>; attachmentContent?: (request: AgentAttachmentContentRequest) => Promise<AgentAttachmentContent | null> }, host: Pick<HostService, 'command'>, senders: () => readonly TrustedIpcSender[], options: AgentIpcOptions): () => void {
-  const { workingCopyOptions, encodeReceipt, encodeThreadChangesReceipt, windowRead } = options
+  const { workingCopyOptions, encodeReceipt, encodeChangedThreadRecordsReceipt, windowRead } = options
   ipc.handle(AGENT_WORKING_COPY_OPTIONS, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error('AGENT_MAIN_WINDOW_REQUIRED')
     const [projectId] = workingCopyOptionsArguments.parse(args)
@@ -141,7 +141,7 @@ export function registerAgentIpc(ipc: IpcMainAdapter, control: Pick<AgentControl
     // The window already has the catalogs from the broadcast, so the answer names each by its catalog
     // revision rather than listing it again (issue #323); the page recovers through AGENT_GET on a mismatch.
     // A page that holds the last broadcast's threads asks for them as changes, which it puts back the same way.
-    const encode: (state: AgentState) => AgentCommandReceipt | AgentCommandThreadChangesReceipt = changes?.threadChanges ? encodeThreadChangesReceipt : encodeReceipt
+    const encode: (state: AgentState) => AgentCommandReceipt | AgentCommandChangedThreadRecordsReceipt = changes?.changedThreadRecords ? encodeChangedThreadRecordsReceipt : encodeReceipt
     return host.command(payload as AgentCommand, windowClient).then(encode)
   })
   return () => { ipc.removeHandler(AGENT_WORKING_COPY_OPTIONS); ipc.removeHandler(AGENT_CHOOSE_PROJECT_DIRECTORY); ipc.removeHandler(AGENT_GET); ipc.removeHandler(AGENT_THREAD_DETAIL_GET); ipc.removeHandler(AGENT_ATTACHMENT_PREVIEW); ipc.removeHandler(AGENT_ATTACHMENT_STAGE); ipc.removeHandler(AGENT_ATTACHMENT_CONTENT); ipc.removeHandler(AGENT_GIT_REFS); ipc.removeHandler(AGENT_GIT_CHANGED_FILES); ipc.removeHandler(AGENT_GIT_PULL_REQUEST); ipc.removeHandler(AGENT_HOST_FOLDERS); ipc.removeHandler(AGENT_START_HANDOVER); ipc.removeHandler(AGENT_ACTIVITY_BODY); ipc.removeHandler(AGENT_THREAD_PROMPTS); ipc.removeHandler(AGENT_COMMAND) }

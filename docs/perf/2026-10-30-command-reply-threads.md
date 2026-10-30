@@ -45,6 +45,11 @@ Three runs each on forge, the same benchmark before and after; each figure is th
 | Shared into the shown state | 1.86-2.11 ms | 0.19-0.20 ms |
 | The window's work | about 6.5 ms | about 0.7 ms |
 
+These are replies the window shares, as it shares a reply when no broadcast landed during its round trip. One after which
+a broadcast landed is not shared, in either version (#306). One that overtakes the broadcast it was measured from costs a
+whole-state read; the command receipt journey (`tests/e2e/command-receipt.spec.ts`) counts none while it types into a
+composer in a real window, where its draft save's reply was 3,082 bytes against a whole state of 13,474.
+
 A draft save changes no thread record, so its reply carries none. What is left is the rest of the shell, about 8.9 KB
 of it the host's projects, paired hosts and providers. A command that changes threads carries those records, a few
 kilobytes each. The contextBridge copy, not measured here, falls with the bytes.
@@ -57,11 +62,13 @@ kilobytes each. The contextBridge copy, not measured here, falls with the bytes.
 - `tests/unit/renderer/agentStateCatalogs.test.ts`:
   - the page asks for changes once it holds a broadcast, gives back the broadcast's own record for each thread the
     reply did not change, and moves nothing it holds;
-  - a reply measured from a broadcast it does not hold reads the whole state;
+  - a reply measured from a broadcast it does not hold reads the whole state, in a read of its own begun after it
+    arrived, never one begun for an earlier reply;
+  - when that read fails, the reply carries the whole list the window holds;
   - a page with no subscription asks for the whole reply.
 - `tests/unit/main/agentCommandReceipt.test.ts`, end to end through the IPC handler, the preload and the page: a draft
   save's reply crosses with no thread record, and the page's reply holds the broadcast's records.
-- `tests/integration/preloadBridge.test.ts` lists the preload's new `commandWithThreadChanges`.
+- `tests/integration/preloadBridge.test.ts` lists the preload's new `commandWithChangedThreadRecords`.
 
 ## What it leaves
 

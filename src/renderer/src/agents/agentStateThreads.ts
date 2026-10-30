@@ -29,6 +29,8 @@ export interface ThreadReassembly {
    * holding what it held: main moves nothing for a reply, so the next broadcast is measured from the same one.
    */
   peek(wire: unknown): AgentThread[] | undefined
+  /** The whole array last put back from a broadcast, or undefined before the first. */
+  current(): AgentThread[] | undefined
 }
 
 export function createThreadReassembly(): ThreadReassembly {
@@ -39,7 +41,10 @@ export function createThreadReassembly(): ThreadReassembly {
     held = next
     return [...next.list]
   }
-  return Object.assign(apply, { peek: (wire: unknown): AgentThread[] | undefined => { const next = resolve(held, wire); return next === undefined ? undefined : [...next.list] } })
+  return Object.assign(apply, {
+    peek: (wire: unknown): AgentThread[] | undefined => { const next = resolve(held, wire); return next === undefined ? undefined : [...next.list] },
+    current: (): AgentThread[] | undefined => held === null ? undefined : [...held.list],
+  })
 }
 
 function resolve(held: HeldThreads | null, wire: unknown): HeldThreads | undefined {

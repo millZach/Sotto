@@ -234,23 +234,27 @@ which panes are open. At the owner's scale (293 threads) a draft save's reply wa
 6.5 ms on each: 1.4 ms receiving it, 3.1 to 3.3 ms in the preload checking every record against the thread schema, and
 1.9 to 2.1 ms in state sharing walking every record, all fresh objects, before contextBridge copied them once more.
 
-**The main window's page asks for a reply's threads as the changes since its last broadcast.** The preload gives the
-page a second command method, `commandWithThreadChanges`, which sends `{ threadChanges: true }` beside the command.
-Main answers it with `encodeThreadChangesReceipt`. That is `encodeReceipt`'s receipt with `host.threads` in a
+**The main window's page asks for a reply's threads as the changed thread records since its last broadcast.** The preload gives the
+page a second command method, `commandWithChangedThreadRecords`, which sends `{ changedThreadRecords: true }` beside the command.
+Main answers it with `encodeChangedThreadRecordsReceipt`. That is `encodeReceipt`'s receipt with `host.threads` in a
 broadcast's shape (`AgentThreadsBroadcast`), measured by the same `ThreadRecordsBroadcast` from the last broadcast the
 window was delivered, and recording nothing as sent. The next broadcast is measured from the same base and carries the
 same changes. A reply before any broadcast, or after the window read the whole state, lists every record with a null
 base. Only the main window may send a command, and only it is broadcast to, so the base is always its own.
 
 **The preload still checks what crosses.** The changed records are parsed against the thread schema, as every record of
-a whole reply was, and the base, revision, removals and order structurally (`agentCommandThreadChangesReceiptSchema`).
+a whole reply was, and the base, revision, removals and order structurally (`agentCommandChangedThreadRecordsReceiptSchema`).
 
 **The page puts the threads back from the broadcast it holds, and moves nothing it holds.** The subscription's
-reassembly (`createThreadReassembly`) reads the reply's changes against its held records with `peek` and keeps them
+reassembly (`createThreadReassembly`) reads the reply's changed records against its held records with `peek` and keeps them
 held, so a reply never changes what the next broadcast is applied to. A thread the reply did not change is the record the
 broadcast gave, so state sharing meets it by identity. A reply measured from a broadcast the window does not hold, as when
-it overtakes one, reads the whole state through `AGENT_GET`, the catalog's recovery. The next broadcast then lists
-every record. A page with no subscription yet asks for the whole reply. Every other caller of the preload's `command`,
+it overtakes one, reads the whole state through `AGENT_GET`. That read is begun for the reply alone, after it arrived, so
+it holds the reply's own command; a catalog's recovery may be shared, since its revision only advances. The next
+broadcast then lists every record. When that read fails twice, the reply carries the whole list the window was last
+broadcast, never its changed records alone, and the next broadcast carries the change. In a real window the command
+receipt journey (`tests/e2e/command-receipt.spec.ts`) types into a composer and counts no whole-state read while the
+draft saves. A page with no subscription yet asks for the whole reply. Every other caller of the preload's `command`,
 the e2e specs included, still gets every thread whole.
 
 Measured with the data-transfer benchmark at the owner's scale, a draft save's reply, three runs each: 272,706 bytes to

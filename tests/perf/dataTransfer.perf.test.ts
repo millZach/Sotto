@@ -344,20 +344,20 @@ it.skipIf(!BENCH)('measures what main moves per chunk and per action', async () 
   // A7: the startup shell the page caches every 2 s. The window holds a broadcast from the same encoder, as main has one for
   // its window; the page asks for its replies as that version of it does. Timed on the machine's clock, median of 15.
   {
-    const shared = await import('../../src/shared/agents') as typeof import('../../src/shared/agents') & { agentCommandThreadChangesReceiptSchema?: { parse(input: unknown): unknown } }
+    const shared = await import('../../src/shared/agents') as typeof import('../../src/shared/agents') & { agentCommandChangedThreadRecordsReceiptSchema?: { parse(input: unknown): unknown } }
     const { createStateSharing } = await import('../../src/renderer/src/agents/stateSharing')
     const { cacheableShell } = await import('../../src/renderer/src/agents/shellCache')
     const { wrapAgentBridge } = await import('../../src/renderer/src/agents/agentStateCatalogs')
     const { desktopWindowClient } = await import('../../src/main/agents/hostService')
-    const encoder = new AgentStateBroadcaster() as AgentStateBroadcaster & { encodeThreadChangesReceipt?: (state: AgentState) => unknown }
+    const encoder = new AgentStateBroadcaster() as AgentStateBroadcaster & { encodeChangedThreadRecordsReceipt?: (state: AgentState) => unknown }
     // The window's broadcasts, from the same encoder, to the page's subscription, as main sends its window each change.
     let toPage: ((state: unknown) => void) | undefined
     const broadcast = (state: AgentState): void => { encoder.send(state, payload => { toPage?.(structuredClone(payload)); return true }) }
-    const changes = typeof encoder.encodeThreadChangesReceipt === 'function'
-    const schema = changes ? shared.agentCommandThreadChangesReceiptSchema! : shared.agentCommandReceiptSchema
+    const changes = typeof encoder.encodeChangedThreadRecordsReceipt === 'function'
+    const schema = changes ? shared.agentCommandChangedThreadRecordsReceiptSchema! : shared.agentCommandReceiptSchema
     let reply: unknown
     const wire = { get: async () => structuredClone(whole), onState: (listener: (state: unknown) => void) => { toPage = listener; return () => undefined },
-      command: async () => reply, ...changes ? { commandWithThreadChanges: async () => reply } : {} }
+      command: async () => reply, ...changes ? { commandWithChangedThreadRecords: async () => reply } : {} }
     const page = wrapAgentBridge(wire as never)
     let held: AgentState | undefined
     page.onState(state => { held = state })
@@ -370,7 +370,7 @@ it.skipIf(!BENCH)('measures what main moves per chunk and per action', async () 
       broadcast(p.router.shell() as AgentState)
       shown = sharing(shown, held!)
       const result = await until(p.router.command({ type: 'save-thread-draft', composer: 'manual', threadId: p.openThread, draftId: `00000000-0000-4000-a000-${index.toString(16).padStart(12, '0')}`, text: `Synthetic draft ${index}`, attachments: [], requestId: null }, desktopWindowClient()))
-      const encoded = changes ? encoder.encodeThreadChangesReceipt!(result as AgentState) : encoder.encodeReceipt(result as AgentState)
+      const encoded = changes ? encoder.encodeChangedThreadRecordsReceipt!(result as AgentState) : encoder.encodeReceipt(result as AgentState)
       let started = realNow()
       const decoded = structuredClone(encoded)
       const ipcMs = realNow() - started
@@ -394,7 +394,7 @@ it.skipIf(!BENCH)('measures what main moves per chunk and per action', async () 
       samples.bytes.push(serialize(encoded).byteLength); samples.ipcMs.push(ipcMs); samples.preloadMs.push(preloadMs); samples.pageMs.push(pageMs); samples.shareMs.push(shareMs)
     }
     const at = (values: number[]) => Math.round(median(values) * 100) / 100
-    results.commandReply = { threadChanges: changes, threads: shown.host.threads.length, bytes: at(samples.bytes), ipcCopyMs: at(samples.ipcMs), preloadCheckMs: at(samples.preloadMs),
+    results.commandReply = { changedThreadRecords: changes, threads: shown.host.threads.length, bytes: at(samples.bytes), ipcCopyMs: at(samples.ipcMs), preloadCheckMs: at(samples.preloadMs),
       pageCompleteMs: at(samples.pageMs), shareMs: at(samples.shareMs) }
     const cached = cacheableShell(whole)
     const started = realNow(), text = nativeStringify(cached)

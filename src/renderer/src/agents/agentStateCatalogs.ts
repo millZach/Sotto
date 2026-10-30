@@ -1,5 +1,5 @@
 import { clientCatalogKey, hostCatalogKey } from '../../../shared/agents'
-import type { AgentBridge, AgentClientHost, AgentCommandReceipt, AgentCommandThreadChangesReceipt, AgentModel, AgentState, AgentThread, AgentWireBridge } from '../../../shared/agents'
+import type { AgentBridge, AgentClientHost, AgentCommandReceipt, AgentCommandChangedThreadRecordsReceipt, AgentModel, AgentState, AgentThread, AgentWireBridge } from '../../../shared/agents'
 import { createThreadReassembly, type ThreadReassembly } from './agentStateThreads'
 
 interface CachedCatalog {
@@ -52,15 +52,15 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
     }
     return full
   }
-  // The thread records the window's subscription was last broadcast, which a reply's thread changes are put back from.
+  // The thread records the window's subscription was last broadcast, which a reply's changed thread records are put back from.
   let held: ThreadReassembly | undefined
   const completeReceipt = createReceiptCompleter({ get }, catalogs, lastRead, () => held)
   const result: AgentBridge = {
     ...bridge,
     get,
     onState: listener => { const threads = createThreadReassembly(); held = threads; return bridge.onState(createReassembler({ get }, catalogs, listener, threads)) },
-    // A window holding a broadcast asks for a reply's threads as the changes since it (ADR-0028, October 30 amendment).
-    command: async request => completeReceipt(held && bridge.commandWithThreadChanges ? await bridge.commandWithThreadChanges(request) : await bridge.command(request)),
+    // A window holding a broadcast asks for a reply's threads as the changed thread records since it (ADR-0028, October 30 amendment).
+    command: async request => completeReceipt(held && bridge.commandWithChangedThreadRecords ? await bridge.commandWithChangedThreadRecords(request) : await bridge.command(request)),
   }
   wrapped.set(bridge, result)
   return result
@@ -103,7 +103,7 @@ function revisionOf(catalog: unknown): number | undefined {
 }
 
 /** Any state whose catalogs a page reads by key: a state, a broadcast or a receipt, whatever its threads. */
-type Cataloged = Pick<AgentState | AgentCommandReceipt | AgentCommandThreadChangesReceipt, 'host'>
+type Cataloged = Pick<AgentState | AgentCommandReceipt | AgentCommandChangedThreadRecordsReceipt, 'host'>
 
 /** Each catalog `state` names, as `key@revision` under the keys main counts revisions by. */
 function catalogRevisions(state: Cataloged): string[] {
@@ -173,8 +173,9 @@ function catalogIn(full: AgentState, key: string): AgentModel[] | undefined {
  * recorded no catalog as sent to it, so the next broadcast carries the catalog in full; until then that
  * host has no models, which is what the window already showed.
  */
-function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, lastRead: LastRead, held: () => ThreadReassembly | undefined): (reply: AgentCommandReceipt | AgentCommandThreadChangesReceipt) => Promise<AgentState> {
+function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, lastRead: LastRead, held: () => ThreadReassembly | undefined): (reply: AgentCommandReceipt | AgentCommandChangedThreadRecordsReceipt) => Promise<AgentState> {
   const recoveries = new Map<string, Promise<AgentState>>()
+  const readAfresh = (reply: Cataloged): Promise<AgentState> => bridge.get().catch(() => bridge.get()).then(full => { rememberRecovered(catalogs, reply, full); return full })
   const recover = (reply: Cataloged): Promise<AgentState> => {
     // Main counts revisions per catalog key, so the key names each catalog by the key main files it under.
     const named = catalogRevisions(reply).join(' ')
@@ -188,7 +189,7 @@ function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: Cata
     return recovery
   }
   return async reply => {
-    // A reply's thread changes are put back from the broadcast the window holds; a complete list needs nothing held.
+    // A reply's changed thread records are put back from the broadcast the window holds; a complete list needs nothing held.
     const wire = reply.host.threads
     const threads: AgentThread[] | undefined = Array.isArray(wire) ? wire : wire.base === null ? wire.changed : held()?.peek(wire)
     const receipt: AgentCommandReceipt = { ...reply, host: { ...reply.host, threads: threads ?? [] } }
@@ -197,13 +198,17 @@ function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: Cata
     // A catalog or the threads this window cannot put back: a reply that overtook the broadcast it was measured from, or
     // one measured from a broadcast this window never held. The whole state answers, and the next broadcast lists every
     // thread record.
+    // Threads the window cannot put back are read afresh, in a read begun after this reply arrived, so it holds the reply's
+    // own command: one begun for an earlier reply may predate it. A read for catalogs alone is shared, since a catalog's
+    // revision only advances.
     let recovered: AgentState | null = null
-    try { recovered = await recover(reply) } catch { /* main ran the command; the fallback below answers */ }
+    try { recovered = await (threads === undefined ? readAfresh(reply) : recover(reply)) } catch { /* main ran the command; the fallback below answers */ }
     const fallback = (key: string): AgentModel[] => (recovered === null ? undefined : catalogIn(recovered, key))
       ?? catalogs.get(key)?.models ?? lastRead.get(key) ?? []
-    // With a fallback that always answers, every catalog resolves. Threads no recovery answered for are the changed ones alone.
+    // With a fallback that always answers, every catalog resolves. Threads no recovery answered for are the whole list the
+    // window was last broadcast, never the changed records alone: the next broadcast carries the change.
     const state = assembleState(catalogs, receipt, { newer: true, fallback })!
-    return threads !== undefined ? state : { ...state, host: { ...state.host, threads: recovered?.host.threads ?? (Array.isArray(wire) ? wire : wire.changed) } }
+    return threads !== undefined ? state : { ...state, host: { ...state.host, threads: recovered?.host.threads ?? held()?.current() ?? (Array.isArray(wire) ? wire : wire.changed) } }
   }
 }
 
