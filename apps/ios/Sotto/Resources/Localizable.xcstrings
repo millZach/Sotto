@@ -80450,6 +80450,17 @@
         }
       }
     },
+    "Queue" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Queue"
+          }
+        }
+      }
+    },
     "Queue for after this turn" : {
       "extractionState" : "manual",
       "localizations" : {

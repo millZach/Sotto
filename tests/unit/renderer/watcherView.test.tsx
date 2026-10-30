@@ -80,11 +80,11 @@ function fakeBridge(state: WatcherRoomState) {
   return { bridge: bridge as unknown as WatcherBridge & typeof bridge, publish: (next: WatcherRoomState) => { for (const listener of listeners) listener(next) } }
 }
 
-function mockApp(navigation: AppNavigation, watcherEnabled = true, museEnabled = false, quietComposer = false) {
+function mockApp(navigation: AppNavigation, watcherEnabled = true, museEnabled = false, quiet = false) {
   const navigate = vi.fn()
   vi.mocked(useOptionalApp).mockReturnValue({
     navigation, platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
-    update: { watcherEnabled, owlFeatures: { watcher: watcherEnabled, muse: museEnabled, 'quiet-composer': quietComposer } }, actions: { navigate, minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
+    update: museEnabled || quiet ? { watcherEnabled, owlFeatures: { watcher: watcherEnabled, muse: museEnabled, 'quiet-composer': quiet } } : { watcherEnabled }, actions: { navigate, minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
   } as unknown as AppContextValue)
   return navigate
 }
@@ -97,8 +97,8 @@ function mockAgents(state: AgentState) {
   return command
 }
 
-function renderRoom(state: AgentState, room: WatcherRoomState, watcherEnabled = true, quietComposer = false) {
-  const navigate = mockApp('watcher', watcherEnabled, false, quietComposer)
+function renderRoom(state: AgentState, room: WatcherRoomState, watcherEnabled = true, quiet = false) {
+  const navigate = mockApp('watcher', watcherEnabled, false, quiet)
   const command = mockAgents(state)
   const { bridge, publish } = fakeBridge(room)
   const view = render(<WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>)

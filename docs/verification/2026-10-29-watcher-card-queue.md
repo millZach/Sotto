@@ -31,6 +31,14 @@ Those suites, the rest of CI, and native iPhone compilation are left to GitHub.
 No Electron app, provider process, local e2e test or full suite was launched.
 The phone, socket and `sotto_threads` schemas are unchanged.
 
+## Review
+
+Muse reviewed the implementation and found no correctness issues. Its one
+wording finding is fixed: the iPhone button now says “Queue” while a card waits,
+instead of promising “after this turn” when Watcher can be idle. The Watcher test
+helpers also match #1812 to avoid an unnecessary merge conflict; their 53 tests
+passed again after that alignment.
+
 ## Headless layout and interaction
 
 A temporary Vite page mounted the real `AgentRequestCard` and `ThreadComposer`

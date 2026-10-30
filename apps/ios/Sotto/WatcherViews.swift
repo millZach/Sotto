@@ -1588,7 +1588,7 @@ private struct WatcherDock: View {
         let steering = !waitingOnCard && model.offersWatcherSteer(hostID) && current?.status == "running"
         let queueing = waitingOnCard || (steering && current?.steers == false)
         let symbol = queueing ? "text.badge.plus" : steering ? "arrow.turn.up.right" : "arrow.up"
-        let label = queueing ? String(localized: "Queue for after this turn") : steering ? String(localized: "Steer into Watcher’s turn") : String(localized: "Send to Watcher")
+        let label = waitingOnCard ? String(localized: "Queue") : queueing ? String(localized: "Queue for after this turn") : steering ? String(localized: "Steer into Watcher’s turn") : String(localized: "Send to Watcher")
         // The + on its own beside a slim box, as in a thread's reply box: photos and files above the words, Send inside
         // the box's end.
         return HStack(alignment: .bottom, spacing: Space.s2) {
