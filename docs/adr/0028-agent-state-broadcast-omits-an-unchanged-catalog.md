@@ -208,3 +208,20 @@ This is not the October 13 envelope again. That one sat behind the `streaming-pu
 Measured on the owner-scale pipeline (291 threads, three streaming, `node:v8` serialization standing in for Electron's, medians of 51 streaming broadcasts): a broadcast fell from 260,910 bytes to 12,525. Main's encode and serialize fell from 1.31 ms to 1.02 ms per broadcast: the comparison costs about 0.3 ms, because the snapshot layers still rebuild each thread's summary, requests and usage on every publish (#925, #1326); with those shared, it is identities only. The page's read, reassembly and state sharing fell from 5.7 ms to 0.47 ms. On stable (290 threads) the same run measured 258,845 bytes to 11,496, main 1.22 ms to 0.90 ms and the page 3.8 ms to 0.24 ms.
 
 The catalog comparison hits its identity shortcut on a broadcast where the catalog did not change. `ModelCatalogRevisions` now keeps the array it last found equal as the one its revision stands for, with its length, so a shell that hands over one array from publish to publish meets it by identity. Before, the stored array stayed the first one seen, and with more than one host the single remembered comparison was the other host's, so the 608-model catalog went through `isDeepStrictEqual` on every publish.
+
+## October 29, 2026: the desktop's host client reads a held catalog once (#996)
+
+The October 16 amendment had the desktop's client put the catalog it holds back into every shell naming its revision and
+then read the shell, catalog and all. So every push read the catalog into a new array, and every comparison downstream,
+the window's broadcast among them, compared it by content again.
+
+A shell push naming a revision the connection holds is now read without its catalog. The first push that carries or
+names a revision is read whole, and that reading is frozen and kept with the revision; every later push naming it is
+handed that same array. A revision names one content, so a catalog carried whole again under the same revision keeps the
+reading. Command answers and `shell` reads still put the catalog back and read it, as before. The client also hands the
+listeners of its pushes its state as read, without a copy, as a local host's broadcast is handed: the router, the only
+listener, reads a few fields of it and builds what it publishes from its own read.
+
+On the owner-scale benchmark (`tests/perf/dataTransfer.perf.test.ts`, a host thread streaming), the client's time per
+push fell from 10.2 ms to 5.0 ms and the window broadcast's catalog comparison from 29.2 ms to 1.5 ms over 60 pushes
+(`docs/perf/2026-10-29-data-transfer.md`).

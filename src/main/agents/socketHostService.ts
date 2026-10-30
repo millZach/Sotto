@@ -23,7 +23,8 @@ import { subagentAssignmentsPageSchema, subagentPageSchema, type SubagentAssignm
 import { toolsResultSchema, type ToolListRequest, type ToolsResult } from '../../shared/tools'
 import { hostSignInSchema, type HostSignIn } from '../../shared/hostProviders'
 import { OPENCODE_HOST_ANSWERS, type OpenCodeHostAnswer, type OpenCodeHostCall } from '../../shared/opencodeSignIn'
-import type { AgentThread, ProviderId } from '../../shared/agents'
+import type { AgentModel, AgentThread, ProviderId } from '../../shared/agents'
+import { immutableModels } from './activitySnapshots'
 import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostFailureWords'
 import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
 import type { AgentActivity } from '../../shared/agentActivity'
@@ -201,8 +202,13 @@ export class SocketHostService implements HostService {
    * asked for the whole thread again, behind the same backlog.
    */
   private readonly lateDetails = new Map<string, string>()
-  /** The model catalog this connection was last sent whole, under the revision the host named (ADR-0028, October 3 amendment). */
-  private catalog: { revision: number; models: unknown } | undefined
+  /**
+   * The model catalog this connection was last sent whole, under the revision the host named (ADR-0028, October 3
+   * amendment), and once a shell push carrying it has been read, that reading frozen and owned (`certified`). A later push
+   * naming the same revision is read without its catalog and handed the certified one, so each push neither reads the
+   * catalog again nor makes a new array of it, and everything downstream that compares catalogs meets the same array (#996).
+   */
+  private catalog: { revision: number; models: unknown; certified?: AgentModel[] } | undefined
   private cachedWatcher: WatcherHostProjection | undefined
   /** Native ownership is immutable; an omitted later shell must not reopen a held thread. */
   private readonly dormantProviderThreads = new Map<string, DormantProviderThread>()
@@ -429,8 +435,11 @@ export class SocketHostService implements HostService {
     // A shell naming a catalog this connection does not hold cannot be shown, so the connection starts again, and its
     // hello carries the catalog whole (ADR-0028, October 16 amendment).
     const result = field(raw, 'result')
-    const restored = field(raw, 'event') === 'shell' ? this.restoreCatalog(field(raw, 'state'))
-      : this.restoreCatalog(result) && this.restoreCatalog(field(result, 'shell'))
+    const shellPush = field(raw, 'event') === 'shell'
+    const named = shellPush ? field(field(field(raw, 'state'), 'host'), 'modelsRevision') : undefined
+    const certified = shellPush ? this.certifiedCatalog(field(raw, 'state')) : undefined
+    const restored = certified !== undefined || (shellPush ? this.restoreCatalog(field(raw, 'state'))
+      : this.restoreCatalog(result) && this.restoreCatalog(field(result, 'shell')))
     if (!restored) { this.frames?.close(); return }
     const parsed = raw !== null && typeof raw === 'object' && 'event' in raw ? hostPushSchema.safeParse(raw) : hostResponseSchema.safeParse(raw)
     if (!parsed.success) { this.unreadable(raw); return }
@@ -439,7 +448,13 @@ export class SocketHostService implements HostService {
       if ('event' in message) {
         // hostPushSchema has already read the shell and the detail with their own schemas, catalog required; a shell or a
         // detail can be megabytes, so neither is read a second time.
-        if (message.event === 'shell') { if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() } this.publish(message.state as AgentState, true) }
+        if (message.event === 'shell') {
+          if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() }
+          const state = message.state as AgentState
+          if (certified) state.host.models = certified
+          else if (typeof named === 'number' && this.catalog?.revision === named) state.host.models = this.catalog.certified = immutableModels(state.host.models)
+          this.publish(state, true)
+        }
         else if (message.event === 'answer-receipt') { if (this.cacheAcceptedAnswer(message.acceptedAnswer) && this.cached) this.notifyState() }
         else if (message.event === 'watcher-state') {
           if (this.options.watcherEnabled === true && this.supportsWatcherReads && this.cached) {
@@ -508,12 +523,26 @@ export class SocketHostService implements HostService {
    * whole leaves `models` out; one carrying it is remembered. The revision itself is the wire's, and goes no further.
    * False for a shell naming a revision this connection was never sent.
    */
+  /**
+   * For a shell push naming the revision whose catalog this connection has already read: that reading, with the push's
+   * own catalog left empty so the schema reads none of it. Undefined when the push carries its catalog whole, names
+   * another revision, or the catalog has not been read from a push yet; `restoreCatalog` then puts it back to be read.
+   */
+  private certifiedCatalog(shell: unknown): AgentModel[] | undefined {
+    const wire = field(shell, 'host') as { models?: unknown; modelsRevision?: unknown } | undefined
+    const revision = field(wire, 'modelsRevision'), catalog = this.catalog
+    if (typeof revision !== 'number' || wire!.models !== undefined || catalog?.revision !== revision || !catalog.certified) return undefined
+    wire!.models = []
+    delete wire!.modelsRevision
+    return catalog.certified
+  }
   private restoreCatalog(shell: unknown): boolean {
     const host = field(shell, 'host')
     const revision = field(host, 'modelsRevision')
     if (typeof revision !== 'number') return true
     const wire = host as { models?: unknown; modelsRevision?: unknown }
-    if (wire.models !== undefined) this.catalog = { revision, models: wire.models }
+    // A revision names one content, so a catalog carried whole again under the revision already read keeps that reading.
+    if (wire.models !== undefined) this.catalog = { revision, models: wire.models, ...this.catalog?.revision === revision && this.catalog.certified ? { certified: this.catalog.certified } : {} }
     else if (this.catalog?.revision === revision) wire.models = this.catalog.models
     else return false
     delete wire.modelsRevision
@@ -681,8 +710,17 @@ export class SocketHostService implements HostService {
     this.notifyState()
     if (this.pushErrorThread === null) this.clearPushError()
   }
-  /** New acceptance evidence changes recovery, but does not mean an unreadable shell has arrived. */
-  private notifyState(): void { for (const listener of this.listeners) listener(this.state()) }
+  /**
+   * New acceptance evidence changes recovery, but does not mean an unreadable shell has arrived. Listeners are handed
+   * `view()`, read in place as a local host's broadcast is: the router, the only one, reads a few fields of it and builds
+   * what it publishes from its own read. A whole copy of the shell with every held detail laid over it was made on every
+   * push, up to twenty a second while anything on the host streamed (#996).
+   */
+  private notifyState(): void {
+    if (!this.listeners.size) return
+    const view = this.view()
+    for (const listener of this.listeners) listener(view)
+  }
   private clearPushError(): void { this.pushErrorThread = undefined; this.options.onPushErrorCleared?.() }
   private cacheDetail(threadId: string, detail: AgentThreadDetail | null): void {
     if (detail && detail.threadId !== threadId) throw new HostConnectionError(t`The host returned a different thread. Refresh before continuing.`, 'invalid_request')
@@ -836,7 +874,7 @@ export class SocketHostService implements HostService {
     this.requireCommandAvailable(command)
     const refusal = managementCommandRefusal(command)
     if (refusal) throw new HostConnectionError(refusal, 'forbidden')
-    if (this.shell().legacyManagement && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
+    if (this.view().legacyManagement && !LEGACY_MANAGEMENT_ALLOWED_COMMANDS.has(command.type)) {
       throw new HostConnectionError(LEGACY_MANAGEMENT_UPDATE, 'forbidden')
     }
     this.recoveryError = undefined
@@ -852,8 +890,9 @@ export class SocketHostService implements HostService {
     }
     // Saves admitted before a command go onto the wire first. Send never waits for their replies.
     this.flushCompose()
-    const owner = admitted.type === 'send' ? admitted.draft?.threadId ?? this.shell().draftThreadId ?? this.shell().activeThreadId
-      : admitted.type === 'cancel-draft' ? this.shell().draftThreadId ?? this.shell().activeThreadId : undefined
+    const shown = admitted.type === 'send' || admitted.type === 'cancel-draft' ? this.view() : undefined
+    const owner = admitted.type === 'send' ? admitted.draft?.threadId ?? shown!.draftThreadId ?? shown!.activeThreadId
+      : admitted.type === 'cancel-draft' ? shown!.draftThreadId ?? shown!.activeThreadId : undefined
     let edit = owner ? this.retainedDrafts.get(this.retainedHostId(), owner) : undefined
     const priorAdmission = this.wireAdmission
     const generation = this.generation
@@ -991,7 +1030,7 @@ export class SocketHostService implements HostService {
     return hostId
   }
   private retainCompose(command: TargetedCompose, commandId?: string): RetainedDraft {
-    const state = this.shell(), previous = this.retainedDrafts.get(this.retainedHostId(), command.threadId)
+    const state = this.view(), previous = this.retainedDrafts.get(this.retainedHostId(), command.threadId)
     // A projected empty local edit is not evidence that a freshly visible question is a prompt.
     const saved = this.cached?.threadDrafts?.find(draft => draft.threadId === command.threadId)
     const thread = state.host.threads.find(item => item.id === command.threadId)
@@ -1101,7 +1140,7 @@ export class SocketHostService implements HostService {
     }
     if (command.type === 'observe-threads') { await this.observe(command.threadIds, this.shown); return this.state() }
     commandId ??= randomUUID()
-    const before = this.shell()
+    const before = this.view()
     const thread = command.type === 'answer' ? before.host.threads.find(item => item.id === command.threadId) : undefined
     const request = command.type === 'answer' ? thread?.requests.find(item => item.id === command.requestId) : undefined
     const questions = request ? requestDraftQuestions(request) : []
@@ -1126,7 +1165,7 @@ export class SocketHostService implements HostService {
     if (command.type === 'connect' && !state.error) {
       const text = providerConnectionNotice(state, command.provider)
       if (quietConnectGeneration === this.explicitConnectionGeneration) {
-        const previous = this.shell().notice
+        const previous = this.view().notice
         this.preserveConnectionFeedback(previous)
         this.quietConnectionNotices.set(text, previous)
       } else if (command.notice !== false && state.notice === text) {

@@ -88,7 +88,7 @@
   },
   "src/main/agents/socketHostService.ts": {
     "structuredClone(": 9,
-    "shell()": 10
+    "shell()": 2
   },
   "src/main/agents/sottoRequests.ts": {
     "structuredClone(": 1
