@@ -57,3 +57,8 @@ The refinement passed typecheck, lint, 17 speed-control assertions, four interfa
 Selected refinement captures: [dark thread pill](../../artifacts/agent-speed/quiet-thread-dark.png), [light thread pill at minimum size](../../artifacts/agent-speed/quiet-thread-light.png), [dark Watcher pill](../../artifacts/agent-speed/quiet-watcher-dark.png), and [light Watcher pill at minimum size](../../artifacts/agent-speed/quiet-watcher-light.png). The Watcher sheets also show its first-message dots at each speed. New Watcher is a named glyph in the quiet pill. The temporary rendering harness was removed.
 
 The final Watcher checks passed 54 assertions in `watcherView` and 17 in `watcherNew`, including first-message speed cycling with worker roles both on and off, preserving speed through effort changes, and the named New Watcher glyph. Final typecheck and lint were clean.
+
+
+Owl **0.1.41-owl.20261029.6** was then built and installed before Muse review from main `fd5267ccadac07b54e0ccb79b9d93fb1ab74c53e` plus speed branch `2d944ef40a762c7fa3b017219c0fded0cae4b4da`, combined as `2ef654cd231b27ebe23b7d4f26cf07ac3087c640` on the throwaway `chore/local-owl-speed-6` branch. Main already includes the focused-pane hairline fix. The copied `.3` finish/swap recipe ran in `/tmp/sotto-owl-0.1.41-owl.20261029.6-swap/` with the new build path and version.
+
+The detached swap quit `com.sotto.desktop` normally in two seconds, installed `.6` and relaunched it; no termination signal was needed. Packaged resources and deep, strict code signing passed. The installed `app.asar` matches the build (SHA-256 `801f068e9657ad1b7c2336b069396fe5cb7768fcce25e927871f75aa52ee9b80`). The previous `.5` bundle remains at `/tmp/sotto-owl-0.1.41-owl.20261029.6-swap/old-Sotto.app` for rollback.
