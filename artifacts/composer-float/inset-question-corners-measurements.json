@@ -1,0 +1,177 @@
+{
+  "records": [
+    {
+      "theme": "dark",
+      "viewport": "1280x800",
+      "end": {
+        "composeTop": 317,
+        "cardTop": 327,
+        "viewportBottom": 343,
+        "overlap": 26,
+        "cover": 0,
+        "padding": 54,
+        "scrollPadding": 0,
+        "remaining": 0,
+        "lastBottom": 265,
+        "corners": [
+          true,
+          true
+        ],
+        "jump": null
+      },
+      "line": {
+        "top": 174,
+        "right": 987.875,
+        "left": 260,
+        "width": 727.875,
+        "text": "The transcript should keep every new line readable above the composer. Resizing a card must preserve these words.",
+        "targetTop": 319
+      },
+      "reading": {
+        "composeTop": 317,
+        "cardTop": 327,
+        "viewportBottom": 343,
+        "overlap": 26,
+        "cover": 0,
+        "padding": 54,
+        "scrollPadding": 0,
+        "remaining": 145,
+        "lastBottom": 410,
+        "corners": [
+          true,
+          true
+        ],
+        "jump": null
+      },
+      "oldCorners": [
+        false,
+        false
+      ],
+      "readingWithJump": {
+        "composeTop": 317,
+        "cardTop": 327,
+        "viewportBottom": 343,
+        "overlap": 26,
+        "cover": 0,
+        "padding": 54,
+        "scrollPadding": 90,
+        "remaining": 595,
+        "lastBottom": 859.75,
+        "corners": [
+          false,
+          false
+        ],
+        "jump": {
+          "top": 267,
+          "bottom": 303,
+          "height": 36,
+          "visibleBottom": 253,
+          "gap": 14
+        }
+      },
+      "jumped": {
+        "composeTop": 317,
+        "cardTop": 327,
+        "viewportBottom": 343,
+        "overlap": 26,
+        "cover": 0,
+        "padding": 54,
+        "scrollPadding": 0,
+        "remaining": 0,
+        "lastBottom": 264.75,
+        "corners": [
+          true,
+          true
+        ],
+        "jump": null
+      }
+    },
+    {
+      "theme": "light",
+      "viewport": "1280x800",
+      "end": {
+        "composeTop": 317,
+        "cardTop": 327,
+        "viewportBottom": 343,
+        "overlap": 26,
+        "cover": 0,
+        "padding": 54,
+        "scrollPadding": 0,
+        "remaining": 0,
+        "lastBottom": 265,
+        "corners": [
+          true,
+          true
+        ],
+        "jump": null
+      },
+      "line": {
+        "top": 174,
+        "right": 987.875,
+        "left": 260,
+        "width": 727.875,
+        "text": "The transcript should keep every new line readable above the composer. Resizing a card must preserve these words.",
+        "targetTop": 319
+      },
+      "reading": {
+        "composeTop": 317,
+        "cardTop": 327,
+        "viewportBottom": 343,
+        "overlap": 26,
+        "cover": 0,
+        "padding": 54,
+        "scrollPadding": 0,
+        "remaining": 145,
+        "lastBottom": 410,
+        "corners": [
+          true,
+          true
+        ],
+        "jump": null
+      },
+      "oldCorners": [
+        false,
+        false
+      ],
+      "readingWithJump": {
+        "composeTop": 317,
+        "cardTop": 327,
+        "viewportBottom": 343,
+        "overlap": 26,
+        "cover": 0,
+        "padding": 54,
+        "scrollPadding": 90,
+        "remaining": 595,
+        "lastBottom": 859.75,
+        "corners": [
+          false,
+          false
+        ],
+        "jump": {
+          "top": 267,
+          "bottom": 303,
+          "height": 36,
+          "visibleBottom": 253,
+          "gap": 14
+        }
+      },
+      "jumped": {
+        "composeTop": 317,
+        "cardTop": 327,
+        "viewportBottom": 343,
+        "overlap": 26,
+        "cover": 0,
+        "padding": 54,
+        "scrollPadding": 0,
+        "remaining": 0,
+        "lastBottom": 264.75,
+        "corners": [
+          true,
+          true
+        ],
+        "jump": null
+      }
+    }
+  ],
+  "errors": []
+}
