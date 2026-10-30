@@ -6,7 +6,7 @@ import { dirname, join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { claudeDigest, claudeReadBack, ClaudeSessionLog, claudeText, claudeUserText, firstUnread, type OriginBucket } from '../../../src/main/agents/claudeSessionLog'
 import { attachedFilesNote, browserFeedbackNote } from '../../../src/main/agents/attachedFiles'
-import type { ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
+import { CLAUDE_MAX_FRAME_BYTES, type ClaudeFrame } from '../../../src/main/agents/claudeProtocol'
 
 const roots: string[] = []
 afterEach(async () => {
@@ -78,6 +78,31 @@ describe('Claude session log cursor', () => {
     resumed.resume(cursor)
     await resumed.poll()
     expect(second.map(frame => (frame.message as { content: string }).content)).toEqual(['Second'])
+  })
+
+  // The reader looks for each line's end in the bytes of each read and decodes a line once, when it is whole (#992).
+  it('reads a line written across many reads whole, with characters cut at their edges, and keeps the cursor on its end', async () => {
+    const { home, cwd, session, path } = await transcript()
+    // Two-byte and four-byte characters, so some reads end inside a character; 300,000 bytes crosses five reads.
+    const long = entry(session, 'é😀'.repeat(50_000)), after = entry(session, 'After')
+    await appendFile(path, long + after)
+    const frames: ClaudeFrame[] = []
+    const reader = new ClaudeSessionLog(home, cwd, session, frame => frames.push(frame))
+    await reader.poll()
+    expect(frames.map(frame => (frame.message as { content: string }).content)).toEqual(['é😀'.repeat(50_000), 'After'])
+    expect(reader.cursor()!.offset).toBe(Buffer.byteLength(long + after))
+  })
+
+  it('passes over a line too long to take, keeps its bytes in the cursor and reads the line after it', async () => {
+    const { home, cwd, session, path } = await transcript()
+    const huge = `${JSON.stringify({ type: 'user', sessionId: session, message: { role: 'user', content: 'x'.repeat(CLAUDE_MAX_FRAME_BYTES) } })}\n`
+    const after = entry(session, 'After')
+    await appendFile(path, huge + after)
+    const frames: ClaudeFrame[] = []
+    const reader = new ClaudeSessionLog(home, cwd, session, frame => frames.push(frame))
+    await reader.poll()
+    expect(frames.map(frame => (frame.message as { content: string }).content)).toEqual(['After'])
+    expect(reader.cursor()!.offset).toBe(Buffer.byteLength(huge + after))
   })
 
   it('reads from the first byte again when the file is not the one the cursor names', async () => {
