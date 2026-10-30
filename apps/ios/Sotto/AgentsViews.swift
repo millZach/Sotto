@@ -8,14 +8,16 @@ import SottoCore
 // thread that waits on the user opens to be answered there.
 
 /// Agents beside the thread's state: the count of its delegated threads and agents, with the Needs you light while a
-/// delegated thread waits on the user. At the largest text sizes it is the mark and the count alone.
+/// delegated thread waits on the user. At compact width, where the bar's room goes to the thread's title, and at the
+/// largest text sizes it is the mark and the count alone.
 struct AgentsButton: View {
     let count: AgentsCount
     let action: () -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.horizontalSizeClass) private var sizeClass
     var body: some View {
         let needs = count.needs > 0
-        let compact = typeSize.isAccessibilitySize
+        let compact = typeSize.isAccessibilitySize || sizeClass != .regular
         Button(action: action) {
             HStack(spacing: 6) {
                 Image(systemName: "person.2").font(.system(size: 13, weight: .semibold)).accessibilityHidden(true)

@@ -769,6 +769,33 @@ describe('Thread transcript scrolling', () => {
       vi.unstubAllGlobals()
     })
 
+    it('keeps a reader at the end there when the composer grows under the transcript and nothing in it changes (#1820)', () => {
+      // The composer's room is the transcript's bottom padding: a draft of several lines grows it, and only the transcript's
+      // own box hears of it, since its content keeps its size. jsdom has no ResizeObserver, so the test says what fires.
+      const observers: { readonly callback: () => void; readonly observed: Element[] }[] = []
+      vi.stubGlobal('ResizeObserver', class {
+        private readonly observed: Element[] = []
+        constructor(callback: () => void) { observers.push({ callback, observed: this.observed }) }
+        observe(element: Element): void { this.observed.push(element) }
+        disconnect(): void {}
+      })
+      const { transcript } = mountWith(answered())
+      let room = 0
+      const end = (): number => transcript.scrollHeight - VIEW
+      vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockImplementation(function (this: HTMLElement) { return height(this) + (this === transcript ? room : 0) })
+      vi.spyOn(HTMLElement.prototype, 'scrollTop', 'set').mockImplementation(function (this: HTMLElement, value: number) { tops.set(this, Math.max(0, Math.min(value, height(this) + (this === transcript ? room : 0) - VIEW))) })
+      expect(transcript.scrollTop).toBe(end())
+      room = 2 * ROW
+      act(() => { for (const { callback, observed } of observers) if (observed.includes(transcript)) callback() })
+      expect(transcript.scrollTop).toBe(end())
+      // The transcript's own move to the end, heard only after the end moved on again, as a draft restored on opening a
+      // thread does before the move is heard, is followed there too rather than taken for the reader leaving the end.
+      room = 3 * ROW
+      fireEvent.scroll(transcript)
+      expect(transcript.scrollTop).toBe(end())
+      vi.unstubAllGlobals()
+    })
+
     it('comes back to where they were reading when the answer is held back while written and then shown whole', () => {
       // With replies shown once complete, the reopened turn's answer reads "Writing a reply…": the transcript grows too short
       // to keep the place, and the window can only scroll to its top. When the answer is whole again, so is the place.

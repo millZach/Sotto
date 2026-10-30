@@ -705,7 +705,7 @@ describe('first-run onboarding', () => {
     await user.tab()
     await user.keyboard('{Enter}')
     expect(screen.getByRole('heading', { name: 'Choose how Sotto looks' })).toHaveFocus()
-    expect(screen.getByText('Step 2 of 9 · Look')).toHaveAttribute('aria-live', 'polite')
+    expect(screen.getByText('Step 2 of 9')).toHaveAttribute('aria-live', 'polite')
   })
 
   it('awaits completion persistence and preserves the setup when saving fails', async () => {

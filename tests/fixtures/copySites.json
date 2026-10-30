@@ -3,7 +3,7 @@
     "shell()": 10
   },
   "src/main/agents/activitySnapshots.ts": {
-    "cloneHostSnapshot(": 1,
+    "cloneHostSnapshot(": 2,
     "cloneActivitySnapshot(": 2,
     "copyUnshared(": 1,
     "copyOver(": 1
@@ -71,7 +71,7 @@
   },
   "src/main/agents/providerSwitch.ts": {
     "structuredClone(": 2,
-    "cloneHostSnapshot(": 5,
+    "cloneHostSnapshot(": 1,
     "clonePlainData(": 1
   },
   "src/main/agents/questionPages.ts": {

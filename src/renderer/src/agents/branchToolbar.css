@@ -10,7 +10,7 @@
 .branch-toolbar__static > span:last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .branch-toolbar__static > svg { flex: none; }
 
-.branch-toolbar__chip, .branch-toolbar__branch { max-width: 260px; cursor: pointer; }
+.branch-toolbar__chip, .branch-toolbar__branch { max-width: 260px; }
 .branch-toolbar__chip > span, .branch-toolbar__branch > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .branch-toolbar__chip > svg, .branch-toolbar__branch > svg { flex: none; }
 .branch-toolbar__chip > svg:last-child, .branch-toolbar__branch > svg:last-child { opacity: .7; }
@@ -20,7 +20,7 @@
 .branch-toolbar__branch[data-busy] { cursor: progress; }
 
 /* The pull request badge: the state icon in its colour and the number, the title in the tooltip. */
-.branch-toolbar__pr { gap: 4px; font-size: 12px; cursor: pointer; }
+.branch-toolbar__pr { gap: 4px; font-size: 12px; }
 .branch-toolbar__pr:disabled { cursor: default; }
 .branch-toolbar__pr[data-state='open'] > svg { color: var(--tt-success); }
 .branch-toolbar__pr[data-state='draft'] > svg { color: var(--tt-text-muted); }
@@ -37,7 +37,7 @@
 .branch-toolbar__workspace-start, .branch-toolbar__workspace-heading { flex: none; }
 .branch-toolbar__workspace-heading { margin: 5px 4px 0; padding: 9px 6px 5px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 11px; }
 .branch-toolbar__workspace-recent { min-height: 0; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; scrollbar-width: thin; }
-.branch-toolbar__workspace-option { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.branch-toolbar__workspace-option { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 34px; padding: 7px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; }
 .branch-toolbar__workspace-option > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .branch-toolbar__workspace-option > svg { flex: none; }
 .branch-toolbar__workspace-option:hover, .branch-toolbar__workspace-option:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
@@ -45,7 +45,7 @@
 .branch-toolbar__workspace-option[aria-selected='true'] { color: var(--tt-activity); }
 /* Placed by measurement from the trigger, so it stays inside the pane whatever the row wrapped into; the stylesheet gives the fallback. */
 .branch-toolbar__panel { left: 0; display: grid; width: min(340px, calc(100vw - 48px)); padding: 6px; }
-.branch-toolbar__list > button, .branch-toolbar__refs > button[role='option'] { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; cursor: pointer; }
+.branch-toolbar__list > button, .branch-toolbar__refs > button[role='option'] { display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; }
 .branch-toolbar__list > button:hover, .branch-toolbar__list > button:focus-visible, .branch-toolbar__refs > button:hover:not(:disabled), .branch-toolbar__refs > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
 .branch-toolbar__list > button:focus-visible, .branch-toolbar__refs > button:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 .branch-toolbar__list > button[aria-selected='true'], .branch-toolbar__refs > button[aria-selected='true'] { color: var(--tt-activity); }
@@ -67,11 +67,11 @@
 .branch-toolbar__badges > small { padding: 1px 6px; border: 1px solid transparent; border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: 10.5px; line-height: 1.4; }
 .branch-toolbar__badges > small[data-badge='current'] { border-color: var(--tt-activity); color: var(--tt-activity); }
 .branch-toolbar__badges > small[data-badge='default'] { color: var(--tt-text-2); }
-.branch-toolbar__more { min-height: 30px; margin: 2px 0 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.branch-toolbar__more { min-height: 30px; margin: 2px 0 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .branch-toolbar__more:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
 .branch-toolbar__more:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .branch-toolbar__empty { margin: 0; padding: 10px; color: var(--tt-text-muted); font-size: 12.5px; }
-.branch-toolbar__switch { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; margin: 4px 2px 0; padding: 8px 8px 6px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; cursor: pointer; }
+.branch-toolbar__switch { display: grid; grid-template-columns: auto 1fr; column-gap: 8px; align-items: center; margin: 4px 2px 0; padding: 8px 8px 6px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; cursor: default; }
 .branch-toolbar__switch > input { margin: 0; accent-color: var(--tt-accent); }
 .branch-toolbar__switch > small { grid-column: 2; color: var(--tt-text-muted); font-size: 11.5px; }
 

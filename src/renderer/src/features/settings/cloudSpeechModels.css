@@ -15,7 +15,7 @@
 .cloud-models__head { color: var(--tt-text-muted); font-size: 12px; border-bottom: 1px solid var(--tt-border); }
 .cloud-models__head > span:first-child,
 .cloud-models__rank { text-align: right; }
-.cloud-models__row { position: relative; border-bottom: 1px solid var(--tt-border-faint); cursor: pointer; outline-offset: -2px; }
+.cloud-models__row { position: relative; border-bottom: 1px solid var(--tt-border-faint); outline-offset: -2px; }
 .cloud-models__row:hover { background: var(--tt-hover); }
 .cloud-models__row[data-checked] { background: var(--tt-accent-surface); }
 .cloud-models__rank { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
@@ -35,7 +35,7 @@
 .cloud-models__row:hover > .cloud-models__tip,
 .cloud-models__row:focus-visible > .cloud-models__tip { display: block; }
 .cloud-models__row[data-tip-quiet] > .cloud-models__tip { display: none; }
-.cloud-models__more { width: 100%; padding: 9px 12px; border: 0; border-radius: 0 0 8px 8px; background: transparent; color: var(--tt-accent-text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.cloud-models__more { width: 100%; padding: 9px 12px; border: 0; border-radius: 0 0 8px 8px; background: transparent; color: var(--tt-accent-text); font: inherit; font-size: 13px; text-align: left; }
 .cloud-models__more:hover { background: var(--tt-hover); }
 /* At the 820x560 minimum the speed column goes; each row's tooltip still says it. */
 @media (max-width: 1000px) {

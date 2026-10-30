@@ -773,8 +773,9 @@ export class AgentControl {
    * guard, asked again as it dispatches, and is never taken for the user's own command, so it answers nothing and changes
    * no permission.
    */
-  commandFromMove(command: Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'settle-thread' }>, guard: () => void): Promise<AgentState> {
-    if (!['create-thread', 'manual-send', 'settle-thread'].includes(command.type)) throw new Error('A move cannot answer requests or change permissions.')
+  commandFromMove(command: Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'interrupt' | 'settle-thread' }>, guard: () => void): Promise<AgentState> {
+    // A move called off with Keep it here (#1178 part 4) stops and settles the thread it made.
+    if (!['create-thread', 'manual-send', 'interrupt', 'settle-thread'].includes(command.type)) throw new Error('A move cannot answer requests or change permissions.')
     const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard })
     return this.admitCommandShell(parsed)
   }
@@ -2291,9 +2292,15 @@ export class AgentControl {
     const messages = this.detailMessagesVersion(thread)
     if (this.dependencies.streamingPublishCost === true && isImmutableActivities(activities)) {
       const held = this.certifiedDetailRevisions.get(thread.id)
+      if (held && held.messages === messages && held.activities === activities) return held.revision
       if (held && held.messages === messages && held.activities.length === activities!.length
         && held.activities.every((record, index) => record === activities![index]
-          || (record.id === activities![index]!.id && this.certifiedActivitySignature(record) === this.certifiedActivitySignature(activities![index]!)))) return held.revision
+          || (record.id === activities![index]!.id && this.certifiedActivitySignature(record) === this.certifiedActivitySignature(activities![index]!)))) {
+        // The same records under new identities, as a store read gives them back: they stand for this revision from now
+        // on, or every later publish would compare each of them by signature again, for every long thread on screen.
+        this.certifiedDetailRevisions.set(thread.id, { ...held, activities: activities! })
+        return held.revision
+      }
       // Retain the legacy signature only across a certified/mutable transition. Ordinary certified
       // publishes compare the owned record identities, without building a signature at all.
       const legacy = this.detailRevisions.get(thread.id)
@@ -2910,7 +2917,12 @@ export class AgentControl {
         this.dependencies.streamingPublishCost === true ? this.certifiedActivitySignature : undefined)
       const advanced = delta === null ? null : applyAgentThreadDetailDelta(held, delta)
       if (delta !== null && advanced !== null) {
-        if (this.dependencies.streamingPublishCost === true && advanced.activities) advanced.activities = immutableActivities(advanced.activities)
+        // The pane's own records, when they are certified and in the order the delta reached: frozen, never edited, and the
+        // records the next publish hands over, so its diff meets them by identity rather than by signature (#1248).
+        if (this.dependencies.streamingPublishCost === true && advanced.activities && advanced.activities !== pane) advanced.activities = pane !== undefined
+          && isImmutableActivities(pane) && pane.length === advanced.activities.length
+          && pane.every((record, index) => record === advanced.activities![index] || record.id === advanced.activities![index]!.id)
+          ? pane as AgentActivity[] : immutableActivities(advanced.activities)
         this.detailSnapshots.set(thread.id, advanced)
         this.publishedDetail.set(thread.id, revision)
         return this.decorateDetailDelta(thread, delta)

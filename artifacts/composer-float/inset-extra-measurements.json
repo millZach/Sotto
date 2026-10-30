@@ -1,0 +1,1796 @@
+{
+  "records": [
+    {
+      "label": "thread-full-motion-normal-dpr1.5-working",
+      "width": 1280,
+      "height": 800,
+      "edge": 672,
+      "composeHeight": 128,
+      "gap": 52,
+      "lastBottom": 620,
+      "remaining": 0,
+      "scrollTop": 4177,
+      "logHeight": 756,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 111.75
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-full-motion-normal-dpr1.5-grows-following",
+      "width": 1280,
+      "height": 800,
+      "edge": 640.5,
+      "composeHeight": 159.5,
+      "gap": 52.5,
+      "lastBottom": 588,
+      "remaining": 0,
+      "scrollTop": 4209,
+      "logHeight": 756,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 79.75
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-full-motion-normal-dpr1.5-resize-following",
+      "width": 820,
+      "height": 560,
+      "edge": 422.5,
+      "composeHeight": 137.5,
+      "gap": 38.5,
+      "lastBottom": 384,
+      "remaining": 0,
+      "scrollTop": 4399,
+      "logHeight": 516,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-22",
+        "top": 68.5
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-full-motion-normal-dpr1.5-slim",
+      "width": 820,
+      "height": 560,
+      "edge": 444,
+      "composeHeight": 106,
+      "gap": -630,
+      "lastBottom": 1084,
+      "remaining": 668,
+      "scrollTop": 3699,
+      "logHeight": 516,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": 14,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-18",
+        "top": 113.5
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-full-motion-normal-dpr1.5-resize-reading",
+      "width": 820,
+      "height": 760,
+      "edge": 644,
+      "composeHeight": 106,
+      "gap": -434.5,
+      "lastBottom": 1088.5,
+      "remaining": 487,
+      "scrollTop": 3564,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": 14,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-18",
+        "top": 118
+      },
+      "activity": 1,
+      "anchorDelta": 4.5
+    },
+    {
+      "label": "thread-full-motion-normal-dpr1.5-multiline-reading",
+      "width": 820,
+      "height": 760,
+      "edge": 532,
+      "composeHeight": 164,
+      "gap": -492.5,
+      "lastBottom": 1088.5,
+      "remaining": 545,
+      "scrollTop": 3564,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": 14,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-18",
+        "top": 118
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-full-motion-normal-dpr1.5-jump",
+      "width": 820,
+      "height": 760,
+      "edge": 596,
+      "composeHeight": 164,
+      "gap": 52.5,
+      "lastBottom": 543.5,
+      "remaining": 0,
+      "scrollTop": 4109,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-22",
+        "top": 228
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-full-motion-normal-dpr1.5-activity",
+      "width": 820,
+      "height": 760,
+      "edge": 650,
+      "composeHeight": 110,
+      "gap": 52.5,
+      "lastBottom": 597.5,
+      "remaining": 0,
+      "scrollTop": 4127,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-22",
+        "top": 210
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-working",
+      "width": 1280,
+      "height": 800,
+      "edge": 724,
+      "composeHeight": 76,
+      "gap": 52,
+      "lastBottom": 672,
+      "remaining": 0,
+      "scrollTop": 4125,
+      "logHeight": 756,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 163.75
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-grows-following",
+      "width": 1280,
+      "height": 800,
+      "edge": 680.5,
+      "composeHeight": 119.5,
+      "gap": 52.5,
+      "lastBottom": 628,
+      "remaining": 0,
+      "scrollTop": 4169,
+      "logHeight": 756,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 119.75
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-resize-following",
+      "width": 820,
+      "height": 560,
+      "edge": 450.5,
+      "composeHeight": 109.5,
+      "gap": 38.5,
+      "lastBottom": 412,
+      "remaining": 0,
+      "scrollTop": 4371,
+      "logHeight": 516,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-22",
+        "top": 96.5
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-slim",
+      "width": 820,
+      "height": 560,
+      "edge": 444,
+      "composeHeight": 70,
+      "gap": -622,
+      "lastBottom": 1112,
+      "remaining": 660,
+      "scrollTop": 3671,
+      "logHeight": 516,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": 14,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-18",
+        "top": 141.5
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-resize-reading",
+      "width": 820,
+      "height": 760,
+      "edge": 644,
+      "composeHeight": 70,
+      "gap": -426.5,
+      "lastBottom": 1116.5,
+      "remaining": 479,
+      "scrollTop": 3536,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": 14,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-18",
+        "top": 146
+      },
+      "activity": 1,
+      "anchorDelta": 4.5
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-multiline-reading",
+      "width": 820,
+      "height": 760,
+      "edge": 566,
+      "composeHeight": 130,
+      "gap": -486.5,
+      "lastBottom": 1116.5,
+      "remaining": 539,
+      "scrollTop": 3536,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": 14,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-18",
+        "top": 146
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-jump",
+      "width": 820,
+      "height": 760,
+      "edge": 630,
+      "composeHeight": 130,
+      "gap": 52.5,
+      "lastBottom": 577.5,
+      "remaining": 0,
+      "scrollTop": 4075,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 69.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-activity",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-t3-code-dark",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-t3-code-light",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-hush-dark",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-hush-light",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-citrine-dark",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-citrine-light",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-graphite-dark",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-graphite-light",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-clay-dark",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-clay-light",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-fern-dark",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "thread-quiet-motion-normal-dpr1.5-fern-light",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-full-motion-normal-dpr1.5-working",
+      "width": 1280,
+      "height": 800,
+      "edge": 672,
+      "composeHeight": 128,
+      "gap": 52,
+      "lastBottom": 620,
+      "remaining": 0,
+      "scrollTop": 4177,
+      "logHeight": 756,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 111.75
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-full-motion-normal-dpr1.5-grows-following",
+      "width": 1280,
+      "height": 800,
+      "edge": 640.5,
+      "composeHeight": 159.5,
+      "gap": 52.5,
+      "lastBottom": 588,
+      "remaining": 0,
+      "scrollTop": 4209,
+      "logHeight": 756,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 79.75
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-full-motion-normal-dpr1.5-resize-following",
+      "width": 820,
+      "height": 560,
+      "edge": 422.5,
+      "composeHeight": 137.5,
+      "gap": 38.5,
+      "lastBottom": 384,
+      "remaining": 0,
+      "scrollTop": 4399,
+      "logHeight": 516,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-22",
+        "top": 68.5
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-full-motion-normal-dpr1.5-slim",
+      "width": 820,
+      "height": 560,
+      "edge": 444,
+      "composeHeight": 106,
+      "gap": -630,
+      "lastBottom": 1084,
+      "remaining": 668,
+      "scrollTop": 3699,
+      "logHeight": 516,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": 14,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-18",
+        "top": 113.5
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-full-motion-normal-dpr1.5-resize-reading",
+      "width": 820,
+      "height": 760,
+      "edge": 644,
+      "composeHeight": 106,
+      "gap": -434.5,
+      "lastBottom": 1088.5,
+      "remaining": 487,
+      "scrollTop": 3564,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": 14,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-18",
+        "top": 118
+      },
+      "activity": 1,
+      "anchorDelta": 4.5
+    },
+    {
+      "label": "watcher-full-motion-normal-dpr1.5-multiline-reading",
+      "width": 820,
+      "height": 760,
+      "edge": 532,
+      "composeHeight": 164,
+      "gap": -492.5,
+      "lastBottom": 1088.5,
+      "remaining": 545,
+      "scrollTop": 3564,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": 14,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-18",
+        "top": 118
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-full-motion-normal-dpr1.5-jump",
+      "width": 820,
+      "height": 760,
+      "edge": 596,
+      "composeHeight": 164,
+      "gap": 52.5,
+      "lastBottom": 543.5,
+      "remaining": 0,
+      "scrollTop": 4109,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-22",
+        "top": 228
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-full-motion-normal-dpr1.5-activity",
+      "width": 820,
+      "height": 760,
+      "edge": 650,
+      "composeHeight": 110,
+      "gap": 52.5,
+      "lastBottom": 597.5,
+      "remaining": 0,
+      "scrollTop": 4127,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-22",
+        "top": 210
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-working",
+      "width": 1280,
+      "height": 800,
+      "edge": 724,
+      "composeHeight": 76,
+      "gap": 52,
+      "lastBottom": 672,
+      "remaining": 0,
+      "scrollTop": 4125,
+      "logHeight": 756,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 163.75
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-grows-following",
+      "width": 1280,
+      "height": 800,
+      "edge": 680.5,
+      "composeHeight": 119.5,
+      "gap": 52.5,
+      "lastBottom": 628,
+      "remaining": 0,
+      "scrollTop": 4169,
+      "logHeight": 756,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 119.75
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-resize-following",
+      "width": 820,
+      "height": 560,
+      "edge": 450.5,
+      "composeHeight": 109.5,
+      "gap": 38.5,
+      "lastBottom": 412,
+      "remaining": 0,
+      "scrollTop": 4371,
+      "logHeight": 516,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-22",
+        "top": 96.5
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-slim",
+      "width": 820,
+      "height": 560,
+      "edge": 444,
+      "composeHeight": 70,
+      "gap": -622,
+      "lastBottom": 1112,
+      "remaining": 660,
+      "scrollTop": 3671,
+      "logHeight": 516,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": 14,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-18",
+        "top": 141.5
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-resize-reading",
+      "width": 820,
+      "height": 760,
+      "edge": 644,
+      "composeHeight": 70,
+      "gap": -426.5,
+      "lastBottom": 1116.5,
+      "remaining": 479,
+      "scrollTop": 3536,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": 14,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-18",
+        "top": 146
+      },
+      "activity": 1,
+      "anchorDelta": 4.5
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-multiline-reading",
+      "width": 820,
+      "height": 760,
+      "edge": 566,
+      "composeHeight": 130,
+      "gap": -486.5,
+      "lastBottom": 1116.5,
+      "remaining": 539,
+      "scrollTop": 3536,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": 14,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-18",
+        "top": 146
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-jump",
+      "width": 820,
+      "height": 760,
+      "edge": 630,
+      "composeHeight": 130,
+      "gap": 52.5,
+      "lastBottom": 577.5,
+      "remaining": 0,
+      "scrollTop": 4075,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 69.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-activity",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-t3-code-dark",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-t3-code-light",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-hush-dark",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-hush-light",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-citrine-dark",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-citrine-light",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-graphite-dark",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-graphite-light",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-clay-dark",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-clay-light",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-fern-dark",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    },
+    {
+      "label": "watcher-quiet-motion-normal-dpr1.5-fern-light",
+      "width": 820,
+      "height": 760,
+      "edge": 696,
+      "composeHeight": 64,
+      "gap": 52.5,
+      "lastBottom": 643.5,
+      "remaining": 0,
+      "scrollTop": 4081,
+      "logHeight": 716,
+      "holes": [
+        false,
+        false,
+        false
+      ],
+      "jumpGap": null,
+      "scrollbarClear": true,
+      "paneOverflow": 0,
+      "anchor": {
+        "id": "message-21",
+        "top": 63.25
+      },
+      "activity": 1
+    }
+  ],
+  "errors": [],
+  "reducedMotionGrowthFrames": [
+    {
+      "i": 0,
+      "t": 1741.9000000357628,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 1,
+      "t": 1742.800000011921,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 2,
+      "t": 1751.800000011921,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 3,
+      "t": 1766,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 4,
+      "t": 1782.2000000476837,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 5,
+      "t": 1798.9000000357628,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 6,
+      "t": 1815.6000000238419,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 7,
+      "t": 1832.1000000238419,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 8,
+      "t": 1848.9000000357628,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 9,
+      "t": 1865.5,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 10,
+      "t": 1882.2000000476837,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 11,
+      "t": 1898.9000000357628,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 12,
+      "t": 1915.5,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 13,
+      "t": 1932.2000000476837,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 14,
+      "t": 1949.2000000476837,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 15,
+      "t": 1966,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 187,
+      "jumpBottom": "201px",
+      "edge": 549,
+      "jumpTop": 563
+    },
+    {
+      "i": 16,
+      "t": 1982.300000011921,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 251px), 0px calc(100% - 251px))",
+      "cover": "187px",
+      "measured": "187px",
+      "height": 204,
+      "jumpBottom": "201px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 17,
+      "t": 1999.1000000238419,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 18,
+      "t": 2016.1000000238419,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 19,
+      "t": 2032.1000000238419,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 20,
+      "t": 2048.900000035763,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 21,
+      "t": 2065.600000023842,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 22,
+      "t": 2082.300000011921,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 23,
+      "t": 2098.600000023842,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 24,
+      "t": 2115.5,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 25,
+      "t": 2132.2000000476837,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 26,
+      "t": 2148.900000035763,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 27,
+      "t": 2165.900000035763,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 28,
+      "t": 2182.2000000476837,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 29,
+      "t": 2198.800000011921,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 30,
+      "t": 2215.900000035763,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 31,
+      "t": 2232.600000023842,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 32,
+      "t": 2249.300000011921,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 33,
+      "t": 2265.900000035763,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    },
+    {
+      "i": 34,
+      "t": 2282.600000023842,
+      "clip": "polygon(0px 0px, 100% 0px, 100% 100%, calc(100% - 10px) 100%, calc(100% - 10px) calc(100% - 268px), 0px calc(100% - 268px))",
+      "cover": "204px",
+      "measured": "204px",
+      "height": 204,
+      "jumpBottom": "218px",
+      "edge": 532,
+      "jumpTop": 546
+    }
+  ]
+}

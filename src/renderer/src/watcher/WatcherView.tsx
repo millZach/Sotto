@@ -20,7 +20,7 @@ import { threadChordCap } from '../agents/threadShortcuts'
 import { WayOffThePage } from '../agents/SidebarFrame'
 import { UpdateControl, type UpdateControlProps } from '../features/updates/UpdateControl'
 import { EffortPicker } from '../agents/EffortPicker'
-import { EffortDots } from '../agents/EffortDots'
+import { SplitChipEffort } from '../agents/SplitChipEffort'
 import { draftEffortScore, suggestedEffortIndex } from '../agents/effortSuggestion'
 import { EffortTrace } from '../agents/EffortTrace'
 import { ModelPicker } from '../agents/ModelPicker'
@@ -30,7 +30,7 @@ import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
 import { useShared } from '../agents/stateSharing'
 import { threadDescriber, useWordsRevision, type ThreadRow } from '../agents/threadFacts'
 import { useContinueEnabled } from '../agents/continuations'
-import { effortChoices, nextSpeed, offeredSpeeds, speedName, speedTitle, SpeedToggle } from '../agents/ThreadOptions'
+import { effortChoices, nextSpeed, offeredSpeeds, speedName, speedOptions, SpeedToggle } from '../agents/ThreadOptions'
 import { SPEED_STANDARD } from '../agents/pendingSettings'
 import { ThreadPane } from '../agents/ThreadPane'
 import { isThreadClosed } from '../../../shared/threadActivity'
@@ -47,7 +47,7 @@ import { BESIDE_PANE_ID, BesideDivider, BesidePane, historyDrawn, roomView, show
 import { firstMessage, useFirstMessage } from './watcherFirstMessage'
 import { WatcherGlance } from './WatcherGlance'
 import { WatcherMachines } from './WatcherMachines'
-import { watcherProviderOf } from './watcherProviders'
+import { useWatcherProviderWords, watcherProviderOf } from './watcherProviders'
 import { WatcherHandoverOffer, WatcherSendGateContext, watcherSendGate } from './WatcherHandover'
 import { NewWatcherNote, newWatcherNoteFacts, WatcherStartStopped } from './WatcherNew'
 import { overviewCount, statusWord, threadPress, TONES, unlistedStatus, useOverview, WatcherOverviewList, type OpenThread, type OverviewEntry } from './WatcherOverview'
@@ -129,7 +129,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const app = useOptionalApp()
   const quiet = useOwlFeature('quiet-composer')
   // Muse is named only where its own gate shows it (ADR-0072); its models are listed only then too.
-  const providers = useOwlFeature('muse') ? t`Codex, Claude Code, Grok Build or Muse` : t`Codex, Claude Code or Grok Build`
+  const providers = useWatcherProviderWords()
   const models = useMemo(() => state.host.models.filter(model => model.ready !== false && watcherProviderOf(model) !== null), [state.host.models])
   const { text, modelId, effort, phase, error } = useFirstMessage()
   // Unchosen here, Watcher starts on the Orchestrating role's model and effort where worker roles are on (#1041). A pick
@@ -183,18 +183,23 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const providerName = provider === null ? null : PROVIDER_LABELS[provider]
   const modelName = model?.name
   const accountProvider = providerName ?? model?.provider
+  const permissions = model === undefined ? null : <WatcherPermissionChip model={model} provider={providerName ?? model.provider} disabled={starting} noticeSlot={notices} />
   return <>
     <div className="thread-transcript" data-room-backdrop="">
       <div className="thread-workspace__transcript watcher-first" data-room-backdrop="">
+        {/* One sentence, left-aligned above the composer, and the rest in Help (Zach's pick A on October 30, 2026, #1822).
+            The heading stays for assistive technology, which finds the room by it. */}
         <div className="watcher-first__intro">
-          <WatcherOwl size={28} className="watcher-first__owl" />
-          <h2><Trans>Start Watcher</Trans></h2>
-          <p className="tt-paragraph"><Trans>Watcher is a thread that starts and briefs your other threads, and keeps an eye on them while they work.</Trans></p>
-          <p className="tt-paragraph"><Trans>It runs on your own {providers} account, with that provider’s own tools. It hands changes to your threads rather than making them itself, and only you answer a thread’s questions and permissions.</Trans></p>
+          <h2 className="tt-visually-hidden"><Trans>Start Watcher</Trans></h2>
+          <p className="tt-paragraph">{model === undefined
+            ? <Trans>Watcher starts your other threads, briefs them and keeps an eye on them while they work.</Trans>
+            : <Trans>Watcher starts your other threads, briefs them and keeps an eye on them while they work. Your first message starts it.</Trans>}
+          {app ? <> <button type="button" className="watcher-first__how tt-focusable" onClick={() => app.actions.navigate('help', 'help-watcher')}>
+            <Trans>How Watcher works</Trans></button></> : null}</p>
           {model === undefined ? <>
             <p className="watcher-first__missing tt-paragraph"><Trans>Connect {providers} in Settings, under Providers, to start Watcher.</Trans></p>
             {app ? <div className="thread-workspace__empty-actions"><Button variant="secondary" onClick={() => app.actions.navigate('settings', 'settings-providers')}><Trans>Open Settings</Trans></Button></div> : null}
-          </> : <p className="tt-paragraph"><Trans>Pick its model and what it may do without asking below, then send what you want done first. That message starts it.</Trans></p>}
+          </> : null}
         </div>
       </div>
     </div>
@@ -202,9 +207,11 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
       {error ? <p className="agent-error watcher-first__error tt-paragraph" role="alert">{error}</p> : null}
       <form className="thread-prompt" data-quiet={quiet || undefined} onSubmit={event => { event.preventDefault(); void start() }}>
         <EffortTrace />
+        {/* The quiet pill draws the shield at its start, before the prompt (ADR-0161). */}
+        {quiet ? <div className="thread-prompt__lead">{permissions}</div> : null}
         <div className="screenshot-input"><div>
         <PromptEditor fieldRef={field} id={WATCHER_PROMPT_ID} text={text} skills={[]} sigils={[]} label={t`Watcher message`} editable={!starting}
-          placeholder={t`Say what to start or check. Sending starts Watcher.`}
+          placeholder={t`Say what to start or check.`}
           onChange={next => firstMessage.update({ text: next })}
           onKeyDown={event => {
             if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.nativeEvent.isComposing) return
@@ -224,15 +231,15 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
                   saveOrchestrating?.(id, resolveModel(models, id)?.defaultReasoningEffort ?? null, models, selectedSpeed)
                 }} />
                 {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={provider ?? undefined} value={speedValue} disabled={starting} pending={false} onChange={changeSpeed} />}
-                {quiet ? levels.length > 0 && <EffortDots levels={levels} value={reasoning} provider={provider ?? undefined} disabled={starting}
+                {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={starting}
                   suggestion={starting ? null : suggestedEffortIndex(draftEffortScore(text), levels.length, levels.indexOf(reasoning))}
                   speed={speeds.length === 0 ? undefined : { value: speedValue, name: speedName(speedValue, speeds),
-                    description: speedTitle(speeds, speedValue, provider ?? undefined, starting),
+                    options: speedOptions(speeds, provider ?? undefined), onChange: changeSpeed,
                     onStep: direction => changeSpeed(nextSpeed(speeds, speedValue, direction)) }}
                   onChange={changeEffort} />
                   : efforts.length > 0 ? <EffortPicker key={model.id} value={reasoning} options={efforts} disabled={starting} onChange={changeEffort}
                   defaultValue={model.defaultReasoningEffort} modelName={model.name} /> : null}
-                <WatcherPermissionChip model={model} provider={providerName ?? model.provider} disabled={starting} noticeSlot={notices} />
+                {quiet ? null : permissions}
               </div>
             </div>
             {starting ? <span className="thread-prompt__status" role="status"><Trans>Starting Watcher…</Trans></span> : null}
@@ -246,7 +253,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
         <div ref={setNotices} className="thread-options-notices" />
       </form>
       <div className="thread-pane__meta">
-        <p className="watched-note tt-paragraph"><WatcherOwl size={13} /><span><Trans>Your first message starts Watcher on {modelName}, with your own {accountProvider} account.</Trans></span></p>
+        <p className="watched-note tt-paragraph"><WatcherOwl size={13} /><span><Trans>On {modelName}, with your own {accountProvider} account.</Trans></span></p>
       </div>
     </div> : null}
   </>

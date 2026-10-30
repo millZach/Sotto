@@ -22,7 +22,7 @@
 /* When the scene steps away, it fades out, and then it is gone. */
 .watcher-scene[data-leaving] { opacity: 0; }
 .watcher-scene[data-leaving] .watcher-scene__owl { pointer-events: none; }
-.watcher-scene__owl { position: absolute; padding: 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; pointer-events: auto; }
+.watcher-scene__owl { position: absolute; padding: 0; border: 0; border-radius: 6px; background: transparent; pointer-events: auto; }
 .watcher-scene__owl:hover { background: color-mix(in srgb, var(--tt-text) 7%, transparent); }
 /* A thread owl's name and what its thread is doing, above it, while the pointer rests on it. */
 .watcher-scene__tip { position: absolute; z-index: 5; display: flex; flex-direction: column; gap: 1px; max-width: 240px; padding: 6px 10px 7px;
@@ -61,9 +61,9 @@
 /* Each tick carries the room's colour around it as the column's words do, so it reads against the room rather than the
    hill under it. The lane itself still paints nothing (#1646). */
 .watcher-pane .message-scrubber__tick::before { box-shadow: 0 0 1px 1px var(--tt-canvas), 0 0 3px 1px var(--tt-canvas), 0 0 6px 2px var(--tt-canvas); }
-/* Watcher's composer is frosted glass: the card's colour, partly clear, over the scene and the words passing under it,
+/* Watcher's composer is frosted glass: the card's colour, partly clear, over the scene,
    blurred, with no edge in any state (ADR-0110). It is never thinner than lets every word on it keep 4.5:1 over pure
-   white or pure black, whatever a picture in the conversation puts under it: the scene works that out from the theme
+   white or pure black: the scene works that out from the theme
    and sets --watcher-glass on the pane (72% at least; about 80 to 91% in the built-in themes), and until it has, the
    card is 92%, which holds for every built-in theme. This is the one composer that is not solid (ADR-0084, amended by
    ADR-0126); asking for less transparency makes it solid again. */

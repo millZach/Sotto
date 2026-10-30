@@ -188,6 +188,43 @@ describe('the store worker', () => {
     expect(stored()).toEqual(mutable.map(({ id, title, status }) => ({ id, title, status })))
   })
 
+  it('sends the first save after a read back as what changed since the list read, unless a list saved meanwhile replaced it', async () => {
+    const { store, writer, post } = await open()
+    const sent = vi.spyOn(internals(store).worker! as unknown as { list(entry: unknown): unknown }, 'list')
+    const lastSent = (): Record<string, unknown> => sent.mock.results.at(-1)!.value as Record<string, unknown>
+    const save = async (activities: readonly AgentActivity[]): Promise<void> => {
+      expect((await post({ kind: 'activities', entries: [{ threadId: 'thread', activities }] })).failed.size).toBe(0)
+    }
+    const readBack = async (): Promise<readonly AgentActivity[]> => {
+      const result = await writer.readActivities('thread')!
+      if (!('activities' in result)) throw new Error('The worker did not read the thread back')
+      return result.activities
+    }
+    const ids = (activities: readonly AgentActivity[]) => activities.map(activity => activity.id)
+    const first = immutableActivities(Array.from({ length: 50 }, (_, index) => ownBuiltActivity(record(`a${index}`, index))))
+    await save(first)
+    // Let go, as a thread nobody looks at is once it is idle, then read back for the record its next turn adds: only that
+    // record crosses, against the list the worker read.
+    await post({ kind: 'activities-released', threadId: 'thread' })
+    const turned = immutableActivities([...await readBack(), ownBuiltActivity(record('b0', 50))])
+    await save(turned)
+    expect(lastSent()).toMatchObject({ base: expect.any(Number) as number, ids: ids(turned) })
+    expect(ids(lastSent().changed as AgentActivity[])).toEqual(['b0'])
+    expect(ids(store.readActivities('thread'))).toEqual(ids(turned))
+    // A list saved while a read is on its way replaces what the worker holds, so the read is no base for the save after it.
+    await post({ kind: 'activities-released', threadId: 'thread' })
+    const reading = readBack()
+    const replaced = immutableActivities(first.slice(0, 3).map(activity => ownBuiltActivity({ ...activity })))
+    const saving = save(replaced)
+    await reading
+    await saving
+    expect(lastSent()).toMatchObject({ whole: replaced })
+    const later = immutableActivities([...replaced, ownBuiltActivity(record('c0', 60))])
+    await save(later)
+    expect(ids(lastSent().changed as AgentActivity[])).toEqual(['c0'])
+    expect(ids(store.readActivities('thread'))).toEqual(ids(later))
+  })
+
   it('commits on main what it was posted once the worker goes mid-batch, and goes on writing there', async () => {
     // The worker waits for the lock as long as it needs: under load the release below can come seconds late, and a write
     // that gave up on the lock first would be a failure, not the worker going.

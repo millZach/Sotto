@@ -394,4 +394,35 @@ describe('main-window theme tokens', () => {
     }
     expect(capsules).toEqual([])
   })
+
+  it('writes labels in sentence case: no renderer stylesheet turns words into capitals', () => {
+    const root = join(process.cwd(), 'src/renderer/src')
+    const sheets = (readdirSync(root, { recursive: true }) as string[]).filter(name => name.endsWith('.css')).map(name => join(root, name))
+    const capitals = sheets.filter(path => /text-transform:\s*uppercase/u.test(readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')))
+    expect(capitals.map(path => relative(process.cwd(), path))).toEqual([])
+  })
+
+  it('draws no status edge down a card: its words and buttons say what it needs (ADR-0110, #1830)', () => {
+    const cards = [
+      ['src/renderer/src/agents/requests/requests.css', ['agent-request', 'prototype-ready', 'thread-questions']],
+      ['src/renderer/src/agents/requests/requestDraftRecovery.css', ['request-recovery']],
+      ['src/renderer/src/agents/activity.css', ['thread-lifted']],
+      ['src/renderer/src/agents/clientUpdates.css', ['client-updates']],
+      ['src/renderer/src/agents/providers.css', ['provider-detail__error']],
+      ['src/renderer/src/agents/agents.css', ['agent-error', 'agent-notice']],
+    ] as const
+    const edges: string[] = []
+    for (const [path, names] of cards) {
+      const css = readFileSync(join(process.cwd(), path), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
+      for (const [, selector = '', body = ''] of css.matchAll(/([^{}]+)\{([^{}]*)\}/gu)) {
+        // The rule's own subject is the card: its last compound selector names the class or a modifier of it, not a part.
+        const subjects = selector.split(',').map(part => part.trim().split(/\s+|>|\+|~/u).filter(Boolean).at(-1) ?? '')
+        if (!subjects.some(subject => names.some(name => new RegExp(`\\.${name}(?:--[\\w-]+)?(?![\\w-])`, 'u').test(subject)))) continue
+        if (/(?:^|[;\s])(?:border-left|border-inline-start)(?:-color|-width|-style)?\s*:/u.test(body) || /(?:^|[;\s])border-color\s*:/u.test(body)) {
+          edges.push(`${path}: ${selector.trim()}`)
+        }
+      }
+    }
+    expect(edges).toEqual([])
+  })
 })

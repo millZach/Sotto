@@ -63,7 +63,9 @@ async function ownerScale(root: string, retirements: number, remoteRetirements: 
     watcherOwners: [] }))
   const lookups = vi.fn((item: RequestDraftOwner) => requestDraftOwnerState(item, local, router))
   const writes: { watcherOwners?: RequestDraftOwner[] | undefined }[] = []
-  const drafts = new RequestDraftService(root, lookups, async () => {}, { write: async saved => { writes.push(saved) } }, undefined,
+  // What each save hands the file: the compact text the store writes as it is.
+  const texts: (string | undefined)[] = []
+  const drafts = new RequestDraftService(root, lookups, async () => {}, { write: async (saved, text) => { writes.push(saved); texts.push(text) } }, undefined,
     () => requestDraftWatcherOwnerIds(local, () => [], router))
   await drafts.start()
   // Every way the router builds every host's state: a fresh shell, or a publication.
@@ -71,7 +73,7 @@ async function ownerScale(root: string, retirements: number, remoteRetirements: 
   const typing: RequestDraftTarget = { kind: 'thread', ownerId: hostEntityKey(REMOTE, 'typing'), providerId: 'codex', requestId: 'request', questions }
   const save = (revision: number) => drafts.save({ target: typing, revision, held: false,
     selections: { question: { optionIds: [], other: true, text: 'Typed answer'.slice(0, revision) } } })
-  return { router, drafts, shell, builds, lookups, typing, save, writes, remoteState, localState }
+  return { router, drafts, shell, builds, lookups, typing, save, writes, texts, remoteState, localState }
 }
 
 /** Builds, copies, lookups and owner keys per save, after the first save has classified every owner the ledger names. */
@@ -125,6 +127,29 @@ describe('saving an answer at the owner\'s scale', () => {
     expect(large.first.lookups).toEqual(small.first.lookups)
     expect(large.perSave.lookups).toBeLessThanOrEqual(2)
     expect(large.perSave.ownerKeys).toBeLessThanOrEqual(4)
+  })
+
+  // Every save rewrote the ledger of answered questions, indented, though a save keeps it as it was (October 29, 2026).
+  it('serializes no more on a later save with a longer ledger, and hands the file compact text of what it saved', async () => {
+    const serialized = async (retirements: number, remoteRetirements: number) => {
+      const scale = await ownerScale(await root(), retirements, remoteRetirements)
+      try {
+        await scale.save(1)
+        const stringify = JSON.stringify
+        let characters = 0
+        const spy = vi.spyOn(JSON, 'stringify').mockImplementation((...args: Parameters<typeof JSON.stringify>) => {
+          const text = stringify(...args); characters += text?.length ?? 0; return text
+        })
+        try { await scale.save(2) } finally { spy.mockRestore() }
+        const text = scale.texts.at(-1)
+        return { characters, text, saved: scale.writes.at(-1) }
+      } finally { scale.router.dispose() }
+    }
+    const small = await serialized(64, 10), large = await serialized(256, 40)
+    expect(large.characters).toBe(small.characters)
+    expect(large.text).toBeDefined()
+    expect(large.text).not.toContain('\n')
+    expect(JSON.parse(large.text!)).toEqual(JSON.parse(JSON.stringify(large.saved)))
   })
 
   it('builds no whole state for a recovery pass that finds nothing changed, though the held answer\'s thread names no provider', async () => {

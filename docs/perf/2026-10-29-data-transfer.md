@@ -30,6 +30,10 @@ SOTTO_PERF_BENCH=1 NODE_OPTIONS=--max-old-space-size=3072 npx vitest run tests/p
 SOTTO_PERF_BENCH=1 SOTTO_AUDIT_SOCKET=1 SOTTO_AUDIT_PROFILE='socket 1' NODE_OPTIONS=--max-old-space-size=3072 npx vitest run tests/perf/dataTransfer.perf.test.ts -t "host socket" --maxWorkers=1 --disable-console-intercept
 ```
 
+By default the thread store writes on main, as under the test runner, and the wire to the store worker is built beside
+it. `SOTTO_AUDIT_WORKER=1` runs the store on the store worker as the build compiles it. A read that runs on the worker then
+leaves main, and the wire counted is the worker handle's own.
+
 Times are from forge (Linux, shared with other work) and read as proportions. A profiled time is the inclusive time of a
 function in a CPU profile sampled every 200 microseconds, taken the same way before and after.
 
@@ -73,3 +77,31 @@ One host thread streaming, 60 pushes, profiled:
 What is left per push is the schema read of the shell's thread rows, which shell deltas take away.
 `tests/integration/socketClientPushCopies.test.ts` fails if a push calls `shell()` or `state()`, or if a later push or a
 command's answer leaves the client holding a catalog other than the one it first read.
+
+### An answer draft saves without a status line, and without keying every answered question (#1248)
+
+A question card's own answer is saved at each pause in typing. The card said "Saving answer…" and then "Answer draft
+saved." every time, to the eye and to a screen reader; it now says nothing unless a save fails, which still shows its
+error and Save again (Zach's call, October 29). In main, the first save after start or after an answer was retired built
+a key for every answered question in the ledger, three serializations each, and every save wrote the whole file
+indented. The ledger's index and the kept owners' keys are now made when the store loads and when a commit replaces
+them, and the file is written compact with the ledger's text made once for each ledger.
+
+`saveAnswerDraft` and `saveAnswerDraft again` in the benchmark, the owner's 256 answered questions:
+
+| Per save | Before | After |
+| --- | ---: | ---: |
+| `JSON.stringify` calls, first save after start | 819 | 48 |
+| `JSON.stringify` calls, each later save | 33 | 29 |
+| Characters serialized, each later save | 94,885 | 6,914 |
+| `request-drafts.json` written and fsynced | 88,569 bytes | 65,728 bytes |
+
+`ownerScaleWorkBudget.perf.test.ts` holds the count: serializations per save fall from 911 to 140 on Owl and from 824 to 33
+on stable, and the save's `KNOWN_HISTORY_GROWTH` entries are gone. The same keys flatten stable's answer-recovery pass
+while the user types or opens a thread, so its entry goes too (typing 20 to 13, opening a thread 31 to 17).
+`requestDraftSaveCost.test.ts` holds the volume: a later save serializes the same characters with 64 answered questions
+as with 256, and hands the file compact text equal to what it saved.
+
+The file is still written whole at each save, 65,728 bytes here, because a retired answer and its draft change together
+in one atomic write. Splitting the ledger into a file of its own would take a save down to the drafts alone, at the cost
+of ordering two writes; that is left for later.
