@@ -362,7 +362,9 @@ oldest records. A read's record that comes out the same as the record held is th
 
 This changes step 3's "What stays on main" above. A record a provider publishes for a stored thread no window looks at
 now reads the thread's list back on the store worker, as a window's read does. The record waits, and is merged onto the
-list once it arrives, in the order it came. Before, the list was read on main at once. That was every turn of a thread
+list once it arrives, in the order it came. Each merges as it did when the list was read on main at once: a record a read
+brought reconciles whole, as a read's does, and only the same certified list published again counts once. A window's
+read keeps its own rule, the same array counting once whatever brought it. Before, the list was read on main at once. That was every turn of a thread
 run out of view: worker swarms, delegated threads, Watcher's workers and babysat threads. At the owner's scale it held
 main about 12 ms a turn for a thread of 2,000 records (`docs/perf/2026-10-30-background-turn-readback.md`), and 0.61 s
 in the owner's recording of one such read. Nothing about the thread waits on the list but its records, which no pane

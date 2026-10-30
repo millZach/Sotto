@@ -245,8 +245,8 @@ export class StoreWorker {
     this.unrefIfIdle()
     const failed = new Set(answer.failed)
     // A list that did not commit is sent whole next time, so the worker never rebuilds from one it lacks.
-    for (const threadId of failed) { this.sent.delete(threadId); this.bases.delete(threadId) }
-    if (answer.error !== undefined && failed.size === 0) { this.sent.clear(); this.bases.clear() }
+    for (const threadId of failed) this.sendWholeNext(threadId)
+    if (answer.error !== undefined && failed.size === 0) this.sendAllWholeNext()
     const error = answer.error === undefined ? undefined : Object.assign(new Error(answer.error.message), { name: answer.error.name })
     pending.settle({ outcome: { failed, ...(error === undefined ? {} : { error }), ...(answer.removed === undefined ? {} : { removed: answer.removed }), ...(answer.memory ? { memory: true } : {}) } })
   }
@@ -267,8 +267,7 @@ export class StoreWorker {
     const applying = Atomics.load(this.control, CONTROL.APPLYING)
     const unanswered = [...this.pending.values()].sort((a, b) => a.id - b.id)
     this.pending.clear()
-    this.sent.clear()
-    this.bases.clear()
+    this.sendAllWholeNext()
     if (!wasGone) {
       try { this.port.close() } catch { /* Already closed. */ }
       void this.worker.terminate().catch(() => undefined)
@@ -279,15 +278,27 @@ export class StoreWorker {
     this.readsLost()
   }
 
+  /** This thread's next list goes whole: neither the list last sent nor a read on its way is a base for it any more. */
+  private sendWholeNext(threadId: string): void {
+    this.sent.delete(threadId)
+    this.bases.delete(threadId)
+  }
+
+  /** Every thread's next list goes whole. */
+  private sendAllWholeNext(): void {
+    this.sent.clear()
+    this.bases.clear()
+  }
+
   /** The write as it crosses: activity lists as what changed since the last sent. */
   private wire(write: ThreadStoreWrite, preserved: () => readonly string[]): WireWrite {
     switch (write.kind) {
       case 'activities': return { kind: 'activities', entries: write.entries.map(entry => this.list(entry)) }
       case 'activity-list': return { kind: 'activity-list', flushed: write.flushed, entry: this.list(write) }
-      case 'history-off': this.sent.clear(); this.bases.clear(); return { ...write, preserved: preserved() }
-      case 'history-on': this.sent.clear(); this.bases.clear(); return write
-      case 'activities-released': this.sent.delete(write.threadId); this.bases.delete(write.threadId); return write
-      case 'forget': for (const threadId of write.threadIds) { this.sent.delete(threadId); this.bases.delete(threadId) } return write
+      case 'history-off': this.sendAllWholeNext(); return { ...write, preserved: preserved() }
+      case 'history-on': this.sendAllWholeNext(); return write
+      case 'activities-released': this.sendWholeNext(write.threadId); return write
+      case 'forget': for (const threadId of write.threadIds) this.sendWholeNext(threadId); return write
       default: return write
     }
   }

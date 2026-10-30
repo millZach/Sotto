@@ -23,7 +23,9 @@ threads.
 ## The change
 
 - The record waits, and the list is read back on the store worker, as a window's read is (`readOnWorker`). The record
-  merges onto the list once it arrives. While closing, or where the worker cannot read, the list is read on main as before.
+  merges onto the list once it arrives, as it merged when the list was read on main at once: a record a read brought
+  reconciles whole, as a read's does (`mergesAgain`). While closing, or where the worker cannot read, the list is read
+  on main as before.
 - The worker keeps the list it read as the thread's last list, under a version main gave the read. Main takes the records
   it received as the last sent. A list saved, released or forgotten while the read is on its way lets that go
   (`StoreWorker.bases`).
@@ -63,6 +65,13 @@ merged record with the one read. Every other scenario of the benchmark sends the
   read, unless a list saved meanwhile replaced it". It fails without the base, and without the rule that a list saved
   while a read is on its way lets the read go, when the worker refuses the next save as one sent against a list it no
   longer holds.
+- `workspaceActivityReadBack.test.ts`, "merges what waited for a record's read as main merged it, a read's whole, at the
+  record limit": a thread of 2,000 records whose provider publishes the list moved on by one, and a read of the same
+  list that comes before the worker's answer. The store keeps what it kept with the read on main, record for record. It
+  fails if the read's record is taken as the publication again.
+- `workspaceActivityReadBack.test.ts`, "keeps what a record's read brings through Keep local history turning off while
+  the list is on its way": the switch cuts the list short after its first piece. The read is finished on main from this
+  run's store, and the thread keeps its 502 records.
 - `tests/unit/main/workspaceStoredActivity.test.ts` runs its cases with the read on main and on the worker, as before.
   On the worker, the case where a changed list reads a stored thread back now counts no read on main.
 
@@ -70,6 +79,10 @@ merged record with the one read. Every other scenario of the benchmark sends the
 
 Not measured: the worker's own share. It rebuilds the few records that changed rather than 2,000, and its store compares
 the same.
+
+A subagent record still crosses on the first save, and on every save of a changed list, as before. The save keeps only
+its classification, and `retainedActivities` makes that again for each list it is handed, so it is never the record the
+worker holds. Each is a few hundred bytes.
 
 Still on main, as #1645 lists them: the adapters' handoff, Watcher's recent activity and a start whose subagent words have
 not moved. Without a worker, as under the test runner and in the benchmark's default run, nothing changes.

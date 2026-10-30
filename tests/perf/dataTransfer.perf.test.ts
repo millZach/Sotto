@@ -103,9 +103,10 @@ const nativePost = ThreadStoreWriterOnWorker.prototype.post
 const nativeStringify = JSON.stringify
 const nativeClone = globalThis.structuredClone
 let depth = 0
-const handle = StoreWorker.prototype as unknown as { wire(this: unknown, write: unknown, preserved: () => readonly string[]): unknown; list(this: unknown, entry: unknown): unknown }
+const handle = StoreWorker.prototype as unknown as { wire(this: unknown, write: unknown, preserved: () => readonly string[]): unknown }
 const wire = handle.wire
-const wireContext: { sent: Map<string, unknown>; nextVersion: number; list(entry: unknown): unknown } = { sent: new Map(), nextVersion: 1, list(entry) { return handle.list.call(this, entry) } }
+/** Writing on main, the handle the wire is built on: what it remembers sending, with the handle's own methods. */
+const wireContext: unknown = Object.assign(Object.create(StoreWorker.prototype) as object, { sent: new Map(), bases: new Map(), nextVersion: 1 })
 
 /** Calls, real milliseconds and a size of what each counted method returned or read, by name. */
 const COUNTED: [object, string, string, ((result: unknown, args: unknown[]) => number)?][] = [
