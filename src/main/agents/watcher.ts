@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
+import { isDeepStrictEqual } from 'node:util'
 import { capabilitiesForThread, isThreadProviderConnected, lastUserMessageIdOf, PROVIDER_LABELS,
   type AgentCommand, type AgentDelivery, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentThread, type HandoverCounts } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
@@ -110,6 +111,19 @@ interface RoomReceipts {
   readonly pending: readonly WatcherOperation[]
 }
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex')
+/**
+ * Sets `field` of `target` to `value` only when it holds something else. A change tried against Watcher's frozen record
+ * (`changesRecord`) writes this way, so one that would change nothing writes nothing.
+ */
+function setIfChanged<T extends object, K extends keyof T>(target: T, field: K, value: T[K]): void {
+  if (!isDeepStrictEqual(target[field], value)) target[field] = value
+}
+/**
+ * Whether a write to a frozen object throws in this module, as it does in strict code, which both builds make it.
+ * `changesRecord` counts on it; were this module ever built sloppy, such a write would pass silently, so it tries each
+ * change on a copy instead.
+ */
+const FROZEN_WRITES_THROW = (() => { try { (Object.freeze({ probe: 0 }) as { probe: number }).probe = 1; return false } catch { return true } })()
 const nativeHead = (thread: AgentThread) => lastUserMessageIdOf(thread) ?? thread.summary?.lastUser?.id ?? null
 type PromptTurn = NonNullable<WatcherRecord['promptTurns']>[number]
 /** A thread of one host snapshot by its ID, the first a search of its list finds. */
@@ -1682,7 +1696,7 @@ export class WatcherService implements WatcherControlHooks {
     let latest = record.promptTurns?.findLast(turn => key(turn.watcher) === key(watcher))
     if (latest) {
       // Native IDs and heads are observations. Only an actual Sotto Send may open another prompt budget.
-      if (nativeTurnId && nativeTurnId !== latest.previousNativeTurnId) latest.nativeTurnId = nativeTurnId
+      if (nativeTurnId && nativeTurnId !== latest.previousNativeTurnId) setIfChanged(latest, 'nativeTurnId', nativeTurnId)
       return latest
     }
     latest = { id: randomUUID(), watcher, createdAt: now(), ...(nativeTurnId ? { nativeTurnId } : {}), ...(nativeHead(thread) ? { rootUserMessageId: nativeHead(thread)! } : {}) }
@@ -2521,7 +2535,7 @@ export class WatcherService implements WatcherControlHooks {
         state: 'participating', generation: watch.generation, promptCount: 0 }
       scope.participants.push(participant)
     }
-    participant.automationStopped = true
+    setIfChanged(participant, 'automationStopped', true)
   }
 
   async recover(): Promise<void> {
@@ -4764,16 +4778,17 @@ ${operation.draftId}`)
     // A read started before the control reply can arrive afterward. Definitive outcomes cannot become pending again.
     if ((own.deliveryState === 'accepted' || own.deliveryState === 'failed') && receipt.deliveryState !== own.deliveryState) return
     const wasFailed = own.deliveryState === 'failed'
-    if (own.deliveryState !== 'accepted') own.deliveryState = receipt.deliveryState
+    // Each field is written only when it differs, so a receipt the record already holds writes nothing (#1781).
+    if (own.deliveryState !== 'accepted') setIfChanged(own, 'deliveryState', receipt.deliveryState)
     if (own.deliveryState === 'accepted') delete own.refusalCode
-    else if (receipt.refusalCode) own.refusalCode = receipt.refusalCode
-    if (receipt.commandId) own.commandId = receipt.commandId
-    if (receipt.itemId) own.itemId = receipt.itemId
-    if (receipt.messageId) own.messageId = receipt.messageId
+    else if (receipt.refusalCode) setIfChanged(own, 'refusalCode', receipt.refusalCode)
+    if (receipt.commandId) setIfChanged(own, 'commandId', receipt.commandId)
+    if (receipt.itemId) setIfChanged(own, 'itemId', receipt.itemId)
+    if (receipt.messageId) setIfChanged(own, 'messageId', receipt.messageId)
     if ((own.action === 'stop' || own.action === 'settle') && own.deliveryState === 'accepted') this.fenceStandingTurn(record, own.target)
-    if (receipt.creationUncertain) own.creationUncertain = true
+    if (receipt.creationUncertain) setIfChanged(own, 'creationUncertain', true)
     else delete own.creationUncertain
-    own.updatedAt = receipt.updatedAt
+    setIfChanged(own, 'updatedAt', receipt.updatedAt)
     if (!wasFailed && own.deliveryState === 'failed') this.refundPrompt(record, own, own.refusalCode ?? 'PROVIDER_UNAVAILABLE')
   }
   private readonly remotePending = new Map<string, boolean>()
@@ -4865,8 +4880,8 @@ ${operation.draftId}`)
           for (const watch of projection.standingWatches ?? []) {
             const own = record.watches?.find(item => item.id === watch.id && key(item.target) === key(watch.target))
             if (!own || watch.target.hostId !== host.hostId || watch.generation < own.generation) continue
-            own.generation = watch.generation; own.pausedByUserMessageId = watch.pausedByUserMessageId ?? null
-            own.lastUserMessageId = watch.lastUserMessageId
+            setIfChanged(own, 'generation', watch.generation); setIfChanged(own, 'pausedByUserMessageId', watch.pausedByUserMessageId ?? null)
+            setIfChanged(own, 'lastUserMessageId', watch.lastUserMessageId)
           }
           for (const [id, receipt] of exact) {
             const own = record.operations.find(item => item.id === id)!
@@ -4887,11 +4902,11 @@ ${operation.draftId}`)
               const revived = own.state === 'taken-over' && participant.state === 'participating' && participant.generation > own.generation
                 && !own.automationStopped && Boolean(record.watches?.some(watch => key(watch.target) === key(participant.target)))
               if (participant.generation < own.generation || own.state !== 'participating' && !revived) continue
-              own.generation = participant.generation; own.state = participant.state
+              setIfChanged(own, 'generation', participant.generation); setIfChanged(own, 'state', participant.state)
               if (revived) delete own.takeover
-              if (participant.automationStopped) own.automationStopped = true
-              if (participant.takeover) own.takeover = participant.takeover
-              if (participant.lastUserMessageId !== undefined) own.lastUserMessageId = participant.lastUserMessageId
+              if (participant.automationStopped) setIfChanged(own, 'automationStopped', true)
+              if (participant.takeover) setIfChanged(own, 'takeover', participant.takeover)
+              if (participant.lastUserMessageId !== undefined) setIfChanged(own, 'lastUserMessageId', participant.lastUserMessageId)
             }
           }
           for (const receipt of projection.operations) {
@@ -4901,7 +4916,7 @@ ${operation.draftId}`)
             if (!own) continue
             this.copyRemoteReceipt(record, own, receipt)
           }
-          record.reservations = record.reservations.filter(reservation => {
+          const reservations = record.reservations.filter(reservation => {
             if (reservation.target.hostId !== host.hostId) return true
             const operations = record.operations.filter(item => key(item.target) === key(reservation.target))
             if (operations.some(item => ['queued', 'dispatching', 'uncertain'].includes(item.deliveryState))) return true
@@ -4914,9 +4929,9 @@ ${operation.draftId}`)
               && operations.some(item => item.action === 'start' && item.deliveryState === 'accepted')) return true
             return thread.status === 'running' || thread.lastTurn?.status === 'running' || Boolean(thread.requests.length || thread.backgroundWork?.length || thread.monitoring?.length)
           })
+          if (reservations.length !== record.reservations.length) record.reservations = reservations
         }
-        const before = this.view(), next = structuredClone(before); apply(next)
-        if (digest(before) !== digest(next)) await this.options.control.updateWatcher(apply)
+        if (this.changesRecord(apply)) await this.options.control.updateWatcher(apply)
         for (const [target, progress] of this.remoteProgress) if (progress.hostId === host.hostId) this.remoteProgress.delete(target)
         const targets = new Set([...projection.requests.flatMap(request => request.participants.map(item => key(item.target))),
           ...(this.view().watches ?? []).filter(watch => watch.target.hostId === host.hostId).map(watch => key(watch.target))])
@@ -4934,10 +4949,24 @@ ${operation.draftId}`)
         this.recoveryNotice = 'A paired host could not be reconciled. Its unconfirmed starts and sends are kept until it is. Other hosts continue to refresh.'
       }
     }
-    const beforeObservation = digest(this.view())
+    // A change that leaves the record as it was keeps the very record (`mutateWatcher`), so another one is a change to save.
+    const beforeObservation = this.view()
     this.observe(this.options.control.watcherSnapshot(), new Set())
-    if (beforeObservation !== digest(this.view())) await this.options.control.updateWatcher(() => undefined)
+    if (beforeObservation !== this.view()) await this.options.control.updateWatcher(() => undefined)
     this.publish()
+  }
+  /**
+   * Whether `change` would change Watcher's record, found without copying it (#1781). The record as read is frozen, so
+   * `change` is tried against it: a write it would make throws, and a change that writes only what differs (`setIfChanged`) writes
+   * nothing when it would change nothing. A record that is not frozen, or a build where a frozen write passes silently,
+   * copies the record to try it on.
+   */
+  private changesRecord(change: (record: WatcherRecord) => void): boolean {
+    const record = this.view()
+    if (!FROZEN_WRITES_THROW || !Object.isFrozen(record)) { const next = structuredClone(record) as WatcherRecord; change(next); return !isDeepStrictEqual(record, next) }
+    try { change(record as WatcherRecord); return false }
+    // A write to the frozen record is a change. Any other error `change` meets, it meets again when the change is made.
+    catch (error) { if (error instanceof TypeError) return true; throw error }
   }
   /**
    * The Watcher conversation, current or in Watcher history, whose request each operation belongs to. Built once for a
