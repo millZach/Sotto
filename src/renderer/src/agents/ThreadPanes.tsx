@@ -64,9 +64,11 @@ function chromeKey(chrome: PaneChrome): string {
  * again because the pane area made its chrome afresh (#993). Its presses run the newest chrome made for that pane, so a
  * kept one never acts on an older arrangement.
  */
-function useStableChrome(): (threadId: string, chrome: PaneChrome) => PaneChrome {
+function useStableChrome(paneIds: readonly string[]): (threadId: string, chrome: PaneChrome) => PaneChrome {
   const kept = useRef(new Map<string, { readonly key: string; readonly chrome: PaneChrome }>())
   const latest = useRef(new Map<string, PaneChrome>())
+  // A pane that has closed lets its chrome go, with the arrangement its presses closed over.
+  for (const map of [kept.current, latest.current]) for (const threadId of map.keys()) if (!paneIds.includes(threadId)) map.delete(threadId)
   return (threadId, chrome) => {
     latest.current.set(threadId, chrome)
     if (chrome === NO_CHROME) return chrome
@@ -308,7 +310,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
   const moveStart = useRef<number | undefined>(undefined)
   const [announcement, setAnnouncement] = useState('')
   /** Scroll offsets and keyboard focus from before a move; React moves pane nodes to keep reading order, and a moved node loses both. */
-  const stableChrome = useStableChrome()
+  const stableChrome = useStableChrome(paneIds)
   const preserved = useRef<{ readonly offsets: readonly (readonly [Element, number, number])[]; readonly active: Element | null } | null>(null)
   const split = isSplit(layout) && paneIds.length >= 2
   const fits = fitsArea(layout, width, height)

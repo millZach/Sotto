@@ -1,11 +1,12 @@
 import React from 'react'
 import { act, render, screen } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
-import type { AgentState, AgentThread } from '../../../../src/shared/agents'
+import type { AgentState } from '../../../../src/shared/agents'
 import { useAgents } from '../../../../src/renderer/src/agents/AgentContext'
 import { ThreadsView } from '../../../../src/renderer/src/agents/ThreadsView'
 import { SplitLayoutStore, openBeside } from '../../../../src/renderer/src/agents/splitLayout'
 import { NOW, connection, stateFixture } from '../../../fixtures/renderer/threadsViewHarness'
+import { withThread } from '../../../fixtures/agentState'
 
 vi.mock('../../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
@@ -15,11 +16,6 @@ vi.mock('../../../../src/renderer/src/agents/ThreadPane', async importOriginal =
   const actual = await importOriginal<typeof import('../../../../src/renderer/src/agents/ThreadPane')>()
   return { ...actual, ThreadPane: (props: Parameters<typeof actual.ThreadPane>[0]) => { drawn.push(props.row.thread.id); return actual.ThreadPane(props) } }
 })
-
-/** The state as main publishes it after one thread's record changed: a new state, host and list, the rest shared. */
-function withThread(state: AgentState, id: string, change: (thread: AgentThread) => AgentThread): AgentState {
-  return { ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.id === id ? change(thread) : thread) } }
-}
 
 it('draws neither pane when a thread not on screen streams, and only its own pane when a shown thread does (#993)', () => {
   let state = stateFixture()

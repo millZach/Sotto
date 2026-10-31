@@ -1,12 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { AgentState, AgentThread } from '../../../../src/shared/agents'
+import type { AgentThread } from '../../../../src/shared/agents'
 import { relatedThreadIds, samePaneWorld } from '../../../../src/renderer/src/agents/paneWorld'
-import { threadsStateFixture } from '../../../fixtures/agentState'
-
-/** The state as main publishes it after one thread's record changed: a new state, host and list, the rest shared. */
-function withThread(state: AgentState, id: string, change: (thread: AgentThread) => AgentThread): AgentState {
-  return { ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.id === id ? change(thread) : thread) } }
-}
+import { threadsStateFixture, withThread } from '../../../fixtures/agentState'
 
 const streamed = (thread: AgentThread): AgentThread => ({ ...thread, messages: [...thread.messages], summary: thread.summary, updatedAt: thread.updatedAt })
 
@@ -52,6 +47,21 @@ describe('samePaneWorld (#993)', () => {
     // Activity that leaves the order alone keeps the pane as it was.
     const stillSecond = withThread(base, 'release-notes', thread => ({ ...thread, updatedAt: '2030-10-01T12:00:00.000Z' }))
     expect(samePaneWorld(base, stillSecond, 'visual-gate')).toBe(true)
+  })
+
+  it('draws the pane again when another project\'s activity moves the greeting\'s recent projects', () => {
+    // footer-links (sotto-site) is newer than weekly-note (notes); notes overtaking it reorders visual-gate's greeting menu.
+    const overtaken = withThread(state, 'weekly-note', thread => ({ ...thread, updatedAt: '2026-07-12T19:40:00.000Z' }))
+    expect(samePaneWorld(state, overtaken, 'visual-gate')).toBe(false)
+  })
+
+  it('draws the pane again when activity changes which branch names a shared worktree, its choice unchanged', () => {
+    // Two threads in the project hold the same folder under different branch names; the newer one names the choice.
+    const holding = (thread: AgentThread, branch: string, updatedAt: string): AgentThread => ({ ...thread, updatedAt, worktree: { mode: 'independent', status: 'ready', path: '/w/shared', branch } })
+    let base = withThread(state, 'release-notes', thread => holding(thread, 'sotto/release', '2030-10-01T00:00:00.000Z'))
+    base = withThread(base, 'grok-previews', thread => holding(thread, 'sotto/grok', '2030-10-02T00:00:00.000Z'))
+    const renamed = withThread(base, 'release-notes', thread => ({ ...thread, updatedAt: '2030-10-03T00:00:00.000Z' }))
+    expect(samePaneWorld(base, renamed, 'visual-gate')).toBe(false)
   })
 })
 

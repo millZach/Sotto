@@ -1,4 +1,5 @@
 import React, { memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useResponseStreaming } from './responseStreaming'
 import { useMark } from '../components/marks'
 import { createPortal, flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
@@ -8,7 +9,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentActivity } from '../../../shared/agentActivity'
 import { hostForThread, isThreadBusy, isVisualMessage, type AgentMessage, type AgentState, type ThreadContinuedIn } from '../../../shared/agents'
 import { Button } from '../components/Button'
-import { useAgents, type AgentConnection } from './AgentContext'
+import type { AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
 import { useWatchActions } from '../watcher/watcherRoom'
 import { watchAfterSend } from '../watcher/watchOnSend'
@@ -705,7 +706,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const quoting = useOwlFeature('reply-quote')
   // A tip under the working words (ADR-0159; Owl only).
   const tipLine = useTipLine({ row, state, store, watcher, onFocusPrompt: onQuoted })
-  const streamText = useAgents().responseStreaming !== 'complete'
+  const streamText = useResponseStreaming() !== 'complete'
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const jump = useRef<HTMLButtonElement>(null)
