@@ -298,7 +298,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
     {agents.error && app ? <Button variant="ghost" onClick={() => app.actions.navigate('settings', 'settings-providers')}><Trans>Open Settings</Trans></Button> : null}
     <PageWindowControls />
   </div>
-  const grid = paneGridActions({ layout, focusedId, paneIds, layoutStore, exists: id => rowsById.has(id), open: openThread, focus: focusPane })
+  const grid = paneGridActions({ layout, focusedId, layoutStore, exists: id => rowsById.has(id), open: openThread, focus: focusPane })
   gridRef.current = grid
 
   const localDraftPresent = focusedId !== null && hasDraftContent(store.draft(focusedId))
@@ -321,7 +321,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
       chrome={chrome} tools={paneTools && focused} terminal={paneTerminal?.(slot) ?? false} />
   }
 
-  return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} data-room-backdrop="" onKeyDown={grid.onKeyDown} {...marks}>
+  return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} data-room-backdrop="" {...marks}>
     {chooser !== null && <NewThreadDialog state={state} command={command}
       onClose={() => setChooser(null)}
       onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
@@ -330,7 +330,8 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
       currentThreadId={focusedId} listedThreadId={listedThreadId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
       newThreadError={shownWords(newThreadError)} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} shortcutsLive
       restartThreads={published?.host.threads} />
-    <section className="thread-workspace" data-room-backdrop="" aria-label={t`Thread workspace`}>
+    {/* A region for F6 only while it holds no pane: the empty page's New thread (ADR-0164). */}
+    <section className="thread-workspace" data-room-backdrop="" data-region="room" aria-label={t`Thread workspace`}>
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}
       {updateAll ? null : <HostUpdateControl />}
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}

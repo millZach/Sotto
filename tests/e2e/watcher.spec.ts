@@ -2159,13 +2159,18 @@ test.describe("Watcher's room on the built app", () => {
         await expect(rowOwl).toHaveAttribute('aria-pressed', 'false')
         await holdOwlSky(page)
         await captureWindow(launched.app, resolve(permissionEvidence, `threads-row-owl-${appearance}-1280x800.png`))
-        // From the keyboard: Tab from the row goes through its actions, Rename and Regenerate title, to the owl.
+        // From the keyboard: the row's actions are its menu's (ADR-0164). Shift+F10 opens it, and Watch is a row of it,
+        // ticked while Watcher watches; Enter presses it and the focus goes back to the row.
         await threads.getByRole('button', { name: 'Weekly note', exact: true }).focus()
-        for (const name of ['Rename Weekly note', 'Regenerate title for Weekly note', 'Watch Weekly note']) {
-          await page.keyboard.press('Tab')
-          expect(await focusedName(page)).toBe(name)
-        }
+        await page.keyboard.press('Shift+F10')
+        const rowMenu = threads.getByRole('menu', { name: 'Actions for Weekly note' })
+        await expect(rowMenu).toBeVisible()
+        const watchRow = rowMenu.getByRole('menuitemcheckbox', { name: 'Watch' })
+        await expect(watchRow).toHaveAttribute('aria-checked', 'false')
+        while (await page.evaluate(() => document.activeElement?.textContent?.trim()) !== 'Watch') await page.keyboard.press('ArrowDown')
         await page.keyboard.press('Enter')
+        await expect(rowMenu).toHaveCount(0)
+        expect(await focusedName(page)).toBe('Weekly note')
         await expect(watch).toHaveAttribute('aria-pressed', 'true')
         await watch.click()
         await expect(watch).toHaveAttribute('aria-pressed', 'false')

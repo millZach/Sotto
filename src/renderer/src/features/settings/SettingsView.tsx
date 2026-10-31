@@ -565,7 +565,8 @@ export function SettingsView({
     <div className="management-view settings-view">
       <SettingsLayout>
         {/* The rail wears the Threads sidebar's frame: its top row above the sections, its foot below them. */}
-        <aside className={platform === 'darwin' ? 'settings-sidebar thread-nav thread-nav--mac' : 'settings-sidebar thread-nav'}>
+        {/* Settings' two regions for F6 (ADR-0164): its column, entered at the open page's tab, and the page itself. */}
+        <aside className={platform === 'darwin' ? 'settings-sidebar thread-nav thread-nav--mac' : 'settings-sidebar thread-nav'} data-region="sidebar">
           <SidebarTop platform={platform} />
           <div className="settings-sidebar__body">
           <h1 ref={headingRef} tabIndex={-1}><Trans comment="The Settings page's heading, at the top of its rail.">Settings</Trans></h1>
@@ -574,7 +575,7 @@ export function SettingsView({
             onEnterResults={() => findListRef.current?.querySelector('button')?.focus()} />
           {findQuery.trim() ? <SettingsFindResults query={findQuery} index={findIndex} pageOf={pageLabel} onOpen={openFound} listRef={findListRef}
             onLeave={clear => { if (clear) setFindQuery(''); findInputRef.current?.focus() }} /> : null}
-          <nav className="settings-subnav" aria-label={t`Settings sections`} role="tablist" aria-orientation="vertical" hidden={findQuery.trim() !== ''}>
+          <nav className="settings-subnav" aria-label={t`Settings sections`} role="tablist" aria-orientation="vertical" hidden={findQuery.trim() !== ''} data-region-entry="1">
             {sections.map((section, index) => {
               const Icon = PAGE_ICONS[section.id]
               return <button
@@ -607,7 +608,7 @@ export function SettingsView({
           </div>
           <SidebarFoot />
         </aside>
-        <div className="settings-detail">
+        <div className="settings-detail" data-region="room">
           {notice === null ? null : <div className="settings-feedback"><p className="settings-notice tt-paragraph" role={notice.error ? 'alert' : 'status'}>{shownWords(notice.text)}</p></div>}
           <div className="settings-scroll" ref={scrollRef}>
             <div className="settings-form">

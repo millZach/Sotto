@@ -44,6 +44,7 @@ import { MoveThreadsSheetHost } from './watcher/MoveThreads'
 import { ClientUpdateCard } from './agents/ClientUpdateCard'
 import { UpdateAllCard } from './features/updates/UpdateAllCard'
 import { PageSidebar } from './agents/PageSidebar'
+import { useRegionCycle } from './components/regionCycle'
 import { SidebarChromeProvider } from './agents/SidebarFrame'
 import { ThreadWorkspace } from './agents/ThreadWorkspace'
 import { E2E_THREADS_NOW } from '../../shared/e2e'
@@ -265,6 +266,8 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
 
   // Ctrl+1 to Ctrl+5 (⌘ on a Mac) by default: Dictate, Watcher, Threads, Usage and Settings (ADR-0158).
   usePageShortcuts({ settings: app.settings, platform: app.platform, navigation: app.navigation, navigate: app.actions.navigate })
+  // F6 and Shift+F6 between the sidebar, each pane and its composer, or the room (ADR-0164).
+  useRegionCycle({ settings: app.settings, platform: app.platform })
 
   // Turning dictation off while the Dictate room is open moves to Threads, so the switch lights a tab.
   useEffect(() => { if (!dictationOn && app.navigation === 'home') app.actions.navigate('threads') }, [app.actions, app.navigation, dictationOn])

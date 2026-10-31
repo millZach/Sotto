@@ -3220,6 +3220,14 @@ msgid "Motion"
 msgstr "Motion"
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Move between sidebar, pane and composer"
+msgstr "Move between sidebar, pane and composer"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Move in the thread list"
+msgstr "Move in the thread list"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Move to the next thread in the sidebar’s order."
 msgstr "Move to the next thread in the sidebar’s order."
 
@@ -3574,6 +3582,14 @@ msgstr "Omarchy setup"
 msgid "On"
 msgstr "On"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "On a row in the thread list: Open, Open beside, Rename, Regenerate title, Watch and Settle. The menu key and a right-click open it too."
+msgstr "On a row in the thread list: Open, Open beside, Rename, Regenerate title, Watch and Settle. The menu key and a right-click open it too."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "On a row in the thread list."
+msgstr "On a row in the thread list."
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "On for {who}, so the host starts before anyone signs in to {name} and keeps running after they sign out."
 msgstr "On for {who}, so the host starts before anyone signs in to {name} and keeps running after they sign out."
@@ -3613,6 +3629,10 @@ msgstr "One word or name per line, so AI cleanup spells them your way. 4,000 cha
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
 msgstr "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Open a thread’s menu"
+msgstr "Open a thread’s menu"
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 #: src/renderer/src/features/settings/HostDialog.tsx
@@ -4289,6 +4309,10 @@ msgstr "Rename"
 msgid "Rename {current}"
 msgstr "Rename {current}"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Rename the thread"
+msgstr "Rename the thread"
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Replace key"
 msgstr "Replace key"
@@ -4641,6 +4665,10 @@ msgstr "Setup stopped."
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Shell sandbox"
 msgstr "Shell sandbox"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Shift+F6 goes back. In a split it goes round every pane. A terminal keeps F6; Ctrl+Tab leaves it."
+msgstr "Shift+F6 goes back. In a split it goes round every pane. A terminal keeps F6; Ctrl+Tab leaves it."
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -5876,6 +5904,10 @@ msgstr "The thread {thread} did not start working. Nothing was changed on {host}
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 msgid "The thread <0>{title}</0> goes in the <1>{project}</1> project."
 msgstr "The thread <0>{title}</0> goes in the <1>{project}</1> project."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "The thread list is one Tab stop. Up and Down move through it, Home and End go to its ends, Right and Left open and close a folder, and Enter opens the thread."
+msgstr "The thread list is one Tab stop. Up and Down move through it, Home and End go to its ends, Right and Left open and close a folder, and Enter opens the thread."
 
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 msgid "The thread runs on this computer. Its provider receives the brief and what the agent's commands print on {hostName}. You answer each command it wants to run."

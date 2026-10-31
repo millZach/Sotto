@@ -100,7 +100,8 @@ test('two threads split the workspace and stay independent through resize, narro
     await fillPrompt(footerPrompt, 'Next: compare the mobile footer.')
     await capture(page, 'two-panes')
 
-    // Keyboard resize, then F6 between panes.
+    // Keyboard resize, then F6 between panes: from a pane's composer to the next pane, at its transcript, then its
+    // composer (ADR-0164).
     await divider.focus()
     await page.keyboard.press('ArrowRight')
     await page.keyboard.press('ArrowRight')
@@ -108,9 +109,11 @@ test('two threads split the workspace and stay independent through resize, narro
     await page.screenshot({ path: join(evidence, 'split-divider-focus-dark.png'), animations: 'disabled' })
     await footerPrompt.focus()
     await page.keyboard.press('F6')
-    await expect(previewsPrompt).toBeFocused()
+    await expect(previews.getByRole('log', { name: 'Thread transcript' })).toBeFocused()
     await expect(previews).toHaveAttribute('data-focused')
     await expect.poll(async () => (await agentState(page)).activeThreadId).toBe(key('grok-previews'))
+    await page.keyboard.press('F6')
+    await expect(previewsPrompt).toBeFocused()
 
     // The shipped minimum width shows one pane at a time and keeps the arrangement for later.
     await size(launched, 820, 800)

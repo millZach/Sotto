@@ -479,7 +479,8 @@ export function ToolsPanel({ focusedThreadId, state, command, files: filesBridge
 
   // The rail comes first in the reading order (surfaces, then the panel's own buttons), then the surface's line
   // of chrome, its work and the working-copy footer; CSS draws the rail on the panel's outer edge.
-  return <>{player}<aside ref={aside} id={TOOLS_PANEL_ID} className="tools-panel" aria-label={t({ message: 'Tools', comment: 'The panel beside a thread that holds its browser, terminal, files, changes and agents.' })} data-mode={overlay ? 'overlay' : 'docked'} data-expanded={chrome.expanded || undefined}
+  // A region F6 visits after the panes while it is open (ADR-0164).
+  return <>{player}<aside ref={aside} id={TOOLS_PANEL_ID} className="tools-panel" data-region="tools" aria-label={t({ message: 'Tools', comment: 'The panel beside a thread that holds its browser, terminal, files, changes and agents.' })} data-mode={overlay ? 'overlay' : 'docked'} data-expanded={chrome.expanded || undefined}
     style={{ '--tools-width': `${Math.round(width)}px` } as React.CSSProperties} onKeyDown={onKeyDown}>
     <div className="tools-panel__sheet">
       <div className="tools-panel__resize" role="separator" aria-orientation="vertical" aria-label={t`Resize tools panel`} tabIndex={chrome.expanded ? -1 : 0}

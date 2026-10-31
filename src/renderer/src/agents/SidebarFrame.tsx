@@ -250,7 +250,8 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
   const sky = useReleaseTrack() === 'owl' && !size.collapsed
   const railOn = useOwlFeature('sidebar-rail')
   const watcherOn = useWatcherEnabled()
-  return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
+  // A region F6 moves between (ADR-0164): it enters at the thread list's stop, or the rail's, or else the search field.
+  return <aside className={mac ? 'thread-nav thread-nav--mac' : 'thread-nav'} aria-label={label} data-region="sidebar" data-mode="threads" data-collapsed={size.collapsed || undefined} data-resizing={resizing || undefined}
     data-sky={sky || undefined} style={{ width: size.collapsed ? (mac ? 80 : 52) : size.width }}>
     <div className="thread-nav__expanded" hidden={size.collapsed}>
     {sky ? <OwlSky /> : null}
@@ -261,7 +262,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
       <button ref={size.collapsed ? undefined : toggle} type="button" className="thread-nav__action tt-focusable thread-nav__collapse" aria-label={t`Collapse sidebar`} title={t`Collapse sidebar`} onClick={() => size.collapse(true)}><PanelLeftClose size={16} aria-hidden="true" /></button>
     </SidebarTop>
     <label className="threads-search"><span className="tt-visually-hidden">{searchPlaceholder}</span><Search size={15} aria-hidden="true" />
-      <input className="tt-input tt-focusable" type="search" value={query} placeholder={searchPlaceholder} onChange={event => onQuery(event.currentTarget.value)}
+      <input className="tt-input tt-focusable" type="search" data-region-entry="2" value={query} placeholder={searchPlaceholder} onChange={event => onQuery(event.currentTarget.value)}
         onKeyDown={event => { if (event.key === 'Escape' && query) { event.preventDefault(); onQuery('') } }} />
       {query ? <button type="button" className="threads-search__clear tt-focusable" aria-label={t`Clear search`} title={t`Clear search`} onClick={() => onQuery('')}><X size={14} aria-hidden="true" /></button> : null}
     </label>
@@ -283,13 +284,16 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
   </aside>
 }
 
-/** Settle project, or Restore project once settled, on a folder head in the sidebar. */
+/**
+ * Settle project, or Restore project once settled, on a folder head in the sidebar. The pointer's: the folder's menu
+ * says the same in words for the keyboard (ADR-0164), so it is out of the Tab order.
+ */
 export function ProjectSettleAction({ projectId, title, settled, disabled, command }: {
   readonly projectId: string; readonly title: string; readonly settled: boolean; readonly disabled: boolean
   readonly command: AgentConnection['command']
 }): ReactNode {
   const { t } = useLingui()
   return settled
-    ? <button type="button" className="thread-nav__action tt-focusable" aria-label={t`Restore project ${title}`} title={t`Restore project`} disabled={disabled} onClick={() => void command({ type: 'restore-project', projectId })}><ArchiveRestore size={16} aria-hidden="true" /></button>
-    : <button type="button" className="thread-nav__action tt-focusable" aria-label={t`Settle project ${title}`} title={t`Settle project`} disabled={disabled} onClick={() => void command({ type: 'settle-project', projectId })}><Archive size={16} aria-hidden="true" /></button>
+    ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Restore project ${title}`} title={t`Restore project`} disabled={disabled} onClick={() => void command({ type: 'restore-project', projectId })}><ArchiveRestore size={16} aria-hidden="true" /></button>
+    : <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Settle project ${title}`} title={t`Settle project`} disabled={disabled} onClick={() => void command({ type: 'settle-project', projectId })}><Archive size={16} aria-hidden="true" /></button>
 }

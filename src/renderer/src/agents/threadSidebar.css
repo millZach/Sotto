@@ -91,6 +91,10 @@
 /* The request card inside keeps its controls and drops its own frame: the popped card is the frame. */
 .needs-you-card .agent-request { margin-top: 8px; padding: 0; border: 0; background: transparent; }
 .needs-you-card__foot { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 6px; border-top: 2px solid var(--tt-card-inset); }
+/* The thread list (ADR-0164) is a box only for its keys: its folders and the Settled shelf lay out as they always have. */
+.thread-nav__list { display: contents; }
+/* A row's or a folder's menu: the pane menu's look, shown in the top layer at the row or at the pointer. */
+.pane-menu__list.thread-row-menu { position: fixed; inset: auto; z-index: 60; box-sizing: border-box; margin: 0; max-height: calc(100vh - 16px); overflow-y: auto; color: var(--tt-text); }
 .thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 4px 4px 12px; }
 .thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; letter-spacing: .02em; }
