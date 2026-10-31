@@ -1,4 +1,4 @@
-/* After a Settle the user pressed (ADR-0165, Zach's pick B of #1826): the held gap in the thread list, and the settle
+/* After a Settle the user pressed (ADR-0167, Zach's pick B of #1826): the held gap in the thread list, and the settle
    toast at the sidebar's foot with Undo. */
 
 /* The held gap: the settled row's height of nothing, until the pointer leaves the list. Closing, it folds away; under

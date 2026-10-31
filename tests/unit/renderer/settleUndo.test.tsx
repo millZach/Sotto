@@ -18,7 +18,7 @@ vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
 }))
 
 /**
- * After a Settle the user pressed (ADR-0165, Zach's pick B of #1826): the row's place stays empty while the pointer stays
+ * After a Settle the user pressed (ADR-0167, Zach's pick B of #1826): the row's place stays empty while the pointer stays
  * over the list, and a toast at the sidebar's foot offers Undo, which is Restore. The nested desktop proves the pointer
  * itself in tests/e2e/settle-undo.spec.ts; these hold the rules a browser is not needed for.
  */

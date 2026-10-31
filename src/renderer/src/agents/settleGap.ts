@@ -12,7 +12,7 @@ export const GAP_CHECK_MS = 3_000
 const NO_GAPS: ReadonlyMap<string, HeldGap> = new Map()
 
 /**
- * The held gap (ADR-0165, Zach's pick B of #1826): a Settle pressed with the pointer leaves its row's place empty while
+ * The held gap (ADR-0167, Zach's pick B of #1826): a Settle pressed with the pointer leaves its row's place empty while
  * the pointer stays over the list, so the next row's Settle does not slide under a still pointer and a second click lands
  * on nothing. It is the pointer's protection alone: a Settle from the keyboard holds nothing, and the focus moves on as
  * the thread list moves it (ADR-0164). Every gap closes once the pointer leaves the list, or, should that leave go

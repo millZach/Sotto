@@ -1,6 +1,6 @@
 # A Settle the user presses holds its row's place and offers Undo
 
-October 30, 2026. The branch `feat/settle-undo-toast` from `main` at 7ba6a922a, closing #1826 (finding 8 of `docs/research/2026-10-29-ui-hillclimb-desktop.md`) with Zach's pick B, recorded in ADR-0165. Checked on forge in the owned nested Omarchy desktop, at 1600x1000 and the 820x560 minimum, in dark and light, and with reduced motion on.
+October 30, 2026. The branch `feat/settle-undo-toast` from `main` at 7ba6a922a, closing #1826 (finding 8 of `docs/research/2026-10-29-ui-hillclimb-desktop.md`) with Zach's pick B, recorded in ADR-0167. Checked on forge in the owned nested Omarchy desktop, at 1600x1000 and the 820x560 minimum, in dark and light, and with reduced motion on.
 
 ## What changed
 

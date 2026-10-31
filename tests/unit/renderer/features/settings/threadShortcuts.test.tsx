@@ -88,7 +88,7 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     expect(onUpdateSettings).not.toHaveBeenCalled()
   })
 
-  it('lists Ctrl+Z for Undo after a Settle among the fixed keys, and refuses it to every shortcut (ADR-0165)', async () => {
+  it('lists Ctrl+Z for Undo after a Settle among the fixed keys, and refuses it to every shortcut (ADR-0167)', async () => {
     const { onUpdateSettings, user } = setup()
     expect(screen.getByText('Undo a settle')).toBeVisible()
     await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Alt R' }))

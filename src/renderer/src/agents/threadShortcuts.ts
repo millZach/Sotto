@@ -8,7 +8,7 @@ import { chordClaimed, chordMatches, parseAccelerator, parseChord } from './bran
 export type ThreadShortcutSettings = Pick<AppSettings, 'threadShortcuts' | 'hotkey' | 'pressShortcuts' | 'holdShortcuts'>
 
 /**
- * Undo after a Settle (ADR-0165): Ctrl+Z, or Cmd+Z on a Mac, as everywhere an undo is offered. A fixed key, listed under
+ * Undo after a Settle (ADR-0167): Ctrl+Z, or Cmd+Z on a Mac, as everywhere an undo is offered. A fixed key, listed under
  * Settings › Keyboard's Fixed & elsewhere and refused to every thread shortcut.
  */
 export const SETTLE_UNDO_CHORD = 'mod+z'

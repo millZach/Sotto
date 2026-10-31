@@ -42,7 +42,7 @@ export { useAddProject } from './addProject'
 type Command = AgentConnection['command']
 type Section = 'open' | 'settled'
 type SettleThread = ReturnType<typeof useSettleThread>['settle']
-/** Settle from the list: a pointer's press over the list holds the row's place while the pointer stays (ADR-0165). */
+/** Settle from the list: a pointer's press over the list holds the row's place while the pointer stays (ADR-0167). */
 type ListSettle = (thread: Parameters<SettleThread>[0], project: Parameters<SettleThread>[1], row?: HTMLElement | null) => Promise<boolean>
 
 /**
@@ -329,7 +329,7 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   readonly liveClock: boolean
   readonly onNewThread: (projectId: string) => void; readonly command: Command
   readonly settle: ListSettle
-  /** The held gaps among this folder's rows (ADR-0165): settled rows whose places stay empty while the pointer stays. */
+  /** The held gaps among this folder's rows (ADR-0167): settled rows whose places stay empty while the pointer stays. */
   readonly gaps?: ReadonlyMap<string, HeldGap> | undefined
   /** Settling or restoring a whole project moves every thread of it at once, so it waits on the global lane. */
   readonly globalLaneBusy: boolean
@@ -578,7 +578,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const threadList = useRef<HTMLDivElement>(null)
   const listKeys = useRovingList(threadList, { tree: true })
   const railKeys = useRovingList(railNav, { tree: false })
-  // The held gap (ADR-0165): a row settled by a pointer over the list keeps its place empty until the pointer leaves.
+  // The held gap (ADR-0167): a row settled by a pointer over the list keeps its place empty until the pointer leaves.
   const { gaps, hold, drop } = useSettleGaps(threadList)
   const settleFromList = useCallback<ListSettle>(async (thread, project, row) => {
     const holding = row !== undefined && hold(thread.id, row)

@@ -232,7 +232,7 @@ export interface SidebarFrameProps {
   /** A line directly under the search, above the list: the Threads sidebar's Needs attention count. */
   readonly afterSearch?: ReactNode
   /**
-   * What stands just above the foot: the Threads sidebar's settle toast (ADR-0165). Open, it is in the column's own flow,
+   * What stands just above the foot: the Threads sidebar's settle toast (ADR-0167). Open, it is in the column's own flow,
    * so it covers no row; on the collapsed rail it stands beside the rail's foot.
    */
   readonly toast?: ReactNode

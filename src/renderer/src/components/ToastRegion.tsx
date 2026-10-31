@@ -10,7 +10,7 @@ export interface ToastRegionProps {
   readonly messages: readonly ToastMessage[]
   /**
    * Where the region stands: the window's corner, or in the Threads sidebar's own flow above its foot, where the settle
-   * toast stands (ADR-0165). Empty, the sidebar's takes no room.
+   * toast stands (ADR-0167). Empty, the sidebar's takes no room.
    */
   readonly placement?: 'corner' | 'sidebar'
 }

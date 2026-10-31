@@ -279,7 +279,7 @@ export function ReclaimWorktreeDialog({ facts, dirty, title, threadId, command, 
  * Settle a thread, then ask whether its own worktree should go with it (ADR-0041). The Settle press
  * settles at once, as it always has; the question is a separate one, answered by Keep folder or Escape.
  * With the on-settle rule turned on, a clean folder goes without the question and a dirty one still asks.
- * Every Settle the user presses comes through here, so each one offers its Undo at the sidebar's foot (ADR-0165): once
+ * Every Settle the user presses comes through here, so each one offers its Undo at the sidebar's foot (ADR-0167): once
  * the question is answered, and only while the folder stayed, since Restore cannot bring a removed one back whole.
  */
 export function useSettleThread(command: AgentConnection['command'], fallbackFocusRef?: React.RefObject<HTMLElement | null>) {

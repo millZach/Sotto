@@ -21,7 +21,7 @@ const typing = (target: EventTarget | null): boolean => target instanceof HTMLIn
 const LANDING_FRAMES = 12
 
 /**
- * The settle toast (ADR-0165, Zach's pick B of #1826) at the Threads sidebar's foot: "Settled <title>" with **Undo** for
+ * The settle toast (ADR-0167, Zach's pick B of #1826) at the Threads sidebar's foot: "Settled <title>" with **Undo** for
  * about six seconds after a Settle the user pressed. Undo is Restore, the press the Settled shelf and its shortcut make, so
  * the thread comes back where it stood with the delegated threads settled with it. Where the settle also removed the
  * thread's worktree folder it says so plainly and offers no Undo, since Restore cannot bring the folder back as it was.

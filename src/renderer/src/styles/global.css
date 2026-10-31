@@ -1561,7 +1561,7 @@ textarea.tt-input {
   color: var(--tt-text);
 }
 
-/* A toast's one action, such as the settle toast's Undo (ADR-0165): a text button in the accent's text colour, as Zach's
+/* A toast's one action, such as the settle toast's Undo (ADR-0167): a text button in the accent's text colour, as Zach's
    pick drew it, with no outline. */
 .tt-toast__action {
   flex: none;

@@ -8,7 +8,7 @@ import { ownedE2EProfile } from './support/e2eProfile'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { holdContentSize } from './support/sottoWindow'
 
-// After a Settle the user pressed (ADR-0165, Zach's pick B of #1826): the settled row's place stays empty while the pointer
+// After a Settle the user pressed (ADR-0167, Zach's pick B of #1826): the settled row's place stays empty while the pointer
 // stays over the list, so a second click lands on nothing rather than on the next row's Settle, and a toast at the sidebar's
 // foot offers Undo, which is Restore. Run after `npm run build`. Captures go to disposable run evidence;
 // `SOTTO_E2E_EVIDENCE=publish` writes artifacts/settle-undo.

@@ -156,7 +156,7 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
     if (sameThreadKeys(chord, 'mod+k', platform)) {
       return msg`Search transcripts already uses ${keys}. Pick other keys.`
     }
-    // Undo after a Settle (ADR-0165), and every text field's own undo.
+    // Undo after a Settle (ADR-0167), and every text field's own undo.
     if (sameThreadKeys(chord, SETTLE_UNDO_CHORD, platform)) {
       return msg`Undo already uses ${keys}. Pick other keys.`
     }

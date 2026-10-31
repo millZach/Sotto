@@ -606,7 +606,7 @@ function folder(id: string, project: AgentProject | undefined, rows: readonly Th
 const NOTHING_HELD: ReadonlyMap<string, string> = new Map()
 
 /**
- * The open folders with each held thread's row put back where it stood, for the held gap (ADR-0165): a Settle pressed with
+ * The open folders with each held thread's row put back where it stood, for the held gap (ADR-0167): a Settle pressed with
  * the pointer over the list leaves its row's place empty until the pointer leaves, so nothing slides under it. Settling
  * changes no row's activity, so a row put back by activity lands in its own place, and a folder the settle emptied, or
  * moved down by taking its latest thread, stands where it stood. A folder's counts stay those of its open rows. Only a

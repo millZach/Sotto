@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 
 /**
- * What the user's last Settle offers back, for the toast at the Threads sidebar's foot (ADR-0165, Zach's pick B of #1826):
+ * What the user's last Settle offers back, for the toast at the Threads sidebar's foot (ADR-0167, Zach's pick B of #1826):
  * Undo, while the settle can be taken back whole, or the plain words of one that removed the thread's worktree folder too.
  * Only a Settle the user pressed makes one: the row's, its menu's, the pane's ··· menu's or the Settle shortcut, which
  * all go through `useSettleThread`. Watcher's settles and Auto-settle merged threads make none. One at a time, for as long
@@ -24,7 +24,7 @@ export interface SettleOffer {
   readonly refusal?: string | undefined
 }
 
-/** How long the toast stands once shown: long enough to reach Undo, and no longer than the gap needs (ADR-0165). */
+/** How long the toast stands once shown: long enough to reach Undo, and no longer than the gap needs (ADR-0167). */
 export const SETTLE_UNDO_MS = 6_000
 /** A refused or unconfirmed Undo stays longer, to be read. */
 export const SETTLE_REFUSAL_MS = 15_000
