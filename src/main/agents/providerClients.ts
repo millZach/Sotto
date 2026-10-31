@@ -46,17 +46,33 @@ const CLAUDE_RELEASE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u
 const claudeSettings = z.object({ autoUpdatesChannel: z.enum(['latest', 'stable']).optional() })
 /** The release channel a native Claude Code follows. */
 export type ClaudeReleaseChannel = 'latest' | 'stable'
+/** The folder Claude Code reads an organisation's managed settings from, by Claude Code's own documentation. */
+export function claudeManagedFolder(platform: NodeJS.Platform = process.platform): string {
+  return platform === 'win32' ? 'C:\\Program Files\\ClaudeCode' : platform === 'darwin' ? '/Library/Application Support/ClaudeCode' : '/etc/claude-code'
+}
+/** The channel one settings file names, or undefined when it names none or cannot be read. */
+async function channelIn(file: string): Promise<ClaudeReleaseChannel | undefined> {
+  try {
+    const settings = claudeSettings.safeParse(JSON.parse(await readFile(file, 'utf8')))
+    return settings.success ? settings.data.autoUpdatesChannel : undefined
+  } catch { return undefined }
+}
 /**
- * The channel `claude update` installs from: `autoUpdatesChannel` in Claude Code's own settings, in `CLAUDE_CONFIG_DIR`
- * or `~/.claude`, and `latest`, Claude Code's default, when they name none or cannot be read.
+ * The channel `claude update` installs from: `autoUpdatesChannel` in managed settings, which Claude Code lets nothing
+ * override (`managed-settings.json`, then each `managed-settings.d/*.json` in name order, the last naming one winning),
+ * else in the user's own settings in `CLAUDE_CONFIG_DIR` or `~/.claude`, else `latest`, Claude Code's default.
  */
-export async function claudeReleaseChannel(environment: NodeJS.ProcessEnv = process.env): Promise<ClaudeReleaseChannel> {
+export async function claudeReleaseChannel(environment: NodeJS.ProcessEnv = process.env, managedFolder = claudeManagedFolder()): Promise<ClaudeReleaseChannel> {
+  const dropIns = (await readdir(join(managedFolder, 'managed-settings.d')).catch(() => [] as string[]))
+    .filter(name => name.toLowerCase().endsWith('.json') && !name.startsWith('.')).sort()
+  let managed: ClaudeReleaseChannel | undefined
+  for (const file of [join(managedFolder, 'managed-settings.json'), ...dropIns.map(name => join(managedFolder, 'managed-settings.d', name))]) {
+    managed = await channelIn(file) ?? managed
+  }
+  if (managed) return managed
   const configured = environment.CLAUDE_CONFIG_DIR
   const home = configured && isAbsolute(configured) ? configured : join(homedir(), '.claude')
-  try {
-    const settings = claudeSettings.safeParse(JSON.parse(await readFile(join(home, 'settings.json'), 'utf8')))
-    return settings.success ? settings.data.autoUpdatesChannel ?? 'latest' : 'latest'
-  } catch { return 'latest' }
+  return await channelIn(join(home, 'settings.json')) ?? 'latest'
 }
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
@@ -628,6 +644,8 @@ export interface ProviderClientsOptions {
   readonly platform?: NodeJS.Platform
   /** Sotto's own Cursor folder: `agent update` runs with it, never with the user's own Cursor folder (ADR-0128). */
   readonly cursorConfigDirectory?: string
+  /** Where Claude Code's managed settings are read: the system folder Claude Code reads, by default. */
+  readonly claudeManagedFolder?: string
 }
 
 /**
@@ -646,6 +664,7 @@ export class ProviderClients {
   private readonly nodePath: string
   private readonly opencodeFolders: OpenCodeFolders | undefined
   private readonly cursorConfigDirectory: string | undefined
+  private readonly claudeManagedFolder: string
   private readonly platform: NodeJS.Platform
   constructor(options: ProviderClientsOptions = {}) {
     this.fetchImpl = options.fetchImpl ?? ((url, init) => fetch(url, init))
@@ -657,6 +676,7 @@ export class ProviderClients {
     this.nodePath = options.nodePath ?? process.execPath
     this.opencodeFolders = options.opencodeFolders
     this.cursorConfigDirectory = options.cursorConfigDirectory
+    this.claudeManagedFolder = options.claudeManagedFolder ?? claudeManagedFolder()
     this.platform = options.platform ?? process.platform
   }
 
@@ -745,7 +765,7 @@ export class ProviderClients {
     const install = await detectClientInstall(provider, executable, environment, this.platform)
     const museChannel = provider === 'muse' ? await museReleaseChannel(executable, environment) : undefined
     // A native Claude Code is compared with what its own updater can install, and an npm one with npm's `latest` (ADR-0165).
-    const claudeChannel = provider === 'claude' && install.channel === 'self-update' ? await claudeReleaseChannel(environment) : undefined
+    const claudeChannel = provider === 'claude' && install.channel === 'self-update' ? await claudeReleaseChannel(environment, this.claudeManagedFolder) : undefined
     const latest = install.channel === 'devin-app' || provider === 'muse' && museChannel === undefined ? undefined
       : claudeChannel ? await this.publishedClaudeNativeVersion(claudeChannel, options.afresh === true)
       : await this.publishedVersion(provider, museChannel, options.afresh === true)
