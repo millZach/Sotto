@@ -5,8 +5,9 @@ import { providerWritesShortText } from '../../../shared/agents'
 import { isThreadArchived } from '../../../shared/threadActivity'
 import { WatcherOwl } from '../watcher/WatcherOwl'
 import type { PaneMenuItem } from './PaneMenu'
+import { rowMenuPressed } from './RowMenu'
 import type { ThreadRow } from './threadFacts'
-import type { ThreadChordLabel } from './threadShortcuts'
+import { openBesidePressed, type ThreadChordLabel } from './threadShortcuts'
 import type { PaneActions } from './ThreadSidebar'
 
 /** A menu row's keys, from a chord's label. */
@@ -41,6 +42,19 @@ export function threadOffers(row: ThreadRow, panes: PaneActions): ThreadOffers {
     shelfKeys: panes.currentThreadId === id,
     renameKey: panes.rowKeys?.rename ?? true,
   }
+}
+
+/**
+ * The keys a thread's row and its rail tile answer beyond Enter, the ones its menu names (ADR-0164): Open beside's keys
+ * open it beside, Shift+F10 or the menu key open the menu, and F2 renames. Shift+F10 and F2 stand down where one of
+ * dictation's shortcuts holds them.
+ */
+export function threadKeyDown(event: React.KeyboardEvent, offers: ThreadOffers, panes: PaneActions, does: {
+  readonly openBeside: () => void; readonly openMenu: () => void; readonly rename: () => void
+}): void {
+  if (offers.beside && panes.openBesideChord && openBesidePressed(event, panes.openBesideChord.chord, panes.openBesideChord.platform)) { event.preventDefault(); does.openBeside(); return }
+  if (rowMenuPressed(event, panes.rowKeys?.menu ?? true)) { event.preventDefault(); does.openMenu(); return }
+  if (event.key === 'F2' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && offers.rename && offers.renameKey) { event.preventDefault(); does.rename() }
 }
 
 /** Each of a thread's actions once, for its menu and its row's hover icons alike. */

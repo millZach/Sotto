@@ -1,11 +1,12 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { AppWindow, Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Hourglass, Pencil, Sparkles, SquarePen } from 'lucide-react'
 import { AGENT_DISMISS_FAILURES_MAX, isThreadBusy, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { useOptionalApp } from '../state/AppContext'
-import { claimedThreadChord, fixedKeyFree, openBesidePressed, threadChordLabel, threadChordPressed, type ThreadChordLabel } from './threadShortcuts'
+import { claimedThreadChord, fixedKeyFree, threadChordLabel, threadChordPressed, type ThreadChordLabel } from './threadShortcuts'
 import { countWorkingThreads, WORKING_THREADS_CAUTION, WORKING_THREADS_QUIET_MAX, workingThreadsLead } from '../../../shared/workingThreads'
 import { ProviderMark } from './ProviderMark'
 import { ThreadNameField } from './ThreadName'
@@ -31,7 +32,7 @@ import { RestartBands, useRestartStopped } from './RestartStopped'
 import { SwarmAngles, swarmAnglesByLead } from './SwarmAngles'
 import type { PaneMenuItem } from './PaneMenu'
 import { RowMenu, rowMenuPlace, rowMenuPressed, type RowMenuPlace } from './RowMenu'
-import { menuKeys, threadOffers, useThreadMenu } from './threadMenu'
+import { menuKeys, threadKeyDown, threadOffers, useThreadMenu } from './threadMenu'
 import { RailTile } from './RailTile'
 import { ROVING_GROUP, ROVING_KEY, ROVING_TOGGLE, ROW_ACTIONS, useRovingList } from './rovingList'
 import './workingThreadsLine.css'
@@ -206,11 +207,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
     <button ref={rowButton} type="button" className="thread-nav__item tt-focusable" aria-label={title} title={title} aria-describedby={[statusId, timeId, detailsId].join(' ')} aria-current={current ? 'page' : undefined} draggable
       aria-keyshortcuts={besideAvailable ? panes.openBesideChord?.label.keys : undefined} {...{ [ROVING_KEY]: `thread:${id}` }}
       onClick={event => { if (besideAvailable && (event.ctrlKey || event.metaKey)) panes.onOpenBeside(row.thread.id); else onOpen(row.thread.id) }}
-      onKeyDown={event => {
-        if (besideAvailable && panes.openBesideChord && openBesidePressed(event, panes.openBesideChord.chord, panes.openBesideChord.platform)) { event.preventDefault(); panes.onOpenBeside(row.thread.id); return }
-        if (rowMenuPressed(event, panes.rowKeys?.menu ?? true)) { event.preventDefault(); setMenu('beside'); return }
-        if (event.key === 'F2' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && canRename && renameKey) { event.preventDefault(); setRenaming(true) }
-      }}
+      onKeyDown={event => threadKeyDown(event, offers, panes, { openBeside, openMenu: () => setMenu('beside'), rename: () => setRenaming(true) })}
       onDragStart={event => { event.dataTransfer.setData(THREAD_DRAG_TYPE, row.thread.id); event.dataTransfer.effectAllowed = 'move'; panes.onDragThread(row.thread.id) }}
       onDragEnd={() => panes.onDragThread(null)}>
       <StatusRing row={row} finished={finished} background={background} />
@@ -726,6 +723,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       </section>
       {searching && !organization.matching ? <p className="thread-nav__empty tt-paragraph"><Trans>Nothing matches "{query}".</Trans></p> : null}
       </div>
-      {settleDialog}
+      {/* The worktree question after a Settle. The rail is too narrow to hold it and the list it would sit in is hidden, so
+          while the sidebar is collapsed it stands over the window. */}
+      {collapsed && settleDialog ? createPortal(settleDialog, document.body) : settleDialog}
   </SidebarFrame>
 }

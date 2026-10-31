@@ -2,12 +2,11 @@ import React, { useCallback, useLayoutEffect, useRef, useState, type ButtonHTMLA
 import { useLingui } from '@lingui/react/macro'
 import { useWatchActions } from '../watcher/watcherRoom'
 import type { AgentConnection } from './AgentContext'
-import { followRow, RowMenu, rowMenuPlace, rowMenuPressed, type RowMenuPlace } from './RowMenu'
+import { followRow, RowMenu, rowMenuPlace, type RowMenuPlace } from './RowMenu'
 import type { ThreadRow } from './threadFacts'
-import { threadOffers, useThreadMenu } from './threadMenu'
+import { threadKeyDown, threadOffers, useThreadMenu } from './threadMenu'
 import { ThreadNameField } from './ThreadName'
 import type { PaneActions } from './ThreadSidebar'
-import { openBesidePressed } from './threadShortcuts'
 import type { useSettleThread } from './ThreadWorkingCopy'
 
 export interface RailTileProps extends Omit<ButtonHTMLAttributes<HTMLButtonElement>, 'type' | 'onContextMenu'> {
@@ -61,10 +60,7 @@ export function RailTile({ row, panes, open, busy, watched, pressOpens, command,
     <button ref={tile} type="button" {...button} aria-keyshortcuts={offers.beside ? panes.openBesideChord?.label.keys : undefined}
       onKeyDown={event => {
         onKeyDown?.(event)
-        if (event.defaultPrevented) return
-        if (offers.beside && panes.openBesideChord && openBesidePressed(event, panes.openBesideChord.chord, panes.openBesideChord.platform)) { event.preventDefault(); openBeside(); return }
-        if (rowMenuPressed(event, panes.rowKeys?.menu ?? true)) { event.preventDefault(); setMenu('beside'); return }
-        if (event.key === 'F2' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && offers.rename && offers.renameKey) { event.preventDefault(); setRenaming(true) }
+        if (!event.defaultPrevented) threadKeyDown(event, offers, panes, { openBeside, openMenu: () => setMenu('beside'), rename: () => setRenaming(true) })
       }}
       onContextMenu={event => { event.preventDefault(); tile.current?.focus(); setMenu(rowMenuPlace(event)) }}>{children}</button>
     {menu !== null ? <RowMenu label={t`Actions for ${title}`} groups={menuGroups()} anchor={() => tile.current} place={menu} side="end"

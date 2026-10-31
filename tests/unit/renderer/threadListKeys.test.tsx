@@ -349,6 +349,24 @@ describe('the collapsed rail\'s menu (ADR-0164)', () => {
     expect(command).toHaveBeenCalledWith({ type: 'settle-thread', threadId: otherId })
   })
 
+  it('asks the worktree question over the window after a Settle from a tile, since the list it would sit in is hidden', async () => {
+    const fixture = threadsStateFixture()
+    const state: AgentState = { ...fixture, host: { ...fixture.host, threads: fixture.host.threads.map(thread => thread.id !== 'visual-gate' ? thread
+      : { ...thread, nativeSessionStarted: true, worktree: { mode: 'independent' as const, status: 'ready' as const, path: 'C:/owned/visual-gate', branch: 'sotto/visual-gate', dirty: false } }) } }
+    const command = vi.fn(async () => state)
+    render(sidebar(state, { command }))
+    const rail = collapse()
+    act(() => within(rail).getByRole('button', { name: 'Visual gate flake' }).focus())
+    press('F10', { shiftKey: true })
+    await act(async () => { fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Settle' })) })
+    expect(command).toHaveBeenCalledWith({ type: 'settle-thread', threadId: 'visual-gate' })
+    const question = await screen.findByRole('dialog', { name: 'Remove its worktree too?' })
+    expect(question.closest('[hidden], aside')).toBeNull()
+    // Expanded, the question stays where the list's Settle has always asked it.
+    act(() => { screen.getByRole('button', { name: 'Expand sidebar' }).click() })
+    expect(screen.getByRole('dialog', { name: 'Remove its worktree too?' }).closest('aside')).not.toBeNull()
+  })
+
   it('renames from a tile\'s menu and from F2 in a field beside the tile, and the focus comes back to the tile', () => {
     const state = threadsStateFixture()
     const command = vi.fn(async () => state)

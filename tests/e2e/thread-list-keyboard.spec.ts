@@ -312,6 +312,25 @@ test('a collapsed rail tile opens its row\'s menu beside it, and Escape gives th
     await page.keyboard.press('Enter')
     await expect(tile).toHaveAttribute('aria-current', 'page')
 
+    // At 1280x800 with reduced motion on, the menu and the rename field are whole and still.
+    await size(launched, 1280, 800)
+    await tile.focus()
+    await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
+    await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
+    await page.keyboard.press('Shift+F10')
+    await expect(menu).toBeVisible()
+    await insideWindow(page, menu)
+    expect(await menu.evaluate(node => getComputedStyle(node).animationName)).toBe('none')
+    await page.keyboard.press('Escape')
+    await expect(tile).toBeFocused()
+    await page.keyboard.press('F2')
+    await expect(field).toBeFocused()
+    await insideWindow(page, field)
+    expect(await field.evaluate(node => getComputedStyle(node.parentElement!).animationName)).toBe('none')
+    await page.keyboard.press('Escape')
+    await expect(tile).toBeFocused()
+    await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'system' }))
+
     // At the minimum window the menu is whole, from the first tile and from the last.
     await size(launched, 820, 560)
     await tile.focus()
