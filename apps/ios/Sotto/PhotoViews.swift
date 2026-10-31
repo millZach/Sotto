@@ -47,7 +47,7 @@ import SottoCore
         if let hit = cached(key) { return hit }
         if let running = loading[key] { return await running.value }
         let task = Task { [weak self] () -> CGImage? in
-            let data = await model.photoBytes(key) {
+            let data = await model.photoBytes(key.ref, messageID: key.messageID, attachmentID: key.attachmentID, activityID: key.activityID) {
                 (self?.shown[key] ?? 0) > 0
             }
             guard let data, let image = await PhotoPipeline.image(data, edge: PhotoPipeline.thumbnailEdge) else { return nil }
@@ -65,7 +65,7 @@ import SottoCore
         if let opened, opened.key == key { return opened.image }
         if let running = openingFull[key] { return await running.value }
         let task = Task { [weak self] () -> CGImage? in
-            guard let data = await model.photoBytes(key, wanted: {
+            guard let data = await model.photoBytes(key.ref, messageID: key.messageID, attachmentID: key.attachmentID, activityID: key.activityID, wanted: {
                 (self?.viewed[key] ?? 0) > 0
             }), let image = await PhotoPipeline.image(data, edge: PhotoPipeline.screenEdge) else { return nil }
             self?.opened = (key, image)
@@ -454,7 +454,7 @@ private struct AgentPictureTile: View {
     @State private var missing = false
     var body: some View {
         Rectangle().fill(Palette.raised)
-            .aspectRatio(3 / 2, contentMode: .fit)
+            .aspectRatio(1.5, contentMode: .fit)
             .overlay {
                 if let image { Image(decorative: image, scale: 1).resizable().scaledToFill() }
                 else if missing { Image(systemName: "photo").font(.title2).foregroundStyle(Palette.muted) }
