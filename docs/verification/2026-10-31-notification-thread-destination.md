@@ -38,3 +38,15 @@ Sotto-originated manual sends, reconciliation and steering preserve the user's e
 The pre-fix targeted run reproduced the Watcher destination mismatch and the automated send's notice overwrite. The cross-project coordinator assertion passed. Node 25.8.2's experimental Web Storage also broke the repository's test cleanup; subsequent individual Vitest runs disable it with `NODE_OPTIONS=--no-experimental-webstorage` without changing repository setup.
 
 Final check results are recorded in the pull request. No Sotto app was launched, no native notification was pressed, no visual capture was made, and no full local CI gate ran. Native notification delivery, focus and appearance await the packaged macOS check. GitHub CI is the remaining gate. The Update-all failure pill is outside this change; no evidence connected it to notification navigation.
+
+## CI follow-up
+
+[Tests (Linux, 5/6), job 124688677887](https://github.com/millZach/Sotto/actions/runs/41252300528/job/124688677887) failed on `b834cd84b` in `tests/unit/main/copySites.test.ts`, “copies state only where the committed list says it does.” The job log was available through `gh api repos/millZach/Sotto/actions/jobs/124688677887/logs` while the enclosing run still prevented `gh run view --log-failed` from returning it:
+
+```text
+src/main/notifications/openNotificationThread.ts now has 1 shell() where the list allows 0.
+```
+
+The same single-file test failed locally before the follow-up fix. This was introduced by this PR: notification routing called the router's copying `shell()` reader. Fetching `origin/main` still returned `bde56ebfe`, the PR's base, with no newer fix.
+
+Notification routing now uses a read-only router view backed by its existing live command-reply reader. The copy-site test and its allowance list stay unchanged. The new notification seam regression, “reads the live notification destination without copying host state,” failed before this change because it observed a host `shell()` call. It checks that routing sees a changed Watcher room before publication and calls neither host's copying reader. After the change, the copy-site file passed its one test and the full notification seam file passed all 18 tests, run separately with the Node option above.

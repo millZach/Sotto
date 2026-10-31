@@ -4,8 +4,8 @@ import { desktopWindowClient } from '../agents/hostService'
 import type { DesktopHostRouter } from '../hosts/desktopHostRouter'
 
 /** A press only navigates (ADR-0117). Watcher's current conversation has its own room, outside Threads. */
-export async function openNotificationThread(router: Pick<DesktopHostRouter, 'shell' | 'command'>, threadId: string, watcherThreadId?: string): Promise<NotificationOpening> {
-  let state = router.shell()
+export async function openNotificationThread(router: Pick<DesktopHostRouter, 'view' | 'command'>, threadId: string, watcherThreadId?: string): Promise<NotificationOpening> {
+  let state = router.view()
   const thread = state.host.threads.find(item => item.id === threadId)
   if (thread?.kind === 'watcher' && threadId === watcherThreadId) {
     return { page: 'watcher', notice: t`This notification is for Watcher. Its conversation is in this room.` }

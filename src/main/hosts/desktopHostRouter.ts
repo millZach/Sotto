@@ -754,6 +754,8 @@ export class DesktopHostRouter {
   }
   /** Every host's shell read afresh and copied, for a caller that must see the state as it is now and may change it. */
   shell(): AgentState { return this.build(connection => connection.service.shell()) }
+  /** Current state for a read-only caller, using the same live views as a command reply. */
+  view(): AgentState { return this.reply() }
   /**
    * A command's answer: every host's state as it is now, the command's own effect included, read in place as a publication
    * is rather than copied (#1760). It may share records with the last publication, and is read, never written into below

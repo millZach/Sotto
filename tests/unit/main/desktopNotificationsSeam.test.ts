@@ -36,7 +36,7 @@ function host(hostId: string, kind: 'local' | 'remote', threads: AgentThread[]) 
   let broadcast: (next: AgentState) => void = () => undefined
   const connection: DesktopHostConnection = { hostId, name: kind === 'local' ? 'This computer' : 'Forge', kind, preview: () => null,
     detail: async threadId => ({ threadId, revision: 1, messages: [] }), observe: async () => undefined,
-    service: { shell: () => state, subscribe: listener => { broadcast = listener; return () => undefined }, command: async () => state } }
+    service: { shell: () => state, replyView: () => state, subscribe: listener => { broadcast = listener; return () => undefined }, command: async () => state } }
   // New thread objects each time: the router reuses its window copy of a thread whose object did not change.
   const push = (next: AgentThread[], followups: AgentFollowup[] = []): void => {
     state.host.threads = next
@@ -142,6 +142,18 @@ describe('desktop notifications across the router, tracker and notifier (ADR-011
     expect(destinations).toEqual([{ page: 'watcher', notice: expect.any(String) }])
     expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'mine'))
     expect(local.state.host.threads[1]!.requests).toEqual([ask('question')])
+  })
+
+  it('reads the live notification destination without copying host state', async () => {
+    const localShell = vi.spyOn(local.connection.service, 'shell')
+    const remoteShell = vi.spyOn(remote.connection.service, 'shell')
+    const key = hostEntityKey(LOCAL, 'watcher')
+    // A coordinator may have changed before its next publication reaches the router.
+    local.state.host.threads = [thread('mine'), thread('watcher', { kind: 'watcher' })]
+
+    expect(await openNotificationThread(router, key, key)).toEqual({ page: 'watcher', notice: expect.any(String) })
+    expect(localShell).not.toHaveBeenCalled()
+    expect(remoteShell).not.toHaveBeenCalled()
   })
 
   it('keeps a useful thread and explains a notification whose thread was cleared', async () => {
