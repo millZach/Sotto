@@ -45,4 +45,34 @@ describe('listOpenRouterModels', () => {
     await expect(listOpenRouterModels({ fetchFn: vi.fn().mockResolvedValue(new Response('', { status: 500 })) })).resolves.toEqual({ ok: false, reason: 'http' })
     await expect(listOpenRouterModels({ fetchFn: vi.fn().mockRejectedValue(new TypeError('offline')) })).resolves.toEqual({ ok: false, reason: 'network' })
   })
+
+  it('lists active account presets first and sends the key only to the preset endpoint without following redirects', async () => {
+    const fetchFn = vi.fn(async (url: string | URL | Request) => {
+      if (String(url).endsWith('/models')) return page([{ id: 'a/model', name: 'A model' }])
+      return new Response(JSON.stringify({ data: [
+        { slug: 'qwen-cerebras', name: 'Qwen Cerebras', status: 'active' },
+        { slug: 'disabled', name: 'Disabled', status: 'disabled' },
+        { slug: 'bad/slug', status: 'active' },
+      ], total_count: 3 }))
+    })
+    await expect(listOpenRouterModels({ fetchFn, apiKey: 'test-key' })).resolves.toEqual({
+      ok: true, complete: true, models: [
+        { id: '@preset/qwen-cerebras', name: 'Qwen Cerebras' },
+        { id: 'a/model', name: 'A model' },
+      ],
+    })
+    expect(fetchFn.mock.calls[0]).toEqual(['https://openrouter.ai/api/v1/models', expect.not.objectContaining({ headers: expect.anything() })])
+    expect(fetchFn.mock.calls[1]).toEqual(['https://openrouter.ai/api/v1/presets?limit=100&offset=0', expect.objectContaining({
+      headers: { Authorization: 'Bearer test-key' }, redirect: 'error',
+    })])
+  })
+
+  it('keeps the public catalog when the key cannot list presets', async () => {
+    const fetchFn = vi.fn(async (url: string | URL | Request) => String(url).endsWith('/models')
+      ? page([{ id: 'a/model', name: 'A model' }])
+      : new Response('', { status: 403 }))
+    await expect(listOpenRouterModels({ fetchFn, apiKey: 'restricted-key' })).resolves.toEqual({
+      ok: true, complete: true, models: [{ id: 'a/model', name: 'A model' }],
+    })
+  })
 })

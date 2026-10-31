@@ -2376,7 +2376,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
             ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
           }),
           ...(cleanupModelEnabled ? {
-            models: () => listOpenRouterModels(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+            models: async () => listOpenRouterModels({
+              apiKey: (await settings.forFormatting()).llmApiKey,
+              ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+            }),
           } : {}),
           ...(speechModelsReader === null ? {} : { speechModels: () => speechModelsReader.list(true) }),
         },
