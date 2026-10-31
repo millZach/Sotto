@@ -93,16 +93,19 @@ async function settledInTurn<Item>(items: readonly Item[], limit: number, work: 
   return outcomes
 }
 
+/** What a system says when it does not sync a folder: Windows opens one but refuses to flush it, macOS may not support it. */
+const FOLDER_SYNC_REFUSED = ['EISDIR', 'EPERM', 'EACCES', 'EINVAL', 'ENOTSUP', 'EBADF']
+
 /**
- * Makes a folder's own entries durable, as the files renamed into it, where the system allows it: Windows opens no folder
- * to sync, and one that is not there has nothing to keep.
+ * Makes a folder's own entries durable, as the files renamed into it, where the system allows it: one that does not, as
+ * Windows does not, keeps its own order of renames and removals, and one that is not there has nothing to keep.
  */
 async function syncFolder(path: string): Promise<void> {
   let handle: Awaited<ReturnType<typeof open>>
   try { handle = await open(path, 'r') }
-  catch (error) { if (['ENOENT', 'EISDIR', 'EPERM', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) return; throw error }
+  catch (error) { if (['ENOENT', ...FOLDER_SYNC_REFUSED].includes((error as NodeJS.ErrnoException).code ?? '')) return; throw error }
   try { await handle.sync() }
-  catch (error) { if (!['EINVAL', 'ENOTSUP', 'EBADF'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error }
+  catch (error) { if (!FOLDER_SYNC_REFUSED.includes((error as NodeJS.ErrnoException).code ?? '')) throw error }
   finally { await handle.close() }
 }
 

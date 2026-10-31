@@ -340,3 +340,23 @@ it('makes the threads\u2019 files durable in their folder before it removes an e
   expect(steps).toEqual(['folder synced', 'one file removed'])
 })
 
+it.each(['EPERM', 'EACCES', 'EISDIR'])('removes an earlier build\u2019s one file where the system refuses to sync a folder (%s), as Windows does (#1936)', async code => {
+  const { root, usage } = await fixture()
+  usage.claude('thread-0', frame(0))
+  await usage.flushed()
+  const saved = await savedLedgers(root)
+  await rm(join(root, 'claude-usage'), { recursive: true })
+  await writeFile(join(root, 'claude-usage.json'), JSON.stringify(saved))
+  const open = fs.open
+  vi.spyOn(fs, 'open').mockImplementation(async (path, ...rest) => {
+    const handle = await open(path, ...rest as [])
+    if (String(path) !== join(root, 'claude-usage')) return handle
+    // Opened, then refused when asked to flush, as Windows answers for a folder.
+    return Object.assign(Object.create(Object.getPrototypeOf(handle) as object) as typeof handle, handle, {
+      sync: async () => { throw Object.assign(new Error('Synthetic refused folder sync'), { code }) }, close: () => handle.close() })
+  })
+  const reopened = new NativeUsage(root, 'claude'); await reopened.load(); await reopened.flushed()
+  expect(await readdir(root)).not.toContain('claude-usage.json')
+  expect(Object.keys(await savedLedgers(root))).toEqual(['thread-0'])
+})
+
