@@ -19,7 +19,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
 import { subagentRoleInstructions } from '../../shared/workerRoles'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
-import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { watcherRequestLine } from './watcherRequestNote'
 import { questionInstructions } from './questionInstructions'
@@ -966,8 +966,9 @@ export class GrokAcpHost implements AgentHost {
       // A thread that stays in the set with its session loaded and read is the poll's to keep up to date. Reading
       // it again here put a history read in front of every send, which observes its thread first (#765).
       if (before.has(id) && this.loaded.has(id) && this.histories.has(id)) continue
-      void this.loadSession(id, true).then(() => { if (generation === this.generation) return this.queueRead(id) }).catch(() => {
-        if (generation === this.generation) { this.state.error = 'A Grok thread could not be loaded. Check the native client.'; this.emit() }
+      void this.loadSession(id, true).then(() => { if (generation === this.generation) return this.queueRead(id) }).catch((error: unknown) => {
+        // An earlier Watcher conversation in view is read only history: refusing to open it is not Grok failing.
+        if (generation === this.generation && !(error instanceof WatcherHistoryRefusal)) { this.state.error = 'A Grok thread could not be loaded. Check the native client.'; this.emit() }
       })
     }
   }

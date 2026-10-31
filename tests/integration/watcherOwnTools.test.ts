@@ -722,3 +722,35 @@ for (const provider of Object.keys(factories) as (keyof typeof factories)[]) it(
   expect((await f.host.snapshot()).threads.find(thread => thread.id === id)?.runtimeMode).toBe('approval-required')
   if (provider === 'codex') expect((f.adapter as unknown as { aliases: Record<string, { pendingSettings?: unknown }> }).aliases[id]!.pendingSettings).toBeUndefined()
 })
+for (const provider of ['claude', 'grok', 'muse'] as const) it(`${provider} keeps an earlier Watcher conversation in view out of its provider error`, async () => {
+  const first = await factories[provider](); cleanups.push(first.cleanup)
+  const id = randomUUID(), hostId = randomUUID()
+  await attach(first.host, first.root, id, first.projectId, provider, hostId)
+  await seedModels(first.root, provider)
+  await first.host.connect()
+  await first.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: first.projectId, title: 'Synthetic', path: first.root })
+  await first.host.startThreadSession!(id, { modelId: first.modelId, workingDirectory: first.root, runtimeMode: 'full-access' })
+  await first.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId: id, projectId: first.projectId, title: 'Watcher', modelId: first.modelId, runtimeMode: 'full-access' })
+  await first.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic first turn' })
+  await first.driver.completeTurn(id, 'Synthetic complete')
+  await expect.poll(async () => (await first.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('idle')
+  // A new Watcher took over, so this conversation is history, and it is still open in a pane when Sotto starts again.
+  const f = await first.driver.restart(); cleanups.push(f.cleanup)
+  const record = emptyWatcherRecord()
+  record.history = [{ target: { hostId, threadId: id }, projectId: f.projectId, provider, creationOperationId: randomUUID(), createdAt: new Date().toISOString() }]
+  await writeFile(join(f.root, 'agents.json'), JSON.stringify({ watcher: record }))
+  const source = new WatcherLaunchProfiles(f.root, () => hostId, threadId => threadId === id ? {
+    id, hostId, projectId: f.projectId, providerId: provider, kind: 'watcher-history', title: 'Watcher', modelId: 'fixture-model', status: 'idle', messages: [], requests: [],
+  } as AgentThread : undefined, true)
+  source.useTools({ ...scoped('sotto_threads'), definitions: [{ name: 'list_threads', description: 'Synthetic', inputSchema: {} }], revoke: vi.fn() })
+  f.host.useLaunchProfiles!(source)
+  await seedModels(f.root, provider)
+  await f.host.connect()
+  f.host.observeThreads!([id])
+  // A send is still refused as history; by its answer the opening the view asked for has been refused the same way.
+  const sent = await f.host.execute({ type: 'send', commandId: randomUUID(), threadId: id, messageId: randomUUID(), text: 'Synthetic history send' })
+    .then(result => result.error ?? (result.accepted ? 'accepted' : 'refused'), (error: Error) => error.message)
+  expect(sent).toContain('earlier Watcher')
+  await expect.poll(async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status).toBe('error')
+  expect((await f.host.snapshot()).error).toBeUndefined()
+})
