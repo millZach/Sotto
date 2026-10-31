@@ -91,7 +91,7 @@ export class ConfiguredProviderHost implements AgentHost {
       const handler = host.profileRefusalHandler?.(threadId)
       return handler ? [handler] : []
     })
-    return async (reason: string): Promise<void> => { await Promise.allSettled(handlers.map(async handler => handler(reason))) }
+    return async (reason: string, history?: boolean): Promise<void> => { await Promise.allSettled(handlers.map(async handler => handler(reason, history))) }
   }
   readonly concurrentProviders = true
   private legacyProjectProvider: ProviderId | undefined

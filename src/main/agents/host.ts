@@ -294,8 +294,11 @@ export interface AgentHost {
   /** Main-only launch capabilities. Wrappers translate identity before handing them to an adapter. */
   useLaunchProfiles?(profiles: ThreadLaunchProfiles): void
   useWatcherTools?(tools: WatcherProfileTools): void
-  /** Capture the owned runtime before main checks identity. A refusal cannot close its replacement. */
-  profileRefusalHandler?(threadId: string): ((reason: string) => void | Promise<void>) | undefined
+  /**
+   * Capture the owned runtime before main checks identity. A refusal cannot close its replacement. `history` is true for an
+   * earlier Watcher conversation's refusal, which stops the runtime but is not the provider's error.
+   */
+  profileRefusalHandler?(threadId: string): ((reason: string, history?: boolean) => void | Promise<void>) | undefined
   /** Inject shared browser tools before connecting the native providers. */
   useBrowserTools?(tools: BrowserAgentTools): void
   /**

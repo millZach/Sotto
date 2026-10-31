@@ -6,6 +6,7 @@ import SottoCore
 /// stays on this iPhone; nothing is sent to a paired computer or changes its settings.
 struct SettingsView: View {
     @State private var toast: String?
+    @Environment(\.duoLayout) private var duo
     var body: some View {
         SheetPage {
             PageHeading(String(localized: "Settings"), subtitle: String(localized: "These are kept on this iPhone. They don’t change any computer’s settings."))
@@ -22,6 +23,11 @@ struct SettingsView: View {
                     GlowPanel()
                     RowDivider()
                     DensityPanel()
+                    // Only the iPhone Duo has a sideways screen with a strip for the tabs.
+                    if duo != .none {
+                        RowDivider()
+                        DuoTabsPanel()
+                    }
                 }
                 .padding(.horizontal, Space.s4)
                 .frame(maxWidth: .infinity)
@@ -270,6 +276,22 @@ private struct DensityPanel: View {
             Segmented(name: String(localized: "Message density"), choices: PhoneDensity.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-density-\($0.rawValue)" }) { density = $0.rawValue }
             PanelHint(text: current == .compact ? String(localized: "Tighter spacing fits more of a thread on screen.") : String(localized: "Room between messages, lists and steps."))
+        }
+        .lookRow()
+    }
+}
+
+/// Where the iPhone Duo, unfolded and held sideways, puts the tabs (Zach's pick, October 30, 2026).
+private struct DuoTabsPanel: View {
+    @AppStorage(PhonePreferenceKey.duoTabsSide) private var side = DuoTabsSide.right.rawValue
+    var body: some View {
+        let current = DuoTabsSide(rawValue: side) ?? .right
+        VStack(alignment: .leading, spacing: Space.s3) {
+            PanelHeader(title: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."), value: nil)
+            Segmented(name: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."),
+                      choices: DuoTabsSide.allCases, selection: current,
+                      title: { $0.title }, identifier: { "setting-duo-tabs-\($0.rawValue)" }) { side = $0.rawValue }
+            PanelHint(text: String(localized: "Upright, they run along the bottom.", comment: "Under the iPhone Duo's sideways tabs setting: held upright, the tabs run along the bottom of the screen."))
         }
         .lookRow()
     }

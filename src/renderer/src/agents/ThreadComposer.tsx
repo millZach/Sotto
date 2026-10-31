@@ -1,6 +1,6 @@
 import React, { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent, type ReactNode, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
-import { ArrowDownToLine, ArrowUp, ArrowUpRight, Laptop, MessageSquare, Quote, Server, Square, X } from 'lucide-react'
+import { ArrowUp, ArrowUpRight, Laptop, ListPlus, MessageSquare, Quote, Server, Square, X } from 'lucide-react'
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { NextPrompt } from '../../../shared/nextPrompt'
@@ -583,7 +583,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
                 title={t`Send this now, without waiting for the turn to end` + (steerChord ? ` ${threadChordLabel(steerChord, platform).suffix}` : '')} onClick={() => send(performance.now(), 'steer')}>
                 <ArrowUpRight size={16} strokeWidth={2.4} aria-hidden="true" /></Button>
               : <Button className="thread-prompt__send thread-prompt__disc" data-face={discFace} aria-label={primaryLabel} aria-keyshortcuts="Enter" title={reason ?? primaryLabel} disabled={!canSend} type="submit">
-                {discFace === 'queue' ? <ArrowDownToLine size={16} strokeWidth={2.4} aria-hidden="true" /> : <ArrowUp size={16} strokeWidth={2.4} aria-hidden="true" />}</Button>}
+                {discFace === 'queue' ? <ListPlus size={16} strokeWidth={2.4} aria-hidden="true" /> : <ArrowUp size={16} strokeWidth={2.4} aria-hidden="true" />}</Button>}
           </> : <>
           {running && capabilities.steer === true && content
             ? <Button variant="ghost" className="thread-prompt__steer" aria-label={t`Steer now`} aria-keyshortcuts={steerChord ? threadChordLabel(steerChord, platform).keys : undefined}

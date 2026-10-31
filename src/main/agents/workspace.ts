@@ -67,7 +67,7 @@ import type { BabysitStore, BabysitThread } from './babysitting'
 import { BABYSITTING_PER_THREAD_MAX, type BabysitEndedReason } from '../../shared/babysitting'
 import { migrateWorkspaceThreadKinds } from './watcherRecords'
 import { WatcherLaunchProfiles, WATCHER_DISABLED } from './watcherLaunchProfiles'
-import { WatcherProfileRefusal } from './watcherProfile'
+import { WatcherHistoryRefusal, WatcherProfileRefusal } from './watcherProfile'
 import { assertWatcherPermission } from './watcherProviderTools'
 import type { WatcherProfileTools, WorkerRoleSource } from './host'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
@@ -5322,7 +5322,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     try { return await work() }
     catch (error) {
       if (threadId && error instanceof WatcherProfileRefusal) {
-        try { await refuse?.(error.message) }
+        try { await refuse?.(error.message, error instanceof WatcherHistoryRefusal) }
         catch { /* Preserve the definitive refusal even if shutdown cleanup fails. */ }
       }
       throw error
