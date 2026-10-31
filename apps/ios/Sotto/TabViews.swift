@@ -53,7 +53,6 @@ struct ThreadsView: View {
     @Environment(\.sottoTheme) private var theme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var typeSize
-    @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.duoLayout) private var duo
     /// The unfolded Duo keeps its cards: side by side, a column each, except at the accessibility text sizes, where a
     /// third of the width can't hold a title and the page keeps one column. Every other iPhone shows the thread list.
@@ -84,8 +83,7 @@ struct ThreadsView: View {
             }
             // A Max held sideways reads the list at the reading width, as a thread does; the unfolded Duo's columns
             // take the whole width.
-            .frame(maxWidth: !unfolded && sizeClass == .regular ? 680 : nil)
-            .frame(maxWidth: .infinity)
+            .readingWidth(on: !unfolded)
         }
         // A tap anywhere outside the search field closes its keyboard; so does scrolling.
         .simultaneousGesture(SpatialTapGesture(coordinateSpace: .global).onEnded { tap in
@@ -177,7 +175,7 @@ struct ThreadsView: View {
         // Every computer that can't be reached shares one note (#1849).
         let unreachable = model.lists.filter { model.show.admits($0.hostID) && $0.status != .online }
         if query.isEmpty && !unreachable.isEmpty {
-            ConnectionNote(computers: unreachable, trying: unreachable.contains { $0.status == .connecting })
+            ConnectionNote(computers: unreachable, trying: unreachable.allSatisfy { $0.status == .connecting })
         }
     }
 
@@ -186,7 +184,7 @@ struct ThreadsView: View {
     /// The thread list, then the settled shelf, folded unless a search reaches into it.
     @ViewBuilder private func list(_ groups: FocusThreads) -> some View {
         if groups.isEmpty { empty(groups) }
-        ThreadListSections(groups: groups, open: open)
+        ThreadListSections(groups: groups, open: open).equatable()
         if !groups.settled.isEmpty {
             if groups.searching {
                 ThreadListHeading(title: String(localized: "Settled", comment: "The heading over threads the user has put aside."), count: groups.settled.count, id: "settled")
@@ -356,7 +354,8 @@ struct ThreadsView: View {
 // MARK: - The computer menu and the summary
 
 /// The note for the computers that can't be reached, one line however many there are (#1849). Try again is its own
-/// view so one press gives one press's feedback, and it tries every one of them.
+/// view so one press gives one press's feedback, and it tries each of them that isn't being tried already; it waits
+/// only while every one of them is.
 private struct ConnectionNote: View {
     let computers: [ComputerThreads]
     let trying: Bool
@@ -373,6 +372,8 @@ private struct ConnectionNote: View {
             VStack(alignment: .leading, spacing: 2) {
                 (trying ? Text("Checking \(names)…") : Text(String(localized: "computer-row.cant-reach", defaultValue: "Can’t reach \(names).", comment: "Over a computer's last shared threads when it can't be reached. %@ is the computer's name")))
                     .font(.sotto(.small, .semibold)).foregroundStyle(Palette.ink)
+                    // Several names hold one line, cut at its end; VoiceOver reads them all.
+                    .lineLimit(computers.count > 1 ? 1 : nil)
                 if !trying {
                     (computers.count == 1 ? Text("Showing its last shared threads.") : Text("Showing their last shared threads."))
                         .font(.sotto(.small)).foregroundStyle(Palette.muted)
@@ -381,7 +382,8 @@ private struct ConnectionNote: View {
             }
             .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: Space.s2)
-            Button { retries += 1; Task { for computer in computers { await model.connect(computer.hostID) } } } label: {
+            // Each computer is tried on its own, so a slow one holds up none of the others.
+            Button { retries += 1; for computer in computers where computer.status != .connecting { Task { await model.connect(computer.hostID) } } } label: {
                 if trying {
                     HStack(spacing: 6) { ProgressView().controlSize(.mini); Text("Trying", comment: "On the button while Sotto tries to reach a computer again.") }
                 } else {

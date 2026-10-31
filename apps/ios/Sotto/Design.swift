@@ -294,15 +294,17 @@ enum Space {
 /// At regular width, the iPhone Duo unfolded, a conversation keeps a reading width in the middle of the screen
 /// instead of running the width of it. At compact width it changes nothing.
 private struct ReadingWidth: ViewModifier {
+    var on = true
     @Environment(\.horizontalSizeClass) private var sizeClass
     static let width: CGFloat = 680
     func body(content: Content) -> some View {
-        let regular = sizeClass == .regular
+        let regular = on && sizeClass == .regular
         content.frame(maxWidth: regular ? Self.width : nil).frame(maxWidth: regular ? .infinity : nil)
     }
 }
 extension View {
-    func readingWidth() -> some View { modifier(ReadingWidth()) }
+    /// The reading width, or, `on: false`, the whole width, as the unfolded Duo's columns of cards take.
+    func readingWidth(on: Bool = true) -> some View { modifier(ReadingWidth(on: on)) }
 }
 
 enum Radius {

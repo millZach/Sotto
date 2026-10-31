@@ -501,7 +501,7 @@ struct ThreadSidebar: View, Equatable {
                 .frame(minHeight: 44)
                 .padding(.horizontal, Space.s2)
                 .padding(.top, Space.s3)
-                ThreadListSections(groups: groups, chosen: model.selected, identifier: "sidebar-thread-", open: open)
+                ThreadListSections(groups: groups, chosen: model.selected, identifier: "sidebar-thread-", open: open).equatable()
             }
             .padding(.horizontal, Space.s2)
             .padding(.bottom, Space.s6)
@@ -522,7 +522,7 @@ struct ThreadSidebar: View, Equatable {
 /// (Zach's pick A, rows only, October 30, 2026). The Threads page shows it on every iPhone but the unfolded Duo, and the
 /// unfolded Duo's sidebar shows it beside a thread. A Needs you row is a row like the others: its thread opens on its
 /// question.
-struct ThreadListSections: View {
+struct ThreadListSections: View, Equatable {
     @EnvironmentObject var model: AppModel
     let groups: FocusThreads
     /// The thread showing beside the list, on the accent's soft chip.
@@ -534,7 +534,7 @@ struct ThreadListSections: View {
         let watched = model.watchedThreadIDs
         VStack(alignment: .leading, spacing: 0) {
             section(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), "needs", groups.questions) { row in
-                rowView(row, .needs, watched)
+                rowView(row, .needs, watched, asking: groups.asking(row))
             }
             section(String(localized: "Working now"), "working", groups.working) { row in rowView(row, .working, watched) }
             section(String(localized: "Recent", comment: "The heading over threads that finished lately."), "recent", groups.recent) { row in
@@ -542,13 +542,32 @@ struct ThreadListSections: View {
             }
         }
     }
-    private func rowView(_ row: HostedThread, _ kind: ThreadListRow.Kind, _ watched: Set<String>) -> some View {
+    /// A Needs you row can stand for a delegated thread that asks (ADR-0081): a press opens the row's thread and then
+    /// the one that asks, so its question opens there and Back returns to the thread that delegated it.
+    private func rowView(_ row: HostedThread, _ kind: ThreadListRow.Kind, _ watched: Set<String>, asking: HostedThread? = nil) -> some View {
         let isWatched = watched.contains(row.id)
-        return ThreadListRow(row: row, kind: kind, watched: isWatched, chosen: row.ref == chosen,
+        let delegated = asking.flatMap { $0.ref == row.ref ? nil : $0 }
+        return ThreadListRow(row: row, kind: kind, asking: delegated, watched: isWatched, chosen: row.ref == chosen,
                              canWatch: model.canChangeWatch(row.ref), identifier: identifier,
-                             open: { open(row.ref) },
+                             open: { open(row.ref); if let delegated { open(delegated.ref) } },
                              setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })
             .equatable()
+    }
+    /// It draws from the model it watches and these: the rows' threads, which section each is in, who asks, the chosen
+    /// one and its identifiers. The closure never changes what it draws.
+    static func == (lhs: ThreadListSections, rhs: ThreadListSections) -> Bool {
+        lhs.identifier == rhs.identifier && lhs.chosen == rhs.chosen && drawn(lhs.groups) == drawn(rhs.groups)
+    }
+    private static func drawn(_ groups: FocusThreads) -> [String] {
+        func rows(_ section: String, _ rows: [HostedThread]) -> [String] {
+            rows.map { row in
+                let thread = row.thread
+                return [section, row.id, thread.title, thread.status, "\(thread.requests.count)", thread.providerId ?? "", row.project ?? "",
+                        row.computer, "\(row.status)", thread.summary?.runningTurnStartedAt ?? "", thread.summary?.lastMessageAt ?? "",
+                        groups.asking(row).id, "\(groups.isUnreadFinish(row))", "\(row.failed)"].joined(separator: "|")
+            }
+        }
+        return rows("needs", groups.questions) + rows("working", groups.working) + rows("recent", groups.recent)
     }
     @ViewBuilder private func section<Row: View>(_ title: String, _ id: String, _ rows: [HostedThread],
                                                  @ViewBuilder row: @escaping (HostedThread) -> Row) -> some View {
@@ -585,6 +604,8 @@ struct ThreadListRow: View, Equatable {
     enum Kind: Equatable { case needs, working, recent(unread: Bool) }
     let row: HostedThread
     let kind: Kind
+    /// The delegated thread whose request a Needs you row stands for, when it isn't the row's own.
+    var asking: HostedThread? = nil
     let watched: Bool
     let chosen: Bool
     let canWatch: Bool
@@ -594,7 +615,7 @@ struct ThreadListRow: View, Equatable {
     @Environment(\.dynamicTypeSize) private var typeSize
     /// What the row draws: the thread's title, state, place and times, its section, light and chip.
     static func == (lhs: ThreadListRow, rhs: ThreadListRow) -> Bool {
-        lhs.row.id == rhs.row.id && lhs.kind == rhs.kind && lhs.watched == rhs.watched && lhs.chosen == rhs.chosen
+        lhs.row.id == rhs.row.id && lhs.kind == rhs.kind && lhs.asking?.id == rhs.asking?.id && lhs.watched == rhs.watched && lhs.chosen == rhs.chosen
             && lhs.canWatch == rhs.canWatch && lhs.identifier == rhs.identifier && lhs.line == rhs.line && lhs.label == rhs.label
             && lhs.row.thread.summary?.runningTurnStartedAt == rhs.row.thread.summary?.runningTurnStartedAt
             && lhs.row.thread.summary?.lastMessageAt == rhs.row.thread.summary?.lastMessageAt
@@ -612,7 +633,13 @@ struct ThreadListRow: View, Equatable {
     /// just finished, can't be reached, failed, or where it lives, as the Threads page always wrote it.
     private var line: String {
         switch kind {
-        case .needs: return "\(state.words) · \(row.computer)"
+        case .needs:
+            if let asking {
+                let provider = Words.provider(row.thread.providerId)
+                return String(localized: "\(provider) on \(row.computer) · Waiting in \(asking.thread.title)",
+                              comment: "First %@ is the agent's name, such as Codex; second is the computer's name; third is the title of the delegated thread the request waits in.")
+            }
+            return "\(state.words) · \(row.computer)"
         case .working: return Words.place(row)
         case .recent(let unread):
             if unread { return String(localized: "Just finished · \(row.computer)", comment: "%@ is the computer's name.") }
@@ -626,7 +653,8 @@ struct ThreadListRow: View, Equatable {
         let place = Words.place(row)
         let spoken: String
         switch kind {
-        case .needs, .working: spoken = "\(row.thread.title), \(state.words), \(place)"
+        case .needs: spoken = "\(row.thread.title), \(ThreadState((asking ?? row).thread).words), \(asking.map { _ in line } ?? place)"
+        case .working: spoken = "\(row.thread.title), \(state.words), \(place)"
         case .recent(let unread):
             if unread {
                 spoken = String(localized: "\(row.thread.title), just finished, not opened yet, \(place)",
@@ -659,8 +687,7 @@ struct ThreadListRow: View, Equatable {
                     Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold))
                         .foregroundStyle(chosen ? Palette.accentText : Palette.ink).lineLimit(large ? 4 : 1)
                     PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
-                              tone: row.failed ? Palette.dangerText : Palette.muted)
-                        .lineLimit(large ? 3 : 1)
+                              tone: row.failed ? Palette.dangerText : Palette.muted, lines: large ? 3 : 1)
                     if large, let ago { Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted) }
                 }
                 Spacer(minLength: Space.s1)

@@ -65,10 +65,12 @@ struct PlaceLine: View {
     let watched: Bool
     let text: String
     var tone: ThemeRole = Palette.muted
+    /// How many lines the words may take; the thread list lets them wrap at the accessibility text sizes.
+    var lines: Int? = 1
     var body: some View {
         HStack(spacing: 5) {
             ProviderMarks(providerID: providerID, watched: watched)
-            Text(text).lineLimit(1)
+            Text(text).lineLimit(lines)
         }
         .font(.sotto(.small))
         .foregroundStyle(tone)
