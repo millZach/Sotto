@@ -287,3 +287,18 @@ export async function paneMenuAction(scope: Page | Locator, name: string): Promi
   await scope.getByRole('button', { name: 'More actions', exact: true }).first().click()
   await scope.getByRole('menu', { name: 'More actions' }).getByRole('menuitem', { name, exact: true }).click()
 }
+
+/**
+ * Shows or hides Tools, a row of the focused pane's ··· menu since the header kept one menu (ADR-0163). The ··· button that
+ * lists Tools is the one the panel hands focus back to, so it is found by that rather than by its pane.
+ */
+export async function toggleTools(scope: Page | Locator): Promise<void> {
+  await scope.locator('[data-opens="tools"]').click()
+  await scope.getByRole('menu', { name: 'More actions' }).getByRole('menuitemcheckbox', { name: 'Tools', exact: true }).click()
+}
+
+/** Presses a ··· menu row that shows or hides something, such as the Terminal drawer, in a pane or the only pane. */
+export async function paneMenuToggle(scope: Page | Locator, name: string): Promise<void> {
+  await scope.getByRole('button', { name: 'More actions', exact: true }).first().click()
+  await scope.getByRole('menu', { name: 'More actions' }).getByRole('menuitemcheckbox', { name, exact: true }).click()
+}

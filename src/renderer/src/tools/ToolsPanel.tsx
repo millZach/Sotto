@@ -3,7 +3,7 @@ import { i18n, type MessageDescriptor } from '@lingui/core'
 import { msg, plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import { useMark } from '../components/marks'
-import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, GitPullRequest, Globe, Maximize2, Minimize2, PanelRight, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
+import { Copy, Folder, FolderGit2, FolderOutput, FolderTree, GitBranch, GitCompare, GitPullRequest, Globe, Maximize2, Minimize2, Pin, PinOff, Server, Smartphone, SquareTerminal, Users, X, type LucideIcon } from 'lucide-react'
 import { hostForThread, PROVIDER_LABELS, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { BrowserBridge } from '../../../shared/browser'
 import type { FilesBridge } from '../../../shared/files'
@@ -13,11 +13,11 @@ import type { SubagentsBridge } from '../../../shared/subagents'
 import { AgentsSurface } from './AgentsSurface'
 import type { DelegatedRosterSource } from './DelegatedThreads'
 import { delegatedBelow, openDelegatedThread } from './delegatedRoster'
-import { delegatedThreadsBelow } from '../../../shared/delegation'
 import { useDelegationsEnabled } from '../agents/delegations'
 import type { AgentContinueOptions } from './AgentContinue'
 import { useThreadStarts } from '../agents/ThreadStart'
 import { useOptionalAgents, type AgentConnection } from '../agents/AgentContext'
+import { TOOLS_OPENER } from './toolsMenu'
 import { offersBabysitting } from '../agents/babysitting'
 import { useRestartStopped } from '../agents/RestartStopped'
 import { resolveModel } from '../../../shared/modelCatalog'
@@ -104,61 +104,9 @@ function workspaceArea(panel: HTMLElement | null): HTMLElement | null {
   return parent !== null && [...parent.children].filter(child => !child.classList.contains('browser-player') && !child.classList.contains('browser-player-pill') && !child.classList.contains('phone-player')).length === 1 && parent.parentElement !== null ? parent.parentElement : parent
 }
 
+/** Back to the More button whose menu opened the panel: the focused pane's, the one that lists Tools (ADR-0163). */
 function focusToggle(): void {
-  document.querySelector<HTMLElement>(`[aria-controls="${TOOLS_PANEL_ID}"]`)?.focus()
-}
-
-/**
- * Opens and closes the shared tools panel. Place it in a pane header; it never changes the focused thread.
- * In a pane whose thread is not the one the panel is pinned to, it gives up its pressed look and says whose files are open.
- * Its dot means this pane's own thread has agents working or a browser request waiting, never a pinned thread's;
- * the browser player can be closed, shrunk, hidden or showing another pane's thread, so a waiting request still
- * appears here (#331).
- */
-export function ToolsPanelToggle({ store = toolsPanelStore, state }: { readonly store?: ToolsPanelStore; readonly state?: AgentState | undefined }): ReactNode {
-  const { t } = useLingui()
-  const chrome = useToolsPanelChrome(store)
-  const agents = useOptionalAgents()
-  const agentState = state ?? agents?.state ?? null
-  const button = useRef<HTMLButtonElement>(null)
-  const [paneThreadId, setPaneThreadId] = useState<string | null>(null)
-  // The header the toggle sits in belongs to one pane's thread.
-  useLayoutEffect(() => { setPaneThreadId(button.current?.closest('[data-thread-id]')?.getAttribute('data-thread-id') ?? null) })
-  // A panel closed from the keyboard hands focus here, including to a toggle the resulting layout change re-mounted.
-  useLayoutEffect(() => {
-    const element = button.current
-    if (!element || !store.togglePendingFocus()) return
-    const active = document.activeElement
-    if (active === element) return
-    if (active === null || active === document.body || !active.isConnected) element.focus()
-    else store.clearToggleFocus()
-  }, [chrome.open, store])
-  const pinned = chrome.pinnedThreadId
-  const delegation = useDelegationsEnabled()
-  const selectedThreadId = paneThreadId ?? agentState?.activeThreadId
-  // The threads this pane's thread delegated (ADR-0081; Owl only) count as its agents: working, or waiting on you.
-  const below = delegation && agentState && selectedThreadId ? delegatedBelow(agentState.host.threads, selectedThreadId) : { needs: 0, working: 0 }
-  const workingAgents = (agentState?.host.threads.find(thread => thread.id === selectedThreadId)?.subagentSummary?.working ?? 0) > 0 || below.working > 0
-  const browserTasks = useBrowserTasks(store.browser)
-  // This pane's own thread, never the pin: a pin shows in another pane's Tools, not by lighting every pane's dot (#331).
-  const browserWaiting = browserTasks.some(task => task.threadId === selectedThreadId && task.pendingAction !== null)
-  // While Tools is pinned to a roster's thread and this pane shows that thread or one it delegated, a delegated thread
-  // waiting on you there still marks this toggle: answering one, Tools stays on the roster where others may wait. The
-  // pin lights nothing else here (#331).
-  const rosterOwner = delegation && agentState && pinned !== null && selectedThreadId && selectedThreadId !== pinned
-    && delegatedThreadsBelow(agentState.host.threads, pinned).includes(selectedThreadId) ? pinned : undefined
-  const delegatedWaiting = (rosterOwner !== undefined && agentState ? delegatedBelow(agentState.host.threads, rosterOwner) : below).needs > 0
-  const pinnedElsewhere = chrome.open && (chrome.surface !== 'agents' || delegation) && pinned !== null && paneThreadId !== null && paneThreadId !== pinned
-  const pinnedTitle = pinnedElsewhere ? agentState?.host.threads.find(thread => thread.id === pinned)?.title ?? t({ message: 'another thread', comment: 'Stands in for a thread\'s title, as in "Tools are pinned to another thread".' }) : null
-  const tools = t({ message: 'Tools', comment: 'The panel beside a thread that holds its browser, terminal, files, changes and agents.' })
-  // Icon only in the pane header; the word stays for a screen reader, and as the title when nothing else explains it.
-  return <button ref={button} type="button" className="pane-action tt-focusable tools-toggle" aria-pressed={chrome.open} aria-controls={TOOLS_PANEL_ID}
-    data-pinned-elsewhere={pinnedElsewhere || undefined} aria-description={[pinnedTitle === null ? null : t({ message: `Showing ${pinnedTitle}, pinned`, comment: '{pinnedTitle} is a thread\'s title.' }), delegatedWaiting ? t`A delegated thread needs you` : null, workingAgents ? t`Agents are working` : null, browserWaiting ? t`A browser request is waiting for your answer` : null].filter(Boolean).join('. ') || undefined}
-    title={pinnedTitle === null ? tools : t({ message: `Tools are pinned to ${pinnedTitle}`, comment: '{pinnedTitle} is a thread\'s title.' })}
-    onClick={() => store.toggle()}>
-    {pinnedElsewhere ? <Pin size={16} aria-hidden="true" /> : <PanelRight size={16} aria-hidden="true" />}<span className="tt-visually-hidden">{tools}</span>
-    {workingAgents || browserWaiting || delegatedWaiting ? <span className="tools-toggle__agents-dot" data-needs={delegatedWaiting || undefined} aria-hidden="true" /> : null}
-  </button>
+  document.querySelector<HTMLElement>(`[data-opens="${TOOLS_OPENER}"]`)?.focus()
 }
 
 /**

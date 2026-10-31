@@ -73,7 +73,7 @@ export async function commandReceiptWindow(root: string, schedule: PublishSchedu
   const registry = ipcRegistry({ mainUrl: 'file:///main.html' })
   const { ipc, main } = registry
   const broadcaster = new AgentStateBroadcaster()
-  const unregister = registerAgentIpc(ipc, router, router, () => [main], { encodeReceipt: broadcaster.encodeReceipt, windowRead: broadcaster.windowRead })
+  const unregister = registerAgentIpc(ipc, router, router, () => [main], { encodeReceipt: broadcaster.encodeReceipt, encodeChangedThreadRecordsReceipt: broadcaster.encodeChangedThreadRecordsReceipt, windowRead: broadcaster.windowRead })
   const handle = (channel: string, ...args: unknown[]): Promise<unknown> => registry.invoke(channel, args)
 
   const wire: Array<{ channel: string; payload: unknown }> = []

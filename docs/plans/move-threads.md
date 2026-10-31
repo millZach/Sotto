@@ -191,3 +191,23 @@ After Sol's confirmation pass on part 4 (October 30):
 - Main says when a move can be kept here (`keepable` on its card): it waits on a machine, with no step under way and not already ending or kept. A press during a step under way, settling the source among them, is refused as not waiting, so it never races the step.
 - Bringing Watcher's watch back has tries of its own, apart from the tries to carry it.
 
+
+## Move suggestions, #1309, as built (October 30, 2026)
+
+Zach's picks on the question card, October 30 (tag `prototype/move-suggestions`):
+
+1. **When Sotto looks: A, no new reads.** A suggestion comes only from the readings the machines line already takes, when Watcher places work or the user opens a machine's panel. His October 23 call that nothing reads machines on a timer stands.
+2. **Where: A, under the machines line.** One line under the line that says what is wrong, gone once the machine reads fine.
+3. **Which threads: A, one named thread, and Choose threads….** The thread at a clean point that worked most recently, with one press to move it, and Choose threads… for the sheet.
+4. **Not now: A.** It hides the suggestion until that machine reads fine again.
+
+As built:
+
+- The window alone (`MoveSuggestion.tsx`, the plan in `moveSuggestionPlan.ts`). Main and the host protocol do not change: the line uses the sheet's own `prepare` and `start`.
+- The machine with room is the one with the most headroom (`headroom` in `list_machines`, #1694), This computer first among equals. A machine whose headroom is null never has room, so a Mac, whose memory reads unknown, is never offered as one.
+- What the line asks about is worked out from the machines alone, so a thread's update does no work for it. Each troubled machine's reading, toward the machine with room, asks main's preview once about that machine's threads that the window can see might move (not running a turn, showing no card, no uncommitted work as its host last read it, not put away, delegated or Watcher's), most recently worked first, in the hundreds a preview takes until one would move now, four hundreds at most, so its previews stay below the eight main keeps; that one is named. It asks nothing while the Move threads sheet is open, so it never pushes out the sheet's own preview, and a reading cut short by the sheet opening is asked once it closes. When none on the first troubled machine would, the next is asked. Each answer is kept by its machine's own reading, so the same reading never asks again, however the threads change under it, the line goes and comes back, another machine reads or the user says Not now to another machine, and an answer that comes late fills only its own reading.
+- A named thread that has since started a turn, shows a card or reads uncommitted work is not named, and the next troubled machine is asked in its place. Work uncommitted since its host last read the folder, and background work, are main's to see, on the press.
+- Move asks for a fresh preview of that thread and starts it. One that would start narrower opens the sheet for that thread at the same machine (`targetHostId`), where it asks first. A check that failed and a start whose answer was lost say so differently, and a press's answer shows only on the reading it was pressed on; every button waits while one is under way. A pressed reading says nothing more until the next one.
+- Choose threads… opens the sheet with the machine named (`{ kind: 'all', targetHostId }`), which goes straight to it, nothing ticked.
+- After the press or Not now, focus goes to that machine's name on the machines line, wide or narrow, whichever shows.
+- Not now is held by the window while it lives, not saved; a reading that shows the machine connected and neither busy, short nor unknown forgets it.

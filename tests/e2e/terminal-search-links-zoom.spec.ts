@@ -1,7 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, resizeWindow, toggleTools, paneMenuToggle } from './support/sottoLaunch'
 import { forceDomTerminalRenderer, SHELL_START_TIMEOUT, terminalOutput, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -135,12 +135,12 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       const threadId = (await page.locator('.thread-pane').first().getAttribute('data-thread-id'))!
       let scope: Locator
       if (surface === 'tools') {
-        await page.getByRole('button', { name: 'Tools', exact: true }).click()
+        await toggleTools(page)
         scope = page.getByRole('complementary', { name: 'Tools', exact: true })
         await scope.getByRole('tablist', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
         await scope.getByRole('button', { name: 'Start terminal', exact: true }).click()
       } else {
-        await page.locator('[data-pane-terminal-toggle]').first().click()
+        await paneMenuToggle(page, 'Terminal drawer')
         scope = page.locator('.pane-terminal')
       }
       const input = scope.locator('.xterm-helper-textarea')
@@ -170,7 +170,7 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
         await expect(search.locator('output')).toHaveText('2 of 3')
         await find.press('Control+j')
         await expect(scope).toBeHidden()
-        await page.locator('[data-pane-terminal-toggle]').first().click()
+        await paneMenuToggle(page, 'Terminal drawer')
         await expect(scope).toBeVisible()
         await input.press('Control+f')
         await expect(find).toHaveValue('needle')
@@ -253,7 +253,7 @@ process.stdin.on('data', data => { for(const c of data.toString()) { if(c==='\\x
       await page.reload(); await openThreads(page)
       await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
       if (surface === 'tools') {
-        await page.getByRole('button', { name: 'Tools', exact: true }).click()
+        await toggleTools(page)
         await scope.getByRole('tablist', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
       }
       await expect(scope.locator('.xterm-rows')).toHaveCSS('font-size', '15px')

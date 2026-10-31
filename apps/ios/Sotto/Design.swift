@@ -685,7 +685,8 @@ final class WashLoopView: LoopingView {
 // MARK: - A tab page that scrolls as one sheet
 
 /// A tab's page: the wash, the heading, its controls and the content all scroll together as one sheet, with no
-/// compact bar. Once the page moves, content fades out under the status bar so text never meets the clock.
+/// compact bar. Once the page moves, content fades out under the status bar so text never meets the clock. A second
+/// press on the page's tab scrolls it back to its top.
 /// Apply `.refreshable` and `.scrollDismissesKeyboard` to the page; the scroll view inside reads them.
 struct SheetPage<Content: View>: View {
     var warm = false
@@ -693,6 +694,8 @@ struct SheetPage<Content: View>: View {
     var washHeight: CGFloat = 520
     let content: Content
     @State private var fade: CGFloat = 0
+    @Environment(\.pageTop) private var topRequest
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     init(warm: Bool = false, washTone: Wash.Tone = .normal, washHeight: CGFloat = 520, @ViewBuilder content: () -> Content) {
         self.warm = warm
         self.washTone = washTone
@@ -701,23 +704,29 @@ struct SheetPage<Content: View>: View {
     }
     var body: some View {
         VStack(spacing: 0) {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    content
-                }
-                .padding(.horizontal, Space.gutter)
-                .padding(.bottom, Space.s8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(alignment: .top) {
-                    // Reaches up under the status bar, so at rest the wash meets the top edge.
-                    Wash(warm: warm, tone: washTone, height: washHeight + 160).offset(y: -160)
-                }
-                .background(alignment: .top) {
-                    // How far the content has moved up from rest, read against the page's own top.
-                    GeometryReader { proxy in
-                        Color.clear.onChange(of: proxy.frame(in: .named("sheet-page")).minY) { _, top in travelled(top) }
+            ScrollViewReader { reader in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Color.clear.frame(height: 0).id(sheetPageTop)
+                        content
                     }
-                    .frame(height: 0)
+                    .padding(.horizontal, Space.gutter)
+                    .padding(.bottom, Space.s8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(alignment: .top) {
+                        // Reaches up under the status bar, so at rest the wash meets the top edge.
+                        Wash(warm: warm, tone: washTone, height: washHeight + 160).offset(y: -160)
+                    }
+                    .background(alignment: .top) {
+                        // How far the content has moved up from rest, read against the page's own top.
+                        GeometryReader { proxy in
+                            Color.clear.onChange(of: proxy.frame(in: .named("sheet-page")).minY) { _, top in travelled(top) }
+                        }
+                        .frame(height: 0)
+                    }
+                }
+                .onChange(of: topRequest) {
+                    withAnimation(reduceMotion ? nil : .snappy) { reader.scrollTo(sheetPageTop, anchor: .top) }
                 }
             }
         }
@@ -732,21 +741,28 @@ struct SheetPage<Content: View>: View {
     }
 }
 
-/// The page's ground fading in under the status bar.
+/// The scroll target at the very top of a `SheetPage`.
+private let sheetPageTop = "sheet-page-top"
+
+/// The page's ground fading in under the status bar: solid over the clock and clear 10 points below the status bar.
+/// A strip at the top of the safe area carries it as a background that reaches up through the status bar, so its
+/// height follows the status bar's without reading it. It used to take its height from the inset a `GeometryReader`
+/// read while ignoring the safe area itself, and scrolled text ran under the clock on every tab page (#1851).
 private struct StatusBarFade: View {
     var body: some View {
-        GeometryReader { proxy in
-            PageGround()
-                .mask(LinearGradient(stops: [
-                    Gradient.Stop(color: .black, location: 0.62),
-                    Gradient.Stop(color: .clear, location: 1)
-                ], startPoint: .top, endPoint: .bottom))
-                .frame(height: proxy.safeAreaInsets.top + 10)
-                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-        }
-        .ignoresSafeArea(edges: .top)
-        .allowsHitTesting(false)
-        .accessibilityHidden(true)
+        Color.clear
+            .frame(maxWidth: .infinity)
+            .frame(height: 10)
+            .background {
+                PageGround()
+                    .mask(LinearGradient(stops: [
+                        Gradient.Stop(color: .black, location: 0.62),
+                        Gradient.Stop(color: .clear, location: 1)
+                    ], startPoint: .top, endPoint: .bottom))
+                    .ignoresSafeArea(edges: .top)
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 }
 

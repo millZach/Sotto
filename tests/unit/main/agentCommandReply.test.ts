@@ -21,11 +21,11 @@ import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { immediatePublishScheduler } from '../../fixtures/publishScheduler'
 
 vi.mock('electron', () => ({ app: { isPackaged: false, getAppPath: () => 'D:/fixture' } }))
-import { AgentStateBroadcaster } from '../../../src/main/agents/agentStateBroadcast'
 import { registerAgentIpc } from '../../../src/main/agents/ipc'
 import { testCredentials } from '../../fixtures/testCredentials'
 import { createAgentControl } from '../../fixtures/agentControlFixture'
 import { ipcRegistry } from '../../fixtures/ipcHarness'
+import { receiptEncoders } from '../../fixtures/receiptEncoders'
 
 const HOST_ID = '11111111-1111-4111-8111-111111111111'
 const roots: string[] = []
@@ -59,7 +59,7 @@ async function fixture() {
 
   const registry = ipcRegistry()
   const { ipc, main } = registry
-  disposables.push(registerAgentIpc(ipc, router, router, () => [main], { encodeReceipt: new AgentStateBroadcaster().encodeReceipt }))
+  disposables.push(registerAgentIpc(ipc, router, router, () => [main], { ...receiptEncoders() }))
   const send = (command: AgentCommand) =>
     registry.invoke(AGENT_COMMAND, [command]) as Promise<AgentState>
   return { control, send }

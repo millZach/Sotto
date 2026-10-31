@@ -1,6 +1,6 @@
 import { clientCatalogKey, hostCatalogKey } from '../../../shared/agents'
-import type { AgentBridge, AgentClientHost, AgentCommandReceipt, AgentModel, AgentState, AgentWireBridge } from '../../../shared/agents'
-import { createThreadReassembly } from './agentStateThreads'
+import type { AgentBridge, AgentClientHost, AgentCommandReceipt, AgentCommandChangedThreadRecordsReceipt, AgentModel, AgentState, AgentThread, AgentWireBridge } from '../../../shared/agents'
+import { createThreadReassembly, type ThreadReassembly } from './agentStateThreads'
 
 interface CachedCatalog {
   revision: number
@@ -52,12 +52,15 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
     }
     return full
   }
-  const completeReceipt = createReceiptCompleter({ get }, catalogs, lastRead)
+  // The thread records the window's subscription was last broadcast, which a reply's changed thread records are put back from.
+  let held: ThreadReassembly | undefined
+  const completeReceipt = createReceiptCompleter({ get }, catalogs, lastRead, () => held)
   const result: AgentBridge = {
     ...bridge,
     get,
-    onState: listener => bridge.onState(createReassembler({ get }, catalogs, listener)),
-    command: async request => completeReceipt(await bridge.command(request)),
+    onState: listener => { const threads = createThreadReassembly(); held = threads; return bridge.onState(createReassembler({ get }, catalogs, listener, threads)) },
+    // A window holding a broadcast asks for a reply's threads as the changed thread records since it (ADR-0028, October 30 amendment).
+    command: async request => completeReceipt(held && bridge.commandWithChangedThreadRecords ? await bridge.commandWithChangedThreadRecords(request) : await bridge.command(request)),
   }
   wrapped.set(bridge, result)
   return result
@@ -99,8 +102,11 @@ function revisionOf(catalog: unknown): number | undefined {
     ? (catalog as { revision: number }).revision : undefined
 }
 
+/** Any state whose catalogs a page reads by key: a state, a broadcast or a receipt, whatever its threads. */
+type Cataloged = Pick<AgentState | AgentCommandReceipt | AgentCommandChangedThreadRecordsReceipt, 'host'>
+
 /** Each catalog `state` names, as `key@revision` under the keys main counts revisions by. */
-function catalogRevisions(state: AgentState | AgentCommandReceipt): string[] {
+function catalogRevisions(state: Cataloged): string[] {
   const named = (key: string, catalog: unknown): string => `${key}@${revisionOf(catalog) ?? '?'}`
   return [named(hostCatalogKey(state.host.hostId), state.host.models),
     ...(state.host.clientHosts ?? []).map(client => named(clientCatalogKey(client.hostId), client.models))]
@@ -127,7 +133,7 @@ function assembleState(catalogs: CatalogCache, state: AgentState | AgentCommandR
  * an immediate repeat of them is read from the cache instead of asked for again. Main answers `get()` after
  * it sent `named`, so the answer is never older than those revisions.
  */
-function rememberRecovered(catalogs: CatalogCache, named: AgentState | AgentCommandReceipt, full: AgentState): void {
+function rememberRecovered(catalogs: CatalogCache, named: Cataloged, full: AgentState): void {
   // Revisions only advance, so a newer one the window already holds is never filed over.
   const remember = (key: string, revision: number | undefined): void => {
     const models = catalogIn(full, key)
@@ -167,9 +173,10 @@ function catalogIn(full: AgentState, key: string): AgentModel[] | undefined {
  * recorded no catalog as sent to it, so the next broadcast carries the catalog in full; until then that
  * host has no models, which is what the window already showed.
  */
-function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, lastRead: LastRead): (reply: AgentCommandReceipt) => Promise<AgentState> {
+function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, lastRead: LastRead, held: () => ThreadReassembly | undefined): (reply: AgentCommandReceipt | AgentCommandChangedThreadRecordsReceipt) => Promise<AgentState> {
   const recoveries = new Map<string, Promise<AgentState>>()
-  const recover = (reply: AgentCommandReceipt): Promise<AgentState> => {
+  const readAfresh = (reply: Cataloged): Promise<AgentState> => bridge.get().catch(() => bridge.get()).then(full => { rememberRecovered(catalogs, reply, full); return full })
+  const recover = (reply: Cataloged): Promise<AgentState> => {
     // Main counts revisions per catalog key, so the key names each catalog by the key main files it under.
     const named = catalogRevisions(reply).join(' ')
     let recovery = recoveries.get(named)
@@ -182,14 +189,26 @@ function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: Cata
     return recovery
   }
   return async reply => {
-    const assembled = assembleState(catalogs, reply, { newer: true })
-    if (assembled !== undefined) return assembled
+    // A reply's changed thread records are put back from the broadcast the window holds; a complete list needs nothing held.
+    const wire = reply.host.threads
+    const threads: AgentThread[] | undefined = Array.isArray(wire) ? wire : wire.base === null ? wire.changed : held()?.peek(wire)
+    const receipt: AgentCommandReceipt = { ...reply, host: { ...reply.host, threads: threads ?? [] } }
+    const assembled = assembleState(catalogs, receipt, { newer: true })
+    if (assembled !== undefined && threads !== undefined) return assembled
+    // A catalog or the threads this window cannot put back: a reply that overtook the broadcast it was measured from, or
+    // one measured from a broadcast this window never held. The whole state answers, and the next broadcast lists every
+    // thread record.
+    // Threads the window cannot put back are read afresh, in a read begun after this reply arrived, so it holds the reply's
+    // own command: one begun for an earlier reply may predate it. A read for catalogs alone is shared, since a catalog's
+    // revision only advances.
     let recovered: AgentState | null = null
-    try { recovered = await recover(reply) } catch { /* main ran the command; the fallback below answers */ }
+    try { recovered = await (threads === undefined ? readAfresh(reply) : recover(reply)) } catch { /* main ran the command; the fallback below answers */ }
     const fallback = (key: string): AgentModel[] => (recovered === null ? undefined : catalogIn(recovered, key))
       ?? catalogs.get(key)?.models ?? lastRead.get(key) ?? []
-    // With a fallback that always answers, every catalog resolves.
-    return assembleState(catalogs, reply, { newer: true, fallback })!
+    // With a fallback that always answers, every catalog resolves. Threads no recovery answered for are the whole list the
+    // window was last broadcast, never the changed records alone: the next broadcast carries the change.
+    const state = assembleState(catalogs, receipt, { newer: true, fallback })!
+    return threads !== undefined ? state : { ...state, host: { ...state.host, threads: recovered?.host.threads ?? held()?.current() ?? (Array.isArray(wire) ? wire : wire.changed) } }
   }
 }
 
@@ -206,11 +225,11 @@ function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: Cata
  * attempt: from the cache, or a recovery of its own. Nothing but a broadcast ever starts a recovery, so
  * a `get()` that keeps failing is retried at most once per broadcast, never on a timer.
  */
-function createReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, listener: (state: AgentState) => void): (raw: unknown) => void {
+function createReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, listener: (state: AgentState) => void,
+  // The thread records this subscription was broadcast, which each broadcast's changed records are applied to (#1330).
+  threads: ThreadReassembly = createThreadReassembly()): (raw: unknown) => void {
   let recovering = false
   let pending: unknown = null
-  // The thread records this subscription was broadcast, which each broadcast's changed records are applied to (#1330).
-  const threads = createThreadReassembly()
 
   /** Caches whatever catalogs a broadcast carried in full, and applies its threads, without delivering it. */
   const seed = (raw: unknown): void => {

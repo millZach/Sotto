@@ -285,6 +285,18 @@ msgstr ""
 msgid "{free} of {all} available. Short on memory"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "{fromName} is busy and short on memory, and {toName} has room."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "{fromName} is busy, and {toName} has room."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "{fromName} is short on memory, and {toName} has room."
+msgstr ""
+
 #: src/renderer/src/features/updates/updateAll.ts
 msgid "{host} restarted before {name} updated. Nothing was changed. Try again."
 msgstr ""
@@ -670,6 +682,10 @@ msgstr ""
 
 #: src/renderer/src/features/usage/UsageSubscriptions.tsx
 msgid "{timePercent}% of the time left"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "{title} can’t move to {toName} now. Nothing was moved."
 msgstr ""
 
 #: src/renderer/src/watcher/WatcherStopAll.tsx
@@ -1383,6 +1399,14 @@ msgstr ""
 msgid "Choose threads to move to {named}"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "Choose threads to move to {toName}"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "Choose threads…"
+msgstr ""
+
 #: src/renderer/src/features/usage/usagePresentation.ts
 msgid "Claude Code subscription"
 msgstr ""
@@ -1467,13 +1491,11 @@ msgstr ""
 msgid "Codex plugin in Claude Code"
 msgstr ""
 
-#: src/renderer/src/features/help/HelpView.tsx
-#: src/renderer/src/watcher/WatcherView.tsx
+#: src/renderer/src/watcher/watcherProviders.ts
 msgid "Codex, Claude Code or Grok Build"
 msgstr ""
 
-#: src/renderer/src/features/help/HelpView.tsx
-#: src/renderer/src/watcher/WatcherView.tsx
+#: src/renderer/src/watcher/watcherProviders.ts
 msgid "Codex, Claude Code, Grok Build or Muse"
 msgstr ""
 
@@ -2420,8 +2442,17 @@ msgstr ""
 msgid "It gave no reason."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "It is between turns."
+msgstr ""
+
 #: src/renderer/src/watcher/WatcherNew.tsx
 msgid "It is in the box below, not sent."
+msgstr ""
+
+#. placeholder {0}: agoWords(now - at)
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "It last worked {0} and is between turns."
 msgstr ""
 
 #: src/renderer/src/features/help/HelpView.tsx
@@ -2940,6 +2971,10 @@ msgstr ""
 msgid "Move {one} to {named}?"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "Move <0>{title}</0> there?"
+msgstr ""
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Move it anyway"
 msgstr ""
@@ -2970,6 +3005,10 @@ msgstr ""
 msgid "Move threads to which machine?"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "Move to {toName}"
+msgstr ""
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Moved"
 msgstr ""
@@ -2986,6 +3025,7 @@ msgstr ""
 msgid "Moving"
 msgstr ""
 
+#: src/renderer/src/watcher/MoveSuggestion.tsx
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Moving…"
 msgstr ""
@@ -3269,8 +3309,13 @@ msgstr ""
 #: src/renderer/src/features/memory/Questionnaire.tsx
 #: src/renderer/src/features/performance/MainFreezeNotice.tsx
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
+#: src/renderer/src/watcher/MoveSuggestion.tsx
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Not now"
+msgstr ""
+
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "Not now, until {fromName} reads fine again"
 msgstr ""
 
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
@@ -4672,6 +4717,10 @@ msgstr ""
 msgid "Sotto could not check Omarchy setup. Your files were left alone. Try again."
 msgstr ""
 
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "Sotto could not check whether {title} can move. Nothing was moved. Try again."
+msgstr ""
+
 #: src/renderer/src/watcher/MoveThreads.tsx
 msgid "Sotto could not check which threads can move. Nothing was moved. Try again."
 msgstr ""
@@ -4862,6 +4911,10 @@ msgstr ""
 
 #: src/renderer/src/platformCopy.ts
 msgid "Sotto looks for new releases on GitHub and installs them itself."
+msgstr ""
+
+#: src/renderer/src/watcher/MoveSuggestion.tsx
+msgid "Sotto lost the answer, so {title} may be moving. Its card in Watcher’s conversation says where it stands."
 msgstr ""
 
 #: src/renderer/src/watcher/MoveThreads.tsx

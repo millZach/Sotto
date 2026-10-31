@@ -1,6 +1,6 @@
 {
   "name": "sotto",
-  "version": "0.1.40",
+  "version": "0.1.41",
   "description": "Dictation on this computer and a coordinator for coding agent threads",
   "author": "Sotto",
   "private": true,
@@ -44,7 +44,7 @@
     "host:verify": "node scripts/verify-host-archive.mjs",
     "test:socket": "vitest run tests/integration/watcherPhone.test.ts tests/integration/socketHostContract.test.ts tests/integration/socketHost.test.ts tests/integration/socketClientIsolation.test.ts tests/integration/socketThreadDetail.test.ts tests/integration/socketHostFeatures.test.ts tests/integration/socketRequestBudgets.test.ts tests/integration/remoteThreadPermissions.test.ts tests/unit/main/pairing.test.ts tests/unit/host/socketFrames.test.ts tests/unit/main/socketDraftDelivery.test.ts tests/unit/main/socketHostFeatures.test.ts tests/unit/main/socketAnswerRecovery.test.ts tests/integration/socketHostCompatibility.test.ts tests/unit/host/remoteCommands.test.ts tests/integration/headlessProcess.test.ts tests/integration/sshLauncher.test.ts tests/integration/launchScript.test.ts tests/integration/launchScriptBoot.test.ts tests/integration/hostListener.test.ts tests/integration/socketWebSocketInterop.test.ts tests/unit/main/cliLookup.test.ts tests/integration/hostProviderLookup.test.ts --maxWorkers=2",
     "assets:verify": "node scripts/verify-assets.mjs",
-    "package:linux": "npm run assets:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --linux tar.gz --x64 --config.npmRebuild=true --publish never && node scripts/verify-packaged-resources.mjs release/linux-unpacked --installer \"release/Sotto-0.1.40-linux-x64.tar.gz\""
+    "package:linux": "npm run assets:verify && npm run build && node scripts/write-build-provenance.mjs && electron-builder --linux tar.gz --x64 --config.npmRebuild=true --publish never && node scripts/verify-packaged-resources.mjs release/linux-unpacked --installer \"release/Sotto-0.1.41-linux-x64.tar.gz\""
   },
   "license": "MIT",
   "type": "commonjs",

@@ -8,7 +8,7 @@ import { join, resolve } from 'node:path'
 import { expect, test, type ElectronApplication } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { requireOwnedE2EProfile } from '../../scripts/e2e-profile-policy.mjs'
-import { closeSotto, launchSotto, openPage, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openPage, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 const SHOTS = evidenceDirectory('artifacts/remote-thread-tools')
@@ -82,7 +82,7 @@ test('a thread on a paired host shows its files, changes and agents in Tools', a
       return state.host.threads.find(thread => thread.id === state.activeThreadId)?.title ?? null
     }), { timeout: 15_000 }).toBe('New thread')
 
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     const footer = panel.locator('.tools-panel__foot')
 

@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { expect, test } from '@playwright/test'
-import { bareEntityId, closeSotto, launchSotto, openThreads, resizeWindow } from './support/sottoLaunch'
+import { bareEntityId, closeSotto, launchSotto, openThreads, resizeWindow, toggleTools, paneMenuToggle } from './support/sottoLaunch'
 import { terminalOutput, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { TERMINAL_CHANNEL, TERMINAL_LIMIT_MESSAGE, terminalSessionSchema } from '../../src/shared/terminal'
 
@@ -27,10 +27,10 @@ for (const place of ['tools', 'drawer'] as const) {
       await page.reload(); await openThreads(page)
       await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
       if (place === 'tools') {
-        await page.getByRole('button', { name: 'Tools', exact: true }).click()
+        await toggleTools(page)
         await page.getByRole('complementary', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
         await page.getByRole('button', { name: 'Start terminal', exact: true }).press('Enter')
-      } else await page.getByRole('button', { name: 'Terminal drawer', exact: true }).click()
+      } else await paneMenuToggle(page, 'Terminal drawer')
       const notice = page.getByRole('alert').filter({ hasText: 'Sotto is removing this folder.' })
       await expect(notice).toContainText('The terminal did not start. Try again when it finishes.')
       await expect(notice).not.toContainText('storage')
@@ -82,7 +82,7 @@ test('a running Tools shell restores truthfully and the global ended-shell limit
     })
     await launched.page.reload(); await openThreads(launched.page)
     await launched.page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-    await launched.page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(launched.page)
     let panel = launched.page.getByRole('complementary', { name: 'Tools', exact: true })
     await panel.getByRole('tablist', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
     await panel.getByRole('button', { name: 'Start terminal', exact: true }).click()
@@ -101,7 +101,7 @@ test('a running Tools shell restores truthfully and the global ended-shell limit
     launched = { ...await launchSotto('success', profile), ownsUserData: true }
     await openThreads(launched.page)
     await launched.page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-    if (!await launched.page.getByRole('complementary', { name: 'Tools', exact: true }).isVisible()) await launched.page.getByRole('button', { name: 'Tools', exact: true }).click()
+    if (!await launched.page.getByRole('complementary', { name: 'Tools', exact: true }).isVisible()) await toggleTools(launched.page)
     panel = launched.page.getByRole('complementary', { name: 'Tools', exact: true })
     await panel.getByRole('tablist', { name: 'Tools', exact: true }).getByRole('tab', { name: 'Terminal', exact: true }).click()
     await expect(panel.getByText('Nothing it showed was kept.')).toBeVisible()

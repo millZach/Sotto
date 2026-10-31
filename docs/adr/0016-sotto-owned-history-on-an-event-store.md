@@ -407,4 +407,5 @@ work as it comes into view, and shows twenty such entries 2 to 4 ms later.
 not watch and that is not working, shows when the thread is opened or sent to, or at the next start, rather than within
 a second. Sidebar rows of such threads show it then too. Nothing of it is lost. A send still reads the thread before it writes, so takeover refusal is unchanged. A
 whole read of the adapter, which a send's read after the prompt asks for, still reads every transcript, as before. A
-subagent's model, read from its own transcript, is read when its thread's transcript is.
+subagent's model, read from its own transcript, is read when its thread's transcript is. Codex's rollouts follow the same
+rule, read on from a saved position (ADR-0005, October 30 amendment).

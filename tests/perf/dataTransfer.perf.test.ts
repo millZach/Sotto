@@ -13,7 +13,8 @@
  * Switches: `SOTTO_AUDIT_TRACK=stable`; `SOTTO_AUDIT_LONG=0` for short threads (long ones hold 2,000 activity records of
  * about 3 KB and 550 messages, the size of forge's longest real threads); `SOTTO_AUDIT_WATCHER=<scale>`;
  * `SOTTO_AUDIT_PROFILE=<scenario,...>` writes a CPU profile of each named scenario to the temporary folder;
- * `SOTTO_AUDIT_STACKS=1` names where each post to the store worker over 1 MB was made; `SOTTO_AUDIT_WORKER=1` runs the thread
+ * `SOTTO_AUDIT_STACKS=1` names where each post to the store worker over 1 MB was made; `SOTTO_AUDIT_REPLY_PARTS=1` prints what a
+ * command's reply to the window is made of; `SOTTO_AUDIT_WORKER=1` runs the thread
  * store on the store worker as the build compiles it, so a read made there leaves main and the wire counted is the worker
  * handle's own, rather than writing on main and building the wire beside it.
  */
@@ -339,26 +340,62 @@ it.skipIf(!BENCH)('measures what main moves per chunk and per action', async () 
   results.wholeStateJsonBytes = Buffer.byteLength(nativeStringify(whole))
   results.wholeStateThreads = whole.host.threads.length
   results.idle = await scenario(async () => { await pass(10_000) }, 0, 'idle')
-  // A1: a command's reply to the window, as the preload takes it (zod) and the page shares it, and A7: the startup shell
-  // the page caches every 2 s. Timed on the machine's clock, median of 15.
+  // A1: a command's reply to the window, as main encodes it, the preload checks it and the page completes and shares it, and
+  // A7: the startup shell the page caches every 2 s. The window holds a broadcast from the same encoder, as main has one for
+  // its window; the page asks for its replies as that version of it does. Timed on the machine's clock, median of 15.
   {
-    const { agentCommandReceiptSchema } = await import('../../src/shared/agents')
+    const shared = await import('../../src/shared/agents') as typeof import('../../src/shared/agents') & { agentCommandChangedThreadRecordsReceiptSchema?: { parse(input: unknown): unknown } }
     const { createStateSharing } = await import('../../src/renderer/src/agents/stateSharing')
     const { cacheableShell } = await import('../../src/renderer/src/agents/shellCache')
+    const { wrapAgentBridge } = await import('../../src/renderer/src/agents/agentStateCatalogs')
     const { desktopWindowClient } = await import('../../src/main/agents/hostService')
-    const encoder = new AgentStateBroadcaster()
-    const replies: unknown[] = []
-    for (let index = 0; index < 16; index++) {
-      const result = await until(p.router.command({ type: 'save-thread-draft', composer: 'manual', threadId: p.openThread, draftId: `00000000-0000-4000-a000-${index.toString(16).padStart(12, '0')}`, text: `Synthetic draft ${index}`, attachments: [], requestId: null }, desktopWindowClient()))
-      replies.push(encoder.encodeReceipt(result as AgentState))
-    }
-    const timed = (work: (index: number) => unknown) => { const samples: number[] = []; for (let index = 1; index < replies.length; index++) { const started = realNow(); work(index); samples.push(realNow() - started) } return Math.round(median(samples) * 100) / 100 }
-    const decoded = replies.map(reply => structuredClone(reply))
+    const encoder = new AgentStateBroadcaster() as AgentStateBroadcaster & { encodeChangedThreadRecordsReceipt?: (state: AgentState) => unknown }
+    // The window's broadcasts, from the same encoder, to the page's subscription, as main sends its window each change.
+    let toPage: ((state: unknown) => void) | undefined
+    const broadcast = (state: AgentState): void => { encoder.send(state, payload => { toPage?.(structuredClone(payload)); return true }) }
+    const changes = typeof encoder.encodeChangedThreadRecordsReceipt === 'function'
+    const schema = changes ? shared.agentCommandChangedThreadRecordsReceiptSchema! : shared.agentCommandReceiptSchema
+    let reply: unknown
+    const wire = { get: async () => structuredClone(whole), onState: (listener: (state: unknown) => void) => { toPage = listener; return () => undefined },
+      command: async () => reply, ...changes ? { commandWithChangedThreadRecords: async () => reply } : {} }
+    const page = wrapAgentBridge(wire as never)
+    let held: AgentState | undefined
+    page.onState(state => { held = state })
+    broadcast(whole)
     const sharing = createStateSharing()
-    sharing(undefined, decoded[0])
-    results.commandReply = { bytes: serialize(replies[0]).byteLength, threads: (replies[0] as AgentState).host.threads.length,
-      zodParseMs: timed(index => agentCommandReceiptSchema.parse(decoded[index])), structuredCloneMs: timed(index => structuredClone(replies[index])),
-      shareMs: timed(index => sharing(decoded[index - 1], decoded[index])) }
+    let shown = sharing(undefined, held!)
+    const samples = { bytes: [] as number[], ipcMs: [] as number[], preloadMs: [] as number[], pageMs: [] as number[], shareMs: [] as number[] }
+    for (let index = 0; index < 16; index++) {
+      // What the window was last broadcast: the state as it stood before this command.
+      broadcast(p.router.shell() as AgentState)
+      shown = sharing(shown, held!)
+      const result = await until(p.router.command({ type: 'save-thread-draft', composer: 'manual', threadId: p.openThread, draftId: `00000000-0000-4000-a000-${index.toString(16).padStart(12, '0')}`, text: `Synthetic draft ${index}`, attachments: [], requestId: null }, desktopWindowClient()))
+      const encoded = changes ? encoder.encodeChangedThreadRecordsReceipt!(result as AgentState) : encoder.encodeReceipt(result as AgentState)
+      let started = realNow()
+      const decoded = structuredClone(encoded)
+      const ipcMs = realNow() - started
+      started = realNow()
+      reply = schema.parse(decoded)
+      const preloadMs = realNow() - started
+      started = realNow()
+      const state = await page.command({ type: 'save-thread-draft' } as never)
+      const pageMs = realNow() - started
+      started = realNow()
+      shown = sharing(shown, state)
+      const shareMs = realNow() - started
+      if (index === 1 && process.env.SOTTO_AUDIT_REPLY_PARTS === '1') {
+        const { host, ...rest } = encoded as unknown as Record<string, unknown> & { host: Record<string, unknown> & { threads: { changed?: unknown[] } | unknown[] } }
+        const { threads, ...hostRest } = host
+        const sizes = (parts: Record<string, unknown>): [string, number][] => Object.entries(parts).map(([key, value]): [string, number] => [key, serialize(value).byteLength]).sort((x, y) => y[1] - x[1]).slice(0, 8)
+        console.log(`REPLY-PARTS ${JSON.stringify({ changed: Array.isArray(threads) ? threads.length : threads.changed?.length, threadBytes: serialize(threads).byteLength,
+          hostRestBytes: serialize(hostRest).byteLength, rest: Object.fromEntries(sizes(rest)), host: Object.fromEntries(sizes(hostRest)) })}`)
+      }
+      if (index === 0) continue
+      samples.bytes.push(serialize(encoded).byteLength); samples.ipcMs.push(ipcMs); samples.preloadMs.push(preloadMs); samples.pageMs.push(pageMs); samples.shareMs.push(shareMs)
+    }
+    const at = (values: number[]) => Math.round(median(values) * 100) / 100
+    results.commandReply = { changedThreadRecords: changes, threads: shown.host.threads.length, bytes: at(samples.bytes), ipcCopyMs: at(samples.ipcMs), preloadCheckMs: at(samples.preloadMs),
+      pageCompleteMs: at(samples.pageMs), shareMs: at(samples.shareMs) }
     const cached = cacheableShell(whole)
     const started = realNow(), text = nativeStringify(cached)
     results.shellCache = { chars: text.length, stringifyMs: Math.round((realNow() - started) * 100) / 100 }

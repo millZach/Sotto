@@ -11,8 +11,8 @@ const keydown = (patch: Partial<ChordEvent> = {}): ChordEvent =>
 /** Two panes, as a split shows them: each with a composer, and a drawer terminal in the first. */
 function panes(): { readonly first: HTMLElement; readonly second: HTMLElement; readonly drawerTerminal: HTMLElement } {
   document.body.innerHTML = `
-    <section class="thread-pane" data-thread-id="first"><button data-pane-terminal-toggle></button><textarea></textarea><div class="pane-terminal"><div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div></div></section>
-    <section class="thread-pane" data-thread-id="second"><button data-pane-terminal-toggle></button><textarea></textarea></section>`
+    <section class="thread-pane" data-thread-id="first"><header data-terminal-drawer></header><textarea></textarea><div class="pane-terminal"><div class="xterm"><textarea class="xterm-helper-textarea"></textarea></div></div></section>
+    <section class="thread-pane" data-thread-id="second"><header data-terminal-drawer></header><textarea></textarea></section>`
   const [first, second] = [...document.querySelectorAll<HTMLElement>('.thread-pane')] as [HTMLElement, HTMLElement]
   return { first, second, drawerTerminal: first.querySelector<HTMLElement>('.xterm-helper-textarea')! }
 }

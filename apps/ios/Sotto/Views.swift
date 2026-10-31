@@ -25,6 +25,8 @@ struct MainTabs: View {
     @State private var watcherPath = NavigationPath()
     @State private var covered = Set<UUID>()
     @State private var keyboard = false
+    /// Each tab's count of presses asking its first page to scroll to the top.
+    @State private var tops: [Tab: Int] = [:]
     enum Tab: Hashable { case threads, watcher, computers, settings }
     @Environment(\.horizontalSizeClass) private var width
     @Environment(\.sottoGlass) private var glass
@@ -46,6 +48,7 @@ struct MainTabs: View {
                 NavigationStack(path: $threadPath) {
                     ThreadsView(openCreated: { ref in threadPath.append(ThreadRoute(ref: ref)) }).threadDestination()
                 }
+                    .environment(\.pageTop, tops[.threads, default: 0])
                     .toolbar(.hidden, for: .tabBar)
                     .tag(Tab.threads)
                 // Watcher's tab (1B), only for a computer that runs Watcher and shows it to this iPhone.
@@ -55,19 +58,23 @@ struct MainTabs: View {
                         .tag(Tab.watcher)
                 }
                 NavigationStack { ComputersView() }
+                    .environment(\.pageTop, tops[.computers, default: 0])
                     .toolbar(.hidden, for: .tabBar)
                     .tag(Tab.computers)
                 NavigationStack { SettingsView() }
+                    .environment(\.pageTop, tops[.settings, default: 0])
                     .toolbar(.hidden, for: .tabBar)
                     .tag(Tab.settings)
             }
             if covered.isEmpty && !keyboard && strip == nil {
-                TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab)
+                TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab,
+                        reselect: reselect)
             }
         }
         .overlay(alignment: .bottomTrailing) {
             if let strip, covered.isEmpty && !keyboard {
-                TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab, rail: true)
+                TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab, rail: true,
+                        reselect: reselect)
                     .frame(width: strip)
                     .offset(x: strip)
             }
@@ -113,6 +120,15 @@ struct MainTabs: View {
         if arguments.contains("--ui-open-settings") { tab = .settings }
     }
     #endif
+    /// A press on the tab already chosen goes back to its first page, as the system's tab bar did; a press with the
+    /// first page showing scrolls it to its top.
+    private func reselect(_ chosen: Tab) {
+        switch chosen {
+        case .threads where !threadPath.isEmpty: threadPath = NavigationPath()
+        case .watcher where !watcherPath.isEmpty: watcherPath = NavigationPath()
+        default: tops[chosen, default: 0] += 1
+        }
+    }
     private func openAlerted(_ ref: ThreadRef?) {
         guard let ref else { return }
         model.alertOpened = nil
@@ -148,6 +164,8 @@ struct TabsBar: View {
     let watcher: WatcherTabState?
     /// Stacked in the Duo cover screen's side strip, icons only, as the system drew its rail there.
     var rail = false
+    /// A press on the tab already chosen.
+    var reselect: (MainTabs.Tab) -> Void = { _ in }
     var body: some View {
         let layout = rail ? AnyLayout(VStackLayout(spacing: Space.s2)) : AnyLayout(HStackLayout(spacing: 0))
         layout {
@@ -160,6 +178,9 @@ struct TabsBar: View {
         }
         .padding(rail ? .vertical : .horizontal, Space.s2)
         .padding(.top, rail ? 0 : Space.s1)
+        // The names stay at the size the system's tab bar keeps; at the accessibility sizes a long press shows the
+        // large content viewer instead. Grown with the text, four names ran together on a small iPhone.
+        .dynamicTypeSize(...DynamicTypeSize.large)
         .modifier(TabsGlass(rail: rail))
         .pageGround()
         .accessibilityElement(children: .contain)
@@ -168,7 +189,7 @@ struct TabsBar: View {
     }
     private func item(_ id: MainTabs.Tab, _ icon: Image, _ title: Text, badge: Int, spoken: String) -> some View {
         let chosen = tab == id
-        return Button { tab = id } label: {
+        return Button { if chosen { reselect(id) } else { tab = id } } label: {
             VStack(spacing: 3) {
                 icon.renderingMode(.template).resizable().scaledToFit()
                     .frame(width: 24, height: 24)
@@ -192,6 +213,7 @@ struct TabsBar: View {
         .accessibilityLabel(title)
         .accessibilityValue(Text(verbatim: spoken))
         .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
+        .accessibilityShowsLargeContentViewer { Label { title } icon: { icon.renderingMode(.template) } }
         .accessibilityIdentifier("tab-\(id)")
     }
 }
@@ -209,6 +231,16 @@ private struct TabsGlass: ViewModifier {
         } else {
             content
         }
+    }
+}
+
+/// How many times a tab's first page has been asked to scroll to its top, by a press on its tab while it shows. Set for
+/// each tab's stack by `MainTabs`; `SheetPage` scrolls whenever it changes.
+private struct PageTopKey: EnvironmentKey { static let defaultValue = 0 }
+extension EnvironmentValues {
+    var pageTop: Int {
+        get { self[PageTopKey.self] }
+        set { self[PageTopKey.self] = newValue }
     }
 }
 
