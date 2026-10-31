@@ -42,12 +42,37 @@ Three runs each on forge, the same benchmark on `main` and on the branch.
 | The process's CPU | 1,490-1,532 ms | 889-945 ms |
 
 With three threads streaming the process's CPU fell from 1,201-1,242 ms to 747-776 ms. The first push of a connection,
-and the first after a `shell` read, lists every record: 205 KB. The phone, which does not accept the feature, was sent the
-same 627,049 bytes for its two shells in every run.
+and the first after a `shell` read, lists every record: 205 KB. The phone, which did not accept the feature yet, was sent
+the same 627,049 bytes for its two shells in every run.
 
 The window was broadcast the same thread records. A run of each with every window broadcast logged gave every thread the
 same last record and the same number of records sent, once the run's random IDs, times and temporary folders were set
 aside. The host's encoding of each push's changes is inside `sendShell`.
+
+## The iPhone
+
+The iPhone then accepted the feature too (`ThreadRecordsCache` in SottoCore). The same benchmark, with its phone peer's
+hello as the iPhone now sends it, three runs before and after:
+
+| The phone peer | Before | After |
+| --- | ---: | ---: |
+| A shell push after a send on the open thread (two each run) | 220,462 bytes | 6,946 bytes |
+| Its shells while one thread streams (two each run) | 627,049 bytes | 210,651 bytes |
+
+While a thread streams a phone is pushed few shells, since its rows leave out what changes with every word. The first of
+those two after its hello listed every record (204,066 bytes) and the second was 6,585 bytes. One before run sent the
+phone three shells, 846,120 bytes.
+
+What reading a push costs the iPhone was measured on a Mac test runner by `ThreadRecordsTests` in SottoCore, which
+prints `THREAD-RECORDS-READ` (`swift test` in `apps/ios`). Over 290 records shaped like the benchmark's, the median of
+30 reads, in each of two runs:
+
+| One push | Bytes | Read |
+| --- | ---: | ---: |
+| Every record, as before | 237,498 | 3.88-4.44 ms |
+| One changed record, put back on the 289 held | 1,073 | 0.68 ms |
+
+These are the runner's times. No iPhone was timed; a trace on an iPhone is #1702.
 
 ## The guards
 
@@ -61,8 +86,14 @@ aside. The host's encoding of each push's changes is inside `sendShell`.
   - a push measured from records the client does not hold is not shown; the client reads the shell whole, and the host's
     next push lists every record.
 - `tests/integration/socketHostFeatures.test.ts` lists the feature in health, the listener file and hello.
+- `apps/ios/Tests/SottoCoreTests/ThreadRecordsTests.swift`, in the macOS job: a push's records are read beside its
+  state; the iPhone puts the whole list back through a change, a removal and a new order; a push measured from records
+  it does not hold, or that cannot place every thread, is not shown and changes nothing held; a shell with every record
+  is read as it came; a push whose records name no base is unreadable. `StreamingTests` checks the hello accepts the
+  feature.
 
 ## What it leaves
 
 The rest of the shell still crosses whole with every push, most of the 12 KB a push now carries: projects, providers,
-paired hosts and the coordinator's fields. The iPhone is still sent every record in every push until its client accepts the feature.
+paired hosts and the coordinator's fields. The Android client does not accept the feature yet and is sent every record
+in every push.
