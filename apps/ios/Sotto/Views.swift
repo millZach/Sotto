@@ -108,7 +108,7 @@ struct MainTabs: View {
             if case .strip(trailing: true, width: let strip) = place {
                 Group {
                     // Folded, an open thread's controls take the strip in place of its bar and the tabs (Zach's pick A).
-                    if threadRail(duo) { FoldedThreadRail(ref: model.selected, clear: duo.clockClearance, back: popThread) }
+                    if threadRail(duo) { FoldedThreadRail(ref: model.selected, clear: duo.clockClearance, back: popThread).equatable() }
                     else { rail(shown, clear: duo.clockClearance, grounded: false) }
                 }
                 .frame(width: strip).offset(x: strip)
@@ -193,9 +193,10 @@ struct MainTabs: View {
         case .none: break
         }
     }
-    /// The list's top row, opened as a press on it opens it: a delegated thread that asks opens over the one that delegated.
+    /// The top row of the list as shown, search and all, opened as a press on it opens it: a delegated thread that asks opens
+    /// over the one that delegated. A search that finds nothing opens nothing.
     private func openTopRow() {
-        let groups = model.focusThreads(show: model.show)
+        let groups = model.focusThreads(show: model.show, query: model.listQuery)
         guard let row = groups.questions.first ?? groups.working.first ?? groups.recent.first else { return }
         var routes = [ThreadRoute(ref: row.ref)]
         let asking = groups.asking(row)
@@ -593,7 +594,8 @@ struct ThreadListSections: View, Equatable {
     private func rowView(_ row: HostedThread, _ kind: ThreadListRow.Kind, _ watched: Set<String>, asking: HostedThread? = nil) -> some View {
         let isWatched = watched.contains(row.id)
         let delegated = asking.flatMap { $0.ref == row.ref ? nil : $0 }
-        return ThreadListRow(row: row, kind: kind, asking: delegated, watched: isWatched, chosen: row.ref == chosen,
+        // A row that stands for a delegated thread that asks is marked while that thread shows, as its own is.
+        return ThreadListRow(row: row, kind: kind, asking: delegated, watched: isWatched, chosen: row.ref == chosen || (chosen != nil && delegated?.ref == chosen),
                              canWatch: model.canChangeWatch(row.ref), identifier: identifier,
                              open: { open(row.ref); if let delegated { open(delegated.ref) } },
                              setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })

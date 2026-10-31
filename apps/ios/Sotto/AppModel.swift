@@ -1385,6 +1385,9 @@ struct HeldDetail {
     /// A press on the folded Duo's thread rail, for the thread showing to act on: its page owns Back and its Agents sheet,
     /// and a delegated thread opened from Agents is pushed by that page, not by the tabs. Set back to nil once taken.
     @Published var railAsked: RailAsk?
+    /// What the Threads list is searched for now, read once when the Duo unfolds from it. Not published: nothing draws it.
+    var listQuery = ""
+
     /// A computer whose Watcher alert was tapped, for the tabs to open the Watcher tab. Set back to nil once it is open.
     @Published var watcherAlertOpened: String?
     /// The computer whose Watcher was last chosen for the Watcher tab, by its alert or the header's menu.

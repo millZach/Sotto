@@ -109,7 +109,7 @@ struct ThreadView: View {
 /// where New thread stands on the other pages, under the clock and battery, then the thread's state, Agents, Watch and
 /// its actions, centred in the height under it. The tabs come back with the list, and a swipe in from the left edge goes
 /// back too.
-struct FoldedThreadRail: View {
+struct FoldedThreadRail: View, Equatable {
     @EnvironmentObject var model: AppModel
     /// The thread showing, once its page has read it.
     let ref: ThreadRef?
@@ -138,6 +138,8 @@ struct FoldedThreadRail: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("duo-thread-rail")
     }
+    /// It draws from the model it watches, the thread and its place under the clock; Back never changes what it draws.
+    static func == (lhs: FoldedThreadRail, rhs: FoldedThreadRail) -> Bool { lhs.ref == rhs.ref && lhs.clear == rhs.clear }
 }
 
 /// What a press on the folded Duo's thread rail asks of the thread showing.
