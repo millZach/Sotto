@@ -594,8 +594,9 @@ struct ThreadListSections: View, Equatable {
     private func rowView(_ row: HostedThread, _ kind: ThreadListRow.Kind, _ watched: Set<String>, asking: HostedThread? = nil) -> some View {
         let isWatched = watched.contains(row.id)
         let delegated = asking.flatMap { $0.ref == row.ref ? nil : $0 }
-        // A row that stands for a delegated thread that asks is marked while that thread shows, as its own is.
-        return ThreadListRow(row: row, kind: kind, asking: delegated, watched: isWatched, chosen: row.ref == chosen || (chosen != nil && delegated?.ref == chosen),
+        // A delegated thread has no row of its own: the row its delegation is reached from is marked while it shows.
+        let marked = chosen.map { groups.rowID(for: $0) == row.id } ?? false
+        return ThreadListRow(row: row, kind: kind, asking: delegated, watched: isWatched, chosen: marked,
                              canWatch: model.canChangeWatch(row.ref), identifier: identifier,
                              open: { open(row.ref); if let delegated { open(delegated.ref) } },
                              setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })
