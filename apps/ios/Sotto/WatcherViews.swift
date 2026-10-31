@@ -1778,7 +1778,7 @@ private struct WatcherSettingsRow: View {
     }
 
     private var modelMenu: some View {
-        let groups = current.map { WatcherSettings.groups($0, catalog: catalog) } ?? []
+        let groups = current.map { WatcherSettings.groups($0, catalog: catalog, others: model.mayAnswer(hostID)) } ?? []
         return Menu {
             ForEach(groups) { group in
                 Section(group.name) {

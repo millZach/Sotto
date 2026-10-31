@@ -342,18 +342,25 @@ export class WatcherPhoneService {
    * Watcher's box from the phone (Zach, October 31, 2026), as the desktop's composer does each: its model, effort or speed
    * through the room's own open, another provider's model starting a new Watcher; New Watcher; Stop on Watcher's own turn;
    * and putting the handover offer away. Each names the current Watcher, and a change meant for one that has since been
-   * replaced changes nothing. None widens what Watcher may do: a new Watcher keeps the saved permission mode.
+   * replaced changes nothing. A new Watcher keeps the saved permission mode, but the same mode lets another provider do
+   * more (Cursor edits without asking where Codex only reads), so moving Watcher to another provider needs this phone's
+   * answers grant, as a mode that acts without asking does.
    */
   async compose(action: 'open' | 'new' | 'stop-turn' | 'dismiss-handover', request: WatcherPhoneOpen | WatcherPhoneCurrent,
     client: ClientIdentity, guard: () => void, mayAnswer: () => boolean, steer = false): Promise<WatcherPhoneResult> {
     const hostId = this.control.hostId()
     if (client.transport !== 'socket' || !hostId) return watcherRefusal('INVALID_INPUT', 'Watcher phone controls need a paired phone connection.')
     const threadId = request.target.threadId
+    const moves = action === 'open' && (request as WatcherPhoneOpen).provider !== this.watcher.state().current?.provider
+    if (moves && !mayAnswer()) {
+      return watcherRefusal('PERMISSION_TOO_WIDE', 'This phone can’t answer on this computer, so it can’t move Watcher to another provider, whose permissions differ. Nothing changed. Change Watcher’s provider in Sotto on this computer.')
+    }
     const check = () => {
       guard()
       const current = this.watcher.state().current
       if (!current || current.target.hostId !== request.target.hostId || current.target.threadId !== threadId
         || !this.watcher.isCurrent(threadId)) throw new Error('Watcher changed.')
+      if (moves && !mayAnswer()) throw new Error('This phone no longer has permission to move Watcher to another provider.')
     }
     try { check() } catch { return watcherRefusal('TARGET_CHANGED', 'Watcher changed, so nothing was changed. Check Watcher’s page and try again.', true) }
     const refusal = await this.composeOne(action, request, client, hostId, check)

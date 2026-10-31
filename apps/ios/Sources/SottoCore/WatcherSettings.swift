@@ -25,12 +25,14 @@ public enum WatcherSettings {
         CatalogEntry.model(catalog, id: current.modelId)
     }
 
-    /// The model menu: Watcher's own provider's ready models, with the one it is on even when it isn't reported ready, then
-    /// every other provider Watcher runs on that has a ready model, in the catalog's order.
-    public static func groups(_ current: WatcherPhoneState.Current, catalog: [ThreadModel]) -> [Group] {
+    /// The model menu: Watcher's own provider's ready models, with the one it is on even when it isn't reported ready, then,
+    /// with `others`, every other provider Watcher runs on that has a ready model, in the catalog's order. Only a phone that
+    /// may answer there lists the others: the same permission mode lets another provider do more.
+    public static func groups(_ current: WatcherPhoneState.Current, catalog: [ThreadModel], others: Bool = true) -> [Group] {
         let on = model(current, catalog: catalog)
         let own = catalog.filter { $0.providerId == current.provider && ($0.ready || $0.id == on?.id) }
         var groups = own.isEmpty ? [] : [Group(providerID: current.provider, name: AgentNames.name(current.provider), models: own, own: true)]
+        guard others else { return groups }
         var seen: Set<String> = [current.provider]
         for entry in catalog {
             guard let provider = entry.providerId, providers.contains(provider), seen.insert(provider).inserted else { continue }

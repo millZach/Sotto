@@ -867,6 +867,8 @@ extension AppModel {
     func chooseWatcherSetting(_ kind: ThreadSettingKind, _ value: String, on hostID: String) async {
         guard offersWatcherComposer(hostID), watcherSettingsHeld(hostID) == nil, let current = watcherPage(hostID)?.current,
               let operation = WatcherSettings.press(kind, value: value, current: current, catalog: watcherCatalog(hostID)) else { return }
+        // Another provider needs this iPhone's answers grant there, which the computer checks again.
+        if kind == .model, WatcherSettings.replaces(value, current: current, catalog: watcherCatalog(hostID)), !mayAnswer(hostID) { return }
         let key = Self.composerKey(hostID)
         watcherManaging.insert(key)
         watcherSettingPicks[hostID] = WatcherSettingPick(kind: kind, value: value)

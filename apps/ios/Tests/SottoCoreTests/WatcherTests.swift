@@ -41,6 +41,7 @@ final class WatcherTests: XCTestCase {
         XCTAssertEqual(groups.map(\.providerID), ["codex", "claude"])
         XCTAssertEqual(groups.first?.models.map(\.id), ["model", "astra"])
         XCTAssertEqual(groups.map(\.own), [true, false])
+        XCTAssertEqual(WatcherSettings.groups(current, catalog: catalog, others: false).map(\.providerID), ["codex"], "Without the answers grant, only Watcher's own provider")
         XCTAssertEqual(WatcherSettings.values(current, catalog: catalog), ThreadSettingValues(model: "model", effort: "high", permissions: "", speed: "fast"))
         // A choice already in force sends nothing; the permissions are Watcher's own and go elsewhere.
         XCTAssertNil(WatcherSettings.press(.effort, value: "high", current: current, catalog: catalog))

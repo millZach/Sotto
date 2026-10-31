@@ -1673,7 +1673,7 @@ import UIKit
     /// side, New Watcher at the end. The model menu lists another provider Watcher runs on; New Watcher starts one at once,
     /// whose empty conversation says so, with the last one's handover offered over the box until X puts it away.
     func testWatchersBoxChangesItsModelAndStartsANewWatcher() {
-        launch(Self.watcher + ["--ui-watcher-box", "--ui-watcher-nothing-waits"])
+        launch(Self.watcher + ["--ui-watcher-box", "--ui-watcher-can-answer", "--ui-watcher-nothing-waits"])
         openWatcher()
         let reply = byID("watcher-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))

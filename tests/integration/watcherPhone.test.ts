@@ -1105,6 +1105,10 @@ describe('Watcher’s box on a phone (October 31, 2026)', () => {
     expect(await peer.call('effort', open)).toMatchObject({ ok: true, result: { status: 'ok', state: { current: { target: f.target, reasoningEffort: open.request.reasoningEffort } } } })
     expect(f.control.watcherSnapshot().threads.find(row => row.id === f.target.threadId)).toMatchObject({ reasoningEffort: open.request.reasoningEffort })
     expect(hostReceiptSchema.parse((await peer.call('effort-receipt', { op: 'receipt', commandId: 'effort' })).result)).toMatchObject({ status: 'completed', watcherManage: { status: 'ok' } })
+    // Another provider's model needs this phone's answers grant: the same permission mode lets another provider do more.
+    const moved = { op: 'watcher-phone-open', request: { target: f.target, provider: 'claude', modelId: 'claude-synthetic' } }
+    expect(await peer.call('move', moved)).toMatchObject({ ok: true, result: { status: 'refused', code: 'PERMISSION_TOO_WIDE' } })
+    expect(f.watcher.state().current?.target).toEqual(f.target)
     // A change meant for a Watcher that is no longer current changes nothing.
     const stale = { ...open, request: { ...open.request, target: { ...f.target, threadId: 'native:codex:thread:retired' } } }
     expect(await peer.call('stale', stale)).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
