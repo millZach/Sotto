@@ -20,7 +20,10 @@ interface AgentTraffic {
   readonly lastReply: { readonly bytes: number; readonly activeThreadId: string | null; readonly models: { readonly revision?: number; readonly omitted?: boolean; readonly models?: unknown } } | null
   /** The text of the last `save-thread-draft` main answered. */
   readonly lastDraft: string | null
-  /** The exact creation request and its own receipt, independent of later observation commands. */
+  /**
+   * The exact creation request and its own receipt, independent of later observation commands. The created thread's
+   * record is the receipt's, or the window broadcast's the receipt was measured from when that carried it first.
+   */
   readonly lastCreation: { readonly threadId: string; readonly activeThreadId: string | null; readonly createdThreadId: string | null; readonly modelId: string | null; readonly error: string | null } | null
 }
 
@@ -31,8 +34,24 @@ interface AgentTraffic {
  * command wrapper sees the receipt exactly as main sends it, before the preload or the page touch it.
  */
 async function watchAgentTraffic(launched: LaunchedSotto): Promise<() => Promise<AgentTraffic>> {
-  await launched.app.evaluate(({ ipcMain }) => {
+  await launched.app.evaluate(({ ipcMain, BrowserWindow }) => {
     type Handler = (...args: unknown[]) => unknown
+    type Thread = { id: string; modelId: string }
+    // The last record each window broadcast carried for a thread. A receipt carries only the records that changed since
+    // the last broadcast the window was sent (ADR-0028, October 30), so a thread a broadcast already carried is read here.
+    const broadcastRecords = new Map<string, Thread>()
+    for (const window of BrowserWindow.getAllWindows()) {
+      const contents = window.webContents, send = contents.send.bind(contents)
+      contents.send = (channel: string, ...payload: unknown[]) => {
+        try {
+          if (channel === 'sotto:agents:state') {
+            const threads = (payload[0] as { host: { threads: Thread[] | { changed: Thread[] } } }).host.threads
+            for (const thread of Array.isArray(threads) ? threads : threads.changed) broadcastRecords.set(thread.id, thread)
+          }
+        } catch { /* Watching never changes what the window is sent. */ }
+        send(channel, ...payload)
+      }
+    }
     const handlers = (ipcMain as unknown as { _invokeHandlers?: Map<string, Handler> })._invokeHandlers
     const get = handlers?.get('sotto:agents:get')
     const command = handlers?.get('sotto:agents:command')
@@ -49,14 +68,15 @@ async function watchAgentTraffic(launched: LaunchedSotto): Promise<() => Promise
       const request = args[1] as { type?: string; text?: string; threadId?: string } | undefined
       traffic.inFlight++
       try {
-        type Thread = { id: string; modelId: string }
         const receipt = await command(...args) as { activeThreadId: string | null; error: string | null; host: { models: unknown; threads: Thread[] | { changed: Thread[] } } }
-        // The page asks for its threads as changed thread records (ADR-0028, October 30); a new thread is always among them.
+        // The page asks for its threads as changed thread records (ADR-0028, October 30).
         const threads = Array.isArray(receipt.host.threads) ? receipt.host.threads : receipt.host.threads.changed
         traffic.lastReply = { bytes: JSON.stringify(receipt).length, activeThreadId: receipt.activeThreadId, models: receipt.host.models }
         if (request?.type === 'save-thread-draft') traffic.lastDraft = request.text ?? ''
         if (request?.type === 'create-thread' && request.threadId) {
-          const thread = threads.find(thread => thread.id === request.threadId)
+          // The new thread's record is in this receipt, or, when a broadcast carrying it reached the window first, in that
+          // broadcast, which the receipt was measured from (#1914).
+          const thread = threads.find(thread => thread.id === request.threadId) ?? broadcastRecords.get(request.threadId)
           traffic.lastCreation = { threadId: request.threadId, activeThreadId: receipt.activeThreadId,
             createdThreadId: thread?.id ?? null, modelId: thread?.modelId ?? null, error: receipt.error }
         }
