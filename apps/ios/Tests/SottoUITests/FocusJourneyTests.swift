@@ -992,26 +992,32 @@ import UIKit
         dragWatcher(down: false, by: 80)
         waitForWatcherBar(away: false, "Going back up the page brings the bar back")
     }
-    /// Presses the bar's owl, and waits for the hero at the top of Watcher's page to bring Watcher's permissions into view.
+    /// Presses the bar's owl, and waits for the hero at the top of Watcher's page to bring Watcher's state into view.
     @discardableResult private func toWatcherHero() -> XCUIElement {
         let owl = app.buttons["watcher-to-top"]
         XCTAssertTrue(owl.waitForExistence(timeout: 5), "The bar carries the owl")
         showWatcherBar()
-        let permissions = app.buttons["watcher-permissions"]
+        let state = byID("watcher-state")
         // The bar and the box don't move; where the band begins and ends is read once.
         let band = watcherBand
-        var seen = "no look found Watcher's permissions"
+        var seen = "no look found Watcher's state"
         let shown = NSPredicate { _, _ in
-            guard permissions.exists else { seen = "Watcher's permissions are missing"; return false }
-            let frame = permissions.frame
-            seen = "permissions \(frame), between \(band.top) and \(band.bottom)"
-            return frame.minY >= band.top && frame.maxY <= band.bottom && permissions.isHittable
+            guard state.exists else { seen = "Watcher's state is missing"; return false }
+            let frame = state.frame
+            seen = "state \(frame), between \(band.top) and \(band.bottom)"
+            return frame.minY >= band.top && frame.maxY <= band.bottom && state.isHittable
         }
         // Going to the top again does nothing more, so a dropped press is simply pressed again.
         let result = press(owl, until: shown)
-        if result != .completed { explain("watcher-hero-permissions-not-shown", seen) }
-        XCTAssertEqual(result, .completed, "The owl brings Watcher's permissions into view (\(seen))")
-        return permissions
+        if result != .completed { explain("watcher-hero-state-not-shown", seen) }
+        XCTAssertEqual(result, .completed, "The owl brings Watcher's state into view (\(seen))")
+        return state
+    }
+    /// Watcher's permissions, the shield in its box's second line.
+    private func watcherShield() -> XCUIElement {
+        let shield = app.buttons["watcher-permissions"]
+        XCTAssertTrue(shield.waitForExistence(timeout: 10), "Watcher's box carries its permissions")
+        return shield
     }
     /// Scrolls Watcher's conversation until `target` sits whole in `watcherBand`, or for one taller than the band, until
     /// its top does. Each drag runs down the page's leading margin (`watcherDragX`), clear of cards, rows and the scroll
@@ -1196,7 +1202,7 @@ import UIKit
         openWatcher()
         let owl = app.buttons["watcher-to-top"]
         XCTAssertTrue(owl.waitForExistence(timeout: 5), "The bar carries the owl")
-        XCTAssertEqual(owl.label, "Go to the top, where Watcher’s state and permissions are")
+        XCTAssertEqual(owl.label, "Go to the top, where Watcher’s state is")
         XCTAssertEqual(owl.value as? String, "Working", "The owl says Watcher's state once the hero has scrolled off")
         let conversation = app.buttons["watcher-section-conversation"]
         let watched = app.buttons["watcher-section-watched"]
@@ -1537,7 +1543,7 @@ import UIKit
     func testAPhoneThatCantAnswerCanOnlyKeepWatcherAskingFirst() {
         launch(Self.watcher)
         openWatcher()
-        let permissions = toWatcherHero()
+        let permissions = watcherShield()
         XCTAssertEqual(permissions.value as? String, "Ask before actions")
         XCTAssertTrue(permissions.isEnabled, "Watcher waits between turns, so its permissions can change")
         permissions.tap()
@@ -1606,17 +1612,16 @@ import UIKit
         capture("watcher-stopped-light")
     }
 
-    /// Watcher's permissions sit in its hero, at the top of its page, in this iPhone's own words (control A, #1276): the
-    /// owl brings them into view, the chip opens the four modes, a choice shows at once, and until Watcher's provider
-    /// confirms it the chip says what is still in force. Nothing of them sits over the box.
-    func testWatchersPermissionsChangeFromItsHero() {
+    /// Watcher's permissions are the shield in its box's second line, as a thread's are (Zach, October 31, 2026), in this
+    /// iPhone's own words (control A, #1276): the shield opens the four modes, a choice shows at once, and until Watcher's
+    /// provider confirms it the line over the box says what is still in force.
+    func testWatchersPermissionsChangeFromItsBox() {
         launch(Self.watcher + ["--ui-watcher-can-answer"])
         openWatcher()
         let reply = byID("watcher-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
-        let permissions = toWatcherHero()
-        XCTAssertGreaterThan(permissions.frame.minY, byID("watcher-state").frame.maxY, "Watcher's permissions sit in the hero, under its state")
-        XCTAssertGreaterThan(reply.frame.minY - permissions.frame.maxY, 100, "Nothing of them sits over the box")
+        let permissions = watcherShield()
+        XCTAssertGreaterThanOrEqual(permissions.frame.minY, reply.frame.maxY - 1, "The shield sits under the words, in the box")
         XCTAssertEqual(permissions.label, "Watcher’s permissions")
         XCTAssertEqual(permissions.value as? String, "Ask before actions")
         capture("watcher-permissions-dark")
@@ -1634,25 +1639,25 @@ import UIKit
         edits.tap()
         XCTAssertTrue(waitUntilGone(edits), "Choosing closes the list")
         let chosen = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Allow edits"), object: permissions)
-        XCTAssertEqual(XCTWaiter.wait(for: [chosen], timeout: 5), .completed, "The chip says the choice at once")
+        XCTAssertEqual(XCTWaiter.wait(for: [chosen], timeout: 5), .completed, "The shield says the choice at once")
         let inForce = byID("watcher-permissions-in-force")
-        XCTAssertTrue(inForce.waitForExistence(timeout: 5), "Until Codex confirms it, the chip says what is still in force")
+        XCTAssertTrue(inForce.waitForExistence(timeout: 5), "Until Codex confirms it, the line over the box says what is still in force")
         XCTAssertEqual(inForce.label, "Codex stays on Ask before actions until it confirms.")
+        XCTAssertLessThanOrEqual(inForce.frame.maxY, reply.frame.minY, "Over the box")
         capture("watcher-permissions-pending-dark")
         // The fixture's Codex confirms fifteen seconds after the choice. On CI's SE each look for the caption on Watcher's
         // long page took eight seconds or more, so twenty seconds held only three looks, and once ran out with the caption
         // already gone from the screen. A deadline that is never reached costs nothing.
         XCTAssertTrue(waitUntilGone(inForce, timeout: 60), "Once Codex confirms it, nothing more is said")
         XCTAssertEqual(permissions.value as? String, "Allow edits")
-        // Writing in the box leaves the chip where it is, in the hero.
+        // Writing in the box leaves the shield where it is.
         reply.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(permissions.exists, "The chip stays in the hero while the box is written in")
+        XCTAssertTrue(permissions.exists, "The shield stays in the box while the box is written in")
         dismissKeyboard()
         watcherInLight()
-        toWatcherHero()
         capture("watcher-permissions-light")
-        permissions.tap()
+        watcherShield().tap()
         let picked = app.buttons["watcher-permission-auto-accept-edits"]
         XCTAssertTrue(picked.waitForExistence(timeout: 5))
         reveal(picked)
@@ -1662,6 +1667,73 @@ import UIKit
         picked.tap()
         XCTAssertTrue(waitUntilGone(picked))
         XCTAssertEqual(permissions.value as? String, "Allow edits")
+    }
+
+    /// Watcher's box takes the thread box's line (Zach, October 31, 2026): model, effort, speed and the shield side by
+    /// side, New Watcher at the end. The model menu lists another provider Watcher runs on; New Watcher starts one at once,
+    /// whose empty conversation says so, with the last one's handover offered over the box until X puts it away.
+    func testWatchersBoxChangesItsModelAndStartsANewWatcher() {
+        launch(Self.watcher + ["--ui-watcher-box", "--ui-watcher-nothing-waits"])
+        openWatcher()
+        let reply = byID("watcher-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        let model = app.buttons["watcher-settings-model"], effort = app.buttons["watcher-settings-effort"]
+        let shield = watcherShield(), new = app.buttons["watcher-new"]
+        XCTAssertTrue(model.waitForExistence(timeout: 5))
+        XCTAssertEqual(model.value as? String, "GPT-6.1 Sol")
+        XCTAssertEqual(effort.value as? String, "High")
+        XCTAssertLessThan(model.frame.maxX, effort.frame.minX + 1, "Model, then effort")
+        XCTAssertLessThan(effort.frame.maxX, shield.frame.minX + 1, "Then the shield")
+        XCTAssertGreaterThan(new.frame.minX, shield.frame.maxX, "New Watcher at the end")
+        XCTAssertGreaterThanOrEqual(model.frame.minY, reply.frame.maxY - 1, "Under the words, in the box")
+        capture("watcher-box-dark")
+        // Watcher's effort, from its box.
+        let low = menuItem("Low")
+        press(effort, until: NSPredicate { _, _ in low.exists })
+        XCTAssertTrue(low.waitForExistence(timeout: 5), "The effort chip opens Watcher's model's levels")
+        low.tap()
+        XCTAssertEqual(waitForValue(effort, "Low"), .completed, "The effort chip says the choice")
+        // The model menu lists Claude Code too, and says what its model does.
+        let opus = menuItem("Opus 5.5")
+        press(model, until: NSPredicate { _, _ in opus.exists })
+        XCTAssertTrue(opus.waitForExistence(timeout: 5), "Another provider Watcher runs on is listed")
+        XCTAssertTrue(text("Another provider’s model starts a new Watcher.").exists, "And the menu says what its model does")
+        capture("watcher-box-models-dark")
+        // The model Watcher is on closes the menu and changes nothing.
+        menuItem("GPT-6.1 Sol").tap()
+        XCTAssertEqual(waitForValue(model, "GPT-6.1 Sol"), .completed)
+        // New Watcher: an empty conversation that says so, and the handover offered over the box.
+        XCTAssertTrue(new.isEnabled)
+        new.tap()
+        let note = byID("watcher-new-note")
+        XCTAssertTrue(note.waitForExistence(timeout: 10), "The new Watcher's conversation says what happened")
+        XCTAssertTrue(note.label.contains("New Watcher on GPT-6.1 Sol."))
+        XCTAssertTrue(note.label.contains("The last conversation is in Watcher history on Laptop."))
+        let strip = byID("watcher-handover")
+        XCTAssertTrue(strip.waitForExistence(timeout: 5))
+        XCTAssertTrue(labelled("Sending starts the new Watcher with a handover of the last one.").exists)
+        XCTAssertFalse(new.isEnabled, "A Watcher that has said nothing has nothing to hand over")
+        capture("watcher-new-handover-dark")
+        app.buttons["watcher-handover-dismiss"].tap()
+        XCTAssertTrue(waitUntilGone(strip), "X puts the handover away")
+        watcherInLight()
+        capture("watcher-new-light")
+    }
+
+    /// While Watcher's own turn runs, its box offers Stop, a solid disc the size of Send, and New Watcher waits for it.
+    func testWatchersOwnTurnStopsFromItsBox() {
+        launch(Self.watcher + ["--ui-watcher-box", "--ui-watcher-turn", "--ui-watcher-nothing-waits"])
+        openWatcher()
+        let stop = app.buttons["watcher-stop"], new = app.buttons["watcher-new"]
+        XCTAssertTrue(stop.waitForExistence(timeout: 10), "Watcher's turn runs, so its box offers Stop")
+        XCTAssertEqual(stop.label, "Stop Watcher’s turn")
+        XCTAssertGreaterThanOrEqual(stop.frame.width, 30, "At least as large as Send")
+        XCTAssertFalse(new.isEnabled, "New Watcher waits for Watcher's turn")
+        capture("watcher-turn-stop-dark")
+        stop.tap()
+        XCTAssertTrue(waitUntilGone(stop), "Stopped, Stop leaves the box")
+        let ready = XCTNSPredicateExpectation(predicate: NSPredicate(format: "isEnabled == true"), object: new)
+        XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 10), .completed, "New Watcher can start one once the turn has stopped")
     }
 
     /// A reply in which Watcher changed files itself carries one quiet line under it (mark B): how many, its reason or that

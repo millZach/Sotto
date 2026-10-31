@@ -2297,7 +2297,7 @@ private struct ThreadSettingsRow: View {
 
 /// A text button in the reply box's second line: its value and a small chevron, no fill at rest (ADR-0113). Drawn 32
 /// points tall and pressed across 44. A change the agent hasn't confirmed draws a dashed edge and a dot, both still.
-private struct SettingChip<Content: View>: View {
+struct SettingChip<Content: View>: View {
     var pending = false
     @ViewBuilder let content: Content
     var body: some View {

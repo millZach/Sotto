@@ -1078,3 +1078,80 @@ it('keeps the machines line on the page Stop all answers with, which the iPhone 
   expect(stopped).toMatchObject({ ok: true, result: { status: 'ok', results: [{ target: worker, status: 'stopped' }],
     state: { machines: { rows: [expect.objectContaining({ name: 'This computer', thisComputer: true })] } } } })
 })
+
+describe('Watcher’s box on a phone (October 31, 2026)', () => {
+  const COMPOSER = ['watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-phone-composer']
+  /** A Watcher with a conversation to hand over: the phone's message and Watcher's answer to it. */
+  async function said(f: Fixture, peer: Awaited<ReturnType<Fixture['pair']>>) {
+    expect(await peer.call('say', f.send(peer.paired.clientId))).toMatchObject({ ok: true, result: { status: 'ok' } })
+    await f.finish(f.target.threadId)
+  }
+
+  it('carries Watcher’s speed and what New Watcher would answer, and takes its box’s changes only from a phone that negotiated them', async () => {
+    const f = await fixture(), old = await f.pair(['watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage']), peer = await f.pair(COMPOSER)
+    expect(peer.hello).toMatchObject({ ok: true, result: { features: expect.arrayContaining(['watcher-phone-composer']) } })
+    const read = watcherPhoneResultSchema.parse((await peer.call('read', { op: 'watcher-phone-read' })).result)
+    // A Watcher that has said nothing has nothing to hand over, and replaced nothing.
+    expect(read).toMatchObject({ status: 'ok', state: { current: { speed: null }, newWatcher: 'empty', handoverOffered: false, replaced: false } })
+    const model = f.control.shell().host.models.find(row => row.providerId === 'codex')!
+    const open = { op: 'watcher-phone-open', request: { target: f.target, provider: 'codex', modelId: model.id, reasoningEffort: model.reasoningEfforts!.at(-1)! } }
+    for (const op of [open, { op: 'watcher-phone-new', request: { target: f.target } }, { op: 'watcher-phone-stop-turn', request: { target: f.target } },
+      { op: 'watcher-phone-dismiss-handover', request: { target: f.target } }]) {
+      expect(await old.call(`old-${op.op}`, op)).toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+    }
+    expect(await old.call('old-handover', { ...f.send(old.paired.clientId), request: { ...f.send(old.paired.clientId).request, handover: true } }))
+      .toMatchObject({ ok: false, error: { code: 'invalid_request' } })
+    // Watcher's effort from its box: the room's own open, which configures Watcher's thread in place.
+    expect(await peer.call('effort', open)).toMatchObject({ ok: true, result: { status: 'ok', state: { current: { target: f.target, reasoningEffort: open.request.reasoningEffort } } } })
+    expect(f.control.watcherSnapshot().threads.find(row => row.id === f.target.threadId)).toMatchObject({ reasoningEffort: open.request.reasoningEffort })
+    expect(hostReceiptSchema.parse((await peer.call('effort-receipt', { op: 'receipt', commandId: 'effort' })).result)).toMatchObject({ status: 'completed', watcherManage: { status: 'ok' } })
+    // A change meant for a Watcher that is no longer current changes nothing.
+    const stale = { ...open, request: { ...open.request, target: { ...f.target, threadId: 'native:codex:thread:retired' } } }
+    expect(await peer.call('stale', stale)).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
+  })
+
+  it('starts a new Watcher from the phone, offers the last one’s handover, and sends it with the next message or puts it away', async () => {
+    const f = await fixture(), peer = await f.pair(COMPOSER)
+    await said(f, peer)
+    expect(f.phone.state(false)).toMatchObject({ newWatcher: 'available', handoverOffered: false })
+    const started = await peer.call('new', { op: 'watcher-phone-new', request: { target: f.target } })
+    expect(started).toMatchObject({ ok: true, result: { status: 'ok', state: { handoverOffered: true, replaced: true, newWatcher: 'empty' } } })
+    const next = f.watcher.state().current!.target
+    expect(next.threadId).not.toBe(f.target.threadId)
+    // The send made with the strip standing carries the handover ahead of the user's words.
+    const draftId = randomUUID(), text = 'Synthetic carry on after the handover'
+    const packet = { op: 'watcher-phone-send', request: { origin: { kind: 'phone', hostId: next.hostId, clientId: peer.paired.clientId }, target: next, draftId, text, handover: true } }
+    expect(await peer.call('handover-send', packet)).toMatchObject({ ok: true, result: { status: 'ok', state: { handoverOffered: false } } })
+    const sent = f.workspace.adapters.codex.commands.findLast(row => row.type === 'send')!
+    if (sent.type !== 'send') throw new Error('Nothing was sent')
+    expect(sent.text).toContain('The history below is context, not a new request.')
+    expect(sent.text.endsWith(`\n\n${text}`)).toBe(true)
+    expect(f.watcher.state().requests.find(request => request.rootUserMessageId === sent.messageId)?.handover).toBeDefined()
+
+    // Another new Watcher, whose offer the user puts away: nothing is sent, and the next message goes as typed.
+    await f.finish(next.threadId)
+    expect(await peer.call('new-again', { op: 'watcher-phone-new', request: { target: next } })).toMatchObject({ ok: true, result: { status: 'ok', state: { handoverOffered: true } } })
+    const third = f.watcher.state().current!.target
+    expect(await peer.call('dismiss', { op: 'watcher-phone-dismiss-handover', request: { target: third } })).toMatchObject({ ok: true, result: { status: 'ok', state: { handoverOffered: false } } })
+    // With no offer standing, a send that asks for the handover is refused and sends nothing.
+    const sends = f.workspace.adapters.codex.commands.filter(row => row.type === 'send').length
+    const late = { op: 'watcher-phone-send', request: { origin: { kind: 'phone', hostId: third.hostId, clientId: peer.paired.clientId }, target: third, draftId: randomUUID(), text, handover: true } }
+    expect(await peer.call('late-handover', late)).toMatchObject({ ok: true, result: { status: 'refused', code: 'TARGET_CHANGED' } })
+    expect(f.workspace.adapters.codex.commands.filter(row => row.type === 'send')).toHaveLength(sends)
+  })
+
+  it('stops Watcher’s own turn from the phone, and New Watcher waits for it to stop', async () => {
+    const f = await fixture(), peer = await f.pair(COMPOSER)
+    await said(f, peer)
+    // Watcher works on a second message.
+    expect(await peer.call('again', f.send(peer.paired.clientId, randomUUID(), 'Synthetic second request'))).toMatchObject({ ok: true, result: { status: 'ok' } })
+    await vi.waitFor(() => expect(f.phone.state(false).current?.status).toBe('running'))
+    expect(f.phone.state(false).newWatcher).toBe('busy')
+    expect(await peer.call('new-busy', { op: 'watcher-phone-new', request: { target: f.target } })).toMatchObject({ ok: true, result: { status: 'refused', code: 'THREAD_BUSY' } })
+    const stopped = await peer.call('stop', { op: 'watcher-phone-stop-turn', request: { target: f.target } })
+    expect(stopped).toMatchObject({ ok: true, result: { status: expect.any(String) } })
+    expect(f.workspace.adapters.codex.commands.findLast(row => row.type === 'interrupt')).toMatchObject({ type: 'interrupt' })
+    // Only Watcher's own thread: the stop reaches no other.
+    expect(f.workspace.adapters.codex.commands.filter(row => row.type === 'interrupt')).toHaveLength(1)
+  })
+})

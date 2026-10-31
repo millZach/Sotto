@@ -23,6 +23,52 @@ final class WatcherTests: XCTestCase {
         XCTAssertTrue(accepts.contains(.string(WatcherWire.manageFeature)))
         guard case .ok? = try decode(Receipt.self, #"{"status":"completed","watcherManage":{"status":"ok"}}"#).watcherManage else { return XCTFail("Missing management outcome") }
     }
+    func testWatchersBoxIsOptionalOnTheWireAndItsChipsGoThroughWatchersOpen() throws {
+        // An older computer says nothing of Watcher's speed, New Watcher or a handover.
+        let old = try decode(WatcherPhoneState.self, state)
+        XCTAssertNil(old.current?.speed); XCTAssertNil(old.newWatcher); XCTAssertNil(old.handoverOffered); XCTAssertNil(old.replaced)
+        let fast = state.replacingOccurrences(of: #""status":"running","connected":true}"#, with: #""status":"idle","connected":true,"speed":"fast"}"#)
+        let page = try decode(WatcherPhoneState.self, String(fast.dropLast()) + #", "newWatcher":"available", "handoverOffered":true, "replaced":true}"#)
+        XCTAssertEqual(page.current?.speed, "fast"); XCTAssertEqual(page.newWatcher, "available")
+        XCTAssertEqual(page.handoverOffered, true); XCTAssertEqual(page.replaced, true)
+        guard case .array(let accepts)? = WatcherWire.managementHello["accepts"] else { return XCTFail("Missing accepts") }
+        XCTAssertTrue(accepts.contains(.string(WatcherWire.composerFeature)))
+
+        let catalog = try decode([ThreadModel].self, #"[{"id":"model","name":"GPT-6.1 Sol","provider":"Codex","providerId":"codex","ready":true,"reasoningEfforts":["low","high"],"defaultReasoningEffort":"high","speeds":[{"id":"fast","name":"Fast"}]},{"id":"astra","name":"GPT-6 Astra","provider":"Codex","providerId":"codex","ready":true},{"id":"luna","name":"GPT-6.1 Luna","provider":"Codex","providerId":"codex","ready":false},{"id":"opus","name":"Opus 5.5","provider":"Claude Code","providerId":"claude","ready":true},{"id":"devin","name":"Devin","provider":"Devin","providerId":"devin","ready":true}]"#)
+        let current = try XCTUnwrap(page.current)
+        // Watcher's own provider first, then each other provider Watcher runs on; never a model that isn't ready, nor Devin.
+        let groups = WatcherSettings.groups(current, catalog: catalog)
+        XCTAssertEqual(groups.map(\.providerID), ["codex", "claude"])
+        XCTAssertEqual(groups.first?.models.map(\.id), ["model", "astra"])
+        XCTAssertEqual(groups.map(\.own), [true, false])
+        XCTAssertEqual(WatcherSettings.values(current, catalog: catalog), ThreadSettingValues(model: "model", effort: "high", permissions: "", speed: "fast"))
+        // A choice already in force sends nothing; the permissions are Watcher's own and go elsewhere.
+        XCTAssertNil(WatcherSettings.press(.effort, value: "high", current: current, catalog: catalog))
+        XCTAssertNil(WatcherSettings.press(.permissions, value: "auto", current: current, catalog: catalog))
+        let effort = JSONValue.object(try XCTUnwrap(WatcherSettings.press(.effort, value: "low", current: current, catalog: catalog)))
+        XCTAssertEqual(effort["op"], .string("watcher-phone-open"))
+        XCTAssertEqual(effort["request"]["target"]["threadId"], .string("watcher"))
+        XCTAssertEqual(effort["request"]["modelId"], .string("model"))
+        XCTAssertEqual(effort["request"]["reasoningEffort"], .string("low"))
+        XCTAssertEqual(effort["request"]["speed"], .null, "An effort change leaves the speed as it is")
+        // Standard goes as null, which the computer reads as a change; another speed by its name.
+        let standard = try XCTUnwrap(WatcherSettings.press(.speed, value: ThreadSettings.standard, current: current, catalog: catalog))
+        guard case .object(let request)? = standard["request"] else { return XCTFail("Missing request") }
+        XCTAssertEqual(request["speed"], .null); XCTAssertTrue(request.keys.contains("speed"))
+        // Another provider's model starts a new Watcher there, through the same open.
+        XCTAssertTrue(WatcherSettings.replaces("opus", current: current, catalog: catalog))
+        XCTAssertFalse(WatcherSettings.replaces("astra", current: current, catalog: catalog))
+        let other = JSONValue.object(try XCTUnwrap(WatcherSettings.press(.model, value: "opus", current: current, catalog: catalog)))
+        XCTAssertEqual(other["request"]["provider"], .string("claude")); XCTAssertEqual(other["request"]["modelId"], .string("opus"))
+        XCTAssertNil(WatcherSettings.press(.model, value: "devin", current: current, catalog: catalog))
+        // New Watcher, Stop and putting the handover away each name the current Watcher; a send may carry the handover.
+        let target = current.target
+        XCTAssertEqual(WatcherWire.startNew(target: target)["op"], .string("watcher-phone-new"))
+        XCTAssertEqual(JSONValue.object(WatcherWire.stopTurn(target: target))["request"]["target"]["threadId"], .string("watcher"))
+        XCTAssertEqual(WatcherWire.dismissHandover(target: target)["op"], .string("watcher-phone-dismiss-handover"))
+        XCTAssertEqual(JSONValue.object(WatcherWire.send(target: target, clientID: "phone", draftID: "draft", text: "Go on", handover: true))["request"]["handover"], .bool(true))
+        XCTAssertEqual(JSONValue.object(WatcherWire.send(target: target, clientID: "phone", draftID: "draft", text: "Go on"))["request"]["handover"], .null)
+    }
     func testReceiptOutcomeStaysOptionalForOlderComputers() throws {
         let old = try decode(WatcherPhoneState.self, state)
         XCTAssertNil(old.receiptGroups.first?.rows.first?.outcome)

@@ -71,6 +71,12 @@ extension WatcherPhoneState {
 // MARK: - Asking Watcher
 
 /// A message on its way to Watcher: its words, its draft ID, and the messages Watcher's conversation held when it left.
+/// A choice just made in Watcher's box, shown on its chip while Watcher's computer takes it.
+struct WatcherSettingPick: Equatable, Sendable {
+    let kind: ThreadSettingKind
+    let value: String
+}
+
 struct WatcherSending: Equatable, Sendable {
     let text: String
     let draftID: String
@@ -379,7 +385,7 @@ struct WatcherBarSlide: Equatable {
 
 enum WatcherWords {
     /// The bar's owl, which goes to the top of Watcher's page.
-    static let toTop = String(localized: "Go to the top, where Watcher’s state and permissions are")
+    static let toTop = String(localized: "Go to the top, where Watcher’s state is")
     /// What Watcher did, in a word or two.
     static func action(_ action: String) -> String {
         switch action {
@@ -535,6 +541,13 @@ enum WatcherWords {
             : String(localized: "\(computer) didn’t confirm that Watcher stopped watching \(title).", comment: "The first %@ is the computer's name; the second is a thread's title"))
             + " " + String(localized: "Check Watched before you try again.")
     }
+    /// Why New Watcher can't start one now, in the desktop's words (`WatcherNew.tsx`).
+    static let newWatcherBusy = String(localized: "Watcher is working. Stop its turn to start a new one.")
+    static let newWatcherEmpty = String(localized: "This Watcher is new, so there is nothing to hand over yet.")
+    /// A change from Watcher's box whose answer was lost on the way.
+    static func changeUnconfirmed(_ computer: String) -> String {
+        String(localized: "\(computer) didn’t confirm the change to Watcher. Check Watcher’s page before you change it again.", comment: "%@ is the computer's name")
+    }
     static func permissionUnconfirmed(_ computer: String) -> String {
         String(localized: "\(computer) didn’t confirm the change to Watcher’s permissions. Check what they say before you change them again.", comment: "%@ is the computer's name")
     }
@@ -620,8 +633,7 @@ enum WatcherPermissions {
         let listed = (model?.runtimeModes ?? []).filter { modes.contains($0) }
         return listed.isEmpty ? modes : modes.filter { listed.contains($0) }
     }
-    /// Why the chip can't be pressed while Watcher works, as on the desktop: beside the chip, and when, as its hint.
-    static let fixed = String(localized: "Fixed while Watcher works.", comment: "Why Watcher's permission mode can't be changed now")
+    /// When the chip can be pressed again, as its hint while Watcher works, as on the desktop.
     static let fixedHint = String(localized: "It can change once Watcher finishes and nothing waits on you.")
     /// What stays in force while Watcher's provider hasn't confirmed the mode just chosen.
     static func inForce(_ mode: String, provider: String) -> String {

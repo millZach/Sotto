@@ -194,9 +194,6 @@ private struct WatcherHero: View {
             }
             if model.watcherHostIDs.count > 1 { computerMenu } else { subtitleText }
             WatcherMachinesLine(hostID: hostID)
-            if model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil {
-                WatcherPermissionChip(hostID: hostID).padding(.top, Space.s1)
-            }
             Rectangle().fill(Palette.hairline).frame(height: 1).padding(.top, Space.s2)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -877,11 +874,26 @@ private struct WatcherConversationPane: View {
             note(String(localized: "Watcher isn’t running on \(model.name(hostID)). Start it in Sotto on \(model.name(hostID)), then ask it here.",
                         comment: "Both %@ are the computer's name"))
         } else if let page, page.conversation.messages.isEmpty, model.watcherSending[hostID] == nil {
-            note(String(localized: "Ask Watcher to start, check on or stop your threads. It answers nothing for you."))
+            if page.replaced == true, let current = page.current { newWatcherNote(current) }
+            else { note(String(localized: "Ask Watcher to start, check on or stop your threads. It answers nothing for you.")) }
         } else if page == nil {
             note(model.online(hostID) ? model.watcherReadProblems[hostID] ?? String(localized: "Reading Watcher on \(model.name(hostID))…", comment: "%@ is the computer's name")
                  : String(localized: "Reconnect to \(model.name(hostID)) to read Watcher.", comment: "%@ is the computer's name"))
         }
+    }
+    /// A new Watcher's empty conversation, by New Watcher or another provider's model, as the desktop's note says it: the
+    /// model it is on, and where the last conversation went.
+    private func newWatcherNote(_ current: WatcherPage.Current) -> some View {
+        let name = CatalogEntry.model(model.watcherCatalog(hostID), id: current.modelId)?.name ?? current.modelId
+        return VStack(spacing: Space.s2) {
+            WatcherOwlMark(size: 28).foregroundStyle(Palette.ink).accessibilityHidden(true)
+            Text("New Watcher on \(name).", comment: "%@ is the model the new Watcher is on, such as GPT-6.1 Sol")
+                .font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink).multilineTextAlignment(.center)
+            note(String(localized: "The last conversation is in Watcher history on \(model.name(hostID)).", comment: "%@ is the computer's name"))
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("watcher-new-note")
     }
     private func note(_ words: String) -> some View {
         Text(words).font(.sotto(.small)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
@@ -1510,6 +1522,7 @@ private struct WatcherDock: View {
     let willSend: () -> Void
     @FocusState private var focused: Bool
     @State private var sent = 0
+    @State private var stopped = 0
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
@@ -1527,6 +1540,15 @@ private struct WatcherDock: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.horizontal, Space.s4)
             }
+            // Until Watcher's provider confirms a permission mode just chosen, what is still in force, as over a thread's box.
+            if let caption = model.watcherPermissionInForce(hostID) {
+                Text(caption).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.s3)
+                    .accessibilityIdentifier("watcher-permissions-in-force")
+            }
+            if model.watcherHandoverOffered(hostID) { WatcherHandoverStrip(hostID: hostID) }
             field
         }
         .padding(.horizontal, Space.s3)
@@ -1609,6 +1631,7 @@ private struct WatcherDock: View {
                         .pasteAttaches(to: box)
                         .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == box.id { model.focusRequest = nil; focused = true } }
                         .disabled(preparing)
+                    if model.canStopWatcherTurn(hostID) { stopButton.padding(.bottom, ComposerMetrics.buttonInset).transition(.scale(scale: 0.6).combined(with: .opacity)) }
                     if written || preparing {
                         // Sending puts the keyboard away, as the design does, so Watcher's answer has room on a small phone.
                         Button { sent += 1; willSend(); focused = false; Task { await model.sendToWatcher(hostID) } } label: {
@@ -1634,99 +1657,262 @@ private struct WatcherDock: View {
                 .padding(.leading, ComposerMetrics.wordsInset)
                 .padding(.trailing, ComposerMetrics.buttonInset)
                 .frame(minHeight: ComposerMetrics.height)
+                if model.offersWatcherManage(hostID), page != nil {
+                    WatcherSettingsRow(hostID: hostID)
+                        .padding(.leading, ComposerMetrics.wordsInset - Space.s2)
+                        .padding(.trailing, ComposerMetrics.buttonInset)
+                        .padding(.bottom, 2)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .composerSurface(in: shape)
         }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written || preparing)
+        .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canStopWatcherTurn(hostID))
+    }
+
+    /// Stop on Watcher's own turn, the thread box's solid disc the size of Send. The threads Watcher started carry on.
+    private var stopButton: some View {
+        Button { stopped += 1; Task { await model.stopWatcherTurn(hostID) } } label: {
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .frame(width: 12, height: 12)
+                .foregroundStyle(Palette.canvas)
+                .frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
+                .background(Palette.ink, in: Circle())
+                .pressArea(drawn: ComposerMetrics.button)
+        }
+        .buttonStyle(PressStyle())
+        .sensoryFeedback(.impact(weight: .medium), trigger: stopped)
+        .disabled(model.watcherManaging.contains(AppModel.composerKey(hostID)))
+        .accessibilityLabel("Stop Watcher’s turn")
+        .accessibilityIdentifier("watcher-stop")
     }
 }
 
-// MARK: - What Watcher may do without asking (control A)
+/// Over a new Watcher's box, while the last one's handover is offered (ADR-0073, as the desktop's strip): sending starts
+/// the new Watcher with it, ahead of the user's words, and X puts it away, so the first message goes without it.
+private struct WatcherHandoverStrip: View {
+    @EnvironmentObject var model: AppModel
+    let hostID: String
+    var body: some View {
+        HStack(alignment: .center, spacing: Space.s2) {
+            Image(systemName: "arrow.turn.down.right").font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.muted)
+                .accessibilityHidden(true)
+            Text("Sending starts the new Watcher with a handover of the last one.")
+                .font(.sotto(.small)).foregroundStyle(Palette.ink).fixedSize(horizontal: false, vertical: true)
+                .paragraphDirection()
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Button { Task { await model.dismissWatcherHandover(hostID) } } label: {
+                Image(systemName: "xmark").font(.system(size: 12, weight: .bold)).foregroundStyle(Palette.muted)
+                    .frame(width: 32, height: 32)
+                    .pressArea(drawn: 32)
+            }
+            .buttonStyle(PressStyle())
+            .accessibilityLabel("Don’t hand over: start the new Watcher without it")
+            .accessibilityIdentifier("watcher-handover-dismiss")
+        }
+        .padding(.leading, Space.s4).padding(.trailing, Space.s1).padding(.vertical, Space.s1)
+        .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("watcher-handover")
+    }
+}
 
-/// Watcher's permissions in its hero, under its model and computer (#1276, pick A): a chip in this iPhone's own words,
-/// after the Threads composer's, that opens the four modes. A choice shows at once; until Watcher's provider confirms
-/// it, the chip's edge is dashed and the words beside it say what is still in force. A computer that refuses says why
-/// in its own words. It left the box so the conversation has the room, and so it no longer comes and goes as the box is
-/// written in.
-private struct WatcherPermissionChip: View {
+/// Watcher's model, effort, speed and permissions as its box's second line, as a thread's box has them (ADR-0166): text
+/// buttons side by side with the shield right after the bolt, then New Watcher at the end, as on the desktop (Zach,
+/// October 31, 2026). The model menu lists every provider Watcher runs on; another provider's model starts a new Watcher.
+/// They are held still, their hint saying why, while Watcher works or a card of its own waits. A computer that takes
+/// only Watcher's permissions from this iPhone shows the shield alone.
+private struct WatcherSettingsRow: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.
     @EnvironmentObject var watcherStore: WatcherStore
     let hostID: String
-    @State private var choosing = false
-    @State private var picks = 0
     @Environment(\.dynamicTypeSize) private var typeSize
+    @State private var choosingPermission = false
+    @State private var picks = 0
+    @State private var starts = 0
 
     var body: some View {
-        let caption = model.watcherPermissionInForce(hostID)
-        let fixed = model.watcherPermissionFixed(hostID)
+        let composer = model.offersWatcherComposer(hostID)
         Group {
-            if typeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: Space.s1) { chip(pending: caption != nil, fixed: fixed); captionText(caption); fixedText(fixed && caption == nil) }
+            if composer, typeSize.isAccessibilitySize {
+                VStack(alignment: .leading, spacing: 0) {
+                    modelMenu
+                    HStack(spacing: 0) { effortMenu; speedButton; permissionShield; Spacer(minLength: 0); newWatcherButton }
+                }
+            } else if composer {
+                HStack(spacing: 0) { modelMenu; effortMenu; speedButton; permissionShield; Spacer(minLength: 0); newWatcherButton }
             } else {
-                HStack(spacing: Space.s3) { chip(pending: caption != nil, fixed: fixed); captionText(caption); fixedText(fixed && caption == nil) }
+                HStack(spacing: 0) { permissionShield; Spacer(minLength: 0) }
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .sheet(isPresented: $choosing) {
+        .sensoryFeedback(.selection, trigger: picks)
+        .sensoryFeedback(.impact(flexibility: .soft), trigger: starts)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("watcher-settings")
+        .sheet(isPresented: $choosingPermission) {
             WatcherPermissionSheet(hostID: hostID) { mode in
                 picks += 1
-                choosing = false
+                choosingPermission = false
                 Task { await model.setWatcherPermission(mode, on: hostID) }
             }
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
-        .sensoryFeedback(.selection, trigger: picks)
     }
 
-    private func chip(pending: Bool, fixed: Bool) -> some View {
-        let mode = model.watcherPermission(hostID)
-        let busy = model.watcherManaging.contains(AppModel.permissionKey(hostID))
-        let edge = StrokeStyle(lineWidth: 1, dash: pending ? [4, 3] : [])
-        return Button { choosing = true } label: {
-            HStack(spacing: 6) {
-                if busy { ProgressView().controlSize(.mini) } else {
-                    Image(systemName: "shield").font(.system(size: 13, weight: .semibold)).accessibilityHidden(true)
+    private var catalog: [ThreadModel] { model.watcherCatalog(hostID) }
+    private var current: WatcherPage.Current? { model.watcherPage(hostID)?.current }
+    private var values: ThreadSettingValues? { model.watcherSettingValues(hostID) }
+    /// The model the chips read: the one just chosen while the computer takes it, then Watcher's own.
+    private var shownModel: ThreadModel? { CatalogEntry.model(catalog, id: values?.model) }
+    private var held: String? { model.watcherSettingsHeld(hostID) }
+
+    private func choose(_ kind: ThreadSettingKind, _ value: String) {
+        picks += 1
+        Task { await model.chooseWatcherSetting(kind, value, on: hostID) }
+    }
+    /// One choice in a chip's menu, a toggle so iOS marks the one in force, as in a thread's box.
+    @ViewBuilder private func option(_ name: String, line: String? = nil, chosen: Bool, action: @escaping () -> Void) -> some View {
+        let isOn = Binding(get: { chosen }, set: { if $0 { action() } })
+        if let line {
+            Toggle(isOn: isOn) { Text(verbatim: name); Text(verbatim: line) }
+        } else {
+            Toggle(isOn: isOn) { Text(verbatim: name) }
+        }
+    }
+
+    private var modelMenu: some View {
+        let groups = current.map { WatcherSettings.groups($0, catalog: catalog) } ?? []
+        return Menu {
+            ForEach(groups) { group in
+                Section(group.name) {
+                    ForEach(group.models) { item in
+                        option(item.name, chosen: item.id == shownModel?.id) { choose(.model, item.id) }
+                    }
                 }
-                Text(WatcherPermissions.name(mode)).lineLimit(1)
-                Image(systemName: "chevron.down").font(.system(size: 11, weight: .semibold)).accessibilityHidden(true)
             }
-            .font(.sotto(.small, .semibold))
-            .foregroundStyle(Palette.ink)
-            .padding(.horizontal, Space.s4)
-            .frame(minHeight: 44)
-            .background(Palette.fillSoft, in: Capsule())
-            .overlay(Capsule().strokeBorder(pending ? Palette.accent.opacity(0.7) : Palette.hairline, style: edge))
-            .contentShape(Capsule())
+            if groups.contains(where: { !$0.own }) {
+                Text("Another provider’s model starts a new Watcher. This conversation stays in Watcher history.")
+            }
+        } label: {
+            SettingChip {
+                ProviderLogo(providerID: shownModel?.providerId ?? current?.provider)
+                Text(verbatim: shownModel?.name ?? current?.modelId ?? "").foregroundStyle(Palette.ink).lineLimit(1)
+            }
+        }
+        .disabled(held != nil)
+        .opacity(held == nil ? 1 : 0.55)
+        .accessibilityLabel(String(localized: "Model", comment: "The field for the model a new thread uses."))
+        .accessibilityValue(shownModel?.name ?? "")
+        .accessibilityHint(held ?? String(localized: "Opens Watcher’s models"))
+        .accessibilityIdentifier("watcher-settings-model")
+    }
+
+    @ViewBuilder private var effortMenu: some View {
+        let efforts = shownModel?.reasoningEfforts ?? []
+        if !efforts.isEmpty, let values {
+            let shown = values.effort.isEmpty ? String(localized: "Default effort") : EffortWords.name(values.effort)
+            Menu {
+                Section(String(localized: "Effort", comment: "The field for how hard a new thread's model reasons.")) {
+                    ForEach(Array(efforts.enumerated()), id: \.element) { index, level in
+                        option(EffortWords.name(level), line: EffortWords.line(level, index: index, count: efforts.count), chosen: level == values.effort) {
+                            choose(.effort, level)
+                        }
+                    }
+                }
+            } label: {
+                SettingChip { Text(verbatim: shown).lineLimit(1) }
+            }
+            .disabled(held != nil)
+            .opacity(held == nil ? 1 : 0.55)
+            .accessibilityLabel(String(localized: "Effort", comment: "The field for how hard a new thread's model reasons."))
+            .accessibilityValue(shown)
+            .accessibilityHint(held ?? String(localized: "Opens the effort levels this model offers"))
+            .accessibilityIdentifier("watcher-settings-effort")
+        }
+    }
+
+    /// One press steps the speed, as in a thread's box: an outline at Standard, one bolt at Fast, two at Ultra fast.
+    @ViewBuilder private var speedButton: some View {
+        let speeds = ThreadSettings.offeredSpeeds(shownModel, providerID: shownModel?.providerId ?? current?.provider)
+        if !speeds.isEmpty, let values {
+            let speed = speeds.contains { $0.id == values.speed } ? values.speed : ThreadSettings.standard
+            let next = ThreadSettings.nextSpeed(speeds, after: speed)
+            let nextName = ThreadSettings.speedName(next, offered: speeds)
+            let cost = speeds.first { $0.id == next }.map { ThreadSettings.speedCost($0, providerID: shownModel?.providerId) }
+            Button { choose(.speed, next) } label: {
+                HStack(spacing: -3) {
+                    Image(systemName: speed == ThreadSettings.standard ? "bolt" : "bolt.fill")
+                    if speed == "ultrafast" { Image(systemName: "bolt.fill") }
+                }
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(speed == ThreadSettings.standard ? Palette.muted : Palette.accentText)
+                .frame(minWidth: 36, minHeight: 44)
+                .contentShape(Rectangle())
+                .padding(.vertical, -6)
+            }
+            .buttonStyle(PressStyle())
+            .disabled(held != nil)
+            .opacity(held == nil ? 1 : 0.55)
+            .accessibilityLabel(String(localized: "Speed", comment: "The thread setting for how fast its agent answers."))
+            .accessibilityValue(ThreadSettings.speedName(speed, offered: speeds))
+            .accessibilityHint(held ?? (cost.map { String(localized: "Changes to \(nextName). \($0)", comment: "The first %@ is a speed, such as Fast; the second says what it costs.") }
+                ?? String(localized: "Changes to \(nextName).", comment: "%@ is a speed, such as Standard.")))
+            .accessibilityIdentifier("watcher-settings-speed")
+        }
+    }
+
+    /// Watcher's permissions as their shield, right after the bolt: an outline while Watcher asks first, half filled while
+    /// it may act without asking, filled for Full access. It opens the four modes in Watcher's own words.
+    private var permissionShield: some View {
+        let mode = model.watcherPermission(hostID)
+        let full = mode == "full-access", grants = WatcherPermissions.grants(mode)
+        let fixed = model.watcherPermissionFixed(hostID)
+        return Button { choosingPermission = true } label: {
+            SettingChip(pending: model.watcherPermissionInForce(hostID) != nil) {
+                if model.watcherManaging.contains(AppModel.permissionKey(hostID)) { ProgressView().controlSize(.mini) } else {
+                    Image(systemName: full ? "shield.fill" : grants ? "shield.lefthalf.filled" : "shield")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(full ? Palette.warningText : grants ? Palette.accentText : Palette.muted)
+                }
+            }
         }
         .buttonStyle(PressStyle())
         .disabled(!model.canChangeWatcherPermission(hostID))
+        .opacity(fixed ? 0.55 : 1)
         .accessibilityLabel("Watcher’s permissions")
         .accessibilityValue(WatcherPermissions.name(mode))
         .accessibilityHint(fixed ? WatcherPermissions.fixedHint : String(localized: "Opens what Watcher may do without asking"))
-        .opacity(fixed ? 0.55 : 1)
         .accessibilityIdentifier("watcher-permissions")
     }
 
-    @ViewBuilder private func captionText(_ caption: String?) -> some View {
-        if let caption {
-            Text(caption).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-                .paragraphDirection()
-                .accessibilityIdentifier("watcher-permissions-in-force")
+    /// New Watcher (as the desktop's chip): a new Watcher at once on this one's model, effort, speed and permissions,
+    /// with a handover of this one offered over its box. Unavailable, it says why in its hint.
+    private var newWatcherButton: some View {
+        let why = model.newWatcherUnavailable(hostID)
+        return Button { starts += 1; Task { await model.startNewWatcher(hostID) } } label: {
+            HStack(spacing: 5) {
+                Image(systemName: "square.and.pencil").font(.system(size: 13, weight: .semibold)).accessibilityHidden(true)
+                Text("New Watcher").lineLimit(1)
+            }
+            .font(.sotto(.small, .medium))
+            .foregroundStyle(Palette.muted)
+            .padding(.horizontal, Space.s2)
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+            .padding(.vertical, -6)
         }
-    }
-
-    /// Beside the chip while Watcher works; the chip's hint says when it can change.
-    @ViewBuilder private func fixedText(_ shown: Bool) -> some View {
-        if shown {
-            Text(WatcherPermissions.fixed).font(.sotto(.caption)).foregroundStyle(Palette.muted).fixedSize(horizontal: false, vertical: true)
-                .paragraphDirection()
-                .accessibilityIdentifier("watcher-permissions-fixed")
-        }
+        .buttonStyle(PressStyle())
+        .disabled(why != nil)
+        .opacity(why == nil ? 1 : 0.55)
+        .accessibilityHint(why ?? String(localized: "Start a new Watcher with a handover of this one"))
+        .accessibilityIdentifier("watcher-new")
     }
 }
+
+// MARK: - What Watcher may do without asking (control A)
 
 /// The four modes, each with what Watcher does under it, the chosen one ticked; then what stays true in every mode. An
 /// iPhone that can't answer on that computer can choose only to keep Watcher asking first, and the sheet says so.

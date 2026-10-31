@@ -136,6 +136,10 @@ describe('remote command allow-list', () => {
       'watcher-phone-remove-followup',
       // Optional phone photos: one photo of the current Watcher's message, a read on the preview guard (October 23, 2026).
       'watcher-phone-preview',
+      // Optional phone composer: Watcher's own model, effort and speed, New Watcher, Stop on Watcher's own turn and putting
+      // the handover away, each naming the current Watcher (October 31, 2026). Pairing admits them, as it admits watching:
+      // a new Watcher keeps the saved permission mode, and none answers anything.
+      'watcher-phone-open', 'watcher-phone-new', 'watcher-phone-stop-turn', 'watcher-phone-dismiss-handover',
       // A thread's Files, Changes and Agents: reads only, never commands (ADR-0025, October 5 amendment).
       'thread-files', 'thread-file-preview', 'thread-changes', 'thread-changes-review', 'subagent-page', 'subagent-assignments',
       // The machine's host facts: numbers and the system's own name, read only by a desktop that lists host-facts (#1031).
@@ -207,7 +211,7 @@ describe('remote command allow-list', () => {
     // any operation it admitted, so a lost answer is read back by its receipt.
     expect(HOST_FEATURES).toContain('watcher-check-stop')
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
-    expect(ops.filter(op => op.includes('stop')).sort()).toEqual(['watcher-phone-prepare-stop-all', 'watcher-phone-stop-all'])
+    expect(ops.filter(op => op.includes('stop')).sort()).toEqual(['watcher-phone-prepare-stop-all', 'watcher-phone-stop-all', 'watcher-phone-stop-turn'])
     expect(Object.keys(watcherToolSchemas.stop_thread.input.shape).sort()).toEqual(['requestId', 'retryKey', 'target'])
   })
   it('sends a host\u2019s own check queue to a recorded desktop as a push under check-queue-views, no request of its own, and only ids and names (#1312)', () => {
