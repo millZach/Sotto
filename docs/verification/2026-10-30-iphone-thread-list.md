@@ -31,7 +31,7 @@ After, the wash runs on under the rail and there is no edge at the strip, in eve
 - **Not seen:**
   - a real Duo or iPhone;
   - VoiceOver;
-  - a delegated thread's Needs you row, which the fixture doesn't hold;
+  - a delegated thread's Needs you row in a capture. `testAgentsOpensADelegatedThreadAndBackReturnsToTheSheet` checks it in CI: the row names the delegated thread that asks, opens it on its question, and Back returns to the thread that delegated it;
   - several unreachable computers, since the fixture has one;
   - the accessibility text sizes.
 - **Thread pages are unchanged.** A thread's own wash spans only its reading column, so a thread beside the sideways rail still has a plain margin before the strip, as it has on either side.

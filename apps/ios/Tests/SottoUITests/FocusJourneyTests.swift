@@ -2084,7 +2084,15 @@ import UIKit
         launch(Self.fixture + ["--ui-agents"])
         let thread = row("iphone")
         reveal(thread)
+        // Its delegated review waits on the user, so the row stands in Needs you and opens the review on its question,
+        // with Back returning to the thread that delegated it (ADR-0151's second October 30 amendment).
+        XCTAssertTrue(thread.label.contains("Review the drawer fix"), "The row says which delegated thread asks")
         thread.tap()
+        XCTAssertTrue(app.staticTexts["Run npm test -- terminalDrawer?"].waitForExistence(timeout: 5),
+                      "A Needs you row for a delegated thread opens that thread on its question")
+        reveal(app.buttons["Not now"])
+        app.buttons["Not now"].tap()
+        back()
         let agents = app.buttons["thread-agents"]
         XCTAssertTrue(agents.waitForExistence(timeout: 5), "A thread with delegated threads and agents has Agents in its top bar")
         XCTAssertEqual(agents.value as? String, "4 agents, 1 needs you")
