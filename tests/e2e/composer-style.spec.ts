@@ -5,7 +5,7 @@ import { longHistory } from './support/longHistory'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
-// The composer's two styles (ADR-0166): Zach's composer, the prompt above a footer of attach, permissions, the model and
+// The composer's two styles (ADR-0168): Zach's composer, the prompt above a footer of attach, permissions, the model and
 // its effort and the disc, is the default; Drake's one pill is the other, chosen in Settings › Appearance. Both draw at a
 // laptop's size and at the window's minimum, dark and light, at rest and while a turn runs, without an edge and without
 // spilling. Captures go to disposable run evidence; `SOTTO_E2E_EVIDENCE=publish` writes artifacts/composer-style.

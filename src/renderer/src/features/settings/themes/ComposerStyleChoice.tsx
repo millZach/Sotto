@@ -16,7 +16,7 @@ const STYLE_WORDS = {
 } as const satisfies Record<ComposerStyle, unknown>
 
 /**
- * Settings → Appearance → Composer (ADR-0166): which of the two styles draws the thread and Watcher composers, as a card
+ * Settings → Appearance → Composer (ADR-0168): which of the two styles draws the thread and Watcher composers, as a card
  * for each with a small drawing of it. A radio group: one Tab stop; the arrows, Home and End move to a style and choose it.
  */
 export function ComposerStyleChoice({ value, onChoose }: {

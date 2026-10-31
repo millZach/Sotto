@@ -147,7 +147,7 @@ export interface AppSettings {
   menuBarOwlEyes: MenuBarOwlEyes
   /** The place Watcher's night scene is set in (ADR-0149); kept whole where Watcher is off. */
   watcherScene: WatcherScene
-  /** How the thread and Watcher composers are drawn (ADR-0166): Zach's two rows unless Drake's pill is chosen. */
+  /** How the thread and Watcher composers are drawn (ADR-0168): Zach's two rows unless Drake's pill is chosen. */
   composerStyle: ComposerStyle
   /** Which character stands above the composer; Sotto's own unless Claude bot is chosen. */
   creature: Creature

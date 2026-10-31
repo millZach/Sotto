@@ -1,4 +1,4 @@
-/* Settings → Appearance → Composer (ADR-0166). Each style is a card (ADR-0110), as the Watcher scenes are: filled, no
+/* Settings → Appearance → Composer (ADR-0168). Each style is a card (ADR-0110), as the Watcher scenes are: filled, no
    outline, the chosen one wearing the accent edge and wash. Its picture is a sketch of the composer on the room's own
    canvas. Every colour is a theme role. */
 .composer-style-choice { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--tt-hairline); container-type: inline-size; }

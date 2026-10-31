@@ -183,7 +183,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const watcherOn = useWatcherEnabled()
   const watchActions = useWatchActions()
   const quietComposer = useOwlFeature('quiet-composer')
-  // Which of the composer's two styles Settings › Appearance chose (ADR-0166); Zach's two rows unless Drake's pill is.
+  // Which of the composer's two styles Settings › Appearance chose (ADR-0168); Zach's two rows unless Drake's pill is.
   const composerStyle = useOptionalApp()?.settings?.composerStyle ?? DEFAULT_COMPOSER_STYLE
   const { draft, save, saveError, answerState, hasContent, effortScore } = useComposerControls(store, threadId, quietComposer)
   const comments = useReviewComments(reviewComments, threadId)
@@ -441,7 +441,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // The quiet composer (ADR-0161, Owl): one pill. Answers, continuations and Watcher's handover keep the full footer,
   // since each has a primary action of its own that the pill's disc does not draw.
   const quiet = quietComposer && !answering && continuing === undefined && handover === null
-  // Zach's composer (ADR-0166) shares the pill's parts and lays them out in two rows: the prompt, then a footer whose
+  // Zach's composer (ADR-0168) shares the pill's parts and lays them out in two rows: the prompt, then a footer whose
   // permissions sit before the model, and whose disc is Stop while a turn runs with nothing typed.
   const rows = quiet && composerStyle === 'rows'
   /** In the quiet pill, the permissions shield goes to the pill's start; elsewhere it stays where it is drawn. */

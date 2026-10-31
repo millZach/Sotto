@@ -20,7 +20,7 @@ function setup({ settings = {}, saves = true }: { settings?: Partial<AppSettings
 const group = () => screen.getByRole('radiogroup', { name: 'Composer' })
 const radio = (name: RegExp) => within(group()).getByRole('radio', { name })
 
-describe('Settings → Appearance → Composer (ADR-0166)', () => {
+describe('Settings → Appearance → Composer (ADR-0168)', () => {
   it('offers Zach’s composer, in use by default, and Drake’s, each named for what a press does, from one Tab stop', () => {
     setup()
     const radios = within(group()).getAllByRole('radio')

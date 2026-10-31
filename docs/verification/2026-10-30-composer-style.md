@@ -1,6 +1,6 @@
 # Zach's composer and Drake's pill, chosen in Appearance
 
-October 30, 2026, on forge (Linux), in the built app under Playwright and a virtual display. Issue #1919, ADR-0166.
+October 30, 2026, on forge (Linux), in the built app under Playwright and a virtual display. Issue #1919, ADR-0168.
 
 ## What was run
 
