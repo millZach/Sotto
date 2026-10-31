@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { open, readdir, unlink } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { threadUsageSchema, usageTokensSchema, type ThreadUsage, type UsageTokens } from '../../shared/threadUsage'
@@ -20,6 +21,12 @@ const entrySchema = z.object({ tokens: usageTokensSchema, model: z.string(), usd
 const ledgerSchema = z.object({ view: threadUsageSchema, entries: z.record(z.string(), entrySchema),
   total: usageTokensSchema.optional(), model: z.string().optional(), seen: z.array(z.string()), latestId: z.string().optional(), incomplete: z.boolean().default(false), contextCompacted: z.boolean().optional() })
 type Ledger = z.infer<typeof ledgerSchema>
+/** One thread's ledger in a file of its own: the thread's ID, which the file's name only hashes, and its ledger. */
+const threadLedgerSchema = z.object({ id: z.string(), ledger: ledgerSchema })
+/** A file found among the threads' ledgers, which the store reads as null when it is not one. */
+const foundLedgerSchema = threadLedgerSchema.nullable()
+const legacyLedgersSchema = z.record(z.string(), ledgerSchema)
+const emptyLedger = (): Ledger => ({ view: { rateVersions: [], partial: false, updatedAt: new Date().toISOString() }, entries: {}, seen: [], incomplete: false })
 const SYNTHETIC = '<synthetic>'
 const GROK_REPORTED_COST = 'grok-reported-cost'
 const object = (value: unknown): Record<string, unknown> => typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
@@ -63,9 +70,41 @@ export function codexEntryKey(turnId: unknown, total: UsageTokens): string {
   return createHash('sha256').update(JSON.stringify([turnId, total])).digest('hex')
 }
 
-const OPEN_BRACE = Buffer.from('{')
-const COMMA = Buffer.from(',')
-const CLOSE_BRACE = Buffer.from('}')
+/** A thread's ledger file's name: its ID hashed, so any ID makes a name every file system takes. */
+const ledgerFileName = (id: string): string => `${createHash('sha256').update(id).digest('hex').slice(0, 40)}.json`
+/**
+ * The most threads' ledger files written at once. Moving an earlier build's one file across writes every thread's, and
+ * opening hundreds of files together can run out of file handles, which would fail the very writes quitting waits for.
+ */
+const LEDGER_WRITES_AT_ONCE = 8
+
+/** `work` for each of `items`, at most `limit` at once, each outcome in its item's place. */
+async function settledInTurn<Item>(items: readonly Item[], limit: number, work: (item: Item) => Promise<void>): Promise<PromiseSettledResult<void>[]> {
+  const outcomes: PromiseSettledResult<void>[] = new Array<PromiseSettledResult<void>>(items.length)
+  let next = 0
+  const lane = async (): Promise<void> => {
+    while (next < items.length) {
+      const index = next++
+      try { await work(items[index]!); outcomes[index] = { status: 'fulfilled', value: undefined } }
+      catch (reason) { outcomes[index] = { status: 'rejected', reason } }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, lane))
+  return outcomes
+}
+
+/**
+ * Makes a folder's own entries durable, as the files renamed into it, where the system allows it: Windows opens no folder
+ * to sync, and one that is not there has nothing to keep.
+ */
+async function syncFolder(path: string): Promise<void> {
+  let handle: Awaited<ReturnType<typeof open>>
+  try { handle = await open(path, 'r') }
+  catch (error) { if (['ENOENT', 'EISDIR', 'EPERM', 'EACCES'].includes((error as NodeJS.ErrnoException).code ?? '')) return; throw error }
+  try { await handle.sync() }
+  catch (error) { if (!['EINVAL', 'ENOTSUP', 'EBADF'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error }
+  finally { await handle.close() }
+}
 
 /** How often the ledger is written while a reply streams. A turn's end is written at once. */
 export const USAGE_WRITE_INTERVAL_MS = 1000
@@ -73,23 +112,36 @@ export const USAGE_WRITE_INTERVAL_MS = 1000
 /**
  * Accounting observation only: never changes delivery, native sessions, or billing settings.
  *
- * The ledger holds every request of every thread and is written whole. A reply reports usage on nearly every
- * frame, so while it streams the ledger is written at most once every `USAGE_WRITE_INTERVAL_MS`, and at once when a turn
- * ends (`elapsed`, Grok's `turn_completed`) or a compaction is recorded. What a crash between two writes loses is
- * that second's counts, which the provider reports again when the thread is read.
+ * The ledger holds every request of every thread, each thread's in a file of its own in `{provider}-usage/` (#555): a
+ * write writes the threads that changed, where the one file every thread shared was written whole, 2.4 to 12.7 MB
+ * synced to disk once a second while a reply streamed. A reply reports usage on nearly every frame, so while it streams
+ * a thread's ledger is written at most once every `USAGE_WRITE_INTERVAL_MS`, and at once when a turn ends (`elapsed`,
+ * Grok's `turn_completed`) or a compaction is recorded. What a crash between two writes loses is that second's counts,
+ * which the provider reports again when the thread is read.
+ *
+ * The one file earlier builds wrote, `{provider}-usage.json`, is read at start beside the threads' own files, which win
+ * for their thread. Every ledger it held is then written to a file of its own, and only once all of them are is the
+ * shared file removed.
  */
 export class NativeUsage {
-  private readonly store: AtomicJsonStore<Record<string, Ledger>>
+  /** The one ledger file of earlier builds, read at start and removed once every ledger it held has a file of its own. */
+  private readonly legacyStore: AtomicJsonStore<Record<string, Ledger>>
+  private readonly legacyPath: string
+  /** Whether that file was there when the ledgers were last read, and has not been removed since. */
+  private legacyPresent = false
+  /** The threads the shared file held whose ledger has not reached a file of its own yet. */
+  private readonly unmoved = new Set<string>()
+  private readonly ledgerDirectory: string
+  /** Each thread's ledger file, by thread ID, made when the thread is first read or written. */
+  private readonly stores = new Map<string, AtomicJsonStore<{ id: string; ledger: Ledger }>>()
   private data: Record<string, Ledger> = {}
   private readonly streaming = new Map<string, string>()
   private writing: Promise<void> | undefined
   private readonly dirty = new Set<string>()
   /**
-   * Each ledger as the file last held it, by the ledger object. The ledger is written whole about once a second while a
-   * reply streams, and one thread's ledger changes in that time; serializing every thread's every request again was about
-   * a second of a busy minute (October 19, 2026). Every change to a ledger goes through `ledger()` or ends in `save()`, and each forgets it.
-   * What is kept is the ledger's member of the file, its ID and its text, already encoded: encoding the whole file's
-   * text again for every write was another second of a busy minute once the file passed 12 MB (#1451).
+   * Each ledger's file as it was last written, already encoded, by the ledger object. Every change to a ledger goes
+   * through `ledger()` or ends in `save()`, and each forgets it, so a thread written again whose ledger did not change is
+   * not encoded again (#1451).
    */
   private serializedLedgers = new WeakMap<Ledger, Buffer>()
   private readonly failed = new Set<string>()
@@ -105,15 +157,45 @@ export class NativeUsage {
   private readonly detailedGrokGroups = new Set<string>()
   private readonly ambiguousGrokGroups = new Set<string>()
   constructor(directory: string, private readonly provider: 'codex' | 'claude' | 'grok', private readonly usageEnabled = false) {
-    // Compact, as `serialized` writes it: the ledger is rewritten whole while a reply streams.
-    this.store = AtomicJsonStore.compact(join(directory, `${provider}-usage.json`), z.record(z.string(), ledgerSchema).parse, () => ({}))
+    this.legacyPath = join(directory, `${provider}-usage.json`)
+    this.legacyStore = AtomicJsonStore.compact(this.legacyPath, legacyLedgersSchema.parse, () => ({}))
+    this.ledgerDirectory = join(directory, `${provider}-usage`)
+  }
+  private store(id: string): AtomicJsonStore<{ id: string; ledger: Ledger }> {
+    let store = this.stores.get(id)
+    if (!store) {
+      store = AtomicJsonStore.compact(join(this.ledgerDirectory, ledgerFileName(id)), threadLedgerSchema.parse, () => ({ id, ledger: emptyLedger() }))
+      this.stores.set(id, store)
+    }
+    return store
+  }
+  /** Every thread's ledger: the shared file of earlier builds, then each thread's own file over it. */
+  private async readLedgers(): Promise<Record<string, Ledger>> {
+    const data: Record<string, Ledger> = {}
+    this.unmoved.clear()
+    this.legacyPresent = await this.legacyStore.exists()
+    if (this.legacyPresent) {
+      for (const [id, ledger] of Object.entries(await this.legacyStore.read())) { data[id] = ledger; this.unmoved.add(id) }
+    }
+    const names = await readdir(this.ledgerDirectory).catch((error: NodeJS.ErrnoException) => { if (error.code === 'ENOENT') return []; throw error })
+    for (const name of names.filter(name => /^[0-9a-f]{40}\.json$/u.test(name))) {
+      const read = await AtomicJsonStore.compact(join(this.ledgerDirectory, name), foundLedgerSchema.parse, () => null).read()
+      // A file unreadable as a ledger has been set aside as the store sets any aside; its thread starts afresh.
+      if (!read || ledgerFileName(read.id) !== name) continue
+      data[read.id] = read.ledger
+      this.unmoved.delete(read.id)
+    }
+    return data
   }
   async load(): Promise<void> {
     await this.flushed()
     this.streaming.clear()
     // A reconnect must not replace newer, unsaved observations with the old archive.
     if (this.failed.size) return
-    this.data = await this.store.read()
+    this.data = await this.readLedgers()
+    // A ledger only the shared file held is written to a file of its own, and the file goes once none is left only there.
+    for (const id of this.unmoved) this.dirty.add(id)
+    if (!this.unmoved.size) await this.removeLegacy()
     for (const [id, ledger] of Object.entries(this.data)) {
       let changed = false
       // A successfully read archive is durable; an old process's failure flag is not.
@@ -255,7 +337,7 @@ export class NativeUsage {
   private ledger(id: string): Ledger {
     const known = this.data[id]
     if (known) { this.serializedLedgers.delete(known); return known }
-    return this.data[id] = { view: { rateVersions: [], partial: false, updatedAt: new Date().toISOString() }, entries: {}, seen: [], incomplete: false }
+    return this.data[id] = emptyLedger()
   }
   private summarize(ledger: Ledger): void {
     const entries = Object.values(ledger.entries)
@@ -299,21 +381,23 @@ export class NativeUsage {
           const ids = new Set([...this.failed, ...this.dirty])
           this.dirty.clear()
           this.urgent = false
-          try {
-            this.lastWriteAt = performance.now()
-            await this.store.writeSerialized(this.serialized())
-            for (const id of ids) {
+          this.lastWriteAt = performance.now()
+          // Each changed thread's ledger to its file, a few at a time; a failure is that thread's alone.
+          const written = [...ids]
+          const results = await settledInTurn(written, LEDGER_WRITES_AT_ONCE, id => this.store(id).writeSerialized([this.serialized(id)]))
+          for (const [index, id] of written.entries()) {
+            if (results[index]!.status === 'fulfilled') {
+              this.unmoved.delete(id)
               // An older successful snapshot cannot clear a newer failed/unsaved state.
               if (this.dirty.has(id)) continue
               this.failed.delete(id)
               delete this.data[id]!.view.persistenceError
-            }
-          } catch {
-            for (const id of ids) {
+            } else {
               this.failed.add(id)
               this.data[id]!.view.persistenceError = true
             }
           }
+          await this.removeLegacy()
         } while (this.dirty.size && (this.urgent || this.draining > 0))
       } finally {
         this.writing = undefined
@@ -323,24 +407,30 @@ export class NativeUsage {
     })
   }
   /**
-   * The ledger as the file holds it, encoded, in pieces: a write failure is this process's to show, never saved. The
-   * pieces are the bytes of `JSON.stringify(this.data)`, with the ledgers nothing changed since the last write kept as
-   * they were, so a write encodes only the ledgers that changed. A kept piece is never written into, only replaced.
+   * A thread's ledger file, encoded: a write failure is this process's to show, never saved. A ledger nothing changed since
+   * it was last encoded is not encoded again; what is kept is never written into, only replaced.
    */
-  private serialized(): Buffer[] {
-    const flagged = Object.values(this.data).filter(ledger => ledger.view.persistenceError)
-    for (const ledger of flagged) delete ledger.view.persistenceError
+  private serialized(id: string): Buffer {
+    const ledger = this.data[id]!
+    let piece = this.serializedLedgers.get(ledger)
+    if (piece !== undefined) return piece
+    const flagged = ledger.view.persistenceError
+    if (flagged) delete ledger.view.persistenceError
+    try { piece = Buffer.from(`{"id":${JSON.stringify(id)},"ledger":${JSON.stringify(ledger)}}`) }
+    finally { if (flagged) ledger.view.persistenceError = true }
+    this.serializedLedgers.set(ledger, piece)
+    return piece
+  }
+  /**
+   * The shared file of earlier builds goes once every ledger it held has a file of its own, and those files' entries in
+   * their folder are on disk, so a power cut cannot keep the removal and lose a file. A failure tries again later.
+   */
+  private async removeLegacy(): Promise<void> {
+    if (!this.legacyPresent || this.unmoved.size) return
     try {
-      const pieces: Buffer[] = [OPEN_BRACE]
-      for (const [id, ledger] of Object.entries(this.data)) {
-        let piece = this.serializedLedgers.get(ledger)
-        if (piece === undefined) { piece = Buffer.from(`${JSON.stringify(id)}:${JSON.stringify(ledger)}`); this.serializedLedgers.set(ledger, piece) }
-        if (pieces.length > 1) pieces.push(COMMA)
-        pieces.push(piece)
-      }
-      pieces.push(CLOSE_BRACE)
-      return pieces
-    } finally { for (const ledger of flagged) ledger.view.persistenceError = true }
+      await syncFolder(this.ledgerDirectory)
+      await unlink(this.legacyPath); this.legacyPresent = false
+    } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') this.legacyPresent = false }
   }
   private record(ledger: Ledger, key: string, model: string, tokens: UsageTokens, reported?: { readonly usd: number; readonly rate: string }): boolean {
     if (model === SYNTHETIC || !Object.values(tokens).some(value => value !== undefined)) return false

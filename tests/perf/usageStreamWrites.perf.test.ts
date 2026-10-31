@@ -9,15 +9,19 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { NativeUsage } from '../../src/main/agents/nativeUsage'
 import { sourceAt } from '../fixtures/baselineSource'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
+import { writeOneUsageFile } from '../fixtures/usageLedgerFiles'
 
-// The commit #767 started from. "before" is its source; "after" is the working tree.
-const BASE = 'e8a82a034c42cc3eb9b8fb3c711726353192ade9'
+// The commit #555's per-thread ledger files started from. "before" is its source; "after" is the working tree. (#767 ran
+// this from e8a82a034c42cc3eb9b8fb3c711726353192ade9.)
+const BASE = '6ebcc25999f70e23445a74b54acde2d83155c5bc'
 const exec = promisify(execFile)
 type Row = { writes: number; bytesWritten: number; archiveBytes: number; streamedMs: number; cpuMs: number; output: number }
 
 /**
  * Writes of the usage ledger while one reply streams: 150 output counts 20 ms apart, then the turn's end, against
- * a ledger about the 6.2 MB the development machine's Claude ledger had grown to (#555 bounds its growth).
+ * a ledger about the 6.2 MB the development machine's Claude ledger had grown to. The seed is the one file an earlier
+ * build wrote, which both versions read; a build that keeps each thread's ledger in a file of its own (#555) moves it
+ * across before the reply starts.
  */
 describe.skipIf(!PERF_BENCH)("usage ledger writes while a reply streams (timing benchmark; requires SOTTO_PERF_BENCH=1)", () => {
   let root: string
@@ -31,7 +35,8 @@ describe.skipIf(!PERF_BENCH)("usage ledger writes while a reply streams (timing 
       message: { id: `message-${thread}-${entry}`, model: 'claude-sonnet-4-6', usage: { input_tokens: 1000, output_tokens: 100, cache_read_input_tokens: 2000, cache_creation_input_tokens: 0 } },
     })
     await seeded.flushed()
-    seed = join(root, 'seed', 'claude-usage.json')
+    // The ledgers as an earlier build kept them, in one file.
+    seed = await writeOneUsageFile(join(root, 'seed'))
     for (const label of ['before', 'after']) {
       const outfile = join(root, `${label}.mjs`)
       await build({ entryPoints: ['tests/fixtures/usageStreamBench.ts'], bundle: true, platform: 'node', format: 'esm', outfile,

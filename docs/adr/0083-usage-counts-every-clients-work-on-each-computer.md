@@ -75,3 +75,28 @@ What main relied on, kept:
 - **A worker that goes** logs `usage-store-worker-lost`. Its unanswered requests fail as a failed save would, and the next request starts a worker again. Writes are idempotent by identity, so writing again what it had committed counts nothing twice; a Clear it had not answered reports that Usage could not be saved.
 
 A history pass reads every file's cursor once as it begins, rather than one file at a time, and waits after each file while more than four of its batches are on their way to the writer, so a first import never hands the worker a whole history at once. Which model served each prompt is now worked out once per revision rather than once per read, and the reader keeps the answers to the last sixteen different reads at one revision; on a warm copy of Zach's store a provider's read went from 210–245 ms to 90–125 ms, and the page's first read stays about 400 ms, now off main. What Usage shows is unchanged.
+
+## Amended October 30, 2026: each thread's usage ledger has a file of its own (#555)
+
+The usage a thread shows, its requests, totals and the keys that keep a replayed request from counting twice, was kept
+for every thread of a provider in one file, `{provider}-usage.json`. A reply reports usage on nearly every frame, so while
+one streamed the file was written about once a second, and each write synced all of it to disk: 2.4 MB on forge's host
+and 12.7 MB on the owner's computer, for one thread's change. Since #1451 only the changed thread was encoded again, but
+the whole file was still written.
+
+- **The files.** Each thread's ledger is a file of its own in `{provider}-usage/`, named by a hash of its Sotto thread ID
+  and holding `{ "id", "ledger" }`, compact. A write writes the threads that changed. What a ledger holds, and when it is
+  written, are as before: at most once a second while a reply streams, at once when a turn ends or a compaction is
+  recorded, a failed write shown on its thread until a later one lands, and the latest counts written when Sotto quits.
+- **The one file of earlier builds** is read at start beneath the threads' own files, which win for their thread. Every
+  ledger only it held is written to a file of its own, and once none is left only there the file is removed. A crash
+  before then reads both again.
+- **An earlier build** finds no shared file once it has been moved across, and counts each thread's usage afresh. Back on
+  this one, a thread's own file is read over what that build counted for it, and a thread that build alone counted is
+  moved across.
+- **What stays.** Every request ever counted is still kept, so lifetime totals and replay deduplication are exact. #555's
+  retention policy is still open; a file per thread lets one apply per thread.
+
+On `usageStreamWrites.perf.test.ts`, a reply streaming 150 usage frames over a 3.8 MB ledger of forty threads wrote
+19,004,865 bytes in five writes before and 473,680 in five after, in each of three rounds
+(`docs/perf/2026-10-30-usage-ledger-per-thread.md`).

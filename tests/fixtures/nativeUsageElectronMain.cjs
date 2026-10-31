@@ -50,11 +50,12 @@ childProcess.spawn = function (command, args, options) {
     : [resolve(__dirname, 'fakeClaudeThread.mjs'), client, ...args]
   return spawn.call(this, node, nativeArgs, { ...options, env: { ...options?.env, SOTTO_FAKE_CLAUDE_HOME: join(home, '.claude') }, windowsHide: true })
 }
-// Hold only the usage archive's atomic replacement, after its data was synced. The test releases it
-// after quit has begun, proving production's before-quit drain rather than a test-only flush call.
+// Hold only the usage archive's atomic replacements, a thread's ledger file's (#555) or an earlier build's one file, after
+// their data was synced. The test releases them after quit has begun, proving production's before-quit drain rather than a
+// test-only flush call.
 const rename = promises.rename
 promises.rename = async (from, to) => {
-  if (to === join(profile, 'claude-usage.json')) {
+  if (to === join(profile, 'claude-usage.json') || dirname(to) === join(profile, 'claude-usage')) {
     if (fs.existsSync(join(root, 'hold-usage-write'))) {
       fs.writeFileSync(join(root, 'usage-write-waiting'), '')
       while (fs.existsSync(join(root, 'hold-usage-write'))) await delay(10)
