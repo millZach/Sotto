@@ -1832,6 +1832,93 @@ import UIKit
     }
 
     /// New thread's fields open from anywhere in their box, and New worktree can be chosen.
+    /// A thread's model, effort, speed and permissions change from its reply box's second line (ADR-0166, pick B): each a
+    /// text button with its own menu, the bolt stepping through the speeds on a press, and a permission change marked
+    /// until the agent confirms it. While a turn runs they are held, as on the desktop.
+    func testAThreadsSettingsChangeFromItsReplyBox() {
+        launch(Self.fixture + ["--ui-thread-settings"])
+        let thread = row("shortcuts")
+        reveal(thread)
+        thread.tap()
+        let reply = byID("thread-reply")
+        XCTAssertTrue(reply.waitForExistence(timeout: 5))
+        let model = byID("thread-settings-model"), effort = byID("thread-settings-effort")
+        let speed = byID("thread-settings-speed"), permissions = byID("thread-settings-permissions")
+        XCTAssertTrue(model.waitForExistence(timeout: 5), "The thread's settings are the reply box's second line")
+        XCTAssertEqual(model.label, "Model")
+        XCTAssertEqual(model.value as? String, "GPT-6.1 Sol")
+        XCTAssertEqual(effort.value as? String, "High")
+        XCTAssertEqual(speed.value as? String, "Standard")
+        XCTAssertEqual(permissions.label, "Thread permissions")
+        XCTAssertEqual(permissions.value as? String, "Ask before actions")
+        XCTAssertGreaterThan(model.frame.midY, reply.frame.midY, "Under the words, inside the box")
+        XCTAssertTrue(model.isEnabled && effort.isEnabled && speed.isEnabled && permissions.isEnabled, "An idle thread's chips can be pressed")
+        capture("thread-settings-dark")
+
+        let astra = menuItem("GPT-6 Astra")
+        press(model, until: NSPredicate { _, _ in astra.exists })
+        XCTAssertTrue(astra.waitForExistence(timeout: 5), "The model chip opens the thread's own provider's models")
+        XCTAssertFalse(menuItem("GPT-6.1 Luna").exists, "A model that isn't ready is left out")
+        capture("thread-settings-model-menu-dark")
+        astra.tap()
+        XCTAssertEqual(waitForValue(model, "GPT-6 Astra"), .completed, "The chip says the choice at once")
+
+        let low = menuItem("Low")
+        press(effort, until: NSPredicate { _, _ in low.exists })
+        XCTAssertTrue(low.waitForExistence(timeout: 5), "The effort chip opens the new model's levels")
+        XCTAssertFalse(menuItem("Extra high").exists, "Astra offers no Extra high")
+        capture("thread-settings-effort-menu-dark")
+        low.tap()
+        XCTAssertEqual(waitForValue(effort, "Low"), .completed)
+
+        press(speed, until: NSPredicate { _, _ in (speed.value as? String) == "Fast" })
+        XCTAssertEqual(waitForValue(speed, "Fast"), .completed, "One press of the bolt steps to the next speed")
+
+        let full = menuItem("Full access")
+        press(permissions, until: NSPredicate { _, _ in full.exists })
+        XCTAssertTrue(full.waitForExistence(timeout: 5))
+        capture("thread-settings-permissions-menu-dark")
+        full.tap()
+        XCTAssertEqual(waitForValue(permissions, "Full access"), .completed, "The shield says the choice at once")
+        let inForce = byID("thread-settings-in-force")
+        XCTAssertTrue(inForce.waitForExistence(timeout: 5), "Until Codex confirms it, a line says what is still in force")
+        XCTAssertEqual(inForce.label, "Codex still asks before acting until it confirms.")
+        capture("thread-settings-pending-dark")
+        // The fixture's Codex confirms eight seconds after the choice. A deadline that is never reached costs nothing.
+        XCTAssertTrue(waitUntilGone(inForce, timeout: 60), "Once Codex confirms it, nothing more is said")
+        XCTAssertEqual(permissions.value as? String, "Full access")
+
+        // In light, and on the working thread, whose chips wait for its turn to end.
+        launch(Self.fixture + ["--ui-thread-settings", "--ui-light"])
+        let idle = row("shortcuts")
+        reveal(idle)
+        idle.tap()
+        XCTAssertTrue(byID("thread-settings-model").waitForExistence(timeout: 5))
+        capture("thread-settings-light")
+        let medium = menuItem("Medium")
+        press(byID("thread-settings-effort"), until: NSPredicate { _, _ in medium.exists })
+        XCTAssertTrue(medium.waitForExistence(timeout: 5))
+        capture("thread-settings-effort-menu-light")
+        medium.tap()
+        back()
+        let working = row("iphone")
+        reveal(working)
+        working.tap()
+        let held = byID("thread-settings-model")
+        XCTAssertTrue(held.waitForExistence(timeout: 5))
+        XCTAssertFalse(held.isEnabled, "While the turn runs the agent would refuse a change, so the chips wait")
+        XCTAssertFalse(byID("thread-settings-permissions").isEnabled)
+        capture("thread-settings-working-light")
+    }
+    /// A menu's item whose words start with these, wherever iOS draws the menu.
+    private func menuItem(_ start: String) -> XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", start)).firstMatch
+    }
+    /// Waits for an element to read this value: a chip settling on a choice.
+    private func waitForValue(_ element: XCUIElement, _ value: String, timeout: TimeInterval = 10) -> XCTWaiter.Result {
+        XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: element)], timeout: timeout)
+    }
+
     func testNewThreadFieldsOpenFromTheirWholeBox() {
         launch(Self.fixture)
         app.buttons["new-thread"].tap()

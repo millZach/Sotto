@@ -15,6 +15,10 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
     /// Where the model comes from: OpenCode's model source, such as OpenCode Zen or Anthropic (ADR-0087), or Cursor's model
     /// maker, the company that made it, such as Anthropic (ADR-0128). Other providers' models say nothing.
     public let source: String?
+    /// The speeds the model offers besides Standard, in the provider's names (ADR-0143), read item by item; or, from an
+    /// older computer, `fastMode` alone for Fast.
+    public var speeds: ThreadList<ModelSpeed>? = nil
+    public var fastMode: ModelFastMode? = nil
     public struct ProviderMode: Decodable, Equatable, Sendable {
         public let id: String; public let name: String; public let allows: String?; public let asks: String?
     }
@@ -50,7 +54,7 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
     /// Prefer an asking mode. A grant is never selected just because this iPhone may answer.
     public var startingPermission: String { permissions.first { !$0.grants }?.id ?? "" }
 }
-public struct ThreadPermission: Identifiable, Sendable {
+public struct ThreadPermission: Identifiable, Equatable, Sendable {
     public let id: String; public let name: String; public let asks: String?
     public let grants: Bool; public let providerOwned: Bool
 }
