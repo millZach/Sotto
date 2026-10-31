@@ -7,11 +7,11 @@
   z-index: 11;
   width: min(360px, calc(100vw - 40px));
   border: 1px solid var(--tt-hairline);
-  border-radius: 12px;
+  border-radius: var(--tt-radius-inset);
   background: var(--tt-surface-elevated);
   box-shadow: var(--tt-shadow-lg);
   overflow: hidden;
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
 }
 
 .client-updates__head {
@@ -25,13 +25,13 @@
 
 .client-updates__head strong {
   color: var(--tt-text);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   font-weight: 600;
 }
 
 .client-updates__head span {
   color: var(--tt-text-muted);
-  font-size: 11.5px;
+  font-size: var(--tt-type-caption);
   text-align: right;
 }
 
@@ -59,7 +59,7 @@
 
 .client-updates__row small {
   color: var(--tt-text-muted);
-  font-size: 11.5px;
+  font-size: var(--tt-type-caption);
   font-variant-numeric: tabular-nums;
   overflow-wrap: anywhere;
 }
@@ -72,7 +72,7 @@
   flex: none;
   min-height: 28px;
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--tt-type-caption);
 }
 
 .client-updates__spinner {
@@ -119,7 +119,7 @@
 .client-updates__details summary {
   padding: 8px 14px;
   color: var(--tt-text-muted);
-  font-size: 11.5px;
+  font-size: var(--tt-type-caption);
 }
 
 .client-updates__details summary:focus-visible {
@@ -131,7 +131,7 @@
   margin: 0;
   padding: 0 14px 10px;
   color: var(--tt-text-muted);
-  font-size: 11.5px;
+  font-size: var(--tt-type-caption);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
@@ -156,7 +156,7 @@
 
 .client-updates__foot > span {
   color: var(--tt-text-muted);
-  font-size: 11.5px;
+  font-size: var(--tt-type-caption);
 }
 
 .client-updates__foot > div {
@@ -167,5 +167,5 @@
 .client-updates__foot .tt-button {
   min-height: 28px;
   padding: 4px 10px;
-  font-size: 12px;
+  font-size: var(--tt-type-caption);
 }

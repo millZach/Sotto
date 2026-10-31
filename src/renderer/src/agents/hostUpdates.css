@@ -34,11 +34,11 @@
   height: 28px;
   padding: 0 11px 0 9px;
   border: 1px solid var(--tt-border);
-  border-radius: 6px;
+  border-radius: var(--tt-radius-control);
   background: var(--tt-surface-elevated);
   color: var(--tt-text);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
   font-weight: 500;
   white-space: nowrap;
   -webkit-app-region: no-drag;
@@ -77,10 +77,10 @@
   background: var(--tt-surface-overlay);
   box-shadow: var(--tt-shadow-lg);
   color: var(--tt-text);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   -webkit-app-region: no-drag;
 }
-.host-update__head { margin: 0; padding: 14px 16px 6px; color: var(--tt-text-muted); font-size: 13px; font-weight: 600; }
+.host-update__head { margin: 0; padding: 14px 16px 6px; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 600; }
 
 .host-update__host { display: grid; gap: 10px; padding: 12px 16px 14px; }
 .host-update__host + .host-update__host { border-top: 1px solid var(--tt-hairline); }
@@ -89,15 +89,15 @@
 .host-update__name strong { min-width: 0; overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .host-update__name strong:focus { outline: none; }
 .host-update__name strong:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 3px; }
-.host-update__name small { flex: none; margin-left: auto; color: var(--tt-text-muted); font-size: 12.5px; }
+.host-update__name small { flex: none; margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .host-update__body { display: grid; gap: 8px; }
 .host-update__body p { margin: 0; line-height: 1.45; }
 .host-update__muted { color: var(--tt-text-muted); }
 .host-update__refusal { margin: 0; color: var(--tt-error-text); }
 
 .host-update__steps { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-.host-update__steps li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; font-size: 12.5px; }
-.host-update__step-mark { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid var(--tt-border); border-radius: 50%; color: var(--tt-text-muted); font-size: 11px; }
+.host-update__steps li { display: grid; grid-template-columns: 20px minmax(0, 1fr); gap: 10px; align-items: start; font-size: var(--tt-type-caption); }
+.host-update__step-mark { display: grid; place-items: center; width: 20px; height: 20px; border: 1px solid var(--tt-border); border-radius: 50%; color: var(--tt-text-muted); font-size: var(--tt-type-micro); }
 .host-update__steps li[data-state='done'] .host-update__step-mark { border-color: var(--tt-success); color: var(--tt-success); }
 .host-update__steps li[data-state='now'] .host-update__step-mark { border-color: var(--tt-accent); color: var(--tt-accent-text); }
 .host-update__steps li[data-state='later'] { color: var(--tt-text-muted); }
@@ -114,9 +114,9 @@
   border-radius: var(--tt-radius-sm);
   background: var(--tt-surface-sunken);
   color: var(--tt-text);
-  font: 12px/1.6 var(--tt-font-mono);
+  font: var(--tt-type-caption)/1.6 var(--tt-font-mono);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .host-update__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
-.host-update__actions .tt-button { min-height: 30px; padding: 0 13px; font-size: 13px; }
+.host-update__actions .tt-button { min-height: 30px; padding: 0 13px; font-size: var(--tt-type-small); }

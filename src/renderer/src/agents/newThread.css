@@ -1,4 +1,4 @@
-.new-thread-dialog { width: min(590px, calc(100vw - 48px)); max-height: calc(100vh - 70px); padding: 0; margin: auto; overflow: hidden; color: var(--tt-text); background: var(--tt-panel); border: 1px solid var(--tt-panel-border); border-radius: 20px; box-shadow: 0 28px 90px var(--tt-shadow-color); }
+.new-thread-dialog { width: min(590px, calc(100vw - 48px)); max-height: calc(100vh - 70px); padding: 0; margin: auto; overflow: hidden; color: var(--tt-text); background: var(--tt-panel); border: 1px solid var(--tt-panel-border); border-radius: var(--tt-radius-overlay); box-shadow: 0 28px 90px var(--tt-shadow-color); }
 .new-thread-dialog::backdrop { background: var(--tt-backdrop); backdrop-filter: blur(5px); }
 /* Arrive as the app's dialogs do: the card settles while its dimming fades in, and the global rule does not reach ::backdrop. */
 @media (prefers-reduced-motion: no-preference) {
@@ -6,40 +6,40 @@
   :root:not([data-reduced-motion='on']) .new-thread-dialog[open]::backdrop { animation: tt-dialog-dim 160ms ease-out; }
 }
 .new-thread-dialog__search { display: flex; align-items: center; gap: 10px; padding: 14px 15px; }
-.new-thread-dialog__search > span { flex: 1; font-size: 14px; }
+.new-thread-dialog__search > span { flex: 1; font-size: var(--tt-type-body); }
 .new-thread-dialog__search > svg { color: var(--tt-text-muted); }
-.new-thread-dialog__search input { flex: 1; min-width: 0; padding: 6px 0; border: 0; outline: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; }
-.new-thread-dialog__search input:focus-visible { box-shadow: inset 0 -2px 0 var(--tt-focus-ring); border-radius: 2px; }
+.new-thread-dialog__search input { flex: 1; min-width: 0; padding: 6px 0; border: 0; outline: none; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); }
+.new-thread-dialog__search input:focus-visible { box-shadow: inset 0 -2px 0 var(--tt-focus-ring); border-radius: var(--tt-radius-mark); }
 .new-thread-dialog__search .tt-button { min-height: 28px; width: 28px; color: var(--tt-text-muted); }
 .new-thread-dialog__choices { padding: 0 9px 12px; max-height: min(440px, calc(100vh - 205px)); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-.new-thread-dialog__choices h3 { margin: 16px 12px 8px; color: var(--tt-text-muted); font-size: 11.5px; font-weight: 400; }
-.new-thread-choice { display: flex; width: 100%; align-items: center; gap: 12px; padding: 11px 12px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); text-align: left; }
+.new-thread-dialog__choices h3 { margin: 16px 12px 8px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 400; }
+.new-thread-choice { display: flex; width: 100%; align-items: center; gap: 12px; padding: 11px 12px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); text-align: left; }
 .new-thread-choice > span { flex: 1; min-width: 0; display: grid; gap: 4px; }
-.new-thread-choice strong { color: var(--tt-text-2); font-size: 13px; font-weight: 500; }
-.new-thread-choice small { font-size: 11.5px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.new-thread-choice strong { color: var(--tt-text-2); font-size: var(--tt-type-small); font-weight: 500; }
+.new-thread-choice small { font-size: var(--tt-type-caption); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .new-thread-choice[data-highlighted], .new-thread-choice:hover, .new-thread-choice:focus-visible { background: var(--tt-hover-strong); outline: 0; }
 .new-thread-choice:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 .new-thread-choice > svg:last-child { opacity: 0; }
 .new-thread-choice[data-highlighted] > svg:last-child, .new-thread-choice:hover > svg:last-child, .new-thread-choice:focus-visible > svg:last-child { opacity: 1; }
-.new-thread-dialog__keys { display: flex; flex-wrap: wrap; gap: 16px; padding: 11px 18px; border-top: 1px solid var(--tt-hairline); background: var(--tt-surface); color: var(--tt-text-muted); font-size: 11px; }
+.new-thread-dialog__keys { display: flex; flex-wrap: wrap; gap: 16px; padding: 11px 18px; border-top: 1px solid var(--tt-hairline); background: var(--tt-surface); color: var(--tt-text-muted); font-size: var(--tt-type-micro); }
 .new-thread-dialog__keys > span { display: flex; align-items: center; gap: 5px; }
-.new-thread-dialog__keys kbd { min-width: 20px; padding: 2px 5px; text-align: center; font: inherit; color: var(--tt-text-2); border-radius: 4px; background: var(--tt-kbd); }
+.new-thread-dialog__keys kbd { min-width: 20px; padding: 2px 5px; text-align: center; font: inherit; color: var(--tt-text-2); border-radius: var(--tt-radius-tag); background: var(--tt-kbd); }
 .new-thread-dialog__form { display: grid; gap: 20px; padding: 6px 25px 24px; max-height: calc(100vh - 210px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
 .new-thread-dialog__folder { display: flex; align-items: center; gap: 12px; padding: 10px 0 20px; border-bottom: 1px solid var(--tt-hairline); }
 .new-thread-dialog__folder > div { display: grid; gap: 5px; flex: 1; min-width: 0; }
-.new-thread-dialog__folder strong { font-size: 14px; font-weight: 500; }
-.new-thread-dialog__folder span { overflow-wrap: anywhere; color: var(--tt-text-muted); font-size: 11.5px; }
-.new-thread-dialog__folder .tt-button { font-size: 11px; }
-.new-thread-dialog__form > label { display: grid; gap: 9px; font-size: 12px; color: var(--tt-text-muted); }
-.new-thread-dialog__form input, .new-thread-dialog__form select { width: 100%; min-height: 39px; padding: 8px 11px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 13px; }
+.new-thread-dialog__folder strong { font-size: var(--tt-type-body); font-weight: 500; }
+.new-thread-dialog__folder span { overflow-wrap: anywhere; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.new-thread-dialog__folder .tt-button { font-size: var(--tt-type-micro); }
+.new-thread-dialog__form > label { display: grid; gap: 9px; font-size: var(--tt-type-caption); color: var(--tt-text-muted); }
+.new-thread-dialog__form input, .new-thread-dialog__form select { width: 100%; min-height: 39px; padding: 8px 11px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-row); background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); }
 .new-thread-dialog__submit { display: flex; justify-content: flex-end; margin-top: 2px; }
-.new-thread-dialog__empty { margin: 14px 12px; color: var(--tt-text-muted); font-size: 12px; }
-.new-thread-dialog .agent-error { margin: 8px 12px; font-size: 12px; }
+.new-thread-dialog__empty { margin: 14px 12px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.new-thread-dialog .agent-error { margin: 8px 12px; font-size: var(--tt-type-caption); }
 .new-thread-dialog .new-thread-hosts { margin: 0 12px 10px; }
 .new-thread-working-copy { display: grid; gap: 9px; min-width: 0; margin: 0; padding: 0; border: 0; }
-.new-thread-working-copy legend { padding: 0; margin-bottom: 9px; color: var(--tt-text-muted); font-size: 12px; }
+.new-thread-working-copy legend { padding: 0; margin-bottom: 9px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .new-thread-working-copy__choices { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
-.new-thread-working-copy__choice { position: relative; display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 39px; padding: 8px 11px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); color: var(--tt-text-2); font-size: 13px; cursor: default; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.new-thread-working-copy__choice { position: relative; display: flex; align-items: center; gap: 9px; min-width: 0; min-height: 39px; padding: 8px 11px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-row); background: var(--tt-field); color: var(--tt-text-2); font-size: var(--tt-type-small); cursor: default; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .new-thread-working-copy__choice > input { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: inherit; }
 .new-thread-working-copy__choice > svg { flex: none; color: var(--tt-text-muted); }
 .new-thread-working-copy__choice > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -48,14 +48,14 @@
 .new-thread-working-copy__choice:has(input:checked) > svg { color: var(--tt-accent-text); }
 .new-thread-working-copy__choice:has(input:focus-visible) { outline: 3px solid var(--tt-focus-ring); outline-offset: 2px; }
 .new-thread-working-copy:disabled .new-thread-working-copy__choice { cursor: default; opacity: .6; }
-.new-thread-working-copy p { margin: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
+.new-thread-working-copy p { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.45; }
 
 .thread-working-copy-fields, .working-copy__selection { display: grid; gap: 12px; min-width: 0; }
-.thread-working-copy-fields > label { display: grid; gap: 7px; color: var(--tt-text-muted); font-size: 14px; }
-.thread-working-copy-fields select { width: 100%; min-width: 0; min-height: 39px; padding: 8px 11px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 14px; }
+.thread-working-copy-fields > label { display: grid; gap: 7px; color: var(--tt-text-muted); font-size: var(--tt-type-body); }
+.thread-working-copy-fields select { width: 100%; min-width: 0; min-height: 39px; padding: 8px 11px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-row); background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: var(--tt-type-body); }
 .thread-working-copy-fields > .thread-working-copy-fields__check { display: flex; align-items: center; gap: 8px; min-height: 32px; }
 .thread-working-copy-fields__check > input { width: 16px; min-height: 16px; height: 16px; margin: 0; accent-color: var(--tt-accent); }
-.thread-working-copy-fields p { margin: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.45; }
+.thread-working-copy-fields p { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.45; }
 
 .new-thread-working-copy__choices--three { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
 .new-thread-working-copy__choices--three .new-thread-working-copy__choice { justify-content: center; padding: 11px 8px; }

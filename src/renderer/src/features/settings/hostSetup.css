@@ -4,10 +4,10 @@
 
 /* What is being added, where the form was. */
 .host-setup__summary { display: flex; align-items: center; gap: 10px; min-width: 0; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); padding: 6px 6px 6px 12px; }
-.hosts-settings .host-setup__summary > p { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: var(--tt-text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.hosts-settings .host-setup__summary > p { flex: 1; min-width: 0; margin: 0; overflow: hidden; color: var(--tt-text); font-size: var(--tt-type-small); text-overflow: ellipsis; white-space: nowrap; }
 .host-setup__summary b { font-weight: 600; }
 .host-setup__summary span { color: var(--tt-text-muted); }
-.host-setup__summary > .tt-button { flex: 0 0 auto; min-height: 30px; padding: 0 12px; font-size: 12.5px; }
+.host-setup__summary > .tt-button { flex: 0 0 auto; min-height: 30px; padding: 0 12px; font-size: var(--tt-type-caption); }
 
 .host-setup__steps { display: grid; gap: 2px; margin: 10px 0 0; padding: 0; list-style: none; }
 .host-setup__steps > li { display: grid; grid-template-columns: 20px minmax(0, 1fr); align-items: start; gap: 4px 10px; padding: 6px 0; }
@@ -16,7 +16,7 @@
 .host-setup__steps [data-state='active'] .host-setup__mark,
 .host-setup__steps [data-state='waiting'] .host-setup__mark { color: var(--tt-accent-text); }
 .host-setup__steps [data-state='failed'] .host-setup__mark { color: var(--tt-error); }
-.host-setup__title { min-width: 0; color: var(--tt-text); font-size: 13.5px; line-height: 20px; overflow-wrap: anywhere; }
+.host-setup__title { min-width: 0; color: var(--tt-text); font-size: var(--tt-type-small); line-height: 20px; overflow-wrap: anywhere; }
 .host-setup__steps [data-state='todo'] .host-setup__title { color: var(--tt-text-muted); }
 .host-setup__steps [data-state='active'] .host-setup__title,
 .host-setup__steps [data-state='waiting'] .host-setup__title,
@@ -28,17 +28,17 @@
 .hosts-notice.host-setup__card { display: grid; gap: 10px; }
 .host-setup__card--done { border-left-color: var(--tt-success); }
 .host-setup__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-.host-setup__actions > .tt-button { min-height: 32px; padding: 0 14px; font-size: 13px; }
-.host-setup__link { border: 0; border-radius: var(--tt-radius-sm); background: none; padding: 2px 0; color: var(--tt-accent-text); font: inherit; font-size: 12.5px; text-decoration: underline; text-underline-offset: 2px; }
+.host-setup__actions > .tt-button { min-height: 32px; padding: 0 14px; font-size: var(--tt-type-small); }
+.host-setup__link { border: 0; border-radius: var(--tt-radius-sm); background: none; padding: 2px 0; color: var(--tt-accent-text); font: inherit; font-size: var(--tt-type-caption); text-decoration: underline; text-underline-offset: 2px; }
 .host-setup__link:hover { color: var(--tt-text); }
-.hosts-settings .host-setup__card .host-setup__quiet { color: var(--tt-text-muted); font-size: 12.5px; }
+.hosts-settings .host-setup__card .host-setup__quiet { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 /* Open approval page did not open: said on the card it belongs to, not as the connect's failure. */
-.hosts-settings .host-setup__card .host-setup__problem { color: var(--tt-error-text); font-size: 13px; overflow-wrap: anywhere; }
+.hosts-settings .host-setup__card .host-setup__problem { color: var(--tt-error-text); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
 
 /* A command to copy: one line that scrolls rather than wraps, so it copies the way it reads. */
 .host-setup__command { display: flex; align-items: center; gap: 8px; min-width: 0; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-sm); background: var(--tt-surface-elevated); padding: 4px 4px 4px 10px; }
-.host-setup__command > code { flex: 1; min-width: 0; overflow-x: auto; color: var(--tt-text); font: 12.5px/1.6 var(--tt-font-mono); white-space: nowrap; }
-.host-setup__command > .tt-button { flex: 0 0 auto; gap: 6px; min-height: 28px; padding: 0 12px; font-size: 12.5px; }
+.host-setup__command > code { flex: 1; min-width: 0; overflow-x: auto; color: var(--tt-text); font: var(--tt-type-caption)/1.6 var(--tt-font-mono); white-space: nowrap; }
+.host-setup__command > .tt-button { flex: 0 0 auto; gap: 6px; min-height: 28px; padding: 0 12px; font-size: var(--tt-type-caption); }
 /* A short command that is the whole point of its card wraps instead, so none of it hides under Copy at the window's smallest size. */
 .host-setup__card--wrap .host-setup__command > code { overflow-x: visible; white-space: pre-wrap; overflow-wrap: anywhere; }
 
@@ -48,22 +48,22 @@
 .host-setup__choice[data-checked] { border-color: var(--tt-accent); background: var(--tt-selected); }
 .host-setup__choice[data-disabled] { cursor: default; }
 .host-setup__choice > input { grid-row: 1 / span 2; width: 16px; height: 16px; margin: 2px 0 0; accent-color: var(--tt-accent); }
-.host-setup__choice-name { color: var(--tt-text); font-size: 13.5px; font-weight: 600; line-height: 20px; }
+.host-setup__choice-name { color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 600; line-height: 20px; }
 .host-setup__choice[data-disabled] .host-setup__choice-name { color: var(--tt-text-muted); }
-.host-setup__choice-text { grid-column: 2; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+.host-setup__choice-text { grid-column: 2; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.45; }
 .host-setup__choice-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -2px 0 2px 40px; }
 
 /* The setup thread's model: a label and the app's own select, on one line. */
-.host-setup__model { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12.5px; }
-.host-setup__model > .tt-select { width: auto; max-width: 100%; min-height: 32px; font-size: 13px; }
+.host-setup__model { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.host-setup__model > .tt-select { width: auto; max-width: 100%; min-height: 32px; font-size: var(--tt-type-small); }
 
 /* Who is setting the machine up, in which thread, with the way there. */
 .host-setup__agent { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 4px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); padding: 8px 8px 8px 12px; }
-.hosts-settings .host-setup__agent > p { flex: 1 1 240px; min-width: 0; margin: 0; color: var(--tt-text); font-size: 13px; }
+.hosts-settings .host-setup__agent > p { flex: 1 1 240px; min-width: 0; margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); }
 .host-setup__agent b { font-weight: 600; }
-.host-setup__agent > .tt-button { flex: 0 0 auto; min-height: 32px; padding: 0 14px; font-size: 13px; }
-.host-setup__by { color: var(--tt-text-muted); font-size: 12.5px; font-weight: 400; }
-.hosts-settings .host-setup__note { margin: 2px 0 0; color: var(--tt-text-muted); font-size: 12.5px; overflow-wrap: anywhere; }
+.host-setup__agent > .tt-button { flex: 0 0 auto; min-height: 32px; padding: 0 14px; font-size: var(--tt-type-small); }
+.host-setup__by { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 400; }
+.hosts-settings .host-setup__note { margin: 2px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); overflow-wrap: anywhere; }
 /* The tailnet address Add host's tailnet step reached (ADR-0053). */
 .hosts-settings .host-setup__address { font-family: var(--tt-font-mono); }
 /* Have my agent fix this, under a failed step's sentence and command. */

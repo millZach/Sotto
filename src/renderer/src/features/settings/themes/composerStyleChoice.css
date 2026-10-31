@@ -6,26 +6,26 @@
 .composer-style-choice .theme-settings__assignment-hint { margin-bottom: 12px; }
 .composer-style-choice__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
 @container (min-width: 520px) { .composer-style-choice__grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } }
-.composer-style-option { display: flex; flex-direction: column; align-items: stretch; gap: 2px; min-width: 0; padding: 8px 8px 10px; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); color: var(--tt-text); font: inherit; text-align: left; transition: background-color 120ms ease, border-color 120ms ease; }
+.composer-style-option { display: flex; flex-direction: column; align-items: stretch; gap: 2px; min-width: 0; padding: 8px 8px 10px; border: 1px solid transparent; border-radius: var(--tt-radius-inset); background: var(--tt-card); color: var(--tt-text); font: inherit; text-align: left; transition: background-color 120ms ease, border-color 120ms ease; }
 .composer-style-option:hover:not([aria-checked='true']) { background: color-mix(in srgb, var(--tt-accent-surface) 30%, var(--tt-card)); }
 .composer-style-option[aria-checked='true'] { border-color: var(--tt-accent); background: var(--tt-card-selected); box-shadow: 0 0 0 1px var(--tt-accent); }
-.composer-style-option__picture { display: flex; align-items: flex-end; height: 76px; margin-bottom: 6px; padding: 10px 12px; border-radius: 6px; background: var(--tt-canvas); }
-.composer-style-option__name { padding: 0 2px; font-size: 14px; font-weight: 600; line-height: 20px; }
+.composer-style-option__picture { display: flex; align-items: flex-end; height: 76px; margin-bottom: 6px; padding: 10px 12px; border-radius: var(--tt-radius-control); background: var(--tt-canvas); }
+.composer-style-option__name { padding: 0 2px; font-size: var(--tt-type-body); font-weight: 600; line-height: 20px; }
 .composer-style-option__now { color: var(--tt-text-muted); font-weight: 400; }
-.composer-style-option__words { padding: 0 2px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.4; }
+.composer-style-option__words { padding: 0 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; }
 
 /* The sketches: a card the composer's colour, words as muted bars, the disc in the composer's ink. */
 .composer-style-sketch { display: flex; flex: 1; gap: 5px; background: var(--tt-card); }
 .composer-style-sketch > i, .composer-style-sketch__foot > i { display: block; flex: none; background: var(--tt-text-muted); opacity: .45; }
-.composer-style-sketch[data-sketch='rows'] { flex-direction: column; gap: 10px; padding: 9px 7px 6px 10px; border-radius: 10px; }
-.composer-style-sketch[data-sketch='pill'] { align-items: center; padding: 5px 5px 5px 8px; border-radius: 12px; }
-.composer-style-sketch__text { width: 55%; height: 5px; border-radius: 2px; }
+.composer-style-sketch[data-sketch='rows'] { flex-direction: column; gap: 10px; padding: 9px 7px 6px 10px; border-radius: var(--tt-radius-inset); }
+.composer-style-sketch[data-sketch='pill'] { align-items: center; padding: 5px 5px 5px 8px; border-radius: var(--tt-radius-inset); }
+.composer-style-sketch__text { width: 55%; height: 5px; border-radius: var(--tt-radius-mark); }
 .composer-style-sketch[data-sketch='pill'] > .composer-style-sketch__text { flex: 1; width: auto; }
 .composer-style-sketch__foot { display: flex; align-items: center; gap: 5px; }
 .composer-style-sketch__foot > span { flex: 1; }
-.composer-style-sketch__dot { width: 7px; height: 7px; border-radius: 2px; }
+.composer-style-sketch__dot { width: 7px; height: 7px; border-radius: var(--tt-radius-mark); }
 .composer-style-sketch__dot[data-shield] { background: var(--tt-accent); opacity: .9; }
-.composer-style-sketch__word { width: 26px; height: 5px; border-radius: 2px; }
+.composer-style-sketch__word { width: 26px; height: 5px; border-radius: var(--tt-radius-mark); }
 .composer-style-sketch__word[data-short] { width: 16px; }
-.composer-style-sketch__chip { width: 38px; height: 12px; border-radius: 4px; opacity: .3; }
+.composer-style-sketch__chip { width: 38px; height: 12px; border-radius: var(--tt-radius-tag); opacity: .3; }
 .composer-style-sketch i.composer-style-sketch__disc { width: 16px; height: 16px; border-radius: 50%; background: var(--tt-pill); opacity: 1; }

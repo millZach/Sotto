@@ -128,7 +128,7 @@ button {
 .widget-shell[data-dragging='true'] .widget-sliver {
   width: 212px;
   height: 28px;
-  border-radius: 14px;
+  border-radius: var(--tt-radius-card);
   opacity: 1;
 }
 
@@ -160,7 +160,7 @@ button {
   justify-content: center;
   gap: 6px;
   overflow: hidden;
-  font-size: 11px;
+  font-size: var(--tt-type-micro);
   white-space: nowrap;
   opacity: 0;
   pointer-events: none;
@@ -209,7 +209,7 @@ button {
   padding: 0 12px 0 10px;
   overflow: hidden;
   border: 1px solid var(--widget-edge);
-  border-radius: 20px;
+  border-radius: var(--tt-radius-overlay);
   background: linear-gradient(
     180deg,
     var(--widget-surface-top) 0%,
@@ -315,7 +315,7 @@ button {
   display: block;
   height: 2px;
   overflow: hidden;
-  border-radius: 1px;
+  border-radius: var(--tt-radius-mark);
   background: color-mix(in srgb, var(--tt-text) 12%, transparent);
 }
 
@@ -323,7 +323,7 @@ button {
   display: block;
   width: var(--widget-progress, 0%);
   height: 100%;
-  border-radius: 1px;
+  border-radius: var(--tt-radius-mark);
   background: linear-gradient(
     90deg,
     color-mix(in srgb, var(--tt-accent) 70%, var(--widget-surface-bottom)),
@@ -422,7 +422,7 @@ button {
 .widget-esc {
   padding: 2px 4px 3px;
   border: 1px solid color-mix(in srgb, var(--tt-text) 22%, transparent);
-  border-radius: 4px;
+  border-radius: var(--tt-radius-tag);
   background: transparent;
   color: var(--tt-text-muted);
   font-size: 9px;

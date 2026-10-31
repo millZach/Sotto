@@ -6,7 +6,7 @@
 .host-providers__grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin: 0; padding: 0; list-style: none; }
 @container (min-width: 700px) { .host-providers__grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @container (max-width: 340px) { .host-providers__grid { grid-template-columns: minmax(0, 1fr); } }
-.hosts-settings .host-providers__foot { margin: 0 0 4px; color: var(--tt-text-muted); font-size: 12px; }
+.hosts-settings .host-providers__foot { margin: 0 0 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 
 /* One provider: its mark and name, a state line with a dot, a detail line and one action. */
 .host-provider { display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 6px; min-width: 0; min-height: 132px; border: 1px solid transparent; border-radius: var(--tt-radius-md); background: var(--tt-card); padding: 12px; }
@@ -16,7 +16,7 @@
 .hosts-card .host-provider:not([data-kind='not-installed']) { background: var(--tt-card-inset); }
 .hosts-card .host-provider__mark { background: var(--tt-card); }
 .host-provider__top { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.host-provider__top h5 { margin: 0; overflow-wrap: anywhere; color: var(--tt-text); font-size: 14px; font-weight: 600; }
+.host-provider__top h5 { margin: 0; overflow-wrap: anywhere; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; }
 .host-provider__mark { display: grid; flex: 0 0 auto; place-items: center; width: 28px; height: 28px; border-radius: var(--tt-radius-sm); background: var(--tt-card-inset); color: var(--tt-text-2); }
 .host-provider__mark .provider-mark { fill: currentColor; }
 .host-provider__mark .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
@@ -25,11 +25,11 @@
 .host-provider__mark .provider-mark[data-provider='devin'] { color: var(--tt-provider-devin); }
 .host-provider__mark .provider-mark[data-provider='opencode'] { color: var(--tt-provider-opencode); }
 .host-provider__mark .provider-mark[data-provider='cursor'] { color: var(--tt-provider-cursor); }
-.hosts-settings .host-provider__state { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--tt-text); font-size: 13px; }
-.hosts-settings .host-provider__detail { margin: 0; color: var(--tt-text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.hosts-settings .host-provider__state { display: flex; align-items: center; gap: 7px; margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); }
+.hosts-settings .host-provider__detail { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); overflow-wrap: anywhere; }
 .host-provider__act { align-self: end; min-width: 0; }
 .host-provider__actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.hosts-settings .host-provider__note { margin: 0; color: var(--tt-text-muted); font-size: 12px; }
+.hosts-settings .host-provider__note { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .hosts-settings .host-provider__note:empty { display: none; }
 
 /* The dot says the state at a glance; the words beside it say it for everyone. */
@@ -49,37 +49,37 @@
 /* Have my agent install it, update it or fix it: the dialog that starts it. */
 .host-agent-dialog { width: min(460px, 100%); }
 .host-agent { display: grid; gap: 12px; margin-top: 10px; }
-.hosts-settings .host-agent p { margin: 0; color: var(--tt-text); font-size: 13px; }
-.hosts-settings .host-agent .host-agent__quiet { color: var(--tt-text-muted); font-size: 12px; }
+.hosts-settings .host-agent p { margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); }
+.hosts-settings .host-agent .host-agent__quiet { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .host-agent b { font-weight: 600; }
 .host-agent__model { display: grid; gap: 6px; }
 .host-agent .hosts-notice { margin-top: 0; }
 
 /* Devin signs in from a terminal on the host: the command, with Copy. */
 .host-provider__command { display: grid; gap: 6px; min-width: 0; }
-.hosts-settings .host-provider__command p { margin: 0; color: var(--tt-text-muted); font-size: 12px; }
-.host-provider__command code { display: block; overflow-wrap: anywhere; border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); padding: 6px 8px; color: var(--tt-code-text); font: 12px/1.5 var(--tt-font-mono); }
+.hosts-settings .host-provider__command p { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.host-provider__command code { display: block; overflow-wrap: anywhere; border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); padding: 6px 8px; color: var(--tt-code-text); font: var(--tt-type-caption)/1.5 var(--tt-font-mono); }
 .host-provider__command .tt-button { justify-self: start; gap: 6px; }
 
 /* Sign in to a provider on a host: the dialog's two shapes. */
 .host-sign-in-dialog { width: min(460px, 100%); }
 .host-sign-in { display: grid; gap: 12px; margin-top: 10px; }
-.hosts-settings .host-sign-in p { margin: 0; color: var(--tt-text); font-size: 13px; }
+.hosts-settings .host-sign-in p { margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); }
 .host-sign-in__row, .host-sign-in__code-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; min-width: 0; }
 .host-sign-in__row .tt-input { flex: 1 1 200px; min-width: 0; min-height: 36px; }
-.host-sign-in__code { color: var(--tt-text); font: 600 22px/1.2 var(--tt-font-mono); letter-spacing: .12em; overflow-wrap: anywhere; }
+.host-sign-in__code { color: var(--tt-text); font: 600 var(--tt-type-figure)/1.2 var(--tt-font-mono); letter-spacing: .12em; overflow-wrap: anywhere; }
 .host-sign-in .tt-button { gap: 6px; }
 .hosts-settings .host-sign-in__waiting { display: flex; align-items: center; gap: 8px; color: var(--tt-text-muted); }
-.hosts-settings .host-sign-in__quiet { color: var(--tt-text-muted); font-size: 12px; }
+.hosts-settings .host-sign-in__quiet { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .host-sign-in__field { display: grid; gap: 6px; }
-.hosts-settings .host-sign-in__field .tt-field__description { margin: 0; font-size: 12px; }
-.hosts-settings .host-sign-in__error { color: var(--tt-error-text); font-size: 12px; }
+.hosts-settings .host-sign-in__field .tt-field__description { margin: 0; font-size: var(--tt-type-caption); }
+.hosts-settings .host-sign-in__error { color: var(--tt-error-text); font-size: var(--tt-type-caption); }
 .host-sign-in__done { border-left-color: var(--tt-success); }
 .host-sign-in__done > svg { color: var(--tt-success); }
 
 /* A host's client updates (#480): the chip beside Show providers, and what a tile says about its client's update. */
 .host-providers__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; justify-self: start; min-width: 0; }
-.host-client-updates__chip { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; border: 1px solid color-mix(in srgb, var(--tt-update) 45%, transparent); border-radius: 5px; background: var(--tt-update-surface); color: var(--tt-update-text); padding: 0 10px; font: 600 12px var(--tt-font-ui); white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.host-client-updates__chip { display: inline-flex; align-items: center; gap: 6px; min-height: 26px; border: 1px solid color-mix(in srgb, var(--tt-update) 45%, transparent); border-radius: var(--tt-radius-tag); background: var(--tt-update-surface); color: var(--tt-update-text); padding: 0 10px; font: 600 var(--tt-type-caption) var(--tt-font-ui); white-space: nowrap; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .host-client-updates__chip:hover, .host-client-updates__chip[aria-expanded='true'] { border-color: var(--tt-update); }
 .host-client-updates__chip[data-tone='error'] { border-color: var(--tt-error-border); background: var(--tt-error-surface); color: var(--tt-error-text); }
 .host-client-updates__chip[data-tone='error']:hover, .host-client-updates__chip[data-tone='error'][aria-expanded='true'] { border-color: var(--tt-error); }
@@ -95,31 +95,31 @@
 /* A tile with an update to show grows to fit it, and keeps its presses at the bottom. */
 .host-provider[data-update] { display: flex; flex-direction: column; }
 .host-provider[data-update] .host-provider__act { align-self: stretch; margin-top: auto; padding-top: 2px; }
-.hosts-settings .host-client-update__line { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--tt-accent-text); font-size: 12px; font-weight: 500; }
+.hosts-settings .host-client-update__line { display: flex; align-items: center; gap: 6px; margin: 0; color: var(--tt-accent-text); font-size: var(--tt-type-caption); font-weight: 500; }
 .hosts-settings .host-client-update__line[data-tone='quiet'] { color: var(--tt-text-muted); font-weight: 400; }
 .hosts-settings .host-client-update__line[data-tone='error'] { color: var(--tt-error-text); }
 .host-client-update__below { display: grid; gap: 8px; min-width: 0; }
-.hosts-settings .host-client-update__words { margin: 0; color: var(--tt-text); font-size: 12px; overflow-wrap: anywhere; }
-.host-client-update__details summary, .host-client-update__printed summary { width: fit-content; color: var(--tt-text-muted); font-size: 12px; }
+.hosts-settings .host-client-update__words { margin: 0; color: var(--tt-text); font-size: var(--tt-type-caption); overflow-wrap: anywhere; }
+.host-client-update__details summary, .host-client-update__printed summary { width: fit-content; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .host-client-update__details summary:hover, .host-client-update__printed summary:hover { color: var(--tt-text); }
 .host-client-update__details-body { display: grid; gap: 8px; margin-top: 6px; min-width: 0; }
-.host-client-update__printed pre { margin: 6px 0 0; max-height: 120px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); padding: 6px 8px; color: var(--tt-code-text); font: 11.5px/1.5 var(--tt-font-mono); }
+.host-client-update__printed pre { margin: 6px 0 0; max-height: 120px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: var(--tt-radius-sm); background: var(--tt-code-bg); padding: 6px 8px; color: var(--tt-code-text); font: var(--tt-type-caption)/1.5 var(--tt-font-mono); }
 
 /* Client updates on forge: one row per client, Not now and Update all. Fixed, so it opens above the chip when below has no room. */
 .host-client-updates__panel { position: fixed; z-index: 40; display: grid; gap: 10px; width: 340px; max-width: calc(100vw - 24px); max-height: calc(100vh - 24px); overflow: auto; overscroll-behavior: contain; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-overlay); padding: 14px; }
-.host-client-updates__panel h6 { margin: 0; color: var(--tt-text); font-size: 14px; font-weight: 600; }
-.hosts-settings .host-client-updates__panel p { margin: 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.host-client-updates__panel h6 { margin: 0; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; }
+.hosts-settings .host-client-updates__panel p { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .hosts-settings .host-client-updates__panel .host-client-updates__status { color: var(--tt-text); }
 .hosts-settings .host-client-updates__panel .host-client-updates__refusal { color: var(--tt-error-text); }
 .host-client-updates__list { margin: 0; padding: 0; border-top: 1px solid var(--tt-border-faint); list-style: none; }
 .host-client-updates__list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px 10px; min-width: 0; border-bottom: 1px solid var(--tt-border-faint); padding: 8px 0; }
-.host-client-updates__name { color: var(--tt-text); font-size: 13px; font-weight: 600; }
-.host-client-updates__versions { color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
-.host-client-updates__state { display: inline-flex; align-items: center; gap: 6px; justify-self: end; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.host-client-updates__name { color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 600; }
+.host-client-updates__versions { color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
+.host-client-updates__state { display: inline-flex; align-items: center; gap: 6px; justify-self: end; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
 .host-client-updates__list li[data-phase='updated'] .host-client-updates__state { color: var(--tt-success); }
 .host-client-updates__list li[data-phase='failed'] .host-client-updates__state { color: var(--tt-error-text); }
 .host-client-updates__why { grid-column: 1 / -1; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px 10px; min-width: 0; }
-.hosts-settings .host-client-updates__why p { flex: 1 1 180px; font-size: 12px; }
+.hosts-settings .host-client-updates__why p { flex: 1 1 180px; font-size: var(--tt-type-caption); }
 .host-client-updates__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; }
 
 @media (max-width: 700px) { .host-providers { padding-left: 0; } .host-providers__toggle.tt-button { margin-left: 0; } }

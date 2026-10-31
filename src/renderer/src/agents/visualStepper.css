@@ -16,7 +16,7 @@
 .visual-stepper__count {
   flex: none;
   color: var(--tt-text-muted);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -37,7 +37,7 @@
   height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--tt-radius-control);
   background: transparent;
   transition: width 160ms ease;
 }
@@ -60,7 +60,7 @@
   gap: 8px;
   margin-left: auto;
 }
-.visual-stepper__button { min-width: 70px; min-height: 30px; padding: 0 12px; font-size: 13px; }
+.visual-stepper__button { min-width: 70px; min-height: 30px; padding: 0 12px; font-size: var(--tt-type-small); }
 /* Back on the first step: quieter, but still words to read, so a muted colour that meets 4.5:1 rather than opacity. */
 .visual-stepper__button[aria-disabled='true'],
 .visual-stepper__button[aria-disabled='true']:hover { border-color: var(--tt-hairline); color: var(--tt-text-muted); cursor: not-allowed; }
@@ -69,7 +69,7 @@
   min-height: 50px;
   margin: 10px 0 0;
   color: var(--tt-text);
-  font-size: 16px;
+  font-size: var(--tt-type-lead);
   line-height: 1.55;
   overflow-wrap: anywhere;
   white-space: pre-wrap;

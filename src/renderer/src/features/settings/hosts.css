@@ -1,8 +1,8 @@
 .hosts-settings { display: grid; gap: 20px; }
 .hosts-settings h3, .hosts-settings h4 { margin: 0; font-weight: 600; }
-.hosts-settings h3 { font-size: 18px; }
-.hosts-settings h4 { font-size: 15px; }
-.hosts-settings p { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 14px; }
+.hosts-settings h3 { font-size: var(--tt-type-heading); }
+.hosts-settings h4 { font-size: var(--tt-type-reading); }
+.hosts-settings p { margin: 6px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-body); }
 .hosts-heading, .hosts-restart { display: flex; align-items: center; justify-content: space-between; gap: 20px; }
 .hosts-heading .tt-button { gap: 6px; }
 
@@ -19,7 +19,7 @@
 .hosts-settings .hosts-card > * { padding: 16px 0; border: 0; border-bottom: 2px solid var(--tt-card-inset); }
 .hosts-settings .hosts-card > :last-child { border-bottom: 0; }
 .hosts-card .hosts-row__icon { background: var(--tt-card-inset); }
-.hosts-settings .hosts-card__note { margin: -10px 2px 0; font-size: 13px; }
+.hosts-settings .hosts-card__note { margin: -10px 2px 0; font-size: var(--tt-type-small); }
 
 .hosts-list { display: grid; }
 .hosts-row { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; min-width: 0; border-bottom: 1px solid var(--tt-hairline); padding: 14px 0; }
@@ -27,18 +27,18 @@
 .hosts-row__icon { display: grid; flex: 0 0 auto; place-items: center; width: 34px; height: 34px; border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); color: var(--tt-accent-text); }
 .hosts-row__icon--local { color: var(--tt-text-muted); }
 .hosts-row__info { flex: 1 1 220px; min-width: 0; }
-.hosts-settings .hosts-row__meta { margin-top: 2px; font-size: 13px; overflow-wrap: anywhere; }
+.hosts-settings .hosts-row__meta { margin-top: 2px; font-size: var(--tt-type-small); overflow-wrap: anywhere; }
 .hosts-row__meta [data-phase='connected'] { color: var(--tt-text); }
 /* How the host is connected: the tailnet reads as the text does, SSH as quietly as the rest of the line. */
 .hosts-row__via[data-via='tailnet'] { color: var(--tt-text); }
-.hosts-settings .hosts-row__note { margin-top: 2px; font-size: 13px; overflow-wrap: anywhere; }
-.hosts-settings .hosts-row__error { margin-top: 4px; color: var(--tt-error-text); font-size: 13px; overflow-wrap: anywhere; }
+.hosts-settings .hosts-row__note { margin-top: 2px; font-size: var(--tt-type-small); overflow-wrap: anywhere; }
+.hosts-settings .hosts-row__error { margin-top: 4px; color: var(--tt-error-text); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
 .hosts-row__actions { display: flex; flex: 0 0 auto; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; margin-left: auto; }
 .hosts-empty { padding: 16px 0; border-block: 1px solid var(--tt-hairline); }
 .hosts-card > .hosts-empty { margin: 0; border: 0; }
 
 /* The On/Off switch: the word beside it is what the switch shows, the name is what a press does. */
-.hosts-switch { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: 13px; }
+.hosts-switch { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .hosts-switch__state { min-width: 22px; text-align: right; }
 .hosts-settings .hosts-switch__control { width: auto; min-height: 30px; grid-template-columns: 36px; align-items: center; padding: 4px 2px; }
 
@@ -46,35 +46,35 @@
 .hosts-menu { position: relative; display: inline-flex; }
 .hosts-menu__list { position: absolute; z-index: 20; top: calc(100% + 4px); right: 0; display: grid; min-width: 184px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-overlay); box-shadow: var(--tt-shadow-overlay); padding: 4px; }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .hosts-menu__list { animation: tt-pop-down 120ms ease-out; } }
-.hosts-menu__list [role='menuitem'] { min-height: 32px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; padding: 6px 10px; color: var(--tt-text); font-size: 13px; text-align: left; }
+.hosts-menu__list [role='menuitem'] { min-height: 32px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; padding: 6px 10px; color: var(--tt-text); font-size: var(--tt-type-small); text-align: left; }
 .hosts-menu__list [role='menuitem']:hover, .hosts-menu__list [role='menuitem']:focus-visible { background: var(--tt-hover); }
 .hosts-menu__list [data-danger] { color: var(--tt-error-text); }
 
 /* Add host, Edit connection and Rename. */
 .hosts-dialog { width: min(480px, 100%); max-height: calc(100dvh - 32px); overflow-y: auto; }
 .hosts-dialog h2 { margin-bottom: 4px; }
-.hosts-settings .hosts-dialog__intro { margin: 0 0 4px; font-size: 13px; }
+.hosts-settings .hosts-dialog__intro { margin: 0 0 4px; font-size: var(--tt-type-small); }
 .hosts-dialog__fields { display: grid; gap: 14px; margin: 14px 0 0; }
 .hosts-dialog__fields .tt-field { display: grid; gap: 5px; min-width: 0; }
 .hosts-dialog__fields .tt-input { min-height: 36px; }
-.hosts-settings .hosts-dialog__fields .tt-field__description { margin: 0; font-size: 12px; }
+.hosts-settings .hosts-dialog__fields .tt-field__description { margin: 0; font-size: var(--tt-type-caption); }
 .hosts-dialog__pair { display: grid; grid-template-columns: minmax(0, 1fr) 110px; gap: 12px; }
 .hosts-dialog__optional { color: var(--tt-text-faint); font-weight: 400; }
-.hosts-dialog__advanced > summary { width: max-content; border-radius: var(--tt-radius-sm); padding: 2px 0; color: var(--tt-text-muted); font-size: 13px; }
+.hosts-dialog__advanced > summary { width: max-content; border-radius: var(--tt-radius-sm); padding: 2px 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .hosts-dialog__advanced[open] > summary { margin-bottom: 10px; }
 .hosts-dialog__advanced > .tt-field + .tt-field { margin-top: 12px; }
-.hosts-settings .hosts-dialog__client { margin: 0; font-size: 12px; overflow-wrap: anywhere; }
+.hosts-settings .hosts-dialog__client { margin: 0; font-size: var(--tt-type-caption); overflow-wrap: anywhere; }
 /* Edit connection (ADR-0053): How Sotto connects, then the SSH fields under what SSH is still for. */
 .hosts-fieldset { display: grid; gap: 12px; min-width: 0; margin: 0; padding: 0; border: 0; }
 /* Floated, so the legend sits inside the group under its rule rather than on the fieldset's border. */
-.hosts-fieldset > legend { float: left; width: 100%; margin: 0; padding: 0; color: var(--tt-text); font-size: 13px; font-weight: 600; }
+.hosts-fieldset > legend { float: left; width: 100%; margin: 0; padding: 0; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 600; }
 .hosts-fieldset + .hosts-fieldset { border-top: 1px solid var(--tt-hairline); padding-top: 14px; }
 .hosts-dialog__address { font-family: var(--tt-font-mono); overflow-wrap: anywhere; }
 .hosts-dialog .tt-dialog__actions { margin-top: 20px; }
 
 /* What the dialog is doing: connecting, asking SSH's question, or what went wrong. */
-.hosts-notice { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; border-left: 2px solid var(--tt-accent); border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); padding: 10px 12px; font-size: 13px; }
-.hosts-settings .hosts-notice p { margin: 0; color: var(--tt-text); font-size: 13px; }
+.hosts-notice { display: flex; align-items: flex-start; gap: 10px; margin-top: 14px; border-left: 2px solid var(--tt-accent); border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); padding: 10px 12px; font-size: var(--tt-type-small); }
+.hosts-settings .hosts-notice p { margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); }
 .hosts-notice--error { border-left-color: var(--tt-error); }
 .hosts-notice > svg { flex: 0 0 auto; margin-top: 2px; color: var(--tt-accent-text); }
 .hosts-prompt { display: grid; gap: 10px; }
@@ -82,7 +82,7 @@
 .hosts-prompt__actions { display: flex; justify-content: flex-end; }
 .hosts-spin { animation: hosts-spin 1s linear infinite; }
 @keyframes hosts-spin { to { transform: rotate(360deg); } }
-.hosts-challenge { max-height: 160px; margin: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text); font: 12px/1.5 var(--tt-font-mono); }
+.hosts-challenge { max-height: 160px; margin: 0; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text); font: var(--tt-type-caption)/1.5 var(--tt-font-mono); }
 .hosts-error { color: var(--tt-text) !important; }
 
 @media (max-width: 1000px) { .hosts-local { flex-wrap: wrap; } }
@@ -90,16 +90,16 @@
 
 /* A host setup the dialog was closed on, still running in its thread (ADR-0035). */
 .hosts-setup-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; border-left: 2px solid var(--tt-accent); border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); padding: 10px 12px; }
-.hosts-settings .hosts-setup-line > p { flex: 1 1 260px; min-width: 0; margin: 0; color: var(--tt-text); font-size: 13px; }
+.hosts-settings .hosts-setup-line > p { flex: 1 1 260px; min-width: 0; margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); }
 .hosts-setup-line b { font-weight: 600; }
 
 /* What Forget says when it could not revoke this computer on the host (ADR-0053): the command, and the way to put it away. */
 .hosts-settings .hosts-forgotten { margin-top: 0; }
 .hosts-forgotten > svg { color: var(--tt-error-text); }
 .hosts-forgotten__copy { display: grid; flex: 1 1 auto; gap: 8px; min-width: 0; }
-.hosts-forgotten__command { display: block; border-radius: var(--tt-radius-sm); background: var(--tt-surface); padding: 6px 8px; color: var(--tt-text); font: 12px/1.5 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
+.hosts-forgotten__command { display: block; border-radius: var(--tt-radius-sm); background: var(--tt-surface); padding: 6px 8px; color: var(--tt-text); font: var(--tt-type-caption)/1.5 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 .hosts-forgotten__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
 .hosts-forgotten__actions .tt-button { gap: 6px; }
-.hosts-forgotten__failed { color: var(--tt-error-text); font-size: 13px; }
+.hosts-forgotten__failed { color: var(--tt-error-text); font-size: var(--tt-type-small); }
 /* Forget's own sign-in waiting on Tailscale, inside its confirmation. */
 .hosts-forget-wait { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }

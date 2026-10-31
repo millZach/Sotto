@@ -1,4 +1,4 @@
 .agent-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.agent-muted { color: var(--tt-text-muted); font-size: 12px; }
-.agent-error, .agent-notice { margin: 0; padding: 10px 13px; border-radius: 6px; background: var(--tt-surface); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.agent-muted { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.agent-error, .agent-notice { margin: 0; padding: 10px 13px; border-radius: var(--tt-radius-control); background: var(--tt-surface); font-size: var(--tt-type-small); line-height: 1.45; overflow-wrap: anywhere; }
 .agent-error { color: var(--tt-error); }

@@ -1,7 +1,7 @@
 /* Bring changes to <branch> (#1030): the strip above the composer, the merge-commit question and the outcome in its place.
    It sits in the Git action's slot and reads like its notice. Every colour is a theme role. */
 .bring-back { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 10px; padding: 10px 12px 10px 14px; border: 1px solid var(--tt-hairline);
-  border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: 14px; line-height: 1.45; }
+  border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated); color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.45; }
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .bring-back {
     animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1);
@@ -18,14 +18,14 @@
 .bring-back strong { color: var(--tt-text); font-weight: 600; }
 .bring-back[data-tone='error'] strong { color: inherit; }
 .bring-back__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
-.bring-back .tt-button { gap: 6px; min-height: 34px; padding: 0 12px; font-size: 14px; }
+.bring-back .tt-button { gap: 6px; min-height: 34px; padding: 0 12px; font-size: var(--tt-type-body); }
 .bring-back .tt-button[aria-disabled='true'] { opacity: .6; cursor: not-allowed; }
 .bring-back .tt-button[aria-busy='true'] { cursor: progress; }
 /* Open <title> on a hold carries another thread's title, which can be long: it wraps inside the strip rather than widening it (#1866). */
 .bring-back .bring-back__open { max-width: 100%; height: auto; padding-block: 6px; white-space: normal; overflow-wrap: anywhere; text-align: start; }
-.bring-back__dismiss { display: grid; place-items: center; width: 28px; height: 28px; flex: none; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.bring-back__dismiss { display: grid; place-items: center; width: 28px; height: 28px; flex: none; padding: 0; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: inherit; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .bring-back__dismiss:hover { background: var(--tt-hover); }
 .bring-back__dismiss:active:not(:disabled) { background: var(--tt-hover-strong); }
 /* Git's own words, as Git said them. */
-.bring-back__git-said { margin: 6px 0 0; padding: 7px 10px; border: 1px solid var(--tt-error-border); border-radius: 6px; background: var(--tt-canvas); color: var(--tt-text);
-  font: 12.5px/1.5 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9.5em; overflow-y: auto; }
+.bring-back__git-said { margin: 6px 0 0; padding: 7px 10px; border: 1px solid var(--tt-error-border); border-radius: var(--tt-radius-control); background: var(--tt-canvas); color: var(--tt-text);
+  font: var(--tt-type-caption)/1.5 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9.5em; overflow-y: auto; }

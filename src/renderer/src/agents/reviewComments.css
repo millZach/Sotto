@@ -4,18 +4,18 @@
 .review-chips { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; margin: 0 0 8px; padding: 0; list-style: none; }
 .review-chip {
   display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; height: 26px; padding: 0 3px 0 9px;
-  border: 1px solid var(--tt-accent-border); border-radius: 5px; background: var(--tt-accent-wash); color: var(--tt-text);
-  font-size: 12.5px; white-space: nowrap;
+  border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-tag); background: var(--tt-accent-wash); color: var(--tt-text);
+  font-size: var(--tt-type-caption); white-space: nowrap;
 }
 .review-chip__icon { flex: none; color: var(--tt-text-muted); }
 .review-chip__label { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .review-chip__remove {
-  display: grid; place-items: center; flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: 4px;
+  display: grid; place-items: center; flex: none; width: 20px; height: 20px; padding: 0; border: 0; border-radius: var(--tt-radius-tag);
   background: transparent; color: var(--tt-text-muted);
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .review-chip__remove:hover { background: var(--tt-hover-strong); color: var(--tt-text); }
-.review-chips__note { margin: -2px 0 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.review-chips__note { margin: -2px 0 8px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 /* A review chip settles onto the composer as a queued message does, on the attachment keyframes. */
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .review-chip { animation: attachment-arrive 160ms cubic-bezier(.2, .8, .2, 1); }

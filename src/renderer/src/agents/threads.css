@@ -31,9 +31,9 @@
 .thread-workspace__title > svg, .thread-workspace__title > .provider-mark { flex: none; }
 .thread-workspace__branches { min-width: 0; }
 .thread-workspace__branches:empty { display: none; }
-.thread-workspace__head h2 { flex: 0 1 auto; min-width: 3em; margin: 0; font-size: 15px; font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thread-workspace__head h2 { flex: 0 1 auto; min-width: 3em; margin: 0; font-size: var(--tt-type-reading); font-weight: 500; letter-spacing: -.2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The name keeps the row; the project crumb is what gives way as the pane narrows. */
-.thread-workspace__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: 12.5px; }
+.thread-workspace__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__crumb::before { flex: none; color: var(--tt-text-muted); content: '/'; }
 .thread-workspace__crumb > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* A crumb holding the working copy gives way no faster than the branch controls after it (ADR-0161): its project name
@@ -41,7 +41,7 @@
 .thread-workspace__crumb[data-has-working-copy] { flex-shrink: 1; }
 .thread-workspace__crumb[data-has-working-copy] > span:first-of-type { flex: 0 1 auto; min-width: 0; }
 .thread-workspace__crumb > .working-copy { flex: none; }
-.thread-workspace__tag { flex: none; padding: 1px 7px; border: 1px solid transparent; border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: 12px; }
+.thread-workspace__tag { flex: none; padding: 1px 7px; border: 1px solid transparent; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-workspace__tag[data-tone='warning'] { background: var(--tt-warning-surface); color: var(--threads-warning-text); }
 /* Renaming turns the heading into a field, so the heading takes the room the field needs to be typed in. */
 .thread-workspace__head h2:has(input) { flex: 1 1 220px; }
@@ -51,17 +51,17 @@
 .thread-workspace__error { margin: 12px 24px 0; }
 
 /* The header's icon buttons: the ··· menu, close, and anything a pane adds beside them. */
-.pane-action { display: grid; place-items: center; width: 30px; height: 30px; flex: none; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+.pane-action { display: grid; place-items: center; width: 30px; height: 30px; flex: none; padding: 0; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .pane-action:hover:not(:disabled), .pane-action[aria-pressed='true'], .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .pane-action:active:not(:disabled):not([aria-pressed='true']):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .pane-action:disabled { opacity: .5; cursor: default; }
 
 /* The More menu hangs under its button, inside the header, so the pane keeps the focus the menu hands out. */
 .pane-menu { position: relative; display: flex; }
-.pane-menu__list { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; display: grid; min-width: 212px; padding: 6px; border: 1px solid var(--tt-hairline); border-radius: 10px; background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.pane-menu__list { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; display: grid; min-width: 212px; padding: 6px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-inset); background: var(--tt-surface-elevated); box-shadow: 0 16px 48px var(--tt-shadow-color); }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .pane-menu__list { animation: tt-pop-down 120ms ease-out; } }
 .pane-menu__list hr { margin: 6px 0; border: 0; border-top: 1px solid var(--tt-hairline); }
-.pane-menu__item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; text-align: left; white-space: nowrap; }
+.pane-menu__item { display: flex; align-items: center; gap: 10px; min-height: 32px; padding: 0 10px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); text-align: left; white-space: nowrap; }
 .pane-menu__item > svg { flex: none; color: var(--tt-text-muted); }
 .pane-menu__item:hover:not(:disabled), .pane-menu__item:focus-visible { background: var(--tt-hover); outline: none; }
 .pane-menu__item[data-tone='danger'], .pane-menu__item[data-tone='danger'] > svg { color: var(--tt-error-text); }
@@ -72,7 +72,7 @@
 .pane-menu__label { flex: 1 1 auto; min-width: 0; }
 .pane-menu__end { display: inline-flex; flex: none; align-items: center; gap: 8px; margin-left: 18px; color: var(--tt-text-muted); }
 .pane-menu__end > svg { color: var(--tt-text-2); }
-.pane-menu__end kbd { font: inherit; font-size: 12px; }
+.pane-menu__end kbd { font: inherit; font-size: var(--tt-type-caption); }
 /* Tools' dot, on the ··· button of the pane that lists Tools: agents working, or the attention colour while a delegated
    thread waits for you. It sits above-left of the dots, where it sat on the Tools icon. */
 .tools-dot { position: absolute; top: 3px; left: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); box-shadow: 0 0 0 2px var(--tt-canvas); pointer-events: none; }
@@ -87,8 +87,8 @@
 .thread-workspace__transcript { position: relative; flex: 1; min-height: 0; overflow-y: auto; overflow-anchor: auto; padding: 28px max(24px, calc((100% - 760px) / 2)); scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-workspace__transcript:focus-visible { outline: 2px solid var(--tt-focus-ring, var(--threads-field-focus)); outline-offset: -2px; }
 .thread-transcript__earlier { display: flex; justify-content: center; margin: 0 0 20px; }
-.thread-transcript__earlier .tt-button { font-size: 13px; }
-.thread-transcript__jump { position: absolute; bottom: 14px; left: 50%; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--threads-field-border); border-radius: 6px; background: var(--threads-field); box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: 14px; transform: translateX(-50%); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease; }
+.thread-transcript__earlier .tt-button { font-size: var(--tt-type-small); }
+.thread-transcript__jump { position: absolute; bottom: 14px; left: 50%; display: inline-flex; align-items: center; gap: 6px; min-height: 36px; padding: 0 14px; border: 1px solid var(--threads-field-border); border-radius: var(--tt-radius-control); background: var(--threads-field); box-shadow: var(--tt-shadow-sm, 0 4px 14px rgb(0 0 0 / 35%)); color: var(--tt-text); font: inherit; font-size: var(--tt-type-body); transform: translateX(-50%); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, filter 120ms ease; }
 .thread-transcript__jump:hover { border-color: var(--threads-field-focus); }
 .thread-transcript__jump:active { filter: brightness(.96); }
 .thread-transcript__jump[data-unseen] { border-color: var(--threads-field-focus); }
@@ -107,13 +107,13 @@
  */
 .thread-transcript__content > :nth-last-child(-n + 12) { content-visibility: visible; }
 .thread-message { position: relative; margin: 0 0 28px; }
-.thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.thread-message header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-message__who { color: var(--tt-text-2); font-weight: 500; }
-.thread-message time { font-size: 12px; font-variant-numeric: tabular-nums; }
+.thread-message time { font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 /* Watcher's reply to news carries its turn's work in its header instead of on a line above it. */
 .thread-message__work {
   display: inline-flex; align-items: center; gap: 4px; min-height: 24px; margin: -2px 0 -2px -4px; padding: 0 6px; border: 0; border-radius: var(--tt-radius-sm);
-  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; font-variant-numeric: tabular-nums;
+  background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .thread-message__work:hover { background: var(--tt-hover); color: var(--tt-text-2); }
@@ -124,7 +124,7 @@
 /* The copy control sits in the message's bottom-left corner and appears while the message is hovered,
    holds focus, or is mid-confirmation. A message that has one keeps room for it under its last line:
    replies line its icon up with their text, user bubbles pin it inside their padding. */
-.thread-message__copy { position: absolute; bottom: 0; left: -5px; display: inline-flex; align-items: center; gap: 5px; min-width: 28px; height: 28px; min-height: 28px; padding: 0 5px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12px; opacity: 0; transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease; }
+.thread-message__copy { position: absolute; bottom: 0; left: -5px; display: inline-flex; align-items: center; gap: 5px; min-width: 28px; height: 28px; min-height: 28px; padding: 0 5px; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-caption); opacity: 0; transition: opacity 120ms ease, background-color 120ms ease, color 120ms ease; }
 .thread-message__copy:hover { background: var(--tt-hover); color: var(--tt-text); }
 .thread-message__copy:active { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-message__copy[data-copied] { color: var(--tt-success); }
@@ -133,24 +133,24 @@
 .thread-message[data-role='user'] .thread-message__copy { bottom: 8px; left: 12px; }
 .thread-message[data-role='user']:has(> .thread-message__copy) { padding-bottom: 40px; }
 .thread-message:hover .thread-message__copy, .thread-message:focus-within .thread-message__copy, .thread-message__copy[data-copied], .thread-message__copy[aria-expanded='true'] { opacity: 1; }
-.thread-message__writing { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
-.thread-message__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text-2); line-height: 1.6; font-size: 15px; }
-.thread-message[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; background: var(--threads-bubble); border: 1px solid transparent; border-radius: 14px 14px 4px 14px; }
+.thread-message__writing { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.thread-message__text { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--tt-text-2); line-height: 1.6; font-size: var(--tt-type-reading); }
+.thread-message[data-role='user'] { margin-left: max(24px, 12%); padding: 14px 18px; background: var(--threads-bubble); border: 1px solid transparent; border-radius: var(--tt-radius-card) var(--tt-radius-card) var(--tt-radius-tag) var(--tt-radius-card); }
 .thread-message[data-role='user'] .thread-message__text { color: var(--tt-text); }
 /* A wake-up babysitting sent (ADR-0061): on the user's side, labelled Sotto and Wake-up, edged in the accent. */
 .thread-message[data-from='sotto'] { border-color: var(--tt-accent-border); }
 .thread-message[data-from='sotto'] .thread-message__who { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text); }
 .thread-message__mark { flex: none; width: 16px; height: 16px; }
-.thread-message__tag { padding: 0 7px; border: 1px solid transparent; border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: 11.5px; line-height: 18px; }
+.thread-message__tag { padding: 0 7px; border: 1px solid transparent; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: var(--tt-type-caption); line-height: 18px; }
 .thread-message--pending[data-status='failed'], .thread-message--pending[data-status='uncertain'] { border-color: color-mix(in srgb, var(--threads-warning-text) 40%, var(--tt-hairline)); }
-.thread-message__status { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: 12px; }
+.thread-message__status { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; font-size: var(--tt-type-caption); }
 .thread-message__status i { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .thread-message__status[data-status='queued'], .thread-message__status[data-status='submitting'] { color: var(--tt-text-muted); }
 .thread-message__status[data-status='accepted'] { color: var(--tt-activity); }
 .thread-message__status[data-status='failed'], .thread-message__status[data-status='uncertain'] { color: var(--threads-warning-text); }
-.thread-message__delivery { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.thread-message__delivery { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.45; }
 .thread-message__delivery-actions { display: flex; flex-wrap: wrap; gap: 6px; }
-.thread-message__delivery .tt-button { min-height: 30px; font-size: 13px; }
+.thread-message__delivery .tt-button { min-height: 30px; font-size: var(--tt-type-small); }
 /* Faint ink would fall below 4.5:1 on the bubble, so Dismiss reads in the muted tier there. */
 .thread-message__delivery .tt-button--ghost { color: var(--tt-text-muted); }
 /* The bubble is a tint, so a failed send's status and a link that would not open take the on-tint tones. */
@@ -225,19 +225,19 @@
 /* Why the last turn failed, above the composer, when the transcript's failed turn line has no reason to give (ADR-0092). */
 .thread-failed-notice { display: flex; align-items: flex-start; gap: 10px; margin: 0 0 10px; padding: 10px 14px 10px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-warning-surface); color: var(--tt-text-2); }
 .thread-failed-notice__icon { flex: none; margin-top: 3px; color: var(--tt-attention); }
-.thread-failed-notice > p { flex: 1 1 auto; min-width: 0; margin: 0; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
+.thread-failed-notice > p { flex: 1 1 auto; min-width: 0; margin: 0; font-size: var(--tt-type-body); line-height: 1.45; overflow-wrap: anywhere; }
 .thread-failed-notice strong { color: var(--tt-text); font-weight: 500; }
 /* The attach button sits in the options row instead of a row of its own, so the transcript keeps the height. */
 /* The composer is a card (ADR-0110): filled, with no edge in any state, at rest, pointed at, with focus, slim, running or
    at a model's highest effort (the user's asks on October 23 and 24, 2026). The caret says where typing goes, and the
    card is the pane's only text field; the border stays transparent so the card keeps its size. */
-.thread-prompt { display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid transparent; border-radius: 16px; background: var(--tt-card); }
+.thread-prompt { display: grid; grid-template-columns: auto minmax(0, 1fr); padding: 14px 16px 10px; border: 1px solid transparent; border-radius: var(--tt-radius-card); background: var(--tt-card); }
 .thread-prompt > *, .thread-prompt .screenshot-input > * { grid-column: 1 / -1; }
 .thread-prompt .screenshot-input, .thread-prompt .screenshot-input__tools { display: contents; }
 .thread-prompt .screenshot-input__tools > .tt-button { grid-column: 1; align-self: center; margin: 6px 4px 0 -6px; }
 .thread-prompt .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }
 .thread-prompt > .thread-prompt__footer { grid-column: 2; }
-.thread-prompt .prompt-editor { display: block; width: 100%; min-height: 36px; max-height: 220px; overflow-y: auto; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
+.thread-prompt .prompt-editor { display: block; width: 100%; min-height: 36px; max-height: 220px; overflow-y: auto; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-reading); line-height: 1.5; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 /* The placeholder is muted ink, as every other field's is, and reads at 4.5:1 on the composer card in every theme
    (paintedTextPairs.ts). While a turn runs it is the only thing that says what typing will do ("Queued until you answer
    the card"), so it is text, not decoration (#1819). The next prompt's ghost keeps its translucent ink (nextPrompt.css). */
@@ -245,18 +245,18 @@
 .prompt-editor p { margin: 0; }
 .prompt-editor[data-empty="true"]::before { content: attr(data-placeholder); color: var(--placeholder-ink); float: left; height: 0; pointer-events: none; }
 .prompt-editor[aria-disabled="true"] { cursor: not-allowed; }
-.followup-editor .prompt-editor { display: block; width: 100%; min-height: 104px; max-height: min(320px, calc(100vh - 200px)); overflow-y: auto; padding: 10px 12px; border: 1px solid var(--tt-field-border, var(--tt-hairline)); border-radius: 12px; outline: 0; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: 16px; line-height: 1.55; resize: vertical; scrollbar-width: thin; }
+.followup-editor .prompt-editor { display: block; width: 100%; min-height: 104px; max-height: min(320px, calc(100vh - 200px)); overflow-y: auto; padding: 10px 12px; border: 1px solid var(--tt-field-border, var(--tt-hairline)); border-radius: var(--tt-radius-inset); outline: 0; background: var(--tt-field); color: var(--tt-text); font: inherit; font-size: var(--tt-type-lead); line-height: 1.55; resize: vertical; scrollbar-width: thin; }
 .followup-editor .prompt-editor:focus { border-color: var(--tt-field-border-focus, var(--tt-focus-ring)); }
-.thread-prompt__notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: -2px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--tt-hairline); color: var(--threads-warning-text); font-size: 13px; }
+.thread-prompt__notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 12px; margin: -2px 0 12px; padding-bottom: 10px; border-bottom: 1px solid var(--tt-hairline); color: var(--threads-warning-text); font-size: var(--tt-type-small); }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .thread-prompt__notice { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); } }
-.thread-prompt__notice .tt-button { min-height: 30px; font-size: 13px; }
+.thread-prompt__notice .tt-button { min-height: 30px; font-size: var(--tt-type-small); }
 /* One row under the prompt: what the thread is set to, then the key that sends it. A caption long enough to
    need words of its own wraps below the pill rather than squeezing either end of the row. */
 .thread-prompt__footer { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 4px; }
 .thread-prompt__meta { display: flex; flex: 1; flex-wrap: wrap; align-items: center; gap: 2px 8px; min-width: 0; }
-.thread-prompt__model { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 4px; color: var(--tt-text-muted); font-size: 13px; }
-.thread-prompt__model small { color: var(--tt-text-muted); font-size: 12px; }
-.thread-prompt__status { min-width: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+.thread-prompt__model { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 4px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
+.thread-prompt__model small { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.thread-prompt__status { min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; }
 .thread-prompt__status[data-tone='warning'] { color: var(--threads-warning-text); }
 .thread-prompt__link { padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-decoration: underline; }
 .thread-prompt__actions { display: flex; flex: none; align-items: center; gap: 6px; }
@@ -264,7 +264,7 @@
    docs/prototypes/prompt-send-refine-2.html). The one filled button is always what Enter does, the theme's own ink on its
    text colour (the pill pair every theme keeps apart); Stop beside typed text and Steer now are flat keys. The full
    names live in the label and the title, so Queue prompt is never called Send. */
-.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer) { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; height: 28px; min-height: 28px; padding: 0 4px 0 7px; border: 1px solid transparent; border-radius: 6px; font-size: 12.5px; font-weight: 600; white-space: nowrap; }
+.thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop, .thread-prompt__steer) { position: relative; display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: none; height: 28px; min-height: 28px; padding: 0 4px 0 7px; border: 1px solid transparent; border-radius: var(--tt-radius-control); font-size: var(--tt-type-caption); font-weight: 600; white-space: nowrap; }
 .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):not([data-wide]):not(:has(> .thread-prompt__key)) { width: 28px; padding: 0; }
 .thread-prompt__glyph { flex: none; }
 .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop) { background: var(--tt-pill); color: var(--tt-pill-ink); }
@@ -282,7 +282,7 @@
 }
 :root[data-reduced-motion='on'] .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):active { transform: none; }
 @media (prefers-reduced-motion: reduce) { .thread-prompt__actions > :is(.thread-prompt__send, .thread-prompt__stop):active { transform: none; } }
-.thread-prompt__key { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 4px; background: color-mix(in oklab, currentcolor 14%, transparent); font: inherit; font-size: 11.5px; letter-spacing: .02em; }
+.thread-prompt__key { display: inline-grid; place-items: center; min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--tt-radius-tag); background: color-mix(in oklab, currentcolor 14%, transparent); font: inherit; font-size: var(--tt-type-caption); letter-spacing: .02em; }
 /* Beside typed text, Stop steps back to a flat key so the filled button is the one Enter presses. */
 .thread-prompt__actions > .thread-prompt__stop[data-beside], .thread-prompt__actions > .thread-prompt__stop[data-beside]:is(:hover, :active):not(:disabled) { background: transparent; color: var(--tt-text-muted); filter: none; }
 .thread-prompt__actions > .thread-prompt__stop[data-beside]:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
@@ -290,10 +290,10 @@
 /* While a turn runs, a light runs round Stop (docs/prototypes/prompt-send-stop-prototype.html, 9b): the control that
    ends the turn is the sign that it is running, and it stays on Stop when the button steps back. Only `transform`
    animates, so the compositor turns it without a repaint; a static mask keeps it to a 1.5px band round the button. */
-.thread-prompt__trace { position: absolute; inset: -3px; overflow: hidden; padding: 1.5px; border-radius: 8px; pointer-events: none;
+.thread-prompt__trace { position: absolute; inset: -3px; overflow: hidden; padding: 1.5px; border-radius: var(--tt-radius-row); pointer-events: none;
   -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); -webkit-mask-composite: xor;
   mask: linear-gradient(black 0 0) content-box exclude, linear-gradient(black 0 0); }
-.thread-prompt__stop[data-beside] > .thread-prompt__trace { inset: -1px; border-radius: 6px; }
+.thread-prompt__stop[data-beside] > .thread-prompt__trace { inset: -1px; border-radius: var(--tt-radius-control); }
 .thread-prompt__trace > i { position: absolute; top: 50%; left: 50%; width: 220%; aspect-ratio: 1; translate: -50% -50%; will-change: transform;
   background: conic-gradient(var(--tt-activity) 0turn .26turn, color-mix(in srgb, var(--tt-activity) 18%, transparent) .26turn 1turn); }
 @media (prefers-reduced-motion: no-preference) {
@@ -308,8 +308,8 @@
 }
 .thread-prompt--saved { width: min(520px, 100%); margin: 12px 0; text-align: left; }
 /* The saved draft is read, not edited: its words lie on the card with no field around them. */
-.thread-prompt--saved textarea { display: block; width: 100%; min-height: 0; padding: 0; border: 0; background: transparent; color: var(--tt-text); font-size: 15px; line-height: 1.5; resize: none; }
-.thread-prompt--saved .thread-prompt__images { margin: 6px 0 0; color: var(--tt-text-muted); font-size: 12px; overflow-wrap: anywhere; }
+.thread-prompt--saved textarea { display: block; width: 100%; min-height: 0; padding: 0; border: 0; background: transparent; color: var(--tt-text); font-size: var(--tt-type-reading); line-height: 1.5; resize: none; }
+.thread-prompt--saved .thread-prompt__images { margin: 6px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); overflow-wrap: anywhere; }
 
 /* At a model's highest level the composer takes the colourway's tide when the level is reached (ADR-0019, amended); it
    wears no outline. The composer reads the effort chip's own mark, so no prop has to travel; the card's arrival state
@@ -326,19 +326,19 @@
 
 /* The thread's model, reasoning and permissions are three chips in the composer footer, each opening its own list. */
 .threads-view .thread-options-bar { position: relative; display: flex; flex: 0 1 auto; flex-wrap: wrap; align-items: center; gap: 4px 8px; min-width: 0; }
-.threads-view .thread-options-bar > small { margin-top: 0; font-size: 12px; }
-.threads-view .screenshot-previews figcaption, .threads-view .screenshot-previews__note, .threads-view .screenshot-input__tools small { font-size: 12px; }
-.threads-view .screenshot-input__tools .tt-button { width: 30px; min-height: 30px; border-radius: 8px; }
+.threads-view .thread-options-bar > small { margin-top: 0; font-size: var(--tt-type-caption); }
+.threads-view .screenshot-previews figcaption, .threads-view .screenshot-previews__note, .threads-view .screenshot-input__tools small { font-size: var(--tt-type-caption); }
+.threads-view .screenshot-input__tools .tt-button { width: 30px; min-height: 30px; border-radius: var(--tt-radius-row); }
 
 
 .thread-workspace__empty { flex: 1; display: flex; flex-direction: column; justify-content: center; align-items: center; gap: 12px; min-height: 200px; height: 100%; padding: 32px; text-align: center; color: var(--tt-text-muted); }
-.thread-workspace__empty h2, .thread-workspace__empty h3 { margin: 2px 0; color: var(--tt-text); font-size: 19px; font-weight: 500; letter-spacing: -.3px; }
-.thread-workspace__empty p { margin: 0; font-size: 13px; }
+.thread-workspace__empty h2, .thread-workspace__empty h3 { margin: 2px 0; color: var(--tt-text); font-size: var(--tt-type-heading); font-weight: 500; letter-spacing: -.3px; }
+.thread-workspace__empty p { margin: 0; font-size: var(--tt-type-small); }
 /* The Threads page with no pane open carries a saved draft as well, so at the minimum window it scrolls from its top. */
 .thread-workspace__empty--page { justify-content: safe center; overflow: auto; }
 .thread-workspace__empty-actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
 .thread-workspace__transcript .thread-workspace__empty { min-height: 0; padding: 40px 0; gap: 8px; }
-.thread-workspace__transcript .thread-workspace__empty h3 { font-size: 16px; }
+.thread-workspace__transcript .thread-workspace__empty h3 { font-size: var(--tt-type-lead); }
 
 /* A new thread greets above its composer, and the two stand together in the middle of the pane, the composer a little
    narrower, until the first send (Zach, October 14: docs/prototypes/new-thread-greeting-prototype.html, variant a). The
@@ -348,29 +348,29 @@
 .thread-pane[data-greeting] > .thread-pane__balance { display: block; flex: 1 1 0; }
 .thread-pane[data-greeting] > .thread-workspace__compose { flex: none; padding-inline: max(16px, calc((100% - 720px) / 2)); }
 .thread-greeting { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 0 24px 18px; text-align: center; }
-.thread-greeting h3 { margin: 0; color: var(--tt-text); font-size: 28px; font-weight: 500; letter-spacing: -.5px; line-height: 1.2; text-wrap: balance; }
-.thread-greeting__where { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; max-width: 100%; margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.thread-greeting h3 { margin: 0; color: var(--tt-text); font-size: var(--tt-type-title); font-weight: 500; letter-spacing: -.5px; line-height: 1.2; text-wrap: balance; }
+.thread-greeting__where { display: flex; flex-wrap: wrap; justify-content: center; gap: 4px 12px; max-width: 100%; margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .thread-greeting__where > span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; max-width: 100%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .thread-greeting__where svg { flex: none; }
 .thread-greeting__project { min-width: 0; max-width: 100%; }
-.pane-menu__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin: -2px -6px; padding: 2px 6px; border: 0; border-radius: 6px; background: transparent; color: inherit; font: inherit; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.pane-menu__trigger { display: inline-flex; align-items: center; gap: 5px; min-width: 0; margin: -2px -6px; padding: 2px 6px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: inherit; font: inherit; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .pane-menu__trigger:hover, .pane-menu__trigger[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .pane-menu__trigger:active:not(:disabled):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-greeting__project-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .thread-greeting__project .pane-menu__list { right: auto; left: 50%; transform: translateX(-50%); max-height: 260px; overflow-y: auto; text-align: left; }
-@container thread-pane (max-width: 720px) { .thread-greeting h3 { font-size: 23px; } }
+@container thread-pane (max-width: 720px) { .thread-greeting h3 { font-size: var(--tt-type-figure); } }
 @container thread-pane (max-height: 600px) {
   .thread-greeting { gap: 4px; padding-bottom: 10px; }
-  .thread-greeting h3 { font-size: 21px; }
+  .thread-greeting h3 { font-size: var(--tt-type-figure); }
 }
 
-.thread-draft-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border: 1px solid var(--tt-hairline); border-radius: 12px; font-size: 13px; color: var(--tt-text-muted); }
+.thread-draft-notice { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 16px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-inset); font-size: var(--tt-type-small); color: var(--tt-text-muted); }
 .thread-draft-notice p { margin: 0; }
 .thread-draft-notice strong { color: var(--tt-text); font-weight: 500; }
 
-.thread-history-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--tt-text-muted); font-size: 13px; padding: 14px 0; }
+.thread-history-status { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; color: var(--tt-text-muted); font-size: var(--tt-type-small); padding: 14px 0; }
 .thread-history-skeleton { display: grid; gap: 28px; padding: 20px 0; }
-.thread-history-skeleton i { display: block; height: 56px; width: 72%; border-radius: 10px; background: linear-gradient(110deg, var(--tt-skeleton-a, #111713), var(--tt-skeleton-b, #19201c), var(--tt-skeleton-a, #111713)); }
+.thread-history-skeleton i { display: block; height: 56px; width: 72%; border-radius: var(--tt-radius-inset); background: linear-gradient(110deg, var(--tt-skeleton-a, #111713), var(--tt-skeleton-b, #19201c), var(--tt-skeleton-a, #111713)); }
 .thread-history-skeleton i:nth-child(2) { margin-left: auto; width: 55%; }
 
 /* Narrow windows (the 760px minimum): a slimmer sidebar, the same 44px header, same type sizes. */

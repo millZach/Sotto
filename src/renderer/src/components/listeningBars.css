@@ -34,7 +34,7 @@
   width: 3px;
   height: 5px;
   flex: none;
-  border-radius: 2px;
+  border-radius: var(--tt-radius-mark);
   background: var(--widget-activity, var(--tt-activity));
   animation: widget-bar 0.9s ease-in-out infinite;
   transition: height 0.18s ease;

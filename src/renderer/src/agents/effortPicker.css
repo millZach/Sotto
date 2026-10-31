@@ -14,7 +14,7 @@
   overflow: auto;
   padding: 12px 14px;
   border: 1px solid var(--tt-field-border);
-  border-radius: 14px;
+  border-radius: var(--tt-radius-card);
   background: var(--tt-surface-elevated);
   color: var(--tt-text);
   box-shadow: 0 16px 48px var(--tt-shadow-color);
@@ -27,7 +27,7 @@
 
 /* Header: the word, and Default when the model reports one. */
 .effort-card__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; min-height: 20px; }
-.effort-card__word { margin: 0; font-size: 15px; font-weight: 600; line-height: 1.3; color: var(--tt-text); }
+.effort-card__word { margin: 0; font-size: var(--tt-type-reading); font-weight: 600; line-height: 1.3; color: var(--tt-text); }
 .effort-card__word > span { display: inline-block; }
 .effort-card__word[data-top='true'] { color: var(--tt-effort-text-fill); background: var(--tt-effort-text-image); -webkit-background-clip: text; background-clip: text; }
 .effort-card__word[data-unknown='true'] { color: var(--tt-text-muted); font-weight: 500; }
@@ -36,24 +36,24 @@
 /* At the highest level the word may be painted through a clipped gradient with a transparent fill (Rainbow), which would
    leave a currentColor stroke invisible, so the mark takes the colourway's ink itself. */
 .effort-card__word[data-top='true'] .effort-card__mark { color: var(--tt-effort-text); }
-.effort-card__default { flex: none; min-height: 24px; padding: 0 4px; border: 0; border-radius: 4px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+.effort-card__default { flex: none; min-height: 24px; padding: 0 4px; border: 0; border-radius: var(--tt-radius-tag); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-caption); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .effort-card__default:hover:not(:disabled) { color: var(--tt-text); background: var(--tt-hover); }
 .effort-card__default:active:not(:disabled) { color: var(--tt-text); background: var(--tt-hover-strong); }
 .effort-card__default:disabled { opacity: .5; cursor: default; }
-.effort-card__line { margin: 1px 0 0; min-height: 18px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.45; }
+.effort-card__line { margin: 1px 0 0; min-height: 18px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.45; }
 
 /* The track: a 22px pill. The fill warms from the cool end toward the colourway as the level climbs, and the
    colourway's own gradient shows through near the top. Dots mark the stops; the thumb is a 26px disc. */
 .effort-card__track { position: relative; height: 26px; margin: 12px 0 0; }
-.effort-card__pill { position: absolute; left: 0; right: 0; top: 2px; height: 22px; border-radius: 2px; background: var(--tt-effort-track); overflow: hidden; }
-.effort-card__fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(13px + var(--effort-x) * (100% - 26px)); border-radius: 2px; overflow: hidden;
+.effort-card__pill { position: absolute; left: 0; right: 0; top: 2px; height: 22px; border-radius: var(--tt-radius-mark); background: var(--tt-effort-track); overflow: hidden; }
+.effort-card__fill { position: absolute; left: 0; top: 0; bottom: 0; width: calc(13px + var(--effort-x) * (100% - 26px)); border-radius: var(--tt-radius-mark); overflow: hidden;
   background: linear-gradient(90deg, color-mix(in srgb, var(--tt-effort-a) calc(30% + 50% * var(--effort-heat)), var(--tt-effort-fill-cool)), color-mix(in srgb, var(--tt-effort-b) calc(45% + 50% * var(--effort-heat)), var(--tt-effort-fill-cool))); }
 .effort-card__fill::before { content: ''; position: absolute; inset: 0; background: var(--tt-effort-fill-image); opacity: calc(var(--effort-heat) * var(--effort-heat) * var(--effort-heat)); }
 .effort-card__fill::after { content: ''; position: absolute; inset: 0; background: var(--tt-effort-fill-veil); }
 .effort-card[data-unknown='true'] .effort-card__fill { opacity: .35; }
 .effort-card__dot { position: absolute; top: 50%; left: calc(13px + var(--effort-stop) * (100% - 26px)); width: 4px; height: 4px; border-radius: 50%; background: var(--tt-effort-dot); transform: translate(-50%, -50%); }
 .effort-card__dot[data-under='true'] { background: color-mix(in srgb, var(--tt-surface-elevated) 55%, var(--tt-effort-b)); }
-.effort-card__thumb { position: absolute; top: 0; left: calc(13px + var(--effort-x) * (100% - 26px)); display: grid; place-items: center; width: 26px; height: 26px; border-radius: 3px; background: var(--tt-effort-thumb); color: light-dark(var(--tt-text), var(--tt-surface)); box-shadow: var(--tt-shadow-sm), 0 0 0 1px var(--tt-effort-thumb-edge); transform: translateX(-50%); pointer-events: none; }
+.effort-card__thumb { position: absolute; top: 0; left: calc(13px + var(--effort-x) * (100% - 26px)); display: grid; place-items: center; width: 26px; height: 26px; border-radius: var(--tt-radius-mark); background: var(--tt-effort-thumb); color: light-dark(var(--tt-text), var(--tt-surface)); box-shadow: var(--tt-shadow-sm), 0 0 0 1px var(--tt-effort-thumb-edge); transform: translateX(-50%); pointer-events: none; }
 .effort-card[data-unknown='true'] .effort-card__thumb { opacity: .45; }
 .effort-card__track input {
   position: absolute;
@@ -65,7 +65,7 @@
   appearance: none;
   background: transparent;
   border: 0;
-  border-radius: 2px;
+  border-radius: var(--tt-radius-mark);
   outline: 0;
   cursor: ew-resize;
   touch-action: none;
@@ -75,16 +75,16 @@
 .effort-card__track:has(input:focus-visible) .effort-card__thumb { box-shadow: var(--tt-shadow-sm), 0 0 0 2px var(--tt-surface-elevated), 0 0 0 4px var(--tt-focus-ring); }
 /* The thumb's Ultracode mark takes the ink opposite the thumb: the thumb is the text colour in dark and the surface in light. */
 /* What Ultracode costs, over its stop while the pointer rests there; the line says the same once it is chosen. */
-.effort-card__hint { position: absolute; right: -4px; bottom: calc(100% + 6px); max-width: 220px; padding: 6px 9px; border: 1px solid var(--tt-field-border); border-radius: 7px; background: var(--tt-surface-overlay); color: var(--tt-text); font-size: 12px; line-height: 1.35; box-shadow: var(--tt-shadow-sm); pointer-events: none; opacity: 0; transform: translateY(3px); transition: opacity 120ms ease, transform 120ms ease; z-index: 1; }
+.effort-card__hint { position: absolute; right: -4px; bottom: calc(100% + 6px); max-width: 220px; padding: 6px 9px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); background: var(--tt-surface-overlay); color: var(--tt-text); font-size: var(--tt-type-caption); line-height: 1.35; box-shadow: var(--tt-shadow-sm); pointer-events: none; opacity: 0; transform: translateY(3px); transition: opacity 120ms ease, transform 120ms ease; z-index: 1; }
 .effort-card__hint[data-shown='true'] { opacity: 1; transform: none; }
-.effort-card__ends { display: flex; justify-content: space-between; margin: 6px 2px 0; color: var(--tt-text-faint); font-size: 11.5px; line-height: 1.2; }
+.effort-card__ends { display: flex; justify-content: space-between; margin: 6px 2px 0; color: var(--tt-text-faint); font-size: var(--tt-type-caption); line-height: 1.2; }
 
 /* Ultrathink: one row that reads as a check, on Claude threads with an editable draft. */
-.effort-card__ultrathink { display: flex; align-items: center; gap: 9px; width: calc(100% + 8px); min-height: 30px; margin: 8px -4px 0; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.effort-card__ultrathink { display: flex; align-items: center; gap: 9px; width: calc(100% + 8px); min-height: 30px; margin: 8px -4px 0; padding: 0 4px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .effort-card__ultrathink:hover:not(:disabled) { color: var(--tt-text); background: var(--tt-hover); }
 .effort-card__ultrathink:active:not(:disabled) { color: var(--tt-text); background: var(--tt-hover-strong); }
 .effort-card__ultrathink:disabled { cursor: default; }
-.effort-card__ultrathink i { display: inline-grid; flex: none; place-items: center; width: 15px; height: 15px; border: 1.5px solid var(--tt-border); border-radius: 4px; color: var(--tt-on-accent); }
+.effort-card__ultrathink i { display: inline-grid; flex: none; place-items: center; width: 15px; height: 15px; border: 1.5px solid var(--tt-border); border-radius: var(--tt-radius-tag); color: var(--tt-on-accent); }
 .effort-card__ultrathink i svg { display: none; }
 .effort-card__ultrathink[data-on='true'] i { border-color: var(--tt-accent); background: var(--tt-accent); }
 .effort-card__ultrathink[data-on='true'] i svg { display: block; }

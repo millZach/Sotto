@@ -7,7 +7,7 @@
 .watcher-scene-choice .theme-settings__subheading { margin: 0 0 10px; }
 .watcher-scene-choice .theme-settings__assignment-hint { margin-bottom: 12px; }
 .watcher-scene-choice__grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
-.watcher-scene-option { display: grid; grid-template-columns: minmax(0, 11fr) minmax(0, 9fr); grid-template-rows: auto auto; align-content: center; column-gap: 12px; row-gap: 2px; min-width: 0; padding: 8px; border: 1px solid transparent; border-radius: 12px; background: var(--tt-card); color: var(--tt-text); font: inherit; text-align: left; transition: background-color 120ms ease, border-color 120ms ease; }
+.watcher-scene-option { display: grid; grid-template-columns: minmax(0, 11fr) minmax(0, 9fr); grid-template-rows: auto auto; align-content: center; column-gap: 12px; row-gap: 2px; min-width: 0; padding: 8px; border: 1px solid transparent; border-radius: var(--tt-radius-inset); background: var(--tt-card); color: var(--tt-text); font: inherit; text-align: left; transition: background-color 120ms ease, border-color 120ms ease; }
 .watcher-scene-option > .watcher-scene-option__picture { grid-row: 1 / span 2; margin: 0; }
 .watcher-scene-option__name { align-self: end; }
 .watcher-scene-option__words { align-self: start; }
@@ -18,11 +18,11 @@
 }
 .watcher-scene-option:hover:not([aria-checked='true']) { background: color-mix(in srgb, var(--tt-accent-surface) 30%, var(--tt-card)); }
 .watcher-scene-option[aria-checked='true'] { border-color: var(--tt-accent); background: var(--tt-card-selected); box-shadow: 0 0 0 1px var(--tt-accent); }
-.watcher-scene-option__picture { display: block; margin-bottom: 6px; overflow: hidden; border-radius: 6px; background: var(--tt-canvas); aspect-ratio: 520 / 231; }
+.watcher-scene-option__picture { display: block; margin-bottom: 6px; overflow: hidden; border-radius: var(--tt-radius-control); background: var(--tt-canvas); aspect-ratio: 520 / 231; }
 .watcher-scene-option__picture > canvas { display: block; width: 100%; height: 100%; }
-.watcher-scene-option__name { padding: 0 2px; font-size: 14px; font-weight: 600; line-height: 20px; }
+.watcher-scene-option__name { padding: 0 2px; font-size: var(--tt-type-body); font-weight: 600; line-height: 20px; }
 .watcher-scene-option__now { color: var(--tt-text-muted); font-weight: 400; }
-.watcher-scene-option__words { padding: 0 2px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.4; }
+.watcher-scene-option__words { padding: 0 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; }
 /* The pictures' inks, read and never seen: the text colour for the ink, the accent for the accent, and on the outline
    the room's canvas the pictures sit on; and the glyph face. */
 .watcher-scene-choice__ink { position: fixed; top: 0; left: 0; width: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none;

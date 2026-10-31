@@ -37,7 +37,7 @@ body {
   color: var(--tt-text);
   font-family: var(--tt-font-ui);
   font-optical-sizing: auto;
-  font-size: 14px;
+  font-size: var(--tt-type-body);
   line-height: 1.5;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -141,7 +141,7 @@ h1[tabindex='-1']:focus {
 
 ::-webkit-scrollbar-thumb {
   border: 3px solid transparent;
-  border-radius: 3px;
+  border-radius: var(--tt-radius-mark);
   background: color-mix(in srgb, var(--tt-border) 55%, transparent);
   background-clip: content-box;
 }
@@ -172,7 +172,7 @@ h1[tabindex='-1']:focus {
 /* Small engraved labels: panel eyebrows, table headers, group titles. */
 .tt-instrument {
   color: var(--tt-text-faint);
-  font-size: 11.5px;
+  font-size: var(--tt-type-caption);
   font-weight: 600;
   letter-spacing: 0.01em;
   line-height: 1.5;
@@ -194,11 +194,11 @@ h1[tabindex='-1']:focus {
   justify-content: center;
   gap: 7px;
   border: 1px solid var(--tt-field-border);
-  border-radius: 6px;
+  border-radius: var(--tt-radius-control);
   padding: 0 14px;
   background: var(--tt-surface);
   color: var(--tt-text-2);
-  font-size: 13.5px;
+  font-size: var(--tt-type-small);
   font-weight: 500;
   line-height: 1.2;
   white-space: nowrap;
@@ -294,7 +294,7 @@ h1[tabindex='-1']:focus {
 }
 
 .tt-field__label {
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   font-weight: 600;
 }
 
@@ -302,7 +302,7 @@ h1[tabindex='-1']:focus {
 .tt-field__error {
   margin: 0;
   color: var(--tt-text-muted);
-  font-size: 12px;
+  font-size: var(--tt-type-caption);
   line-height: 1.5;
 }
 
@@ -315,11 +315,11 @@ h1[tabindex='-1']:focus {
   width: 100%;
   min-height: 30px;
   border: 1px solid var(--tt-border-faint);
-  border-radius: 6px;
+  border-radius: var(--tt-radius-control);
   background: var(--tt-surface-sunken);
   padding: 4px 12px;
   color: var(--tt-text);
-  font-size: 13.5px;
+  font-size: var(--tt-type-small);
   font-weight: 500;
   transition: border-color 120ms ease, background-color 120ms ease, opacity 120ms ease;
 }
@@ -367,14 +367,14 @@ textarea.tt-input {
 .tt-input[inputmode='url'],
 .tt-input[type='password'] {
   font-family: var(--tt-font-mono);
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
   font-weight: 400;
 }
 
 /* Keys are monospaced; the note standing in for a saved one is prose. */
 .tt-input[type='password']::placeholder {
   font-family: var(--tt-font-ui);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
 }
 
 .tt-input[inputmode='numeric'] {
@@ -402,7 +402,7 @@ textarea.tt-input {
 }
 
 .tt-toggle__copy > strong {
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   font-weight: 600;
 }
 
@@ -418,7 +418,7 @@ textarea.tt-input {
   flex: 0 0 auto;
   margin-top: 1px;
   border: 1px solid var(--tt-border);
-  border-radius: 5px;
+  border-radius: var(--tt-radius-tag);
   background: var(--tt-surface-sunken);
   transition: background-color 120ms ease, border-color 120ms ease;
 }
@@ -439,7 +439,7 @@ textarea.tt-input {
   left: 2px;
   width: 14px;
   height: 14px;
-  border-radius: 3px;
+  border-radius: var(--tt-radius-mark);
   background: var(--tt-text-muted);
   transition: transform 120ms ease, width 120ms ease, background-color 120ms ease;
 }
@@ -496,7 +496,7 @@ textarea.tt-input {
   padding: 2px 7px;
   color: var(--tt-text-2);
   font-family: var(--tt-font-ui);
-  font-size: 12px;
+  font-size: var(--tt-type-caption);
   font-weight: 500;
   line-height: 1.5;
   text-align: center;
@@ -512,7 +512,7 @@ textarea.tt-input {
 .tt-level-meter__bar {
   width: 4px;
   min-height: 4px;
-  border-radius: 2px;
+  border-radius: var(--tt-radius-mark);
   background: color-mix(in srgb, var(--tt-border) 55%, transparent);
   transition: height 100ms linear, background-color 100ms linear;
 }
@@ -539,7 +539,7 @@ textarea.tt-input {
   background: var(--tt-surface-elevated);
   box-shadow: var(--tt-shadow-lg);
   padding: 11px 14px;
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
 }
 
 .tt-toast[data-tone='error'] {
@@ -599,7 +599,7 @@ textarea.tt-input {
   width: var(--wave-w, 3px);
   height: var(--wave-rest, 5px);
   flex: none;
-  border-radius: 2px;
+  border-radius: var(--tt-radius-mark);
   background: var(--tt-activity);
   transition: height 180ms ease;
 }
@@ -696,7 +696,7 @@ textarea.tt-input {
   display: block;
   margin-bottom: 8px;
   color: var(--tt-text-muted);
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
   font-weight: 500;
   text-align: center;
 }
@@ -725,7 +725,7 @@ textarea.tt-input {
 .onboarding-progress__bars i {
   flex: 1 1 0;
   height: 2px;
-  border-radius: 2px;
+  border-radius: var(--tt-radius-mark);
   background: color-mix(in srgb, var(--tt-border) 45%, transparent);
   transition: background-color 200ms ease;
 }
@@ -741,7 +741,7 @@ textarea.tt-input {
 .onboarding-progress__group {
   overflow: hidden;
   color: var(--tt-text-muted);
-  font-size: 11.5px;
+  font-size: var(--tt-type-caption);
   text-align: center;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -787,18 +787,18 @@ textarea.tt-input {
 
 .onboarding-card .tt-button {
   padding-inline: 18px;
-  font-size: 13.5px;
+  font-size: var(--tt-type-small);
 }
 
 .onboarding-card .tt-input,
 .onboarding-card .tt-select {
-  font-size: 13.5px;
+  font-size: var(--tt-type-small);
 }
 
 .onboarding-card h1 {
   max-width: 560px;
   margin: 0;
-  font-size: 28px;
+  font-size: var(--tt-type-title);
   font-variation-settings: 'opsz' 96;
   font-weight: 500;
   letter-spacing: -0.7px;
@@ -809,7 +809,7 @@ textarea.tt-input {
   max-width: 590px;
   margin: -4px 0 0;
   color: var(--tt-text-muted);
-  font-size: 14px;
+  font-size: var(--tt-type-body);
 }
 
 .onboarding-assurances {
@@ -824,7 +824,7 @@ textarea.tt-input {
   gap: 9px;
   margin: 0;
   color: var(--tt-text-muted);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   line-height: 1.4;
 }
 
@@ -848,7 +848,7 @@ textarea.tt-input {
 .onboarding-aside {
   margin: 0;
   color: var(--tt-text-muted);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
 }
 
 .onboarding-ready svg {
@@ -882,7 +882,7 @@ textarea.tt-input {
   min-width: 0;
   margin: 0;
   color: var(--tt-text-muted);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   line-height: 1.45;
 }
 
@@ -890,7 +890,7 @@ textarea.tt-input {
 .onboarding-microphone-test p strong {
   display: block;
   color: var(--tt-text);
-  font-size: 13.5px;
+  font-size: var(--tt-type-small);
   font-weight: 600;
 }
 
@@ -908,7 +908,7 @@ textarea.tt-input {
   height: 32px;
   flex: none;
   place-items: center;
-  border-radius: 6px;
+  border-radius: var(--tt-radius-control);
   background: color-mix(in srgb, var(--tt-success) 18%, transparent);
   color: var(--tt-success);
 }
@@ -930,7 +930,7 @@ textarea.tt-input {
   border-radius: var(--tt-radius-sm);
   background: var(--tt-card-inset);
   padding: 12px 14px;
-  font-size: 13px;
+  font-size: var(--tt-type-small);
 }
 
 .onboarding-completion-error {
@@ -946,7 +946,7 @@ textarea.tt-input {
   background: var(--tt-card-inset);
   padding: 14px;
   color: var(--tt-text);
-  font-size: 13.5px;
+  font-size: var(--tt-type-small);
 }
 
 .onboarding-model-problem {
@@ -958,7 +958,7 @@ textarea.tt-input {
   border: 1px solid var(--tt-hairline);
   border-radius: var(--tt-radius-sm);
   padding: 14px;
-  font-size: 13.5px;
+  font-size: var(--tt-type-small);
 }
 
 .onboarding-muted,
@@ -969,7 +969,7 @@ textarea.tt-input {
 
 .onboarding-download-disclosure > p {
   margin: 18px 0 12px;
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
 }
 
 .onboarding-model-list {
@@ -992,12 +992,12 @@ textarea.tt-input {
 }
 
 .onboarding-model-card h3 {
-  font-size: 14px;
+  font-size: var(--tt-type-body);
 }
 
 .onboarding-model-card p,
 .onboarding-consent {
-  font-size: 11.5px;
+  font-size: var(--tt-type-caption);
 }
 
 .onboarding-consent {
@@ -1026,7 +1026,7 @@ textarea.tt-input {
   background: var(--tt-card-inset);
   padding: 14px 16px;
   color: var(--tt-text-muted);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
 }
 
 .onboarding-paste-field {
@@ -1062,11 +1062,11 @@ textarea.tt-input {
   }
 
   .onboarding-card h1 {
-    font-size: 23px;
+    font-size: var(--tt-type-figure);
   }
 
   .onboarding-lead {
-    font-size: 13.5px;
+    font-size: var(--tt-type-small);
   }
 
   .onboarding-actions {
@@ -1187,7 +1187,7 @@ textarea.tt-input {
   width: 34px;
   min-height: 30px;
   height: 30px;
-  border-radius: 6px;
+  border-radius: var(--tt-radius-control);
 }
 
 .app-room__foot {
@@ -1197,7 +1197,7 @@ textarea.tt-input {
   min-width: 0;
   padding: 0 16px;
   color: var(--tt-text-faint);
-  font-size: 12px;
+  font-size: var(--tt-type-caption);
   user-select: none;
 }
 
@@ -1217,7 +1217,7 @@ textarea.tt-input {
   margin: 0 16px 8px;
   padding: 2px 6px;
   color: var(--tt-text-faint);
-  font-size: 12px;
+  font-size: var(--tt-type-caption);
   user-select: none;
 }
 
@@ -1240,7 +1240,7 @@ textarea.tt-input {
   align-items: center;
   gap: 9px;
   color: var(--tt-text);
-  font-size: 15px;
+  font-size: var(--tt-type-reading);
   font-weight: 600;
   letter-spacing: -0.1px;
 }
@@ -1277,11 +1277,11 @@ textarea.tt-input {
   min-width: var(--room-tile, 30px);
   padding: 0 7px;
   border: 0;
-  border-radius: 7px;
+  border-radius: var(--tt-radius-control);
   background: var(--tt-surface-sunken);
   color: var(--tt-text-muted);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   font-weight: 500;
   white-space: nowrap;
   transition: background-color 200ms ease, color 200ms ease, gap 250ms ease, padding 250ms ease;
@@ -1340,7 +1340,7 @@ textarea.tt-input {
   align-self: center;
   min-height: 36px;
   height: 36px;
-  border-radius: 10px;
+  border-radius: var(--tt-radius-inset);
 }
 
 .app-controls .app-controls__maximize:hover:not(:disabled) {
@@ -1396,7 +1396,7 @@ textarea.tt-input {
   /* A minimized theme editor resting in the footer sets the reserve, so the status line ends before the bar. */
   padding: 0 max(22px, var(--theme-editor-reserve, 0px)) 0 22px;
   color: var(--tt-text-faint);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   user-select: none;
 }
 
@@ -1407,7 +1407,7 @@ textarea.tt-input {
 }
 
 .app-footer__link {
-  border-radius: 3px;
+  border-radius: var(--tt-radius-mark);
   color: var(--tt-text-2);
   text-decoration: none;
   transition: color 120ms ease;
@@ -1444,7 +1444,7 @@ textarea.tt-input {
   height: 30px;
   place-items: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--tt-radius-control);
   background: transparent;
   color: var(--tt-text-faint);
   transition: background-color 120ms ease, color 120ms ease;
@@ -1510,7 +1510,7 @@ textarea.tt-input {
   width: 10px;
   height: 10px;
   place-items: center;
-  border-radius: 4px;
+  border-radius: var(--tt-radius-tag);
   background: currentColor;
   box-shadow: 0 0 0 2px var(--tt-surface);
 }
@@ -1566,7 +1566,7 @@ textarea.tt-input {
   height: 26px;
   padding: 0 8px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--tt-radius-control);
   background: transparent;
   color: var(--tt-accent-text);
   font: inherit;
@@ -1591,7 +1591,7 @@ textarea.tt-input {
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--tt-radius-control);
   background: transparent;
   color: var(--tt-text-muted);
   transition: background-color 120ms ease, color 120ms ease;
@@ -1626,14 +1626,14 @@ textarea.tt-input {
 
 .tt-panel__header h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   font-weight: 600;
 }
 
 .tt-panel__header .tt-button {
   min-height: 26px;
   padding: 0 8px;
-  font-size: 12px;
+  font-size: var(--tt-type-caption);
 }
 
 /* ---- shared view furniture ---- */
@@ -1643,7 +1643,7 @@ textarea.tt-input {
   border-left: 2px solid var(--tt-success);
   background: color-mix(in srgb, var(--tt-success) 9%, transparent);
   padding: 10px 13px;
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
 }
 
 .settings-notice[role='alert'] {
@@ -1667,7 +1667,7 @@ textarea.tt-input {
 }
 
 .management-empty h2 {
-  font-size: 15px;
+  font-size: var(--tt-type-reading);
   font-weight: 600;
 }
 
@@ -1675,7 +1675,7 @@ textarea.tt-input {
   max-width: 480px;
   margin-top: 6px;
   color: var(--tt-text-muted);
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
 }
 
 /* ---- settings: subnav and rows ---- */
@@ -1713,7 +1713,7 @@ textarea.tt-input {
   border-radius: var(--tt-radius-sm);
   padding: 5px 10px;
   color: var(--tt-text-muted);
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
   font-weight: 500;
   line-height: 1.25;
   text-decoration: none;
@@ -1772,14 +1772,14 @@ textarea.tt-input {
 
 .settings-section__heading h2 {
   color: var(--tt-text);
-  font-size: 13.5px;
+  font-size: var(--tt-type-small);
   font-weight: 600;
 }
 
 .settings-section__heading p {
   margin-top: 1px;
   color: var(--tt-text-muted);
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
 }
 
 .settings-rows {
@@ -1872,13 +1872,13 @@ textarea.tt-input {
 }
 
 .settings-model-statement h3 {
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   font-weight: 600;
 }
 
 .settings-model-statement p {
   color: var(--tt-text-muted);
-  font-size: 12px;
+  font-size: var(--tt-type-caption);
 }
 
 /* The privacy disclosure closes the section as its own row, so it reads as
@@ -1887,7 +1887,7 @@ textarea.tt-input {
   margin: 0;
   max-width: 66ch;
   color: var(--tt-text-muted);
-  font-size: 12px;
+  font-size: var(--tt-type-caption);
   line-height: 1.55;
 }
 
@@ -1905,7 +1905,7 @@ textarea.tt-input {
   gap: 9px;
   margin: 0;
   color: var(--tt-success);
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
 }
 
 .settings-remote-status--error {
@@ -1922,14 +1922,14 @@ textarea.tt-input {
 .settings-update-version {
   margin: 0;
   color: var(--tt-text);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   font-weight: 500;
 }
 
 .settings-update-status {
   margin: 1px 0 0;
   color: var(--tt-text-muted);
-  font-size: 12px;
+  font-size: var(--tt-type-caption);
 }
 
 .settings-update-actions {
@@ -1952,14 +1952,14 @@ textarea.tt-input {
 }
 
 .settings-danger-row h3 {
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   font-weight: 500;
 }
 
 .settings-danger-row p {
   margin-top: 1px;
   color: var(--tt-text-muted);
-  font-size: 12px;
+  font-size: var(--tt-type-caption);
 }
 
 .settings-download-dialog {
@@ -2032,7 +2032,7 @@ textarea.tt-input {
 
 .help-topic summary h2 {
   margin: 0;
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   font-weight: 500;
 }
 
@@ -2051,7 +2051,7 @@ textarea.tt-input {
   margin: 0;
   padding: 0 16px 14px;
   color: var(--tt-text-muted);
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
   line-height: 1.6;
 }
 
@@ -2075,7 +2075,7 @@ textarea.tt-input {
   justify-content: space-between;
   gap: 12px;
   padding: 9px 16px;
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
 }
 
 .help-keys > div + div {
@@ -2096,7 +2096,7 @@ textarea.tt-input {
   margin: 0;
   padding: 12px 16px;
   color: var(--tt-text-muted);
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
   line-height: 1.55;
 }
 
@@ -2153,7 +2153,7 @@ textarea.tt-input {
 
 .tt-dialog h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--tt-type-lead);
   font-weight: 600;
   line-height: 1.3;
   letter-spacing: -0.01em;
@@ -2162,7 +2162,7 @@ textarea.tt-input {
 .tt-dialog__description {
   margin: 10px 0 20px;
   color: var(--tt-text-muted);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   line-height: 1.5;
 }
 
@@ -2173,7 +2173,7 @@ textarea.tt-input {
   background: color-mix(in srgb, var(--tt-primary) 9%, transparent);
   padding: 10px 12px;
   color: var(--tt-text);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   line-height: 1.45;
 }
 
@@ -2191,7 +2191,7 @@ textarea.tt-input {
 
 .tt-dialog__actions .tt-button {
   padding-inline: 16px;
-  font-size: 13px;
+  font-size: var(--tt-type-small);
 }
 
 /* ---- wave motion overrides ----

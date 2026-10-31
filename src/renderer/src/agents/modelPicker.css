@@ -10,16 +10,16 @@
 
 /* Where the model control is a named field rather than a chip: the New thread dialog. */
 .thread-options__model { display: grid; gap: 5px; min-width: 0; }
-.thread-options__model > span { color: var(--tt-text-muted); font-size: 10.5px; }
+.thread-options__model > span { color: var(--tt-text-muted); font-size: var(--tt-type-micro); }
 .new-thread-dialog .thread-options__model { grid-column: 1 / -1; }
-.new-thread-dialog .model-picker__trigger { justify-content: space-between; width: 100%; max-width: none; height: auto; min-height: 39px; padding: 8px 11px; border-radius: 7px; background: var(--tt-field); font-size: 13px; }
+.new-thread-dialog .model-picker__trigger { justify-content: space-between; width: 100%; max-width: none; height: auto; min-height: 39px; padding: 8px 11px; border-radius: var(--tt-radius-control); background: var(--tt-field); font-size: var(--tt-type-small); }
 .new-thread-dialog .model-picker__trigger > span:not(.provider-mark) { flex: 1; text-align: left; }
 
 /* The model menu: a provider rail, then a search line over the list with one note under it. Anchored over
    the chip. Two columns whenever more than one provider can be chosen; one when the thread is settled. Its one row
    takes no more than the menu's height, so a long list scrolls inside it and the note under it stays in view. With the
    rail it keeps that full height, so choosing another provider does not resize the menu under the pointer. */
-.model-picker__dialog { position: fixed; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); width: min(300px, calc(100vw - 32px)); max-height: min(380px, calc(100vh - 32px)); margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--tt-field-border); border-radius: 14px; background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 16px 48px var(--tt-shadow-color); }
+.model-picker__dialog { position: fixed; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); width: min(300px, calc(100vw - 32px)); max-height: min(380px, calc(100vh - 32px)); margin: 0; padding: 0; overflow: hidden; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-card); background: var(--tt-surface-elevated); color: var(--tt-text); box-shadow: 0 16px 48px var(--tt-shadow-color); }
 .model-picker__dialog[data-rail] { grid-template-columns: 52px minmax(0, 1fr); width: min(336px, calc(100vw - 32px)); height: min(380px, calc(100vh - 32px)); }
 /* The menu goes straight to the place it is given. Reduced motion gives every property a 1ms transition (global.css),
    which a window in the background never finishes, and that left the menu over the chip after a step changed its height. */
@@ -29,32 +29,32 @@
 /* Marks only: a provider costs the same here whatever it is called, which is what the tabs could not do.
    The chosen tile is filled and keeps an accent edge, so the choice does not rest on hue alone. */
 .model-picker__rail { display: flex; flex-direction: column; gap: 4px; padding: 8px 6px; border-right: 1px solid var(--tt-hairline); background: var(--tt-surface); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
-.model-picker__rail > button { position: relative; display: grid; place-items: center; flex: none; width: 40px; height: 40px; border: 0; border-radius: 10px; background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.model-picker__rail > button { position: relative; display: grid; place-items: center; flex: none; width: 40px; height: 40px; border: 0; border-radius: var(--tt-radius-inset); background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .model-picker__rail > button .provider-mark { opacity: .75; }
 .model-picker__rail > button:hover { background: var(--tt-hover); }
 .model-picker__rail > button:active:not(:disabled):not([aria-selected='true']) { background: var(--tt-hover-strong); }
 .model-picker__rail > button:hover .provider-mark, .model-picker__rail > button[aria-selected='true'] .provider-mark { opacity: 1; }
 .model-picker__rail > button[aria-selected='true'] { background: var(--tt-selected); }
-.model-picker__rail > button[aria-selected='true']::before { content: ''; position: absolute; left: -6px; top: 10px; bottom: 10px; width: 2px; border-radius: 0 2px 2px 0; background: var(--tt-activity); }
+.model-picker__rail > button[aria-selected='true']::before { content: ''; position: absolute; left: -6px; top: 10px; bottom: 10px; width: 2px; border-radius: 0 var(--tt-radius-mark) var(--tt-radius-mark) 0; background: var(--tt-activity); }
 .model-picker__search { display: flex; flex: none; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 12px; border-bottom: 1px solid var(--tt-hairline); color: var(--tt-text-muted); }
-.model-picker__dialog .model-picker__search input { flex: 1; min-width: 0; width: auto; min-height: 0; padding: 4px 0; border: 0; border-radius: 0; outline: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: 13px; }
-.model-picker__dialog .model-picker__search input:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: 3px; }
+.model-picker__dialog .model-picker__search input { flex: 1; min-width: 0; width: auto; min-height: 0; padding: 4px 0; border: 0; border-radius: 0; outline: 0; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); }
+.model-picker__dialog .model-picker__search input:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: 2px; border-radius: var(--tt-radius-mark); }
 .model-picker__search input::placeholder { color: var(--tt-text-faint); }
-.model-picker__search > button { display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.model-picker__search > button { display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .model-picker__search > button:hover { background: var(--tt-hover); color: var(--tt-text); }
 .model-picker__search > button:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .model-picker__models { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 6px; scrollbar-width: thin; scrollbar-color: var(--tt-scrollbar) transparent; }
-.model-picker__models [role='option'] { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; }
+.model-picker__models [role='option'] { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; min-height: 32px; padding: 6px 10px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); text-align: left; }
 .model-picker__models [role='option']:hover:not(:disabled), .model-picker__models [role='option']:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
 .model-picker__models [role='option']:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 .model-picker__models [role='option'][aria-selected='true'] { color: var(--tt-activity); }
 .model-picker__models [role='option']:disabled { opacity: .45; cursor: default; }
 .model-picker__models [role='option'] > span { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.model-picker__models [role='option'] > span > small { color: var(--tt-text-muted); font-size: 11.5px; }
-.model-picker__empty { margin: 0; padding: 12px 10px; color: var(--tt-text-muted); font-size: 13px; }
+.model-picker__models [role='option'] > span > small { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.model-picker__empty { margin: 0; padding: 12px 10px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 /* Over another provider's models where picking one starts a new thread there (ADR-0089). */
-.model-picker__heading { flex: none; margin: 0; padding: 9px 16px 0; color: var(--tt-text-2); font-size: 12px; font-weight: 600; }
-.model-picker__note { flex: none; margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: 12px; line-height: 1.4; }
+.model-picker__heading { flex: none; margin: 0; padding: 9px 16px 0; color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; }
+.model-picker__note { flex: none; margin: 0; padding: 8px 12px 10px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; }
 
 /* A provider with several model sources (OpenCode, ADR-0087). The chip names the source before the model, the way it
    was reached; it asks for more room than other chips, and the source gives way first, down to a floor, so a narrow
@@ -71,29 +71,29 @@
 .model-picker__name { flex: 0 .000001 auto; min-width: 0; }
 .model-picker__trigger:hover:not(:disabled) .model-picker__source, .model-picker__trigger[aria-expanded='true'] .model-picker__source { color: var(--tt-text-2); }
 /* The first step: one row per model source, its name over its model count. The one holding the chosen model wears the accent. */
-.model-picker__sources > button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 7px 8px 7px 10px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); font: inherit; text-align: left; }
+.model-picker__sources > button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 7px 8px 7px 10px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); font: inherit; text-align: left; }
 .model-picker__sources > button:hover, .model-picker__sources > button:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
 .model-picker__sources > button:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 .model-picker__sources > button > span { display: grid; flex: 1; gap: 1px; min-width: 0; }
-.model-picker__sources > button b { overflow: hidden; font-size: 13px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
-.model-picker__sources > button small { overflow: hidden; color: var(--tt-text-muted); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.model-picker__sources > button b { overflow: hidden; font-size: var(--tt-type-small); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.model-picker__sources > button small { overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .model-picker__sources > button:hover small, .model-picker__sources > button:focus-visible small { color: var(--tt-text-2); }
 .model-picker__sources > button[aria-current='true'] b { color: var(--tt-activity); }
 .model-picker__sources > button > svg { flex: none; color: var(--tt-text-muted); }
 /* Inside one source: a back control, the source's name and its count. */
 .model-picker__step { display: flex; flex: none; align-items: center; gap: 6px; height: 36px; padding: 0 12px 0 4px; border-bottom: 1px solid var(--tt-hairline); }
-.model-picker__step > button { display: inline-flex; flex: none; align-items: center; gap: 2px; height: 28px; min-height: 28px; padding: 0 8px 0 4px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 12.5px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.model-picker__step > button { display: inline-flex; flex: none; align-items: center; gap: 2px; height: 28px; min-height: 28px; padding: 0 8px 0 4px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-caption); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .model-picker__step > button:hover { background: var(--tt-hover); color: var(--tt-text); }
 .model-picker__step > button:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
-.model-picker__step > b { min-width: 0; overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.model-picker__step > span { flex: none; margin-left: auto; color: var(--tt-text-muted); font-size: 11.5px; }
+.model-picker__step > b { min-width: 0; overflow: hidden; font-size: var(--tt-type-small); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.model-picker__step > span { flex: none; margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 /* Searching every source at once: the matches under small source headings that stay put while their group scrolls. */
-.model-picker__count { flex: none; color: var(--tt-text-muted); font-size: 11.5px; }
+.model-picker__count { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .model-picker__models--grouped { padding-top: 0; }
 /* A heading carries the menu's own surface down to it (glass.css decides what that is), so rows pass under it unseen. */
 .model-picker__dialog:has(.model-picker__group) .model-picker__panel, .model-picker__models--grouped, .model-picker__models--grouped > [role='group'] { background: inherit; }
-.model-picker__group { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; margin: 0 -6px; padding: 10px 16px 4px; background: inherit; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
-.model-picker__group > span { margin-left: auto; font-size: 11.5px; font-weight: 500; }
+.model-picker__group { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; margin: 0 -6px; padding: 10px 16px 4px; background: inherit; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; }
+.model-picker__group > span { margin-left: auto; font-size: var(--tt-type-caption); font-weight: 500; }
 
 /* Favorites (ADR-0147): a star tile heads the rail, and a star ends each model row. The star shows on a row the pointer or
    focus is on, and always where it is filled; a favorite carries its provider's mark before its name. */
@@ -103,7 +103,7 @@
 .model-picker__models [role='option'][data-favorite] > span:first-child { align-items: center; }
 .model-picker__models [role='option'][aria-disabled='true'] { opacity: .45; cursor: default; }
 .model-picker__models [role='option'][aria-disabled='true']:hover { background: transparent; color: var(--tt-text-2); }
-.model-picker__models [role='option'] > .model-picker__star { display: grid; flex: none; place-items: center; width: 22px; height: 22px; margin: -3px -6px -3px 0; border-radius: 6px; color: var(--tt-text-muted); visibility: hidden; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.model-picker__models [role='option'] > .model-picker__star { display: grid; flex: none; place-items: center; width: 22px; height: 22px; margin: -3px -6px -3px 0; border-radius: var(--tt-radius-control); color: var(--tt-text-muted); visibility: hidden; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .model-picker__models [role='option']:hover > .model-picker__star, .model-picker__models [role='option']:focus-visible > .model-picker__star, .model-picker__star[data-starred] { visibility: visible; }
 .model-picker__models [role='option'] > .model-picker__star:hover { background: var(--tt-hover); color: var(--tt-text); }
 .model-picker__models [role='option'] > .model-picker__star:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }

@@ -9,7 +9,7 @@
    a square that turns; a static scale stretches the square to the card's shape, so the light keeps an even pace along
    the long edges. Static masks keep the head to a 1.5px band on the card's edge, and the halo, cut to the card plus
    8px and blurred, to a band outside the card, so it falls on the room and never on the words. */
-.effort-trace { display: none; position: absolute; inset: -1px; z-index: 2; border-radius: 17px; pointer-events: none; }
+.effort-trace { display: none; position: absolute; inset: -1px; z-index: 2; border-radius: var(--tt-radius-card); pointer-events: none; }
 /* Placed automatically, so the card's padding box holds it rather than the grid area every other child spans. */
 .thread-prompt > .effort-trace { grid-area: auto; }
 .thread-prompt:has(.effort-picker-anchor[data-effort-trace='true']) > .effort-trace { display: block; }

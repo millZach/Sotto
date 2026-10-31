@@ -41,7 +41,7 @@
 
 .threads-tour__note h2 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--tt-type-reading);
   font-weight: 600;
 }
 
@@ -52,7 +52,7 @@
 .threads-tour__note p {
   margin: 0;
   color: var(--tt-text-muted);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   line-height: 1.5;
 }
 
@@ -66,7 +66,7 @@
 
 .threads-tour__count {
   color: var(--tt-text-muted);
-  font-size: 12px;
+  font-size: var(--tt-type-caption);
 }
 
 .threads-tour__actions {
