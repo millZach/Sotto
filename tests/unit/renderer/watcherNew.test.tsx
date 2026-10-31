@@ -1,3 +1,4 @@
+import type { ComposerStyle } from '../../../src/shared/composerStyle'
 import React from 'react'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -66,9 +67,9 @@ function roomState(current: string, patch: Partial<WatcherRoomState> = {}): Watc
   }
 }
 
-function renderRoom(room: WatcherRoomState, state: AgentState, startNew: () => Promise<WatcherRoomResult>, quiet = false) {
+function renderRoom(room: WatcherRoomState, state: AgentState, startNew: () => Promise<WatcherRoomResult>, quiet = false, style: ComposerStyle = 'pill') {
   vi.mocked(useOptionalApp).mockReturnValue({
-    navigation: 'watcher', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
+    navigation: 'watcher', platform: 'win32', windowMaximized: false, settings: { ...DEFAULT_SETTINGS, composerStyle: style },
     update: { watcherEnabled: true, owlFeatures: { watcher: true, 'quiet-composer': quiet } }, actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
   } as unknown as AppContextValue)
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)
@@ -146,6 +147,16 @@ describe('New Watcher in Watcher’s composer', () => {
     await user.click(button)
     expect(bridge.startNew).not.toHaveBeenCalled()
     expect(NEW_WATCHER_BUSY).toBe('Watcher is working. Stop its turn to start a new one.')
+  })
+
+  it('stands before the disc in Zach\'s composer, where the disc is Stop while Watcher works with nothing typed', async () => {
+    renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a', { messages: said, status: 'running' })), vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: roomState('watcher-b') })), true, 'rows')
+    await newButton()
+    const pane = await watcherPane()
+    const controls = pane.querySelector('.thread-prompt__actions')!
+    expect([...controls.querySelectorAll('button')].map(control => control.getAttribute('aria-label'))).toEqual(['New Watcher', 'Stop agent'])
+    expect(controls.querySelector('[data-face="stop"]')).toHaveClass('thread-prompt__disc')
+    expect(pane.querySelector('.thread-prompt__shield .thread-chip')).not.toBeNull()
   })
 
   it('is available while Watcher’s turn waits on a card of its own (#1735)', async () => {

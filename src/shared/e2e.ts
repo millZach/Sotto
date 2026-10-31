@@ -58,6 +58,8 @@ export const e2eScenarioSchema = z.enum([
   'queued-steering',
   /** The test Claude model offers Ultracode past Max, as Claude Code's catalog does on a model with Extra high (ADR-0148). */
   'ultracode',
+  /** The test Claude model also offers Fast, so the composer draws its speed's bolt (ADR-0166). */
+  'composer-speed',
 ])
 
 export const e2eSnapshotSchema = z.object({
