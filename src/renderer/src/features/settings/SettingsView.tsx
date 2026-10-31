@@ -897,10 +897,11 @@ export function SettingsView({
               </Card> : null}
             </div>
           </div>
+          {/* The footer status: the column's last line, in the room's bottom-right corner, so nothing scrolls under it (#1907). */}
+          {statusText ? <p className="page-status">{statusText}</p> : null}
         </div>
       </SettingsLayout>
       <PageWindowControls />
-      {statusText ? <p className="page-status">{statusText}</p> : null}
 
       {!clearOpen ? null : <ConfirmationDialog title={t`Clear history?`} description={t`This permanently removes every saved transcript, and the numbers the Dictate room counts. Settings are unchanged.`} cancelLabel={t`Keep history`} confirmLabel={t`Clear all transcripts`} failureMessage={shownWords(clearFailure) ?? t`History could not be cleared.`} fallbackFocusRef={headingRef} onCancel={() => setClearOpen(false)} onConfirm={async () => { setClearFailure(null); const cleared = await onClearHistory().catch(() => false); if (cleared) setNotice({ text: msg`Transcript history cleared.`, error: false }); else setClearFailure(msg`History could not be cleared. Your saved transcripts are unchanged.`); return cleared }} />}
       {!resetOpen ? null : <ConfirmationDialog title={t`Reset settings?`} description={t`Defaults will be restored and first-run setup will reopen. Your saved OpenRouter key, speech model and history are preserved.`} cancelLabel={t`Keep settings`} confirmLabel={t`Reset all settings`} failureMessage={shownWords(resetFailure) ?? t`Settings could not be reset.`} fallbackFocusRef={headingRef} onCancel={() => setResetOpen(false)} onConfirm={async () => { setResetFailure(null); const reset = await onResetSettings().catch(() => false); if (reset) setNotice({ text: msg`Settings reset to defaults.`, error: false }); else setResetFailure(msg`Settings could not be reset. Your current settings are unchanged.`); return reset }} />}
