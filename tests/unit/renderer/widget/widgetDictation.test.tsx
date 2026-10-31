@@ -138,7 +138,7 @@ describe('WidgetApp', () => {
     rerender(
       <WidgetApp
         snapshot={snapshot({
-          status: 'listening', sessionId: 'listening', startedAt: 3_000, level: 0.65,
+          status: 'listening', sessionId: 'listening', startedAt: 3_000, speaking: true,
           cancellable: true, ...privateFields,
         })}
         platform="win32" now={15_340}
@@ -297,7 +297,7 @@ describe('WidgetApp', () => {
     const { rerender } = render(
       <WidgetApp
         snapshot={snapshot({
-          status: 'listening', sessionId: 'listening', startedAt: 0, level: 0.4,
+          status: 'listening', sessionId: 'listening', startedAt: 0, speaking: true,
           cancellable: true,
         })}
         platform="win32" now={1_000}

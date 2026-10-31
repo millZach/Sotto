@@ -24,6 +24,7 @@ import type {
 } from '../../../shared/contracts'
 import type { SpeechModelOption, SpeechModelStatus } from '../../../shared/speechModel'
 import { initialDictationState, type DictationState, type WidgetSnapshot } from '../../../shared/dictation'
+import { LiveLevelStore, type LiveLevel } from '../audio/liveLevel'
 import { E2E_HISTORY_CREATED_AT } from '../../../shared/e2e'
 import type { HistoryEntry } from '../../../shared/history'
 import type { DictationRecord } from '../../../shared/dictationRecord'
@@ -88,6 +89,8 @@ export interface AppControllerFactoryBindings {
   readonly addHistory: SottoBridge['addHistory']
   readonly retainOutput?: (entry: HistoryEntry) => void
   readonly publishWidgetState: (snapshot: WidgetSnapshot) => ReturnType<SottoBridge['publishWidgetState']>
+  /** The microphone's level while listening, for the Dictate room's meter alone (#993). */
+  readonly publishLevel?: (level: number) => void
   readonly polishTranscript?: SottoBridge['polishTranscript']
   /** Present when the preload bridge exposes the speech model in main. */
   readonly transcription?: TranscriptionBridge
@@ -141,6 +144,7 @@ export function createProductionDictationController(
     ...(bindings.openRouterKeyMissing ? { openRouterKeyMissing: bindings.openRouterKeyMissing } : {}),
     ...(bindings.transcribedWith ? { transcribedWith: bindings.transcribedWith } : {}),
     publishWidgetState: bindings.publishWidgetState,
+    ...(bindings.publishLevel ? { publishLevel: bindings.publishLevel } : {}),
     ...(platform === undefined ? {} : { platform }),
     ...(polish === undefined
       ? {}
@@ -213,6 +217,8 @@ export interface AppContextValue {
   readonly dictationRecords: readonly DictationRecord[]
   readonly dictationRecovery: readonly HistoryEntry[]
   readonly dictation: DictationState
+  /** The microphone's level while dictating, for the Dictate room's meter alone; never part of `dictation` (#993). */
+  readonly dictationLevel: LiveLevel
   readonly navigation: AppNavigation
   /** The Settings page or group last asked for with `navigate('settings', section)`; Settings opens there. */
   readonly settingsRequest?: SettingsRequest | null
@@ -269,6 +275,7 @@ export function AppProvider({
   const dictationRecordsTailRef = useRef<Promise<void>>(Promise.resolve())
   const [dictationRecovery, setDictationRecovery] = useState<readonly HistoryEntry[]>([])
   const [dictation, setDictation] = useState<DictationState>(initialDictationState)
+  const [dictationLevel] = useState(() => new LiveLevelStore())
   const [navigation, setNavigation] = useState<AppNavigation>('onboarding')
   const [settingsRequest, setSettingsRequest] = useState<SettingsRequest | null>(null)
   const [helpRequest, setHelpRequest] = useState<HelpRequest | null>(null)
@@ -478,6 +485,7 @@ export function AppProvider({
     setHistory([])
     setDictationRecords([])
     setDictation(initialDictationState)
+    dictationLevel.set(0)
     setRecoveryNotices([])
     setUpdate(null)
     setSpeechModels(null)
@@ -633,6 +641,9 @@ export function AppProvider({
             }
             setDictation(controller.getState())
             return bridge.publishWidgetState(snapshot)
+          },
+          publishLevel: (level) => {
+            if (isCurrentGeneration(generation) && localController === controller) dictationLevel.set(level)
           },
         }
 
@@ -919,6 +930,7 @@ export function AppProvider({
     dictationRecords,
     dictationRecovery,
     dictation,
+    dictationLevel,
     navigation,
     settingsRequest,
     helpRequest,
@@ -929,7 +941,7 @@ export function AppProvider({
     update,
     updateCheckRequest,
     actions,
-  }), [windowMaximized, actions, copy, dictation, dictationRecords, dictationRecovery, failure, history, historyStatus, navigation, settingsRequest, helpRequest, platform, recoveryNotices, settings, speechModel, speechModels, status, update, updateCheckRequest])
+  }), [windowMaximized, actions, copy, dictation, dictationLevel, dictationRecords, dictationRecovery, failure, history, historyStatus, navigation, settingsRequest, helpRequest, platform, recoveryNotices, settings, speechModel, speechModels, status, update, updateCheckRequest])
 
   return createElement(AppContext.Provider, { value }, children)
 }

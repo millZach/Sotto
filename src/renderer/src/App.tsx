@@ -508,6 +508,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)}
           platform={app.platform}
           dictation={app.dictation}
+          level={app.dictationLevel}
           entries={app.history}
           records={app.dictationRecords}
           recovery={app.dictationRecovery}

@@ -30,7 +30,7 @@ describe('WidgetApp', () => {
     const { container } = render(
       <WidgetApp
         snapshot={snapshot({
-          status: 'listening', sessionId: 'click', startedAt: 0, level: 0.4,
+          status: 'listening', sessionId: 'click', startedAt: 0, speaking: true,
           cancellable: true,
         })}
         platform="win32" now={1_000}
@@ -104,7 +104,7 @@ describe('WidgetApp', () => {
     const { container } = render(
       <WidgetApp
         snapshot={snapshot({
-          status: 'listening', sessionId: 'drag', startedAt: 0, level: 0.4,
+          status: 'listening', sessionId: 'drag', startedAt: 0, speaking: true,
           cancellable: true,
         })}
         platform="win32" now={1_000}
@@ -197,7 +197,7 @@ describe('WidgetApp', () => {
 
   it.each([
     ['requesting permission', snapshot({ status: 'requesting-permission', sessionId: 'permission' })],
-    ['listening', snapshot({ status: 'listening', sessionId: 'listening', startedAt: 0, level: 0.4 })],
+    ['listening', snapshot({ status: 'listening', sessionId: 'listening', startedAt: 0, speaking: true })],
     ['processing', snapshot({
       status: 'processing', sessionId: 'processing', startedAt: 0,
       stage: 'transcribing', progress: 0.5,
