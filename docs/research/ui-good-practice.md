@@ -391,6 +391,7 @@ Read from `AGENTS.md`, `CONTEXT.md`, the ADRs named below and the 106 stylesheet
 ### Already the practice, by rule and by check
 
 - **Colour comes from theme roles** (ADR-0011). `themeTokens.test.ts` fails a stylesheet on its `owned` list that uses a literal colour. There is one accent, the app icon's teal (ADR-0024), and status colours mean status. This avoids "every element its own colour" and the generic palettes (section 5). The one deliberate exception is the effort colourways (ADR-0019), which are a choice the user makes.
+- **Text sizes and corners come from a named scale** (ADR-0169, October 30, 2026): nine type steps from 11 to 28 px and seven corner steps from 2 to 20 px, as `--tt-type-*` and `--tt-radius-*` tokens. `scaleTokens.test.ts` fails a renderer stylesheet that writes a size or a corner off the scale, unless its reason is on the test's exception list (1.3, 1.7).
 - **Contrast is a rule, not a hope.** `AGENTS.md` requires 4.5:1 for text. The Omarchy theme's readability check mixes text to 4.5:1 and focus to 3:1 (`CONTEXT.md`, Readability check). `builtin-palette-contrast.spec.ts` and the `textContrast` and `elementContrast` helpers measure it in the running app (1.4).
 - **Containers are filled cards with no outline, and no control is a pill** (ADR-0110). The composer's options are text buttons (ADR-0113). These answer "borders on everything", "card-in-card" and boxed chips at the rule level (1.7, section 5).
 - **Surfaces are solid** (ADR-0084). There is no glassmorphism except the Glass theme, which the user picks in Owl (ADR-0150).
@@ -408,15 +409,15 @@ Read from `AGENTS.md`, `CONTEXT.md`, the ADRs named below and the 106 stylesheet
 
 ### Where the stylesheets drift from the rubric
 
-Measured with `grep` over `src/renderer/**/*.css`.
+Measured with `grep` over `src/renderer/**/*.css` on main `e1f838016`, as of the review. The type and radius rows have since been fixed by ADR-0169; their numbers after it are in each row.
 
 | Rubric rule | What the code has |
 |---|---|
-| A few type roles (1.3) | 34 distinct `font-size` values, all literals, in half-pixel steps from 9 to 34 px. The commonest are 13 (373 uses), 12 (208), 12.5 (190), 14 (185) and 13.5 (84). There are no type tokens. |
+| A few type roles (1.3) | 34 distinct `font-size` values, all literals, in half-pixel steps from 9 to 34 px. The commonest are 13 (373 uses), 12 (208), 12.5 (190), 14 (185) and 13.5 (84). There are no type tokens. **Since ADR-0169:** 1,283 of 1,292 size declarations name one of nine `--tt-type-*` steps. The rest are 3 `inherit`, Usage's 2 figures that grow with the room, and 4 sizes in the floating widget. |
 | Two weights, or three with roles (1.1) | 600, 500 and 400 carry the app. 550 and 450 appear 17 times. |
-| Two or three radii by level (1.7) | `--tt-radius-sm`, `md` and `lg` exist, but only 126 of the 731 radius declarations use them. There are 43 distinct values: 6 px (138 uses), 8 (70), 4 (55), 2 (48), 7 (36), 12 (34), 3 (33), 5 (32), 10 (28) and more. |
+| Two or three radii by level (1.7) | `--tt-radius-sm`, `md` and `lg` exist, but only 126 of the 731 radius declarations use them. There are 43 distinct values: 6 px (138 uses), 8 (70), 4 (55), 2 (48), 7 (36), 12 (34), 3 (33), 5 (32), 10 (28) and more. **Since ADR-0169:** 664 of 754 corner declarations name a `--tt-radius-*` step; 84 are `0`, `inherit` or a circle's `50%`, and 6 keep a size of their own with a reason (Usage's bars, the skill pill, the effort trace's halo and glow, two in the widget). Seven steps is more than the rubric's two or three, but each is tied to what it rounds. |
 | Shadows mean elevation (1.7) | 148 `box-shadow` declarations with 62 distinct values. |
 | Sentence case (1.3) | 5 `text-transform: uppercase` rules (Dictate's stats, the theme studio, the global styles). |
 | One way to show a status (section 5, redundant labels) | A coloured left-edge stripe beside status words and a status ring appears on six surfaces: the request card, a ready prototype, a lifted thread, client updates, a provider error and agent errors and notices. |
 
-These are drift rather than defaults. Each has a token-level fix (section 6, small effort): a type ramp and a radius scale as `--tt-*` tokens, with the literals moved onto them. That is one change that tidies every surface without changing the look Zach chose. The iPhone review found the same drift in `apps/ios` (`~/ui-hillclimb/shared-notes.md`), so one shared ramp and radius scale would serve both apps.
+These are drift rather than defaults. Each has a token-level fix (section 6, small effort): a type ramp and a radius scale as `--tt-*` tokens, with the literals moved onto them. That is one change that tidies every surface without changing the look Zach chose, and for type and radii it has been made (ADR-0169). The iPhone review found the same drift in `apps/ios` (`~/ui-hillclimb/shared-notes.md`), so one shared ramp and radius scale would serve both apps.
