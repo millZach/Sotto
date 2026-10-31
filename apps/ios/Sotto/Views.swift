@@ -85,7 +85,7 @@ struct MainTabs: View {
         // The bar sits under the pages rather than in their safe area, which a NavigationStack doesn't pass on to its
         // pages: they end above it, as they did above the system's.
         return HStack(spacing: 0) {
-            if case .column(leading: true, width: let strip) = place { rail(shown, clear: Space.s4).frame(width: strip) }
+            if case .column(leading: true, width: let strip) = place { rail(shown, clear: Space.s4, grounded: true).frame(width: strip) }
             if sidebar {
                 ThreadSidebar(open: openFromSidebar).equatable()
                     .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
@@ -99,14 +99,14 @@ struct MainTabs: View {
                         .overlay(alignment: .trailing) { if duo == .upright { newThread.padding(.trailing, Space.s5) } }
                 }
             }
-            if case .column(leading: false, width: let strip) = place { rail(shown, clear: Space.s4).frame(width: strip) }
+            if case .column(leading: false, width: let strip) = place { rail(shown, clear: Space.s4, grounded: true).frame(width: strip) }
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: sidebar)
         .overlay(alignment: .trailing) {
-            if case .strip(trailing: true, width: let strip) = place { rail(shown, clear: clockClearance(duo)).frame(width: strip).offset(x: strip) }
+            if case .strip(trailing: true, width: let strip) = place { rail(shown, clear: clockClearance(duo), grounded: false).frame(width: strip).offset(x: strip) }
         }
         .overlay(alignment: .leading) {
-            if case .strip(trailing: false, width: let strip) = place { rail(shown, clear: clockClearance(duo)).frame(width: strip).offset(x: -strip) }
+            if case .strip(trailing: false, width: let strip) = place { rail(shown, clear: clockClearance(duo), grounded: false).frame(width: strip).offset(x: -strip) }
         }
         .overlay { if duo == .upright && threadOpen { ThreadDrawer(shown: $drawer, open: openFromSidebar).equatable() } }
         .sheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
@@ -150,12 +150,14 @@ struct MainTabs: View {
     /// The tabs stood in a column: in the Duo's strip, or down the edge of the unfolded Duo held sideways. New thread
     /// tops it, just under the clock and battery and apart from the tabs, on every tab (Zach's picks, October 30, 2026),
     /// and the tabs are centred in the height under it.
-    @ViewBuilder private func rail(_ shown: Bool, clear: CGFloat) -> some View {
+    /// In the Duo's strip the rail is `grounded: false`, so the page beside it, wash and all, shows under it and the
+    /// strip reads as the page's own (ADR-0151, amended); in a column of its own it stands on the page's ground.
+    @ViewBuilder private func rail(_ shown: Bool, clear: CGFloat, grounded: Bool) -> some View {
         if shown {
             VStack(spacing: 0) {
                 newThread.padding(.top, clear)
                 TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab,
-                        style: .rail, reselect: reselect)
+                        style: .rail, grounded: grounded, reselect: reselect)
                     .frame(maxHeight: .infinity)
             }
             .ignoresSafeArea(.keyboard)
@@ -282,6 +284,8 @@ struct TabsBar: View {
     /// The bar along the bottom of every other iPhone, or the Duo's icons: a rail stacked down a strip, or a row.
     enum Style { case bar, rail, row }
     var style = Style.bar
+    /// Whether it stands on the page's ground. A rail in the Duo's strip doesn't: the page under the strip shows through.
+    var grounded = true
     /// A press on the tab already chosen.
     var reselect: (MainTabs.Tab) -> Void = { _ in }
     private var duo: Bool { style != .bar }
@@ -304,7 +308,7 @@ struct TabsBar: View {
         // large content viewer instead. Grown with the text, four names ran together on a small iPhone.
         .dynamicTypeSize(...DynamicTypeSize.large)
         .modifier(TabsGlass(shown: style == .bar))
-        .pageGround()
+        .background { if grounded { PageGround().ignoresSafeArea().accessibilityHidden(true) } }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isTabBar)
         .accessibilityIdentifier("tabs")
@@ -418,6 +422,14 @@ enum DuoLayout: Equatable {
     /// Unfolded and held upright: the tabs run along the bottom.
     case upright
     var sideways: Bool { if case .sideways = self { return true } else { return false } }
+    /// How wide the strip is on each side of the window, where a page that reaches it carries its ground on under it.
+    var strip: (leading: CGFloat, trailing: CGFloat) {
+        switch self {
+        case .folded(let strip): return (0, strip)
+        case .sideways(let strip, let trailing): return trailing ? (0, strip) : (strip, 0)
+        case .none, .upright: return (0, 0)
+        }
+    }
 }
 private struct DuoLayoutKey: EnvironmentKey { static let defaultValue = DuoLayout.none }
 extension EnvironmentValues {

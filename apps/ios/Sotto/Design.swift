@@ -696,6 +696,7 @@ struct SheetPage<Content: View>: View {
     @State private var fade: CGFloat = 0
     @Environment(\.pageTop) private var topRequest
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
     init(warm: Bool = false, washTone: Wash.Tone = .normal, washHeight: CGFloat = 520, @ViewBuilder content: () -> Content) {
         self.warm = warm
         self.washTone = washTone
@@ -714,8 +715,10 @@ struct SheetPage<Content: View>: View {
                     .padding(.bottom, Space.s8)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(alignment: .top) {
-                        // Reaches up under the status bar, so at rest the wash meets the top edge.
+                        // Reaches up under the status bar, so at rest the wash meets the top edge, and on the iPhone Duo
+                        // on under the strip beside the page, where the tabs stand, so the strip is the page's own.
                         Wash(warm: warm, tone: washTone, height: washHeight + 160).offset(y: -160)
+                            .padding(.leading, -duo.strip.leading).padding(.trailing, -duo.strip.trailing)
                     }
                     .background(alignment: .top) {
                         // How far the content has moved up from rest, read against the page's own top.
@@ -725,6 +728,9 @@ struct SheetPage<Content: View>: View {
                         .frame(height: 0)
                     }
                 }
+                // Lets the wash out sideways into the Duo's strip, and nothing out above or below the page.
+                .scrollClipDisabled(duo.strip.leading + duo.strip.trailing > 0)
+                .clipShape(WiderRect(leading: duo.strip.leading, trailing: duo.strip.trailing))
                 .onChange(of: topRequest) {
                     withAnimation(reduceMotion ? nil : .snappy) { reader.scrollTo(sheetPageTop, anchor: .top) }
                 }
@@ -738,6 +744,15 @@ struct SheetPage<Content: View>: View {
     private func travelled(_ top: CGFloat) {
         let next = min(1, max(0, -top / 24))
         if next != fade { fade = next }
+    }
+}
+
+/// A rectangle reaching past its frame on either side by these widths, and no further up or down.
+private struct WiderRect: Shape {
+    let leading: CGFloat
+    let trailing: CGFloat
+    func path(in rect: CGRect) -> Path {
+        Path(CGRect(x: rect.minX - leading, y: rect.minY, width: rect.width + leading + trailing, height: rect.height))
     }
 }
 
