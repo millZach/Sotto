@@ -1,12 +1,12 @@
 import React, { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
-import { AppWindow, Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Hourglass, MessageSquare, Pencil, Sparkles, SquarePen } from 'lucide-react'
-import { AGENT_DISMISS_FAILURES_MAX, isThreadBusy, providerWritesShortText, type AgentState, type AgentThread } from '../../../shared/agents'
+import { AppWindow, Archive, ArchiveRestore, ChevronRight, Columns2, Folder, FolderGit2, Gauge, GitBranch, Hourglass, Pencil, Sparkles, SquarePen } from 'lucide-react'
+import { AGENT_DISMISS_FAILURES_MAX, isThreadBusy, type AgentState, type AgentThread } from '../../../shared/agents'
 import type { SottoPlatform } from '../../../shared/platform'
 import { useOptionalApp } from '../state/AppContext'
-import { claimedThreadChord, fixedKeyFree, openBesidePressed, threadChordLabel, threadChordPressed, type ThreadChordLabel } from './threadShortcuts'
-import { isThreadArchived } from '../../../shared/threadActivity'
+import { claimedThreadChord, fixedKeyFree, threadChordLabel, threadChordPressed, type ThreadChordLabel } from './threadShortcuts'
 import { countWorkingThreads, WORKING_THREADS_CAUTION, WORKING_THREADS_QUIET_MAX, workingThreadsLead } from '../../../shared/workingThreads'
 import { ProviderMark } from './ProviderMark'
 import { ThreadNameField } from './ThreadName'
@@ -32,6 +32,8 @@ import { RestartBands, useRestartStopped } from './RestartStopped'
 import { SwarmAngles, swarmAnglesByLead } from './SwarmAngles'
 import type { PaneMenuItem } from './PaneMenu'
 import { RowMenu, rowMenuPlace, rowMenuPressed, type RowMenuPlace } from './RowMenu'
+import { menuKeys, threadKeyDown, threadOffers, useThreadMenu } from './threadMenu'
+import { RailTile } from './RailTile'
 import { ROVING_GROUP, ROVING_KEY, ROVING_TOGGLE, ROW_ACTIONS, useRovingList } from './rovingList'
 import './workingThreadsLine.css'
 
@@ -113,9 +115,6 @@ export interface PaneActions {
   readonly rowKeys?: { readonly rename: boolean; readonly menu: boolean } | undefined
 }
 
-/** A menu row's keys, from a chord's label. */
-const menuKeys = (label: ThreadChordLabel | undefined): PaneMenuItem['shortcut'] => label === undefined ? undefined : { plain: label.plain, keys: label.keys }
-
 /** One tile on Owl's rail: what waits on you and what rests are told apart by position and by look. */
 type RailItem = { readonly row: ThreadRow; readonly status: ReturnType<typeof rowStatus>; readonly waiting: boolean; readonly resting: boolean }
 
@@ -154,8 +153,9 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   // Restarts at 3:00 pm (ADR-0144; Owl only) stands where a stopped thread's failure line would be.
   const restartOn = useRestartStopped()
   const { text: status, finished, babysitting, prototype, background, restart } = rowStatus(row, { restart: restartOn })
-  // Beside the focused pane's own thread, which a row marked current only for a delegated thread in the pane is not.
-  const besideAvailable = panes.currentThreadId !== null && panes.currentThreadId !== row.thread.id
+  // What the row offers beyond opening it, the same as its rail tile's (ADR-0164).
+  const offers = threadOffers(row, panes)
+  const { beside: besideAvailable, rename: canRename, regenerate: canRegenerate, watch: canWatch, shelfKeys, renameKey } = offers
   const [renaming, setRenaming] = useState(false)
   // A finished rename hands the focus back to the row itself, the list's stop, wherever the rename was asked from.
   const rowButton = useRef<HTMLButtonElement>(null)
@@ -171,7 +171,6 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   const statusId = useId()
   const timeId = useId()
   const detailsId = useId()
-  const archived = isThreadArchived(row.thread)
   const copy = describeWorkingCopy(row.thread, row.project)
   const WorkingCopyIcon = copy.status === 'pending' || copy.status === 'error' ? FolderGit2 : copy.branch || copy.repositoryRoot ? GitBranch : Folder
   const branch = copy.status === 'ready' ? copy.branch : undefined
@@ -185,13 +184,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   const copyDetails = [...new Set([waitingIn ? t({ message: `Waiting in ${waitingIn}`, comment: '{waitingIn} is the title of a thread this one delegated to.' }) : undefined, row.thread.hostLabel, row.model?.name, branchName, copyLabel, watched ? WATCHED_BY_WATCHER : undefined].filter(Boolean))].join(', ')
   const swarm = angles === undefined ? null : <SwarmAngles lead={row.thread} angles={angles} currentThreadId={panes.currentThreadId} onOpen={onOpen} command={command} />
   const id = row.thread.id
-  const canRename = !archived
-  // A name the user typed is never written over, so this thread's own name is the one offered for rewriting.
-  const canRegenerate = !archived && row.thread.titleSource !== 'user' && providerWritesShortText(row.thread.providerId)
-  const canWatch = row.thread.kind !== 'watcher' && row.thread.kind !== 'watcher-history'
-  // Settle's and Restore's keys act on the focused thread, so only that thread's row says them, as its buttons do.
-  const shelfKeys = panes.currentThreadId === id
-  const renameKey = panes.rowKeys?.rename ?? true
+  const threadMenu = useThreadMenu()
   // Each action once, for the menu and the hover icon alike, so the two cannot drift apart.
   const openBeside = (): void => panes.onOpenBeside(id)
   const regenerate = (): void => void command({ type: 'regenerate-thread-title', threadId: id })
@@ -199,17 +192,10 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   const restoreRow = (): void => void command({ type: 'restore-thread', threadId: id })
   // The row's actions in words, with the keys that do the same from the row: the hover icons' twin for the keyboard
   // and the right-click. Built only while the menu is open.
-  const menuGroups = (): PaneMenuItem[][] => [
-    [{ id: 'open', label: t({ message: 'Open', comment: 'A sidebar row\'s menu: open the thread in the focused pane.' }), icon: <MessageSquare size={15} aria-hidden="true" />, shortcut: { plain: 'Enter', keys: 'Enter' }, run: () => onOpen(id) },
-      ...besideAvailable && !open ? [{ id: 'beside', label: t`Open beside`, icon: <Columns2 size={15} aria-hidden="true" />, shortcut: menuKeys(panes.openBesideChord?.label), run: openBeside }] : []],
-    [...canRename ? [{ id: 'rename', label: t({ message: 'Rename', comment: 'Rename the thread.' }), icon: <Pencil size={15} aria-hidden="true" />, shortcut: renameKey ? { plain: 'F2', keys: 'F2' } : undefined, run: () => setRenaming(true) }] : [],
-      ...canRegenerate ? [{ id: 'regenerate', label: t`Regenerate title`, icon: <Sparkles size={15} aria-hidden="true" />, disabled: busy, run: regenerate }] : [],
-      ...canWatch && watchActions !== null ? [{ id: 'watch', label: t({ message: 'Watch', context: 'Put a thread under Watcher\'s watch' }), icon: <WatcherOwl size={15} />, shown: watched, run: () => void watchActions.setThread(id, !watched) }] : []],
-    row.settledBy === null
-      ? [{ id: 'settle', label: t({ message: 'Settle', comment: 'Settle the thread: put it away on the Settled shelf.' }), icon: <Archive size={15} aria-hidden="true" />, disabled: busy, shortcut: shelfKeys ? menuKeys(panes.settleShortcut) : undefined, run: settleRow }]
-      : row.settledBy === 'thread'
-        ? [{ id: 'restore', label: t({ message: 'Restore', comment: 'Restore a settled thread to open work.' }), icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: busy, shortcut: shelfKeys ? menuKeys(panes.restoreShortcut) : undefined, run: restoreRow }] : [],
-  ]
+  const menuGroups = (): PaneMenuItem[][] => threadMenu(row, panes, { offers, open, busy, watched, enterOpens: true }, {
+    open: () => onOpen(id), openBeside, rename: () => setRenaming(true), regenerate, settle: settleRow, restore: restoreRow,
+    watch: watchActions === null ? undefined : () => void watchActions.setThread(id, !watched),
+  })
   if (renaming) return <><li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <span className="thread-nav__item thread-nav__item--renaming">
       <ThreadNameField title={title} label={t`Rename ${title}`} className="thread-nav__rename tt-focusable"
@@ -221,11 +207,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
     <button ref={rowButton} type="button" className="thread-nav__item tt-focusable" aria-label={title} title={title} aria-describedby={[statusId, timeId, detailsId].join(' ')} aria-current={current ? 'page' : undefined} draggable
       aria-keyshortcuts={besideAvailable ? panes.openBesideChord?.label.keys : undefined} {...{ [ROVING_KEY]: `thread:${id}` }}
       onClick={event => { if (besideAvailable && (event.ctrlKey || event.metaKey)) panes.onOpenBeside(row.thread.id); else onOpen(row.thread.id) }}
-      onKeyDown={event => {
-        if (besideAvailable && panes.openBesideChord && openBesidePressed(event, panes.openBesideChord.chord, panes.openBesideChord.platform)) { event.preventDefault(); panes.onOpenBeside(row.thread.id); return }
-        if (rowMenuPressed(event, panes.rowKeys?.menu ?? true)) { event.preventDefault(); setMenu('beside'); return }
-        if (event.key === 'F2' && !event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey && canRename && renameKey) { event.preventDefault(); setRenaming(true) }
-      }}
+      onKeyDown={event => threadKeyDown(event, offers, panes, { openBeside, openMenu: () => setMenu('beside'), rename: () => setRenaming(true) })}
       onDragStart={event => { event.dataTransfer.setData(THREAD_DRAG_TYPE, row.thread.id); event.dataTransfer.effectAllowed = 'move'; panes.onDragThread(row.thread.id) }}
       onDragEnd={() => panes.onDragThread(null)}>
       <StatusRing row={row} finished={finished} background={background} />
@@ -645,10 +627,12 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     const active = document.activeElement
     if (active === null || active === document.body) railTileOf(railCard)?.focus()
   }, [railCard, railEntry])
+  // Each tile opens its thread's row menu (ADR-0164), through the same Settle as the list's rows.
+  const railTileFacts = (row: ThreadRow) => ({ row, panes, open: openThreadIds.includes(row.thread.id), busy: isThreadBusy({ busyThreadIds: state.busyThreadIds }, row.thread.id), command, settle, onOpen })
   const railTile = ({ row, status, waiting, resting }: RailItem, watched: boolean): ReactNode => {
     const pops = railPops?.get(row.thread.id)
     const id = row.thread.id
-    return <button key={id} type="button" data-rail-thread={id} {...{ [ROVING_KEY]: `rail:${id}` }}
+    return <RailTile key={id} {...railTileFacts(row)} watched={watched} pressOpens={pops === undefined} data-rail-thread={id} {...{ [ROVING_KEY]: `rail:${id}` }}
     className="thread-nav__rail-thread thread-nav__rail-mark tt-focusable" data-resting={resting || undefined} data-waiting={waiting || undefined} aria-label={pops ? popWords(pops).name : row.thread.title}
     title={[row.thread.title, status.text, watched ? t`Watched by Watcher` : ''].filter(Boolean).join(' · ')}
     aria-haspopup={pops ? 'dialog' : undefined} aria-expanded={pops ? railCard === id : undefined} aria-controls={pops && railCard === id ? railCardId : undefined}
@@ -656,7 +640,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     onKeyDown={event => { if (pops && railCard === id && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setRailCard(null) } }}>
     {watched ? <span className="thread-nav__rail-watched-mark" aria-hidden="true"><WatcherOwl size={10} /></span> : null}
     <span aria-hidden="true">{railMark(row.thread.title)}</span><StatusRing row={row} {...status} />
-  </button>
+  </RailTile>
   }
   const threads = state.host.threads
   const restartOn = useRestartStopped()
@@ -717,9 +701,9 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       <RestartBands threads={restartThreads ?? threads} command={command} onOpen={onOpen} />
       {queueOn ? <NeedsYouQueue queue={organization.needsYou} state={state} command={command} failures={failures} panes={panes} onOpen={onOpen} /> : <NeedsAttentionLine failures={failures} command={command} />}
     </>}
-    collapsedContent={<nav ref={railNav} aria-label={t`Threads`} data-region-entry="1" onKeyDown={railKeys.onKeyDown} onFocus={railKeys.onFocus}>{owlRail ?? railRows.map(row => <button key={row.thread.id} type="button" className="thread-nav__rail-thread tt-focusable" {...{ [ROVING_KEY]: `rail:${row.thread.id}` }} aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row, { restart: restartOn }).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
+    collapsedContent={<nav ref={railNav} aria-label={t`Threads`} data-region-entry="1" onKeyDown={railKeys.onKeyDown} onFocus={railKeys.onFocus}>{owlRail ?? railRows.map(row => <RailTile key={row.thread.id} {...railTileFacts(row)} watched={watchedIds.has(row.thread.id)} pressOpens className="thread-nav__rail-thread tt-focusable" {...{ [ROVING_KEY]: `rail:${row.thread.id}` }} aria-label={row.thread.title} title={`${row.thread.title} · ${rowStatus(row, { restart: restartOn }).text}`} aria-current={listed === row.thread.id ? 'page' : undefined} onClick={() => onOpen(row.thread.id)}>
       <span aria-hidden="true">{row.thread.title.slice(0, 1)}</span><StatusRing row={row} {...rowStatus(row, { restart: restartOn })} />
-    </button>)}</nav>}>
+    </RailTile>)}</nav>}>
       {/* The thread list: its folders, rows and the Settled shelf are one Tab stop, walked with the arrow keys, and the
           first place F6 lands in the sidebar (ADR-0164). */}
       <div ref={threadList} className="thread-nav__list" data-region-entry="1" onKeyDown={listKeys.onKeyDown} onFocus={listKeys.onFocus}>
@@ -739,6 +723,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
       </section>
       {searching && !organization.matching ? <p className="thread-nav__empty tt-paragraph"><Trans>Nothing matches "{query}".</Trans></p> : null}
       </div>
-      {settleDialog}
+      {/* The worktree question after a Settle. The rail is too narrow to hold it and the list it would sit in is hidden, so
+          while the sidebar is collapsed it stands over the window. */}
+      {collapsed && settleDialog ? createPortal(settleDialog, document.body) : settleDialog}
   </SidebarFrame>
 }

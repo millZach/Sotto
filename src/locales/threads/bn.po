@@ -1581,6 +1581,7 @@ msgstr ""
 msgid "Actions for {projectTitle}"
 msgstr ""
 
+#: src/renderer/src/agents/RailTile.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Actions for {title}"
 msgstr ""
@@ -5506,7 +5507,7 @@ msgstr ""
 #. A sidebar row's menu: open the thread in the focused pane.
 #. Opens the thread.
 #: src/renderer/src/agents/NeedsYouQueue.tsx
-#: src/renderer/src/agents/ThreadSidebar.tsx
+#: src/renderer/src/agents/threadMenu.tsx
 msgid "Open"
 msgstr ""
 
@@ -5564,6 +5565,7 @@ msgstr ""
 msgid "Open {title}, the thread this one continues"
 msgstr ""
 
+#: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Open beside"
@@ -6388,6 +6390,7 @@ msgstr ""
 msgid "Refused when last read"
 msgstr ""
 
+#: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Regenerate title"
@@ -6514,11 +6517,12 @@ msgstr ""
 
 #. Rename the thread.
 #. Rename the thread.
+#: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
-#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Rename"
 msgstr ""
 
+#: src/renderer/src/agents/RailTile.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Rename {title}"
@@ -6624,8 +6628,8 @@ msgstr ""
 
 #. Restore a settled thread to open work.
 #. Restore a settled thread to open work.
+#: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
-#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Restore"
 msgstr ""
 
@@ -6977,8 +6981,8 @@ msgstr ""
 
 #. Settle the thread: put it away on the Settled shelf.
 #. Settle the thread: put it away on the Settled shelf.
+#: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
-#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Settle"
 msgstr ""
 
@@ -9291,7 +9295,7 @@ msgstr ""
 msgid "was {from} tokens"
 msgstr ""
 
-#: src/renderer/src/agents/ThreadSidebar.tsx
+#: src/renderer/src/agents/threadMenu.tsx
 msgctxt "Put a thread under Watcher's watch"
 msgid "Watch"
 msgstr ""
