@@ -119,7 +119,7 @@ function shownHeight(compose: HTMLElement): number {
 
 /**
  * The composer floats over the transcript's foot: the pane learns its height, so the transcript keeps a steady scroll
- * box and a readable edge above the card. While the composer is slim (ADR-0125) it keeps that room, so the
+ * box, scrolls on under the card and keeps room to bring its last line clear of it. While the composer is slim (ADR-0125) it keeps that room, so the
  * transcript neither moves nor changes size; the pane learns how much of it shows, for the Jump button, and keeps the
  * card's full height, which Watcher's night scene lays out by. While the card moves between the two the composer keeps
  * that room too (slimComposer.ts), and nothing is read until the card has settled.

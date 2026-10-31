@@ -7,7 +7,8 @@ import { evidenceDirectory } from '../fixtures/evidence'
 
 // #1391's composer floats over the transcript's foot. Its first rule nested one :has() in another, which is not valid CSS,
 // so the browser dropped it and nothing floated while every layout assertion still held. These journeys measure the float
-// itself in the built app: its scroll box stays put, but its words stop above the composer and Jump to latest.
+// itself in the built app: its scroll box stays put and its words run on under the composer, and its padding brings the
+// last line clear of the composer and Jump to latest.
 
 const evidence = evidenceDirectory('artifacts/composer-float')
 const hostKeys = hostKeysPerTest()
@@ -78,7 +79,8 @@ async function float(pane: Locator): Promise<Float> {
     log.scrollTop = log.scrollHeight
     await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
     const composeBox = compose.getBoundingClientRect(), logBox = log.getBoundingClientRect()
-    // The strip beside the card used to expose the transcript underneath. Neither words nor hit targets belong here.
+    // The strip beside the card lets presses through to the transcript running under it. The right of the card, since
+    // the message scrubber keeps the left margin.
     const card = compose.querySelector('.thread-prompt')!.getBoundingClientRect()
     const strip = document.elementFromPoint((card.right + composeBox.right) / 2, card.top + 10)
     const content = log.querySelector('.thread-transcript__content')!.getBoundingClientRect()
@@ -101,8 +103,9 @@ function expectFloating(layout: Float): void {
   expect(layout.marginTop, context).toBeCloseTo(-layout.composeHeight, 0)
   expect(layout.overlap, context).toBeGreaterThanOrEqual(layout.composeHeight - 1)
   expect(layout.logPadding, context).toBeGreaterThanOrEqual(layout.composeHeight)
-  expect(layout.underStrip, context).toBe(false)
-  expect(layout.clipped, context).toBe(true)
+  expect(layout.underStrip, context).toBe(true)
+  // Nothing cuts the words off at the composer's top: they scroll on under it (#1391).
+  expect(layout.clipped, context).toBe(false)
   expect(layout.scrollbarClear, context).toBe(true)
   expect(layout.lastClear, context).toBe(true)
 }
@@ -174,8 +177,7 @@ test('a thread composer floats over its transcript, alone, side by side and in a
         if (!jump) continue
         shown++
         const edge = log.getBoundingClientRect().bottom - parseFloat(getComputedStyle(log).scrollPaddingBottom)
-        const beside = document.elementFromPoint(jump.left - 8, jump.top + 8)
-        if (edge > jump.top - 13 || (beside !== null && log.contains(beside))) obscured.push(top)
+        if (edge > jump.top - 13) obscured.push(top)
         const card = log.querySelector('.agent-request')!.getBoundingClientRect()
         if (jump.bottom > card.top && jump.top < card.bottom && jump.right > card.left && jump.left < card.right) hits.push(top)
       }
