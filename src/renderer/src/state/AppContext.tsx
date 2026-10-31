@@ -30,7 +30,7 @@ import type { HistoryEntry } from '../../../shared/history'
 import type { DictationRecord } from '../../../shared/dictationRecord'
 import type { SottoPlatform } from '../../../shared/platform'
 import { cloudTranscriptionOn, type AppSettings, type SettingsPatch } from '../../../shared/settings'
-import type { RecoveryNotice } from '../../../shared/recoveryNotice'
+import { isPastePermissionNotice, type PastePermissionNoticeCode, type RecoveryNotice, type RecoveryNoticeEvent } from '../../../shared/recoveryNotice'
 import { AudioRecorder, type AudioRecorderOptions } from '../audio/audioRecorder'
 import { SoundCuePlayer } from '../audio/soundCues'
 import {
@@ -180,6 +180,8 @@ export interface AppActions {
   clearHistory(): Promise<boolean>
   copyHistory(text: string): Promise<boolean>
   dismissDictationRecovery(id: string): void
+  dismissPastePermissionNotice(code: PastePermissionNoticeCode): void
+  dismissPastePermissionNotices(): void
   checkOpenRouterKey(): Promise<OpenRouterKeyCheck>
   /** OpenRouter's text models for the cleanup model picker (ADR-0122); a failure is a reason, never a throw. */
   listOpenRouterModels(): Promise<OpenRouterModelList>
@@ -280,6 +282,8 @@ export function AppProvider({
   const [settingsRequest, setSettingsRequest] = useState<SettingsRequest | null>(null)
   const [helpRequest, setHelpRequest] = useState<HelpRequest | null>(null)
   const [recoveryNotices, setRecoveryNotices] = useState<readonly RecoveryNotice[]>([])
+  // A clear event can beat the initial list response. Never let that old snapshot revive the notice.
+  const clearedRecoveryNotices = useRef(new Set<RecoveryNotice['code']>())
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   // The navigation and the update as of the last render, for navigate(), which is made once.
   const navigationRef = useRef(navigation)
@@ -312,7 +316,13 @@ export function AppProvider({
   const settingsTailRef = useRef<Promise<void>>(Promise.resolve())
   const historyTailRef = useRef<Promise<void>>(Promise.resolve())
 
-  const commitRecoveryNotice = useCallback((notice: RecoveryNotice): void => {
+  const commitRecoveryNotice = useCallback((notice: RecoveryNoticeEvent): void => {
+    if (notice.cleared) {
+      clearedRecoveryNotices.current.add(notice.code)
+      setRecoveryNotices(current => current.filter(candidate => candidate.code !== notice.code))
+      return
+    }
+    if (clearedRecoveryNotices.current.has(notice.code)) return
     setRecoveryNotices((current) =>
       current.some((candidate) => candidate.code === notice.code)
         ? current
@@ -323,6 +333,12 @@ export function AppProvider({
   const commitUpdate = useCallback((next: UpdateStatus): void => {
     setUpdate(next)
   }, [])
+
+  const dismissPastePermissionNotice = useCallback((code: PastePermissionNoticeCode): void => {
+    commitRecoveryNotice({ code, cleared: true })
+    // Dismiss locally at once; a lost bridge reply must not keep the card over the user's work.
+    void bridge?.dismissPastePermissionNotice(code).catch(() => undefined)
+  }, [bridge, commitRecoveryNotice])
 
   const commitSpeechModel = useCallback((next: SpeechModelStatus): void => {
     speechModelRef.current = next
@@ -805,6 +821,13 @@ export function AppProvider({
       })
     },
     dismissDictationRecovery: id => setDictationRecovery(entries => entries.filter(entry => entry.id !== id)),
+    dismissPastePermissionNotice,
+    dismissPastePermissionNotices: () => {
+      for (const { code } of recoveryNotices) {
+        if (!isPastePermissionNotice(code)) continue
+        dismissPastePermissionNotice(code)
+      }
+    },
     copyHistory: async (text) => {
       if (bridge === undefined || activeGenerationRef.current === 0) return false
       const current = settingsRef.current
@@ -905,7 +928,7 @@ export function AppProvider({
         if (isCurrentGeneration(generation)) setFailure('APP_ACTION_FAILED')
       }
     },
-  }), [bridge, commitUpdate, enqueueHistoryMutation, enqueueSettings, isCurrentGeneration, queueDictationRecords, refreshDictationRecord, refreshDictationRecords, refreshSpeechModels])
+  }), [bridge, commitUpdate, dismissPastePermissionNotice, enqueueHistoryMutation, enqueueSettings, isCurrentGeneration, queueDictationRecords, recoveryNotices, refreshDictationRecord, refreshDictationRecords, refreshSpeechModels])
 
   // The application menu's Settings… (Cmd+, on a Mac, Ctrl+, elsewhere) opens Settings, once setup is done (#1825).
   useEffect(() => {

@@ -36,7 +36,7 @@ import { HostQuestionDialog } from './features/settings/HostQuestionDialog'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 import { OpenSystemSettingsButton } from './components/OpenSystemSettingsButton'
 import { platformCopy } from './platformCopy'
-import type { RecoveryNotice } from '../../shared/recoveryNotice'
+import { isPastePermissionNotice, type PastePermissionNoticeCode, type RecoveryNotice } from '../../shared/recoveryNotice'
 import type { SottoPlatform } from '../../shared/platform'
 import type { SystemSettingsPane } from '../../shared/systemSettings'
 import { AgentProvider } from './agents/AgentContext'
@@ -78,7 +78,8 @@ const recoveryPanes: Partial<Record<RecoveryNotice['code'], SystemSettingsPane>>
   AUTOMATION_PERMISSION_REQUIRED: 'automation',
 }
 
-function recoveryToast(notice: RecoveryNotice, platform: SottoPlatform): ToastMessage {
+function recoveryToast(notice: RecoveryNotice, platform: SottoPlatform, dismiss: (code: PastePermissionNoticeCode) => void): ToastMessage {
+  const code = notice.code
   const text = notice.code === 'OPENROUTER_KEY_UNREADABLE'
     ? platformCopy(platform).openRouterKeyUnreadable
     : i18n._(recoveryMessages[notice.code])
@@ -86,6 +87,7 @@ function recoveryToast(notice: RecoveryNotice, platform: SottoPlatform): ToastMe
   return {
     id: notice.code,
     message: pane === undefined ? text : <>{text} <OpenSystemSettingsButton platform={platform} pane={pane} appearance="toast" /></>,
+    ...(isPastePermissionNotice(code) ? { onDismiss: () => dismiss(code) } : {}),
   }
 }
 
@@ -401,7 +403,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
       </main>
     )
   } else if (!app.settings.onboardingComplete || app.navigation === 'onboarding') {
-    const recoveryToasts: ToastMessage[] = app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform))
+    const recoveryToasts: ToastMessage[] = app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform, app.actions.dismissPastePermissionNotice))
     content = (
       <>
         <Onboarding
@@ -573,7 +575,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           onNotice={message => setThemeNotice(current => ({ id: `theme-${Number(current?.id.slice(6) ?? 0) + 1}`, message }))}
         />
         <ToastRegion messages={[
-          ...app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform)),
+          ...app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform, app.actions.dismissPastePermissionNotice)),
           ...(themeNotice === null ? [] : [themeNotice]),
           ...(settingsNotice === null ? [] : [{
             id: 'settings-save', tone: 'error' as const,

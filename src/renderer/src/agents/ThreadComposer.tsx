@@ -179,12 +179,13 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
 }): ReactNode {
   const { t } = useLingui()
   const threadId = row.thread.id
+  const app = useOptionalApp()
   // An answer written here is kept for Watcher's line about its request, never its words, and only where Watcher is on.
   const watcherOn = useWatcherEnabled()
   const watchActions = useWatchActions()
   const quietComposer = useOwlFeature('quiet-composer')
   // Which of the composer's two styles Settings › Appearance chose (ADR-0168); Zach's two rows unless Drake's pill is.
-  const composerStyle = useOptionalApp()?.settings?.composerStyle ?? DEFAULT_COMPOSER_STYLE
+  const composerStyle = app?.settings?.composerStyle ?? DEFAULT_COMPOSER_STYLE
   const { draft, save, saveError, answerState, hasContent, effortScore } = useComposerControls(store, threadId, quietComposer)
   const comments = useReviewComments(reviewComments, threadId)
   // Reply quotes are an Owl feature: stable shows no chip and sends none (ADR-0129).
@@ -336,6 +337,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   /** `written`: the text was put in the draft by this press (a Next answer), so the draft read at render is not yet it. */
   const send = (submittedAt: number, mode: SubmissionMode = queueing ? 'queue' : 'send', written = false, fromKeyboard = false): void => {
     if (mode === 'steer' ? !canSteer : !(canSend || written && reason === null && !readingImages && !answerState.sending)) return
+    app?.actions.dismissPastePermissionNotices()
     if (continuing !== undefined) { if (mode === 'send') void continueSend(continuing); return }
     if (mode !== 'steer') plateSent(actionsRow.current, fromKeyboard)
     // Sent from a button, which the emptied draft is about to disable: the next prompt starts where the last was written.
@@ -409,7 +411,6 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
 
   // The next prompt (ADR-0132; Owl only): offered while the thread is at rest and the user's to write to, for the turn
   // that just ended, and gone the moment anything is sent, queued or asked.
-  const app = useOptionalApp()
   const nextOn = useOwlFeature('next-prompt') && app?.settings?.nextPromptSuggestions !== false
   const nextEntry = useNextPrompt(nextOn ? threadId : null)
   const nextAnchor = lastUserMessageIdOf(row.thread) ?? ''

@@ -104,6 +104,7 @@ import {
   OUTPUT_DELIVER,
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
+  PASTE_PERMISSION_NOTICE_DISMISS,
   TRANSCRIPTION_CANCEL,
   OPENROUTER_CHECK_KEY,
   OPENROUTER_LIST_MODELS,
@@ -160,7 +161,7 @@ import {
   type SottoPlatform,
 } from '../shared/platform'
 import { settingsSchema } from '../shared/settings'
-import { recoveryNoticeSchema, recoveryNoticesSchema } from '../shared/recoveryNotice'
+import { pastePermissionNoticeCodeSchema, recoveryNoticeEventSchema, recoveryNoticesSchema } from '../shared/recoveryNotice'
 import {
   E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentSchema, e2eBrowserAgentResultSchema, E2E_HOST_SETUP_TOOL_CHANNEL, e2eHostSetupToolSchema, E2E_VISUAL_TOOL_CHANNEL, e2eVisualToolSchema, E2E_DELEGATION_TOOL_CHANNEL, e2eDelegationToolSchema,
   E2E_SNAPSHOT_CHANNEL,
@@ -426,7 +427,7 @@ export function createSottoBridge(
   const onRecoveryNotice = createBufferedSubscription(
     renderer,
     RECOVERY_NOTICE,
-    recoveryNoticeSchema,
+    recoveryNoticeEventSchema,
     2,
   )
   const onSpeechModelStatus = createBufferedSubscription(
@@ -614,6 +615,7 @@ export function createSottoBridge(
     listRecoveryNotices: () =>
       invokeParsed(renderer, RECOVERY_NOTICE_LIST, recoveryNoticesSchema),
     onRecoveryNotice,
+    dismissPastePermissionNotice: code => invokeParsed(renderer, PASTE_PERMISSION_NOTICE_DISMISS, commandResultSchema, pastePermissionNoticeCodeSchema.parse(code)),
 
     getSettings: () => invokeParsed(renderer, SETTINGS_GET, settingsSchema),
     updateSettings: (patch) => invokeParsed(renderer, SETTINGS_UPDATE, settingsSchema, patch),

@@ -39,4 +39,22 @@ describe('RecoveryNoticeCenter', () => {
     expect(Object.isFrozen(first[0])).toBe(true)
     expect(center.list()).toEqual([{ code: 'SETTINGS_RECOVERED' }])
   })
+
+  it('clears a notice for every subscriber and keeps its cause seen until the next launch', () => {
+    const center = new RecoveryNoticeCenter()
+    const listener = vi.fn()
+    center.subscribe(listener)
+    center.publish({ code: 'SETTINGS_RECOVERED' })
+    center.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' })
+    center.clear('ACCESSIBILITY_PERMISSION_REQUIRED')
+    center.clear('ACCESSIBILITY_PERMISSION_REQUIRED')
+    center.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' })
+    expect(center.list()).toEqual([{ code: 'SETTINGS_RECOVERED' }])
+    expect(listener).toHaveBeenCalledTimes(3)
+    expect(listener).toHaveBeenLastCalledWith({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: true })
+
+    const restarted = new RecoveryNoticeCenter()
+    restarted.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' })
+    expect(restarted.list()).toEqual([{ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' }])
+  })
 })
