@@ -2,7 +2,7 @@
    prototype/composer-zach). The prompt has the card's whole width; under it, attach on the left and, on the right, the
    permissions, the model and its effort as words with the speed's bolt, then the disc. No edge in any state; colour
    comes only from theme roles. Drake's pill (quietComposer.css) is the other style. */
-.thread-prompt[data-quiet][data-style='rows'] { grid-template-columns: auto minmax(0, 1fr); align-items: start; column-gap: 0; padding: 14px 10px 8px 16px; border-radius: var(--tt-radius-card); }
+.thread-prompt[data-quiet][data-style='rows'] { grid-template-columns: auto minmax(0, 1fr); align-items: start; column-gap: 0; padding: 14px 10px 8px 16px; border-radius: var(--tt-radius-overlay); }
 .thread-prompt[data-quiet][data-style='rows'] .screenshot-input > :has(.prompt-editor) { grid-column: 1 / -1; grid-row: 2; }
 .thread-prompt[data-quiet][data-style='rows'] .prompt-editor { min-height: 45px; max-height: 220px; padding: 0 6px 0 0; }
 /* The footer: attach in the first column, everything else at the far end of the second. */

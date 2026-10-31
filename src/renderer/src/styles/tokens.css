@@ -403,8 +403,8 @@
   --tt-radius-control: 6px; /* Buttons, fields, composer chips */
   --tt-radius-row: 8px; /* Sidebar and menu rows, icon buttons */
   --tt-radius-inset: 10px; /* Code blocks, menus, notes inside a card */
-  --tt-radius-card: 14px; /* Cards, the composer, the Dictate bar */
-  --tt-radius-overlay: 20px; /* Dialogs and the widget */
+  --tt-radius-card: 14px; /* Cards, the full composer, the Dictate bar */
+  --tt-radius-overlay: 20px; /* Dialogs, Zach's two-row composer and the widget */
   --tt-radius-full: 50%; /* Dots and rings: a circle on a square box, never a pill (ADR-0110) */
   /* The names before the scale, kept so whatever names them still rounds the same. */
   --tt-radius-sm: var(--tt-radius-control);

@@ -1,7 +1,7 @@
 /* The quiet composer (ADR-0161, Owl): one pill holding attach, the permissions shield, the prompt, one filled chip of
    the model and its effort in words with a bolt for speed, and one disc. Answers and continuations keep the footer of
    ADR-0113. Colour comes only from theme roles. */
-.thread-prompt[data-quiet] { grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; column-gap: 2px; padding: 6px 7px 6px 8px; border-radius: var(--tt-radius-overlay); }
+.thread-prompt[data-quiet] { grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; column-gap: 2px; padding: 6px 7px 6px 8px; border-radius: 24px; }
 .thread-prompt[data-quiet] .screenshot-input > :has(.prompt-editor) { grid-column: 3; grid-row: 2; min-width: 0; }
 .thread-prompt[data-quiet] > .thread-prompt__lead { grid-column: 2; grid-row: 2; display: flex; align-items: center; }
 .thread-prompt[data-quiet] > .thread-prompt__lead:empty { display: none; }

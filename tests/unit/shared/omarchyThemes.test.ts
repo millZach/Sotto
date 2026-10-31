@@ -183,7 +183,7 @@ describe('Omarchy M3 and readability check', () => {
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
     const tokenHash = createHash('sha256').update(tokenText).digest('hex')
-    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('22649f496c6473b17dce8dc79f122e5bf48579aa6322e696f9c9fb7479aedb8a')
+    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('570049fc7b0764670705cec9166363d95fbbe8a34dd7c34341d4351ecbc487cb')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })
