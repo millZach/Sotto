@@ -1779,6 +1779,72 @@ test.describe("Watcher's room on the built app", () => {
     })
   })
 
+  test('a machine short on memory gets a move suggestion under the machines line, from the reading Watcher’s placement took (#1309)', async () => {
+    const FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10'
+    const now = new Date().toISOString()
+    const GIB = 1024 ** 3
+    const load = (cpu: number, available: number) => ({ observedAt: now, windowMs: 2_000, cpuBusyPercent: cpu, loadAverage: null, availableMemoryBytes: available * GIB,
+      windowStartAvailableMemoryBytes: available * GIB, memoryPressurePercent: null })
+    const facts = (name: string, family: 'windows' | 'linux', cpus: number, total: number) => ({ observedAt: now, os: { family, name, version: null }, architecture: 'x64',
+      totalMemoryBytes: total * GIB, freeMemoryBytes: null, logicalCpuCount: cpus })
+    // This computer reads short on memory; forge has headroom for three more workers.
+    const machines = (hostId: string): NonNullable<WatcherStandInSeed['machines']> => ({ status: 'ok', observedAt: now, newWorkersStart: { choice: 'watcher' }, machines: [
+      { hostId, name: 'This computer', thisComputer: true, connected: true, factsState: 'reported', facts: facts('Windows 11', 'windows', 16, 32), runningThreads: 1, load: load(30, 1.5),
+        placedNotStarted: 0, memoryState: 'short', cpuState: 'not-busy', headroom: 0 },
+      { hostId: FORGE, name: 'forge', thisComputer: false, connected: true, factsState: 'reported', facts: facts('Omarchy', 'linux', 24, 64), runningThreads: 1, load: load(20, 40),
+        placedNotStarted: 0, memoryState: 'enough', cpuState: 'not-busy', headroom: 3 }] })
+    // Watcher placed a start on forge, so the line read the machines once.
+    const more = (hostId: string, requestId: string): Partial<WatcherRoomState> => {
+      const receipt = { id: randomUUID(), requestId, retryKey: randomUUID(), digest: '0'.repeat(64), action: 'start' as const, target: { hostId: FORGE, threadId: 'there' },
+        generation: 0, deliveryState: 'accepted' as const, createdAt: now, updatedAt: now, receiptId: randomUUID(), cardId: randomUUID() }
+      void hostId
+      return { receipts: [receipt], receiptReplies: [{ operationId: receipt.id, messageId: 'watcher-reply' }],
+        receiptPlacements: [{ operationId: receipt.id, placement: { hostId: FORGE, name: 'forge', awayFromDefault: false } }] }
+    }
+    const moves = (hostId: string): NonNullable<WatcherStandInSeed['moves']> => ({
+      machines: [{ hostId: FORGE, name: 'forge', connected: true }], localHostId: hostId, cards: [],
+      preview: { status: 'ok', confirmationId: randomUUID(), expiresAt: now, machine: 'forge', threads: [
+        { threadId: hostEntityKey(hostId, 'grok-previews'), outcome: 'moves', model: { name: 'Claude Sonnet 4.6' } }] },
+      started: [{ id: randomUUID(), state: 'thread-started', source: { hostId, threadId: 'grok-previews' }, hostId: FORGE, machine: 'forge', model: { name: 'Claude Sonnet 4.6' }, at: now, updatedAt: now }],
+    })
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance, 'reduced'), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, more, machines, moves })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        await expect(page.getByRole('group', { name: 'Machines and what works on each' }).locator('.watcher-machines__wide')).toContainText('short on memory')
+        const line = page.locator('.watcher-move-suggestion')
+        await expect(line).toContainText('This computer is short on memory, and forge has room. Move Grok voice previews there?')
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `The move suggestion at ${width}x${height}` }).toEqual([])
+          await captureInto(movesEvidence, launched, `moves-suggestion-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `moves-suggestion-${appearance}-${width}x${height}`)
+        }
+        await resizeContentWindow(launched, 1280, 800)
+        // From the keyboard: Move, Choose threads… and Not now follow the sentence in order.
+        const moveButton = line.getByRole('button', { name: 'Move to forge', exact: true })
+        await moveButton.focus()
+        await page.keyboard.press('Tab')
+        await expect(line.getByRole('button', { name: 'Choose threads to move to forge' })).toBeFocused()
+        await page.keyboard.press('Tab')
+        await expect(line.getByRole('button', { name: 'Not now, until This computer reads fine again' })).toBeFocused()
+        await page.keyboard.press('Shift+Tab')
+        await page.keyboard.press('Shift+Tab')
+        await page.keyboard.press('Enter')
+        // The move starts, its card reports it in Watcher's conversation, and the line is gone until the next reading.
+        await expect(line).toHaveCount(0)
+        await expect(page.locator('.move-card')).toHaveCount(1)
+        await expect(page.getByRole('group', { name: 'Machines and what works on each' }).getByRole('button', { name: /^This computer/u })).toBeFocused()
+        await settle(page)
+        await captureInto(movesEvidence, launched, `moves-suggestion-moved-${appearance}-1280x800.png`)
+      })
+    })
+  })
+
   test('Keep it here on a move waiting on its machine asks first on the card, then waits to call the move off (#1178 part 4)', async () => {
     const FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10'
     const now = new Date().toISOString()
