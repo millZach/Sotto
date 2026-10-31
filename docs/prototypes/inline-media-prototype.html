@@ -1,0 +1,1066 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. Not shipped, not tested, not wired to anything.
+
+  Zach's ask (October 31, 2026): show images and videos inside a thread and in Watcher — screenshots an agent takes or
+  reads, images it generates, screen recordings and GIFs, and his own attachments full size — let him mark any image
+  up (arrows, circles, boxes, pen, notes) and send the marked copy back as his reply while the original stays, let an
+  agent place callouts on an image, and play an ASCII scene while an image is being generated. Desktop, iPhone and the
+  unfolded Duo (pen) together. It must not slow Sotto down.
+
+  Views (pills at the top): Thread, Watcher, Mark up, iPhone, Duo unfolded, Image generating, Providers.
+  Variants (bar at the bottom, or the left and right arrow keys):
+    Thread, Watcher, iPhone, Duo:   ?layout=A Reading width · B Tiles · C Lead and strip
+    Image generating:               ?scene=1 Denoise · 2 Owl at the easel · 3 Loom
+  The meter at the bottom right counts what the page holds right now, to show the performance rules at work:
+  media load only near the screen and unload when far from it, a video never plays off screen and never autoplays,
+  and the ASCII scene draws nothing once it is off screen or finished.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PROTOTYPE · Sotto inline media and markup</title>
+<style>
+:root {
+  color-scheme: dark;
+  --tt-canvas: oklch(0.115 0.008 265);
+  --tt-field: oklch(0.145 0.008 265);
+  --tt-surface-elevated: oklch(0.185 0.008 265);
+  --tt-surface-sunken: oklch(0.1 0.008 265);
+  --tt-bubble: oklch(0.205 0.014 265);
+  --tt-text: oklch(0.985 0.005 280);
+  --tt-text-2: color-mix(in oklab, oklch(0.985 0.005 280) 55%, oklch(0.72 0.014 265));
+  --tt-text-muted: color-mix(in oklab, oklch(0.72 0.014 265) 85%, oklch(0.985 0.005 280));
+  --tt-hairline: oklch(0.305 0.02 265);
+  --tt-border-faint: oklch(0.26 0.016 265);
+  --tt-accent: oklch(0.714 0.104 183);
+  --tt-on-accent: oklch(0.16 0.02 183);
+  --tt-danger: oklch(0.7 0.19 25);
+  --tt-warning: oklch(0.83 0.15 82);
+  --tt-success: oklch(0.78 0.14 155);
+  --tt-hover: color-mix(in srgb, oklch(0.32 0.05 185) 70%, transparent);
+  --tt-scrim: rgb(0 0 0 / 82%);
+  --tt-shadow-color: rgb(0 0 0 / 70%);
+  --tt-font: Figtree, ui-sans-serif, system-ui, 'Segoe UI', sans-serif;
+  --tt-mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --fade: 160ms;
+}
+:root[data-theme='light'] {
+  color-scheme: light;
+  --tt-canvas: oklch(0.978 0.004 85);
+  --tt-field: oklch(0.99 0.003 85);
+  --tt-surface-elevated: oklch(0.99 0.003 85);
+  --tt-surface-sunken: oklch(0.945 0.006 85);
+  --tt-bubble: oklch(0.945 0.007 85);
+  --tt-text: oklch(0.235 0.014 75);
+  --tt-text-2: oklch(0.36 0.014 75);
+  --tt-text-muted: oklch(0.5 0.014 75);
+  --tt-hairline: oklch(0.86 0.012 80);
+  --tt-border-faint: oklch(0.9 0.01 80);
+  --tt-accent: oklch(0.5 0.12 200);
+  --tt-on-accent: oklch(0.99 0.003 85);
+  --tt-danger: oklch(0.55 0.2 25);
+  --tt-warning: oklch(0.58 0.13 70);
+  --tt-hover: color-mix(in srgb, oklch(0.9 0.03 200) 70%, transparent);
+  --tt-scrim: rgb(20 22 26 / 76%);
+  --tt-shadow-color: rgb(20 24 22 / 20%);
+}
+:root[data-motion='reduced'] { --fade: 0ms; }
+* { box-sizing: border-box; }
+html, body { height: 100%; }
+body { margin: 0; background: #16181d; color: var(--tt-text); font: 15px/1.5 var(--tt-font); overflow: hidden; }
+:root[data-theme='light'] body { background: #c9ccd2; }
+button { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--tt-accent); outline-offset: 2px; }
+
+/* ---------- prototype chrome (not part of the design) ---------- */
+.pnav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 8px 10px; background: #f3f0e8; color: #111; font: 600 13px/1 system-ui, sans-serif; box-shadow: 0 2px 10px rgb(0 0 0 / 30%); }
+.pnav b { margin-right: 6px; font-weight: 800; letter-spacing: .02em; }
+.pnav button { border: 1px solid #c8c3b6; background: #fff; color: #111; border-radius: 999px; padding: 6px 11px; cursor: pointer; font: inherit; }
+.pnav button[aria-pressed='true'] { background: #111; color: #fff; border-color: #111; }
+.pnav .gap { flex: 1; }
+.pbar { position: fixed; z-index: 100; left: 50%; bottom: max(14px, env(safe-area-inset-bottom)); transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 6px 8px; background: #fff; color: #111; border-radius: 999px; box-shadow: 0 6px 24px rgb(0 0 0 / 45%); font: 700 14px/1 system-ui, sans-serif; white-space: nowrap; }
+.pbar button { border: 0; width: 34px; height: 34px; border-radius: 50%; background: #111; color: #fff; cursor: pointer; font-size: 16px; }
+.pbar button:disabled { opacity: .25; cursor: default; }
+.hud { position: fixed; z-index: 100; right: 10px; bottom: 64px; width: 250px; padding: 10px 12px; background: #fffbe8; color: #222; border-radius: 10px; font: 12px/1.45 system-ui, sans-serif; box-shadow: 0 6px 20px rgb(0 0 0 / 35%); }
+.hud b { display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: #8a6d00; margin-bottom: 4px; }
+.hud .row { display: flex; justify-content: space-between; gap: 8px; }
+.hud .x { position: absolute; top: 4px; right: 6px; border: 0; background: none; cursor: pointer; font-size: 14px; color: #777; }
+.hud.min { width: auto; padding: 6px 10px; } .hud.min .rows { display: none; }
+@media (max-width: 700px) { .hud { bottom: 70px; right: 6px; width: 210px; font-size: 11px; } }
+#stage { position: absolute; left: 0; right: 0; bottom: 0; overflow: auto; }
+.scaler { transform-origin: top left; }
+
+/* ---------- desktop window ---------- */
+.win { position: relative; width: 100%; height: 100%; background: var(--tt-canvas); display: flex; flex-direction: column; overflow: hidden; }
+.strip { height: 38px; flex: none; border-bottom: 1px solid var(--tt-hairline); display: flex; align-items: center; padding: 0 16px; gap: 14px; color: var(--tt-text-muted); font-size: 13px; }
+.strip b { color: var(--tt-text); font-weight: 600; }
+.mark { width: 22px; height: 22px; border-radius: 6px; background: var(--tt-accent); display: grid; place-items: center; color: var(--tt-on-accent); font-weight: 800; font-size: 12px; }
+.app { flex: 1; min-height: 0; display: grid; grid-template-columns: 236px 1fr; }
+.sidebar { border-right: 1px solid var(--tt-hairline); padding: 12px 10px; font-size: 13px; color: var(--tt-text-2); overflow: hidden; }
+.sidebar h4 { margin: 10px 10px 6px; font-size: 11.5px; letter-spacing: .05em; text-transform: uppercase; color: var(--tt-text-muted); font-weight: 600; }
+.sidebar div { padding: 6px 10px; border-radius: 8px; display: flex; align-items: center; gap: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar .on { background: var(--tt-hover); color: var(--tt-text); }
+.sidebar .light { width: 7px; height: 7px; border-radius: 50%; background: var(--tt-text-muted); flex: none; }
+.sidebar .light.work { background: var(--tt-accent); }
+.pane { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; }
+.pane-head { height: 46px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 22px; border-bottom: 1px solid var(--tt-border-faint); font-weight: 600; font-size: 14px; }
+.pane-head span { color: var(--tt-text-muted); font-weight: 400; font-size: 13px; }
+.scroll { flex: 1; overflow: auto; min-height: 0; }
+.transcript { max-width: 740px; margin: 0 auto; padding: 24px 28px 40px; }
+.composer { flex: none; margin: 0 auto 14px; width: min(740px, calc(100% - 40px)); background: var(--tt-field); border: 1px solid var(--tt-hairline); border-radius: 16px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.composer .row { display: flex; align-items: flex-end; gap: 8px; }
+.composer .ta { flex: 1; min-height: 24px; max-height: 120px; overflow: auto; outline: none; color: var(--tt-text); padding: 4px 2px; }
+.composer .ta:empty::before { content: attr(data-ph); color: var(--tt-text-muted); }
+.composer .send { width: 34px; height: 34px; border-radius: 50%; border: 0; background: var(--tt-accent); color: var(--tt-on-accent); cursor: pointer; font-weight: 800; }
+.composer .chips { display: flex; gap: 8px; color: var(--tt-text-muted); font-size: 12.5px; }
+.deck { display: flex; gap: 8px; flex-wrap: wrap; }
+.deck:empty { display: none; }
+.staged { position: relative; width: 112px; border-radius: 10px; overflow: hidden; border: 1px solid var(--tt-hairline); background: var(--tt-surface-sunken); }
+.staged .badge { position: absolute; left: 6px; bottom: 6px; font-size: 11px; padding: 1px 7px; border-radius: 999px; background: var(--tt-danger); color: #fff; font-weight: 600; }
+.staged .rm { position: absolute; top: 4px; right: 4px; width: 20px; height: 20px; border-radius: 50%; border: 0; background: rgb(0 0 0 / 60%); color: #fff; font-size: 11px; cursor: pointer; }
+
+/* messages */
+.msg { position: relative; margin: 0 0 26px; }
+.msg header { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; color: var(--tt-text-muted); font-size: 12.5px; }
+.msg .who { color: var(--tt-text-2); font-weight: 600; }
+.msg p { margin: 0 0 8px; color: var(--tt-text-2); line-height: 1.6; }
+.msg ol { margin: 0 0 8px; padding-left: 22px; color: var(--tt-text-2); line-height: 1.6; }
+.msg ol li::marker { color: var(--tt-accent); font-weight: 700; }
+.msg[data-role='user'] { margin-left: max(24px, 14%); padding: 12px 16px; background: var(--tt-bubble); border: 1px solid var(--tt-hairline); border-radius: 14px 14px 4px 14px; }
+.steps { color: var(--tt-text-muted); font-size: 13px; margin-bottom: 8px; }
+.tool { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text-muted); font-size: 12.5px; margin: 2px 0 8px; }
+.tool i { font-style: normal; width: 16px; height: 16px; display: inline-grid; place-items: center; border-radius: 4px; background: var(--tt-surface-elevated); font-size: 10px; }
+.receipt { display: inline-flex; gap: 8px; align-items: center; padding: 6px 10px; border: 1px solid var(--tt-border-faint); border-radius: 10px; font-size: 12.5px; color: var(--tt-text-2); margin: 0 0 10px; }
+
+/* ---------- media, shared ---------- */
+.media-group { display: flex; flex-direction: column; gap: 14px; margin: 10px 0 12px; }
+.fig { margin: 0; position: relative; }
+.frame { position: relative; display: block; overflow: hidden; border: 1px solid var(--tt-border-faint); border-radius: 10px; background: var(--tt-surface-sunken); padding: 0; cursor: zoom-in; }
+.frame > img, .frame > canvas, .frame > .marks { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.frame > img { object-fit: contain; opacity: 0; transition: opacity var(--fade) ease; }
+.frame > img.in { opacity: 1; }
+.frame[data-loaded] .ph { display: none; }
+.frame .ph { position: absolute; inset: 0; display: grid; place-items: center; color: var(--tt-text-muted); font-size: 12px; }
+.cap { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 12.5px; color: var(--tt-text-muted); min-height: 28px; }
+.cap .kind { color: var(--tt-text-2); font-weight: 600; }
+.cap .acts { margin-left: auto; display: flex; gap: 2px; opacity: 0; transition: opacity var(--fade) ease; }
+.fig:hover .acts, .fig:focus-within .acts, .touch .acts { opacity: 1; }
+.act { border: 0; background: transparent; color: var(--tt-text-muted); border-radius: 6px; padding: 4px 8px; font-size: 12.5px; cursor: pointer; }
+.act:hover { background: var(--tt-hover); color: var(--tt-text); }
+.act.primary { color: var(--tt-accent); font-weight: 600; }
+.pin { position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px; border-radius: 50%; background: var(--tt-accent); color: var(--tt-on-accent); font: 700 12px/22px var(--tt-font); text-align: center; box-shadow: 0 2px 6px rgb(0 0 0 / 40%); pointer-events: none; }
+.cobox { position: absolute; border: 2px dashed var(--tt-accent); border-radius: 6px; pointer-events: none; }
+.badge-n { position: absolute; right: 6px; top: 6px; padding: 1px 7px; font-size: 11px; border-radius: 999px; background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 700; }
+.video .play { position: absolute; left: 50%; top: 50%; width: 56px; height: 56px; margin: -28px 0 0 -28px; border-radius: 50%; border: 0; background: rgb(0 0 0 / 62%); color: #fff; font-size: 20px; cursor: pointer; display: grid; place-items: center; }
+.video .vbar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: linear-gradient(transparent, rgb(0 0 0 / 70%)); color: #fff; font-size: 12px; font-variant-numeric: tabular-nums; }
+.video .vbar input { flex: 1; accent-color: var(--tt-accent); }
+.video .vbar button { border: 0; background: none; color: #fff; cursor: pointer; font-size: 13px; padding: 2px 4px; }
+.video .note { position: absolute; left: 10px; top: 8px; font-size: 11.5px; padding: 2px 8px; border-radius: 999px; background: rgb(0 0 0 / 60%); color: #fff; }
+.dur { position: absolute; right: 6px; bottom: 6px; font-size: 11px; padding: 1px 6px; border-radius: 6px; background: rgb(0 0 0 / 65%); color: #fff; font-variant-numeric: tabular-nums; }
+
+/* layout A: reading width */
+[data-layout='A'] .fig .frame { width: min(100%, var(--w)); aspect-ratio: var(--ar); max-height: 420px; }
+[data-layout='A'] .fig.tall .frame { width: auto; height: 420px; }
+[data-layout='A'] .fig.gen .frame { width: min(100%, 380px); }
+/* layout B: tiles */
+[data-layout='B'] .media-group { flex-direction: row; flex-wrap: wrap; gap: 10px; }
+[data-layout='B'] .fig { width: 208px; }
+[data-layout='B'] .fig .frame { width: 208px; height: 140px; }
+[data-layout='B'] .fig .frame > img { object-fit: cover; }
+[data-layout='B'] .cap { flex-wrap: wrap; gap: 0 6px; line-height: 1.35; }
+[data-layout='B'] .cap .acts { display: none; }
+[data-layout='B'] .pin, [data-layout='B'] .cobox { display: none; }
+/* layout C: lead and strip */
+[data-layout='C'] .media-group { gap: 8px; }
+[data-layout='C'] .lead .frame { width: min(100%, var(--w)); aspect-ratio: var(--ar); max-height: 400px; }
+[data-layout='C'] .lead.tall .frame { width: auto; height: 400px; }
+[data-layout='C'] .lead.gen .frame { width: min(100%, 360px); }
+[data-layout='C'] .strip-row { display: flex; gap: 6px; }
+[data-layout='C'] .strip-row .frame { width: 84px; height: 58px; border-radius: 8px; cursor: pointer; }
+[data-layout='C'] .strip-row .frame > img { object-fit: cover; }
+[data-layout='C'] .strip-row .frame[aria-current='true'] { outline: 2px solid var(--tt-accent); outline-offset: 1px; }
+[data-layout='C'] .strip-row .pin, [data-layout='C'] .strip-row .cobox { display: none; }
+
+/* ASCII scene */
+.ascii { position: absolute; inset: 0; overflow: hidden; background: var(--tt-surface-sunken); }
+.ascii pre { position: absolute; inset: 0; margin: 0; font-family: var(--tt-mono); white-space: pre; overflow: hidden; }
+.ascii .bg { color: color-mix(in oklab, var(--tt-text-muted) 60%, transparent); }
+.ascii .fg { color: var(--tt-accent); }
+.ascii .fg2 { color: var(--tt-warning); }
+.gen-line { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--tt-text-muted); margin-top: 6px; }
+.gen-line .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--tt-accent); animation: pulse 1.4s ease-in-out infinite; }
+:root[data-motion='reduced'] .gen-line .dot { animation: none; }
+@keyframes pulse { 50% { opacity: .3; } }
+
+/* ---------- viewer and markup editor ---------- */
+.ov { position: absolute; inset: 0; z-index: 20; background: var(--tt-scrim); display: flex; flex-direction: column; animation: fadein var(--fade) ease; }
+@keyframes fadein { from { opacity: 0; } }
+.ov-top { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--tt-surface-elevated); border-bottom: 1px solid var(--tt-hairline); flex-wrap: wrap; }
+.ov-top .title { font-size: 13px; color: var(--tt-text-2); margin-right: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.ov-top .sp { flex: 1; }
+.tb { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--tt-text-2); cursor: pointer; font-size: 13px; }
+.tb:hover { background: var(--tt-hover); color: var(--tt-text); }
+.tb[aria-pressed='true'] { background: var(--tt-hover); color: var(--tt-text); border-color: var(--tt-hairline); }
+.tb kbd { font: 11px var(--tt-font); color: var(--tt-text-muted); }
+.tb.primary { background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 600; }
+.tb.primary:hover { filter: brightness(1.08); }
+.sepv { width: 1px; height: 22px; background: var(--tt-hairline); margin: 0 4px; }
+.ink { width: 22px; height: 22px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; padding: 0; }
+.ink[aria-checked='true'] { border-color: var(--tt-text); }
+.ov-body { flex: 1; min-height: 0; display: flex; }
+.stage-wrap { flex: 1; min-width: 0; display: grid; place-items: center; padding: 18px; position: relative; overflow: hidden; }
+.mstage { position: relative; box-shadow: 0 16px 40px var(--tt-shadow-color); border-radius: 4px; overflow: visible; background: #fff; }
+.mstage img { display: block; width: 100%; height: 100%; border-radius: 4px; user-select: none; -webkit-user-drag: none; }
+.mstage svg { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+.mstage.view svg { cursor: zoom-in; pointer-events: none; }
+.mstage.fingers svg { touch-action: pan-x pan-y pinch-zoom; }
+.side { width: 270px; flex: none; background: var(--tt-surface-elevated); border-left: 1px solid var(--tt-hairline); padding: 14px; overflow: auto; font-size: 13px; }
+.side h5 { margin: 0 0 8px; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--tt-text-muted); display: flex; justify-content: space-between; align-items: center; }
+.side ol, .side ul { margin: 0 0 16px; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
+.side li { display: flex; gap: 8px; align-items: flex-start; color: var(--tt-text-2); line-height: 1.4; }
+.side li .n { flex: none; width: 20px; height: 20px; border-radius: 50%; background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 700; font-size: 11px; display: grid; place-items: center; }
+.side li .sw { flex: none; width: 12px; height: 12px; border-radius: 3px; margin-top: 4px; }
+.side li button { margin-left: auto; border: 0; background: none; color: var(--tt-text-muted); cursor: pointer; }
+.side label { display: flex; gap: 8px; align-items: center; color: var(--tt-text-2); margin-top: 4px; cursor: pointer; }
+.side .empty { color: var(--tt-text-muted); font-style: italic; }
+.hint { padding: 6px 14px 10px; text-align: center; color: color-mix(in oklab, #fff 75%, transparent); font-size: 12.5px; }
+:root[data-theme='light'] .hint { color: #fff; }
+.note-in { position: absolute; z-index: 3; min-width: 140px; padding: 4px 8px; border-radius: 6px; border: 2px solid var(--tt-danger); background: var(--tt-surface-elevated); color: var(--tt-text); font: 14px var(--tt-font); outline: none; }
+
+/* ---------- phones ---------- */
+.devices { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 14px 10px 120px; }
+.states { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.states button { background: #2b2f37; color: #e6e8ee; border: 1px solid #3a3f49; border-radius: 999px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+.states button[aria-pressed='true'] { background: var(--tt-accent); color: var(--tt-on-accent); border-color: var(--tt-accent); }
+.dnote { font-size: 13px; color: #b9bdc6; max-width: 560px; text-align: center; line-height: 1.45; }
+:root[data-theme='light'] .dnote { color: #333; }
+.phone { position: relative; width: 393px; height: 852px; border-radius: 54px; border: 10px solid #000; background: var(--tt-canvas); overflow: hidden; box-shadow: 0 30px 60px rgb(0 0 0 / 50%); display: flex; flex-direction: column; flex: none; }
+.duo { position: relative; width: 1100px; height: 774px; border-radius: 40px; border: 12px solid #000; background: var(--tt-canvas); overflow: hidden; box-shadow: 0 30px 60px rgb(0 0 0 / 50%); display: flex; flex-direction: column; flex: none; }
+.duo::after { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: rgb(255 255 255 / 4%); pointer-events: none; }
+.pstatus { height: 50px; flex: none; display: flex; justify-content: space-between; align-items: flex-end; padding: 0 30px 6px; font-weight: 600; font-size: 15px; }
+.duo .pstatus { height: 30px; padding: 0 26px 2px; font-size: 13px; }
+.ptop { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 14px 10px; }
+.ptop .back { width: 36px; height: 36px; border-radius: 50%; background: var(--tt-surface-elevated); border: 0; display: grid; place-items: center; font-size: 18px; }
+.ptop .t { flex: 1; font-weight: 600; font-size: 16px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.wpill { font-size: 12px; padding: 5px 10px; border-radius: 999px; background: var(--tt-surface-elevated); color: var(--tt-accent); white-space: nowrap; }
+.pscroll { flex: 1; overflow: auto; min-height: 0; padding: 6px 16px 10px; -webkit-overflow-scrolling: touch; }
+.phone .msg { font-size: 16px; margin-bottom: 20px; }
+.phone .msg p { color: var(--tt-text); line-height: 1.4; }
+.phone .msg[data-role='user'] { margin-left: 18%; border-radius: 20px; padding: 10px 14px; }
+.duo .pscroll { padding: 6px 0 10px; }
+.duo .reading { width: 680px; margin: 0 auto; }
+.preply { flex: none; margin: 6px 12px 26px; display: flex; align-items: flex-end; gap: 8px; padding: 6px; border-radius: 26px; background: color-mix(in oklab, var(--tt-surface-elevated) 88%, transparent); border: 1px solid var(--tt-hairline); }
+.duo .preply { width: 760px; margin: 6px auto 16px; }
+.preply .plus { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--tt-bubble); font-size: 20px; }
+.preply .f { flex: 1; display: flex; flex-direction: column; gap: 6px; padding: 8px 4px; color: var(--tt-text-muted); font-size: 16px; }
+.preply .send { width: 40px; height: 40px; border-radius: 50%; border: 0; background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 800; }
+.phone .cap .acts, .duo .cap .acts { opacity: 1; }
+[data-layout='A'] .phone .fig .frame { max-height: 360px; }
+[data-layout='A'] .phone .fig.tall .frame { height: 360px; }
+[data-layout='B'] .phone .fig { width: calc(50% - 5px); }
+[data-layout='B'] .phone .fig .frame { width: 100%; height: 110px; }
+.pov { position: absolute; inset: 0; z-index: 20; background: #000; display: flex; flex-direction: column; color: #fff; animation: fadein var(--fade) ease; }
+.pov-top { display: flex; align-items: center; justify-content: space-between; padding: 54px 16px 10px; gap: 8px; }
+.duo .pov-top { padding-top: 34px; }
+.pov-top button { border: 0; background: rgb(255 255 255 / 12%); color: #fff; border-radius: 999px; padding: 8px 14px; font-size: 15px; cursor: pointer; }
+.pov-top button.primary { background: var(--tt-accent); color: var(--tt-on-accent); font-weight: 700; }
+.pov-top .t { font-weight: 600; font-size: 15px; }
+.pov .stage-wrap { padding: 10px; }
+.pov .mstage { box-shadow: none; }
+.pal { align-self: center; display: flex; align-items: center; gap: 1px; padding: 5px; margin: 8px 6px 28px; max-width: calc(100% - 12px); border-radius: 22px; background: rgb(40 43 50 / 96%); }
+.pal button { width: 34px; height: 38px; border-radius: 12px; border: 0; background: transparent; color: #fff; font-size: 17px; cursor: pointer; display: grid; place-items: center; }
+.pal button[aria-pressed='true'] { background: rgb(255 255 255 / 18%); }
+.pal .ink { width: 22px; height: 22px; }
+.pal .sepv { margin: 0 2px; height: 20px; }
+.duo .pal button { width: 42px; height: 42px; }
+.pal .sepv { background: rgb(255 255 255 / 18%); }
+.duo .pal { position: absolute; left: 50%; bottom: 20px; transform: translateX(-50%); margin: 0; z-index: 4; box-shadow: 0 10px 30px rgb(0 0 0 / 50%); }
+.pnotes { padding: 0 16px 6px; font-size: 13.5px; color: #cfd3da; display: flex; flex-direction: column; gap: 4px; }
+.pnotes span.n { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: var(--tt-accent); color: var(--tt-on-accent); font-size: 11px; font-weight: 700; margin-right: 6px; }
+.pen-hint { position: absolute; top: 74px; left: 50%; transform: translateX(-50%); z-index: 4; padding: 6px 12px; border-radius: 999px; background: rgb(255 255 255 / 12%); font-size: 13px; color: #fff; white-space: nowrap; }
+.pov .side { background: #111316; border-left-color: #2a2f39; color: #e6e8ee; }
+.pov .side li { color: #d6d9df; }
+
+/* Watcher */
+.wroom .pane-head { border: 0; height: 52px; }
+.wroom .owl { width: 26px; height: 26px; border-radius: 7px; background: var(--tt-accent); color: var(--tt-on-accent); display: grid; place-items: center; font-size: 13px; }
+.wroom .night { position: absolute; left: 0; right: 0; bottom: 0; height: 200px; pointer-events: none; background: radial-gradient(ellipse at 50% 120%, color-mix(in oklab, var(--tt-accent) 18%, transparent), transparent 70%); }
+.wroom .composer { position: relative; z-index: 2; background: color-mix(in oklab, var(--tt-field) 70%, transparent); backdrop-filter: blur(14px); }
+.from { font-size: 12px; color: var(--tt-text-muted); margin: 2px 0 2px; }
+.from a { color: var(--tt-accent); text-decoration: none; }
+
+/* providers */
+.doc { max-width: 980px; margin: 0 auto; padding: 24px 22px 120px; color: var(--tt-text); }
+.doc h2 { margin: 0 0 6px; }
+.doc p { color: var(--tt-text-2); max-width: 75ch; }
+.doc table { border-collapse: collapse; width: 100%; font-size: 13.5px; margin: 14px 0; }
+.doc th, .doc td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--tt-hairline); }
+.doc th { color: var(--tt-text-muted); font-weight: 600; font-size: 12px; letter-spacing: .03em; text-transform: uppercase; }
+.doc td:first-child { font-weight: 600; white-space: nowrap; }
+.yes { color: var(--tt-success); } .no { color: var(--tt-text-muted); } .part { color: var(--tt-warning); }
+.gen-stage { max-width: 760px; margin: 0 auto; padding: 24px 22px 120px; }
+.scene-pick { display: flex; gap: 12px; margin: 18px 0; flex-wrap: wrap; }
+.scene-pick button { flex: 1; min-width: 150px; border: 1px solid var(--tt-hairline); background: var(--tt-field); border-radius: 12px; padding: 10px 12px; cursor: pointer; text-align: left; color: var(--tt-text-2); }
+.scene-pick button[aria-pressed='true'] { border-color: var(--tt-accent); color: var(--tt-text); }
+.scene-pick b { display: block; color: var(--tt-text); }
+</style>
+</head>
+<body>
+<nav class="pnav" id="pnav" aria-label="Prototype views"></nav>
+<main id="stage"></main>
+<div class="pbar" id="pbar"><button id="prev" aria-label="Previous variant">‹</button><span id="plabel"></span><button id="next" aria-label="Next variant">›</button></div>
+<aside class="hud" id="hud"><button class="x" id="hudx" aria-label="Fold the meter">–</button><b>Prototype meter</b><div class="rows" id="hudrows"></div></aside>
+
+<script>
+'use strict'
+/* ================================================================== state */
+const qs = new URLSearchParams(location.search)
+const S = {
+  view: qs.get('view') || 'thread', layout: qs.get('layout') || 'A', scene: qs.get('scene') || '1',
+  phoneState: 'thread', duoState: 'thread', fingers: false,
+  staged: { desk: [], phone: [], duo: [] }, sent: { desk: [], phone: [], duo: [] },
+  gen: {}, frames: 0, unloaded: 0,
+}
+const VIEWS = [['thread', 'Thread'], ['watcher', 'Watcher'], ['markup', 'Mark up'], ['iphone', 'iPhone'], ['duo', 'Duo unfolded'], ['generating', 'Image generating'], ['providers', 'Providers']]
+const LAYOUTS = { A: 'Reading width', B: 'Tiles', C: 'Lead and strip' }
+const SCENES = { 1: 'Denoise', 2: 'Owl at the easel', 3: 'Loom' }
+const reduced = () => document.documentElement.dataset.motion === 'reduced'
+const $ = (s, r = document) => r.querySelector(s)
+const $$ = (s, r = document) => [...r.querySelectorAll(s)]
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+function syncUrl() { history.replaceState(null, '', '?' + new URLSearchParams({ view: S.view, layout: S.layout, scene: S.scene })) }
+
+/* ================================================================== mock media (drawn, so the file stands alone) */
+const F = 'font-family="Helvetica,Arial,sans-serif"'
+function svgCheckout() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 800"><rect width="1280" height="800" fill="#f5f2ed"/><rect width="1280" height="68" fill="#1d2733"/><circle cx="52" cy="34" r="14" fill="#f2b84b"/><text x="76" y="42" ${F} font-size="22" font-weight="700" fill="#fff">Lumen</text><text x="960" y="40" ${F} font-size="16" fill="#c9d2dc">Shop     Journal     Cart (2)</text><text x="80" y="140" ${F} font-size="36" font-weight="700" fill="#1d2733">Checkout</text><text x="80" y="210" ${F} font-size="15" fill="#5b6672">Email</text><rect x="80" y="222" width="560" height="50" rx="8" fill="#fff" stroke="#cfd5db"/><text x="98" y="254" ${F} font-size="17" fill="#1d2733">zach@example.com</text><rect x="80" y="300" width="560" height="50" rx="8" fill="#fff" stroke="#cfd5db"/><text x="98" y="332" ${F} font-size="17" fill="#9aa4ae">1234 1234 1234 1234</text><text x="80" y="390" ${F} font-size="15" fill="#5b6672">Name on card</text><rect x="80" y="402" width="560" height="50" rx="8" fill="#fff" stroke="#cfd5db"/><text x="80" y="490" ${F} font-size="15" fill="#5b6672">Country</text><rect x="80" y="502" width="560" height="50" rx="8" fill="#fff" stroke="#cfd5db"/><text x="98" y="534" ${F} font-size="17" fill="#1d2733">United States</text><rect x="760" y="110" width="440" height="420" rx="16" fill="#fff" stroke="#e1e4e8"/><text x="790" y="160" ${F} font-size="20" font-weight="700" fill="#1d2733">Order</text><rect x="790" y="184" width="64" height="64" rx="10" fill="#e9d6b0"/><text x="872" y="212" ${F} font-size="17" fill="#1d2733">Linen lamp</text><text x="872" y="236" ${F} font-size="14" fill="#5b6672">Sand · 1</text><text x="1170" y="212" ${F} font-size="17" text-anchor="end" fill="#1d2733">$36.00</text><rect x="790" y="266" width="64" height="64" rx="10" fill="#b9d3c8"/><text x="872" y="294" ${F} font-size="17" fill="#1d2733">Fig candle</text><text x="872" y="318" ${F} font-size="14" fill="#5b6672">Sage · 1</text><text x="1170" y="294" ${F} font-size="17" text-anchor="end" fill="#1d2733">$12.00</text><line x1="790" y1="356" x2="1170" y2="356" stroke="#e1e4e8"/><text x="790" y="388" ${F} font-size="15" fill="#5b6672">Shipping</text><text x="1170" y="388" ${F} font-size="15" text-anchor="end" fill="#5b6672">Free</text><text x="790" y="434" ${F} font-size="20" font-weight="700" fill="#1d2733">Total</text><text x="1170" y="434" ${F} font-size="20" font-weight="700" text-anchor="end" fill="#1d2733">$48.00</text><rect x="780" y="408" width="400" height="58" rx="12" fill="#1d2733"/><text x="980" y="444" ${F} font-size="19" font-weight="700" text-anchor="middle" fill="#fff">Pay $48.00</text><text x="80" y="640" ${F} font-size="13" fill="#9aa4ae">Payments are secured. Returns within 30 days.</text></svg>`
+}
+function svgPhone() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 390 844"><rect width="390" height="844" fill="#f5f2ed"/><text x="24" y="34" ${F} font-size="15" font-weight="700" fill="#1d2733">9:41</text><rect y="52" width="390" height="56" fill="#1d2733"/><circle cx="34" cy="80" r="11" fill="#f2b84b"/><text x="54" y="87" ${F} font-size="19" font-weight="700" fill="#fff">Lumen</text><text x="24" y="156" ${F} font-size="28" font-weight="700" fill="#1d2733">Checkout</text><text x="24" y="196" ${F} font-size="13" fill="#5b6672">Email</text><rect x="24" y="204" width="342" height="44" rx="8" fill="#fff" stroke="#cfd5db"/><rect x="24" y="266" width="342" height="44" rx="8" fill="#fff" stroke="#cfd5db"/><text x="38" y="294" ${F} font-size="15" fill="#9aa4ae">1234 1234 1234 1234</text><text x="24" y="340" ${F} font-size="13" fill="#5b6672">Name on card</text><rect x="24" y="348" width="342" height="44" rx="8" fill="#fff" stroke="#cfd5db"/><rect x="24" y="420" width="342" height="230" rx="14" fill="#fff" stroke="#e1e4e8"/><text x="44" y="456" ${F} font-size="17" font-weight="700" fill="#1d2733">Order</text><text x="44" y="492" ${F} font-size="15" fill="#1d2733">Linen lamp</text><text x="346" y="492" ${F} font-size="15" text-anchor="end" fill="#1d2733">$36.00</text><text x="44" y="524" ${F} font-size="15" fill="#1d2733">Fig candle</text><text x="346" y="524" ${F} font-size="15" text-anchor="end" fill="#1d2733">$12.00</text><text x="44" y="600" ${F} font-size="17" font-weight="700" fill="#1d2733">Total $48.00</text><rect x="200" y="700" width="280" height="54" rx="12" fill="#1d2733"/><text x="300" y="734" ${F} font-size="17" font-weight="700" fill="#fff">Pay $48.0</text></svg>`
+}
+function svgLanding() {
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1440 900"><rect width="1440" height="900" fill="#efe9df"/><rect width="1440" height="72" fill="#1d2733"/><circle cx="56" cy="36" r="15" fill="#f2b84b"/><text x="82" y="45" ${F} font-size="24" font-weight="700" fill="#fff">Lumen</text><text x="96" y="250" ${F} font-size="64" font-weight="700" fill="#1d2733">Light that lasts.</text><text x="96" y="310" ${F} font-size="24" fill="#5b6672">Lamps and candles made in small batches.</text><rect x="96" y="360" width="220" height="62" rx="31" fill="#1d2733"/><text x="206" y="399" ${F} font-size="20" font-weight="700" text-anchor="middle" fill="#fff">Shop now</text><rect x="760" y="130" width="580" height="660" rx="24" fill="#e2c99c"/><circle cx="1050" cy="390" r="150" fill="#f6e6c3"/><rect x="1035" y="520" width="30" height="180" fill="#8a6b45"/><rect x="960" y="700" width="180" height="26" rx="10" fill="#6d5236"/><text x="96" y="820" ${F} font-size="18" fill="#9a8f80">Free shipping over $40</text></svg>`
+}
+function svgStep(n) {
+  const hues = ['#7c9cbf', '#b98fd0', '#8fbf9a', '#d0a38f', '#8fc7cf', '#c7c08f', '#cf8fa8', '#9a9fd6']
+  const c = hues[n % hues.length]
+  let rows = ''
+  for (let i = 0; i < 7; i++) rows += `<rect x="260" y="${150 + i * 56}" width="${520 - (i * 53) % 220}" height="16" rx="8" fill="#3a4250"/>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1280 720"><rect width="1280" height="720" fill="#14171d"/><rect width="220" height="720" fill="#1b1f27"/><rect x="24" y="30" width="120" height="16" rx="8" fill="${c}"/><rect x="260" y="70" width="380" height="30" rx="8" fill="${c}"/>${rows}<rect x="900" y="150" width="300" height="200" rx="16" fill="#1f2530" stroke="${c}"/><text x="920" y="200" ${F} font-size="28" font-weight="700" fill="${c}">Step ${n}</text></svg>`
+}
+function svgLighthouse(v = 0) {
+  const sky = v ? ['#2a1f4a', '#e07a5f'] : ['#0e3a49', '#f2a65a']
+  const sea = v ? '#2c2347' : '#0b2b36'
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024"><defs><linearGradient id="s${v}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${sky[0]}"/><stop offset=".62" stop-color="${sky[1]}"/></linearGradient><clipPath id="c${v}"><rect width="1024" height="1024" rx="220"/></clipPath></defs><g clip-path="url(#c${v})"><rect width="1024" height="1024" fill="url(#s${v})"/><circle cx="320" cy="560" r="110" fill="#ffd39a"/><polygon points="738,286 0,120 0,420" fill="#fff4d6" opacity=".28"/><rect y="640" width="1024" height="384" fill="${sea}"/>${[0, 1, 2, 3, 4, 5].map(i => `<rect x="${250 + (i % 2) * 30}" y="${670 + i * 46}" width="${150 - i * 18}" height="10" rx="5" fill="#ffd39a" opacity="${.8 - i * .12}"/>`).join('')}<path d="M600 700 Q735 610 880 700 L880 760 L600 760Z" fill="#11202a"/><polygon points="700,300 776,300 800,690 676,690" fill="#f4efe6"/><polygon points="690,420 786,420 790,480 686,480" fill="#d6524a"/><polygon points="682,560 794,560 798,620 678,620" fill="#d6524a"/><rect x="694" y="240" width="88" height="60" rx="8" fill="#fff1b8"/><polygon points="684,240 738,190 792,240" fill="#d6524a"/></g></svg>`
+}
+const uri = svg => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg)
+
+const MEDIA = {
+  checkout: { kind: 'image', w: 1280, h: 800, name: 'checkout-1280.png', what: 'Screenshot', by: 'Sotto’s browser', svg: svgCheckout,
+    callouts: [{ n: 1, x: .6, y: .48, w: .335, h: .115, note: 'The Pay button sits on top of the total.' }, { n: 2, x: .055, y: .365, w: .453, h: .083, note: 'The card number field has no label.' }] },
+  phone: { kind: 'image', w: 390, h: 844, name: 'checkout-390.png', what: 'Screenshot', by: 'the test iPhone', svg: svgPhone,
+    callouts: [{ n: 3, x: .49, y: .815, w: .51, h: .088, note: 'At 390 wide the Pay button runs off the screen.' }] },
+  rec: { kind: 'video', w: 1280, h: 800, name: 'signup-flow.webm', dur: 14, what: 'Recording', by: 'Sotto’s browser' },
+  icon: { kind: 'gen', w: 1024, h: 1024, name: 'lighthouse-icon.png', what: 'Generated image', by: 'Codex image generation', svg: () => svgLighthouse(0),
+    prompt: 'An app icon for Lighthouse: a lighthouse at dusk, flat shapes, teal sky and amber light' },
+  icon2: { kind: 'gen', w: 1024, h: 1024, name: 'lighthouse-icon-2.png', what: 'Generated image', by: 'Codex image generation', svg: () => svgLighthouse(1),
+    prompt: 'The same icon, warmer: violet sky, coral sun' },
+  landing: { kind: 'image', w: 1440, h: 900, name: 'landing.png', what: 'Your image', by: 'you', svg: svgLanding, mine: true },
+}
+for (let i = 1; i <= 8; i++) MEDIA['step' + i] = { kind: 'image', w: 1280, h: 720, name: `step-${i}.png`, what: 'Screenshot', by: 'Sotto’s browser', svg: () => svgStep(i) }
+const URI_CACHE = new Map()
+const srcOf = id => { if (!URI_CACHE.has(id)) URI_CACHE.set(id, uri(MEDIA[id].svg())); return URI_CACHE.get(id) }
+
+/* ================================================================== the recording (a canvas stands in for <video>) */
+function drawRecording(ctx, t, w, h) {
+  ctx.setTransform(w / 1280, 0, 0, h / 800, 0, 0)
+  ctx.fillStyle = '#f5f2ed'; ctx.fillRect(0, 0, 1280, 800)
+  ctx.fillStyle = '#1d2733'; ctx.fillRect(0, 0, 1280, 68)
+  ctx.fillStyle = '#fff'; ctx.font = '700 22px Helvetica, Arial'; ctx.fillText('Lumen', 76, 42)
+  ctx.fillStyle = '#f2b84b'; ctx.beginPath(); ctx.arc(52, 34, 14, 0, 7); ctx.fill()
+  ctx.fillStyle = '#1d2733'; ctx.font = '700 36px Helvetica, Arial'; ctx.fillText('Create your account', 400, 170)
+  const typed = 'zach@example.com'.slice(0, Math.max(0, Math.floor((t - 1.5) * 6)))
+  const fields = [['Email', typed], ['Password', t > 4 ? '••••••••••' : '']]
+  fields.forEach(([l, v], i) => {
+    ctx.fillStyle = '#5b6672'; ctx.font = '15px Helvetica, Arial'; ctx.fillText(l, 400, 230 + i * 90)
+    ctx.fillStyle = '#fff'; ctx.strokeStyle = '#cfd5db'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.roundRect(400, 242 + i * 90, 480, 50, 8); ctx.fill(); ctx.stroke()
+    ctx.fillStyle = '#1d2733'; ctx.font = '17px Helvetica, Arial'; ctx.fillText(v, 418, 274 + i * 90)
+  })
+  const clicked = t > 6
+  ctx.fillStyle = clicked ? '#3a4656' : '#1d2733'; ctx.beginPath(); ctx.roundRect(400, 440, 480, 58, 12); ctx.fill()
+  ctx.fillStyle = '#fff'; ctx.font = '700 19px Helvetica, Arial'; ctx.textAlign = 'center'
+  ctx.fillText(clicked ? 'Creating your account…' : 'Create account', 640, 476); ctx.textAlign = 'left'
+  if (clicked) {
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 3; ctx.beginPath(); const a = t * 5; ctx.arc(445, 469, 11, a, a + 4.2); ctx.stroke()
+    if (t < 6.6) { ctx.strokeStyle = 'rgba(29,39,51,.35)'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(640, 469, 30 + (t - 6) * 160, 0, 7); ctx.stroke() }
+  }
+  // the cursor
+  const path = [[0, 220, 640], [1.4, 600, 267], [4.6, 600, 357], [5.8, 650, 470], [14, 650, 470]]
+  let cx = 220, cy = 640
+  for (let i = 0; i < path.length - 1; i++) { const [t0, x0, y0] = path[i], [t1, x1, y1] = path[i + 1]; if (t >= t0 && t <= t1) { const k = (t - t0) / (t1 - t0); cx = x0 + (x1 - x0) * k; cy = y0 + (y1 - y0) * k } }
+  ctx.fillStyle = '#111'; ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(cx, cy + 26); ctx.lineTo(cx + 7, cy + 20); ctx.lineTo(cx + 18, cy + 20); ctx.closePath(); ctx.fill(); ctx.stroke()
+  ctx.setTransform(1, 0, 0, 1, 0, 0)
+}
+const fmt = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+
+/* ================================================================== ASCII scenes */
+const RAMP = ' .:-=+*#%@'
+function lum(u, v) {
+  const hz = .64; let l
+  if (v < hz) { l = .1 + .5 * Math.pow(v / hz, 2.2); const dx = (u - .3) * 1.1, dy = v - .53; if (dx * dx + dy * dy < .011) l = .97 }
+  else { l = .14 + .08 * Math.sin(u * 34 + v * 70); if (Math.abs(u - .3) < .07 * (1 - (v - hz) * 2) && Math.sin(v * 140) > .1) l = .78 }
+  const bx = .72 - u, by = v - .27; if (bx > 0 && Math.abs(by) < bx * .2 && v < hz) l = Math.max(l, .5)
+  if (v > .3 && v < .68) { const half = .024 + .034 * (v - .3) / .38; if (Math.abs(u - .72) < half) l = (Math.floor((v - .3) / .075) % 2) ? .45 : .92 }
+  if (v > .23 && v <= .3 && Math.abs(u - .72) < .032) l = 1
+  if (v > .19 && v <= .23 && Math.abs(u - .72) < .03 - (.23 - v)) l = .55
+  if (v > .63 && v < .74 && u > .56 && u < .9 && v > .66 - .05 * Math.cos((u - .73) * 9)) l = .3
+  return Math.max(0, Math.min(.999, l))
+}
+function hash(x, y, s = 1) { const n = Math.sin(x * 127.1 + y * 311.7 + s * 74.7) * 43758.5453; return n - Math.floor(n) }
+const NOISE = '.:-=+*#%'
+function grid(cols, rows, fn) { const a = []; for (let y = 0; y < rows; y++) { let s = ''; for (let x = 0; x < cols; x++) s += fn(x, y); a.push(s) } return a.join('\n') }
+
+const SCENE_FRAMES = {
+  // 1. Denoise: static settles into the picture, the way an image model works
+  1(cols, rows, p, t) {
+    const tick = Math.floor(t * 12)
+    const fg = grid(cols, rows, (x, y) => hash(x, y) < p ? RAMP[Math.floor(lum(x / cols, y / rows) * 10)] : ' ')
+    const bg = grid(cols, rows, (x, y) => hash(x, y) < p ? ' ' : (hash(x, y, tick) < .3 ? NOISE[Math.floor(hash(y, x, tick) * NOISE.length)] : ' '))
+    return { fg, bg }
+  },
+  // 2. Watcher's owl paints the picture on an easel under the night sky
+  2(cols, rows, p, t) {
+    const fx0 = Math.round(cols * .4), fx1 = cols - 2, fy0 = 2, fy1 = rows - 8
+    const iw = fx1 - fx0 - 1, ih = fy1 - fy0 - 1
+    const seg = 6, strokes = []
+    for (let y = 0; y < ih; y++) for (let s = 0; s < iw; s += seg) strokes.push([y, s])
+    strokes.sort((a, b) => (a[0] + hash(a[1], a[0]) * 6) - (b[0] + hash(b[1], b[0]) * 6))
+    const painted = new Set(strokes.slice(0, Math.floor(p * strokes.length)).map(([y, s]) => y * 1000 + s))
+    const last = strokes[Math.max(0, Math.floor(p * strokes.length) - 1)] || [0, 0]
+    const owlRow = rows - 9, ox = 3
+    const blink = (t % 3.4) < .15
+    const arm = Math.floor(t * 4) % 2
+    const owl = ['  ,_____,', blink ? '  ( -v- )' : '  ( OvO )', arm ? '  (/   \\)__/' : '  (/   \\)--~', '   ^^ ^^ ']
+    const fg = grid(cols, rows, (x, y) => {
+      if (x > fx0 && x < fx1 && y > fy0 && y < fy1) { const ix = x - fx0 - 1, iy = y - fy0 - 1; return painted.has(iy * 1000 + Math.floor(ix / seg) * seg) ? RAMP[Math.floor(lum(ix / iw, iy / ih) * 10)] : ' ' }
+      return ' '
+    })
+    const brushY = fy0 + 1 + last[0], brushX = fx0 + 1 + last[1] + Math.floor((t * 8) % seg)
+    const bg = grid(cols, rows, (x, y) => {
+      if (y === brushY && x === brushX) return '/'
+      if ((x === fx0 || x === fx1) && y >= fy0 && y <= fy1) return (y === fy0 || y === fy1) ? '+' : '|'
+      if ((y === fy0 || y === fy1) && x > fx0 && x < fx1) return '-'
+      const ly = y - fy1; if (ly > 0 && y < rows - 1) { if (x === fx0 + 4 - ly) return '/'; if (x === fx1 - 4 + ly) return '\\'; if (x === Math.round((fx0 + fx1) / 2)) return '|' }
+      if (y === rows - 1) return x < cols ? '_' : ' '
+      const oy = y - owlRow; if (oy >= 0 && oy < owl.length && x >= ox && x - ox < owl[oy].length) return owl[oy][x - ox]
+      if (y === owlRow + 4 && x >= ox - 1 && x < ox + 10) return '='
+      if (y < owlRow - 1 && x < fx0 - 1) { const h = hash(x, y); if (h > .965) return (Math.sin(t * 2 + h * 40) > .3) ? '*' : '.'; if (h > .94) return '.' }
+      return ' '
+    })
+    return { fg, bg }
+  },
+  // 3. A loom weaves the picture row by row, the shuttle running back and forth
+  3(cols, rows, p, t) {
+    const done = p * rows, r = Math.floor(done), frac = done - r
+    const dirR = r % 2 === 0, sx = Math.floor((dirR ? frac : 1 - frac) * cols)
+    const woven = (x, y) => y < r || (y === r && (dirR ? x < sx : x > sx))
+    const fg = grid(cols, rows, (x, y) => {
+      if (y === r && x >= sx - 2 && x <= sx + 2) return dirR ? '==>'[Math.min(2, Math.max(0, x - sx + 2))] || '=' : '<=='[Math.min(2, Math.max(0, x - sx + 2))] || '='
+      return woven(x, y) ? RAMP[Math.floor(lum(x / cols, y / rows) * 10)] : ' '
+    })
+    const bg = grid(cols, rows, (x, y) => woven(x, y) || (y === r && Math.abs(x - sx) <= 2) ? ' ' : (x % 3 === 0 ? (y > r + 1 && Math.sin(t * 6 + x) > .97 ? ':' : '|') : ' '))
+    return { fg, bg }
+  },
+}
+const running = new Set()
+function mountAscii(box, scene, startedAt, durMs, onDone) {
+  box.innerHTML = '<div class="ascii"><pre class="bg"></pre><pre class="fg"></pre></div>'
+  const bg = $('.bg', box), fg = $('.fg', box)
+  let cols = 60, rows = 36, raf = 0, last = 0, visible = false, finished = false
+  const handle = { box }
+  function size() {
+    const r = box.getBoundingClientRect(); const W = box.clientWidth || r.width, H = box.clientHeight || r.height
+    rows = 36; cols = Math.max(20, Math.round(rows * (W / H) / .6))
+    const fs = W / (cols * .6), lh = H / rows
+    for (const pre of [bg, fg]) { pre.style.fontSize = fs + 'px'; pre.style.lineHeight = lh + 'px' }
+  }
+  function prog(now) { const e = now - startedAt; return Math.min(.97, 1 - Math.exp(-e / (durMs / 3.2))) }
+  function draw(now) {
+    const f = SCENE_FRAMES[scene](cols, rows, prog(now), (now - startedAt) / 1000)
+    fg.textContent = f.fg; bg.textContent = f.bg; S.frames++
+  }
+  function loop(now) {
+    raf = 0
+    if (finished || !visible) return
+    if (now - startedAt >= durMs) { finish(); return }
+    if (now - last >= 83) { last = now; draw(now) }   // 12 frames a second is plenty for ASCII
+    raf = requestAnimationFrame(loop)
+  }
+  function start() { if (finished || raf || reduced()) return; running.add(handle); hud(); raf = requestAnimationFrame(loop) }
+  function stop() { if (raf) cancelAnimationFrame(raf); raf = 0; running.delete(handle); hud() }
+  function finish() { finished = true; stop(); io.disconnect(); clearTimeout(timer); onDone && onDone() }
+  size(); draw(performance.now())
+  if (reduced()) { fg.textContent = SCENE_FRAMES[scene](cols, rows, .5, 0).fg; bg.textContent = '' }
+  const io = new IntersectionObserver(es => { visible = es[es.length - 1].isIntersecting; visible ? start() : stop() })
+  io.observe(box)
+  // the image arriving ends the scene even if it never came into view
+  const timer = setTimeout(() => { if (!finished) finish() }, Math.max(0, startedAt + durMs - performance.now()))
+  handle.stop = () => { finished = true; stop(); io.disconnect(); clearTimeout(timer) }
+  return handle
+}
+
+/* ================================================================== media rendering */
+const observers = []
+function captionHTML(id, opts = {}) {
+  const m = MEDIA[id]
+  const meta = m.kind === 'video' ? `${m.name} · ${fmt(m.dur)}` : m.kind === 'gen' ? `${m.w}×${m.h}` : `${m.name} · ${m.w}×${m.h}`
+  const by = m.mine ? '' : ` · ${m.by}`
+  const acts = m.kind === 'video' ? `<button class="act" data-act="open">Open</button>` : `<button class="act primary" data-act="markup">Mark up</button><button class="act" data-act="open">Open</button><button class="act" data-act="copy">Copy</button>`
+  return `<figcaption class="cap"><span class="kind">${opts.marked ? 'Marked-up copy' : m.what}</span><span>${meta}${opts.marked ? '' : by}</span><span class="acts">${opts.marked ? '' : acts}</span></figcaption>`
+}
+function calloutsHTML(m) {
+  return (m.callouts || []).map(c => `<span class="cobox" style="left:${c.x * 100}%;top:${c.y * 100}%;width:${c.w * 100}%;height:${c.h * 100}%"></span><span class="pin" style="left:${c.x * 100}%;top:${c.y * 100}%">${c.n}</span>`).join('')
+}
+function figHTML(id, opts = {}) {
+  const m = MEDIA[id]
+  const tall = m.h > m.w * 1.2 ? ' tall' : ''
+  const cls = `fig ${m.kind}${tall}${opts.lead ? ' lead' : ''}`
+  const style = `--ar:${m.w}/${m.h};--w:${Math.min(m.w / 2, 680)}px`
+  const label = `${m.what}: ${m.name}${m.callouts ? `, ${m.callouts.length} callouts` : ''}. Press to open.`
+  const badge = m.callouts ? `<span class="badge-n" aria-hidden="true">${m.callouts.length}</span>` : ''
+  let inner
+  if (m.kind === 'video') inner = `<div class="frame video" role="group" aria-label="${esc(m.what + ': ' + m.name)}" data-media="${id}" style="${style}"><canvas></canvas><span class="dur">${fmt(m.dur)}</span><button class="play" aria-label="Play ${esc(m.name)}">▶</button></div>`
+  else inner = `<button class="frame" data-media="${id}" style="${style}" aria-label="${esc(label)}"><span class="ph">${m.kind === 'gen' ? '' : m.name}</span>${calloutsHTML(m)}${opts.layout === 'B' ? badge : ''}${opts.marks ? `<svg class="marks" viewBox="0 0 ${m.w} ${m.h}" preserveAspectRatio="none">${opts.marks}</svg>` : ''}</button>`
+  const genLine = m.kind === 'gen' ? `<div class="gen-line" data-genline="${id}"></div>` : ''
+  return `<figure class="${cls}" data-fig="${id}" style="${style}">${inner}${genLine}${captionHTML(id, opts)}</figure>`
+}
+function groupHTML(ids, layout, opts = {}) {
+  if (layout === 'C' && ids.length > 1) {
+    return `<div class="media-group" data-group>${figHTML(ids[0], { ...opts, layout, lead: true })}<div class="strip-row" role="list" aria-label="Other pictures in this reply">${ids.map((id, i) => `<button class="frame" role="listitem" data-media="${id}" data-swap="${id}" aria-current="${i === 0}" aria-label="Show ${esc(MEDIA[id].name)} large" style="--ar:${MEDIA[id].w}/${MEDIA[id].h}">${MEDIA[id].kind === 'video' ? `<canvas></canvas><span class="dur">${fmt(MEDIA[id].dur)}</span>` : ''}</button>`).join('')}</div></div>`
+  }
+  return `<div class="media-group" data-group>${ids.map(id => figHTML(id, { ...opts, layout, lead: layout === 'C' })).join('')}</div>`
+}
+
+/* lazy loading: a picture loads when it comes near the screen and lets go of its pixels when it is far away */
+function hydrate(root, scroller) {
+  const near = new IntersectionObserver(es => {
+    for (const e of es) {
+      const el = e.target, id = el.dataset.media, m = MEDIA[id]
+      if (e.isIntersecting) loadInto(el, id)
+      else unloadFrom(el, id)
+    }
+    hud()
+  }, { root: scroller, rootMargin: '300px 0px' })
+  observers.push(near)
+  for (const el of $$('[data-media]', root)) near.observe(el)
+  // videos pause when they leave the screen (no margin here: off screen means off screen)
+  const seen = new IntersectionObserver(es => { for (const e of es) if (!e.isIntersecting) pauseVideo(e.target, true) }, { root: scroller })
+  observers.push(seen)
+  for (const el of $$('.frame.video', root)) seen.observe(el)
+  for (const el of $$('[data-fig]', root)) if (MEDIA[el.dataset.fig].kind === 'gen') startGen(el)
+}
+function loadInto(el, id) {
+  const m = MEDIA[id]
+  if (m.kind === 'gen' && !(S.gen[id] && S.gen[id].done)) return
+  if (m.kind === 'video') { const c = $('canvas', el); if (!el.dataset.loaded) { c.width = Math.max(1, el.clientWidth * devicePixelRatio); c.height = Math.max(1, el.clientHeight * devicePixelRatio); drawRecording(c.getContext('2d'), el._t ?? 6.4, c.width, c.height); el.dataset.loaded = '1' } return }
+  let img = $('img', el)
+  if (!img) { img = new Image(); img.alt = ''; img.decoding = 'async'; img.onload = () => img.classList.add('in'); el.prepend(img) }
+  if (!img.getAttribute('src')) { img.src = srcOf(id); el.dataset.loaded = '1' }
+}
+function unloadFrom(el, id) {
+  if (!el.dataset.loaded) return
+  const m = MEDIA[id]
+  if (m.kind === 'video') { pauseVideo(el); const c = $('canvas', el); c.width = 0; c.height = 0 }
+  else { const img = $('img', el); if (img) { img.removeAttribute('src'); img.classList.remove('in') } }
+  delete el.dataset.loaded; S.unloaded++
+}
+const playing = new Set()
+function playVideo(el) {
+  const m = MEDIA[el.dataset.media]; loadInto(el, el.dataset.media)
+  if (el._t == null || el._t >= m.dur) el._t = 0
+  const c = $('canvas', el), ctx = c.getContext('2d')
+  $('.play', el)?.remove(); $('.note', el)?.remove()
+  if (!$('.vbar', el)) {
+    el.insertAdjacentHTML('beforeend', `<div class="vbar"><button data-v="pp" aria-label="Pause">❚❚</button><input type="range" min="0" max="${m.dur}" step=".1" aria-label="Position in ${esc(m.name)}"><span class="tm"></span></div>`)
+    $('[data-v=pp]', el).onclick = ev => { ev.stopPropagation(); playing.has(el) ? pauseVideo(el) : playVideo(el) }
+    $('input', el).oninput = ev => { el._t = +ev.target.value; drawRecording(ctx, el._t, c.width, c.height); tm() }
+  }
+  const tm = () => { $('.tm', el).textContent = `${fmt(el._t)} / ${fmt(m.dur)}`; $('input', el).value = el._t }
+  playing.add(el); $('[data-v=pp]', el).textContent = '❚❚'; $('[data-v=pp]', el).setAttribute('aria-label', 'Pause'); hud()
+  let prev = performance.now()
+  const step = now => {
+    if (!playing.has(el)) return
+    el._t += (now - prev) / 1000; prev = now
+    if (el._t >= m.dur) { el._t = m.dur; pauseVideo(el); return }
+    drawRecording(ctx, el._t, c.width, c.height); tm(); el._raf = requestAnimationFrame(step)
+  }
+  el._raf = requestAnimationFrame(step)
+}
+function pauseVideo(el, offscreen) {
+  if (!playing.has(el)) return
+  playing.delete(el); cancelAnimationFrame(el._raf)
+  const pp = $('[data-v=pp]', el); if (pp) { pp.textContent = '▶'; pp.setAttribute('aria-label', 'Play') }
+  if (offscreen && !$('.note', el)) el.insertAdjacentHTML('beforeend', '<span class="note">Paused when scrolled away</span>')
+  hud()
+}
+function startGen(fig) {
+  const id = fig.dataset.fig, frame = $('.frame', fig), line = $('[data-genline]', fig)
+  const g = S.gen[id] || (S.gen[id] = { start: performance.now(), dur: 9000, done: false })
+  if (g.done) { line.innerHTML = ''; loadInto(frame, id); return }
+  line.innerHTML = `<span class="dot"></span><span>Making the image</span><span class="el"></span>`
+  frame.setAttribute('aria-label', 'Making the image')
+  const elT = $('.el', line)
+  const clock = setInterval(() => { if (!fig.isConnected) return clearInterval(clock); elT.textContent = fmt((performance.now() - g.start) / 1000) }, 1000)
+  const holder = document.createElement('div'); holder.style.cssText = 'position:absolute;inset:0'; frame.prepend(holder)
+  const h = mountAscii(holder, S.scene, g.start, g.dur, () => {
+    g.done = true; clearInterval(clock); holder.remove(); line.innerHTML = ''
+    frame.setAttribute('aria-label', `${MEDIA[id].what}: ${MEDIA[id].name}. Press to open.`)
+    loadInto(frame, id); hud()
+  })
+  fig._ascii = h
+}
+
+/* clicks on media: open the viewer, mark up, play, swap the lead */
+function wireMedia(root, ctx) {
+  root.addEventListener('click', ev => {
+    const swap = ev.target.closest('[data-swap]')
+    if (swap) {
+      const group = swap.closest('[data-group]'); const id = swap.dataset.swap
+      const lead = $('.lead', group); const old = lead.dataset.fig
+      if (old === id) return
+      lead._ascii?.stop?.()
+      lead.outerHTML = figHTML(id, { layout: 'C', lead: true })
+      $$('[data-swap]', group).forEach(b => b.setAttribute('aria-current', b.dataset.swap === id))
+      hydrate(group, ctx.scroller); return
+    }
+    const play = ev.target.closest('.play'); if (play) { playVideo(play.closest('.frame')); return }
+    const vf = ev.target.closest('.frame.video'); if (vf && !ev.target.closest('.vbar')) { playing.has(vf) ? pauseVideo(vf) : playVideo(vf); return }
+    const act = ev.target.closest('[data-act]')
+    const fig = ev.target.closest('[data-fig]')
+    if (act && fig) {
+      const id = fig.dataset.fig
+      if (act.dataset.act === 'markup') ctx.markup(id)
+      else if (act.dataset.act === 'open') ctx.open(id)
+      else if (act.dataset.act === 'copy') { act.textContent = 'Copied'; setTimeout(() => act.textContent = 'Copy', 1400) }
+      return
+    }
+    const fr = ev.target.closest('button.frame[data-media]')
+    if (fr && fig) { const id = fig.dataset.fig; if (MEDIA[id].kind === 'gen' && !S.gen[id]?.done) return; ctx.open(id) }
+  })
+}
+
+/* ================================================================== markup core (shared by desktop, iPhone and Duo) */
+const INKS = [['red', 'var(--tt-danger)', 'Red'], ['amber', 'var(--tt-warning)', 'Amber'], ['plain', 'var(--tt-text)', 'Plain']]
+const TOOLS = [['arrow', '↗', 'Arrow', 'A'], ['ellipse', '◯', 'Circle', 'O'], ['box', '▢', 'Box', 'B'], ['pen', '✎', 'Pen', 'P'], ['note', 'T', 'Note', 'T']]
+function marksSVG(m, ed, forExport) {
+  const W = m.w, D = Math.max(m.w, m.h), sw = D / 260
+  let out = ''
+  if (ed.showAgent && (!forExport || ed.includeAgent)) for (const c of m.callouts || []) {
+    const x = c.x * W, y = c.y * m.h, r = D / 55
+    out += `<rect x="${x}" y="${y}" width="${c.w * W}" height="${c.h * m.h}" rx="${sw * 2}" fill="none" stroke="var(--tt-accent)" stroke-width="${sw}" stroke-dasharray="${sw * 3} ${sw * 2}"/><circle cx="${x}" cy="${y}" r="${r}" fill="var(--tt-accent)"/><text x="${x}" y="${y + r * .38}" text-anchor="middle" font-size="${r * 1.1}" font-weight="700" font-family="Figtree, system-ui" fill="var(--tt-on-accent)">${c.n}</text>`
+  }
+  for (const k of ed.marks) out += shapeSVG(k, D, sw)
+  if (ed.live) out += shapeSVG(ed.live, D, sw)
+  return out
+}
+function shapeSVG(k, W, sw0) {
+  const col = INKS.find(i => i[0] === k.ink)[1], sw = sw0 * 1.3
+  if (k.t === 'box') return `<rect x="${Math.min(k.x0, k.x1)}" y="${Math.min(k.y0, k.y1)}" width="${Math.abs(k.x1 - k.x0)}" height="${Math.abs(k.y1 - k.y0)}" rx="${sw * 2}" fill="none" stroke="${col}" stroke-width="${sw}"/>`
+  if (k.t === 'ellipse') return `<ellipse cx="${(k.x0 + k.x1) / 2}" cy="${(k.y0 + k.y1) / 2}" rx="${Math.abs(k.x1 - k.x0) / 2}" ry="${Math.abs(k.y1 - k.y0) / 2}" fill="none" stroke="${col}" stroke-width="${sw}"/>`
+  if (k.t === 'arrow') {
+    const a = Math.atan2(k.y1 - k.y0, k.x1 - k.x0), L = sw * 6
+    const p1 = [k.x1 - L * Math.cos(a - .45), k.y1 - L * Math.sin(a - .45)], p2 = [k.x1 - L * Math.cos(a + .45), k.y1 - L * Math.sin(a + .45)]
+    return `<line x1="${k.x0}" y1="${k.y0}" x2="${k.x1 - Math.cos(a) * L * .6}" y2="${k.y1 - Math.sin(a) * L * .6}" stroke="${col}" stroke-width="${sw}" stroke-linecap="round"/><polygon points="${k.x1},${k.y1} ${p1} ${p2}" fill="${col}"/>`
+  }
+  if (k.t === 'pen') {
+    // pressure from a pen widens the line
+    let s = ''
+    for (let i = 1; i < k.pts.length; i++) { const [x0, y0, p0] = k.pts[i - 1], [x1, y1] = k.pts[i]; s += `<line x1="${x0}" y1="${y0}" x2="${x1}" y2="${y1}" stroke="${col}" stroke-width="${sw * (k.pressure ? .5 + p0 * 1.6 : 1)}" stroke-linecap="round"/>` }
+    return s
+  }
+  if (k.t === 'note') {
+    const fs = W / 48, w = Math.min(W * .4, fs * .55 * k.text.length + fs * 1.2), h = fs * 1.7
+    return `<rect x="${k.x0}" y="${k.y0 - h / 2}" width="${w}" height="${h}" rx="${fs * .3}" fill="${col}"/><text x="${k.x0 + fs * .6}" y="${k.y0 + fs * .35}" font-size="${fs}" font-family="Figtree, system-ui" font-weight="600" fill="${k.ink === 'plain' ? 'var(--tt-canvas)' : '#fff'}">${esc(k.text)}</text>`
+  }
+  return ''
+}
+function describeMark(k) { return { box: 'Box', ellipse: 'Circle', arrow: 'Arrow', pen: 'Pen line', note: `Note: “${k.text}”` }[k.t] }
+
+function openEditor(host, id, kind, onAdd, onClose) {
+  const m = MEDIA[id]
+  const ed = { tool: 'arrow', ink: 'red', marks: [], redo: [], showAgent: true, includeAgent: true, live: null }
+  const phone = kind === 'phone', duo = kind === 'duo', desk = kind === 'desk'
+  const ov = document.createElement('div')
+  ov.className = phone || duo ? 'pov' : 'ov'
+  ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', `Mark up ${m.name}`)
+  const toolBtns = TOOLS.map(([t, g, n, key]) => `<button class="${phone || duo ? '' : 'tb'}" data-tool="${t}" aria-pressed="${t === ed.tool}" aria-label="${n}${desk ? ` (${key})` : ''}" title="${n}${desk ? ` (${key})` : ''}">${g}${desk ? ` <span>${n}</span>` : ''}</button>`).join('')
+  const inkBtns = `<span role="radiogroup" aria-label="Ink" style="display:inline-flex;gap:6px;align-items:center">${INKS.map(([k, c, n]) => `<button class="ink" role="radio" data-ink="${k}" aria-checked="${k === ed.ink}" aria-label="${n} ink" style="background:${c}"></button>`).join('')}</span>`
+  const undo = `<button class="${phone || duo ? '' : 'tb'}" data-cmd="undo" aria-label="Undo" title="Undo (Ctrl+Z)">↶${desk ? ' <span>Undo</span>' : ''}</button><button class="${phone || duo ? '' : 'tb'}" data-cmd="redo" aria-label="Redo" title="Redo (Ctrl+Shift+Z)">↷</button>`
+  const sideHTML = `<aside class="side" aria-label="Marks"><h5>${m.callouts ? `Codex’s callouts <label style="margin:0;text-transform:none;letter-spacing:0;font-weight:400"><input type="checkbox" data-opt="show" checked> Show</label>` : 'Callouts'}</h5>${m.callouts ? `<ol>${m.callouts.map(c => `<li><span class="n">${c.n}</span><span>${esc(c.note)}</span></li>`).join('')}</ol>` : '<p class="empty">No callouts from the agent on this one.</p>'}<h5>Your marks</h5><ul data-mine></ul>${m.callouts ? '<label><input type="checkbox" data-opt="include" checked> Keep Codex’s callouts in the copy</label>' : ''}<p style="color:var(--tt-text-muted);font-size:12px;margin-top:14px">The marked copy goes into your reply. The original stays in the thread as it was.</p></aside>`
+  if (desk) {
+    ov.innerHTML = `<div class="ov-top" role="toolbar" aria-label="Markup tools"><span class="title">${esc(m.name)}</span>${toolBtns}<span class="sepv"></span>${inkBtns}<span class="sepv"></span>${undo}<span class="sp"></span><button class="tb" data-cmd="cancel">Cancel</button><button class="tb primary" data-cmd="add">Add to reply</button></div><div class="ov-body"><div class="stage-wrap"><div class="mstage"><img alt="${esc(m.name)}" src="${srcOf(id)}"><svg viewBox="0 0 ${m.w} ${m.h}" preserveAspectRatio="none" aria-hidden="true"></svg></div></div>${sideHTML}</div><div class="hint">Drag to draw. Press where a note goes, then type. A, O, B, P and T pick a tool. Escape cancels.</div>`
+  } else {
+    const notes = m.callouts && !duo ? `<div class="pnotes">${m.callouts.map(c => `<div><span class="n">${c.n}</span>${esc(c.note)}</div>`).join('')}</div>` : ''
+    ov.innerHTML = `<div class="pov-top"><button data-cmd="cancel">Cancel</button><span class="t">Mark up</span><button class="primary" data-cmd="add">Add to reply</button></div>${duo ? `<div class="pen-hint" data-penhint>${S.fingers ? 'Pen and finger both draw' : 'Pen draws · finger moves the picture'}</div>` : ''}<div class="ov-body"><div class="stage-wrap"><div class="mstage${duo && !S.fingers ? ' fingers' : ''}"><img alt="${esc(m.name)}" src="${srcOf(id)}"><svg viewBox="0 0 ${m.w} ${m.h}" preserveAspectRatio="none" aria-hidden="true"></svg></div></div>${duo ? sideHTML : ''}</div>${notes}<div class="pal" role="toolbar" aria-label="Markup tools">${toolBtns}<span class="sepv"></span>${inkBtns}<span class="sepv"></span>${undo}${duo ? `<span class="sepv"></span><button data-cmd="fingers" aria-pressed="${S.fingers}" aria-label="Draw with a finger too" title="Draw with a finger too">☝</button>` : ''}</div>`
+  }
+  host.appendChild(ov)
+  const stage = $('.mstage', ov), svg = $('svg', stage), wrap = $('.stage-wrap', ov)
+  function fit() {
+    const W = wrap.clientWidth - 24, H = wrap.clientHeight - 24
+    const k = Math.min(W / m.w, H / m.h)
+    stage.style.width = m.w * k + 'px'; stage.style.height = m.h * k + 'px'
+  }
+  fit(); const ro = new ResizeObserver(fit); ro.observe(wrap)
+  function render() {
+    svg.innerHTML = marksSVG(m, ed)
+    const mine = $('[data-mine]', ov)
+    if (mine) mine.innerHTML = ed.marks.length ? ed.marks.map((k, i) => `<li><span class="sw" style="background:${INKS.find(x => x[0] === k.ink)[1]}"></span><span>${esc(describeMark(k))}</span><button data-del="${i}" aria-label="Remove ${esc(describeMark(k))}">✕</button></li>`).join('') : '<li class="empty">None yet. Draw on the picture.</li>'
+  }
+  render()
+  const pt = e => { const r = svg.getBoundingClientRect(); return [(e.clientX - r.left) / r.width * m.w, (e.clientY - r.top) / r.height * m.h] }
+  let down = null
+  svg.addEventListener('pointerdown', e => {
+    if (duo && !S.fingers && e.pointerType === 'touch') return   // a finger scrolls on the Duo unless the user says otherwise
+    e.preventDefault(); svg.setPointerCapture(e.pointerId)
+    const [x, y] = pt(e); down = { x, y, moved: false }
+    if (ed.tool === 'note') return
+    ed.live = ed.tool === 'pen' ? { t: 'pen', ink: ed.ink, pts: [[x, y, e.pressure || .5]], pressure: e.pointerType === 'pen' } : { t: ed.tool, ink: ed.ink, x0: x, y0: y, x1: x, y1: y }
+  })
+  svg.addEventListener('pointermove', e => {
+    if (!down || !ed.live) return
+    const [x, y] = pt(e); down.moved = true
+    if (ed.live.t === 'pen') ed.live.pts.push([x, y, e.pressure || .5]); else { ed.live.x1 = x; ed.live.y1 = y }
+    svg.innerHTML = marksSVG(m, ed)
+  })
+  svg.addEventListener('pointerup', e => {
+    if (!down) return
+    const [x, y] = pt(e)
+    if (ed.tool === 'note') { placeNote(x, y); down = null; return }
+    const k = ed.live; ed.live = null; down = null
+    if (k && (k.t === 'pen' ? k.pts.length > 2 : Math.hypot(k.x1 - k.x0, k.y1 - k.y0) > m.w / 80)) { ed.marks.push(k); ed.redo = [] }
+    render()
+  })
+  function placeNote(x, y) {
+    const r = svg.getBoundingClientRect(), sr = stage.getBoundingClientRect()
+    const inp = document.createElement('input'); inp.className = 'note-in'; inp.placeholder = 'Type a note'
+    inp.setAttribute('aria-label', 'Note text')
+    inp.style.left = (x / m.w * sr.width) / (sr.width / stage.offsetWidth) + 'px'; inp.style.top = (y / m.h * sr.height) / (sr.height / stage.offsetHeight) - 16 + 'px'
+    stage.appendChild(inp); inp.focus()
+    let done = false
+    const commit = () => { if (done) return; done = true; const t = inp.value.trim(); inp.remove(); if (t) { ed.marks.push({ t: 'note', ink: ed.ink, x0: x, y0: y, text: t }); ed.redo = []; render() } }
+    inp.addEventListener('keydown', ev => { ev.stopPropagation(); if (ev.key === 'Enter') commit(); if (ev.key === 'Escape') { done = true; inp.remove() } })
+    inp.addEventListener('blur', commit)
+  }
+  function setTool(t) { ed.tool = t; $$('[data-tool]', ov).forEach(b => b.setAttribute('aria-pressed', b.dataset.tool === t)) }
+  function close() { ro.disconnect(); ov.remove(); document.removeEventListener('keydown', keys, true); onClose && onClose() }
+  function add() { onAdd({ id, svg: marksSVG(m, ed, true), count: ed.marks.length }); close() }
+  ov.addEventListener('click', e => {
+    const t = e.target.closest('[data-tool]'); if (t) return setTool(t.dataset.tool)
+    const i = e.target.closest('[data-ink]'); if (i) { ed.ink = i.dataset.ink; $$('[data-ink]', ov).forEach(b => b.setAttribute('aria-checked', b === i)); return }
+    const d = e.target.closest('[data-del]'); if (d) { ed.marks.splice(+d.dataset.del, 1); render(); return }
+    const c = e.target.closest('[data-cmd]'); if (!c) return
+    const cmd = c.dataset.cmd
+    if (cmd === 'undo' && ed.marks.length) { ed.redo.push(ed.marks.pop()); render() }
+    if (cmd === 'redo' && ed.redo.length) { ed.marks.push(ed.redo.pop()); render() }
+    if (cmd === 'cancel') close()
+    if (cmd === 'add') add()
+    if (cmd === 'fingers') { S.fingers = !S.fingers; c.setAttribute('aria-pressed', S.fingers); stage.classList.toggle('fingers', !S.fingers); $('[data-penhint]', ov).textContent = S.fingers ? 'Pen and finger both draw' : 'Pen draws · finger moves the picture' }
+  })
+  ov.addEventListener('change', e => {
+    if (e.target.dataset.opt === 'show') { ed.showAgent = e.target.checked; render() }
+    if (e.target.dataset.opt === 'include') ed.includeAgent = e.target.checked
+  })
+  function keys(e) {
+    if (e.target.matches('input.note-in')) return
+    if (e.key === 'Escape') { e.stopPropagation(); close(); return }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); $(`[data-cmd=${e.shiftKey ? 'redo' : 'undo'}]`, ov).click(); return }
+    if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { add(); return }
+    const tool = TOOLS.find(t => t[3].toLowerCase() === e.key.toLowerCase()); if (tool && !e.ctrlKey && !e.metaKey) { setTool(tool[0]); e.stopPropagation() }
+  }
+  document.addEventListener('keydown', keys, true)
+  $('[data-tool=arrow]', ov).focus()
+}
+
+function openViewer(host, id, kind, onMarkup) {
+  const m = MEDIA[id]
+  const phone = kind !== 'desk'
+  const ov = document.createElement('div'); ov.className = phone ? 'pov' : 'ov'
+  ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-label', m.name)
+  const canMark = m.kind !== 'video'
+  ov.innerHTML = phone
+    ? `<div class="pov-top"><button data-cmd="close">Done</button><span class="t">${esc(m.name)}</span>${canMark ? '<button class="primary" data-cmd="markup">Mark up</button>' : '<span></span>'}</div><div class="ov-body"><div class="stage-wrap"><div class="mstage view"><img alt="${esc(m.name)}" src="${srcOf(id)}"><svg viewBox="0 0 ${m.w} ${m.h}" preserveAspectRatio="none">${marksSVG(m, { marks: [], showAgent: true })}</svg></div></div></div>${m.callouts ? `<div class="pnotes" style="padding-bottom:30px">${m.callouts.map(c => `<div><span class="n">${c.n}</span>${esc(c.note)}</div>`).join('')}</div>` : '<div style="height:30px"></div>'}`
+    : `<div class="ov-top"><span class="title">${esc(m.name)}</span><span class="sp"></span>${canMark ? '<button class="tb primary" data-cmd="markup">Mark up</button>' : ''}<button class="tb" data-cmd="copy">Copy image</button><button class="tb" data-cmd="close">Close</button></div><div class="ov-body"><div class="stage-wrap"><div class="mstage view"><img alt="${esc(m.name)}" src="${srcOf(id)}"><svg viewBox="0 0 ${m.w} ${m.h}" preserveAspectRatio="none">${marksSVG(m, { marks: [], showAgent: true })}</svg></div></div>${m.callouts ? `<aside class="side"><h5>Codex’s callouts</h5><ol>${m.callouts.map(c => `<li><span class="n">${c.n}</span><span>${esc(c.note)}</span></li>`).join('')}</ol></aside>` : ''}</div><div class="hint">Escape closes. M marks it up.</div>`
+  host.appendChild(ov)
+  const stage = $('.mstage', ov), wrap = $('.stage-wrap', ov)
+  const fit = () => { const k = Math.min((wrap.clientWidth - 24) / m.w, (wrap.clientHeight - 24) / m.h); stage.style.width = m.w * k + 'px'; stage.style.height = m.h * k + 'px' }
+  fit(); const ro = new ResizeObserver(fit); ro.observe(wrap)
+  const close = () => { ro.disconnect(); ov.remove(); document.removeEventListener('keydown', keys, true) }
+  const keys = e => { if (e.key === 'Escape') { e.stopPropagation(); close() } if (e.key.toLowerCase() === 'm' && canMark) { e.stopPropagation(); close(); onMarkup(id) } }
+  document.addEventListener('keydown', keys, true)
+  ov.addEventListener('click', e => {
+    const c = e.target.closest('[data-cmd]'); if (!c) return
+    if (c.dataset.cmd === 'close') close()
+    if (c.dataset.cmd === 'markup') { close(); onMarkup(id) }
+    if (c.dataset.cmd === 'copy') { c.textContent = 'Copied'; setTimeout(() => c.textContent = 'Copy image', 1400) }
+  })
+  $('[data-cmd]', ov).focus()
+}
+
+/* ================================================================== staged marked copies and sent replies */
+function stagedHTML(list, where) {
+  return list.map((s, i) => { const m = MEDIA[s.id]; return `<div class="staged" style="aspect-ratio:${m.w}/${m.h};${m.h > m.w ? 'width:64px' : ''}"><img alt="" src="${srcOf(s.id)}" style="width:100%;height:100%;display:block"><svg viewBox="0 0 ${m.w} ${m.h}" preserveAspectRatio="none" style="position:absolute;inset:0;width:100%;height:100%">${s.svg}</svg><span class="badge">Marked up</span><button class="rm" data-unstage="${where}:${i}" aria-label="Remove the marked copy of ${esc(m.name)}">✕</button></div>` }).join('')
+}
+function sentHTML(where, layout) {
+  return S.sent[where].map(s => `<article class="msg" data-role="user"><header><span class="who">You</span><time>now</time></header>${s.text ? `<p>${esc(s.text)}</p>` : ''}${s.items.map(it => groupHTML([it.id], layout, { marks: it.svg, marked: true }).replace(/<span class="cobox[^]*?<\/span><span class="pin[^]*?<\/span>/g, '')).join('')}</article>`).join('')
+}
+
+/* ================================================================== desktop views */
+function sidebarHTML(on) {
+  const t = (n, cur, work) => `<div class="${cur ? 'on' : ''}"><span class="light ${work ? 'work' : ''}"></span>${n}</div>`
+  return `<nav class="sidebar" aria-label="Threads"><h4>Lumen shop</h4>${t('Fix the checkout layout', on === 'checkout', true)}${t('Lighthouse app icon', on === 'icon')}${t('Tidy the order emails')}<h4>Sotto</h4>${t('Refine the iPhone thread view', false, true)}${t('Watcher news batching')}${t('Release 0.1.58')}</nav>`
+}
+function historyHTML(layout) {
+  let h = ''
+  for (let i = 1; i <= 8; i++) h += `<article class="msg"><header><span class="who">Codex</span><time>${9 + Math.floor(i / 2)}:${String(10 + i * 5).padStart(2, '0')}</time></header><div class="tool"><i>◧</i>Took a screenshot in Sotto’s browser</div><p>Step ${i} of the walk through the shop. Nothing wrong on this page.</p>${groupHTML(['step' + i], layout)}</article>`
+  return h
+}
+function threadTranscript(layout, where) {
+  return `${historyHTML(layout)}
+  <article class="msg" data-role="user"><header><span class="who">You</span><time>10:42</time></header><p>Checkout looks broken on the new landing build. Here’s what I see. Find what’s wrong at desktop and phone widths and show me.</p>${groupHTML(['landing'], layout)}</article>
+  <article class="msg"><header><span class="who">Codex</span><time>10:44</time></header>
+    <div class="steps">6 steps · 1m 52s ›</div>
+    <div class="tool"><i>◧</i>Took 2 screenshots and a recording in Sotto’s browser</div>
+    <p>I opened checkout at 1280 and at 390 wide and marked what is wrong:</p>
+    ${groupHTML(['checkout', 'phone', 'rec'], layout)}
+    <ol><li>The Pay button sits on top of the total, since <code>.summary</code> lost its bottom padding.</li><li>The card number field has no label, so a screen reader reads nothing.</li><li>At 390 wide the Pay button runs off the screen.</li></ol>
+    <p>The recording shows sign-up too: the button spins and never finishes, because the request goes to the old API host.</p>
+  </article>
+  <article class="msg" data-role="user"><header><span class="who">You</span><time>10:47</time></header><p>Fix those. While you’re at it, make an app icon for Lighthouse.</p></article>
+  <article class="msg"><header><span class="who">Codex</span><time>10:49</time></header>
+    <div class="tool"><i>✦</i>Generating an image</div>
+    <p>Fixed all three; tests pass. Here’s the icon:</p>
+    ${groupHTML(['icon'], layout)}
+  </article>
+  ${sentHTML(where, layout)}`
+}
+function deskWindow(inner) { return `<div class="win" data-layout="${S.layout}">${inner}</div>` }
+function viewThread(openMark) {
+  const L = S.layout
+  return deskWindow(`<div class="strip"><span class="mark">S</span><b>Threads</b><span>Dictate · Watcher · Threads</span></div>
+  <div class="app">${sidebarHTML('checkout')}
+    <section class="pane" id="pane"><header class="pane-head">Fix the checkout layout <span>Codex · gpt-6 · Lumen shop</span></header>
+      <div class="scroll" id="scroll"><div class="transcript">${threadTranscript(L, 'desk')}</div></div>
+      ${composerHTML('desk', 'Reply to Codex')}
+    </section></div>`)
+}
+function composerHTML(where, ph) {
+  return `<div class="composer"><div class="deck" id="deck-${where}">${stagedHTML(S.staged[where], where)}</div><div class="row"><div class="ta" contenteditable="true" role="textbox" aria-label="${ph}" data-ph="${S.staged[where].length ? 'Say what to fix' : ph}" id="ta-${where}"></div><button class="send" data-send="${where}" aria-label="Send">↑</button></div><div class="chips"><span>gpt-6</span><span>High</span><span>Ask first</span></div></div>`
+}
+function viewWatcher() {
+  const L = S.layout
+  return deskWindow(`<div class="pane wroom" id="pane" style="flex:1">
+    <header class="pane-head"><span class="owl">◉◉</span>Watcher <span>All threads 6 ⌄</span></header>
+    <div class="scroll" id="scroll"><div class="transcript">
+      <article class="msg" data-role="user"><header><span class="who">You</span><time>10:50</time></header><p>What did the checkout thread find? Show me.</p></article>
+      <article class="msg"><header><span class="who">Watcher</span><time>10:50</time></header>
+        <div class="receipt">◉ Read <b>Fix the checkout layout</b></div>
+        <p>Codex found three problems and has fixed them. Its pictures, from the thread:</p>
+        <div class="from">From <a href="#">Fix the checkout layout</a></div>
+        ${groupHTML(['checkout', 'rec'], L)}
+        <p>The recording shows sign-up stuck on the old API host; that is fixed too.</p>
+      </article>
+      <article class="msg" data-role="user"><header><span class="who">You</span><time>10:53</time></header><p>And the icon?</p></article>
+      <article class="msg"><header><span class="who">Watcher</span><time>10:53</time></header>
+        <div class="receipt">◉ Asked <b>Lighthouse app icon</b> for a warmer one</div>
+        <div class="from">From <a href="#">Lighthouse app icon</a></div>
+        ${groupHTML(['icon2'], L)}
+      </article>
+      ${sentHTML('desk', L)}
+    </div></div>
+    <div class="night"></div>
+    ${composerHTML('desk', 'Watcher message')}
+  </div>`)
+}
+function viewGenerating() {
+  const L = 'A'
+  return `<div class="win" data-layout="A" style="overflow:auto"><div class="gen-stage">
+    <h2 style="margin:0 0 4px">While an image is being made</h2>
+    <p style="color:var(--tt-text-2);margin:0">The scene fills the image’s own frame, at the image’s size, so nothing moves when the picture lands. No provider tells us how far along it is, so the scene slows as it goes and the picture replaces it when it arrives. It draws twelve frames a second as text, stops the moment it leaves the screen or the picture lands, and holds still under reduced motion.</p>
+    <div class="scene-pick" role="radiogroup" aria-label="Scene">${Object.entries(SCENES).map(([k, n]) => `<button role="radio" data-scene="${k}" aria-pressed="${k === S.scene}" aria-checked="${k === S.scene}"><b>${k}. ${n}</b>${{ 1: 'Static settles into the picture, the way an image model really works.', 2: 'Watcher’s owl paints the picture on an easel under the night sky.', 3: 'A shuttle weaves the picture row by row.' }[k]}</button>`).join('')}</div>
+    <article class="msg"><header><span class="who">Codex</span><time>now</time></header><div class="tool"><i>✦</i>Generating an image</div><p>Here’s the icon:</p><div id="genhost">${groupHTML(['icon'], L)}</div></article>
+    <button class="tb" id="replay" style="border-color:var(--tt-hairline)">Make it again</button>
+  </div></div>`
+}
+function viewProviders() {
+  return `<div class="win" style="overflow:auto"><div class="doc" id="providers">${PROVIDERS_HTML}</div></div>`
+}
+const PROVIDERS_HTML = `<h2>What each provider can show</h2>
+<p>Today Sotto keeps the words of every tool result and drops every picture, on purpose: pictures arrive as base64 inside the provider's messages, and carrying them would slow the update path. The plan keeps that rule. Main saves each picture to disk once, as attached images already are, and a thread carries only a handle to it.</p>
+<table><thead><tr><th>Provider</th><th>Makes images</th><th>Pictures it takes or reads</th><th>Video</th><th>How a picture reaches Sotto</th></tr></thead><tbody>
+<tr><td>Codex</td><td class="yes">Yes</td><td class="yes">view_image, Computer Use, Sotto's browser</td><td class="part">Files it writes</td><td>An <code>imageGeneration</code> item with a saved path (or base64), and its revised prompt. No progress while it works. <code>imageView</code> carries a path.</td></tr>
+<tr><td>Cursor</td><td class="yes">Yes</td><td class="yes">Tool results, Sotto's browser</td><td class="part">Files it writes</td><td><code>cursor/generate_image</code> with a file path. The only picture Sotto records today, as a tool row.</td></tr>
+<tr><td>Claude Code</td><td class="no">No</td><td class="yes">Read on an image, Chrome, Sotto's browser, any MCP tool</td><td class="part">Files it writes; Chrome GIFs are downloads</td><td>Base64 image blocks in tool results (Read sends the bytes twice). For MCP pictures the CLI also saves a copy and names its path.</td></tr>
+<tr><td>Grok Build</td><td class="no">No</td><td class="yes">Tool results, Sotto's browser</td><td class="part">Files it writes</td><td>ACP image content (base64) in tool updates.</td></tr>
+<tr><td>Devin</td><td class="no">No</td><td class="yes">Tool results, Sotto's browser</td><td class="part">Files it writes</td><td>ACP image content, as Grok Build.</td></tr>
+<tr><td>DeepSeek Harness</td><td class="no">No</td><td class="yes">Tool results, Sotto's browser</td><td class="part">Files it writes</td><td>ACP image content.</td></tr>
+<tr><td>OpenCode</td><td class="no">No</td><td class="part">Not confirmed</td><td class="part">Files it writes</td><td>Tool parts from its server; picture parts not confirmed.</td></tr>
+<tr><td>Muse</td><td class="no">No</td><td class="part">Not confirmed</td><td class="part">Files it writes</td><td>Attachment sizes and types only, no bytes.</td></tr>
+</tbody></table>
+<p><b>Sotto's own tools.</b> Sotto's browser and the cloud iPhone return screenshots to every provider that takes Sotto's tools. The browser already keeps each task's last three, so it is the cleanest first source. A thread sees them only while its page is shared, and the inline pictures follow the same rule.</p>
+<p><b>Video.</b> No provider makes video. A recording or GIF is a file the agent wrote, usually from a shell command (Playwright, ffmpeg). Sotto finds it through the turn's changed files. A large video can pass the 8 MiB checkpoint cap, so videos are read straight from the working copy.</p>
+<p><b>Meshy.</b> ADR-0141 makes 3D models and their still pictures; those stills show inline like any written image.</p>`
+
+/* ================================================================== phones */
+function phoneThread(layout, where, duo) {
+  const transcript = `
+    <article class="msg" data-role="user"><header><span class="who">You</span></header><p>Checkout looks broken. Show me what’s wrong at phone width.</p>${groupHTML(['landing'], layout)}</article>
+    <article class="msg"><header><span class="who">Codex</span></header><div class="tool"><i>◧</i>Took a screenshot and a recording</div><p>Two problems, marked:</p>${groupHTML(['phone', 'checkout', 'rec'], layout)}<p>Want me to fix both?</p></article>
+    <article class="msg" data-role="user"><header><span class="who">You</span></header><p>Yes. And make the Lighthouse icon.</p></article>
+    <article class="msg"><header><span class="who">Codex</span></header><div class="tool"><i>✦</i>Generating an image</div>${groupHTML(['icon'], layout)}</article>
+    ${sentHTML(where, layout)}`
+  return `<div class="pstatus"><span>9:41</span><span>●●● ▮</span></div>
+    <div class="ptop"><button class="back" aria-label="Back">‹</button><span class="t">Fix the checkout layout</span><span class="wpill">● Working</span></div>
+    <div class="pscroll touch" data-pscroll><div class="${duo ? 'reading' : ''}">${transcript}</div></div>
+    <div class="preply"><button class="plus" aria-label="Attach">+</button><div class="f"><div class="deck" id="deck-${where}">${stagedHTML(S.staged[where], where)}</div><span>${S.staged[where].length ? 'Say what to fix' : 'Reply while it works'}</span></div><button class="send" data-send="${where}" aria-label="Send">↑</button></div>`
+}
+function viewDevice(kind) {
+  const where = kind === 'duo' ? 'duo' : 'phone'
+  const st = kind === 'duo' ? S.duoState : S.phoneState
+  const states = kind === 'duo' ? [['thread', 'Thread'], ['open', 'Image open'], ['markup', 'Mark up with the pen']] : [['thread', 'Thread'], ['open', 'Image open'], ['markup', 'Mark up'], ['gen', 'Image generating']]
+  const note = kind === 'duo'
+    ? 'Unfolded, the thread keeps its 680-point reading width. Marking up puts the picture beside the list of marks, with the tools floating at the bottom. The pen draws and a finger moves the picture; ☝ lets a finger draw too. With a mouse here, the mouse draws.'
+    : 'Tap a picture to open it full screen, then Mark up. A finger draws on the iPhone. Add to reply puts the marked copy in the reply box; the original stays in the thread.'
+  return `<div class="devices" data-layout="${S.layout}"><div class="dnote">${note}</div><div class="states">${states.map(([k, n]) => `<button data-state="${k}" aria-pressed="${k === st}">${n}</button>`).join('')}</div>
+    <div class="dev-fit"><div class="${kind === 'duo' ? 'duo' : 'phone'}" id="device" data-layout="${S.layout}">${phoneThread(S.layout, where, kind === 'duo')}</div></div></div>`
+}
+
+/* ================================================================== mount */
+function render() {
+  observers.splice(0).forEach(o => o.disconnect())
+  for (const el of playing) pauseVideo(el)
+  ;[...running].forEach(h => h.stop())
+  renderNav()
+  const st = $('#stage'); st.style.top = $('#pnav').offsetHeight + 'px'
+  const v = S.view
+  let html
+  if (v === 'thread' || v === 'markup') html = viewThread()
+  else if (v === 'watcher') html = viewWatcher()
+  else if (v === 'generating') html = viewGenerating()
+  else if (v === 'providers') html = viewProviders()
+  else html = viewDevice(v === 'duo' ? 'duo' : 'phone')
+  const desktopish = ['thread', 'markup', 'watcher', 'generating', 'providers'].includes(v)
+  st.innerHTML = desktopish ? `<div class="scaler" id="scaler">${html}</div>` : html
+  fitDesk()
+  if (desktopish) mountDesk(); else mountDevice(v === 'duo' ? 'duo' : 'phone')
+  renderNav(); renderBar(); hud(); syncUrl()
+}
+function fitDesk() {
+  const st = $('#stage'), sc = $('#scaler'); if (!sc) return
+  const W = st.clientWidth, H = st.clientHeight
+  if (W >= 1000) { sc.style.width = W + 'px'; sc.style.height = H + 'px'; sc.style.transform = '' }
+  else { const k = W / 1280; sc.style.width = '1280px'; sc.style.height = Math.max(800, H / k) + 'px'; sc.style.transform = `scale(${k})` }
+}
+function fitDevice() {
+  const dev = $('#device'); if (!dev) return
+  const wrap = dev.parentElement, st = $('#stage')
+  const W = dev.offsetWidth, H = dev.offsetHeight
+  const k = Math.min(1, (st.clientWidth - 20) / W, Math.max(.45, (st.clientHeight - 150) / H))
+  dev.style.transform = k < 1 ? `scale(${k})` : ''; dev.style.transformOrigin = 'top left'
+  wrap.style.width = W * k + 'px'; wrap.style.height = H * k + 'px'
+}
+function mountDesk() {
+  const scroller = $('#scroll'); const pane = $('#pane')
+  if (S.view === 'generating') {
+    hydrate($('#genhost'), null); wireMedia($('#genhost'), { scroller: null, open: () => {}, markup: () => {} })
+    $('#replay').onclick = () => { $('#genhost .fig')?._ascii?.stop?.(); delete S.gen.icon; render() }
+    $$('[data-scene]').forEach(b => b.onclick = () => { S.scene = b.dataset.scene; $('#genhost .fig')?._ascii?.stop?.(); delete S.gen.icon; render() })
+    return
+  }
+  if (!scroller) return
+  scroller.scrollTop = scroller.scrollHeight
+  const ctx = {
+    scroller,
+    open: id => openViewer(pane, id, 'desk', id2 => ctx.markup(id2)),
+    markup: id => openEditor(pane, id, 'desk', item => { S.staged.desk.push(item); refreshComposer('desk') }),
+  }
+  hydrate(scroller, scroller); wireMedia(scroller, ctx); wireComposer('desk', () => render())
+  if (S.view === 'markup') ctx.markup('checkout')
+}
+function mountDevice(kind) {
+  const where = kind === 'duo' ? 'duo' : 'phone'
+  const dev = $('#device'); fitDevice()
+  const scroller = $('[data-pscroll]', dev)
+  scroller.scrollTop = scroller.scrollHeight
+  const ctx = {
+    scroller,
+    open: id => openViewer(dev, id, kind, id2 => ctx.markup(id2)),
+    markup: id => openEditor(dev, id, kind, item => { S.staged[where].push(item); refreshComposer(where) }),
+  }
+  hydrate(scroller, scroller); wireMedia(scroller, ctx); wireComposer(where, () => render())
+  $$('[data-state]').forEach(b => b.onclick = () => { if (kind === 'duo') S.duoState = b.dataset.state; else S.phoneState = b.dataset.state; render() })
+  const st = kind === 'duo' ? S.duoState : S.phoneState
+  if (st === 'open') ctx.open('phone')
+  if (st === 'markup') ctx.markup(kind === 'duo' ? 'checkout' : 'phone')
+  if (st === 'gen') { $('[data-fig=icon]', scroller)?._ascii?.stop?.(); delete S.gen.icon; scroller.innerHTML = scroller.innerHTML; hydrate(scroller, scroller); scroller.scrollTop = scroller.scrollHeight }
+}
+function refreshComposer(where) {
+  const deck = $('#deck-' + where); if (deck) deck.innerHTML = stagedHTML(S.staged[where], where)
+  const ta = $('#ta-' + where); if (ta) { ta.dataset.ph = S.staged[where].length ? 'Say what to fix' : ta.getAttribute('aria-label'); ta.focus() }
+  const ph = deck?.parentElement?.querySelector('span:not(.badge)'); if (ph && !ta) ph.textContent = S.staged[where].length ? 'Say what to fix' : 'Reply while it works'
+}
+function wireComposer(where, after) {
+  const root = $('#stage')
+  root.addEventListener('click', e => {
+    const u = e.target.closest('[data-unstage]'); if (u) { const [w, i] = u.dataset.unstage.split(':'); S.staged[w].splice(+i, 1); refreshComposer(w); return }
+    const s = e.target.closest('[data-send]'); if (!s) return
+    const w = s.dataset.send, ta = $('#ta-' + w), text = ta ? ta.textContent.trim() : ''
+    if (!text && !S.staged[w].length) return
+    S.sent[w].push({ text, items: S.staged[w].splice(0) }); after()
+  }, { once: false })
+}
+
+/* ================================================================== chrome */
+function renderNav() {
+  const n = $('#pnav')
+  n.innerHTML = `<b>PROTOTYPE</b>${VIEWS.map(([k, l]) => `<button data-view="${k}" aria-pressed="${k === S.view}">${l}</button>`).join('')}<span class="gap"></span><button data-tog="theme" aria-pressed="${document.documentElement.dataset.theme === 'light'}">Light</button><button data-tog="motion" aria-pressed="${reduced()}">Reduced motion</button>`
+}
+$('#pnav').addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return
+  if (b.dataset.view) { S.view = b.dataset.view; render() }
+  if (b.dataset.tog === 'theme') { const r = document.documentElement; r.dataset.theme = r.dataset.theme === 'light' ? 'dark' : 'light'; render() }
+  if (b.dataset.tog === 'motion') { const r = document.documentElement; r.dataset.motion = reduced() ? 'full' : 'reduced'; render() }
+})
+function barKind() { return S.view === 'generating' ? 'scene' : (S.view === 'markup' || S.view === 'providers') ? null : 'layout' }
+function renderBar() {
+  const k = barKind()
+  $('#prev').disabled = $('#next').disabled = !k
+  $('#plabel').textContent = k === 'scene' ? `Scene ${S.scene} · ${SCENES[S.scene]}` : k === 'layout' ? `${S.layout} · ${LAYOUTS[S.layout]}` : S.view === 'markup' ? 'Mark up · one design' : 'Providers'
+}
+function cycle(d) {
+  const k = barKind(); if (!k) return
+  if (k === 'scene') { const keys = Object.keys(SCENES); S.scene = keys[(keys.indexOf(S.scene) + d + keys.length) % keys.length]; delete S.gen.icon }
+  else { const keys = Object.keys(LAYOUTS); S.layout = keys[(keys.indexOf(S.layout) + d + keys.length) % keys.length] }
+  render()
+}
+$('#prev').onclick = () => cycle(-1); $('#next').onclick = () => cycle(1)
+document.addEventListener('keydown', e => {
+  if (e.target.closest('input, textarea, [contenteditable="true"]') || $('.ov, .pov')) return
+  if (e.key === 'ArrowLeft') cycle(-1); if (e.key === 'ArrowRight') cycle(1)
+})
+$('#hudx').onclick = () => { const h = $('#hud'); h.classList.toggle('min'); $('#hudx').textContent = h.classList.contains('min') ? '+' : '–' }
+function hud() {
+  const all = $$('#stage [data-media]').filter(el => !el.dataset.swap || true)
+  const loaded = all.filter(el => el.dataset.loaded).length
+  const asciiState = running.size ? `drawing (${running.size})` : reduced() ? 'still (reduced motion)' : Object.values(S.gen).some(g => !g.done) ? 'stopped, off screen' : 'stopped, finished'
+  $('#hudrows').innerHTML = `<div class="row"><span>Pictures holding pixels</span><b style="all:unset;font-weight:700">${loaded} of ${all.length}</b></div><div class="row"><span>Let go when scrolled away</span><span>${S.unloaded}</span></div><div class="row"><span>Videos playing</span><span>${playing.size}</span></div><div class="row"><span>ASCII scene</span><span>${asciiState}</span></div><div class="row"><span>ASCII frames drawn</span><span>${S.frames}</span></div><div style="margin-top:4px;color:#7a6a3a">Scroll the thread to watch pictures load and let go.</div>`
+}
+setInterval(() => { if (running.size) hud() }, 500)
+addEventListener('resize', () => { fitDesk(); fitDevice() })
+if (innerWidth < 700) { $('#hud').classList.add('min'); $('#hudx').textContent = '+' }
+if (matchMedia('(prefers-reduced-motion: reduce)').matches) document.documentElement.dataset.motion = 'reduced'
+render()
+</script>
+</body>
+</html>
