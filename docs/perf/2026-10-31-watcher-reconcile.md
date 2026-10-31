@@ -57,7 +57,8 @@ or serialized whole.
 
 `tests/perf/watcherRemoteReconcile.perf.test.ts`, "copies and serializes nothing the size of the record on a reconcile
 that changes nothing", runs in the default suite: with the owner's history and with four times it, a pass copies nothing
-of the record, hands nothing to `updateWatcher`, and serializes nothing over a kilobyte. Its stopped thread makes each
+of the record, hands nothing to `updateWatcher`, and serializes nothing a twentieth of the record's size or more (about
+12 KB; its shortest list is 30 KB). Its stopped thread makes each
 pass fence the watch's turn again, so the fence's writes are tried too. It fails on `main` at the copy, and fails the
 same way if the prompt turn writes the native turn it already holds.
 The paired-host suites (`watcherPairedReconciliation.test.ts`, `watcherPairedHosts.test.ts`) and every other Watcher

@@ -80,13 +80,15 @@ async function pairedWatcher(watcherScale: number) {
  */
 async function measure(paired: Awaited<ReturnType<typeof pairedWatcher>>, passes: number) {
   const native = globalThis.structuredClone, stringify = JSON.stringify.bind(JSON), before = paired.control.watcherRecordView()
-  let copies = 0, characters = 0, largest = 0
+  let copies = 0, characters = 0, largest = 0, largestStart = ''
   globalThis.structuredClone = ((value: unknown, options?: StructuredSerializeOptions) => {
     if (value === paired.control.watcherRecordView()) copies++
     return native(value, options)
   }) as typeof structuredClone
   const serialized = vi.spyOn(JSON, 'stringify').mockImplementation(((...parameters: Parameters<typeof JSON.stringify>) => {
-    const text = stringify(...parameters); characters += text?.length ?? 0; largest = Math.max(largest, text?.length ?? 0); return text
+    const text = stringify(...parameters); characters += text?.length ?? 0
+    if ((text?.length ?? 0) > largest) { largest = text!.length; largestStart = text!.slice(0, 160) }
+    return text
   }) as typeof JSON.stringify)
   const updates = vi.spyOn(paired.control, 'updateWatcher'), times: number[] = []
   let handed: number
@@ -95,7 +97,7 @@ async function measure(paired: Awaited<ReturnType<typeof pairedWatcher>>, passes
     handed = updates.mock.calls.length
   } finally { globalThis.structuredClone = native; serialized.mockRestore(); updates.mockRestore() }
   expect(paired.control.watcherRecordView()).toBe(before)
-  return { copies: copies / passes, characters: characters / passes, largest, updates: handed / passes, times }
+  return { copies: copies / passes, characters: characters / passes, largest, largestStart, updates: handed / passes, times }
 }
 
 it('copies and serializes nothing the size of the record on a reconcile that changes nothing', async () => {
@@ -105,9 +107,11 @@ it('copies and serializes nothing the size of the record on a reconcile that cha
     expect(paired.fenced).toBe(true)
     expect(pass.copies).toBe(0)
     expect(pass.updates).toBe(0)
-    // The record is about 250 KB here; the longest serialization left is a Watcher identity, under a kilobyte.
+    // The record is about 250 KB here, and its shortest list, the prompt turns, about 30 KB. The longest serialization a
+    // pass makes is a Watcher identity, a few hundred characters; the process's other work, such as a fixture's saves
+    // landing while a pass runs on a slow runner, makes a few kilobytes at most.
     expect(paired.recordBytes).toBeGreaterThan(200_000)
-    expect(pass.largest).toBeLessThan(1_000)
+    expect(pass.largest, `the longest began: ${pass.largestStart}`).toBeLessThan(paired.recordBytes / 20)
   }
 })
 
