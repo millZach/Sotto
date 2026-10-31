@@ -41,6 +41,8 @@ Amended October 31, 2026: Zach tested TestFlight build 45 on his iPhone Duo and 
 
 The iPhone Duo is not among CI's simulators, so none of this is exercised in CI; the iPhone's README lists it among the checks by hand.
 
+Amended October 31, 2026, a second time: every page change moves (point 6 of the same request, from the same prototype). A thread opened from the list pushes in and pops out as iOS's own pages do, with its swipe back. Anything else that changes the page, such as another tab, another thread chosen in the sidebar, or the Duo unfolding onto the list's top row, fades the page in from the ground in a sixth of a second, and the sidebar keeps its place. Folding or unfolding the Duo reshapes the page into its new place on a spring, the sidebar sliding in or out beside it, and the folded thread rail and the tabs crossfade as a thread comes and goes. With Reduce Motion each of these is a short fade instead: a push from the list too, and the fold, which then reshapes nothing. Rows are not carried across the fold one by one, as the prototype draws them: the folded list and the unfolded sidebar are separate pages to SwiftUI, which can't move one view between them.
+
 ## Context
 
 The iPhone Duo folds. Folded, its cover screen gives the app 382×644 points at compact width, and Sotto looks as it does on any iPhone. Unfolded, the inner screen is landscape, 951×669 points. Beside the tab bar, which iOS 27.1 draws as a floating rail at the right edge, the app gets 867×635 points at regular width. The client had no layout for regular width, so every page stretched to the full 867 points: a thread's lines ran to about 140 characters and its tables spread across the screen.
