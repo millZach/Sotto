@@ -26,6 +26,7 @@ import { OPENCODE_HOST_ANSWERS, type OpenCodeHostAnswer, type OpenCodeHostCall }
 import type { AgentModel, AgentThread, ProviderId } from '../../shared/agents'
 import { immutableModels } from './activitySnapshots'
 import { CONNECT_FAILURES, WordedError, type FailureWords } from '../hosts/hostFailureWords'
+import { createThreadReassembly, type ThreadReassembly } from '../../shared/threadReassembly'
 import { commandFromProtocolV1, protocolAgentCommandSchema, protocolAgentStateSchema, managementCommandRefusal, LEGACY_MANAGEMENT_ALLOWED_COMMANDS, LEGACY_MANAGEMENT_UPDATE, hostAttachmentContentSchema, hostIsNewer, hostIsOlder, hostHealthFeatures, hostPairingSchema, hostSessionSchema, hostHelloSchema, hostEventPageSchema, hostResponseSchema, hostPushSchema, hostReceiptSchema, hostStartHandoverSchema, hostActivityBodySchema, hostThreadPromptsSchema, PROVIDER_HOST_FEATURES, HOST_FILE_PART_BYTES } from '../../shared/hostProtocol'
 import type { AgentActivity } from '../../shared/agentActivity'
 import type { HostFeature, HostAnswerTarget, HostHello, HostOperation, HostPairing, HostSession, HostResponse, HostPush, HostEventPage, HostReceipt, HostErrorCode } from '../../shared/hostProtocol'
@@ -211,6 +212,8 @@ export class SocketHostService implements HostService {
   private catalog: { revision: number; models: unknown; certified?: AgentModel[] } | undefined
   /** Each raw shell `restoreCatalog` read with an empty catalog, by its `host`, and the catalog it is handed once read. */
   private readonly readCatalogs = new WeakMap<object, AgentModel[]>()
+  /** The thread records this connection's shell pushes carried, which each push's changed records are put back on (#996). */
+  private pushedThreads: ThreadReassembly = createThreadReassembly()
   /** The revision each raw shell `restoreCatalog` restored named, by its `host`, so its first reading can be kept. */
   private readonly namedCatalogs = new WeakMap<object, number>()
   private cachedWatcher: WatcherHostProjection | undefined
@@ -382,7 +385,9 @@ export class SocketHostService implements HostService {
     try {
       // This desktop knows every provider Sotto has, OpenCode among them, so it accepts each one's feature (#1107); a provider
       // held on this run is hidden here as on this computer, by the held gate.
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
+      this.pushedThreads = createThreadReassembly()
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -453,6 +458,15 @@ export class SocketHostService implements HostService {
           if (message.eventPage && this.catchesUp) { this.cacheEvents(message.eventPage); if (message.eventPage.hasMore) this.catchUp() }
           const state = message.state as AgentState
           this.adoptCatalog(field(raw, 'state'), state)
+          // The thread records that changed since the last shell push, put back on the records it carried (#996): those
+          // that did not change are the very records this client already read.
+          if (message.threads !== undefined) {
+            const threads = this.pushedThreads(message.threads)
+            // Measured from records this connection does not hold: the shell is read whole, and the host's next push lists
+            // every record.
+            if (threads === undefined) { void this.readShell().catch(() => this.frames?.close()); return }
+            state.host.threads = threads
+          }
           this.publish(state, true)
         }
         else if (message.event === 'answer-receipt') { if (this.cacheAcceptedAnswer(message.acceptedAnswer) && this.cached) this.notifyState() }
