@@ -42,7 +42,7 @@ export const widgetSnapshotSchema: z.ZodType<WidgetSnapshot> = z.discriminatedUn
       status: z.literal('listening'),
       sessionId: boundedSessionId,
       startedAt: z.number().finite().nonnegative(),
-      level: z.number().finite().min(0).max(1),
+      speaking: z.boolean(),
       ...widgetMetadataSchema,
     })
     .strict(),

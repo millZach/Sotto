@@ -36,6 +36,7 @@ import {
   type AudioRecordingResult,
 } from '../../audio/audioRecorder'
 import { calculateRms } from '../../audio/audioMath'
+import { safeLevel, SpeakingGate } from '../../audio/speakingGate'
 import { isSilentTail } from '../../audio/silentTail'
 import type {
   LoadOptions,
@@ -94,6 +95,11 @@ export interface DictationControllerDependencies {
   /** Completed words that output could not deliver. Kept by the app in memory until dismissed. */
   readonly retainOutput?: (entry: HistoryEntry) => void
   readonly publishWidgetState: (snapshot: WidgetSnapshot) => unknown | Promise<unknown>
+  /**
+   * The microphone's level while listening, about every 33 ms, and 0 once listening ends: for the meter that shows it
+   * (`LiveLevel`). Nothing else is published per level; the widget and the window hear when `speaking` changes (#993).
+   */
+  readonly publishLevel?: (level: number) => void
   /** Optional LLM cleanup pass; any failure falls back to the raw transcript. */
   readonly polishTranscript?: (
     text: string,
@@ -125,6 +131,8 @@ interface ActiveSession {
   startedAt: number
   /** Whether the recorder reached listening, independent of its start timestamp. */
   captureStarted: boolean
+  /** Whether a voice is heard, from the levels while listening; made with the first level. */
+  gate?: SpeakingGate
   /** The recording's parts in order: segments emitted while listening, then the tail. */
   readonly parts: RecordingPart[]
   /** The whole recording's length, once it has stopped. */
@@ -262,6 +270,8 @@ export class DictationController {
   private lifecycleToken = 0
   private resetTimer: unknown
   private disposed = false
+  /** The level the meter was last given. */
+  private level = 0
 
   private readonly platform: SottoPlatform
   private readonly now: () => number
@@ -550,6 +560,7 @@ export class DictationController {
     ++this.lifecycleToken
     this.session = null
     this.clearResetTimer()
+    this.stopLevels(session)
     if (session?.recorder !== undefined) {
       try {
         void session.recorder.cancel().catch(() => undefined)
@@ -818,9 +829,28 @@ export class DictationController {
     this.scheduleReset(session)
   }
 
+  /**
+   * A level goes to the meter alone, and through the speaking gate, which publishes only when it opens or closes: a
+   * publication redraws the window and crosses to main and the widget, and the level comes about every 33 ms (#993).
+   */
   private handleLevel(session: ActiveSession, level: number): void {
     if (!this.isCurrent(session) || this.state.status !== 'listening') return
-    this.dispatch({ type: 'LEVEL_CHANGED', sessionId: session.id, level }, session)
+    const bounded = safeLevel(level)
+    this.publishLevel(bounded)
+    session.gate ??= new SpeakingGate(speaking => {
+      if (this.isCurrent(session)) this.dispatch({ type: 'SPEAKING_CHANGED', sessionId: session.id, speaking }, session)
+    }, false, { set: this.setTimer, clear: this.clearTimer })
+    session.gate.feed(bounded)
+  }
+
+  private publishLevel(level: number): void {
+    if (level === this.level) return
+    this.level = level
+    try {
+      this.dependencies.publishLevel?.(level)
+    } catch {
+      // The meter is observational and cannot break dictation.
+    }
   }
 
   private handleProgress(session: ActiveSession, progress: TranscriptionProgress): void {
@@ -841,7 +871,14 @@ export class DictationController {
     const next = reduceDictation(this.state, event)
     if (next === this.state) return
     this.state = next
+    if (next.status !== 'listening') this.stopLevels(session)
     this.publish(session)
+  }
+
+  /** Listening is over: the gate's pending close goes, and the meter rests. */
+  private stopLevels(session: ActiveSession | null): void {
+    session?.gate?.dispose()
+    this.publishLevel(0)
   }
 
   /** An error stays until it is dismissed, tried again, or a new dictation starts. */
@@ -919,7 +956,7 @@ export class DictationController {
           status: state.status,
           sessionId: state.sessionId,
           startedAt: state.startedAt,
-          level: state.level,
+          speaking: state.speaking,
           ...metadata,
         }
       case 'processing':

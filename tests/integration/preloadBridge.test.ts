@@ -556,7 +556,7 @@ describe('typed preload bridge', () => {
       ([channel]) => channel === DICTATION_COMMAND,
     )?.[1]
     const listening = {
-      status: 'listening', sessionId: 's', startedAt: 1, level: 0.2,
+      status: 'listening', sessionId: 's', startedAt: 1, speaking: true,
       theme: 'system', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'system', shortcut: 'Primary', cancellable: true,
     } as const
     widgetEvent?.({}, listening)

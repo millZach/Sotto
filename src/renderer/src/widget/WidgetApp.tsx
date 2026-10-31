@@ -567,7 +567,7 @@ export function WidgetApp({
         <span className="widget-glyph" data-testid="widget-glyph" aria-hidden="true">
           <SottoMark className="widget-glyph__mark" />
         </span>
-        {isListening && <ListeningBars level={snapshot.level} />}
+        {isListening && <ListeningBars speaking={snapshot.speaking} />}
         {elapsed}
         {isProcessing && (
           <span className="widget-spinner" data-testid="processing-orbit" aria-hidden="true" />
@@ -622,8 +622,8 @@ function themeRoleVariable(role: WidgetThemeRole): string {
 /**
  * Put the resolved scheme, the theme half that paints it and the motion
  * preference on the widget root. Only canonical colours reach the style, and
- * an unchanged role is not rewritten, so frequent level snapshots cause no
- * style churn.
+ * an unchanged role is not rewritten, so frequent snapshots cause no style
+ * churn.
  */
 export function applyRootPresentation(
   presentation: Pick<WidgetSnapshot, 'theme' | 'palette' | 'reducedMotion'>,
@@ -778,7 +778,7 @@ export function parseVisualPreview(
         cancellable: false,
       }
     case 'listening':
-      return { ...common, status: 'listening', startedAt: 1_000, level: 0.64, cancellable: true }
+      return { ...common, status: 'listening', startedAt: 1_000, speaking: true, cancellable: true }
     case 'processing':
       return {
         ...common, status: 'processing', startedAt: 1_000, stage: 'transcribing',
