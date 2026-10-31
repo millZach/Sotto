@@ -4,6 +4,7 @@ import { ArrowUp, ArrowUpRight, Laptop, ListPlus, MessageSquare, Quote, Server, 
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { NextPrompt } from '../../../shared/nextPrompt'
+import { DEFAULT_COMPOSER_STYLE } from '../../../shared/composerStyle'
 import { useOptionalApp } from '../state/AppContext'
 import { chordClaimed, chordMatches } from './branchToolbar.logic'
 import { claimedThreadChord, threadChordCap, threadChordLabel, threadChordPressed } from './threadShortcuts'
@@ -56,6 +57,7 @@ import { EffortTrace } from './EffortTrace'
 import { continueChoiceFor, continueModels, continueStore, unavailableProviders, useContinueChoice, useContinueEnabled, type ContinueChoice } from './continuations'
 import { shownWords, type LaterWords } from './interfaceWords'
 import './composer.css'
+import './rowsComposer.css'
 import './reviewComments.css'
 
 type Command = AgentConnection['command']
@@ -181,6 +183,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const watcherOn = useWatcherEnabled()
   const watchActions = useWatchActions()
   const quietComposer = useOwlFeature('quiet-composer')
+  // Which of the composer's two styles Settings › Appearance chose (ADR-0168); Zach's two rows unless Drake's pill is.
+  const composerStyle = useOptionalApp()?.settings?.composerStyle ?? DEFAULT_COMPOSER_STYLE
   const { draft, save, saveError, answerState, hasContent, effortScore } = useComposerControls(store, threadId, quietComposer)
   const comments = useReviewComments(reviewComments, threadId)
   // Reply quotes are an Owl feature: stable shows no chip and sends none (ADR-0129).
@@ -437,6 +441,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // The quiet composer (ADR-0161, Owl): one pill. Answers, continuations and Watcher's handover keep the full footer,
   // since each has a primary action of its own that the pill's disc does not draw.
   const quiet = quietComposer && !answering && continuing === undefined && handover === null
+  // Zach's composer (ADR-0168) shares the pill's parts and lays them out in two rows: the prompt, then a footer whose
+  // permissions sit before the model, and whose disc is Stop while a turn runs with nothing typed.
+  const rows = quiet && composerStyle === 'rows'
   /** In the quiet pill, the permissions shield goes to the pill's start; elsewhere it stays where it is drawn. */
   const inSlot = (node: ReactNode): ReactNode => quiet && shieldSlot ? createPortal(node, shieldSlot) : node
   // The pill's disc turns into Steer while Steer's modifier is held, so it always shows what the key pressed will do.
@@ -512,7 +519,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     {/* When Sotto restarts what a limit stopped (ADR-0144; Owl only), before the prompt; a begun continuation takes its place, and Watcher's own pane has the band. */}
     {continuing === undefined && !watcher ? <RestartStrip thread={row.thread} command={command} composerId={composerId} /> : null}
     {continuing !== undefined ? <ContinueStrip thread={row.thread} state={state} choice={continuing} composerId={composerId} /> : null}
-    <form className="thread-prompt" data-quiet={quiet || undefined} data-ornament={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
+    <form className="thread-prompt" data-quiet={quiet || undefined} data-style={quiet ? composerStyle : undefined} data-ornament={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { leavePickers.current(); setNextList(null) } }}>
       <EffortTrace />
@@ -522,7 +529,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span><Trans>This answer was for a question that is no longer pending.</Trans></span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}><Trans>Discard answer</Trans></Button></div> : null}
       {/* Before the prompt in the Tab order, as the shield is before it on the line. */}
-      {quiet ? <div ref={setShieldSlot} className="thread-prompt__lead" /> : null}
+      {quiet && !rows ? <div ref={setShieldSlot} className="thread-prompt__lead" /> : null}
       <ThreadComposerEditor key={threadId} row={row} state={state} command={command} store={store} composerId={composerId}
         editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering} attachable={!answering} watcher={watcher}
         field={field} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
@@ -557,6 +564,8 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       </ThreadComposerEditor>
       <div className="thread-prompt__footer">
         <div className="thread-prompt__meta" id={statusId}>
+          {/* Zach's composer draws the permissions first at the footer's end, before the model, in the order Tab takes them. */}
+          {rows ? <div ref={setShieldSlot} className="thread-prompt__shield" /> : null}
           {/* Every composer belongs to a thread that already exists on its host, so the host is shown here, not chosen.
               Watcher's full composer has New Watcher in that place; the quiet pill keeps it beside Send. */}
           {watcher && !quiet ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} />
@@ -575,10 +584,14 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         <div ref={actionsRow} className="thread-prompt__actions">
           {quiet ? <>
             {watcher ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} /> : null}
-            {working ? <Button variant="ghost" className="thread-prompt__stop" data-beside aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
+            {working && !(rows && !content) ? <Button variant="ghost" className="thread-prompt__stop" data-beside aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
               title={stopTitle} disabled={!canStop} onClick={interrupt}><Square size={10} fill="currentColor" aria-hidden="true" /></Button> : null}
-            {/* One disc: Send, Queue while a turn runs, Steer while Steer's modifier is held. Its glyph says which. */}
-            {discFace === 'steer'
+            {/* One disc: Send, Queue while a turn runs, Steer while Steer's modifier is held. Its glyph says which. In
+                Zach's composer it is Stop while a turn runs with nothing typed, so Stop is never drawn twice. */}
+            {rows && working && !content
+              ? <Button className="thread-prompt__send thread-prompt__disc" data-face="stop" aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
+                title={stopTitle} disabled={!canStop} onClick={interrupt}><Square size={11} fill="currentColor" aria-hidden="true" /></Button>
+              : discFace === 'steer'
               ? <Button className="thread-prompt__send thread-prompt__disc" data-face="steer" aria-label={t`Steer now`} aria-keyshortcuts={steerChord ? threadChordLabel(steerChord, platform).keys : undefined}
                 title={t`Send this now, without waiting for the turn to end` + (steerChord ? ` ${threadChordLabel(steerChord, platform).suffix}` : '')} onClick={() => send(performance.now(), 'steer')}>
                 <ArrowUpRight size={16} strokeWidth={2.4} aria-hidden="true" /></Button>
