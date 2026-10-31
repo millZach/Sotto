@@ -780,7 +780,6 @@ msgid "{name} isn’t answering. Trying again ({tried} of {of})."
 msgstr ""
 
 #. {name} is a thread's title.
-#. {name} is a thread's title.
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "{name} moved to pane {position} of {count}"
 msgstr ""
@@ -1576,6 +1575,14 @@ msgstr ""
 #: src/renderer/src/agents/gitActionButton.logic.ts
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Action failed"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Actions for {projectTitle}"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Actions for {title}"
 msgstr ""
 
 #. A group of work an agent did, when it has no summary.
@@ -5496,8 +5503,10 @@ msgstr ""
 msgid "Only the first entries of this folder are listed. Keep typing to narrow them."
 msgstr ""
 
+#. A sidebar row's menu: open the thread in the focused pane.
 #. Opens the thread.
 #: src/renderer/src/agents/NeedsYouQueue.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Open"
 msgstr ""
 
@@ -6504,7 +6513,9 @@ msgid "Removing…"
 msgstr ""
 
 #. Rename the thread.
+#. Rename the thread.
 #: src/renderer/src/agents/ThreadPane.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Rename"
 msgstr ""
 
@@ -6612,7 +6623,9 @@ msgid "Restarts soon"
 msgstr ""
 
 #. Restore a settled thread to open work.
+#. Restore a settled thread to open work.
 #: src/renderer/src/agents/ThreadPane.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Restore"
 msgstr ""
 
@@ -6630,6 +6643,7 @@ msgid "Restore branch {sent}"
 msgstr ""
 
 #: src/renderer/src/agents/SidebarFrame.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Restore project"
 msgstr ""
 
@@ -6962,7 +6976,9 @@ msgid "Settings"
 msgstr ""
 
 #. Settle the thread: put it away on the Settled shelf.
+#. Settle the thread: put it away on the Settled shelf.
 #: src/renderer/src/agents/ThreadPane.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Settle"
 msgstr ""
 
@@ -6971,6 +6987,7 @@ msgid "Settle {title}"
 msgstr ""
 
 #: src/renderer/src/agents/SidebarFrame.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Settle project"
 msgstr ""
 
@@ -9272,6 +9289,11 @@ msgstr ""
 #. The context's size before a compaction.
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "was {from} tokens"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgctxt "Put a thread under Watcher's watch"
+msgid "Watch"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadSidebar.tsx

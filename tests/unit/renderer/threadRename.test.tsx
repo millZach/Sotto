@@ -36,7 +36,8 @@ describe('renaming a thread from the sidebar row', () => {
     fireEvent.keyDown(field, { key: 'Enter' })
     expect(renames(live)).toEqual([{ type: 'rename-thread', threadId: 'weekly-note', title: 'Friday wrap' }])
     expect(screen.queryByRole('textbox', { name: 'Rename Weekly note' })).toBeNull()
-    expect(within(row('Weekly note')).getByRole('button', { name: 'Rename Weekly note' })).toHaveFocus()
+    // The focus comes back to the row, the thread list's stop, not its hover icon, which is out of the Tab order (ADR-0164).
+    expect(within(row('Weekly note')).getByRole('button', { name: 'Weekly note' })).toHaveFocus()
   })
 
   it('cancels with Escape, leaving the thread and its name alone', () => {
@@ -47,8 +48,7 @@ describe('renaming a thread from the sidebar row', () => {
     fireEvent.keyDown(field, { key: 'Escape' })
     expect(renames(live)).toEqual([])
     expect(screen.queryByRole('textbox', { name: 'Rename Weekly note' })).toBeNull()
-    expect(within(row('Weekly note')).getByRole('button', { name: 'Weekly note' })).toBeInTheDocument()
-    expect(within(row('Weekly note')).getByRole('button', { name: 'Rename Weekly note' })).toHaveFocus()
+    expect(within(row('Weekly note')).getByRole('button', { name: 'Weekly note' })).toHaveFocus()
   })
 
   it('refuses an empty or whitespace-only name and keeps the editor open', () => {

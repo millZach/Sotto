@@ -325,13 +325,18 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
     fixedRow(t`Send the prompt`, <Trans>The composer’s own key. Shift+Enter adds a line.</Trans>, 'Enter', 'send'),
     fixedRow(t`Steer now`, <Trans>In the composer while a turn runs, where the agent can take it. Otherwise it does what Enter does.</Trans>, acceleratorOf('mod+enter'), 'steer'),
     fixedRow(t`Commit, use folder`, <Trans>Inside its dialog only.</Trans>, acceleratorOf('mod+enter'), 'commit'),
+    // The thread list's keys and F6 (ADR-0164): fixed, and each standing down for dictation's own.
+    fixedRow(t`Move in the thread list`, <Trans>The thread list is one Tab stop. Up and Down move through it, Home and End go to its ends, Right and Left open and close a folder, and Enter opens the thread.</Trans>, 'Down', 'thread-list'),
+    fixedRow(t`Open a thread’s menu`, <Trans>On a row in the thread list: Open, Open beside, Rename, Regenerate title, Watch and Settle. The menu key and a right-click open it too.</Trans>, 'Shift+F10', 'row-menu'),
+    fixedRow(t`Rename the thread`, <Trans>On a row in the thread list.</Trans>, 'F2', 'rename'),
+    fixedRow(t`Move between sidebar, pane and composer`, <Trans>Shift+F6 goes back. In a split it goes round every pane. A terminal keeps F6; Ctrl+Tab leaves it.</Trans>, 'F6', 'regions'),
     fixedRow(t`Search transcripts`, <Trans>Opens the Dictate room on its search, from any page.</Trans>, acceleratorOf('mod+k'), 'search'),
     fixedRow(t`Terminal search & text size`, <Trans>The terminal’s own keys, while a terminal holds them.</Trans>, acceleratorOf('mod+f'), 'terminal'),
     fixedRow(t`Settings`, platform === 'darwin'
       ? <Trans>macOS’s own Settings chord, from the app menu.</Trans>
       : <Trans>Opens Settings from any page.</Trans>, 'CommandOrControl+,', 'settings'),
   ]
-  const fixedMatches = query === '' || 'fixed dictation send steer search terminal settings'.includes(query)
+  const fixedMatches = query === '' || 'fixed dictation send steer search thread list arrows menu rename regions sidebar pane composer f6 terminal settings'.includes(query)
   const changedCount = GROUPS.flatMap(groupRows).filter(row => changed(row.id)).length
 
   return (

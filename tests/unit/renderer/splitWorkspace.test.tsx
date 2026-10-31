@@ -13,11 +13,18 @@ import {
 } from '../../../src/renderer/src/agents/splitLayout'
 import { liveAgentState, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 import { openPaneMenu, paneMenuItems } from '../../fixtures/renderer/paneMenu'
+import { useRegionCycle } from '../../../src/renderer/src/components/regionCycle'
 
 vi.mock('../../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 
 const NOW = E2E_THREADS_NOW
 const WIDE = 1200
+
+/** The window's F6, which the app mounts beside the page. */
+function RegionKeys(): null {
+  useRegionCycle({ settings: undefined, platform: 'win32' })
+  return null
+}
 
 /** Manual threads only, with a controller that moves the selection when asked. */
 function mount(options: { readonly width?: number; readonly height?: number; readonly store?: SplitLayoutStore; readonly tools?: (props: ThreadToolsProps) => React.ReactNode; readonly activeThreadId?: string; readonly slots?: Partial<ThreadsViewProps> } = {}) {
@@ -225,23 +232,33 @@ describe('split thread workspace', () => {
     expect(view.selections()).toEqual(['wav-stall', 'footer-links'])
   })
 
-  it('opens beside with Ctrl+Enter from the sidebar and moves between panes with F6', async () => {
-    vi.useFakeTimers({ toFake: ['setTimeout'] })
+  it('opens beside with Ctrl+Enter from the sidebar, and F6 goes round the panes from the focused one and back', async () => {
     const view = mount()
+    render(<RegionKeys />)
     const row = within(sidebar()).getByRole('button', { name: 'Streaming WAV stall' })
     row.focus()
     await act(async () => { fireEvent.keyDown(row, { key: 'Enter', ctrlKey: true }) })
     expect(view.selections()).toEqual(['wav-stall'])
     expect(view.pane('Streaming WAV stall')).toHaveAttribute('data-focused')
-    // Like opening a row, the keyboard stays in the sidebar; F6 enters the focused pane.
+    // Like opening a row, the keyboard stays in the sidebar; F6 enters the focused pane at its transcript, then its
+    // composer, then the other pane and its composer, and comes back to the row the list holds (ADR-0164).
     expect(row).toHaveFocus()
-    await act(async () => { fireEvent.keyDown(row, { key: 'F6' }) })
-    await act(async () => { vi.runAllTimers() })
+    const transcript = (title: string) => within(view.pane(title)).getByRole('log', { name: 'Thread transcript' })
+    const press = async (shiftKey = false): Promise<void> => { await act(async () => { fireEvent.keyDown(document.activeElement ?? document.body, { key: 'F6', shiftKey }) }) }
+    await press()
+    expect(transcript('Streaming WAV stall')).toHaveFocus()
+    await press()
     expect(view.prompt('Streaming WAV stall')).toHaveFocus()
-    await act(async () => { fireEvent.keyDown(view.prompt('Streaming WAV stall'), { key: 'F6' }) })
-    await act(async () => { vi.runAllTimers() })
-    expect(view.prompt('Grok voice previews')).toHaveFocus()
+    await press()
+    expect(transcript('Grok voice previews')).toHaveFocus()
     expect(view.pane('Grok voice previews')).toHaveAttribute('data-focused')
+    await press()
+    expect(view.prompt('Grok voice previews')).toHaveFocus()
+    await press()
+    expect(row).toHaveFocus()
+    // Shift+F6 from the sidebar reaches the focused pane's composer first.
+    await press(true)
+    expect(view.prompt('Grok voice previews')).toHaveFocus()
     expect(view.selections()).toEqual(['wav-stall', 'grok-previews'])
   })
 

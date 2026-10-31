@@ -288,7 +288,8 @@ export function AppShell({
       {beside ? sidebar : null}
       {beside ? <div className="app-room__top"><MainFreezeNotice />{platform === 'win32' ? <WindowControls maximized={maximized} onMaximize={onMaximize} onMinimize={onMinimize} onClose={onClose} /> : null}</div> : null}
       {/* Takes focus only from a page shortcut whose room has no switch on screen (pageShortcuts.ts). */}
-      <main className={page ? 'app-room app-room--page' : 'app-room'} id="main-content" tabIndex={-1}>{children}</main>
+      {/* A region F6 moves to beside the sidebar, on a page that has none of its own inside (ADR-0164). */}
+      <main className={page ? 'app-room app-room--page' : 'app-room'} id="main-content" tabIndex={-1} data-region="room">{children}</main>
       {beside ? <footer className="app-room__foot"><FooterStatus>{statusText}</FooterStatus></footer> : null}
       {!page && !beside && management ? (
         <footer className="app-footer">

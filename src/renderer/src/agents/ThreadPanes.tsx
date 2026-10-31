@@ -463,7 +463,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
             end: () => { window.clearTimeout(moveStart.current); setMoving(null) },
           } : undefined,
         }
-        return <React.Fragment key={id}><Marked>{marks => <section id={paneDomId(id)} className="thread-pane" data-room-backdrop="" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
+        return <React.Fragment key={id}><Marked>{marks => <section id={paneDomId(id)} className="thread-pane" data-room-backdrop="" data-region="pane" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
           data-placed={placed !== null || undefined} data-under-controls={index === underControls || undefined} {...marks}
           aria-label={paneName(id)} role={single ? 'tabpanel' : 'region'} style={placed ? boxStyle(`pane-${index}`) : undefined}
           // A hidden pane stays mounted for its scroll position and draft, but out of reach.

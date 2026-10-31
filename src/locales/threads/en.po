@@ -780,7 +780,6 @@ msgid "{name} isn’t answering. Trying again ({tried} of {of})."
 msgstr "{name} isn’t answering. Trying again ({tried} of {of})."
 
 #. {name} is a thread's title.
-#. {name} is a thread's title.
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "{name} moved to pane {position} of {count}"
 msgstr "{name} moved to pane {position} of {count}"
@@ -1577,6 +1576,14 @@ msgstr "Access token"
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Action failed"
 msgstr "Action failed"
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Actions for {projectTitle}"
+msgstr "Actions for {projectTitle}"
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgid "Actions for {title}"
+msgstr "Actions for {title}"
 
 #. A group of work an agent did, when it has no summary.
 #: src/renderer/src/agents/ThreadActivity.tsx
@@ -5496,8 +5503,10 @@ msgstr "only the agent’s title"
 msgid "Only the first entries of this folder are listed. Keep typing to narrow them."
 msgstr "Only the first entries of this folder are listed. Keep typing to narrow them."
 
+#. A sidebar row's menu: open the thread in the focused pane.
 #. Opens the thread.
 #: src/renderer/src/agents/NeedsYouQueue.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Open"
 msgstr "Open"
 
@@ -6504,7 +6513,9 @@ msgid "Removing…"
 msgstr "Removing…"
 
 #. Rename the thread.
+#. Rename the thread.
 #: src/renderer/src/agents/ThreadPane.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Rename"
 msgstr "Rename"
 
@@ -6612,7 +6623,9 @@ msgid "Restarts soon"
 msgstr "Restarts soon"
 
 #. Restore a settled thread to open work.
+#. Restore a settled thread to open work.
 #: src/renderer/src/agents/ThreadPane.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Restore"
 msgstr "Restore"
 
@@ -6630,6 +6643,7 @@ msgid "Restore branch {sent}"
 msgstr "Restore branch {sent}"
 
 #: src/renderer/src/agents/SidebarFrame.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Restore project"
 msgstr "Restore project"
 
@@ -6962,7 +6976,9 @@ msgid "Settings"
 msgstr "Settings"
 
 #. Settle the thread: put it away on the Settled shelf.
+#. Settle the thread: put it away on the Settled shelf.
 #: src/renderer/src/agents/ThreadPane.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Settle"
 msgstr "Settle"
 
@@ -6971,6 +6987,7 @@ msgid "Settle {title}"
 msgstr "Settle {title}"
 
 #: src/renderer/src/agents/SidebarFrame.tsx
+#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Settle project"
 msgstr "Settle project"
 
@@ -9273,6 +9290,11 @@ msgstr "Walkthrough"
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "was {from} tokens"
 msgstr "was {from} tokens"
+
+#: src/renderer/src/agents/ThreadSidebar.tsx
+msgctxt "Put a thread under Watcher's watch"
+msgid "Watch"
+msgstr "Watch"
 
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Watched by Watcher"

@@ -1,4 +1,4 @@
-import { useEffect, useState, type KeyboardEvent } from 'react'
+import { useEffect, useState } from 'react'
 import { focusInPane, type DropTarget } from './ThreadPanes'
 import { closePane, openBeside, replacePane, type SplitLayout, type SplitLayoutStore } from './splitLayout'
 
@@ -20,7 +20,6 @@ export const focusPaneLater = (id: string): void => { window.setTimeout(() => fo
 export interface PaneGrid {
   readonly layout: SplitLayout
   readonly focusedId: string | null
-  readonly paneIds: readonly string[]
   readonly layoutStore: SplitLayoutStore
   /** Whether this ID can be shown in a pane right now. */
   readonly exists: (id: string) => boolean
@@ -32,9 +31,10 @@ export interface PaneGrid {
 
 /**
  * The actions every pane grid offers: open beside the focused pane, drop a sidebar row on a target, close a pane
- * (the view only, never the work in it), and F6 between panes. The workspace decides what opening and focusing mean.
+ * (the view only, never the work in it). The workspace decides what opening and focusing mean. F6 between the panes is the
+ * window's own region cycle now (ADR-0164, `regionCycle.ts`).
  */
-export function paneGridActions({ layout, focusedId, paneIds, layoutStore, exists, open, focus }: PaneGrid) {
+export function paneGridActions({ layout, focusedId, layoutStore, exists, open, focus }: PaneGrid) {
   const openBesideFocused = (id: string, side: 'start' | 'end' = 'end'): void => {
     if (focusedId === null) { open(id); return }
     if (id === focusedId) return
@@ -61,16 +61,5 @@ export function paneGridActions({ layout, focusedId, paneIds, layoutStore, exist
     if (id === focusedId) focus(keep)
     focusPaneLater(keep)
   }
-  const onKeyDown = (event: KeyboardEvent<HTMLElement>): void => {
-    // F6 moves between panes, as it moves between the panes of other Windows apps.
-    if (event.key !== 'F6' || event.altKey || event.ctrlKey || event.metaKey || paneIds.length < 2) return
-    event.preventDefault()
-    const index = focusedId === null ? -1 : paneIds.indexOf(focusedId)
-    // From outside the panes (the sidebar), F6 enters the focused pane; inside, it moves to the next one.
-    const inside = (event.target as HTMLElement).closest('.thread-pane') !== null
-    const next = !inside && focusedId !== null ? focusedId : paneIds[(index + (event.shiftKey ? -1 : 1) + paneIds.length) % paneIds.length]!
-    focus(next)
-    focusPaneLater(next)
-  }
-  return { openBesideFocused, onDrop, close, onKeyDown }
+  return { openBesideFocused, onDrop, close }
 }

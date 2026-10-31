@@ -467,7 +467,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         observed={JSON.stringify([rowConnected, state.connection, thread.historyStatus, thread.status, closed, thread.requests.map(request => [request.id, request.delivery, request.questions])])} />
     </ThreadTranscript></RunCommands></ThreadWebLinks>
     <div className="thread-greeting-slot" data-room-backdrop="" ref={setGreetingSlot} />
-    <div className="thread-workspace__compose" data-room-backdrop="" ref={compose} data-slim={slim || undefined} onMouseDown={slim ? pressSlim : undefined}
+    {/* F6's stop after the transcript (ADR-0164), entered at the prompt. */}
+    <div className="thread-workspace__compose" data-room-backdrop="" data-region="composer" ref={compose} data-slim={slim || undefined} onMouseDown={slim ? pressSlim : undefined}
       onFocus={() => setComposeFocused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setComposeFocused(false) }}>
       {/* What a Watch or Stop watching press did, just above the focused pane's composer (Owl only). */}
       {focused ? <WatchToast /> : null}

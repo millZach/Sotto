@@ -638,7 +638,7 @@ export function WatcherView({ now: fixedNow, update = null }: {
       <div className="thread-workspace__body" data-room-backdrop="" data-panes>
         <div className="thread-panes" data-room-backdrop="">
           <div ref={area} className="thread-panes__area" data-room-backdrop="" style={{ '--watcher-share': share } as CSSProperties}>
-            <Marked>{paneMarks => <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" data-room-backdrop="" {...paneMarks} data-thread-id={watcherId ?? undefined} data-focused={focusedPane === 'watcher' || !beside || undefined}
+            <Marked>{paneMarks => <section id={WATCHER_PANE_ID} className="thread-pane watcher-pane" data-room-backdrop="" data-region="pane" {...paneMarks} data-thread-id={watcherId ?? undefined} data-focused={focusedPane === 'watcher' || !beside || undefined}
               data-under-controls={!beside || undefined} role="region" aria-label="Watcher"
               onFocusCapture={() => setFocusedPane('watcher')} onPointerDownCapture={() => setFocusedPane('watcher')}>
               <WatcherNightScene shown={sceneShown} held={fixedNow !== undefined} place={app?.settings?.watcherScene} owls={owls} glowing={glowing} onOpen={openThread} onShowAll={showAll} />
