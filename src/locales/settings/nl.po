@@ -6253,6 +6253,14 @@ msgstr ""
 msgid "Undo"
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Undo a settle"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Undo already uses {keys}. Pick other keys."
+msgstr ""
+
 #. A systemd unit, the file that starts a service.
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Unit"
@@ -6782,6 +6790,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
 msgid "Where Watcher and the owls for your threads live. Its colors come from your theme."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "While the toast at the sidebar’s foot offers Undo. A text field keeps these keys for its own typing."
 msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx

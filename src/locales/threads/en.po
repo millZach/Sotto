@@ -7027,6 +7027,11 @@ msgstr "Settled {title}"
 msgid "Settled {title} and removed its worktree. The branch is kept."
 msgstr "Settled {title} and removed its worktree. The branch is kept."
 
+#. A toast while a cleanup rule removes a settled thread's worktree folder; {title} is the thread's name.
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "Settled {title}. Removing its worktree…"
+msgstr "Settled {title}. Removing its worktree…"
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Setup did not finish."
 msgstr "Setup did not finish."
@@ -7344,6 +7349,11 @@ msgstr "Sotto could not compare that thread's permission with this thread's safe
 msgid "Sotto could not compare the permission it asked for with this thread's own, so it could not tell how much a new thread may have. {nothing}"
 msgstr "Sotto could not compare the permission it asked for with this thread's own, so it could not tell how much a new thread may have. {nothing}"
 
+#. A toast after Undo got no answer; {title} is the thread's name.
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "Sotto could not confirm that {title} came back. If it is still on the Settled shelf, restore it from there."
+msgstr "Sotto could not confirm that {title} came back. If it is still on the Settled shelf, restore it from there."
+
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing."
 msgstr "Sotto could not confirm that the prompt was set aside. Your next message is kept. Check again before continuing."
@@ -7435,10 +7445,6 @@ msgstr "Sotto could not reach its own side of this. Nothing was changed. Try aga
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto could not reach its own side of this. Nothing was saved. Try again."
 msgstr "Sotto could not reach its own side of this. Nothing was saved. Try again."
-
-#: src/renderer/src/agents/SettleToast.tsx
-msgid "Sotto could not reach this thread's computer. Nothing was changed; try Restore on the Settled shelf."
-msgstr "Sotto could not reach this thread's computer. Nothing was changed; try Restore on the Settled shelf."
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto could not read it again on {machine} just now. It reads it again when {machine} says it changed."

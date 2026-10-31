@@ -12,10 +12,12 @@ export interface SettleOffer {
   readonly threadId: string
   readonly title: string
   /**
-   * `undo` while Restore would put everything back; `removed` once the settle also took the thread's worktree folder,
-   * which Restore cannot bring back with what was in it; `refused` when Undo was pressed and the thread stayed settled.
+   * `undo` while Restore would put everything back; `removing` while the on-settle cleanup rule takes the thread's clean
+   * worktree folder, its time standing still until that answers; `removed` once the settle took the folder, which Restore
+   * cannot bring back with what was in it; `refused` when Undo was pressed and main kept the thread settled; `unconfirmed`
+   * when Undo was pressed and no answer came back, so whether it took is not known.
    */
-  readonly kind: 'undo' | 'removed' | 'refused'
+  readonly kind: 'undo' | 'removing' | 'removed' | 'refused' | 'unconfirmed'
   /** The worktree question is open: the toast waits for its answer before it shows or its time starts. */
   readonly asking: boolean
   /** Main's words for a refused Undo. */
@@ -24,13 +26,16 @@ export interface SettleOffer {
 
 /** How long the toast stands once shown: long enough to reach Undo, and no longer than the gap needs (ADR-0165). */
 export const SETTLE_UNDO_MS = 6_000
-/** A refused Undo stays longer, to be read. */
+/** A refused or unconfirmed Undo stays longer, to be read. */
 export const SETTLE_REFUSAL_MS = 15_000
 
 let current: SettleOffer | null = null
 let next = 1
 let timer: ReturnType<typeof setTimeout> | undefined
-/** The pointer or the focus is on the toast: its time stands still until both leave. */
+/**
+ * The pointer or the focus is on the toast: its time stands still until both leave. It is the toast's, not one offer's, so
+ * a later Settle that replaces the words under a still pointer is held as well.
+ */
 let held = false
 const listeners = new Set<() => void>()
 const publish = (): void => { for (const listener of [...listeners]) listener() }
@@ -39,13 +44,14 @@ const publish = (): void => { for (const listener of [...listeners]) listener() 
 function startClock(): void {
   if (timer !== undefined) { clearTimeout(timer); timer = undefined }
   const offer = current
-  if (offer === null || offer.asking || held) return
-  timer = setTimeout(() => settleOffers.dismiss(offer.id), offer.kind === 'refused' ? SETTLE_REFUSAL_MS : SETTLE_UNDO_MS)
+  if (offer === null || offer.asking || offer.kind === 'removing' || held) return
+  timer = setTimeout(() => settleOffers.dismiss(offer.id), offer.kind === 'undo' || offer.kind === 'removed' ? SETTLE_UNDO_MS : SETTLE_REFUSAL_MS)
 }
 
 function replace(offer: SettleOffer | null): void {
   current = offer
-  held = false
+  // Nothing left to hold once the toast is gone; a toast that replaces another keeps its hold.
+  if (offer === null) held = false
   startClock()
   publish()
 }
@@ -61,27 +67,32 @@ function update(threadId: string, change: (offer: SettleOffer) => SettleOffer): 
 export const settleOffers = {
   get: (): SettleOffer | null => current,
   /**
-   * A Settle the user pressed took. `asking` while its worktree question opens; `removed` when the on-settle rule takes
-   * its clean folder at once.
+   * A Settle the user pressed took. `asking` while its worktree question opens; `removing` while the on-settle rule takes
+   * its clean folder.
    */
-  settled(threadId: string, title: string, { asking = false, removed = false }: { readonly asking?: boolean; readonly removed?: boolean } = {}): void {
-    replace({ id: next++, threadId, title, kind: removed ? 'removed' : 'undo', asking })
+  settled(threadId: string, title: string, { asking = false, removing = false }: { readonly asking?: boolean; readonly removing?: boolean } = {}): void {
+    replace({ id: next++, threadId, title, kind: removing ? 'removing' : 'undo', asking })
   },
-  /** The worktree question was answered: the folder went with the thread, or stayed. */
+  /**
+   * The worktree question was answered, or the rule's removal was: the folder went with the thread, or it stayed and Undo
+   * can put everything back. The toast's time starts now.
+   */
   answered(threadId: string, removed: boolean): void {
-    update(threadId, offer => ({ ...offer, asking: false, kind: removed ? 'removed' : offer.kind }))
+    update(threadId, offer => ({ ...offer, asking: false, kind: removed ? 'removed' : offer.kind === 'removing' ? 'undo' : offer.kind }))
   },
-  /** The on-settle rule's removal was refused, so the folder stayed and Undo can put everything back after all. */
-  kept(threadId: string): void {
-    update(threadId, offer => offer.kind === 'removed' ? { ...offer, kind: 'undo' } : offer)
-  },
-  /** Undo was pressed and main kept the thread settled, in its own words. */
-  refused(threadId: string, title: string, refusal: string): void {
-    replace({ id: next++, threadId, title, kind: 'refused', asking: false, refusal })
+  /**
+   * Undo was pressed and main kept the thread settled, in its own words, or (`refusal` undefined) no answer came back.
+   * Said only while no later Settle has offered its own Undo, which would otherwise be taken away by older news.
+   */
+  refused(threadId: string, title: string, refusal: string | undefined): void {
+    if (current !== null) return
+    replace(refusal === undefined
+      ? { id: next++, threadId, title, kind: 'unconfirmed', asking: false }
+      : { id: next++, threadId, title, kind: 'refused', asking: false, refusal })
   },
   /** Holds the toast's time while the pointer or the focus is on it, and starts it again once both have left. */
-  hold(id: number, on: boolean): void {
-    if (current?.id !== id || held === on) return
+  hold(on: boolean): void {
+    if (held === on) return
     held = on
     startClock()
   },

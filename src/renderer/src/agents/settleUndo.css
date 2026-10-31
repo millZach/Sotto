@@ -13,7 +13,7 @@
 .thread-nav__toast { flex: none; min-width: 0; }
 .thread-nav__toast .tt-toast-region[data-placement='sidebar'] { position: static; max-width: none; margin: 0 8px 8px; }
 .thread-nav__toast .tt-toast-region[data-placement='sidebar']:empty { margin: 0; }
-.thread-nav__toast .tt-toast { padding: 6px 6px 6px 12px; }
+:is(.thread-nav__toast, .settle-toast-corner) .tt-toast { padding: 6px 6px 6px 12px; }
 
 /* On the collapsed rail it stands beside the rail's foot, over the edge of the room, as wide as an open sidebar's. */
 .thread-nav__rail .thread-nav__toast { position: absolute; left: calc(100% + 8px); bottom: 12px; z-index: 30; width: min(300px, calc(100vw - 96px)); }

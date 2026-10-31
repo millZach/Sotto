@@ -8,6 +8,7 @@ import { useOptionalApp } from '../../../src/renderer/src/state/AppContext'
 import { describeThreads, holdSettledRows, organizeWorkspace } from '../../../src/renderer/src/agents/threadFacts'
 import { ThreadSidebar } from '../../../src/renderer/src/agents/ThreadSidebar'
 import { SETTLE_UNDO_MS, settleOffers } from '../../../src/renderer/src/agents/settleUndo'
+import { SettleToast } from '../../../src/renderer/src/agents/SettleToast'
 import { GAP_CLOSE_MS } from '../../../src/renderer/src/agents/settleGap'
 import { openSidebarFolders, threadsStateFixture } from '../../fixtures/renderer/liveAgentState'
 
@@ -23,13 +24,14 @@ vi.mock('../../../src/renderer/src/state/AppContext', async importOriginal => ({
  */
 const now = E2E_THREADS_NOW
 const settledAt = new Date(now).toISOString()
-const pointerOver = { list: false }
+const pointerOver = { list: false, toast: false }
 const matches = Element.prototype.matches
 beforeEach(() => {
   pointerOver.list = false
-  // jsdom has no pointer to be over anything: `:hover` on the sidebar's scroll area answers for it here.
+  pointerOver.toast = false
+  // jsdom has no pointer to be over anything: `:hover` on the sidebar's scroll area and on the toast answers for it here.
   vi.spyOn(Element.prototype, 'matches').mockImplementation(function (this: Element, selector: string) {
-    if (selector === ':hover') return pointerOver.list && this.classList.contains('thread-nav__scroll')
+    if (selector === ':hover') return (pointerOver.list && this.classList.contains('thread-nav__scroll')) || (pointerOver.toast && this.classList.contains('thread-nav__toast'))
     return matches.call(this, selector)
   })
 })
@@ -44,7 +46,8 @@ afterEach(() => {
 })
 
 /** The design fixture's sidebar over a state that settles and restores the way main does, and the commands it got. */
-function mount(patch: (state: AgentState) => void = () => undefined, refuse: Partial<Record<AgentCommand['type'], string>> = {}) {
+/** `refuse` answers a command with main's refusal; `lose` carries it out but loses its answer, as a dropped reply would. */
+function mount(patch: (state: AgentState) => void = () => undefined, refuse: Partial<Record<AgentCommand['type'], string>> = {}, lose: readonly AgentCommand['type'][] = []) {
   const initial = threadsStateFixture()
   patch(initial)
   openSidebarFolders(initial)
@@ -64,7 +67,7 @@ function mount(patch: (state: AgentState) => void = () => undefined, refuse: Par
       current = { ...current, host: { ...current.host, threads: current.host.threads.map((thread): AgentThread => thread.id === request.threadId ? { ...thread, workspaceSettledAt: settling ? settledAt : null } : thread) } }
       publish(current)
     }
-    return current
+    return lose.includes(request.type) ? null as unknown as AgentState : current
   })
   function Sidebar() {
     const [state, setState] = useState(initial)
@@ -72,8 +75,8 @@ function mount(patch: (state: AgentState) => void = () => undefined, refuse: Par
     return <ThreadSidebar state={state} command={command} organization={organizeWorkspace(state, describeThreads(state, now), '', state.activeProjectId)}
       query="" onQuery={vi.fn()} onOpen={vi.fn()} onNewThread={vi.fn()} currentThreadId="visual-gate" openThreadIds={['visual-gate']} onOpenBeside={vi.fn()} onDragThread={vi.fn()} shortcutsLive />
   }
-  render(<Sidebar />)
-  return { commands, projects: () => within(screen.getByRole('region', { name: 'Projects' })) }
+  const view = render(<Sidebar />)
+  return { commands, projects: () => within(screen.getByRole('region', { name: 'Projects' })), unmount: view.unmount }
 }
 
 /** A press of the row's hover Settle with the pointer over the list, as a mouse makes it. */
@@ -250,6 +253,78 @@ describe('the settle toast', () => {
     await ask('Remove worktree')()
     expect(await screen.findByText('Settled Grok voice previews and removed its worktree. The branch is kept.')).toBeVisible()
     expect(screen.queryByRole('button', { name: /^Undo/ })).not.toBeInTheDocument()
+  })
+
+  it('stays held when a later Settle replaces it under a still pointer, and lets go when the sidebar goes', async () => {
+    const { unmount } = mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Settle Grok voice previews' }))
+    await screen.findByRole('button', { name: 'Undo: restore Grok voice previews' })
+    pointerOver.toast = true
+    fireEvent.pointerEnter(document.querySelector('.thread-nav__toast')!)
+    vi.useFakeTimers()
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Settle Streaming WAV stall' })) })
+    expect(screen.getByRole('button', { name: 'Undo: restore Streaming WAV stall' })).toBeVisible()
+    act(() => { vi.advanceTimersByTime(SETTLE_UNDO_MS * 2) })
+    expect(settleOffers.get()?.title).toBe('Streaming WAV stall')
+    // Taken away while held, as by another page, its time runs again rather than standing for good.
+    unmount()
+    act(() => { vi.advanceTimersByTime(SETTLE_UNDO_MS) })
+    expect(settleOffers.get()).toBeNull()
+  })
+
+  it('lets a thread shortcut saved on Ctrl+Z keep it', async () => {
+    vi.mocked(useOptionalApp).mockReturnValue({ platform: 'win32', settings: { ...DEFAULT_SETTINGS, threadShortcuts: { 'focus-prompt': 'mod+z' } } } as unknown as ReturnType<typeof useOptionalApp>)
+    const { commands } = mount()
+    fireEvent.click(screen.getByRole('button', { name: 'Settle Grok voice previews' }))
+    expect(await screen.findByRole('button', { name: 'Undo: restore Grok voice previews' })).not.toHaveAttribute('aria-keyshortcuts')
+    fireEvent.keyDown(document.body, { key: 'z', ctrlKey: true })
+    expect(commands.filter(request => request.type === 'restore-thread')).toEqual([])
+  })
+
+  it('says it cannot tell when Undo got no answer, and goes once the thread is seen back', async () => {
+    mount(() => undefined, {}, ['restore-thread'])
+    fireEvent.click(screen.getByRole('button', { name: 'Settle Grok voice previews' }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Undo: restore Grok voice previews' }))
+    // The restore took, so the thread is seen back and the toast that could not tell goes.
+    await waitFor(() => expect(screen.getByRole('region', { name: 'Projects' })).toHaveTextContent('Grok voice previews'))
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument())
+    expect(settleOffers.get()).toBeNull()
+  })
+
+  it('keeps a later Settle\'s Undo when an earlier Undo is refused', () => {
+    settleOffers.settled('b', 'B')
+    settleOffers.refused('a', 'A', 'That thread is unavailable.')
+    expect(settleOffers.get()).toMatchObject({ threadId: 'b', kind: 'undo' })
+    settleOffers.dismiss(settleOffers.get()!.id)
+    settleOffers.refused('a', 'A', undefined)
+    expect(settleOffers.get()).toMatchObject({ threadId: 'a', kind: 'unconfirmed' })
+  })
+
+  it('says while the on-settle rule removes the folder, then offers Undo only if the folder stayed', async () => {
+    const worktree = { mode: 'independent' as const, status: 'ready' as const, path: 'C:/owned/grok', branch: 'sotto/grok', dirty: false }
+    const owned = (state: AgentState): void => { state.host.threads = state.host.threads.map(thread => thread.id === 'grok-previews' ? { ...thread, nativeSessionStarted: true, worktree } : thread) }
+    vi.mocked(useOptionalApp).mockReturnValue({ platform: 'win32', settings: { ...DEFAULT_SETTINGS, worktreeCleanup: { ...DEFAULT_SETTINGS.worktreeCleanup, onSettle: true } } } as unknown as ReturnType<typeof useOptionalApp>)
+    mount(owned)
+    fireEvent.click(screen.getByRole('button', { name: 'Settle Grok voice previews' }))
+    expect(await screen.findByText('Settled Grok voice previews and removed its worktree. The branch is kept.')).toBeVisible()
+    expect(screen.queryByRole('button', { name: /^Undo/ })).not.toBeInTheDocument()
+    cleanup()
+    mount(owned, { 'reclaim-thread-worktree': 'This folder has files Git ignores. Nothing was removed.' })
+    fireEvent.click(screen.getByRole('button', { name: 'Settle Grok voice previews' }))
+    expect(await screen.findByRole('button', { name: 'Undo: restore Grok voice previews' })).toBeVisible()
+    // While main still removes it, the toast says so and its time stands still.
+    settleOffers.settled('grok-previews', 'Grok voice previews', { removing: true })
+    expect(await screen.findByText('Settled Grok voice previews. Removing its worktree…')).toBeVisible()
+    expect(screen.queryByRole('button', { name: /^Undo/ })).not.toBeInTheDocument()
+  })
+
+  it('stands in the window\'s corner where there is no sidebar', () => {
+    const state = threadsStateFixture()
+    render(<SettleToast command={vi.fn()} threads={state.host.threads} placement="corner" />)
+    act(() => settleOffers.settled('grok-previews', 'Grok voice previews'))
+    const region = screen.getByRole('button', { name: 'Undo: restore Grok voice previews' }).closest('.tt-toast-region')!
+    expect(region).not.toHaveAttribute('data-placement')
+    expect(region.closest('.settle-toast-corner')).not.toBeNull()
   })
 
   it('says plainly when Undo could not restore the thread', async () => {
