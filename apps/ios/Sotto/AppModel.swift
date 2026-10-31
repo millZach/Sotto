@@ -53,7 +53,7 @@ extension AppModel {
         if let kept = listed.groups[key] { return kept }
         // Each search typed is its own key; a list that stays the same while the user types keeps only the latest few.
         if listed.groups.count >= 8 { listed.groups = [:] }
-        let groups = FocusThreads(lists, show: show, query: query, opened: opened, holding: holding)
+        let groups = BenchProbe.time("list.focusThreads") { FocusThreads(lists, show: show, query: query, opened: opened, holding: holding) }
         listed.groups[key] = groups
         return groups
     }
@@ -1368,6 +1368,15 @@ struct HeldDetail {
     private var fixtureShells: [String: [String: Any]] = [:]
     /// The laptop's Watcher page in the Watcher journeys, as the laptop would send it.
     private var fixtureWatcher: [String: Any]?
+    /// The iPhone benchmarks (`--bench-threads`, `Scripts/bench.sh`): the computer their frames come from, the long
+    /// thread's `detail` push being built, the records the laptop's pushes were measured from, and the laptop's state.
+    private var benchLaptop: String?
+    private var benchTurns = 0
+    private var benchLongFrame: Task<Data, Never>?
+    private var benchRecords = ThreadRecordsCache()
+    private var benchShellRevision = 0
+    private var benchSequence = 1_000
+    private var benchState: Data?
     private func loadUIFixture() {
         isUIFixture = true
         if ProcessInfo.processInfo.arguments.contains("--reset-ui-preferences"), let bundle = Bundle.main.bundleIdentifier {
@@ -1566,6 +1575,7 @@ struct HeldDetail {
             if arguments.contains("--ui-watcher-two-cards") { answerFixtureNotesWhenAsked(on: laptop) }
         }
         storageReady = true
+        if arguments.contains("--bench-threads") { startBench(laptop: laptop, arguments: arguments) }
         if arguments.contains("--ui-streaming") { streamFixture(host: laptop) }
         if arguments.contains("--ui-feedback-request-gone") { feedback = Self.requestNoLongerWaiting }
         if arguments.contains("--ui-feedback-markers-unreadable") { feedback = Self.markersUnreadable }
@@ -1593,6 +1603,78 @@ struct HeldDetail {
                       let next = detail.applying(change) else { continue }
                 openDetail = next; detailVersion += 1
             }
+        }
+    }
+    /// The iPhone benchmarks' computer (`docs/perf/2026-10-31-iphone-benchmarks.md`). The laptop's list becomes
+    /// `--bench-threads` records and a long thread of `--bench-turns` turns, sent as wire bytes the way a host that
+    /// offers `changed-thread-records` sends them, and read as `HostConnection` reads them: decoded off the main actor,
+    /// the records put back, then `push`, the path every computer's update takes.
+    private func startBench(laptop: String, arguments: [String]) {
+        func number(_ name: String) -> Int? {
+            guard let index = arguments.firstIndex(of: name), arguments.indices.contains(index + 1) else { return nil }
+            return Int(arguments[index + 1])
+        }
+        guard let threads = number("--bench-threads"), var state = fixtureShells[laptop] else { return }
+        let turns = number("--bench-turns") ?? 200
+        var host = state["host"] as? [String: Any] ?? [:]
+        host["threads"] = [Any]()
+        state["host"] = host
+        guard let stateData = try? JSONSerialization.data(withJSONObject: state) else { return }
+        BenchProbe.enabled = true
+        benchLaptop = laptop; benchTurns = turns; benchState = stateData
+        // As on a live connection, so the laptop's pushes are taken, not set aside as a finished connection's.
+        generations[laptop] = UUID()
+        let journey = arguments.firstIndex(of: "--bench-journey").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
+        BenchDriver.start(model: self, chunks: number("--bench-chunks") ?? 200, journey: journey ?? "all",
+                          long: ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID))
+        let now = Date()
+        benchLongFrame = Task.detached(priority: .userInitiated) { BenchWire.longDetailFrame(turns: turns, now: now) }
+        Task { [weak self] in
+            let records = await Task.detached(priority: .userInitiated) { BenchWire.threadRecords(count: threads, hostID: laptop, now: now) }.value
+            guard let self else { return }
+            benchShellRevision = 1
+            await benchDeliver(BenchWire.shellFrame(state: stateData, revision: 1, base: nil, changed: records), kind: "shell-full")
+            BenchDriver.listApplied()
+        }
+    }
+    /// One frame from the benchmarks' computer, read as `HostConnection.receive` reads it, with its bytes and its time
+    /// to decode and to apply counted by kind.
+    private func benchDeliver(_ data: Data, kind: String) async {
+        guard let laptop = benchLaptop else { return }
+        BenchProbe.count("frames." + kind)
+        BenchProbe.count("bytes." + kind, by: data.count)
+        let read = DispatchTime.now().uptimeNanoseconds
+        guard var frame = try? await Wire.readFrame(data) else { BenchProbe.count("frames.unreadable"); return }
+        let applied = DispatchTime.now().uptimeNanoseconds
+        BenchProbe.record("decode." + kind, nanoseconds: Int(applied - read))
+        if case .shell(let shell) = frame {
+            guard let whole = benchRecords.whole(shell) else { BenchProbe.count("frames.unplaced"); return }
+            frame = .shell(whole)
+        }
+        benchSequence += 1
+        push(frame, from: laptop, sequence: benchSequence)
+        BenchProbe.record("apply." + kind, nanoseconds: Int(DispatchTime.now().uptimeNanoseconds - applied))
+    }
+    /// Streams `chunks` words into the long thread's last reply, one every 50 ms as a computer sends them, each a
+    /// `detail-delta` push; every fifth is followed by a shell push listing only the long thread's record, and every
+    /// twentieth finishes a step and starts another. `done` is called after the last, or once the thread is closed.
+    func benchStream(chunks: Int, done: @escaping @MainActor () -> Void) {
+        guard let laptop = benchLaptop, let state = benchState else { done(); return }
+        let ref = ThreadRef(hostID: laptop, threadID: BenchWire.longThreadID)
+        let steps = BenchWire.streamStepSequence(turns: benchTurns)
+        Task { [weak self] in
+            let now = Date()
+            for chunk in 1...max(1, chunks) {
+                try? await Task.sleep(nanoseconds: 50_000_000)
+                guard let self, selected == ref, let detail = openDetail else { break }
+                await benchDeliver(BenchWire.deltaFrame(chunk: chunk, revision: detail.revision, firstSequence: steps, now: now), kind: "delta")
+                if chunk % 5 == 0 {
+                    let record = BenchWire.longThreadRecord(hostID: laptop, now: Date())
+                    await benchDeliver(BenchWire.shellFrame(state: state, revision: benchShellRevision + 1, base: benchShellRevision, changed: [record]), kind: "shell")
+                    benchShellRevision += 1
+                }
+            }
+            done()
         }
     }
     /// Twelve turns of a question and a long Markdown reply, a command between each, and a last step after the final reply.
@@ -2579,6 +2661,14 @@ struct HeldDetail {
         threadSelectionGeneration = selection
         guard threadSelectionGeneration == selection, !Task.isCancelled else { return }
         #if DEBUG && os(iOS)
+        if isUIFixture, let ref, ref.hostID == benchLaptop, ref.threadID == BenchWire.longThreadID, let frame = benchLongFrame {
+            // The benchmarks' long thread is read as a computer's `detail` push, through the frame reader and `push`.
+            let data = await frame.value
+            guard selected == ref else { return }
+            await benchDeliver(data, kind: "detail")
+            BenchDriver.detailApplied()
+            return
+        }
         if isUIFixture {
             let detail = ref.flatMap { fixtureDetails[$0.id] }
             if fixtureSlowDetail, let ref {

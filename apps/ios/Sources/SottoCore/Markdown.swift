@@ -174,6 +174,8 @@ public enum Markdown {
     static let blocksKept = RecentCache<String, [MarkdownBlock]>(limit: 256, budget: 256 * 1024) { $0.utf8.count }
 
     public static func blocks(_ text: String) -> [MarkdownBlock] {
+        BenchProbe.count("markdown.blocks")
+        BenchProbe.count("markdown.bytes", by: text.utf8.count)
         let normalized = text.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
         let lines = normalized.components(separatedBy: "\n")
         var blocks: [MarkdownBlock] = []

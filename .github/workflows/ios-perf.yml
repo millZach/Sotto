@@ -1,0 +1,89 @@
+name: iPhone benchmarks
+
+# The iPhone benchmarks (docs/perf/2026-10-31-iphone-benchmarks.md), apart from CI because they take most of an hour on
+# a macOS runner and the native client's own job is already close to its limit (#963). They run when asked for: on a
+# pull request carrying the `ios-perf` label, at every push while it carries it, or by hand from the Actions tab. Each
+# run measures the pull request's base and its head on the same runner, so the two columns differ only by the change.
+on:
+  pull_request:
+    types: [labeled, synchronize, reopened]
+    paths:
+      - 'apps/ios/**'
+      - '.github/workflows/ios-perf.yml'
+  workflow_dispatch:
+    inputs:
+      base:
+        description: 'Ref to measure as the before column; empty measures only the chosen ref'
+        required: false
+        default: 'main'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-perf-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  bench:
+    name: iPhone benchmarks (macOS)
+    if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ios-perf')
+    runs-on: macos-26
+    # Two optimized builds, each with five launches and five journeys: about an hour.
+    timeout-minutes: 150
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
+      HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      BASE_REF: ${{ github.event.pull_request.base.sha || inputs.base }}
+    steps:
+      - name: Check out the change
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.HEAD_SHA }}
+          fetch-depth: 0
+      - name: Record native toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+      - name: Check out the base beside it
+        id: base
+        run: |
+          if [ -z "$BASE_REF" ]; then echo "measure=false" >> "$GITHUB_OUTPUT"; exit 0; fi
+          base=$(git rev-parse --verify "$BASE_REF^{commit}" 2>/dev/null || git rev-parse --verify "origin/$BASE_REF^{commit}")
+          git worktree add --detach "$RUNNER_TEMP/base" "$base"
+          # A base from before the benchmarks has nothing to run.
+          if [ -f "$RUNNER_TEMP/base/apps/ios/Scripts/bench.sh" ]; then echo "measure=true" >> "$GITHUB_OUTPUT"; else echo "measure=false" >> "$GITHUB_OUTPUT"; fi
+          echo "Base: $base"
+      - name: Measure the base
+        if: steps.base.outputs.measure == 'true'
+        run: sh "$RUNNER_TEMP/base/apps/ios/Scripts/bench.sh" "$RUNNER_TEMP/bench/before"
+      - name: Measure the change
+        run: sh apps/ios/Scripts/bench.sh "$RUNNER_TEMP/bench/after"
+      - name: Compare
+        if: always()
+        run: |
+          {
+            echo "## iPhone benchmarks"
+            echo
+            if [ -f "$RUNNER_TEMP/bench/before/summary.json" ] && [ -f "$RUNNER_TEMP/bench/after/summary.json" ]; then
+              python3 apps/ios/Scripts/bench-summary.py compare "$RUNNER_TEMP/bench/before" "$RUNNER_TEMP/bench/after"
+            elif [ -f "$RUNNER_TEMP/bench/after/summary.md" ]; then
+              cat "$RUNNER_TEMP/bench/after/summary.md"
+            else
+              echo "No summary was written; see the logs in the artifact."
+            fi
+          } | tee "$RUNNER_TEMP/bench/comparison.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-benchmarks
+          # The reports, logs and summaries; the result bundles stay behind, as they hold every screenshot.
+          path: |
+            ${{ runner.temp }}/bench/comparison.md
+            ${{ runner.temp }}/bench/*/summary.*
+            ${{ runner.temp }}/bench/*/*.log
+            ${{ runner.temp }}/bench/*/source.txt
+            ${{ runner.temp }}/bench/*/app/*.json
+          if-no-files-found: warn
+          retention-days: 30

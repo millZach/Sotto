@@ -6,6 +6,7 @@ import SottoCore
 struct RootView: View {
     @EnvironmentObject var model: AppModel
     var body: some View {
+        let _ = BenchProbe.body("RootView")
         // The whole screen, safe areas included, for Glass's backdrop on every page, pairing included.
         GeometryReader { frame in
             let insets = frame.safeAreaInsets
@@ -39,6 +40,7 @@ struct MainTabs: View {
     @AppStorage(PhonePreferenceKey.duoTabsSide) private var railSide = DuoTabsSide.right.rawValue
     @AppStorage(PhonePreferenceKey.duoSidebarHidden) private var sidebarHidden = false
     var body: some View {
+        let _ = BenchProbe.body("MainTabs")
         GeometryReader { frame in
             let duo = duoLayout(frame.safeAreaInsets)
             tabs(duo: duo).environment(\.duoLayout, duo)
@@ -531,6 +533,7 @@ struct ThreadListSections: View, Equatable {
     var identifier = "thread-"
     let open: (ThreadRef) -> Void
     var body: some View {
+        let _ = BenchProbe.body("ThreadListSections")
         let watched = model.watchedThreadIDs
         VStack(alignment: .leading, spacing: 0) {
             section(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), "needs", groups.questions) { row in
@@ -666,6 +669,7 @@ struct ThreadListRow: View, Equatable {
         return watched ? String(localized: "\(spoken), watched by Watcher", comment: "%@ is what VoiceOver reads of the thread before this: its title and where it runs.") : spoken
     }
     var body: some View {
+        let _ = BenchProbe.body("ThreadListRow")
         if canWatch {
             button.contextMenu {
                 Button { setWatched(!watched) } label: {
