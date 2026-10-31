@@ -31,3 +31,7 @@ The computer already took everything this needs. `configure-thread`, with `model
 - Not ported: favorites are this computer's window's own (ADR-0147) and the phone has none. The draft's suggested effort (ADR-0161 decision 3) and Claude Code's `ultrathink` are desktop only.
 - The chips make the box one short line taller wherever a thread's computer offers them. The conversation makes room for it as it does for photos.
 - The Focus journey `testAThreadsSettingsChangeFromItsReplyBox` (`--ui-thread-settings`) changes each setting on the simulator and keeps `thread-settings-*` captures in dark and light. CI runs it on the iPhone SE and the iPhone 16 Pro Max; the iPhone Duo is not among CI's simulators.
+
+## October 31, 2026: the shield beside the bolt
+
+Zach, testing build 45 on the unfolded iPhone Duo, asked for the shield to sit next to the bolt: at the line's end it stood far from the other three on a wide screen. The four now sit together in the desktop's order, the shield right after the bolt (or after the effort, where the model offers no speeds), and the room left over is after them. This replaces "at the line's end" in decision 1. Watcher's box takes the same line (point 1 of the same request).

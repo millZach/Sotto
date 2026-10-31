@@ -719,7 +719,8 @@ private struct WatcherConversationPane: View {
                     // A fast send can begin and end before SwiftUI renders its sending state. The press itself
                     // resumes following, before the keyboard and the conversation change their layout.
                     resumeFollowing()
-                }).readingWidth().dockFade().background(dockReader(proxy, newest: newest))
+                // It floats as a thread's reply box does, with the conversation running on under it.
+                }).readingWidth().background(dockReader(proxy, newest: newest))
             }
             // New words, the user's own or Watcher's, are scrolled to just above the box, for a reader who sees the newest
             // words or the page's end. Cards waiting on the user sit after the whole conversation, where the page opens,

@@ -154,7 +154,8 @@ private struct ThreadStatePill: View {
 
 /// Watch beside the thread's state (watch B, Zach's pick on October 13, 2026): pressed while Watcher watches the thread,
 /// which then lasts until the user stops it here or on Watched, with no limit on how many. A press asks nothing first;
-/// what it did is said over the reply box with Undo. Its name stays Watch and its value says whether it is on. Only where
+/// what it did is said over the reply box with Undo. Its name stays Watch and its value says whether it is on; its hint
+/// says what the lit owl can't, where a send here takes the thread over or Watcher only steers. Only where
 /// a computer that runs Watcher takes it from this iPhone; at compact width, where the bar's room goes to the thread's
 /// title, and at the largest text sizes it is the owl alone.
 private struct WatchToggle: View {
@@ -188,7 +189,9 @@ private struct WatchToggle: View {
         .disabled(!model.canChangeWatch(ref))
         .accessibilityLabel("Watch")
         .accessibilityValue(watched ? String(localized: "On", comment: "Whether Watcher watches this thread") : String(localized: "Off", comment: "Whether Watcher watches this thread"))
-        .accessibilityHint(watched ? String(localized: "Stops Watcher watching this thread") : String(localized: "Watcher keeps this thread going until you stop it"))
+        // What the line over the reply box said goes here, ahead of what a press does (ADR-0073, October 31 amendment).
+        .accessibilityHint(watched ? [model.watchFact(ref), String(localized: "Stops Watcher watching this thread")].compactMap { $0 }.joined(separator: " ")
+                           : String(localized: "Watcher keeps this thread going until you stop it"))
         .accessibilityIdentifier("thread-watch")
     }
 }
@@ -323,8 +326,8 @@ private struct Tail: Equatable {
     let failed: Bool
 }
 
-/// The scrolling page: the wash, the big title and its chips, then messages and steps, with the reply box in glass
-/// over the bottom edge. The page keeps its place: while the user reads at the bottom it stays at the bottom when the
+/// The scrolling page: the wash, the big title and its chips, then messages and steps, with the reply box floating over
+/// the bottom edge. The page keeps its place: while the user reads at the bottom it stays at the bottom when the
 /// reply box changes height, the keyboard opens or closes, a request is answered or new content arrives; once they
 /// have scrolled up to read, nothing moves them.
 private struct Conversation: View {
@@ -371,10 +374,11 @@ private struct Conversation: View {
             }
             .background(barReader)
             .safeAreaInset(edge: .bottom, spacing: 0) {
+                // It floats, as the desktop's composer does: the conversation runs on under it with no ground behind
+                // the box, and the inset still lets the last message scroll clear of it (Zach, October 31, 2026).
                 ReplyDock(ref: ref, openRequest: openRequest)
                     .equatable()
                     .readingWidth()
-                    .dockFade()
                     .background(dockReader(proxy))
             }
             .onChange(of: tail) { _, _ in
@@ -1966,32 +1970,14 @@ private struct ReplyDock: View, Equatable {
                 problemNote(problem)
             }
             FollowupStack(ref: ref)
-            // What a Watch press just did, with Undo, in place of what watching means here.
+            // What a Watch press just did, with Undo. What watching means is the lit owl's to say, not a line here
+            // (Zach, October 31, 2026).
             if model.watchNotice?.target == ref { WatchToast(scope: ref) }
-            else if let line = model.watchedLine(ref) { watchedLine(line) }
             dock
         }
         .padding(.horizontal, Space.s3)
         .padding(.top, Space.s2)
         .padding(.bottom, Space.s2)
-    }
-
-    /// What watching means here: Watcher keeps the thread going, and only steers while the user's own turn runs; or, on a
-    /// computer that keeps no standing watches, that a direct instruction here takes the thread over from Watcher.
-    /// Opening the thread or answering its card changes neither.
-    private func watchedLine(_ words: String) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            WatcherOwlMark(size: 13).accessibilityHidden(true)
-            Text(words).fixedSize(horizontal: false, vertical: true).paragraphDirection()
-        }
-        .font(.sotto(.small))
-        .foregroundStyle(Palette.muted)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s4)
-        .padding(.vertical, Space.s3)
-        .glass(in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("watched-takeover")
     }
 
     private func problemNote(_ problem: String) -> some View {
@@ -2108,13 +2094,14 @@ private struct ReplyDock: View, Equatable {
         }
     }
 
+    /// A solid disc the size of Send, with a larger square: on the soft fill it read as a dot (Zach, October 31, 2026).
     private var stopButton: some View {
         Button { stopped += 1; Task { await model.interrupt(ref) } } label: {
-            RoundedRectangle(cornerRadius: 2.5, style: .continuous)
-                .frame(width: 10, height: 10)
+            RoundedRectangle(cornerRadius: 3, style: .continuous)
+                .frame(width: 12, height: 12)
+                .foregroundStyle(Palette.canvas)
                 .frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
-                .foregroundStyle(Palette.ink)
-                .background(Palette.fillSoft, in: Circle())
+                .background(Palette.ink, in: Circle())
                 .pressArea(drawn: ComposerMetrics.button)
         }
         .buttonStyle(PressStyle())
@@ -2147,7 +2134,8 @@ private struct ReplyDock: View, Equatable {
 }
 
 /// The thread's model, effort, speed and permissions as the reply box's second line (ADR-0166, pick B): text buttons in
-/// the desktop's order (ADR-0113), each opening its own menu, and the bolt stepping through the speeds on a press. They
+/// the desktop's order (ADR-0113), side by side with the shield right after the bolt (Zach, October 31, 2026), each
+/// opening its own menu, and the bolt stepping through the speeds on a press. They
 /// are held still, their hint saying why, while the agent would refuse a change: during a turn, while the thread waits
 /// on the user, and while a permission change goes unconfirmed.
 private struct ThreadSettingsRow: View {
@@ -2162,10 +2150,10 @@ private struct ThreadSettingsRow: View {
             if typeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 0) {
                     modelMenu
-                    HStack(spacing: 0) { effortMenu; speedButton; Spacer(minLength: Space.s2); permissionMenu }
+                    HStack(spacing: 0) { effortMenu; speedButton; permissionMenu; Spacer(minLength: 0) }
                 }
             } else {
-                HStack(spacing: 0) { modelMenu; effortMenu; speedButton; Spacer(minLength: Space.s2); permissionMenu }
+                HStack(spacing: 0) { modelMenu; effortMenu; speedButton; permissionMenu; Spacer(minLength: 0) }
             }
         }
         .sensoryFeedback(.selection, trigger: picks)

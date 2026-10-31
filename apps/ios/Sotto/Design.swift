@@ -849,12 +849,9 @@ extension View {
         background { PageGround().ignoresSafeArea().accessibilityHidden(true) }
     }
 
-    /// The page's ground behind a bar floating at the bottom of a page, such as the reply box: clear `reach` points above
-    /// the bar, solid from its top down to the screen's edge. What scrolls under the bar fades out before it reaches it,
-    /// instead of showing in the gaps between + and the box (#1847).
-    func dockFade(reach: CGFloat = Space.s4) -> some View { dockFade(reach: reach) { PageGround() } }
-
-    /// `dockFade` on a ground of the caller's, for a sheet whose surface isn't the page's.
+    /// A ground of the caller's behind a bar at the bottom of a sheet: clear `reach` points above the bar, solid from its
+    /// top down to the screen's edge, so what scrolls under the bar fades out before it reaches it (#1847). A page's reply
+    /// box has none: it floats over the conversation, as the desktop's composer does (Zach, October 31, 2026).
     func dockFade<Ground: View>(reach: CGFloat = Space.s4, @ViewBuilder ground: () -> Ground) -> some View {
         let fill = ground()
         return background(alignment: .top) {

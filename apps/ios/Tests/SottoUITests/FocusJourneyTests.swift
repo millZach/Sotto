@@ -1322,8 +1322,13 @@ import UIKit
         capture("watcher-bar-away-card-answered-dark")
     }
 
-    /// A row in what Watcher did opens its thread, with the provider's logo and the owl under its title, Watch on, and
-    /// the line saying what watching means in its reply box.
+    /// Whether a line over a thread's reply box says it is watched, as one did until October 31, 2026, in any wording.
+    private func watchedLineShows() -> Bool {
+        app.descendants(matching: .any).matching(NSPredicate(format: "label BEGINSWITH %@", "Watched by Watcher.")).firstMatch.exists
+    }
+
+    /// A row in what Watcher did opens its thread, with the provider's logo and the owl under its title and Watch on,
+    /// and no line over its reply box: the lit owl says the thread is watched (ADR-0073, October 31 amendment).
     func testAReceiptRowOpensItsThread() {
         launch(Self.watcher)
         for appearance in ["dark", "light"] {
@@ -1336,11 +1341,8 @@ import UIKit
             XCTAssertTrue(title.waitForExistence(timeout: 10), "The row opens its thread")
             XCTAssertEqual(title.label, "Babysit #845 release notes")
             XCTAssertTrue(text("Codex on Laptop · Sotto, watched by Watcher").exists, "The owl follows the provider's logo")
-            let watched = byID("watched-takeover")
-            XCTAssertTrue(watched.waitForExistence(timeout: 5))
-            XCTAssertEqual(watched.label, "Watched by Watcher. It keeps this thread going and brings you its questions and permissions.",
-                           "Watcher keeps a watched thread going until the user stops it; a send here doesn't end that")
             XCTAssertEqual(app.buttons["thread-watch"].value as? String, "On", "Its Watch is on")
+            XCTAssertFalse(watchedLineShows(), "Nothing over the reply box says what the lit owl says")
             capture("watcher-receipt-thread-" + appearance)
             back()
             XCTAssertTrue(byID("watcher-state").waitForExistence(timeout: 10), "Back returns to Watcher's page")
@@ -1710,7 +1712,6 @@ import UIKit
         XCTAssertTrue(watch.waitForExistence(timeout: 5), "A thread's page offers Watch where a computer runs Watcher")
         XCTAssertEqual(watch.label, "Watch")
         XCTAssertEqual(watch.value as? String, "Off")
-        XCTAssertFalse(byID("watched-takeover").exists)
         // XCTest lets an expectation be waited on only once, so each wait for Watch's value makes its own.
         func watchReads(_ value: String) -> XCTWaiter.Result {
             let reads = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", value), object: watch)
@@ -1731,10 +1732,10 @@ import UIKit
         XCTAssertTrue(text("Watcher stopped watching Add keyboard shortcuts.").waitForExistence(timeout: 5))
         watch.tap()
         XCTAssertEqual(watchReads("On"), .completed, "Watch watches it again")
-        // Once the toast goes, the box says what watching means.
-        let line = byID("watched-takeover")
-        XCTAssertTrue(line.waitForExistence(timeout: 20))
-        XCTAssertEqual(line.label, "Watched by Watcher. It keeps this thread going and brings you its questions and permissions.")
+        // Once the toast goes, nothing over the reply box takes its place: the lit owl says the thread is watched.
+        let gone = XCTNSPredicateExpectation(predicate: NSPredicate(format: "exists == false"), object: toast)
+        XCTAssertEqual(XCTWaiter.wait(for: [gone], timeout: 20), .completed, "The toast goes")
+        XCTAssertFalse(watchedLineShows(), "No line says what watching means")
         capture("watch-thread-page-watched-dark")
         back()
 
@@ -1852,6 +1853,9 @@ import UIKit
         XCTAssertEqual(permissions.label, "Thread permissions")
         XCTAssertEqual(permissions.value as? String, "Ask before actions")
         XCTAssertGreaterThan(model.frame.midY, reply.frame.midY, "Under the words, inside the box")
+        // The four sit together, the shield right after the bolt rather than at the box's far end (Zach, October 31, 2026).
+        XCTAssertGreaterThanOrEqual(permissions.frame.minX, speed.frame.maxX - 1, "The shield follows the bolt")
+        XCTAssertLessThan(permissions.frame.minX - speed.frame.maxX, 12, "With no room left between them")
         XCTAssertTrue(model.isEnabled && effort.isEnabled && speed.isEnabled && permissions.isEnabled, "An idle thread's chips can be pressed")
         capture("thread-settings-dark")
 
