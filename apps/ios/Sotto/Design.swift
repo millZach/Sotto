@@ -954,8 +954,8 @@ extension View {
 
 // MARK: - Cards and glows
 
-/// How a card is lit. Only Needs you glows; the other tones say what the card holds and paint it the same (ADR-0051,
-/// amended October 30, 2026).
+/// How a card is lit. Needs you carries a warm glow, and the Threads tab's working and answered cards an accent one; the
+/// other tones paint the card the same (ADR-0051, amended October 30, 2026).
 enum CardTone { case plain, needsYou, answered, working, online }
 
 /// Whether a view sits on a sheet. A sheet's ground is the raised surface in dark, so a card on it steps up to the overlay
@@ -970,9 +970,9 @@ extension EnvironmentValues {
 
 /// A card's surface, the desktop's card (ADR-0110): one fill a step off the room, with no outline, no highlight along its
 /// top and no gradient. That fill is the theme's raised surface, a step darker than the room by day and lighter by night,
-/// and the overlay surface on a sheet. Only a card that needs the user glows (ADR-0051, amended October 30, 2026): with
-/// every card lit, the one asking for the user had to out-glow the rest. Under Glass the card is the raised tint over the
-/// room.
+/// and the overlay surface on a sheet. A card that needs the user glows, and so do the Threads tab's working and answered
+/// cards, which that tab keeps as they were while it becomes the Duo's sidebar list (ADR-0051, amended October 30, 2026).
+/// Under Glass the card is the raised tint over the room.
 struct CardSurface: ViewModifier {
     let tone: CardTone
     var radius: CGFloat = Radius.lg
@@ -989,10 +989,15 @@ struct CardSurface: ViewModifier {
             .background { glow }
     }
     @ViewBuilder private var glow: some View {
-        if tone == .needsYou {
-            GlowLayer(radius: radius, color: theme.rgb(.warning), alpha: 0.5, base: glass == nil ? theme.rgb(fill) : nil, period: 6)
+        switch tone {
+        case .needsYou: GlowLayer(radius: radius, color: theme.rgb(.warning), alpha: 0.5, base: base, period: 6)
+        case .working: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.5, base: base, period: 4.4)
+        case .answered: GlowLayer(radius: radius, color: theme.rgb(.accent), alpha: 0.6, base: base, period: nil)
+        case .plain, .online: EmptyView()
         }
     }
+    /// What the glow fills the card's shape with: the card's fill, or nothing under Glass, where the card is see-through.
+    private var base: ThemeRGB? { glass == nil ? theme.rgb(fill) : nil }
     private var fill: ThemeRoleName { onSheet ? .overlay : .raised }
 }
 
