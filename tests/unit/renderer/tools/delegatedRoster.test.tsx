@@ -6,7 +6,8 @@ import type { DelegatedView, DelegationsBridge, DelegationsChanged, DelegationVi
 import { E2E_THREADS_NOW } from '../../../../src/shared/e2e'
 import { EMPTY_SUBAGENT_SUMMARY, type SubagentRow, type SubagentsBridge } from '../../../../src/shared/subagents'
 import { delegatedBelow, delegatedRoster, mixedRoster, openAction, openDelegatedThread, rosterCounts, threadsMissingStarts, type DelegatedRosterRow, type DelegationReadOf, type DelegationReads } from '../../../../src/renderer/src/tools/delegatedRoster'
-import { ToolsPanel, ToolsPanelToggle } from '../../../../src/renderer/src/tools/ToolsPanel'
+import { ToolsPanel } from '../../../../src/renderer/src/tools/ToolsPanel'
+import { ThreadPaneMenu } from '../../../../src/renderer/src/agents/ThreadPaneMenu'
 import { delegatedStatusWord } from '../../../../src/renderer/src/tools/DelegatedThreads'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
 import { useOptionalApp, type AppContextValue } from '../../../../src/renderer/src/state/AppContext'
@@ -237,7 +238,7 @@ describe('Tools › Agents with delegated threads', () => {
     const command = vi.fn(async () => state)
     const subagents = agentsBridge([agent('explore', 2)])
     const ui = (focusedThreadId: string) => <div className="thread-workspace__body">
-      <section className="thread-pane" data-thread-id={focusedThreadId}><ToolsPanelToggle store={store} state={state} /></section>
+      <section className="thread-pane" data-thread-id={focusedThreadId}><ThreadPaneMenu threadId={focusedThreadId} tools terminal={false} layout={[]} groups={[]} toolsStore={store} state={state} /></section>
       <ToolsPanel focusedThreadId={focusedThreadId} state={state} command={command} subagents={subagents} store={store} />
     </div>
     const view = render(ui(focused))
@@ -299,7 +300,7 @@ describe('Tools › Agents with delegated threads', () => {
     expect(within(panel()).getByText('1 needs you · 2 working')).toBeInTheDocument()
     expect(within(panel()).getByRole('tab', { name: 'Agents' })).toHaveAccessibleDescription('A delegated thread needs you')
     expect(panel().querySelector('#tools-tab-agents .tools-rail__live')).toHaveAttribute('data-needs')
-    expect(document.querySelector('.tools-toggle__agents-dot')).toHaveAttribute('data-needs')
+    expect(document.querySelector('.tools-dot')).toHaveAttribute('data-needs')
     // Its details: the brief and the latest outcome, never the reply; Escape closes them.
     const head = within(review).getByRole('button', { name: 'PR 1150 native review, delegated thread on Claude Code, Needs your answer' })
     fireEvent.click(head)
@@ -349,10 +350,10 @@ describe('Tools › Agents with delegated threads', () => {
     await waitFor(() => expect(within(list()).getByRole('button', { name: 'Open PR 1121 state scout to answer its request' })).toBeInTheDocument())
     act(() => store.pin(PARENT))
     rerender(MERGE)
-    expect(document.querySelector('.tools-toggle__agents-dot')).toHaveAttribute('data-needs')
+    expect(document.querySelector('.tools-dot')).toHaveAttribute('data-needs')
     // Unpinned, the toggle is the merge thread's own again, and nothing below it waits (#331).
     act(() => store.unpin())
-    expect(document.querySelector('.tools-toggle__agents-dot[data-needs]')).toBeNull()
+    expect(document.querySelector('.tools-dot[data-needs]')).toBeNull()
   })
 
   it('shows none of it in stable: agents alone, following the focused thread, with no pin on Agents', async () => {

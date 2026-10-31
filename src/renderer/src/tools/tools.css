@@ -159,10 +159,6 @@
 .threads-view .thread-workspace__tools:has(> .tools-panel) { border-left: 0; }
 .threads-view .thread-workspace__tools:empty { display: none; }
 
-/* Header toggle placed in a pane header by the workspace. Pinned to another pane's thread, it is not this pane's panel. */
-.tools-toggle[aria-pressed='true']:not([data-pinned-elsewhere]) { color: var(--tt-text); border-color: var(--tt-border-faint); }
-.tools-toggle[data-pinned-elsewhere] > svg { color: var(--tt-accent-text); }
-
 .git-actions { grid-area: actions; border-bottom: 1px solid var(--tt-hairline); min-height: 0; max-height: 50%; overflow: auto; color: var(--tt-text-2); font-size: 14px; }
 .git-actions__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 7px 16px; }
 .git-actions__drawer { display: flex; flex-direction: column; gap: 14px; padding: 8px 16px 16px; }

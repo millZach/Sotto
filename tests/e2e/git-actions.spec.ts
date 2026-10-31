@@ -220,10 +220,17 @@ test('the Git action commits and pushes from the header, asks before the default
     expect(await pane(page).locator('.git-action__label').evaluate(element => element.getBoundingClientRect().width)).toBeLessThanOrEqual(1)
     await resize(launched, 1280, 800)
 
-    // A folder without Git: Initialize Git, then Publish repository, since the new repository has no remote.
+    // A folder without Git: Initialize Git, a row of the pane's ··· menu rather than a button in its header (ADR-0163),
+    // then Publish repository, since the new repository has no remote.
     await createThread(page, 'Plain folder', 'Plain thread')
-    await expect(pane(page).getByRole('button', { name: 'Initialize Git' })).toBeVisible({ timeout: 20_000 })
-    await pane(page).getByRole('button', { name: 'Initialize Git' }).click()
+    await expect(pane(page).locator('.git-action')).toHaveCount(0)
+    await expect.poll(async () => {
+      await pane(page).getByRole('button', { name: 'More actions', exact: true }).click()
+      const offered = await pane(page).getByRole('menuitem', { name: 'Initialize Git', exact: true }).count()
+      if (offered === 0) await page.keyboard.press('Escape')
+      return offered
+    }, { timeout: 20_000 }).toBe(1)
+    await pane(page).getByRole('menuitem', { name: 'Initialize Git', exact: true }).click()
     await expect(notice(page)).toContainText('Git initialized.', { timeout: 30_000 })
     expect(existsSync(join(plain, '.git'))).toBe(true)
     // The new repository has an untracked file and no remote: Commit stands, and Publish repository waits in the menu.

@@ -5,7 +5,7 @@ import { _electron as electron, expect, test, type Locator } from '@playwright/t
 import { ownedE2EProfile } from './support/e2eProfile'
 import { measurePaintedPair } from './support/paintedPair'
 import { evidenceDirectory } from '../fixtures/evidence'
-import { launchSotto, closeSotto, firstSottoWindow, openThreads } from './support/sottoLaunch'
+import { launchSotto, closeSotto, firstSottoWindow, openThreads, toggleTools } from './support/sottoLaunch'
 import { promptField, fillPrompt } from './support/prompt'
 import { contrastRatio } from '../../src/shared/themes/color'
 import { BUILT_IN_THEMES } from '../../src/shared/themes/library'
@@ -87,12 +87,11 @@ test('captures the built-in palettes\' text surfaces on the owned nested display
       const pair = await measurePaintedPair(element)
       measurements.push({ half, surface, ...pair, ratio: contrastRatio(pair.foreground, pair.background) })
     }
-    const tools = page.getByRole('button', { name: 'Tools', exact: true })
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     const lines = panel.getByRole('grid', { name: 'Lines of colours.txt' })
 
     // At this size the sidebar, the thread and the docked Tools panel stand side by side, so Tools stays open.
-    await tools.click()
+    await toggleTools(page)
     const changesTab = panel.getByRole('tab', { name: 'Changes', exact: true })
     await changesTab.click()
     const expand = panel.getByRole('button', { name: 'Expand colours.txt', exact: true })

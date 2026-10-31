@@ -3628,17 +3628,9 @@ msgstr ""
 msgid "Draft not saved. <0>Save again</0>"
 msgstr ""
 
-#: src/renderer/src/agents/ThreadPanes.tsx
-msgid "Drag or use arrow keys to move"
-msgstr ""
-
 #: src/renderer/src/agents/AttachmentViewer.tsx
 #: src/renderer/src/agents/diagrams/DiagramViewer.tsx
 msgid "Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit"
-msgstr ""
-
-#: src/renderer/src/agents/ThreadPanes.tsx
-msgid "Drag to another pane, or use the arrow keys"
 msgstr ""
 
 #: src/renderer/src/agents/AttachmentViewer.tsx
@@ -4352,6 +4344,7 @@ msgid "Include {path}"
 msgstr ""
 
 #: src/renderer/src/agents/gitActionButton.logic.ts
+#: src/renderer/src/agents/ThreadPane.tsx
 msgid "Initialize Git"
 msgstr ""
 
@@ -4941,16 +4934,23 @@ msgid "Morning. What’s first?"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadPanes.tsx
-msgid "movable pane"
-msgstr ""
-
-#. {name} is a thread's title.
-#: src/renderer/src/agents/ThreadPanes.tsx
-msgid "Move {name} pane"
-msgstr ""
-
-#: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Move here"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadPanes.tsx
+msgid "Move pane down"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadPanes.tsx
+msgid "Move pane left"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadPanes.tsx
+msgid "Move pane right"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadPanes.tsx
+msgid "Move pane up"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
@@ -7232,10 +7232,6 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadMonitor.tsx
 msgid "since {since}"
-msgstr ""
-
-#: src/renderer/src/agents/ThreadPanes.tsx
-msgid "Single row"
 msgstr ""
 
 #: src/renderer/src/agents/SkillPill.tsx
@@ -9657,11 +9653,6 @@ msgstr ""
 #: src/renderer/src/agents/AttachmentViewer.tsx
 #: src/renderer/src/agents/diagrams/DiagramViewer.tsx
 msgid "Zoom"
-msgstr ""
-
-#. {name} is a thread's title.
-#: src/renderer/src/agents/ThreadPanes.tsx
-msgid "Zoom {name} pane"
 msgstr ""
 
 #: src/renderer/src/agents/AttachmentViewer.tsx
