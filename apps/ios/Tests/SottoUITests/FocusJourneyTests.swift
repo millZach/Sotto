@@ -603,6 +603,40 @@ import UIKit
         capture("thread-glow-top")
     }
 
+    /// At the largest text sizes a thread stays inside the screen. On a small iPhone the Git chips wrap onto another line
+    /// rather than widen the page, which cut the first letters off every line of the thread (#1848).
+    func testAThreadStaysInsideTheScreenAtTheLargestTextSizes() {
+        launch(Self.fixture + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        XCTAssertTrue(byID("thread-reply").waitForExistence(timeout: 5))
+        let chips = text("Branch feat/frosted-window-and-pane-terminal")
+        scrollThread(to: chips, towardStart: true)
+        let screen = app.windows.firstMatch.frame
+        for (name, element) in [("The title", app.staticTexts["thread-title"]), ("The branch and changes", chips), ("The reply box", byID("thread-reply"))] {
+            XCTAssertTrue(element.exists, "\(name) shows")
+            XCTAssertGreaterThanOrEqual(element.frame.minX, screen.minX - 1, "\(name) starts inside the screen")
+            XCTAssertLessThanOrEqual(element.frame.maxX, screen.maxX + 1, "\(name) ends inside the screen")
+        }
+        capture("thread-largest-text-top")
+    }
+
+    /// A press on the tab already chosen scrolls its page back to the top, as the system's tab bar does.
+    func testPressingTheChosenTabAgainScrollsItsPageToTheTop() {
+        launch(Self.fixture)
+        let tab = byID("tab-settings")
+        tab.tap()
+        let heading = app.staticTexts["Settings"].firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 5))
+        for _ in 0..<3 { app.swipeUp() }
+        XCTAssertFalse(heading.isHittable, "Scrolled down, the page's heading has left the screen")
+        capture("settings-scrolled-status-bar")
+        tab.tap()
+        expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: heading)
+        waitForExpectations(timeout: 5)
+    }
+
     /// A thread's pull request on an Owl computer (ADR-0102): the chip opens a sheet that reads it from GitHub, shows where
     /// it stands, its failing check first with how long it took, and starts and stops babysitting. Once read, the chip
     /// carries the checks.
