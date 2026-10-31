@@ -7,7 +7,7 @@ import { watcherResultForHostV1, type WatcherIdentity } from '../../shared/watch
 import type { WatcherService } from './watcher'
 import type { WatcherPhoneService } from './watcherPhone'
 
-import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentProject } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentAttachmentPreviewResult, type AgentProject } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -259,6 +259,8 @@ export interface HostService {
   /** A page was opened by its token, which clears the prototype-ready mark it belongs to (ADR-0108). */
   questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  /** One picture an activity record names (ADR-0170); null when the host keeps no such picture for that record. */
+  threadMedia?(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult>
   /** One part of a sent attached file a message carries, for the iPhone's Quick Look (ADR-0131); null for anything else. */
   attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */
@@ -289,6 +291,8 @@ export interface HostService {
   readonly supportsAgentsView?: boolean
   /** The host keeps attached files that are not images (`file-staging`, ADR-0131): its Owl answer turns it on. */
   readonly supportsFileStaging?: boolean
+  /** The host keeps its agents' pictures and answers `thread-media` (ADR-0170): its Owl answer turns it on. */
+  readonly supportsThreadMedia?: boolean
   /** What delegation's record knows of each thread delegated below one thread, for the iPhone's Agents view (ADR-0103). */
   threadDelegations?(threadId: string): Promise<HostThreadDelegations>
 }
@@ -349,6 +353,7 @@ export interface LocalHostControl {
   questionPage?(token: string): QuestionPageTarget | undefined
   questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
+  threadMedia?(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult>
   attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   attachmentContent?(digest: string): Promise<AgentAttachmentContent | null>
@@ -409,6 +414,8 @@ export class LocalHostService implements HostService {
     threadDelete?: boolean
     /** Attached files that are not images (ADR-0131), true only when the host's Owl answer turns it on. */
     fileStaging?: boolean
+    /** The `inline-media` Owl answer (ADR-0170): this host keeps its agents' pictures and answers for them. */
+    threadMedia?: boolean
     /**
      * The iPhone's Agents view (ADR-0103), present only when the host's Owl answer turns it on. `delegations` is there only
      * where delegation runs (ADR-0081); without it a thread has no delegated threads to read.
@@ -564,6 +571,8 @@ export class LocalHostService implements HostService {
   questionPage(token: string): QuestionPageTarget | undefined { return this.control.questionPage?.(token) }
   questionPageOpened(token: string): void { this.control.questionPageOpened?.(token) }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> { return await this.control.attachmentPreview?.(request) ?? null }
+  async threadMedia(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult> { return this.options.threadMedia === true ? await this.control.threadMedia?.(request) ?? null : null }
+  get supportsThreadMedia(): boolean { return this.options.threadMedia === true }
   async attachmentFile(request: HostAttachmentFileRequest): Promise<HostAttachmentFile> { return await this.control.attachmentFile?.(request) ?? null }
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     if (!this.control.stageAttachment) return Promise.reject(new Error(HOST_CANNOT_STAGE_SCREENSHOTS))

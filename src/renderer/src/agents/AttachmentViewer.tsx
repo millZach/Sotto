@@ -5,6 +5,7 @@ import { msg } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentAttachmentReference } from '../../../shared/agents'
 import { useAttachmentSource, type AttachmentOrigin } from './attachmentSources'
+import { useThreadMediaSource, type ThreadMediaOrigin } from './threadMediaSources'
 import { usePanZoom } from './diagrams/usePanZoom'
 import { chordClaimed, chordMatches } from './branchToolbar.logic'
 import { useOptionalApp } from '../state/AppContext'
@@ -19,6 +20,15 @@ export interface ViewerImage extends Partial<Pick<AgentAttachmentReference, 'pre
   readonly name: string
   /** Type and size, e.g. "PNG · 449 KB". */
   readonly details: string
+  /** A picture an agent made, read by its handle rather than from a message (ADR-0170). */
+  readonly media?: ThreadMediaOrigin | undefined
+}
+
+/** The image to draw: a sent attachment's, read by its message, or an agent's picture, read by its handle. */
+function useViewerSource(image: ViewerImage, origin: AttachmentOrigin | undefined, size: 'tile' | 'full'): { readonly source: string | null; readonly awaiting: boolean } {
+  const attachment = useAttachmentSource(image.media ? { id: image.id } : image, image.media ? undefined : origin)
+  const media = useThreadMediaSource(image.media, size, image.media !== undefined)
+  return image.media ? media : attachment
 }
 
 /** One image of the strip under the viewer, which shows where the viewer is among the message's images. */
@@ -27,7 +37,7 @@ function StripThumb({ image, origin, index, count, current, onSelect }: {
   readonly current: boolean; readonly onSelect: (index: number) => void
 }): ReactNode {
   const { t } = useLingui()
-  const { source } = useAttachmentSource(image, origin)
+  const { source } = useViewerSource(image, origin, 'tile')
   const name = image.name, number = index + 1
   return <button type="button" className="attachment-viewer__thumb tt-focusable" aria-label={t({ message: `Show ${name}, ${{ number: shownCount(number) }} of ${{ count: shownCount(count) }}`, comment: '{name} is the file name of an image.' })}
     aria-current={current || undefined} data-index={index} onClick={() => onSelect(index)}>
@@ -51,7 +61,7 @@ export function AttachmentViewer({ images, origin, startId, anchor, onClose }: {
   const { t } = useLingui()
   const [index, setIndex] = useState(() => Math.max(0, images.findIndex(image => image.id === startId)))
   const image = images[Math.min(index, images.length - 1)]!
-  const { source, awaiting } = useAttachmentSource(image, origin)
+  const { source, awaiting } = useViewerSource(image, origin, 'full')
   // The image's own size, read once it loads, and kept with the image it belongs to.
   const [measured, setMeasured] = useState<{ readonly id: string; readonly width: number; readonly height: number } | null>(null)
   const size = measured?.id === image.id ? measured : null

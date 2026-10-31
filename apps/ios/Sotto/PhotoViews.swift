@@ -11,7 +11,9 @@ import SottoCore
 /// memory while the app runs. Nothing is written to disk. A photo that has scrolled away before its turn on
 /// the computer comes is never fetched.
 @MainActor final class PhotoPreviews: ObservableObject {
-    struct Key: Hashable { let ref: ThreadRef; let messageID: String; let attachmentID: String }
+    /// A sent photo by its message and attachment; an agent's picture (ADR-0170) by its step, with `attachmentID` its
+    /// handle's ID and `messageID` the step's.
+    struct Key: Hashable { let ref: ThreadRef; let messageID: String; let attachmentID: String; var activityID: String? = nil }
     private final class Box { let image: CGImage; init(_ image: CGImage) { self.image = image } }
     private let thumbnails: NSCache<NSString, Box> = {
         let cache = NSCache<NSString, Box>(); cache.countLimit = 150; cache.totalCostLimit = 64 * 1024 * 1024; return cache
@@ -24,8 +26,10 @@ import SottoCore
     private var opened: (key: Key, image: CGImage)?
     private var openingFull: [Key: Task<CGImage?, Never>] = [:]
 
-    private static func name(_ ref: ThreadRef, _ attachmentID: String) -> NSString { "\(ref.id)/\(attachmentID)" as NSString }
-    func cached(_ key: Key) -> CGImage? { thumbnails.object(forKey: Self.name(key.ref, key.attachmentID))?.image }
+    private static func name(_ ref: ThreadRef, _ attachmentID: String, activityID: String? = nil) -> NSString {
+        (activityID.map { "\(ref.id)/\($0)/\(attachmentID)" } ?? "\(ref.id)/\(attachmentID)") as NSString
+    }
+    func cached(_ key: Key) -> CGImage? { thumbnails.object(forKey: Self.name(key.ref, key.attachmentID, activityID: key.activityID))?.image }
     /// Keeps the thumbnails of a reply this iPhone just sent under their staged IDs, which its message's photos
     /// carry, so the thread draws them without asking the computer for them.
     func keep(_ photos: [DraftPhoto], ref: ThreadRef) {
@@ -43,11 +47,11 @@ import SottoCore
         if let hit = cached(key) { return hit }
         if let running = loading[key] { return await running.value }
         let task = Task { [weak self] () -> CGImage? in
-            let data = await model.sentPhoto(key.ref, messageID: key.messageID, attachmentID: key.attachmentID) {
+            let data = await model.photoBytes(key) {
                 (self?.shown[key] ?? 0) > 0
             }
             guard let data, let image = await PhotoPipeline.image(data, edge: PhotoPipeline.thumbnailEdge) else { return nil }
-            self?.thumbnails.setObject(Box(image), forKey: PhotoPreviews.name(key.ref, key.attachmentID), cost: image.bytesPerRow * image.height)
+            self?.thumbnails.setObject(Box(image), forKey: PhotoPreviews.name(key.ref, key.attachmentID, activityID: key.activityID), cost: image.bytesPerRow * image.height)
             return image
         }
         loading[key] = task
@@ -61,7 +65,7 @@ import SottoCore
         if let opened, opened.key == key { return opened.image }
         if let running = openingFull[key] { return await running.value }
         let task = Task { [weak self] () -> CGImage? in
-            guard let data = await model.sentPhoto(key.ref, messageID: key.messageID, attachmentID: key.attachmentID, wanted: {
+            guard let data = await model.photoBytes(key, wanted: {
                 (self?.viewed[key] ?? 0) > 0
             }), let image = await PhotoPipeline.image(data, edge: PhotoPipeline.screenEdge) else { return nil }
             self?.opened = (key, image)
@@ -92,10 +96,15 @@ struct SentPhotoButtons: View {
     }
 }
 
-/// The photos of one message in a thread: what a press opens full screen.
+/// The photos of one message in a thread, or the pictures of one run of steps: what a press opens full screen.
 struct OpenPhotos: Identifiable {
-    let ref: ThreadRef; let messageID: String; let photos: [Attachment]; var index: Int
-    var id: String { messageID }
+    struct Item: Identifiable { let key: PhotoPreviews.Key; let name: String; var id: String { (key.activityID ?? "") + "/" + key.attachmentID } }
+    let ref: ThreadRef; let id: String; let items: [Item]; var index: Int
+    init(ref: ThreadRef, messageID: String, photos: [Attachment], index: Int) {
+        self.ref = ref; self.id = messageID; self.index = index
+        self.items = photos.map { Item(key: PhotoPreviews.Key(ref: ref, messageID: messageID, attachmentID: $0.id), name: $0.name) }
+    }
+    init(ref: ThreadRef, id: String, items: [Item], index: Int) { self.ref = ref; self.id = id; self.items = items; self.index = index }
 }
 
 /// One sent photo in the thread, at its own shape. It shows a placeholder until its thumbnail arrives.
@@ -147,14 +156,14 @@ struct PhotoViewer: View {
             HStack {
                 Button("Done") { dismiss() }.fontWeight(.semibold).frame(minHeight: 44)
                 Spacer()
-                if opened.photos.count > 1 { Text("\(opened.index + 1) of \(opened.photos.count)").foregroundStyle(Palette.muted) }
+                if opened.items.count > 1 { Text("\(opened.index + 1) of \(opened.items.count)").foregroundStyle(Palette.muted) }
             }.padding(.horizontal, 20).foregroundStyle(Palette.ink)
             TabView(selection: $opened.index) {
-                ForEach(Array(opened.photos.enumerated()), id: \.element.id) { index, photo in
-                    FullPhoto(key: PhotoPreviews.Key(ref: opened.ref, messageID: opened.messageID, attachmentID: photo.id), name: photo.name).tag(index)
+                ForEach(Array(opened.items.enumerated()), id: \.element.id) { index, item in
+                    FullPhoto(key: item.key, name: item.name).tag(index)
                 }
-            }.tabViewStyle(.page(indexDisplayMode: opened.photos.count > 1 ? .always : .never))
-            Text(opened.photos[safe: opened.index]?.name ?? "").font(.footnote).foregroundStyle(Palette.muted)
+            }.tabViewStyle(.page(indexDisplayMode: opened.items.count > 1 ? .always : .never))
+            Text(opened.items[safe: opened.index]?.name ?? "").font(.footnote).foregroundStyle(Palette.muted)
                 .lineLimit(1).truncationMode(.middle).padding(.horizontal, 20).padding(.vertical, 12)
         }
         .background(Palette.canvas)
@@ -401,5 +410,62 @@ struct CameraPicker: UIViewControllerRepresentable {
             shown.wrappedValue = false
         }
         func imagePickerControllerDidCancel(_ picker: UIImagePickerController) { shown.wrappedValue = false }
+    }
+}
+
+// MARK: An agent's pictures
+
+/// The pictures a run of steps made or looked at (ADR-0170), as tiles two across under the run, whether it is open or
+/// folded: a press opens them full screen. Each tile reads its picture from the computer when it first shows, and the
+/// thumbnail is made here, as a sent photo's is.
+struct AgentPictures: View {
+    let ref: ThreadRef
+    let steps: [Activity]
+    let open: (OpenPhotos) -> Void
+    private var items: [OpenPhotos.Item] {
+        steps.flatMap { step in (step.media ?? []).filter { $0.kind == "image" }.map { picture in
+            OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id), name: step.title)
+        } }
+    }
+    var body: some View {
+        let items = self.items
+        if !items.isEmpty {
+            LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2), GridItem(.flexible(), spacing: Space.s2)], alignment: .leading, spacing: Space.s2) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                    Button { open(OpenPhotos(ref: ref, id: "pictures-" + (steps.first?.id ?? ""), items: items, index: index)) } label: {
+                        AgentPictureTile(key: item.key)
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Open picture \(index + 1) of \(items.count), from \(item.name)", comment: "%1$lld of %2$lld pictures an agent's steps made; %3$@ names the step."))
+                }
+            }
+            .padding(.vertical, Space.s2)
+        }
+    }
+}
+
+/// One of an agent's pictures as a tile, three by two, filled. It shows a placeholder until its thumbnail arrives, and
+/// says so when the computer no longer keeps it.
+private struct AgentPictureTile: View {
+    @EnvironmentObject var model: AppModel
+    @EnvironmentObject var previews: PhotoPreviews
+    let key: PhotoPreviews.Key
+    @State private var image: CGImage?
+    @State private var missing = false
+    var body: some View {
+        Rectangle().fill(Palette.raised)
+            .aspectRatio(3 / 2, contentMode: .fit)
+            .overlay {
+                if let image { Image(decorative: image, scale: 1).resizable().scaledToFill() }
+                else if missing { Image(systemName: "photo").font(.title2).foregroundStyle(Palette.muted) }
+                else { ProgressView() }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .onAppear { previews.appeared(key) }
+            .onDisappear { previews.disappeared(key) }
+            .task(id: key) {
+                if image == nil { image = previews.cached(key) }
+                if image == nil { image = await previews.thumbnail(key, model: model); missing = image == nil }
+            }
     }
 }

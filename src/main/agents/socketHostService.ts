@@ -10,7 +10,7 @@ import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostR
 import { watcherRoomInputs } from './watcherRoomInput'
 import { type WatcherIdentity, watcherResultFromHostV1, watcherToolSchemas } from '../../shared/watcher'
 import { DEFLATE_OFFER, deflateAccepted, SocketFrames } from '../../host/socketFrames'
-import { HOST_CANNOT_STAGE_FILES, isImageAttachment, PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_FILES, isImageAttachment, PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, agentThreadMediaResultSchema, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
@@ -1277,6 +1277,12 @@ export class SocketHostService implements HostService {
       .filter(request => request.delivery === 'uncertain').map(request => request.id) ?? [],
     completed: [...this.acceptedAnswers.values()].filter(item => item.threadId === threadId && item.providerId === providerId)
       .map(({ requestId, questionsDigest, decisionId }) => ({ requestId, questionsDigest, decisionId })) }
+  }
+  /** One picture an activity record names (ADR-0170), behind previews, since the host takes one large frame at a time. */
+  threadMedia(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult> {
+    if (!this.features.includes('thread-media')) return Promise.resolve(null)
+    const result = this.previewTail.then(async () => this.read(agentThreadMediaResultSchema, await this.call({ op: 'thread-media', request })))
+    this.previewTail = result.catch(() => undefined); return result
   }
   attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
     const result = this.previewTail.then(async () => this.read(agentAttachmentPreviewResultSchema, await this.call({ op: 'preview', request })))

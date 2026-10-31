@@ -3122,6 +3122,20 @@ struct HeldDetail {
     }
     /// A sent photo's bytes from the computer that keeps it. It waits its turn behind other large requests to
     /// that computer, and is never made if nothing on screen still `wanted` it by then.
+    /// A photo's bytes, or an agent's picture's (ADR-0170): the key says which. Nil when the computer has none to give,
+    /// or does not keep its agents' pictures.
+    func photoBytes(_ key: PhotoPreviews.Key, wanted: @escaping @MainActor () -> Bool) async -> Data? {
+        guard let activityID = key.activityID else { return await sentPhoto(key.ref, messageID: key.messageID, attachmentID: key.attachmentID, wanted: wanted) }
+        guard live[key.ref.hostID]?.features.contains(Photos.threadMediaFeature) == true else { return nil }
+        let operation = Photos.threadMedia(threadID: key.ref.threadID, activityID: activityID, mediaID: key.attachmentID)
+        guard let url = try? await largeRequest(on: key.ref.hostID, { connection -> String? in
+            guard wanted() else { return nil }
+            return try await connection.call(operation, as: Optional<PhotoPreview>.self)?.dataUrl
+        }) else { return nil }
+        return await Photos.bytes(fromDataURL: url)
+    }
+    /// Whether this thread's computer shows its agents' pictures (ADR-0170).
+    func showsAgentPictures(_ hostID: String) -> Bool { live[hostID]?.features.contains(Photos.threadMediaFeature) == true }
     func sentPhoto(_ ref: ThreadRef, messageID: String, attachmentID: String, wanted: @escaping @MainActor () -> Bool) async -> Data? {
         // Watcher's thread is never one of this iPhone's own to read: its photos come through Watcher's page.
         let operation: [String: JSONValue]

@@ -56,6 +56,11 @@ msgstr ""
 msgid "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
 msgstr ""
 
+#. placeholder {0}: pictures.length
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "{0, plural, one {Picture} other {# pictures}}"
+msgstr ""
+
 #. placeholder {0}: models.length
 #: src/renderer/src/agents/ProviderModelList.tsx
 msgid "{0, plural, one {Show {label} models, # model} other {Show {label} models, # models}}"
@@ -5219,6 +5224,10 @@ msgstr ""
 msgid "No local commits to push."
 msgstr ""
 
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "No longer kept on this computer"
+msgstr ""
+
 #: src/renderer/src/agents/ModelPicker.tsx
 #: src/renderer/src/agents/ProviderModelList.tsx
 msgid "No matching models."
@@ -5638,6 +5647,16 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Open panes"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Open picture"
+msgstr ""
+
+#. {number} of {count} pictures in a turn; {title} names the step that made it.
+#. placeholder {0}: shown.record.title
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Open picture {number} of {count}, from {0}"
 msgstr ""
 
 #: src/renderer/src/agents/FolderBrowserDialog.tsx

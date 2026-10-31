@@ -91,10 +91,12 @@ export class AttachmentStore {
   readonly missing: string
   /** Whether this store keeps files that are not images: the `attach-any-file` Owl answer, read once at start (ADR-0131). */
   readonly acceptsFiles: boolean
-  constructor(directory: string, { historyEnabled = () => true, now = () => Date.now(), missing = MISSING_ATTACHMENT, acceptsFiles = false }: {
-    readonly historyEnabled?: () => boolean; readonly now?: () => number; readonly missing?: string | undefined; readonly acceptsFiles?: boolean | undefined } = {}) {
+  constructor(directory: string, { historyEnabled = () => true, now = () => Date.now(), missing = MISSING_ATTACHMENT, acceptsFiles = false, folder = 'attachments' }: {
+    readonly historyEnabled?: () => boolean; readonly now?: () => number; readonly missing?: string | undefined; readonly acceptsFiles?: boolean | undefined
+    /** The folder under `directory` it keeps content in: `attachments`, or `thread-media` for the pictures agents made (ADR-0170). */
+    readonly folder?: string } = {}) {
     this.historyEnabled = historyEnabled; this.now = now; this.missing = missing; this.acceptsFiles = acceptsFiles
-    this.folder = join(directory, 'attachments')
+    this.folder = join(directory, folder)
     this.index = new AtomicJsonStore(join(this.folder, INDEX_FILE), value => {
       const saved = indexSchema.parse(value)
       return { version: 1, entries: saved.entries.flatMap(item => { const parsed = entrySchema.safeParse(item); return parsed.success ? [parsed.data] : [] }) }
