@@ -13,6 +13,7 @@ import type { LaterWords } from '../interfaceWords'
 import { diagramStepCss } from './diagramSteps'
 import { svgDataUrl, toInertDiagramSvg, type DiagramBounds } from './diagramSvg'
 import { shownCount } from '../../state/interfaceNumbers'
+import { TYPE_STEPS } from '../../styles/typeSteps'
 
 export type DiagramRenderResult =
   | {
@@ -68,11 +69,12 @@ export function configFor(palette: DiagramPalette): MermaidConfig {
     theme: 'base',
     darkMode: palette.dark,
     fontFamily: FONT_FAMILY,
-    fontSize: 15,
+    // A diagram's labels read at the transcript's size, the reading step.
+    fontSize: TYPE_STEPS.reading,
     themeVariables: {
       darkMode: palette.dark,
       fontFamily: FONT_FAMILY,
-      fontSize: '15px',
+      fontSize: `${TYPE_STEPS.reading}px`,
       background: palette.block,
       primaryColor: palette.node,
       primaryTextColor: palette.text,
