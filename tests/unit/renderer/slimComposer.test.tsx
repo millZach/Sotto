@@ -43,8 +43,9 @@ describe('when the composer is slim (ADR-0125)', () => {
     expect(at(0)).toBe(false)
     expect(at(READING_BACK_PX)).toBe(false)
     expect(at(READING_BACK_PX + 1)).toBe(true)
-    // A single wheel notch from the end is reading back.
+    // A single wheel notch from the end is reading back, and so is a trackpad's small scroll.
     expect(at(100)).toBe(true)
+    expect(at(20)).toBe(true)
   })
 
   it('takes a printable key typed on the transcript’s words as the start of a message, and nothing else', () => {
@@ -90,7 +91,7 @@ describe('the slim composer in a thread pane', () => {
     expect(view.compose).not.toHaveAttribute('data-slim')
     view.readBack(400)
     expect(view.compose).toHaveAttribute('data-slim', 'true')
-    view.readBack(20)
+    view.readBack(4)
     expect(view.compose).not.toHaveAttribute('data-slim')
 
     view.readBack(400)
@@ -121,7 +122,7 @@ describe('the slim composer in a thread pane', () => {
     fireEvent.mouseDown(view.textbox())
     expect(view.compose).not.toHaveAttribute('data-slim')
     // Reading back across the line again slims it again; a draft keeps it full.
-    view.readBack(20)
+    view.readBack(4)
     view.readBack(400)
     expect(view.compose).toHaveAttribute('data-slim', 'true')
     setPromptText(view.textbox(), 'and the narrow pane')
@@ -130,8 +131,9 @@ describe('the slim composer in a thread pane', () => {
 
   it('slims at every scroll away from the end while the composer is empty, however it came back full', () => {
     const view = mount()
-    // Back to the end and away again, five times over, by a wheel notch or more: it slims every time.
-    for (const fromEnd of [60, 100, 160, 400, 900]) {
+    // Back to the end and away again, seven times over, by a trackpad's small scroll, a wheel notch or more: it slims
+    // every time.
+    for (const fromEnd of [12, 30, 60, 100, 160, 400, 900]) {
       view.readBack(0)
       expect(view.compose, `full at the end before ${fromEnd}`).not.toHaveAttribute('data-slim')
       view.readBack(fromEnd)
@@ -148,13 +150,20 @@ describe('the slim composer in a thread pane', () => {
     }
   })
 
-  it('stays full while focus is on another of its controls as the reader scrolls back', () => {
+  it('stays full while a picker of the composer is open, and slims once it has closed, the focus moving to the prompt', () => {
     const view = mount()
-    // The fixture's own controls are disabled until the thread connects, so a control of the composer stands in for them.
-    const control = view.compose.appendChild(document.createElement('button'))
-    act(() => { control.focus() })
+    // The fixture's own controls are disabled until the thread connects, so a picker's trigger of the composer stands in.
+    const trigger = view.compose.appendChild(document.createElement('button'))
+    trigger.setAttribute('aria-expanded', 'true')
+    act(() => { trigger.focus() })
     view.readBack(400)
     expect(view.compose).not.toHaveAttribute('data-slim')
+    // Closed, its trigger keeps the focus; the next scroll slims the composer and puts the focus in the prompt, since the
+    // slim line hides the trigger.
+    trigger.setAttribute('aria-expanded', 'false')
+    view.readBack(500)
+    expect(view.compose).toHaveAttribute('data-slim', 'true')
+    expect(view.textbox()).toHaveFocus()
   })
 
   it('learns what shows of the slim composer while the effort border’s own transition runs', () => {

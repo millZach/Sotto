@@ -147,8 +147,8 @@ for (const style of COMPOSER_STYLES) test(`reading back slims ${style === 'rows'
     expect(full.optionsShown, JSON.stringify(full)).toBe(true)
 
     const announced = await liveWords(pane)
-    // Within the follow slack is still the end.
-    await readBack(pane, 30)
+    // A pixel or two short of the end is still the end.
+    await readBack(pane, 2)
     await expect(compose).not.toHaveAttribute('data-slim')
 
     // Reading back: one line with its disc beside it; the options row, the toolbar and the row under the card step away.
@@ -183,7 +183,7 @@ for (const style of COMPOSER_STYLES) test(`reading back slims ${style === 'rows'
     expect(await liveWords(pane), 'what the composer announces').toEqual(announced)
 
     // Back near the end: full again.
-    await readBack(pane, 20)
+    await readBack(pane, 2)
     await expect(compose).not.toHaveAttribute('data-slim')
 
     // The caret resting in the empty prompt, as it is after a send or on opening a thread, does not hold the composer
@@ -192,7 +192,7 @@ for (const style of COMPOSER_STYLES) test(`reading back slims ${style === 'rows'
     await readBack(pane, 420)
     await expect(compose).toHaveAttribute('data-slim', 'true')
     await expect(textbox).toBeFocused()
-    await readBack(pane, 20)
+    await readBack(pane, 2)
     await expect(compose).not.toHaveAttribute('data-slim')
     await log.focus()
 

@@ -8,11 +8,12 @@ import { prefersReducedMotion } from '../state/reducedMotion'
  */
 
 /**
- * How far above its end the transcript must be read before the composer slims: past the slack in which the transcript
- * still follows the end, so any scroll that leaves the end slims an empty composer (Zach's ask on October 31, 2026; it
- * was 160 pixels, which a wheel notch or two from the end did not reach).
+ * How far above its end the transcript must be read before the composer slims: less than a line, so any scroll that
+ * leaves the end, a trackpad's small one included, slims an empty composer, and only a scroll that has run out a pixel
+ * or two short of the end does not (Zach's ask on October 31, 2026; it was 160 pixels, which a wheel notch or two from
+ * the end did not reach).
  */
-export const READING_BACK_PX = 48
+export const READING_BACK_PX = 8
 /** How long the card takes to change height, slim or full. */
 export const SLIM_MS = 200
 /** The card's own move between slim and full, by which a measure of the card knows to wait for it and for nothing else. */
@@ -30,7 +31,7 @@ export interface SlimFacts {
   readonly readingBack: boolean
   /**
    * Focus holds the composer full: it came to the composer, from a click, Tab or a key typed into the transcript, since
-   * the reader last scrolled back. A caret left resting in the empty prompt does not hold it once the reader scrolls back.
+   * the reader last scrolled away from the end. A scroll lets go of it unless a picker or menu of the composer is open.
    */
   readonly held: boolean
   /** The composer holds text or attachments: a draft keeps it full. */

@@ -268,11 +268,16 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const [readingBack, setReadingBack] = useState(false)
   const [composeHeld, setComposeHeld] = useState(false)
   // Every scroll the reader makes away from the end slims an empty composer, even one that came back full with the caret
-  // resting in its prompt, as it is after a send, on opening a thread or after a click on the slim card. Focus on any
-  // other of its controls, such as an open picker, keeps it full.
+  // resting in its prompt, as it is after a send, on opening a thread or after a click on the slim card. Only an open
+  // picker or menu keeps it full. Focus left on one of its other controls, such as a picker's trigger once the picker
+  // closed, moves to the prompt, since the slim line hides that control.
   const readBack = useCallback((reading: boolean): void => {
     setReadingBack(reading)
-    if (reading && document.activeElement?.id === promptId) setComposeHeld(false)
+    const element = compose.current
+    if (!reading || element === null || element.querySelector('[aria-expanded="true"]') !== null) return
+    const prompt = document.getElementById(promptId), active = document.activeElement
+    if (prompt !== null && active !== prompt && active !== null && element.contains(active)) prompt.focus({ preventScroll: true })
+    setComposeHeld(false)
   }, [promptId])
   const slim = composerSlim({ enabled: slimOn, readingBack, held: composeHeld, draft: paneHasDraft,
     questionWaits: !isThreadClosed(thread) && thread.requests.some(request => request.kind === 'question') })
