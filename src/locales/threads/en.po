@@ -1237,6 +1237,11 @@ msgstr "{threadTitle} could not start a cloud iPhone."
 msgid "{threadTitle} wants to start a cloud iPhone."
 msgstr "{threadTitle} wants to start a cloud iPhone."
 
+#. A toast after Undo could not restore a settled thread; {title} is its name and {refusal} says why.
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "{title} is still settled. {refusal}"
+msgstr "{title} is still settled. {refusal}"
+
 #. {title} is a visual's title: its source.
 #. {title} is the title of a diagram: its Mermaid source.
 #: src/renderer/src/agents/InteractiveVisualCard.tsx
@@ -3531,6 +3536,7 @@ msgstr "Disconnecting…"
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 #: src/renderer/src/agents/HostUpdates.tsx
 #: src/renderer/src/agents/NeedsYouQueue.tsx
+#: src/renderer/src/agents/SettleToast.tsx
 #: src/renderer/src/agents/SidebarFrame.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
@@ -7011,6 +7017,16 @@ msgstr "Settle thread"
 msgid "Settled"
 msgstr "Settled"
 
+#. A toast after the user settled a thread; {title} is the thread's name.
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "Settled {title}"
+msgstr "Settled {title}"
+
+#. A toast after the user settled a thread and Sotto removed its worktree folder; {title} is the thread's name.
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "Settled {title} and removed its worktree. The branch is kept."
+msgstr "Settled {title} and removed its worktree. The branch is kept."
+
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "Setup did not finish."
 msgstr "Setup did not finish."
@@ -7419,6 +7435,10 @@ msgstr "Sotto could not reach its own side of this. Nothing was changed. Try aga
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Sotto could not reach its own side of this. Nothing was saved. Try again."
 msgstr "Sotto could not reach its own side of this. Nothing was saved. Try again."
+
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "Sotto could not reach this thread's computer. Nothing was changed; try Restore on the Settled shelf."
+msgstr "Sotto could not reach this thread's computer. Nothing was changed; try Restore on the Settled shelf."
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto could not read it again on {machine} just now. It reads it again when {machine} says it changed."
@@ -8503,8 +8523,10 @@ msgstr "This question has no choices Sotto can show."
 msgid "This Sotto cannot change what Watcher may do without asking."
 msgstr "This Sotto cannot change what Watcher may do without asking."
 
+#. Stands for a thread's name in "Settled this thread" when it has none.
 #. The thread that delegated, inside a sentence.
 #: src/renderer/src/agents/delegationWords.ts
+#: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "this thread"
 msgstr "this thread"
 
@@ -8869,6 +8891,14 @@ msgstr "Unconfirmed"
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "Unconfirmed answer"
 msgstr "Unconfirmed answer"
+
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "Undo"
+msgstr "Undo"
+
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "Undo: restore {title}"
+msgstr "Undo: restore {title}"
 
 #. A background agent's status.
 #: src/renderer/src/agents/threadActivityView.ts

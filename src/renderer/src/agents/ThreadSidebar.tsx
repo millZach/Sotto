@@ -14,7 +14,7 @@ import { describeWorkingCopy, useSettleThread } from './ThreadWorkingCopy'
 import { useSidebarSize } from './sidebarSize'
 import type { AgentConnection } from './AgentContext'
 import { ProjectSettleAction, SidebarFrame } from './SidebarFrame'
-import { rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
+import { holdSettledRows, rowStatus, unseenFailures, workingLabel, type ProjectFolder, type ThreadRow, type WorkspaceOrganization } from './threadFacts'
 import { THREAD_DRAG_TYPE } from './splitLayout'
 import { HostBadge, hostIdOf, listedHosts, type ListedHost } from './HostBadge'
 import { MainCheckoutLine } from './MainCheckoutLine'
@@ -33,12 +33,17 @@ import { SwarmAngles, swarmAnglesByLead } from './SwarmAngles'
 import type { PaneMenuItem } from './PaneMenu'
 import { RowMenu, rowMenuPlace, rowMenuPressed, type RowMenuPlace } from './RowMenu'
 import { ROVING_GROUP, ROVING_KEY, ROVING_TOGGLE, ROW_ACTIONS, useRovingList } from './rovingList'
+import { useSettleGaps, type HeldGap } from './settleGap'
+import { SettleToast } from './SettleToast'
 import './workingThreadsLine.css'
 
 export { useAddProject } from './addProject'
 
 type Command = AgentConnection['command']
 type Section = 'open' | 'settled'
+type SettleThread = ReturnType<typeof useSettleThread>['settle']
+/** Settle from the list: a pointer's press over the list holds the row's place while the pointer stays (ADR-0165). */
+type ListSettle = (thread: Parameters<SettleThread>[0], project: Parameters<SettleThread>[1], row?: HTMLElement | null) => Promise<boolean>
 
 /**
  * The working threads line (#1183, Zach's pick A from the prototype): while more than ten threads are working on this
@@ -144,7 +149,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   readonly busy: boolean
   readonly liveClock: boolean
   readonly panes: PaneActions
-  readonly settle: ReturnType<typeof useSettleThread>['settle']
+  readonly settle: ListSettle
   /** This thread leads a swarm (Owl `worker-swarms`): its angles, listed under its row. */
   readonly angles?: readonly AgentThread[] | undefined
 }): ReactNode {
@@ -195,7 +200,7 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   // Each action once, for the menu and the hover icon alike, so the two cannot drift apart.
   const openBeside = (): void => panes.onOpenBeside(id)
   const regenerate = (): void => void command({ type: 'regenerate-thread-title', threadId: id })
-  const settleRow = (): void => void settle(row.thread, row.project)
+  const settleRow = (): void => void settle(row.thread, row.project, rowItem.current)
   const restoreRow = (): void => void command({ type: 'restore-thread', threadId: id })
   // The row's actions in words, with the keys that do the same from the row: the hover icons' twin for the keyboard
   // and the right-click. Built only while the menu is open.
@@ -312,7 +317,7 @@ const PEEK_DELAY_MS = 350
 const PEEK_GRACE_MS = 300
 
 /** One project folder and its rows. Memoised for the same reason a row is: its folder is shared across updates. */
-const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut, peekEnabled, indicatorsHidden, mainCheckout, swarmAngles }: {
+const FolderView = memo(function FolderView({ folder, section, panes, activeProjectId, expanded, liveClock, onToggle, onOpen, onNewThread, command, settle, globalLaneBusy, busyThreadIds, host, newThreadShortcut, peekEnabled, indicatorsHidden, mainCheckout, swarmAngles, gaps }: {
   readonly folder: ProjectFolder; readonly section: Section; readonly panes: PaneActions; readonly activeProjectId: string | null
   /** Each swarm lead's angles (Owl `worker-swarms`); absent while the feature is off. */
   readonly swarmAngles?: ReadonlyMap<string, readonly AgentThread[]> | undefined
@@ -323,7 +328,9 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   readonly expanded: boolean; readonly onToggle: (key: string) => void; readonly onOpen: (threadId: string) => void
   readonly liveClock: boolean
   readonly onNewThread: (projectId: string) => void; readonly command: Command
-  readonly settle: ReturnType<typeof useSettleThread>['settle']
+  readonly settle: ListSettle
+  /** The held gaps among this folder's rows (ADR-0165): settled rows whose places stay empty while the pointer stays. */
+  readonly gaps?: ReadonlyMap<string, HeldGap> | undefined
   /** Settling or restoring a whole project moves every thread of it at once, so it waits on the global lane. */
   readonly globalLaneBusy: boolean
   /** The threads whose own lane is running; each row reads only its own entry. */
@@ -341,7 +348,8 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   // The chord opens a thread in the focused pane's project, so only this project's pen answers to it while one of its threads is focused.
   const listed = panes.listedThreadId ?? panes.currentThreadId
   const chordAppliesHere = listed !== null && folder.rows.some(row => row.thread.id === listed)
-  const projectTitle = folder.title, hostName = host?.name, count = folder.rows.length
+  // A held gap is a settled thread's place, not one of the folder's threads.
+  const projectTitle = folder.title, hostName = host?.name, count = folder.rows.length - (gaps?.size ?? 0)
   const toggleLabel = hostName === undefined
     ? plural(count, { one: `${projectTitle} ${{ threads: shownCount(count) }} thread`, other: `${projectTitle} ${{ threads: shownCount(count) }} threads` })
     : plural(count, { one: `${projectTitle} on ${hostName} ${{ threads: shownCount(count) }} thread`, other: `${projectTitle} on ${hostName} ${{ threads: shownCount(count) }} threads` })
@@ -359,7 +367,7 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
   const draggingRef = useRef(false)
   /** Escape latches the preview shut until focus leaves the folder; returned focus alone must not reopen it. */
   const suppressRef = useRef(false)
-  const canPreview = peekEnabled && !expanded && folder.rows.length > 0
+  const canPreview = peekEnabled && !expanded && count > 0
   const peeking = preview && canPreview
   useEffect(() => () => { window.clearTimeout(enterTimer.current); window.clearTimeout(leaveTimer.current) }, [])
   // The folder's menu (ADR-0164): its head's actions in words, for the keyboard and a right-click.
@@ -398,8 +406,13 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
     if (pointerType !== '' && pointerType !== 'mouse' && pointerType !== 'pen') return false
     return typeof window.matchMedia !== 'function' || window.matchMedia('(hover: hover) and (pointer: fine)').matches
   }
-  const renderRows = (open: (threadId: string) => void, rowPanes: PaneActions): ReactNode => folder.rows.map(row => <ThreadNavRow key={row.thread.id} row={row} current={listed === row.thread.id} open={rowPanes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
-    liveClock={liveClock} onOpen={open} command={command} panes={rowPanes} settle={settle} angles={swarmAngles?.get(row.thread.id)} />)
+  // A held gap is the settled row's height of nothing: no control, no name, and a click on it does nothing.
+  const renderRows = (open: (threadId: string) => void, rowPanes: PaneActions): ReactNode => folder.rows.map(row => {
+    const gap = gaps?.get(row.thread.id)
+    if (gap !== undefined) return <li key={row.thread.id} className="thread-nav__gap" aria-hidden="true" data-closing={gap.closing || undefined} style={{ height: gap.height }} />
+    return <ThreadNavRow key={row.thread.id} row={row} current={listed === row.thread.id} open={rowPanes.openThreadIds.includes(row.thread.id)} busy={isThreadBusy({ busyThreadIds }, row.thread.id)}
+      liveClock={liveClock} onOpen={open} command={command} panes={rowPanes} settle={settle} angles={swarmAngles?.get(row.thread.id)} />
+  })
   return <div ref={rootRef} className="thread-folder" data-section={section} data-active={activeProjectId === folder.id || undefined} {...{ [ROVING_GROUP]: '' }}
     onPointerEnter={event => { if (fineHover(event.pointerType)) { hoverRef.current = true; schedulePreview('hover') } }}
     onPointerLeave={() => { hoverRef.current = false; scheduleHide('hover') }}
@@ -426,7 +439,7 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
         <Folder size={14} aria-hidden="true" /><span className="thread-folder__title">{folder.title}</span>{host ? <HostBadge host={host} /> : null}
         {!expanded ? <Indicators id={indicatorsId} working={folder.working} needs={folder.needs} hidden={indicatorsHidden} /> : null}
         {/* An empty folder shows its name alone; the room says once that there are no threads (#1834). */}
-        {folder.rows.length ? <span className="thread-folder__count" aria-hidden="true">{folder.rows.length}</span> : null}
+        {count ? <span className="thread-folder__count" aria-hidden="true">{count}</span> : null}
       </button>
       {project !== undefined ? <span className="thread-folder__actions" {...{ [ROW_ACTIONS]: '' }}>
         {section === 'open' ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`New thread in ${projectTitle}`}
@@ -565,6 +578,37 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   const threadList = useRef<HTMLDivElement>(null)
   const listKeys = useRovingList(threadList, { tree: true })
   const railKeys = useRovingList(railNav, { tree: false })
+  // The held gap (ADR-0165): a row settled by a pointer over the list keeps its place empty until the pointer leaves.
+  const { gaps, hold, drop } = useSettleGaps(threadList)
+  const settleFromList = useCallback<ListSettle>(async (thread, project, row) => {
+    const holding = row !== undefined && hold(thread.id, row)
+    const settled = await settle(thread, project)
+    if (!settled && holding) drop(thread.id)
+    return settled
+  }, [settle, hold, drop])
+  const heldIds = useMemo(() => new Set(gaps.keys()), [gaps])
+  const held = useMemo(() => holdSettledRows(organization.open, organization.settled, heldIds), [organization.open, organization.settled, heldIds])
+  const gapsByFolder = useMemo(() => {
+    const folders = new Map<string, Map<string, HeldGap>>()
+    for (const [threadId, folderId] of held.placed) {
+      const gap = gaps.get(threadId)
+      if (gap === undefined) continue
+      const folder = folders.get(folderId) ?? new Map<string, HeldGap>()
+      folder.set(threadId, gap)
+      folders.set(folderId, folder)
+    }
+    return folders
+  }, [held.placed, gaps])
+  // A gap whose thread came back (Undo, the shelf's Restore) goes at once, rather than waiting for the pointer to leave.
+  const heldSettled = useRef(new Set<string>())
+  useEffect(() => {
+    const seen = heldSettled.current
+    for (const id of gaps.keys()) {
+      if (held.placed.has(id)) seen.add(id)
+      else if (seen.has(id)) { seen.delete(id); drop(id) }
+    }
+    for (const id of [...seen]) if (!gaps.has(id)) seen.delete(id)
+  }, [gaps, held.placed, drop])
   // The chords that act from anywhere in the window (Settings › Keyboard): Settle and Restore for the focused
   // thread — the same press their row buttons make, worktree question included — and moving between threads in
   // the sidebar's order, the waiting ones included from the Settled shelf too.
@@ -625,8 +669,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
     return <FolderView key={key} folder={folder} section={section} panes={panes} activeProjectId={state.activeProjectId} liveClock={liveClock}
       host={hosts.find(item => item.hostId === hostId)} newThreadShortcut={newThreadShortcut} peekEnabled={folderPeek}
       mainCheckout={section === 'open' && mainCheckout.size ? mainCheckout.get(projectWorkingCopyDefaultKey(state, folder.id)) : undefined}
-      expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settle} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} indicatorsHidden={queueOn}
-      swarmAngles={swarmAngles} />
+      expanded={searching || isFolderOpen(key)} onToggle={toggle} onOpen={onOpen} onNewThread={onNewThread} command={command} settle={settleFromList} globalLaneBusy={state.globalLaneBusy} busyThreadIds={state.busyThreadIds} indicatorsHidden={queueOn}
+      swarmAngles={swarmAngles} gaps={section === 'open' ? gapsByFolder.get(folder.id) : undefined} />
   }
   const { open, settled } = organization
   // The collapsed rail's threads: every open one, and the focused one even once settled.
@@ -712,6 +756,7 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
   return <SidebarFrame state={state} command={command} label={t`Thread sidebar`} query={query} searchPlaceholder={t`Search threads`} onQuery={onQuery}
     onNew={() => onNewThread()} newLabel={t`New thread`} NewIcon={SquarePen} newShortcut={topShortcut} title={title}
     extraError={newThreadError} onDismissExtraError={onDismissNewThreadError} onProjectAdded={onNewThread} notice={<WorkingThreadsLine threads={state.host.threads} />}
+    toast={<SettleToast command={command} threads={state.host.threads} list={threadList} platform={platform} />}
     afterSearch={<>
       {/* When Sotto restarts what a limit stopped, under the search and before what waits on you (ADR-0144; Owl only). */}
       <RestartBands threads={restartThreads ?? threads} command={command} onOpen={onOpen} />
@@ -724,8 +769,8 @@ export function ThreadSidebar({ state, command, organization, query, liveClock =
           first place F6 lands in the sidebar (ADR-0164). */}
       <div ref={threadList} className="thread-nav__list" data-region-entry="1" onKeyDown={listKeys.onKeyDown} onFocus={listKeys.onFocus}>
       <section aria-label={t`Projects`}>
-        {open.map(folderView('open'))}
-        {!open.length ? <p className="thread-nav__empty tt-paragraph">{searching ? t`No matching open threads.` : state.host.projects.length ? t`All caught up.` : t`Add a project folder to start.`}</p> : null}
+        {held.open.map(folderView('open'))}
+        {!held.open.length ? <p className="thread-nav__empty tt-paragraph">{searching ? t`No matching open threads.` : state.host.projects.length ? t`All caught up.` : t`Add a project folder to start.`}</p> : null}
       </section>
       <section aria-label={t`Settled`} className="thread-nav__shelf" {...{ [ROVING_GROUP]: '' }}>
         <button ref={settledButton} className="thread-nav__settled tt-focusable" type="button" aria-expanded={settledShown} onClick={() => setSettledOpen(!settledOpen)}

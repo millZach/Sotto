@@ -1,0 +1,25 @@
+/* After a Settle the user pressed (ADR-0165, Zach's pick B of #1826): the held gap in the thread list, and the settle
+   toast at the sidebar's foot with Undo. */
+
+/* The held gap: the settled row's height of nothing, until the pointer leaves the list. Closing, it folds away; under
+   reduced motion it goes at once, as the hook removes it without this step. */
+.thread-nav__gap { margin: 1px 0; list-style: none; }
+.thread-nav__gap[data-closing] { height: 0 !important; margin: 0; }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .thread-nav__gap { transition: height 160ms ease-out, margin 160ms ease-out; }
+}
+
+/* In the column's own flow just above the foot, so it covers no row; empty, it takes no room at all. */
+.thread-nav__toast { flex: none; min-width: 0; }
+.thread-nav__toast .tt-toast-region[data-placement='sidebar'] { position: static; max-width: none; margin: 0 8px 8px; }
+.thread-nav__toast .tt-toast-region[data-placement='sidebar']:empty { margin: 0; }
+.thread-nav__toast .tt-toast { padding: 6px 6px 6px 12px; }
+
+/* On the collapsed rail it stands beside the rail's foot, over the edge of the room, as wide as an open sidebar's. */
+.thread-nav__rail .thread-nav__toast { position: absolute; left: calc(100% + 8px); bottom: 12px; z-index: 30; width: min(300px, calc(100vw - 96px)); }
+.thread-nav__rail .thread-nav__toast .tt-toast-region[data-placement='sidebar'] { margin: 0; }
+
+.settle-toast { display: flex; align-items: center; gap: 10px; min-height: 26px; color: var(--tt-text); line-height: 1.4; }
+.settle-toast__words { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+/* "Settled <title>" stays one line beside Undo; the title in full is its tooltip and its toast's spoken words. */
+.settle-toast[data-kind='undo'] .settle-toast__words { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

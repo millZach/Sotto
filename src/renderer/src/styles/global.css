@@ -1561,6 +1561,48 @@ textarea.tt-input {
   color: var(--tt-text);
 }
 
+/* A toast's one action, such as the settle toast's Undo (ADR-0165): a quiet outlined button, as Watch's Undo is. */
+.tt-toast__action {
+  flex: none;
+  height: 26px;
+  padding: 0 11px;
+  border: 1px solid var(--tt-field-border);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tt-text);
+  font: inherit;
+  font-weight: 600;
+  transition: background-color 120ms ease, border-color 120ms ease;
+}
+
+.tt-toast__action:hover {
+  background: var(--tt-hover);
+}
+
+.tt-toast__action:active {
+  background: var(--tt-hover-strong);
+}
+
+/* Dismiss on a toast that has nothing to take back. */
+.tt-toast__dismiss {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--tt-text-muted);
+  transition: background-color 120ms ease, color 120ms ease;
+}
+
+.tt-toast__dismiss:hover {
+  background: var(--tt-hover);
+  color: var(--tt-text);
+}
+
 /* ---- panels ---- */
 
 .tt-panel {
