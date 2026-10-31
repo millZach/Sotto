@@ -259,6 +259,8 @@ artifacts/review-667/
 artifacts/workspace-picker/
 # Filled cards and setup's card (#1831, #1824); the cited captures are committed
 artifacts/filled-cards-and-setup-card/
+# Settings' footer status on its own line (#1907); the cited before and after captures are committed
+artifacts/settings-footer-status-clearance/
 artifacts/codex-restored-replies/
 
 # Native iPhone Focus verification captures; force-add only images cited by the note.

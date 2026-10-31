@@ -1206,21 +1206,19 @@ textarea.tt-input {
 }
 
 /* The sentence of a page that owns the window and has no foot line of its
-   own (Settings): the bottom-right corner of the room, on a patch of
-   canvas so it reads on top of whatever scrolls beneath it. */
+   own (Settings): the last line of the page's column, in the room's
+   bottom-right corner. It takes a line of its own rather than lying over the
+   column, so the column's scroll ends above it and no row ever passes under
+   it (#1907). Its margins and padding keep the words where the corner always
+   had them. */
 .page-status {
-  position: absolute;
-  right: 16px;
-  bottom: 8px;
-  z-index: 5;
-  margin: 0;
+  flex: none;
+  align-self: flex-end;
+  margin: 0 16px 8px;
   padding: 2px 6px;
-  border-radius: 4px;
-  background: var(--tt-canvas);
   color: var(--tt-text-faint);
   font-size: 12px;
   user-select: none;
-  pointer-events: none;
 }
 
 .app-strip {
