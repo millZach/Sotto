@@ -616,6 +616,10 @@ private struct WatcherConversationPane: View {
     @State private var viewing: OpenPhotos?
     private static let end = "watcher-end"
     private static let sendingID = "watcher-sending"
+    /// Just under the newest words, where following scrolls to: `newestGap` below them, so they end that far above the
+    /// box rather than against the edge of its frame, which on its own sits only the box's padding above the glass.
+    private static let newestEnd = "watcher-newest-end"
+    private static let newestGap = Space.s3
     /// A waiting card's place on the page, to scroll it whole above the box.
     private static func cardID(_ key: String) -> String { "watcher-needs-you-" + key }
 
@@ -626,7 +630,7 @@ private struct WatcherConversationPane: View {
         // The photos of Watcher's messages are its thread's, read through Watcher's page.
         let ref = page?.current.map { ThreadRef(hostID: hostID, threadID: $0.target.threadId) }
         let items = page.map { WatcherConversation.items($0) } ?? []
-        let newest = sending != nil ? Self.sendingID : items.last?.id ?? Self.end
+        let newest = items.isEmpty && sending == nil ? Self.end : Self.newestEnd
         // While a card waits on the user, the bar stays where it is (#1288).
         let pinned = page?.needsYou.isEmpty == false
         ScrollViewReader { proxy in
@@ -638,24 +642,31 @@ private struct WatcherConversationPane: View {
                     notes(page)
                     if !items.isEmpty || sending != nil {
                         // The conversation and the words on their way, whose bottom is the newest words.
-                        VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
-                            ForEach(items) { item in
-                                Group {
-                                    switch item {
-                                    case .message(let message): WatcherMessage(message: message, ref: ref) { viewing = $0 }.equatable()
-                                    case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
-                                    case .ownChange(let change): WatcherOwnChangeLine(change: change)
+                        VStack(alignment: .leading, spacing: 0) {
+                            VStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
+                                ForEach(items) { item in
+                                    Group {
+                                        switch item {
+                                        case .message(let message): WatcherMessage(message: message, ref: ref) { viewing = $0 }.equatable()
+                                        case .receipts(let group, _): ReceiptCard(hostID: hostID, group: group)
+                                        case .ownChange(let change): WatcherOwnChangeLine(change: change)
+                                        }
                                     }
+                                    .id(item.id)
                                 }
-                                .id(item.id)
+                                if let sending { SendingBubble(text: sending, photos: sendingPhotos, files: sendingFiles).id(Self.sendingID) }
                             }
-                            if let sending { SendingBubble(text: sending, photos: sendingPhotos, files: sendingFiles).id(Self.sendingID) }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .background(reader { follow.newest = $0.maxY })
+                            .environment(\.replyQuoteBox, ReplyQuoteBox(key: model.watcherDraftKey(hostID)) { [model, hostID] in
+                                model.quoteReply($0, into: model.watcherDraftKey(hostID))
+                            })
+                            // The place following scrolls to, under the newest words: a zero-height frame whose gap-tall
+                            // content runs on below it, so it takes no room on the page.
+                            Color.clear.frame(height: Self.newestGap).id(Self.newestEnd)
+                                .frame(height: 0, alignment: .top)
+                                .accessibilityHidden(true)
                         }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(reader { follow.newest = $0.maxY })
-                        .environment(\.replyQuoteBox, ReplyQuoteBox(key: model.watcherDraftKey(hostID)) { [model, hostID] in
-                            model.quoteReply($0, into: model.watcherDraftKey(hostID))
-                        })
                     }
                     ForEach(Array((model.watcherSetAside[hostID] ?? []).enumerated()), id: \.offset) { _, words in
                         SetAsideCard(hostID: hostID, words: words)
