@@ -4431,10 +4431,6 @@ msgstr ""
 msgid "Room the preview shows"
 msgstr ""
 
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Run a quick input-level test."
-msgstr ""
-
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Run the local host"

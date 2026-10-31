@@ -1011,6 +1011,11 @@ export const agentStateSchema = z.object({
   threadDeletePreview: threadDeletePreviewSchema.optional(),
   threadClearPreview: threadClearPreviewSchema.optional(),
   threadClearResult: threadClearResultSchema.optional(),
+  /**
+   * A refusal because the checkout guard is held (#1823), on that reply alone: present for every such refusal, with the
+   * thread holding the folder when a thread does, so the window offers to open it. Keyed for the window by the router.
+   */
+  checkoutHold: z.object({ threadId: z.string().min(1).optional() }).optional(),
   clientScoped: z.boolean().optional(),
   connections: z.array(z.object({ hostId: z.uuid(), name: z.string(), kind: z.enum(['local', 'remote']), connected: z.boolean() })).optional(),
   hostId: z.uuid().optional(),
@@ -1155,6 +1160,22 @@ export const agentCommandReceiptSchema = agentStateSchema.extend({
   }),
 })
 export type AgentCommandReceipt = z.infer<typeof agentCommandReceiptSchema>
+
+/**
+ * `host.threads` as a command's reply carries it to a page that asked for changed thread records (ADR-0028, October 30 amendment):
+ * the shape of a broadcast's (`AgentThreadsBroadcast`), measured from the last broadcast the window was sent and moving
+ * nothing, so the page puts the whole array back from the records it holds. Unlike a broadcast's, the preload checks it,
+ * each changed record against the thread schema, as it checked every record of a whole reply.
+ */
+export const agentChangedThreadRecordsSchema = z.object({ revision: z.number().int().nonnegative(), base: z.number().int().nonnegative().nullable(),
+  changed: z.array(agentThreadSchema), removed: z.array(z.string()).optional(), order: z.array(z.string()).optional() }).strict()
+/** A command receipt whose threads are the changes since the window's last broadcast (`agentChangedThreadRecordsSchema`). */
+export const agentCommandChangedThreadRecordsReceiptSchema = agentCommandReceiptSchema.extend({
+  host: agentCommandReceiptSchema.shape.host.extend({ threads: agentChangedThreadRecordsSchema }),
+})
+export type AgentCommandChangedThreadRecordsReceipt = z.infer<typeof agentCommandChangedThreadRecordsReceiptSchema>
+/** What a page may ask of a command's reply, beside the command: `changedThreadRecords` for its threads as changed thread records. */
+export const agentCommandReplyOptionsSchema = z.object({ changedThreadRecords: z.literal(true) }).strict()
 
 /**
  * One viewed thread's history, pushed and fetched apart from the shell stream: its messages and the
@@ -1536,6 +1557,11 @@ export type AgentStartHandover = z.infer<typeof agentStartHandoverSchema>
  */
 export interface AgentWireBridge extends Omit<AgentBridge, 'command' | 'onState'> {
   command(command: AgentCommand): Promise<AgentCommandReceipt>
+  /**
+   * The command, answered with its threads as the changed thread records since the window's last broadcast, for a page that holds that
+   * broadcast's records and puts the whole array back (ADR-0028, October 30 amendment).
+   */
+  commandWithChangedThreadRecords?(command: AgentCommand): Promise<AgentCommandChangedThreadRecordsReceipt>
   onState(listener: (state: AgentStateBroadcast) => void): () => void
 }
 

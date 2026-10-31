@@ -153,6 +153,12 @@
    Its label is a paragraph, not a label element, so it sheds the paragraph's margins to sit tight on its description. */
 .settings-view .settings-rows .tt-field > .tt-button { grid-area: control; justify-self: end; }
 .settings-view .settings-rows p.tt-field__label { margin: 0; }
+/* The microphone test is a row like the others on its card (ADR-0110, #1831): the label over its description, what the
+   test found under both, and the level and the button at the row's end. */
+.settings-view .settings-rows .settings-microphone-test > .settings-microphone-test__status { grid-area: error; margin: 6px 0 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.45; }
+.settings-view .settings-rows .settings-microphone-test > .settings-microphone-test__status:empty { margin: 0; }
+.settings-view .settings-rows .settings-microphone-test > .settings-microphone-test__controls { grid-area: control; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 10px 14px; min-width: 0; }
+.settings-microphone-test__controls .voice-wave { flex: none; }
 .settings-feedback { flex: none; padding: 16px 6vw 0; }
 .settings-view .settings-notice { width: 100%; max-width: 790px; margin: 0 auto; padding: 10px 14px; border-radius: 8px; font-size: 14px; line-height: 1.45; overflow-wrap: anywhere; }
 .settings-view .settings-detail:has(.settings-feedback) .settings-scroll { padding-top: 20px; }

@@ -61,7 +61,7 @@ For a remote thread, the laptop also keeps the latest text and image selections 
 
 Standalone Chats, including Talk and Generate prompt, has been removed. With **Keep local history** on, existing `personal-chat/` files and personal records in `request-drafts.json` are preserved without reopening conversations, reconnecting providers or showing old drafts. Turning history off clears Sotto's retained personal transcripts and submitted answers; startup applies the same cleanup when history is already off. Provider-owned history is untouched; nothing is migrated into Threads.
 
-After you type in the Claude CLI, the next send from Sotto resumes the updated native history, even if the restart stops background work.
+After you type in the Claude CLI, the next send from Sotto resumes the updated native history, even if the restart stops background work. What you typed shows in Sotto within a second while the thread is open, working or watched by Watcher, and otherwise when you open it or send to it. Work typed in Codex outside Sotto shows the same way.
 
 If a Claude Code answer is unconfirmed, **Check again** checks the request without sending anything. A delayed write keeps your original choice; another answer is allowed only after the write fails outright or the client is gone.
 

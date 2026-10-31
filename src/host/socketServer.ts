@@ -1005,6 +1005,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     }
     const receipt: HostReceipt = { status: 'pending' }
     let privateError: string | null | undefined
+    // A Git command refused because the folder is held says what holds it (#1823), on this reply alone.
+    let checkoutHold: AgentState['checkoutHold']
     const task = (async () => {
       try {
         if (input.type === 'select-thread') {
@@ -1026,6 +1028,7 @@ export async function startSocketServer(options: SocketServerOptions) {
             }) : await service.command(input, client, answerDecisionId(peer.client.clientId, request.id))
             : await service.command(dispatched, client)
           if (input.type === 'compose' && result.error) peer.editingThreadId = previousEditor
+          if (result.checkoutHold) checkoutHold = result.checkoutHold
           if (['cancel-draft', 'send'].includes(input.type) && !result.error) peer.editingThreadId = null
           // Continuing an agent answers in the agent's row (#1028): its refusal is this command's alone, as a send's is.
           if (input.type === 'answer' || input.type === 'send' || input.type === 'save-thread-draft' || startsThread(input) || input.type === 'compose' && input.threadId !== undefined) privateError = result.error
@@ -1039,7 +1042,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     })()
     if (recorded) receipts.record(peer.client.clientId, request.id, { digest, receipt, task } satisfies CommandReceipt)
     await task
-    return privateError === undefined ? shell(peer) : { ...shell(peer), error: privateError }
+    const answer = privateError === undefined ? shell(peer) : { ...shell(peer), error: privateError }
+    return checkoutHold === undefined ? answer : { ...answer, checkoutHold }
   }
   /** A tool read that failed outright is the host's failure to read; what it answered, a refusal included, goes as it is. */
   const toolRead = async <T>(read: () => Promise<T>): Promise<T> => {

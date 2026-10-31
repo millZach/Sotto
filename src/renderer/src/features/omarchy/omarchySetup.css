@@ -1,8 +1,10 @@
 .omarchy-setup { display: grid; gap: 16px; min-width: 0; }
 .omarchy-setup__head { display: flex; justify-content: space-between; align-items: start; gap: 16px; }
 .omarchy-setup__head p { margin: 0; }
-.omarchy-setup__pieces { list-style: none; margin: 0; padding: 0; border: 1px solid var(--tt-hairline); border-radius: 16px; overflow: hidden; }
-.omarchy-setup__piece { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 4px; padding: 14px 16px; border-bottom: 1px solid var(--tt-hairline); }
+/* The pieces sit on a card in Settings and in setup: a fill of the inset with no outline, each divided from the next by a
+   2px line of the card (ADR-0110, #1831). */
+.omarchy-setup__pieces { list-style: none; margin: 0; padding: 0; border-radius: 16px; background: var(--tt-card-inset); overflow: hidden; }
+.omarchy-setup__piece { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; column-gap: 12px; row-gap: 4px; padding: 14px 16px; border-bottom: 2px solid var(--tt-card); }
 .omarchy-setup__piece:last-child { border-bottom: 0; }
 .omarchy-setup__icon { grid-column: 1; grid-row: 1 / span 2; color: var(--tt-text-muted); display: flex; justify-content: center; align-items: center; width: 32px; height: 32px; background: var(--tt-surface); border-radius: 10px; }
 .omarchy-setup__icon svg { width: 20px; height: 20px; }

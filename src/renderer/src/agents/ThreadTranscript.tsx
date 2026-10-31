@@ -932,10 +932,17 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     // the update that brings the room back, and a reader who did not scroll is not following the end they were pulled to.
     const held = reading.current
     if (held?.held === true && held.threadId === thread.id && Math.abs(element.scrollTop - held.top) < 1) return
-    const distance = element.scrollHeight - element.scrollTop - element.clientHeight
+    let distance = element.scrollHeight - element.scrollTop - element.clientHeight
     // Any move up that is not the end being cut short lets go of the end, however near it: a reply being written grows the
     // end faster than a reader scrolls out of the slack, and following would pull them back down with every word.
     const movedUp = element.scrollTop < lastTop.current - 1 && distance > 1
+    // The transcript's own move to the end, heard only after the end moved on (the composer's room grew with a restored
+    // draft, or a waiting card was laid out), is not the reader leaving it: the end is followed there, so a thread opened
+    // on a request shows its choices clear of the composer (#1820).
+    if (following.current && distance > 1 && Math.abs(element.scrollTop - lastTop.current) < 1) {
+      element.scrollTop = element.scrollHeight
+      distance = element.scrollHeight - element.scrollTop - element.clientHeight
+    }
     lastTop.current = element.scrollTop
     following.current = !movedUp && distance <= FOLLOW_SLACK_PX
     const isAway = distance > Math.max(FOLLOW_SLACK_PX, element.clientHeight / 2)
