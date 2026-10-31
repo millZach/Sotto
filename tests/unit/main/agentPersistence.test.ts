@@ -4,6 +4,8 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AgentControl } from '../../../src/main/agents/control'
+import { WATCHER_RECORD_FILE } from '../../../src/main/agents/watcherRecordFile'
+import { savedWatcherRecord } from '../../fixtures/savedWatcher'
 
 import { E2EAgentHost, e2eAgentReasoner } from '../../../src/main/e2e/agentEffects'
 import { AtomicJsonStore } from '../../../src/main/storage/atomicJsonStore'
@@ -46,10 +48,13 @@ describe('coordinator persistence', () => {
     delete saved.watcher
     saved.assignments = [{ threadId: 'workshop', instruction: 'Retired words', mode: 'managed' }]
     await writeFile(path, JSON.stringify(saved), 'utf8')
+    // An older store has no file of Watcher's own.
+    await rm(join(f.root, WATCHER_RECORD_FILE), { force: true })
     const reopened = createAgentControl({ directory: f.root, host: f.host, credentials: f.credentials, reasoner: e2eAgentReasoner })
     controls.push(reopened); await reopened.start(); reopened.dispose(); await reopened.closed()
     const migrated = JSON.parse(await readFile(path, 'utf8'))
-    expect(migrated.watcher).toEqual(emptyWatcherRecord())
+    expect(await savedWatcherRecord(f.root)).toEqual(emptyWatcherRecord())
+    expect(migrated).not.toHaveProperty('watcher')
     expect(migrated).not.toHaveProperty('assignments')
     expect(migrated.configuration).toEqual(saved.configuration)
     expect((await readdir(f.root)).some(name => name.includes('.corrupt-'))).toBe(false)
@@ -61,8 +66,10 @@ describe('coordinator persistence', () => {
     const path = join(f.root, 'agents.json')
     const saved = JSON.parse(await readFile(path, 'utf8'))
     const record = watcherRecordFixture()
+    // Saved before Watcher's record had a file of its own: the first restart moves it across.
     saved.watcher = record
     await writeFile(path, JSON.stringify(saved), 'utf8')
+    await rm(join(f.root, WATCHER_RECORD_FILE), { force: true })
     const warnings = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
     for (let restart = 0; restart < 2; restart++) {
       const host = new E2EAgentHost()
@@ -71,7 +78,8 @@ describe('coordinator persistence', () => {
       host.event({ type: 'manual', threadId: 'workshop', text: 'DISTINCT_PRIVATE_WATCHER_REQUEST' })
       host.event({ type: 'stream', threadId: 'workshop', messageId: 'private-reply', text: 'DISTINCT_PRIVATE_FILE_CONTENT', status: 'idle' })
       reopened.dispose(); await reopened.closed()
-      expect(JSON.parse(await readFile(path, 'utf8')).watcher).toEqual(record)
+      expect(await savedWatcherRecord(f.root)).toEqual(record)
+      expect(JSON.parse(await readFile(path, 'utf8'))).not.toHaveProperty('watcher')
       // No recovery writer may mistake a retained uncertain operation for new work.
       expect((await host.snapshot()).threads.flatMap(thread => thread.messages).filter(message => message.commandId)).toEqual([])
     }

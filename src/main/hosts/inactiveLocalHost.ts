@@ -1,9 +1,10 @@
 import { t } from '@lingui/core/macro'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { readFile } from 'node:fs/promises'
 import { z } from 'zod'
 import { watcherRecordSchema } from '../../shared/watcher'
 import { migrateWatcherRecord } from '../agents/watcherRecords'
+import { savedWatcherFile } from '../agents/watcherRecordFile'
 import { defaultAgentConfiguration, EMPTY_AGENT_HOST, type AgentState } from '../../shared/agents'
 import { HELD_PROVIDER_ENTRIES, type HeldProviders } from '../../shared/heldProviders'
 import type { createAgentRuntime } from '../agents/runtime'
@@ -38,7 +39,13 @@ export async function inactiveLocalHost(directory: string,
     catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}; throw error }
   }
   try {
-    const [agents, workspace] = await Promise.all([read('agents.json'), read('workspace.json')])
+    // Watcher's record is in its own file, or in `agents.json` for a store saved before it had one (`savedWatcherFile`).
+    const watcherFile = await savedWatcherFile(directory).then(file => basename(file.path), (error: unknown) => {
+      // Neither file there reads as an empty store, as before; any other failure leaves ownership unreadable.
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'agents.json'
+      throw error
+    })
+    const [agents, workspace] = await Promise.all([read(watcherFile), read('workspace.json')])
     const watcher = z.object({ watcher: z.preprocess(migrateWatcherRecord, watcherRecordSchema).optional() }).parse(agents).watcher
     if (watcher) for (const identity of [watcher.current, watcher.creation?.identity, ...watcher.history]) {
       if (identity) retained.add(identity.target.threadId)

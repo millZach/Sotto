@@ -16,6 +16,7 @@ import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { AGENT_STATE, type AgentHostSnapshot, type AgentThread } from '../../src/shared/agents'
 import { parseHostEntityKey } from '../../src/shared/clientIdentity'
 import type { WatcherRecord } from '../../src/shared/watcher'
+import { WATCHER_RECORD_FILE } from '../../src/main/agents/watcherRecordFile'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 import { addWatcherHistory, OWNER_SCALE, ownerRequestDrafts } from '../fixtures/ownerScale'
 import { bareEntityId, closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
@@ -166,8 +167,8 @@ async function remoteHost(profile: string) {
 }
 
 /**
- * The rest of the owner's history, written into the closed profile in the app's own files: Watcher's record in
- * `agents.json`, with `watcher` as the current Watcher, standing watches on `watched` and its past requests and
+ * The rest of the owner's history, written into the closed profile in the app's own files: Watcher's record in its own
+ * file (`WATCHER_RECORD_FILE`), with `watcher` as the current Watcher, standing watches on `watched` and its past requests and
  * operations on `others` and the remote host's threads, and the answer retirements and Watcher owners in
  * `request-drafts.json`. The fixture's provider has no Watcher model, so Watcher cannot be opened from the window; the
  * record names one of the padding threads as the current Watcher instead, as if it had been, so main's wake-up pass reads
@@ -175,7 +176,7 @@ async function remoteHost(profile: string) {
  */
 async function writeHistory(profile: string, localHostId: string, watcher: string, watched: readonly string[], others: readonly string[],
   remote: { hostId: string; threadIds: readonly string[] }): Promise<void> {
-  const file = join(profile, 'agents.json')
+  const file = join(profile, WATCHER_RECORD_FILE)
   const saved = JSON.parse(await readFile(file, 'utf8')) as { watcher: WatcherRecord }
   const at = new Date().toISOString()
   saved.watcher.current = { target: { hostId: localHostId, threadId: watcher }, projectId: PROJECT_ID, provider: 'claude', creationOperationId: randomUUID(), createdAt: at }
