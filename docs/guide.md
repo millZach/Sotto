@@ -1054,6 +1054,7 @@ Nothing runs until you press. Then Sotto brings the branch's commits to main, in
 - Uncommitted changes where main is checked out are refused too, including new files, and Sotto doesn't touch that folder. Commit or set them aside there, then press again.
 - If the thread it began from has switched to another branch, the press is refused. Sotto never switches a branch: switch it back to main there, then press again.
 - If these commits add a file that the folder where main is checked out already has as an ignored file, such as a local `.env` or build output, the press is refused and names the file, so Sotto never replaces it. Move it aside there, then press again.
+- If another thread is working, waiting for your answer or holding queued work where main is checked out, the strip reads **On hold**, names that thread and what it is doing, says nothing was brought back, and offers **Open** with the thread's title, which opens it. A Git action, or Sotto itself, holding that folder is said in plain words with nothing to open. Press again when it finishes.
 - A conflict is refused in Git's own words, with main unchanged. Sotto never resolves a conflict: ask the thread to merge main into its branch and resolve it, then press again.
 - A worker started as a check begins from a snapshot of uncommitted changes. Sotto won't bring that snapshot back as a commit, so the press is refused; ask the worker to put its own commits on a branch made from main.
 

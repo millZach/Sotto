@@ -30,3 +30,13 @@ it.each([
   expect(refusal.message).toBe(copy)
   expect(refusal.threadId).toBe(threadId)
 })
+
+// #1866: Bring changes back says the same hold with what it did not do, in place of "Nothing was changed.".
+it('says the same hold with another account of what was not done', () => {
+  const refusal = checkoutMutationRefusal({ kind: 'waiting-answer', threadId: 'b', title: 'Visual gate flake' })
+  expect(refusal.saying('Nothing was brought back.')).toBe('Thread "Visual gate flake" is waiting for your answer. Nothing was brought back. Answer it, then try again.')
+  expect(refusal.message).toBe('Thread "Visual gate flake" is waiting for your answer. Nothing was changed. Answer it, then try again.')
+  // One made from its message alone, as a host's own refusal is, keeps that message.
+  expect(new CheckoutHeldRefusal('Sotto is pulling this folder. Nothing was changed. Try again in a moment.', undefined).saying('Nothing was brought back.'))
+    .toBe('Sotto is pulling this folder. Nothing was changed. Try again in a moment.')
+})

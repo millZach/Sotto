@@ -49,6 +49,12 @@ export const bringBackSchema = z.object({
   files: z.number().int().nonnegative().optional(),
   /** Sotto's own sentence for a refusal that has no plainer one: a busy folder, or why Git could not start. */
   message: z.string().max(1_000).optional(),
+  /**
+   * On a `busy` refusal, the thread whose work holds the folder where the target is checked out, by its Sotto thread ID,
+   * so the window can offer to open it (#1866). Keyed for the window as thread IDs are. Absent when no thread holds it (a
+   * Git action, or Sotto itself) and from older hosts, whose refusal keeps its words.
+   */
+  heldBy: z.string().min(1).max(512).optional(),
   /** What Git said when it refused, in its own words, a few lines at most. */
   gitSaid: z.string().max(2_000).optional(),
   /**

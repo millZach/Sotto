@@ -214,6 +214,21 @@ describe('desktop host routing', () => {
     router.dispose()
   })
 
+  it('names the thread holding a refused bring-back\'s folder by this window\'s key, on this computer and a paired host (#1866)', () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    const held = { actionId: randomUUID(), status: 'refused', target: 'main', branch: 'sotto/task', refusal: 'busy', heldBy: 'holder', at: '2026-10-30T00:00:00.000Z',
+      message: 'Thread "Docs" is working in this folder. Nothing was brought back. Wait for it to finish before changing this folder.' } as const
+    for (const entry of [local, remote]) entry.state.host.threads = [{ ...entry.state.host.threads[0]!, bringBack: held, broughtBack: { ...held, from: 'away' } }]
+    router.add(local.connection); router.add(remote.connection)
+    try {
+      for (const hostId of [LOCAL, REMOTE]) {
+        const thread = agentStateSchema.parse(router.shell()).host.threads.find(item => item.id === hostEntityKey(hostId, 'thread'))
+        expect(thread?.bringBack).toEqual({ ...held, heldBy: hostEntityKey(hostId, 'holder') })
+        expect(thread?.broughtBack?.heldBy).toBe(hostEntityKey(hostId, 'holder'))
+      }
+    } finally { router.dispose() }
+  })
+
   it('names the host in its no-provider refusal by the name this computer saved it under (#459)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     router.add(local.connection); router.add({ ...remote.connection, name: 'forge' })

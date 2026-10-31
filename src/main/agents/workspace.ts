@@ -7,7 +7,7 @@ import { heldProviderRefusal, heldProvidersOf, type HeldProviders } from '../../
 import { summarizePullRequestChecks } from './pullRequestCheckState'
 import type { PullRequestObservation } from './watcherEvidence'
 import { threadsInCheckout } from './checkoutCandidates'
-import { CheckoutMutations, checkoutMutationRefusal, type CheckoutHolder, type CheckoutPendingWork } from './checkoutMutations'
+import { CheckoutHeldRefusal, CheckoutMutations, checkoutMutationRefusal, type CheckoutHolder, type CheckoutPendingWork } from './checkoutMutations'
 import { loadHostIdentity, migrateWorkspaceHost, stampHostSnapshot, stampHostThread } from './hostIdentity'
 import { ThreadChangesPublisher, ThreadMap, inPlacingOrder, orderBetween, threadChangesBetween, verifyingThreadChanges, type ActivityChangesListener, type ActivityChangesSubscription, type AgentHostChanges, type ThreadChangeSet, type ThreadPlacement } from './threadChanges'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -1486,7 +1486,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           parentCheckout: folder => sameCheckout(folder, parentFolder),
           holdCheckout: async folder => {
             // Every thread that works where the target is checked out, the one it began from first, must be at rest.
-            const release = await this.acquireCheckoutMutationInFolder(thread.id, folder, { kind: 'git-action' })
+            let release: () => void
+            try { release = await this.acquireCheckoutMutationInFolder(thread.id, folder, { kind: 'git-action' }) }
+            catch (error) {
+              // A thread whose work holds that folder is a hold (#1866): the record names it, so the strip offers to open it.
+              if (error instanceof CheckoutHeldRefusal && error.threadId !== undefined) {
+                throw new BringBackRefusal('busy', error.saying('Nothing was brought back.'), { checkout: folder, heldBy: error.threadId })
+              }
+              throw error
+            }
             try {
               if (this.mutationGuard && !await this.mutationGuard(thread.id, folder)) throw new GitActionRefusal(`Wait for the work where ${found.target} is checked out to finish, then try again. Nothing changed.`)
               return release
@@ -1566,13 +1574,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     return this.workspaceSnapshot()
   }
-  /** A refusal's record: why, how many files, Git's own words, where the target is, and Sotto's sentence where it has no plainer one. */
+  /**
+   * A refusal's record: why, how many files, Git's own words, where the target is, the thread holding that folder when one
+   * does, and Sotto's sentence where it has no plainer one.
+   */
   private async bringBackRefused(base: Pick<BringBack, 'actionId' | 'target' | 'branch' | 'at'> & { readonly from?: string }, error: unknown, projectPath: string | undefined): Promise<BringBack> {
     const refusal = error instanceof BringBackRefusal ? error : undefined
     return { ...base, status: 'refused', refusal: refusal?.reason ?? 'git',
       ...(refusal?.detail.files !== undefined ? { files: refusal.detail.files } : {}),
       ...(refusal?.detail.gitSaid ? { gitSaid: refusal.detail.gitSaid } : {}),
       ...(refusal?.detail.checkout !== undefined ? { checkedOut: await this.checkoutPlace(refusal.detail.checkout, projectPath) } : {}),
+      ...(refusal?.detail.heldBy !== undefined ? { heldBy: refusal.detail.heldBy } : {}),
       ...(!refusal || refusal.reason === 'busy' || refusal.reason === 'git' || refusal.reason === 'ignored' ? { message: (error instanceof Error ? error.message : 'Git did not answer.').slice(0, 1_000) } : {}) }
   }
   private bringBackRecord(outcome: BringBackOutcome, checkedOut: NonNullable<BringBack['checkedOut']>): Omit<BringBack, 'actionId' | 'target' | 'branch' | 'at'> {
