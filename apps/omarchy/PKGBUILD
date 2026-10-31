@@ -1,6 +1,6 @@
 # The release owner updates pkgver and the archive checksum after verifying a release on forge.
 pkgname=sotto-bin
-pkgver=0.1.40
+pkgver=0.1.41
 pkgrel=1
 pkgdesc='Dictation and manual coding threads'
 arch=('x86_64')
@@ -29,7 +29,7 @@ source=("${_archive}::${_source_url}"
         'sotto' 'sotto.desktop' 'install.sh'
         'sotto-48.png' 'sotto-128.png' 'sotto-256.png')
 # Filled from the verified archive and package sources; never use SKIP for the release archive.
-sha256sums=('b5318f736c8b5e7130c0f270c3109ca7d9481622dde412aafc8e629897bb5f64'
+sha256sums=('4f78ca2eea793d9bad5913c98056d6033b85a7330f86e7b5f436cb49ebc3a6d3'
             'b6c787d65d76cb6d3b249e237361b5991d70a96e762f8893c96cd6d567e70e86'
             '79b1f65a213d781994e77d887a451e19ad6282cc352e91507aaf8b6ca97d92d0'
             '35c949114cc26f1e34500cd853b8e0aee2fe770789b19247002095df07d394e6'
