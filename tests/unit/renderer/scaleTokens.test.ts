@@ -4,14 +4,11 @@ import { join, relative } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import { TYPE_STEPS } from '../../../src/renderer/src/styles/typeSteps'
+import { scaleSteps } from '../../fixtures/renderer/scaleSteps'
 
 const root = join(process.cwd(), 'src/renderer/src')
 const read = (path: string): string => readFileSync(join(root, path), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
-
-/** The `--tt-type-*` and `--tt-radius-*` steps a token sheet declares, as written. */
-function scaleOf(path: string): ReadonlyMap<string, string> {
-  return new Map([...read(path).matchAll(/(--tt-(?:type|radius)-[a-z]+)\s*:\s*([^;]+);/gu)].map(([, name, value]) => [name!, value!.trim()] as const))
-}
+const scaleOf = (path: string): ReadonlyMap<string, string> => scaleSteps(read(path))
 
 const scale = scaleOf('styles/tokens.css')
 const TYPE_NAMES = ['micro', 'caption', 'small', 'body', 'reading', 'lead', 'heading', 'figure', 'title'] as const
@@ -43,11 +40,13 @@ const KEYWORDS = new Set(['inherit', 'initial', 'unset', 'revert'])
 /** What in a declaration's value is not a step: an empty list when it is drawn from the scale. */
 function offScale(property: string, value: string): string[] {
   if (KEYWORDS.has(value)) return []
+  const isStep = (part: string): boolean => /^var\(--tt-type-[a-z]+\)$/u.test(part) && scale.has(part.slice(4, -1))
   if (property === 'font') {
-    const step = /var\((--tt-type-[a-z]+)\)/u.exec(value)?.[1]
-    return step !== undefined && scale.has(step) ? [] : [value]
+    // The shorthand's size is its one length before the line height's slash: a step, with no other length beside it.
+    const sizes = value.replace(/\/\s*\S+/u, '').split(/\s+/u).filter(part => /^(?:\d*\.?\d+[a-z%]+|var\(--tt-type-[a-z]+\))$/u.test(part))
+    return sizes.length === 1 && isStep(sizes[0]!) ? [] : [value]
   }
-  if (property === 'font-size') return /^var\(--tt-type-[a-z]+\)$/u.test(value) && scale.has(value.slice(4, -1)) ? [] : [value]
+  if (property === 'font-size') return isStep(value) ? [] : [value]
   // A corner: every length is 0, a circle's 50%, or a step, corner by corner.
   return value.split(/\s+|\//u).filter(Boolean).filter(part => {
     if (part === '0' || part === '50%') return false
@@ -100,6 +99,8 @@ describe('the type and corner scale (ADR-0169)', () => {
     expect(offScale('font-size', '12.5px')).toEqual(['12.5px'])
     expect(offScale('font-size', 'var(--tt-type-smaller)')).toEqual(['var(--tt-type-smaller)'])
     expect(offScale('font', '600 13px/1.4 var(--tt-font-ui)')).toEqual(['600 13px/1.4 var(--tt-font-ui)'])
+    // A step in the line height's place does not make the size one.
+    expect(offScale('font', '600 12.5px/var(--tt-type-heading) var(--tt-font-ui)')).toEqual(['600 12.5px/var(--tt-type-heading) var(--tt-font-ui)'])
     expect(offScale('border-radius', 'var(--tt-radius-card) 7px 0 0')).toEqual(['7px'])
     expect(offScale('font', '600 var(--tt-type-caption)/1.4 var(--tt-font-ui)')).toEqual([])
     expect(offScale('border-radius', '0 var(--tt-radius-sm) var(--tt-radius-sm) 0')).toEqual([])
