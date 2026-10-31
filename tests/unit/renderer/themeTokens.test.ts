@@ -21,7 +21,7 @@ import {
   type PaintOptions,
   type Rgba,
 } from '../../fixtures/renderer/themeTokenResolver'
-import { PAINTED_TEXT_PAIRS, paintedContrast, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
+import { PAINTED_TEXT_PAIRS, paintedContrast, placeholderApartFromText, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
 import { visionDistance } from '../../fixtures/renderer/colourVision'
 import { scaleSteps } from '../../fixtures/renderer/scaleSteps'
 
@@ -69,6 +69,8 @@ describe('main-window theme tokens', () => {
     for (const pair of PAINTED_TEXT_PAIRS) {
       expect(paintedContrast(declarations, pair), `${pair.ink} on ${pair.surface.join(' + ')} (${pair.where})`).toBeGreaterThanOrEqual(4.5)
     }
+    // The composer's placeholder reads as a hint: dimmer than typed text, not the same ink.
+    expect(placeholderApartFromText(declarations), 'placeholder against typed text').toBeGreaterThanOrEqual(1.2)
   })
 
   it.each(combinations)('%s mode of %s keeps the tinted effort word readable in every colourway', (mode, id) => {

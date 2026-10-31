@@ -223,7 +223,8 @@ test.describe("Watcher's conversation column on the built app", () => {
           await readBack(page, 0)
           await settle(page)
           expect(await pageBoundProblems(page), `room at ${width}x${height}`).toEqual([])
-          // The composer floats while the readable viewport ends above it, including the strip beside the card.
+          // The composer floats: the conversation runs on under it, keeps room to bring its last line clear, and the strip
+          // beside the card lets presses through.
           const float = await page.evaluate(() => {
             const pane = document.getElementById('watcher-pane')!
             const box = pane.querySelector<HTMLElement>(':scope > .thread-workspace__compose')!
@@ -242,7 +243,7 @@ test.describe("Watcher's conversation column on the built app", () => {
           expect(float.padding, context).toBeGreaterThanOrEqual(float.height)
           expect(float.lastClear, context).toBe(true)
           expect(float.floorClear, context).toBe(true)
-          expect(float.underStrip, context).toBe(false)
+          expect(float.underStrip, context).toBe(true)
           expect(float.glass.filter, context).toContain('blur(14px)')
           // At least the picked 72%, and thicker where the card's words need it over pure white or black.
           const glassAlpha = await page.evaluate(css => { const ctx = document.createElement('canvas').getContext('2d', { willReadFrequently: true })!; ctx.fillStyle = css; ctx.fillRect(0, 0, 1, 1); return ctx.getImageData(0, 0, 1, 1).data[3]! / 255 }, float.glass.background)
@@ -259,11 +260,9 @@ test.describe("Watcher's conversation column on the built app", () => {
             const log = document.querySelector<HTMLElement>('#watcher-pane .thread-workspace__transcript')!
             const jump = document.querySelector('#watcher-pane .thread-transcript__jump')!.getBoundingClientRect()
             const edge = log.getBoundingClientRect().bottom - parseFloat(getComputedStyle(log).scrollPaddingBottom)
-            const beside = document.elementFromPoint(jump.left - 8, jump.top + 8)
-            return { gap: jump.top - edge, covered: beside !== null && log.contains(beside) }
+            return { gap: jump.top - edge }
           })
           expect(readable.gap, JSON.stringify(readable)).toBeGreaterThanOrEqual(13)
-          expect(readable.covered, JSON.stringify(readable)).toBe(false)
           expect(await columnDigest(page), `the scene under the column at ${width}x${height} as the composer slims and the words scroll`).toBe(before)
           expect(await pageBoundProblems(page), `slim at ${width}x${height}`).toEqual([])
           await capture(launched, `slim-${appearance}-${width}x${height}.png`)

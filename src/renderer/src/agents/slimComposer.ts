@@ -7,8 +7,13 @@ import { prefersReducedMotion } from '../state/reducedMotion'
  * `docs/prototypes/composer-shrink-prototype.html`). Everything here is the rule and its motion; the pane owns the state.
  */
 
-/** How far above its end the transcript must be read before the composer slims. */
-export const READING_BACK_PX = 160
+/**
+ * How far above its end the transcript must be read before the composer slims: less than a line, so any scroll that
+ * leaves the end, a trackpad's small one included, slims an empty composer, and only a scroll that has run out a pixel
+ * or two short of the end does not (Zach's ask on October 31, 2026; it was 160 pixels, which a wheel notch or two from
+ * the end did not reach).
+ */
+export const READING_BACK_PX = 8
 /** How long the card takes to change height, slim or full. */
 export const SLIM_MS = 200
 /** The card's own move between slim and full, by which a measure of the card knows to wait for it and for nothing else. */
@@ -24,8 +29,11 @@ export interface SlimFacts {
   readonly enabled: boolean
   /** The transcript is read more than READING_BACK_PX above its end. */
   readonly readingBack: boolean
-  /** Focus is anywhere in the composer, from a click, Tab or a key typed into the transcript. */
-  readonly focused: boolean
+  /**
+   * Focus holds the composer full: it came to the composer, from a click, Tab or a key typed into the transcript, since
+   * the reader last scrolled away from the end. A scroll lets go of it unless a picker or menu of the composer is open.
+   */
+  readonly held: boolean
   /** The composer holds text or attachments: a draft keeps it full. */
   readonly draft: boolean
   /** A question waits above the message bar, so the composer stacks instead of floating and never slims. */
@@ -34,7 +42,7 @@ export interface SlimFacts {
 
 /** Whether the composer shows as the slim line. Only a floating composer with nothing in it, read away from, slims. */
 export function composerSlim(facts: SlimFacts): boolean {
-  return facts.enabled && facts.readingBack && !facts.focused && !facts.draft && !facts.questionWaits
+  return facts.enabled && facts.readingBack && !facts.held && !facts.draft && !facts.questionWaits
 }
 
 /** Whether a scroller is read far enough above its end for the composer to slim. */

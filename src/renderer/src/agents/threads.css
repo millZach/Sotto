@@ -170,18 +170,15 @@
 .thread-pane > .thread-transcript { min-height: min(160px, 30%); }
 .thread-workspace__compose { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
 .thread-workspace__compose > * { flex: none; }
-/* Keep the scroll box steady, but stop its words above the floating composer, including the strips beside the card.
-   Padding brings the last line clear; clipping also protects every line while reading back. */
+/* The composer floats over the transcript's foot, and the words scroll on under it while the reader reads back (#1391).
+   The scroll box keeps steady; its bottom padding brings the last line clear of the composer, and its scroll padding
+   brings a focused line clear of the composer and Jump to latest (#1885). The strip around the card lets presses through
+   to the transcript beneath. */
 .thread-pane:not([data-greeting], [data-questions]) { --thread-compose-height: var(--thread-compose-measured, 0px); }
 .thread-pane > .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose { position: relative; z-index: 2; margin-top: calc(-1 * var(--thread-compose-height, 0px)); pointer-events: none; }
 .thread-workspace__compose > * { pointer-events: auto; }
-/* Leave the existing scrollbar gutter whole; only the conversation ends above the floating controls. */
-.thread-transcript__viewport {
-  --thread-compose-cover: var(--thread-compose-height, 0px); --thread-jump-band: 0px;
-  --thread-readable-bottom: calc(100% - var(--thread-compose-cover) - var(--thread-jump-band));
-  display: flex; flex: 1; min-height: 0;
-  clip-path: polygon(0 0, 100% 0, 100% 100%, calc(100% - var(--tt-scrollbar-size)) 100%, calc(100% - var(--tt-scrollbar-size)) var(--thread-readable-bottom), 0 var(--thread-readable-bottom));
-}
+/* How much of the transcript's foot the composer covers, and the band Jump to latest stands in above it. */
+.thread-transcript__viewport { --thread-compose-cover: var(--thread-compose-height, 0px); --thread-jump-band: 0px; display: flex; flex: 1; min-height: 0; }
 .thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: calc(var(--thread-compose-cover) + var(--thread-jump-band)); }
 .thread-transcript:has(> .thread-transcript__jump) > .thread-transcript__viewport { --thread-jump-band: calc(var(--thread-jump-height, 0px) + 2 * var(--thread-jump-gap)); }
 /* A waiting question keeps 26px of conversation under its rounded corners (#1815), without clipping those words.
@@ -240,8 +237,10 @@
 .thread-prompt .prompt-editor { display: block; width: 100%; min-height: 36px; max-height: 220px; overflow-y: auto; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-reading); line-height: 1.5; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 /* The placeholder is muted ink, as every other field's is, and reads at 4.5:1 on the composer card in every theme
    (paintedTextPairs.ts). While a turn runs it is the only thing that says what typing will do ("Queued until you answer
-   the card"), so it is text, not decoration (#1819). The next prompt's ghost keeps its translucent ink (nextPrompt.css). */
-.prompt-editor { --placeholder-ink: var(--tt-text-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
+   the card"), so it is text, not decoration (#1819). The next prompt's ghost keeps its translucent ink (nextPrompt.css).
+   It is the hint tier (tokens.css), muted ink drawn from the theme's own Muted text role, so it never takes the body
+   text's colour. */
+.prompt-editor { --placeholder-ink: var(--tt-text-hint); white-space: pre-wrap; overflow-wrap: anywhere; }
 .prompt-editor p { margin: 0; }
 .prompt-editor[data-empty="true"]::before { content: attr(data-placeholder); color: var(--placeholder-ink); float: left; height: 0; pointer-events: none; }
 .prompt-editor[aria-disabled="true"] { cursor: not-allowed; }

@@ -123,3 +123,13 @@ export function paintedContrast(declarations: ReadonlyMap<string, string>, { ink
   const foreground = over(token(ink), background)
   return Math.min(contrast(foreground, background), contrast(foreground, pixel))
 }
+
+/**
+ * How far the prompt editor's placeholder stands from typed text on the composer card, as a contrast ratio between the
+ * two inks. The placeholder is a hint, so it must read as dimmer than what the user types, not as the same ink.
+ */
+export function placeholderApartFromText(declarations: ReadonlyMap<string, string>): number {
+  const token = (name: string): Rgba => resolveColor(name.startsWith('--') ? name : `--tt-${name}`, declarations)
+  const card = over(token('card'), token('canvas'))
+  return contrast(over(token('--placeholder-ink'), card), over(token('text'), card))
+}

@@ -690,8 +690,9 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   /** The inline request, rendered after the newest message. */
   readonly children?: ReactNode
   /**
-   * Told when the reader goes more than READING_BACK_PX above the end, or comes back, for the slim composer (ADR-0125).
-   * Only a crossing is told, never a scroll, and leaving says the reader is back.
+   * Told when the reader goes more than READING_BACK_PX above the end, or comes back, for the slim composer (ADR-0125),
+   * and told again at each scroll the reader makes while reading back, so a composer that came back full slims again.
+   * The transcript's own growth is never told.
    */
   readonly onReadingBack?: ((reading: boolean) => void) | undefined
   /** A printable key pressed in the transcript: the pane puts focus in the composer, which takes the key. */
@@ -734,9 +735,9 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const readingBack = useRef(false)
   const onReadingBackRef = useRef(onReadingBack)
   onReadingBackRef.current = onReadingBack
-  const noteReading = useCallback((element: HTMLElement): void => {
+  const noteReading = useCallback((element: HTMLElement, scrolled = false): void => {
     const reading = readsBack(element)
-    if (reading === readingBack.current) return
+    if (reading === readingBack.current && !(reading && scrolled)) return
     readingBack.current = reading
     onReadingBackRef.current?.(reading)
   }, [])
@@ -933,6 +934,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const held = reading.current
     if (held?.held === true && held.threadId === thread.id && Math.abs(element.scrollTop - held.top) < 1) return
     let distance = element.scrollHeight - element.scrollTop - element.clientHeight
+    const scrolled = Math.abs(element.scrollTop - lastTop.current) >= 1
     // Any move up that is not the end being cut short lets go of the end, however near it: a reply being written grows the
     // end faster than a reader scrolls out of the slack, and following would pull them back down with every word.
     const movedUp = element.scrollTop < lastTop.current - 1 && distance > 1
@@ -953,7 +955,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const place = reading.current
     if (following.current) reading.current = null
     else if (place === null || place.threadId !== thread.id || Math.abs(element.scrollTop - place.top) >= 1) reading.current = readingPlace(element, rows, thread.id)
-    noteReading(element)
+    noteReading(element, scrolled)
   }
   /** The reader's own wheel, touch, press or scrolling key takes the scroll back from a held place, even where it cannot move. */
   const onReaderInput = (event: React.SyntheticEvent): void => {
