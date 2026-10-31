@@ -105,7 +105,10 @@ import UIKit
             let distance = min(120, visible.height * 0.3)
             let direction: CGFloat = down ? 1 : -1
             let origin = window.coordinate(withNormalizedOffset: .zero)
-            let x = visible.midX - window.frame.minX
+            // Drag in the page's leading margin, where no control sits: a drag that starts on a slider moves the slider,
+            // not the page. Settings' Glow slider came to sit under the viewport's middle once Glass added a third row of
+            // theme tiles, and forty drags in a row moved only the slider (#1752).
+            let x = visible.minX + 10 - window.frame.minX
             let y = visible.midY - window.frame.minY
             let start = origin.withOffset(CGVector(dx: x, dy: y - direction * distance / 2))
             let end = origin.withOffset(CGVector(dx: x, dy: y + direction * distance / 2))

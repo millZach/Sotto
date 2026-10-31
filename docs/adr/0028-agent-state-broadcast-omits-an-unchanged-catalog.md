@@ -261,3 +261,44 @@ Measured with the data-transfer benchmark at the owner's scale, a draft save's r
 11,462. The window's work fell from 1.38-1.39 ms receiving it, 3.12-3.25 ms checking it and 1.86-2.11 ms sharing it to
 0.10-0.11 ms, 0.31-0.33 ms and 0.19-0.20 ms, with 0.08-0.10 ms more to put the threads back: about 6.5 ms to 0.7 ms per
 reply (`docs/perf/2026-10-30-command-reply-threads.md`).
+
+## October 30, 2026: a paired host's shell pushes carry only the thread records that changed (#996)
+
+The October 22 section left the socket protocol untouched, so a paired host still pushed every thread record whole in
+every shell push. While a thread on the host streams, it pushes the shell up to twenty times a second to each connected
+client. On the owner-scale benchmark (`tests/perf/dataTransfer.perf.test.ts`, about 290 threads on the host) each push to
+a desktop was 232,942 bytes, about 11 KB deflated, for a change to one thread's record. The desktop's host client then
+parsed every record against the thread schema, and the router compared every one, all fresh objects, before the window's
+broadcast found the one that changed.
+
+**A host lists a new feature, `changed-thread-records`, and the protocol stays v1** (ADR-0025). Every listener lists it,
+to desktops and phones alike. A client that accepts it in hello is sent each shell push with `threads`, the changed
+thread records since the last shell push written to that connection, in the window's broadcast shape
+(`AgentChangedThreadRecords`), and with `state.host.threads` empty. The host keeps one `ThreadRecordsBroadcast` per such
+connection and encodes each push's thread list with it. A push becomes the base only once it is written. A push that
+repeats the last one, is held for Watcher's writing window or goes as a `too_large` error moves nothing. A push whose only
+news is a thread record is written, though the rest of its state repeats the last. Hello, a `shell` read and a command's
+answer still carry every record and move nothing. A `shell` read drops the base, so the push after it lists every
+record.
+
+**The desktop's host client accepts the feature wherever the host lists it, and puts each push's list back before
+anything reads it.** It keeps the records the last push carried with the page's reassembly, moved from the renderer to
+`src/shared/threadReassembly.ts` so main and the page share one. A thread that did not change is the record the client
+already holds, so the router and the window's broadcast meet it by identity. A push measured from records it does not
+hold, which should not happen on one ordered connection, is not shown. The client reads the shell whole instead, and
+the host's next push lists every record. A new connection starts with nothing held on either side.
+
+**The iPhone accepts it too, and puts each push's list back the same way** (`ThreadRecordsCache` in SottoCore, ported
+from `threadReassembly.ts`). The connection holds the records beside the catalog it holds, in socket order, and a push
+it cannot put back starts the connection again, as a catalog revision it does not hold does. The new connection's hello
+lists every record. An earlier iPhone build, the Android client and any other client that does not accept the feature
+are sent every record in every push.
+
+On the benchmark, three runs before and after on forge, with one host thread streaming for 60 pushes: a desktop push
+fell from 232,942 bytes to 11,929-11,950 (about 11,100 to about 1,970 deflated). The first push of a connection, and
+the first after a `shell` read, lists every record (205 KB). The desktop client's work on its pushes fell from
+295-303 ms to 67-73 ms, about 5 ms to 1.2 ms a push. The host's shell sends to its three clients fell from 287-293 ms to
+236-248 ms. The whole process, host, clients, router and window together, used 889-945 ms of CPU against 1,490-1,532 ms.
+The window was broadcast the same thread records as before. For a phone, a shell push after a send on the open thread
+fell from 220,462 bytes to 6,946, and reading one push on a Mac test runner from 3.88-4.44 ms for every record to 0.68 ms for
+one changed record put back (`docs/perf/2026-10-30-host-shell-thread-records.md`).

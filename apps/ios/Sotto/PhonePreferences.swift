@@ -26,6 +26,10 @@ enum PhonePreferenceKey {
     static let newThreadEffort = "phoneNewThreadEffort"
     static let newThreadPermission = "phoneNewThreadPermission"
     static let newThreadWorkingCopy = "phoneNewThreadWorkingCopy"
+    /// right or left: where the iPhone Duo, unfolded and held sideways, puts the tabs. Missing means right.
+    static let duoTabsSide = "phoneDuoTabsSide"
+    /// Whether the sidebar beside a thread on the iPhone Duo, unfolded and held sideways, is collapsed.
+    static let duoSidebarHidden = "phoneDuoSidebarHidden"
 }
 
 /// So an iPhone that saved a palette the desktop has since retired paints its replacement (ADR-0024).
@@ -107,6 +111,16 @@ struct PhoneGlow: Equatable {
 enum PhoneWorkingCopy: String, CaseIterable {
     case shared, independent
     var title: String { self == .shared ? String(localized: "Project folder", comment: "Where a new thread works: the project's shared folder.") : String(localized: "New worktree", comment: "Where a new thread works: a new git worktree of its own.") }
+}
+
+/// Where the iPhone Duo, unfolded and held sideways, puts the tabs: in the clock's strip on the right, or down the
+/// left edge (Zach's pick, October 30, 2026). Upright they run along the bottom, and folded they stand in the strip.
+enum DuoTabsSide: String, CaseIterable {
+    case right, left
+    var title: String {
+        self == .right ? String(localized: "duo-tabs.right", defaultValue: "Right", comment: "Where the tabs stand on the iPhone Duo unfolded and held sideways: on the right.")
+            : String(localized: "duo-tabs.left", defaultValue: "Left", comment: "Where the tabs stand on the iPhone Duo unfolded and held sideways: on the left.")
+    }
 }
 
 /// Reads and writes the preferences outside SwiftUI.

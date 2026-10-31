@@ -51,7 +51,7 @@ import type { WatcherLaunchProfile, ThreadLaunchProfiles, WorkerRoleSource } fro
 import { CodexRoleFiles, codexTakesRoles, malformedCodexRole, narrowerMode, type CodexRoleFilesEvent } from './subagentRoles'
 import { capRuntimeMode, subagentRoleInstructions } from '../../shared/workerRoles'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
-import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { questionInstructions } from './questionInstructions'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
@@ -289,10 +289,10 @@ export class CodexAppServerHost implements AgentHost {
   profileRefusalHandler(id: string) {
     const generation = this.generation, runtime = this.runtimes.get(id)
     if (!runtime) return undefined
-    return (reason: string): void => {
+    return (reason: string, history = false): void => {
       if (generation !== this.generation || this.runtimes.get(id) !== runtime) return
       try { this.watcherProfiles.get(id)?.revoke(reason) } catch { /* Cleanup failure never keeps the process alive. */ }
-      this.stopUnverifiedProfile(id, reason)
+      this.stopUnverifiedProfile(id, reason, !history)
     }
   }
   private async checkLaunchProfile(id: string): Promise<WatcherLaunchProfile | undefined> {
@@ -310,7 +310,7 @@ export class CodexAppServerHost implements AgentHost {
       if (generation !== this.generation) throw new Error('Codex connection changed.', { cause: error })
       const refusal = error instanceof WatcherProfileRefusal ? error : new WatcherProfileRefusal('Watcher’s saved profile could not be verified. Its session was stopped. Reopen Watcher to recover.')
       try { this.watcherProfiles.get(id)?.revoke(refusal.message) } catch { /* Revocation failure never keeps the process alive. */ }
-      this.stopUnverifiedProfile(id, refusal.message)
+      this.stopUnverifiedProfile(id, refusal.message, !(refusal instanceof WatcherHistoryRefusal))
       throw refusal
     }
   }
@@ -339,13 +339,14 @@ export class CodexAppServerHost implements AgentHost {
     }
     return configuration
   }
-  private stopUnverifiedProfile(id: string, reason: string): void {
+  /** `providerError` is false for an earlier Watcher conversation, whose refusal says nothing about Codex itself. */
+  private stopUnverifiedProfile(id: string, reason: string, providerError = true): void {
     const runtime = this.runtimes.get(id)
     if (runtime) { this.runtimeLost(id, runtime); this.endServer(runtime.server) }
     this.live.delete(id); this.runningTurns.delete(id)
     for (const [key, pending] of this.requests) if (pending.sessionId === id) this.removeRequest(key)
     const thread = this.threads.get(id)
-    this.state.error = reason
+    if (providerError) this.state.error = reason
     if (thread) {
       if (thread.lastTurn?.status === 'running') {
         thread.lastTurn = { ...thread.lastTurn, status: 'failed' }
@@ -761,7 +762,7 @@ export class CodexAppServerHost implements AgentHost {
         server.write({ method: 'initialized' })
       } catch (error) {
         this.endServer(server)
-        if (error instanceof WatcherProfileRefusal) { this.state.error = error.message; this.emit(); throw error }
+        if (error instanceof WatcherProfileRefusal) { if (!(error instanceof WatcherHistoryRefusal)) this.state.error = error.message; this.emit(); throw error }
         throw new SessionUnavailable(error)
       }
       if (generation !== this.generation || !this.state.connected) { this.endServer(server); throw new Error('Codex connection changed while starting this thread.') }
@@ -986,6 +987,8 @@ export class CodexAppServerHost implements AgentHost {
       await Promise.all([...this.observed].filter(id => this.aliases[id] && this.aliases[id]!.kind !== 'personal').map(id => this.open(id).catch(error => {
         // A thread whose own app-server would not start fails alone; its next action tries again.
         if (error instanceof SessionUnavailable) { this.ensureThread(id).status = 'error'; return }
+        // An earlier Watcher conversation in view stays unopened; the rest of Codex connects as usual.
+        if (error instanceof WatcherHistoryRefusal) return
         if (!(error instanceof Rejected) || error.missingThreadId !== this.aliases[id]!.codexThreadId) throw error
         // An unavailable saved thread must not take the whole provider offline.
         // Its alias remains intact; never replace the native session implicitly.

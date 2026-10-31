@@ -5,7 +5,7 @@ import { watcherRecordSchema, type WatcherRecord } from '../../shared/watcher'
 import type { AgentThread } from '../../shared/agents'
 import type { ProviderId } from '../../shared/agents'
 import type { WatcherProfileTools, ThreadLaunchProfiles, WatcherLaunchProfile } from './host'
-import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { migrateWatcherRecord } from './watcherRecords'
 
 const savedIdentity = z.object({ watcher: z.preprocess(migrateWatcherRecord, watcherRecordSchema) })
@@ -108,7 +108,7 @@ export class WatcherLaunchProfiles implements ThreadLaunchProfiles {
     }
     const current = record?.current
     if (record?.history.some(identity => identity.target.threadId === threadId) || thread?.kind === 'watcher-history') {
-      throw new WatcherProfileRefusal('This earlier Watcher conversation is read only history. Open Watcher to continue.')
+      throw new WatcherHistoryRefusal()
     }
     if (current?.target.threadId !== threadId) {
       if (thread?.kind === 'watcher' || record?.creation?.identity.target.threadId === threadId) throw new WatcherProfileRefusal(IDENTITY_FAILURE)

@@ -1169,6 +1169,7 @@ export type AgentCommandReceipt = z.infer<typeof agentCommandReceiptSchema>
  */
 export const agentChangedThreadRecordsSchema = z.object({ revision: z.number().int().nonnegative(), base: z.number().int().nonnegative().nullable(),
   changed: z.array(agentThreadSchema), removed: z.array(z.string()).optional(), order: z.array(z.string()).optional() }).strict()
+export type AgentChangedThreadRecords = z.infer<typeof agentChangedThreadRecordsSchema>
 /** A command receipt whose threads are the changes since the window's last broadcast (`agentChangedThreadRecordsSchema`). */
 export const agentCommandChangedThreadRecordsReceiptSchema = agentCommandReceiptSchema.extend({
   host: agentCommandReceiptSchema.shape.host.extend({ threads: agentChangedThreadRecordsSchema }),

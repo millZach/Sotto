@@ -1,0 +1,493 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. The iPhone Duo's tabs, folded, unfolded sideways and unfolded upright.
+  Round 1 (October 30, 2026) asked which chip style: A, a soft rounded square behind the chosen icon, icons only, over
+  B (capsule, names unfolded) and C (tile with name). Zach picked A, bigger and more centred, and asked for:
+    - folded: the rail in the cover screen's right strip, centred down it, no pill;
+    - unfolded sideways: the rail on the right by default, in the strip under the clock, with Left as a choice in Settings;
+    - unfolded upright: the tabs along the bottom, icons only, no pill;
+    - a Max iPhone held sideways keeps its bottom bar.
+  Round 2 asked the icon size: Zach picked M, 28 points, over L, 32. "Today" shows the tabs as they are now.
+  Round 3 (same day) adds a sidebar of threads beside a thread on the unfolded Duo, as on the desktop: Needs you, Working
+  now and Recent, the open thread on the same chip as the chosen tab, a press switching threads. Sideways it shows beside
+  the thread and collapses; upright the thread has the screen and a swipe in from the left edge brings the sidebar over
+  it. ?section=sidebar opens it. Its choices: ?layout=A|B|C, how the tabs and the sidebar sit together, and
+  ?rows=D|E, the sidebar's entries. Zach picked A and D, with no Back pill sideways (the rail's Threads tab goes back to
+  the list, collapsed or not), and the upright edge swipe opening the sidebar, with Back kept as the bar's button.
+  Round 4 (same day): Zach asked for New thread's + on the Duo's rail, in the strip under the clock and battery, in
+  place of the + on the Threads page. ?plus=P|Q, on every tab or only on Threads, and ?look=X|Y, the accent circle or a
+  plain icon like the tabs. Upright the + leads the row along the bottom. ?section=tabs shows it on every page.
+  ?side=left puts the sideways rail on the left, as the Settings row in the mock-up does. ?theme=light shows light.
+  Synthetic data only. No network, no persistence. Colours are Glass's palette from ThemePalettes.swift, sizes in points.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>iPhone Duo tab rails (prototype)</title>
+<style>
+@font-face{font-family:Figtree;src:url('../../apps/ios/Sotto/Resources/Figtree.ttf') format('truetype'),url('Figtree.ttf') format('truetype');font-weight:400}
+@font-face{font-family:Figtree;src:url('../../apps/ios/Sotto/Resources/Figtree-SemiBold.ttf') format('truetype'),url('Figtree-SemiBold.ttf') format('truetype');font-weight:600}
+@font-face{font-family:Figtree;src:url('../../apps/ios/Sotto/Resources/Figtree-Bold.ttf') format('truetype'),url('Figtree-Bold.ttf') format('truetype');font-weight:700}
+:root,[data-theme=dark]{
+  --canvas:#111418;--ground1:#0c1015;--ground2:#151b22;--surface:#1b1e23;--raised:#21252a;--ink:#f9fafc;--muted:#ccd1d9;
+  --hair:#2f3339;--accent:#69caff;--onaccent:#071727;--accentsurface:#1a3b51;--accenttext:#84d2ff;--warning:#fe9a00;
+  --warnsurface:#3c311e;--warntext:#ffc183;--message:#202e3e;--placeholder:#c5cbd2;--chrome:#0b0d10;--glass:rgba(49,54,60,.55);
+  --composer:#262a30;--shadow:rgba(0,0,0,.45)}
+[data-theme=light]{
+  --canvas:#f0f2f6;--ground1:#f4f7fb;--ground2:#e6ecf4;--surface:#f9fafc;--raised:#ffffff;--ink:#101419;--muted:#43484f;
+  --hair:#ccd1d9;--accent:#0064b5;--onaccent:#fcfcfc;--accentsurface:#d4e7fc;--accenttext:#0f518f;--warning:#fe9a00;
+  --warnsurface:#f9edd9;--warntext:#785128;--message:#dae6f3;--placeholder:#484e55;--chrome:#e3e6eb;--glass:rgba(255,255,255,.6);
+  --composer:#e7eaef;--shadow:rgba(16,20,25,.14)}
+*{box-sizing:border-box;margin:0}
+html{-webkit-text-size-adjust:100%}
+body{font-family:Figtree,system-ui,sans-serif;background:#07080a;color:#e9ebef;min-height:100vh}
+body.light{background:#d9dde3;color:#14181d}
+header.bar{position:sticky;top:0;z-index:10;background:rgba(7,8,10,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  padding:10px 12px calc(10px);border-bottom:1px solid #22262c;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+body.light header.bar{background:rgba(217,221,227,.92);border-color:#c3c8cf}
+.seg{display:flex;background:#1a1d22;border-radius:12px;padding:3px;gap:2px}
+body.light .seg{background:#c8cdd4}
+.seg button{font:inherit;font-size:15px;font-weight:600;border:0;background:none;color:inherit;opacity:.7;padding:9px 14px;border-radius:9px;min-height:40px;cursor:pointer}
+.seg button[aria-pressed=true]{background:#3a76a8;color:#fff;opacity:1}
+h1{font-size:15px;font-weight:700;margin-right:auto}
+main{padding:14px 12px 60px;max-width:1500px;margin:0 auto}
+.lede{font-size:15px;line-height:1.45;max-width:760px;margin:0 0 6px}
+.lede b{font-weight:700}
+.note{font-size:13.5px;line-height:1.45;opacity:.75;max-width:760px;margin:0 0 16px}
+.grid{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+.grid figure{flex:1 1 100%}
+@media (min-width:1000px){.grid figure{flex:0 1 var(--w)}}
+figure{margin:0}
+figcaption{font-size:13px;font-weight:600;opacity:.8;margin:0 0 6px}
+.fit{width:100%;position:relative;overflow:hidden;border-radius:22px;box-shadow:0 0 0 1px #2a2e35}
+body.light .fit{box-shadow:0 0 0 1px #b7bdc6}
+.screen{position:absolute;left:0;top:0;transform-origin:0 0;overflow:hidden;font-family:Figtree,system-ui,sans-serif;color:var(--ink);
+  background:radial-gradient(120% 80% at 20% 0%,var(--ground2),var(--ground1) 60%,var(--canvas));}
+.strip{position:absolute;top:0;right:0;bottom:0;background:var(--chrome)}
+.clock{position:absolute;top:30px;width:100%;text-align:center;font-weight:700;font-size:17px;color:var(--ink)}
+.batt{position:absolute;top:58px;left:50%;margin-left:-19px;width:38px;height:38px;border-radius:50%;border:3px solid #34c759;border-bottom-color:transparent}
+/* page content */
+.page{position:absolute;top:0;bottom:0}
+.h1{font-weight:700;font-size:30px;letter-spacing:-.2px}
+.plus{width:44px;height:44px;border-radius:50%;background:var(--surface);border:1px solid var(--hair);display:grid;place-items:center;color:var(--accent);font-size:26px;font-weight:400}
+.chiprow{display:flex;gap:10px;align-items:center;flex-wrap:nowrap}
+.pill{height:40px;border-radius:20px;border:1px solid var(--hair);background:var(--surface);display:flex;align-items:center;padding:0 14px;font-size:15px;font-weight:600;gap:8px;white-space:nowrap}
+.search{flex:1;color:var(--placeholder);font-weight:400}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.dot.warn{background:var(--warning);box-shadow:0 0 8px var(--warning)}
+.sec{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;margin:18px 0 10px}
+.sec span{opacity:.6;font-weight:400}
+.card{border-radius:20px;background:var(--surface);border:1px solid var(--hair);padding:14px 16px;margin-bottom:12px}
+.card.need{border-color:rgba(254,154,0,.55);box-shadow:0 0 22px rgba(254,154,0,.18)}
+.card.work{border-color:rgba(105,202,255,.35);box-shadow:0 0 22px rgba(105,202,255,.12)}
+.k{font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center;justify-content:space-between}
+.k i{font-style:normal;opacity:.6;font-weight:400}
+.t{font-size:18px;font-weight:600;margin:6px 0 4px}
+.s{font-size:14.5px;color:var(--muted)}
+.need .k b{color:var(--warntext);font-weight:600}
+.work .k b{color:var(--accenttext);font-weight:600}
+/* watcher */
+.wtop{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--hair);border-radius:28px;padding:6px}
+.owlb{width:44px;height:44px;border-radius:50%;background:var(--raised);display:grid;place-items:center;color:var(--ink)}
+.segw{flex:1;display:flex;background:var(--canvas);border-radius:22px;padding:3px}
+.segw div{flex:1;text-align:center;font-size:16px;font-weight:600;padding:9px 0;border-radius:19px;color:var(--muted)}
+.segw div.on{background:var(--raised);color:var(--ink)}
+.bubble{margin:16px 0 16px auto;width:max-content;max-width:80%;background:var(--message);padding:10px 16px;border-radius:18px;font-size:16px}
+.who{font-size:13.5px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.msg{font-size:17px;line-height:1.5;margin:6px 0 14px}
+.msg b{font-weight:600}
+.dock{position:absolute;left:0;right:0;bottom:0;padding:0 14px 20px}
+.fade{position:absolute;left:0;right:0;bottom:0;pointer-events:none}
+.comp{display:flex;gap:8px;align-items:flex-end}
+.cplus{width:38px;height:38px;border-radius:50%;background:var(--composer);display:grid;place-items:center;font-size:22px;box-shadow:0 2px 10px var(--shadow)}
+.cbox{flex:1;height:38px;border-radius:19px;background:var(--composer);display:flex;align-items:center;padding:0 14px;color:var(--placeholder);font-size:16px;box-shadow:0 2px 10px var(--shadow)}
+/* tabs */
+.rail{position:absolute;display:flex;flex-direction:column;align-items:center}
+.tab{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);-webkit-tap-highlight-color:transparent}
+.tab .chip{position:absolute;left:50%;transform:translateX(-50%);background:transparent;transition:background .15s}
+.tab.on{color:var(--accenttext)}
+.tab.on .chip{background:var(--accentsurface)}
+.tab svg{position:relative;display:block}
+[data-sbcase] [data-edge]{touch-action:none}
+.tab .lbl{position:relative;font-size:11.5px;font-weight:600;white-space:nowrap;letter-spacing:.1px}
+.tab.on .lbl{font-weight:700}
+.badge{position:absolute;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--warning);color:#111418;font-size:12px;font-weight:700;display:grid;place-items:center}
+.wdot{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.today-pill{position:absolute;border-radius:999px;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),0 6px 20px var(--shadow)}
+.legend{display:grid;grid-template-columns:1fr;gap:10px;margin:0 0 18px;max-width:900px}
+@media (min-width:700px){.legend{grid-template-columns:1fr 1fr 1fr}}
+.legend div{background:#15181c;border:1px solid #262a30;border-radius:14px;padding:10px 12px;font-size:13.5px;line-height:1.4;cursor:pointer}
+body.light .legend div{background:#eef0f3;border-color:#c3c8cf}
+.legend div.on{border-color:#3a76a8;box-shadow:0 0 0 1px #3a76a8}
+.legend b{font-weight:700;display:block;margin-bottom:2px}
+</style>
+</head>
+<body>
+<header class="bar">
+  <h1>Duo tabs · prototype, round 4</h1>
+  <div class="seg" id="sections" role="group" aria-label="Section"></div>
+  <div class="seg" id="layouts" role="group" aria-label="Sidebar layout"></div>
+  <div class="seg" id="rowsSeg" role="group" aria-label="Sidebar entries"></div>
+  <div class="seg" id="plusSeg" role="group" aria-label="Where the plus shows"></div>
+  <div class="seg" id="lookSeg" role="group" aria-label="How the plus looks"></div>
+  <div class="seg" id="variants" role="group" aria-label="Icon size"></div>
+  <div class="seg" id="sides" role="group" aria-label="Sideways rail"></div>
+  <div class="seg" id="themes" role="group" aria-label="Appearance"></div>
+</header>
+<main>
+  <section id="sb">
+  <p class="lede">A thread on the unfolded Duo gets a sidebar of threads, as on the desktop. <b>Sideways</b>, it stands beside the thread, and the button at the thread bar's left collapses it for full-width reading. <b>Upright</b>, the thread has the screen; swipe in from the left edge (or press the edge handle) to bring the sidebar over it. The open thread sits on the same soft chip as the chosen tab. Press any thread in a sidebar to switch to it.</p>
+  <p class="note">Tabs are your M pick. The sideways rail is on the right, as you chose in round 2; <b>Left</b> at the top moves it, as the Settings row will. With the sidebar open the thread is about 590 points wide, under its 680-point reading width; collapsed it takes the reading width again. Regular iPhones don't change.</p>
+  <div class="legend" id="sblegend"></div>
+  <div class="grid" id="sbgrid"></div>
+  </section>
+  <section id="tb">
+  <p class="lede"><b>Round 4:</b> New thread’s <b>+</b> leaves the Threads page for the rail, in the strip under the clock and battery, set apart from the tabs. Unfolded sideways it tops the rail the same way; upright it leads the row along the bottom. Pick where it shows and how it looks.</p>
+  <div class="legend" id="pluslegend"></div>
+  <p class="lede">Round 2, your pick <b>A</b>: icons only, the chosen one filled on a soft rounded square, no pill. Folded, the rail stands centred down the right strip. Unfolded sideways, it stands in the same strip under the clock, on the <b>right</b> unless Settings says <b>Left</b>. Unfolded upright, the tabs run along the bottom. Pick the icon size.</p>
+  <p class="note">Colours are the Glass theme's. Every tab keeps a 44-point press area at least. Press any tab in any screen to choose it there, and Right or Left in the sideways Settings screen to move that rail. Watcher's composer shows the fade under it from #1868, the fix for the stray “at”. A long press on a tab shows its name large, and VoiceOver reads it.</p>
+  <div class="legend" id="legend"></div>
+  <div class="grid" id="grid"></div>
+  </section>
+</main>
+<script>
+const VARIANTS = {
+  M: {name: 'M · 28-point icons', text: 'Icons 28 points on a 60 by 50 chip. A step up from today’s 24, still quiet in the folded strip.', icon: 28, chip: [60, 50], item: [72, 62], gap: 10},
+  L: {name: 'L · 32-point icons', text: 'Icons 32 points on a 66 by 56 chip. The biggest that fits the 84-point folded strip with room either side.', icon: 32, chip: [66, 56], item: [78, 68], gap: 10},
+  T: {name: 'Today', text: 'As the app draws it now under Glass: a glass pill folded, a full-width bar along the bottom unfolded.'}
+};
+const params = new URLSearchParams(location.search);
+let variant = VARIANTS[params.get('variant')] ? params.get('variant') : 'M';
+let theme = params.get('theme') === 'light' ? 'light' : 'dark';
+let side = params.get('side') === 'left' ? 'left' : 'right';
+let section = params.get('section') === 'sidebar' ? 'sidebar' : 'tabs';
+const LAYOUTS = {
+  A: {name: 'A · Rail stays in its strip', text: 'The tabs stay where they are on every page: the rail in the clock’s strip on the right, the sidebar on the left. Set to Left, the rail stands at the edge and the sidebar beside it. Nothing moves when a thread opens.'},
+  B: {name: 'B · Tabs in the sidebar’s foot', text: 'While the sidebar shows, the four tabs sit in a row at its foot on the same chips, and the strip holds only the clock. Collapse the sidebar and the rail comes back to its strip.'},
+  C: {name: 'C · Tabs go under a thread', text: 'As on the iPhone today: a thread covers the tabs, so the sidebar stands alone and Back returns to them. The quietest; a tab is one Back away.'}
+};
+const ROWS = {
+  D: {name: 'D · Rows', text: 'One row per thread: its light, title and a short line, like the Threads page’s Recent. About ten threads fit.'},
+  E: {name: 'E · Small cards', text: 'Each thread on a small card like the Threads page’s, with its question or state. Richer, about five fit.'}
+};
+let layout = LAYOUTS[params.get('layout')] ? params.get('layout') : 'A';
+let rows = ROWS[params.get('rows')] ? params.get('rows') : 'D';
+const PLUS = {
+  P: {name: 'P · On every tab', text: 'New thread is one press away from any page: Threads, Watcher, Computers and Settings. It opens the New thread sheet over the page you are on.'},
+  Q: {name: 'Q · Only on Threads', text: 'The + shows while Threads is chosen, as it does on the page today, and leaves the rail on the other tabs. The tabs never move when it comes and goes.'}
+};
+const LOOKS = {
+  X: {name: 'X · Accent circle', text: 'The filled accent circle the + has today, so it reads as an action, not a fifth tab.'},
+  Y: {name: 'Y · Plain icon', text: 'A + drawn like the tab icons, with no fill. The quietest; it looks like one more tab.'}
+};
+let plus = PLUS[params.get('plus')] ? params.get('plus') : 'P';
+let look = LOOKS[params.get('look')] ? params.get('look') : 'X';
+function plusShown(tab) { return variant !== 'T' && (plus === 'P' || tab === 'threads'); }
+function plusBtn() {
+  const inner = look === 'X'
+    ? `<span style="width:52px;height:52px;border-radius:50%;background:var(--accent);color:var(--onaccent);display:grid;place-items:center;font-size:32px;line-height:1;font-weight:400;box-shadow:0 0 18px color-mix(in srgb,var(--accent) 45%,transparent)">+</span>`
+    : `<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M12 4.5v15M4.5 12h15"/></svg>`;
+  return `<div class="tab" data-newthread role="button" aria-label="New thread" style="width:72px;height:62px">${inner}</div>`;
+}
+function sheet(state) {
+  return state.sheet ? `<div data-closesheet style="position:absolute;inset:0;background:rgba(0,0,0,.4);cursor:pointer"></div>
+    <div style="position:absolute;left:50%;transform:translateX(-50%);bottom:0;width:min(560px,92%);height:62%;border-radius:22px 22px 0 0;background:var(--raised);padding:18px 22px">
+      <div style="width:40px;height:5px;border-radius:3px;background:var(--hair);margin:0 auto 14px"></div>
+      <div style="font-size:22px;font-weight:700">New thread</div><div class="s" style="margin-top:6px">Choose a computer, then a project.</div>
+      <div class="card" style="margin-top:14px"><div class="t" style="margin:0;font-size:17px">Laptop · Online</div></div></div>` : '';
+}
+if (!VARIANTS[params.get('variant')]) variant = 'M';
+const I = {
+  threads: (f) => `<svg width="S" height="S" viewBox="0 0 24 24"><path d="M12 3.5c5 0 9 3.2 9 7.3s-4 7.3-9 7.3c-1 0-2-.1-2.9-.4L4.6 20c-.5.2-.9-.3-.7-.7l1-3C3.7 15 3 13 3 10.8 3 6.7 7 3.5 12 3.5Z" ${f ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"'}/></svg>`,
+  watcher: () => `<svg width="S" height="S" viewBox="-2 -2.5 20 20"><path fill="currentColor" fill-rule="evenodd" d="M 1.27 4.8 C 0.84 3.93 0.73 2.31 1.49 1.22 C 1.63 0.95 1.93 0.68 2.06 1.22 C 2.12 2.03 2.71 2.9 3.93 2.9 C 5.83 2.2 10.17 1.76 12.94 3.34 C 13.69 3.28 14.4 2.71 14.45 1.82 C 14.51 1.57 14.73 1.57 14.83 1.98 C 15.32 2.58 15.54 4.26 14.94 5.56 C 15.38 6.1 15.7 7.46 15.7 9.63 C 15.76 12.12 15.290 13.37 13.97 14.24 C 12.75 15.19 10.17 15.24 8 15.24 C 5.8 15.24 3.23 15.19 2.01 14.24 C 0.68 13.37 0.22 12.12 0.27 9.63 C 0.24 7.19 0.52 5.83 1.27 4.8 Z M 1.84 8.95 C 1.82 7.05 2.25 6.07 3.66 6.07 C 5.34 6.02 6.75 6.21 6.73 8.54 C 6.73 10.44 6.1 11.31 4.34 11.31 C 2.58 11.34 1.82 10.58 1.84 8.95 Z M 9.33 9.22 C 9.33 8.14 9.63 7.67 10.44 7.46 L 13.1 6.92 C 13.8 6.78 14.13 7.46 14.13 8.81 C 14.16 10.71 13.69 11.34 11.66 11.34 C 10.17 11.34 9.33 10.71 9.33 9.22 Z"/><circle fill="currentColor" cx="5.29" cy="8.22" r="1.19"/><circle fill="currentColor" cx="10.79" cy="8.87" r="1.19"/></svg>`,
+  computers: (f) => `<svg width="S" height="S" viewBox="0 0 24 24"><rect x="2.8" y="3.8" width="18.4" height="12.4" rx="2" ${f ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="1.7"'}/><path d="M9 20.2h6M12 16.5v3.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
+  settings: (f) => `<svg width="S" height="S" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="15" cy="6" r="2.3" fill="${f ? 'currentColor' : 'var(--bgk)'}"/><circle cx="8" cy="12" r="2.3" fill="${f ? 'currentColor' : 'var(--bgk)'}"/><circle cx="14" cy="18" r="2.3" fill="${f ? 'currentColor' : 'var(--bgk)'}"/></svg>`
+};
+const TABS = [['threads', 'Threads'], ['watcher', 'Watcher'], ['computers', 'Computers'], ['settings', 'Settings']];
+
+function iconSized(id, on, size) { return I[id](on).split('width="S"').join(`width="${size}"`).split('height="S"').join(`height="${size}"`); }
+function marks(id, size, labelGap) {
+  // Threads' badge and Watcher's working dot ride the icon's top right corner.
+  const half = size / 2;
+  if (id === 'threads') return `<span class="badge" style="left:calc(50% + ${half - 6}px);top:${-7}px">4</span>`;
+  if (id === 'watcher') return `<span class="wdot" style="left:calc(50% + ${half - 3}px);top:${-1}px"></span>`;
+  return '';
+}
+
+function threadsPage(width, cols) {
+  const need = `<div class="card need"><div class="k"><b><span class="dot warn"></span>&nbsp;Question</b><i>2m ago</i></div><div class="t">Choose the release target</div><div class="s">Claude Code on Laptop</div></div>
+    <div class="card need"><div class="k"><b><span class="dot warn"></span>&nbsp;Question</b><i>3m ago</i></div><div class="t">Fix login test</div><div class="s">Claude Code on Laptop</div></div>`;
+  const work = `<div class="card work"><div class="k"><b><span class="dot"></span>&nbsp;Working</b><i>12m 05s</i></div><div class="t">Babysit #845 release notes</div><div class="s">Codex on Laptop · Sotto</div></div>
+    <div class="card work"><div class="k"><b><span class="dot"></span>&nbsp;Working</b><i>12m 05s</i></div><div class="t">Refine the iPhone thread view</div><div class="s">Codex on Laptop · Sotto</div></div>`;
+  const recent = `<div class="card"><div class="t" style="margin-top:0">Add keyboard shortcuts</div><div class="s">Just finished · Laptop</div></div><div class="card"><div class="t" style="margin-top:0">Compare motor drive options</div><div class="s">Codex · Panel tools</div></div>`;
+  const head = `<div style="display:flex;justify-content:space-between;align-items:center"><div class="h1">Threads</div>${variant === 'T' ? '<div class="plus">+</div>' : ''}</div>
+    <div class="chiprow" style="margin-top:14px"><div class="pill"><span class="dot"></span>All computers ▾</div>${cols > 1 ? '<div class="pill search">⌕ Search threads</div><div style="font-size:14px;white-space:nowrap"><span class="dot"></span> 3 working&nbsp;&nbsp;<span class="dot warn"></span> 2 need you</div>' : '<div class="pill search" style="padding:0 12px">⌕ Search</div>'}</div>`;
+  if (cols === 1) return `${head}<div class="sec"><span class="dot warn"></span>Needs you <span>2</span></div>${need}<div class="sec"><span class="dot"></span>Working now <span>3</span></div>${work}`;
+  const third = cols === 3 ? `<div><div class="sec">Recent <span>3</span></div>${recent}</div>` : '';
+  return `${head}<div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:18px"><div><div class="sec"><span class="dot warn"></span>Needs you <span>2</span></div>${need}</div><div><div class="sec"><span class="dot"></span>Working now <span>3</span></div>${work}${cols === 2 ? `<div class="sec">Recent <span>3</span></div>${recent}` : ''}</div>${third}</div>`;
+}
+
+function otherPage(tab) {
+  const name = tab === 'computers' ? 'Computers' : 'Settings';
+  const rows = tab === 'computers' ? ['Laptop · Online', 'Studio Mac · Can’t reach it'] : ['Theme · Glass', 'Text size · Default'];
+  const sideRow = tab === 'settings' ? `<div class="card"><div style="display:flex;align-items:center;justify-content:space-between;gap:12px"><div><div class="t" style="margin:0;font-size:17px">Tabs when unfolded sideways</div><div class="s" style="margin-top:2px">Upright, they sit along the bottom.</div></div>
+      <div class="segw" style="flex:none;width:150px">${['right', 'left'].map(x => `<div data-side="${x}" class="${side === x ? 'on' : ''}" style="cursor:pointer;padding:10px 0">${x === 'right' ? 'Right' : 'Left'}</div>`).join('')}</div></div></div>` : '';
+  return `<div class="h1">${name}</div><div style="margin-top:16px">${rows.map(r => `<div class="card"><div class="t" style="margin:0;font-size:17px">${r}</div></div>`).join('')}${sideRow}</div>`;
+}
+
+function watcherPage() {
+  return `<div class="wtop"><div class="owlb">${iconSized('watcher', true, 26)}</div><div class="segw"><div class="on">Conversation</div><div>Watched 3</div></div></div>
+    <div class="bubble">How are the release notes for #845 doing?</div>
+    <div class="who">${iconSized('watcher', true, 14)} Watcher · 6:03 AM</div>
+    <div class="msg"><b>Babysit #845 release notes</b> is waiting for the checks on #845. I asked it to tell me when they pass.</div>
+    <div class="who">${iconSized('watcher', true, 14)} Watcher · 6:13 AM</div>
+    <div class="msg"><b>Fix login test</b> found the cause: overlapping runs share one account. It’s asking you which account to use, and only you can answer it. I’ll look again at the checks when they’re done, and tell you what changed in that thread.</div>`;
+}
+
+function dock(reading) {
+  return `<div class="fade" style="height:96px;background:linear-gradient(to bottom,transparent,var(--canvas) 26px)"></div>
+    <div class="dock"><div class="comp" style="max-width:${reading}px;margin:0 auto"><div class="cplus">+</div><div class="cbox">Ask Watcher while it works</div></div></div>`;
+}
+
+
+function tabItem(id, name, on) {
+  const v = VARIANTS[variant];
+  return `<div class="tab ${on ? 'on' : ''}" data-tab="${id}" role="button" aria-label="${name}" aria-pressed="${on}" style="width:${v.item[0]}px;height:${v.item[1]}px">
+    <span class="chip" style="width:${v.chip[0]}px;height:${v.chip[1]}px;top:${(v.item[1] - v.chip[1]) / 2}px;border-radius:${Math.round(v.chip[1] * 0.3)}px"></span>
+    <span style="position:relative">${iconSized(id, on, v.icon)}${marks(id, v.icon)}</span></div>`;
+}
+function tabs(state) { return TABS.map(([id, name]) => tabItem(id, name, state.tab === id)).join(''); }
+function todayItem(id, name, on, withLabel) {
+  return `<div class="tab ${on ? 'on' : ''}" data-tab="${id}" role="button" aria-label="${name}" style="width:${withLabel ? 'auto' : '84px'};flex:${withLabel ? 1 : 'none'};height:${withLabel ? 50 : 52}px">
+    ${on && !withLabel ? '<span class="chip" style="width:56px;height:46px;top:3px;border-radius:23px;background:var(--glass)"></span>' : ''}
+    <span style="position:relative">${iconSized(id, false, 24)}${marks(id, 24)}</span>${withLabel ? `<span class="lbl" style="margin-top:3px;font-weight:500">${name}</span>` : ''}</div>`;
+}
+function todayBar(left, right, bottom) {
+  return `<div class="today-pill" style="left:${left}px;right:${right}px;bottom:${bottom}px;height:58px"></div>
+    <div class="rail" style="flex-direction:row;left:${left + 8}px;right:${right + 8}px;bottom:${bottom + 4}px;height:50px">${TABS.map(([id, n]) => todayItem(id, n, false, true)).join('')}</div>`;
+}
+function todayBarState(state, left, right, bottom) {
+  return todayBar(left, right, bottom).replace(`data-tab="${state.tab}"`, `data-tab="${state.tab}" data-on`).replace(/class="tab " data-tab="(\w+)" data-on/, 'class="tab on" data-tab="$1"');
+}
+function statusStrip(strip) { return `<div class="strip" style="width:${strip}px;background:transparent"><div class="clock">9:41</div><div class="batt"></div></div>`; }
+function body(state, width, cols, reading) {
+  if (state.tab === 'watcher') return `<div style="padding:12px 14px 0;max-width:${reading + 28}px;margin:0 auto">${watcherPage()}</div>${dock(reading)}`;
+  if (state.tab === 'threads') return `<div style="padding:16px 20px 0">${threadsPage(width, cols)}</div>`;
+  return `<div style="padding:16px 20px 0;max-width:${reading + 40}px;margin:0 auto">${otherPage(state.tab)}</div>`;
+}
+// A rail stood in a strip, centred in the height under the clock and battery.
+function stripRail(x, strip, H, bottom, tab, clock = true) {
+  const top = plusShown(tab) || plus === 'Q' ? 196 : 110;
+  const p = plusShown(tab) ? `<div class="rail" style="left:${x}px;width:${strip}px;top:${clock ? 116 : 20}px">${plusBtn()}</div>` : '';
+  return `${p}<div class="rail" style="left:${x}px;width:${strip}px;top:${top}px;bottom:${bottom}px;justify-content:center;gap:${VARIANTS[variant].gap || 0}px">`;
+}
+function folded(state) {
+  const W = 466, H = 678, strip = 84, bottom = 34, pageW = W - strip;
+  let t;
+  if (variant === 'T') t = `<div class="today-pill" style="left:${pageW + 6}px;width:${strip - 12}px;bottom:${bottom + 10}px;height:${4 * 56 + 12}px"></div>
+      <div class="rail" style="left:${pageW}px;width:${strip}px;bottom:${bottom + 16}px;gap:4px">${TABS.map(([id, n]) => todayItem(id, n, state.tab === id, false)).join('')}</div>`;
+  else t = `${stripRail(pageW, strip, H, bottom, state.tab)}${tabs(state)}</div>`;
+  return {W, H, html: `${statusStrip(strip)}<div class="page" style="left:0;width:${pageW}px">${body(state, pageW, 1, 9999)}</div>${t}${sheet(state)}`};
+}
+function sideways(state) {
+  const W = 952, H = 680, strip = 85, bottom = 20;
+  if (variant === 'T') {
+    const pageW = W - strip;
+    return {W, H, html: `${statusStrip(strip)}<div class="page" style="left:0;width:${pageW}px;bottom:64px">${body(state, pageW, 3, 680)}</div>${todayBarState(state, 16, strip + 16, 10)}`};
+  }
+  // On the right the rail shares the clock's strip; on the left it takes a strip of its own.
+  const left = side === 'left', pageL = left ? strip : 0, pageW = W - strip - (left ? strip : 0);
+  const reading = Math.min(680, pageW - 40);
+  return {W, H, html: `${statusStrip(strip)}<div class="page" style="left:${pageL}px;width:${pageW}px">${body(state, pageW, 3, reading)}</div>${stripRail(left ? 0 : W - strip, strip, H, bottom, state.tab, !left)}${tabs(state)}</div>${sheet(state)}`};
+}
+function upright(state) {
+  const W = 680, H = 952, top = 44, bottom = 20;
+  const v = VARIANTS[variant];
+  const barH = variant === 'T' ? 64 : v.item[1] + bottom + 6;
+  const status = `<div style="position:absolute;top:14px;left:34px;font-weight:700;font-size:17px">9:41</div><div style="position:absolute;top:14px;right:34px;width:26px;height:13px;border-radius:4px;border:1.5px solid var(--ink);opacity:.8"></div>`;
+  const reading = 600;
+  const t = variant === 'T' ? todayBarState(state, 16, 16, 10)
+    : `${plusShown(state.tab) ? `<div class="rail" style="flex-direction:row;left:20px;bottom:${bottom}px">${plusBtn()}</div>` : ''}<div class="rail" style="flex-direction:row;left:0;right:0;bottom:${bottom}px;justify-content:center;gap:${v.item[0] * 0.55}px">${tabs(state)}</div>`;
+  return {W, H, html: `${status}<div class="page" style="left:0;right:0;top:${top}px;bottom:${barH}px">${body(state, W, 2, reading).replace('class="dock"', 'class="dock" style="padding-bottom:10px"')}</div>${t}${sheet(state)}`};
+}
+
+// ---- Round 3: a thread with the sidebar ----
+const THREADS = [
+  {id: 't1', sec: 'need', title: 'Choose the release target', line: 'Question · Claude Code on Laptop', ago: '2m'},
+  {id: 't2', sec: 'need', title: 'Fix login test', line: 'Question · Claude Code on Laptop', ago: '3m'},
+  {id: 't3', sec: 'work', title: 'Babysit #845 release notes', line: 'Working · Codex on Laptop', ago: '12m'},
+  {id: 't4', sec: 'work', title: 'Refine the iPhone thread view', line: 'Working · Codex on Laptop', ago: '12m'},
+  {id: 't5', sec: 'work', title: 'Clean up the wiring schedule', line: 'Working · Codex on Studio Mac', ago: '20m'},
+  {id: 't6', sec: 'recent', title: 'Add keyboard shortcuts', line: 'Just finished · Laptop', ago: '18m'},
+  {id: 't7', sec: 'recent', title: 'Compare motor drive options', line: 'Codex · Panel tools', ago: '1h'},
+  {id: 't8', sec: 'recent', title: 'Update the lighting plan', line: 'Can’t reach it · Studio Mac', ago: '1d'}
+];
+const SECS = [['need', 'Needs you', 'warn'], ['work', 'Working now', ''], ['recent', 'Recent', 'none']];
+const sideIcon = `<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="4.5" width="18" height="15" rx="3"/><path d="M9.5 4.5v15"/><path d="M5.5 8h2M5.5 11h2" stroke-linecap="round"/></svg>`;
+function sbEntry(t, open) {
+  const light = t.sec === 'need' ? '<span class="dot warn"></span>' : t.sec === 'work' ? '<span class="dot"></span>' : '<span class="dot" style="background:transparent;box-shadow:none;border:1.5px solid var(--muted);width:8px;height:8px"></span>';
+  const bg = open ? 'background:var(--accentsurface);' : '';
+  const ink = open ? 'color:var(--accenttext);' : '';
+  if (rows === 'D') return `<div data-thread="${t.id}" style="display:flex;gap:10px;align-items:flex-start;padding:9px 10px;border-radius:12px;cursor:pointer;${bg}">
+      <span style="margin-top:6px">${light}</span><div style="min-width:0;flex:1"><div style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;${ink}">${t.title}</div>
+      <div style="font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.line}</div></div><span style="font-size:12px;color:var(--muted);margin-top:2px">${t.ago}</span></div>`;
+  const cls = t.sec === 'need' ? 'need' : t.sec === 'work' ? 'work' : '';
+  return `<div data-thread="${t.id}" class="card ${cls}" style="padding:10px 12px;margin-bottom:8px;cursor:pointer;${open ? 'background:var(--accentsurface);' : ''}">
+      <div class="k" style="font-size:12px">${t.sec === 'recent' ? '<i style="opacity:.7">Recent</i>' : `<b>${light}&nbsp;${t.sec === 'need' ? 'Question' : 'Working'}</b>`}<i>${t.ago} ago</i></div>
+      <div style="font-size:15px;font-weight:600;margin-top:4px;${ink}">${t.title}</div><div style="font-size:12.5px;color:var(--muted)">${t.line.split(' · ').slice(-1)[0]}</div></div>`;
+}
+function sidebar(state, w, foot, withPlus = false) {
+  const list = SECS.map(([sec, name]) => {
+    const ts = THREADS.filter(t => t.sec === sec);
+    return `<div style="font-size:13px;font-weight:600;color:var(--muted);margin:14px 10px 6px;display:flex;gap:6px">${name}<span style="opacity:.7;font-weight:400">${ts.length}</span></div>${ts.map(t => sbEntry(t, t.id === state.thread)).join('')}`;
+  }).join('');
+  const footH = foot ? 82 : 0;
+  const v = VARIANTS[variant];
+  const footHtml = foot ? `<div style="position:absolute;left:0;right:0;bottom:0;height:${footH}px;border-top:1px solid var(--hair);display:flex;justify-content:space-around;align-items:center;padding:0 6px 10px">${TABS.map(([id, n]) => tabItem(id, n, id === 'threads').replace(`width:${v.item[0]}px`, 'width:62px')).join('')}</div>` : '';
+  return `<div style="position:absolute;top:0;bottom:0;width:${w}px;border-right:1px solid var(--hair);background:color-mix(in srgb,var(--surface) 70%,transparent)">
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:14px 12px 4px 18px"><div style="font-size:24px;font-weight:700">Threads</div>
+      <div style="display:flex;gap:6px">${withPlus ? '<div class="plus" data-newthread style="width:40px;height:40px;font-size:22px;cursor:pointer">+</div>' : ''}</div></div>
+    <div style="position:absolute;top:64px;left:8px;right:8px;bottom:${footH}px;overflow:hidden">${list}</div>${footHtml}</div>`;
+}
+function threadBar(state, withSideButton, collapsed) {
+  const t = THREADS.find(x => x.id === state.thread);
+  const btn = withSideButton ? `<div data-collapse role="button" aria-label="${collapsed ? 'Show the sidebar' : 'Hide the sidebar'}" style="width:44px;height:44px;border-radius:50%;display:grid;place-items:center;color:var(--accenttext);cursor:pointer;background:var(--surface);border:1px solid var(--hair)">${sideIcon}</div>` : '';
+  const back = `<div style="height:44px;border-radius:22px;display:flex;align-items:center;gap:4px;padding:0 14px 0 10px;background:var(--surface);border:1px solid var(--hair);font-size:15px;font-weight:600;color:var(--accenttext)">‹ Threads</div>`;
+  return `<div style="display:flex;gap:8px;align-items:center;padding:10px 14px">${btn}${withSideButton ? '' : back}
+    <div style="flex:1;min-width:0;text-align:center;font-weight:600;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.title}</div>
+    <div style="height:36px;border-radius:18px;display:flex;align-items:center;gap:6px;padding:0 12px;background:var(--surface);border:1px solid var(--hair);font-size:14px"><span class="dot${t.sec === 'need' ? ' warn' : ''}"></span>${t.sec === 'need' ? 'Needs you' : t.sec === 'work' ? 'Working' : 'Done'}</div></div>`;
+}
+function threadBody(state, reading) {
+  const t = THREADS.find(x => x.id === state.thread);
+  return `<div style="max-width:${reading}px;margin:0 auto;padding:6px 18px 0">
+    <div style="font-size:26px;font-weight:700;margin:6px 0 4px">${t.title}</div><div class="s">${t.line.split(' · ').slice(-1)[0]} · Sotto · sotto/3f2a</div>
+    <div class="bubble" style="margin:16px 0 14px auto">Can you check what changed since yesterday?</div>
+    <div class="who">Codex · 6:13 AM</div>
+    <div class="msg">I read the last day of commits on <b>main</b> and the two open pull requests. Three things changed what this thread touches: the reply box moved, the tab bar lost its pill, and the Duo got columns at regular width.</div>
+    <div style="font-size:14px;color:var(--muted);padding:8px 12px;border:1px solid var(--hair);border-radius:12px;width:max-content">▸ 14 steps · 1m 32s</div>
+    <div class="msg" style="margin-top:12px">I'll start with the reply box, since the other two follow from it.</div></div>
+    <div class="fade" style="height:96px;background:linear-gradient(to bottom,transparent,var(--canvas) 26px)"></div>
+    <div class="dock"><div class="comp" style="max-width:${reading}px;margin:0 auto"><div class="cplus">+</div><div class="cbox">Reply while it works</div></div></div>`;
+}
+function sbSideways(state) {
+  const W = 952, H = 680, strip = 85, bottom = 20, sbW = 280;
+  const collapsed = state.collapsed;
+  const rail = (x) => `${stripRail(x, strip, H, bottom, 'threads', x !== 0)}${tabs({tab: 'threads'})}</div>`;
+  const left = side === 'left';
+  let railHtml = '', sbX = 0, foot = false;
+  const showRail = layout === 'A' || (layout === 'B' && collapsed);
+  if (layout === 'B' && !collapsed) foot = true;
+  if (showRail) railHtml = rail(left ? 0 : W - strip);
+  const railLeft = showRail && left;
+  sbX = railLeft ? strip : 0;
+  const pageL = sbX + (collapsed ? 0 : sbW), pageR = W - strip;
+  const reading = Math.min(680, pageR - pageL - 20);
+  const sb = collapsed ? '' : `<div style="position:absolute;left:${sbX}px;top:0;bottom:0;width:${sbW}px">${sidebar(state, sbW, foot)}</div>`;
+  return {W, H, html: `${statusStrip(strip)}${sb}<div class="page" style="left:${pageL}px;width:${pageR - pageL}px">${threadBar(state, true, collapsed)}${threadBody(state, reading)}</div>${railHtml}${sheet(state)}`};
+}
+function sbUpright(state) {
+  const W = 680, H = 952, top = 44, sbW = 320;
+  const status = `<div style="position:absolute;top:14px;left:34px;font-weight:700;font-size:17px">9:41</div><div style="position:absolute;top:14px;right:34px;width:26px;height:13px;border-radius:4px;border:1.5px solid var(--ink);opacity:.8"></div>`;
+  const open = state.drawer;
+  const drawer = `<div data-scrim style="position:absolute;inset:0;background:rgba(0,0,0,${open ? .35 : 0});pointer-events:${open ? 'auto' : 'none'};transition:background .25s"></div>
+    <div style="position:absolute;top:0;bottom:0;left:0;width:${sbW}px;transform:translateX(${open ? 0 : -sbW - 20}px);transition:transform .28s cubic-bezier(.2,.8,.2,1);box-shadow:0 0 30px rgba(0,0,0,.35);background:var(--canvas)">${sidebar(state, sbW, layout === 'B', true)}</div>`;
+  const handle = open ? '' : `<div data-edge role="button" aria-label="Show the sidebar" style="position:absolute;left:0;top:${H / 2 - 40}px;width:22px;height:80px;cursor:pointer;display:grid;place-items:center"><span style="width:4px;height:44px;border-radius:2px;background:var(--muted);opacity:.45"></span></div>`;
+  return {W, H, html: `${status}<div class="page" style="left:0;right:0;top:${top}px">${threadBar(state, false, true)}${threadBody(state, 600)}</div>${handle}${drawer}${sheet(state)}`};
+}
+const sbCases = [
+  {pos: sbSideways, thread: 't3', collapsed: false, cap: 'Unfolded sideways · a thread with the sidebar'},
+  {pos: sbSideways, thread: 't1', collapsed: true, cap: 'Unfolded sideways · sidebar collapsed'},
+  {pos: sbUpright, thread: 't3', drawer: false, cap: 'Unfolded upright · just the thread (swipe in from the left edge)'},
+  {pos: sbUpright, thread: 't3', drawer: true, cap: 'Unfolded upright · sidebar swiped in'}
+];
+const cases = [
+  {pos: folded, tab: 'watcher', cap: 'Folded · Watcher'},
+  {pos: sideways, tab: 'watcher', cap: 'Unfolded sideways · Watcher'},
+  {pos: folded, tab: 'threads', cap: 'Folded · Threads'},
+  {pos: sideways, tab: 'settings', cap: 'Unfolded sideways · Settings, with the side choice'},
+  {pos: upright, tab: 'watcher', cap: 'Unfolded upright · Watcher'},
+  {pos: upright, tab: 'threads', cap: 'Unfolded upright · Threads'}
+];
+function render() {
+  document.documentElement.dataset.theme = theme;
+  document.getElementById('sections').innerHTML = [['sidebar', 'Thread sidebar'], ['tabs', 'Tabs']].map(([k, n]) => `<button data-sec="${k}" aria-pressed="${k === section}">${n}</button>`).join('');
+  document.getElementById('sb').hidden = section !== 'sidebar';
+  document.getElementById('tb').hidden = section !== 'tabs';
+  document.getElementById('variants').hidden = section !== 'tabs';
+  document.getElementById('layouts').hidden = section !== 'sidebar';
+  document.getElementById('rowsSeg').hidden = section !== 'sidebar';
+  document.getElementById('layouts').innerHTML = Object.keys(LAYOUTS).map(k => `<button data-layout="${k}" aria-pressed="${k === layout}">${k}</button>`).join('');
+  document.getElementById('plusSeg').innerHTML = Object.keys(PLUS).map(k => `<button data-plus="${k}" aria-pressed="${k === plus}">${k}</button>`).join('');
+  document.getElementById('lookSeg').innerHTML = Object.keys(LOOKS).map(k => `<button data-look="${k}" aria-pressed="${k === look}">${k}</button>`).join('');
+  document.getElementById('pluslegend').innerHTML = Object.entries(PLUS).map(([k, v]) => `<div data-plus="${k}" class="${k === plus ? 'on' : ''}"><b>${v.name}</b>${v.text}</div>`).join('') + Object.entries(LOOKS).map(([k, v]) => `<div data-look="${k}" class="${k === look ? 'on' : ''}"><b>${v.name}</b>${v.text}</div>`).join('');
+  document.getElementById('rowsSeg').innerHTML = Object.keys(ROWS).map(k => `<button data-rows="${k}" aria-pressed="${k === rows}">${k}</button>`).join('');
+  document.getElementById('sblegend').innerHTML = Object.entries(LAYOUTS).map(([k, v]) => `<div data-layout="${k}" class="${k === layout ? 'on' : ''}"><b>${v.name}</b>${v.text}</div>`).join('') + Object.entries(ROWS).map(([k, v]) => `<div data-rows="${k}" class="${k === rows ? 'on' : ''}"><b>${v.name}</b>${v.text}</div>`).join('');
+  document.getElementById('sbgrid').innerHTML = sbCases.map((c, i) => {
+    const s = c.pos(c);
+    return `<figure style="--w:${s.W}px"><figcaption>${c.cap}</figcaption><div class="fit" data-w="${s.W}" data-h="${s.H}"><div class="screen" data-sbcase="${i}" style="width:${s.W}px;height:${s.H}px;--bgk:var(--canvas)">${s.html}</div></div></figure>`;
+  }).join('');
+  document.body.classList.toggle('light', theme === 'light');
+  document.getElementById('variants').innerHTML = Object.keys(VARIANTS).map(k => `<button data-v="${k}" aria-pressed="${k === variant}">${k === 'T' ? 'Today' : k}</button>`).join('');
+  document.getElementById('sides').innerHTML = ['right', 'left'].map(x => `<button data-side="${x}" aria-pressed="${x === side}">${x === 'right' ? 'Right' : 'Left'}</button>`).join('');
+  document.getElementById('themes').innerHTML = ['dark', 'light'].map(t => `<button data-t="${t}" aria-pressed="${t === theme}">${t === 'dark' ? 'Dark' : 'Light'}</button>`).join('');
+  document.getElementById('legend').innerHTML = Object.entries(VARIANTS).map(([k, v]) => `<div data-v="${k}" class="${k === variant ? 'on' : ''}"><b>${v.name}</b>${v.text}</div>`).join('');
+  document.getElementById('grid').innerHTML = cases.map((c, i) => {
+    const s = c.pos(c);
+    return `<figure style="--w:${s.W}px"><figcaption>${c.cap}</figcaption><div class="fit" data-w="${s.W}" data-h="${s.H}"><div class="screen" data-case="${i}" style="width:${s.W}px;height:${s.H}px;--bgk:var(--canvas)">${s.html}</div></div></figure>`;
+  }).join('');
+  fit();
+  const u = new URL(location.href); u.searchParams.set('variant', variant); u.searchParams.set('theme', theme); u.searchParams.set('side', side); u.searchParams.set('section', section); u.searchParams.set('layout', layout); u.searchParams.set('rows', rows); u.searchParams.set('plus', plus); u.searchParams.set('look', look); history.replaceState(null, '', u);
+}
+function fit() {
+  document.querySelectorAll('.fit').forEach(f => {
+    const w = +f.dataset.w, h = +f.dataset.h, k = Math.min(1, f.clientWidth / w);
+    f.style.height = (h * k) + 'px';
+    f.firstElementChild.style.transform = `scale(${k})`;
+  });
+}
+document.addEventListener('click', e => {
+  const sec = e.target.closest('[data-sec]'); if (sec) { section = sec.dataset.sec; render(); return; }
+  const ly = e.target.closest('[data-layout]'); if (ly) { layout = ly.dataset.layout; render(); return; }
+  const rw = e.target.closest('[data-rows]'); if (rw) { rows = rw.dataset.rows; render(); return; }
+  const pl = e.target.closest('[data-plus]'); if (pl) { plus = pl.dataset.plus; render(); return; }
+  const lk = e.target.closest('[data-look]'); if (lk) { look = lk.dataset.look; render(); return; }
+  const scr = e.target.closest('[data-sbcase],[data-case]');
+  if (scr && e.target.closest('[data-newthread]')) { const c = scr.dataset.sbcase !== undefined ? sbCases[+scr.dataset.sbcase] : cases[+scr.dataset.case]; c.sheet = true; render(); return; }
+  if (scr && e.target.closest('[data-closesheet]')) { const c = scr.dataset.sbcase !== undefined ? sbCases[+scr.dataset.sbcase] : cases[+scr.dataset.case]; c.sheet = false; render(); return; }
+  const sbs = e.target.closest('[data-sbcase]');
+  if (sbs) {
+    const c = sbCases[+sbs.dataset.sbcase];
+    const th = e.target.closest('[data-thread]'); if (th) { c.thread = th.dataset.thread; if (c.pos === sbUpright) c.drawer = false; render(); return; }
+    if (e.target.closest('[data-collapse]')) { c.collapsed = !c.collapsed; render(); return; }
+    if (e.target.closest('[data-edge]')) { c.drawer = true; render(); return; }
+    if (e.target.closest('[data-scrim]')) { c.drawer = false; render(); return; }
+    return;
+  }
+  const v = e.target.closest('[data-v]'); if (v) { variant = v.dataset.v; render(); return; }
+  const t = e.target.closest('[data-t]'); if (t) { theme = t.dataset.t; render(); return; }
+  const sd = e.target.closest('[data-side]'); if (sd) { side = sd.dataset.side; render(); return; }
+  const tab = e.target.closest('[data-tab]');
+  if (tab) { const i = +tab.closest('.screen').dataset.case; cases[i].tab = tab.dataset.tab; render(); }
+});
+// A swipe in from the left edge of an upright thread brings its sidebar; a swipe back to the left puts it away.
+let swipe = null;
+document.addEventListener('pointerdown', e => {
+  const scr = e.target.closest('[data-sbcase]'); if (!scr) return;
+  const c = sbCases[+scr.dataset.sbcase]; if (c.pos !== sbUpright) return;
+  const r = scr.getBoundingClientRect(), k = r.width / 680, x = (e.clientX - r.left) / k;
+  if (!c.drawer && x > 40) return;
+  swipe = {c, x0: e.clientX};
+});
+document.addEventListener('pointerup', e => {
+  if (!swipe) return;
+  const dx = e.clientX - swipe.x0;
+  if (!swipe.c.drawer && dx > 30) { swipe.c.drawer = true; render(); }
+  else if (swipe.c.drawer && dx < -30) { swipe.c.drawer = false; render(); }
+  swipe = null;
+});
+addEventListener('resize', fit);
+render();
+</script>
+</body>
+</html>

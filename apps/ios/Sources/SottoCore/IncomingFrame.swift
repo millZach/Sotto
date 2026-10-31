@@ -23,13 +23,16 @@ public enum IncomingFrame: Sendable {
 private enum FrameEnvelope: Decodable {
     case reply(String, CarriedCatalog?)
     case frame(IncomingFrame)
-    private enum Keys: String, CodingKey { case v, id, ok, result, error, event, state, threadId, detail, delta }
+    private enum Keys: String, CodingKey { case v, id, ok, result, error, event, state, threads, threadId, detail, delta }
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         guard try c.decode(Int.self, forKey: .v) == 1 else { throw ClientError.invalidProtocol }
         if let event = try c.decodeIfPresent(String.self, forKey: .event) {
             switch event {
-            case "shell": self = .frame(.shell(try c.decode(Shell.self, forKey: .state)))
+            case "shell":
+                var shell = try c.decode(Shell.self, forKey: .state)
+                shell.threadRecords = try c.decodeIfPresent(ChangedThreadRecords.self, forKey: .threads)
+                self = .frame(.shell(shell))
             case "detail": self = .frame(.detail(threadID: try c.decode(String.self, forKey: .threadId), value: try c.decode(Optional<ThreadDetail>.self, forKey: .detail)))
             case "detail-delta": self = .frame(.delta(threadID: try c.decode(String.self, forKey: .threadId), value: try c.decode(ThreadDetailDelta.self, forKey: .delta)))
             case "error": self = .frame(.failure(try c.decode(WireFailure.self, forKey: .error)))
@@ -61,9 +64,11 @@ public extension Wire {
     /// The phone reads snapshots, not event history. Match the desktop's v1 snapshot-only hello.
     /// `activity-summaries` asks for activity as its rows read it, without command output, text or diffs (#701).
     /// `provider-opencode` asks for OpenCode's provider row, models and threads, which this phone names and opens (ADR-0087),
-    /// and `provider-cursor` the same for Cursor (ADR-0128).
+    /// and `provider-cursor` the same for Cursor (ADR-0128). `changed-thread-records` asks for shell pushes that carry
+    /// only the thread records that changed since the last one (ADR-0028's October 30 amendment), which the connection
+    /// puts back into the whole list (`ThreadRecordsCache`).
     static let snapshotHello: [String: JSONValue] = ["op": .string("hello"), "afterSeq": .number(9_007_199_254_740_991),
-        "accepts": .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor")])]
+        "accepts": .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("changed-thread-records")])]
 
     // Nonisolated async functions run on the generic executor in this package's Swift 5 mode.
     // Awaiting each frame before receiving the next keeps pushes and replies in socket order.
