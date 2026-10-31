@@ -31,8 +31,7 @@ whose thread did not change was drawn again for every word, as was every pane wh
 - **What `samePaneWorld` checks.** Everything in the state but the thread list must be the same. The list must hold the
   same threads in the same order. The pane's own thread, and every thread related to it by delegation, a swarm, a
   continuation or a start, must be unchanged. Another thread may have changed only in what moves while it streams: its
-  messages, activity, summary, `updatedAt` and usage. Even then, the change must leave the branch toolbar's order of
-  working copies as it was, since that order follows the project's threads' activity.
+  messages, activity, summary, `updatedAt` and usage, and only so far as it leaves the orders below as they were.
 - **When in doubt, redraw.** Any doubt redraws the pane.
 - **Orders that follow activity.** Two orders a pane shows follow other threads' activity: the branch toolbar's working
   copies, which follow the activity of the threads in the pane's project, and a new thread's greeting's recent projects,
