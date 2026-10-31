@@ -21,7 +21,7 @@ import type { AgentConnection } from './AgentContext'
 import { PaneMenu, type PaneMenuItem } from './PaneMenu'
 import { commitLabel, commits, defaultBranchQuestion, fileCount, lineCounts, menuEntries, needsDefaultBranchConfirmation, noticeFor, quickAction, stackedFor, STATUS_LETTER, type GitNotice, type GitQuickKind } from './gitActionButton.logic'
 import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
-import { holdingThread, openHolderWords } from './checkoutHold'
+import { holdingThread, ON_HOLD, openHolderWords } from './checkoutHold'
 import { shownCount } from '../state/interfaceNumbers'
 import './gitActionButton.css'
 
@@ -180,7 +180,10 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
     onDismiss={() => { if (local) setLocal(null); else if (progress) setDismissed(progress.actionId) }}
     onRun={action => runAction({ action })} /> : null
   const record = bringView?.kind === 'asks' || bringView?.kind === 'outcome' ? bringView.record : undefined
+  // The thread whose work holds the folder where the target is checked out, when another thread does: the hold offers to open it (#1866).
+  const bringHolder = bringView?.kind === 'outcome' ? holdingThread(allThreads, bringView.record.heldBy, thread.id) : undefined
   const strip = bringView ? <BringChangesBack view={bringView} parentTitle={bringParent?.title ?? t`the thread it began from`} machine={bringMachine} busy={inFlight}
+    holder={bringHolder ? { title: bringHolder.title, open: () => { void command({ type: 'select-thread', threadId: bringHolder.id }) } } : undefined}
     takeFocus={record !== undefined && record.actionId === bringPressed}
     onBring={() => bring()} onMergeCommit={() => { if (record) bring(record.actionId) }}
     onNotNow={() => { if (record) dismissals.dismiss(record.actionId) }}
@@ -216,7 +219,6 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
 /** A notice this pane keeps itself, for a command's answer or refusal, until it is shown. */
 interface LocalNotice { readonly tone: 'success' | 'error' | 'held'; readonly title: LaterWords; readonly detail?: LaterWords; readonly holder?: string }
 const ACTION_FAILED = msg`Action failed`
-const ON_HOLD = msg({ message: 'On hold', comment: 'Leads a Git action refused because another thread or Sotto holds the folder. Nothing failed and nothing was changed.' })
 /** A refusal in the host's words: a hold when the folder's guard is held, with the thread holding it when one does (#1823). */
 function refusalNotice(error: string, hold: AgentState['checkoutHold']): LocalNotice {
   if (hold === undefined) return { tone: 'error', title: ACTION_FAILED, detail: error }

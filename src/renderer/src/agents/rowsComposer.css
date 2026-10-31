@@ -1,0 +1,32 @@
+/* Zach's composer (ADR-0168): the quiet composer's parts in two rows, after T3 Code (Zach's pick A of
+   prototype/composer-zach). The prompt has the card's whole width; under it, attach on the left and, on the right, the
+   permissions, the model and its effort as words with the speed's bolt, then the disc. No edge in any state; colour
+   comes only from theme roles. Drake's pill (quietComposer.css) is the other style. */
+.thread-prompt[data-quiet][data-style='rows'] { grid-template-columns: auto minmax(0, 1fr); align-items: start; column-gap: 0; padding: 14px 10px 8px 16px; border-radius: 18px; }
+.thread-prompt[data-quiet][data-style='rows'] .screenshot-input > :has(.prompt-editor) { grid-column: 1 / -1; grid-row: 2; }
+.thread-prompt[data-quiet][data-style='rows'] .prompt-editor { min-height: 45px; max-height: 220px; padding: 0 6px 0 0; }
+/* The footer: attach in the first column, everything else at the far end of the second. */
+.thread-prompt[data-quiet][data-style='rows'] .screenshot-input__tools > .tt-button { grid-column: 1; grid-row: 4; align-self: center; margin: 6px 0 0 -8px; }
+.thread-prompt[data-quiet][data-style='rows'] > .thread-prompt__footer { grid-column: 2; grid-row: 4; align-self: center; justify-content: flex-end; gap: 4px; margin: 6px 0 0; }
+.thread-prompt[data-quiet][data-style='rows'] > .thread-prompt__footer > .thread-prompt__meta { flex: 1 1 auto; justify-content: flex-end; min-width: 0; }
+.thread-prompt[data-quiet][data-style='rows'] > .thread-options-notices { grid-row: 5; }
+
+/* The model and its effort read as words, not a chip: no fill and no hairline between them. */
+.thread-prompt[data-quiet][data-style='rows'] .thread-options--chips:has(> .split-chip-effort) { background: transparent; }
+.thread-prompt[data-quiet][data-style='rows'] .split-chip-effort::before { display: none; }
+.thread-prompt[data-quiet][data-style='rows'] .thread-options--chips:has(> .split-chip-effort) .model-picker__trigger { border-radius: 8px; padding-inline-end: 4px; color: var(--tt-text); }
+.thread-prompt[data-quiet][data-style='rows'] .split-chip-effort__trigger { border-radius: 8px; padding-inline-start: 4px; }
+
+/* Permissions come first at the footer's end, in a slot of their own before the model, as their shield and the mode's
+   name in the mode's colour. A narrow pane keeps the shield alone; the name stays for assistive technology and in the
+   tooltip. */
+.thread-prompt[data-quiet][data-style='rows'] .thread-prompt__shield { display: flex; flex: none; align-items: center; margin-inline-end: 2px; }
+.thread-prompt[data-quiet][data-style='rows'] .thread-prompt__shield:empty { display: none; }
+.thread-prompt[data-quiet][data-style='rows'] .thread-chip[data-permission]:has(> .thread-chip__icon) { gap: 6px; }
+.thread-prompt[data-quiet][data-style='rows'] .thread-chip[data-permission]:has(> .thread-chip__icon) > .thread-chip__value { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-size: 13px; }
+@container thread-pane (max-width: 560px) {
+  .thread-prompt[data-quiet][data-style='rows'] .thread-chip[data-permission]:has(> .thread-chip__icon) > .thread-chip__value { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}
+
+/* While a turn runs with nothing typed the disc is Stop, in the disc's own ink. */
+.thread-prompt[data-quiet][data-style='rows'] .thread-prompt__actions > .thread-prompt__disc[data-face='stop'] { background: var(--tt-pill); color: var(--tt-pill-ink); }

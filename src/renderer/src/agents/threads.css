@@ -36,12 +36,18 @@
 .thread-workspace__crumb { display: flex; flex: 0 100 auto; align-items: center; gap: 7px; min-width: 0; color: var(--tt-text-muted); font-size: 12.5px; }
 .thread-workspace__crumb::before { flex: none; color: var(--tt-text-muted); content: '/'; }
 .thread-workspace__crumb > span:first-of-type { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* A crumb holding the working copy gives way no faster than the branch controls after it (ADR-0161): its project name
+   shortens, and the working copy keeps its own width, so it is never drawn under them. */
+.thread-workspace__crumb[data-has-working-copy] { flex-shrink: 1; }
+.thread-workspace__crumb[data-has-working-copy] > span:first-of-type { flex: 0 1 auto; min-width: 0; }
+.thread-workspace__crumb > .working-copy { flex: none; }
 .thread-workspace__tag { flex: none; padding: 1px 7px; border: 1px solid transparent; border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-text-muted); font-size: 12px; }
 .thread-workspace__tag[data-tone='warning'] { background: var(--tt-warning-surface); color: var(--threads-warning-text); }
 /* Renaming turns the heading into a field, so the heading takes the room the field needs to be typed in. */
 .thread-workspace__head h2:has(input) { flex: 1 1 220px; }
 .thread-workspace__head h2 > input { width: 100%; }
-.thread-workspace__actions { display: flex; flex: none; align-items: center; gap: 2px; }
+/* The actions stand on the pane's own surface, so branch controls a narrow pane has squeezed pass under them unseen. */
+.thread-workspace__actions { position: relative; display: flex; flex: none; align-items: center; gap: 2px; background: var(--tt-canvas); }
 .thread-workspace__error { margin: 12px 24px 0; }
 
 /* The header's icon buttons: the ··· menu, close, and anything a pane adds beside them. */

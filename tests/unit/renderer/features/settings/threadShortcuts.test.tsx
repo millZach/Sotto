@@ -88,6 +88,16 @@ describe('Settings › Keyboard (ADR-0133)', () => {
     expect(onUpdateSettings).not.toHaveBeenCalled()
   })
 
+  it('lists Ctrl+Z for Undo after a Settle among the fixed keys, and refuses it to every shortcut (ADR-0167)', async () => {
+    const { onUpdateSettings, user } = setup()
+    expect(screen.getByText('Undo a settle')).toBeVisible()
+    await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Alt R' }))
+    press('ControlLeft', 'KeyZ')
+    release('KeyZ')
+    expect(await within(row('Restore settled thread')).findByRole('alert')).toHaveTextContent('Undo already uses Ctrl + Z. Pick other keys.')
+    expect(onUpdateSettings).not.toHaveBeenCalled()
+  })
+
   it('lets a shortcut take Force Reload’s keys, which no menu answers now (#1825)', async () => {
     const { onUpdateSettings, user } = setup()
     await user.click(screen.getByRole('button', { name: 'Change shortcut, Ctrl Alt R' }))

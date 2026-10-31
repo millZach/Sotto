@@ -54,6 +54,7 @@ struct NewThreadSheet: View {
         }
         .foregroundStyle(Palette.ink)
         .background { NewThreadBackground() }
+        .environment(\.sottoOnSheet, true)
         .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(busy)
         .onAppear { model.creationFeedback = nil; startOnTheOnlyComputer() }

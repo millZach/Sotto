@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentCommand, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
+import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
@@ -177,7 +178,7 @@ describe('the manual composer', () => {
   })
 
   it('keeps quiet Stop after the split chip and before the round Send, with the shield at the start of the pill', () => {
-    vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
+    vi.mocked(useOptionalApp).mockReturnValue({ settings: { ...DEFAULT_SETTINGS, composerStyle: 'pill' }, update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
     const state = threadsStateFixture()
     state.host.capabilities.configureThread = true
     const thread = state.host.threads.find(item => item.id === THREAD)!
@@ -196,5 +197,30 @@ describe('the manual composer', () => {
     expect(send.querySelector('svg.lucide-list-plus')).not.toBeNull()
     // The shield stands at the pill's start, after attach (ADR-0161).
     expect(shield.closest('.thread-prompt__lead')).not.toBeNull()
+  })
+
+  it('draws Zach\'s composer by default: the prompt above, permissions before the model, and the disc as Stop while a turn runs with nothing typed', () => {
+    vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
+    const state = threadsStateFixture()
+    state.host.capabilities.configureThread = true
+    const thread = state.host.threads.find(item => item.id === THREAD)!
+    thread.status = 'running'
+    thread.requests = []
+    state.host.models.find(model => model.id === thread.modelId)!.runtimeModes = ['approval-required', 'full-access']
+    mount({ state })
+    const form = document.querySelector('form.thread-prompt')!
+    expect(form).toHaveAttribute('data-style', 'rows')
+    expect(form.querySelector('.thread-prompt__lead')).toBeNull()
+    const shield = screen.getByRole('combobox', { name: 'Thread permissions' })
+    const model = form.querySelector('.model-picker__trigger')!
+    // In the footer, in the order the eye and Tab take them: permissions, the model, then the disc.
+    expect(shield.closest('.thread-prompt__shield')).not.toBeNull()
+    expect(shield.compareDocumentPosition(model) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    const actions = form.querySelector('.thread-prompt__actions')!
+    expect([...actions.querySelectorAll('button')].map(button => button.getAttribute('aria-label'))).toEqual(['Stop agent'])
+    const stop = screen.getByRole('button', { name: 'Stop agent' })
+    expect(stop).toHaveClass('thread-prompt__disc')
+    expect(stop).toHaveAttribute('data-face', 'stop')
+    expect(screen.queryByRole('button', { name: 'Queue prompt' })).toBeNull()
   })
 })

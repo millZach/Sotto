@@ -1748,6 +1748,15 @@ msgstr ""
 msgid "Compaction"
 msgstr ""
 
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
+msgid "Composer"
+msgstr ""
+
+#: src/renderer/src/features/settings/AppearanceSettings.tsx
+msgid "Composer saved."
+msgstr ""
+
 #. Connects a provider on a host.
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Connect"
@@ -2189,6 +2198,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Drafted pull requests use Sotto's own sections."
+msgstr ""
+
+#. A style of the thread composer, named for the person who made it
+#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
+msgid "Drake’s composer"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -2685,6 +2699,10 @@ msgstr ""
 msgid "How Sotto connects to {name} could not be changed. Nothing was changed. Try again."
 msgstr ""
 
+#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
+msgid "How the box you write to threads and Watcher in is laid out."
+msgstr ""
+
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "How this computer appears on phones. Leave it empty to use {defaultName}."
 msgstr ""
@@ -2754,6 +2772,7 @@ msgstr ""
 msgid "In the thread <0>{workingThread}</0> on this computer."
 msgstr ""
 
+#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
 #: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "In use"
@@ -3612,6 +3631,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "One client updates at a time. Your threads keep working, and move to the new version when they are idle."
+msgstr ""
+
+#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
+msgid "One pill: the shield, the prompt and a chip of the model and effort on one line."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -5792,6 +5815,10 @@ msgstr ""
 msgid "The pasted text was cut to fit the 4,000-character limit."
 msgstr ""
 
+#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
+msgid "The prompt on its own row, with the model, effort and permissions in words under it."
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "The provider"
 msgstr ""
@@ -6253,6 +6280,14 @@ msgstr ""
 msgid "Undo"
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Undo a settle"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Undo already uses {keys}. Pick other keys."
+msgstr ""
+
 #. A systemd unit, the file that starts a service.
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Unit"
@@ -6440,6 +6475,14 @@ msgstr ""
 
 #: src/renderer/src/features/settings/MenuBarOwlSettings.tsx
 msgid "Use {label} as the owl's eye color, currently active"
+msgstr ""
+
+#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
+msgid "Use {name}"
+msgstr ""
+
+#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
+msgid "Use {name}, in use"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
@@ -6784,6 +6827,10 @@ msgstr ""
 msgid "Where Watcher and the owls for your threads live. Its colors come from your theme."
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "While the toast at the sidebar’s foot offers Undo. A text field keeps these keys for its own typing."
+msgstr ""
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "While Tools is closed, Changes opens on its own when a turn leaves 3 more changed files or 50 more changed lines."
 msgstr ""
@@ -6943,6 +6990,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "Your threads on {host} keep working."
+msgstr ""
+
+#. A style of the thread composer, named for the person who chose it
+#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
+msgid "Zach’s composer"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx

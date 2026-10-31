@@ -7,7 +7,7 @@ import { heldProviderRefusal, heldProvidersOf, type HeldProviders } from '../../
 import { summarizePullRequestChecks } from './pullRequestCheckState'
 import type { PullRequestObservation } from './watcherEvidence'
 import { threadsInCheckout } from './checkoutCandidates'
-import { CheckoutMutations, checkoutMutationRefusal, type CheckoutHolder, type CheckoutPendingWork } from './checkoutMutations'
+import { CheckoutHeldRefusal, CheckoutMutations, checkoutMutationRefusal, type CheckoutHolder, type CheckoutPendingWork } from './checkoutMutations'
 import { loadHostIdentity, migrateWorkspaceHost, stampHostSnapshot, stampHostThread } from './hostIdentity'
 import { ThreadChangesPublisher, ThreadMap, inPlacingOrder, orderBetween, threadChangesBetween, verifyingThreadChanges, type ActivityChangesListener, type ActivityChangesSubscription, type AgentHostChanges, type ThreadChangeSet, type ThreadPlacement } from './threadChanges'
 import type { BrowserAgentTools } from './browserAgentServer'
@@ -436,6 +436,8 @@ const PUBLISH_WINDOW_MS = 16
 /** How long a provider-driven cache write waits for the state to settle. A user command never
  * waits this out: it writes through `flush()` and returns after its own write. */
 const WRITE_WINDOW_MS = 250
+/** What a bring-back refused because a thread holds a folder says in place of the guard's "Nothing was changed." (#1866). */
+const NOTHING_BROUGHT_BACK = 'Nothing was brought back.'
 
 /** Durable Sotto organization above the existing native identity/transport boundary.
  * Only an unstarted local thread can change provider. Native bindings are never rewritten. */
@@ -1437,6 +1439,18 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   }
   /** Bringing changes back (#1030), on only where Work across machines is on, read once at start. */
   private bringBackAllowed = false
+  /**
+   * A bring-back press on its thread's lane, which holds that thread's own folder as any Git command's does: the child's
+   * worktree, or for a child on another machine the parent's folder, where the commits go. A thread whose work holds that
+   * folder refuses the press before Git runs, as a hold in the guard's words that says nothing was brought back, and the
+   * reply names that thread (`checkoutHold`, #1866). A hold no thread caused keeps its words.
+   */
+  private onBringBackLane(threadId: string, operation: () => Promise<void>): Promise<void> {
+    return this.onGitLane(threadId, operation).catch((error: unknown) => {
+      if (error instanceof CheckoutHeldRefusal && error.threadId !== undefined) throw new CheckoutHeldRefusal(error.withOutcome(NOTHING_BROUGHT_BACK), error.threadId)
+      throw error
+    })
+  }
   allowBringBack(): void { this.bringBackAllowed = true }
   /**
    * How a check installs packages first, present only while Work across machines is on (#1312, ADR-0072): main turns it on
@@ -1462,7 +1476,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    */
   async bringChangesBack(command: { readonly threadId: string; readonly actionId: string; readonly mergeCommit?: string | undefined; readonly away?: BringBackAway | undefined }): Promise<AgentHostSnapshot> {
     if (command.away) return this.bringChangesArrived({ ...command, away: command.away })
-    await this.onGitLane(command.threadId, async () => {
+    await this.onBringBackLane(command.threadId, async () => {
       if (!this.bringBackAllowed) throw new GitActionRefusal(BRING_BACK_OFF)
       const thread = this.thread(command.threadId)
       // A child of a thread on another machine moves its branch there first, which only the desktop does.
@@ -1486,7 +1500,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
           parentCheckout: folder => sameCheckout(folder, parentFolder),
           holdCheckout: async folder => {
             // Every thread that works where the target is checked out, the one it began from first, must be at rest.
-            const release = await this.acquireCheckoutMutationInFolder(thread.id, folder, { kind: 'git-action' })
+            let release: () => void
+            try { release = await this.acquireCheckoutMutationInFolder(thread.id, folder, { kind: 'git-action' }) }
+            catch (error) {
+              // A thread whose work holds that folder is a hold (#1866): the record names it, so the strip offers to open it.
+              if (error instanceof CheckoutHeldRefusal && error.threadId !== undefined) {
+                throw new BringBackRefusal('busy', error.withOutcome(NOTHING_BROUGHT_BACK), { checkout: folder, heldBy: error.threadId })
+              }
+              throw error
+            }
             try {
               if (this.mutationGuard && !await this.mutationGuard(thread.id, folder)) throw new GitActionRefusal(`Wait for the work where ${found.target} is checked out to finish, then try again. Nothing changed.`)
               return release
@@ -1525,7 +1547,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const repository = named ? this.state.snapshot.projects.find(item => item.id === named.projectId)?.path : undefined
     const arrived = repository ? await movedBranchRef(repository, away.moveId).then(ref => ({ repository, ref }), () => undefined) : undefined
     try {
-      await this.onGitLane(command.threadId, async () => {
+      await this.onBringBackLane(command.threadId, async () => {
         if (!this.bringBackAllowed) throw new GitActionRefusal(BRING_BACK_OFF)
         const parent = this.thread(command.threadId)
         if (!repository) throw new GitActionRefusal(BRING_BACK_NO_TARGET)
@@ -1566,13 +1588,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
     return this.workspaceSnapshot()
   }
-  /** A refusal's record: why, how many files, Git's own words, where the target is, and Sotto's sentence where it has no plainer one. */
+  /**
+   * A refusal's record: why, how many files, Git's own words, where the target is, the thread holding that folder when one
+   * does, and Sotto's sentence where it has no plainer one.
+   */
   private async bringBackRefused(base: Pick<BringBack, 'actionId' | 'target' | 'branch' | 'at'> & { readonly from?: string }, error: unknown, projectPath: string | undefined): Promise<BringBack> {
     const refusal = error instanceof BringBackRefusal ? error : undefined
     return { ...base, status: 'refused', refusal: refusal?.reason ?? 'git',
       ...(refusal?.detail.files !== undefined ? { files: refusal.detail.files } : {}),
       ...(refusal?.detail.gitSaid ? { gitSaid: refusal.detail.gitSaid } : {}),
       ...(refusal?.detail.checkout !== undefined ? { checkedOut: await this.checkoutPlace(refusal.detail.checkout, projectPath) } : {}),
+      ...(refusal?.detail.heldBy !== undefined ? { heldBy: refusal.detail.heldBy } : {}),
       ...(!refusal || refusal.reason === 'busy' || refusal.reason === 'git' || refusal.reason === 'ignored' ? { message: (error instanceof Error ? error.message : 'Git did not answer.').slice(0, 1_000) } : {}) }
   }
   private bringBackRecord(outcome: BringBackOutcome, checkedOut: NonNullable<BringBack['checkedOut']>): Omit<BringBack, 'actionId' | 'target' | 'branch' | 'at'> {
