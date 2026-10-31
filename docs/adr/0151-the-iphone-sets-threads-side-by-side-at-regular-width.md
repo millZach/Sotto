@@ -29,7 +29,8 @@ Amended October 30, 2026, a second time: the Threads page becomes the sidebar's 
 - **Rows only (pick A).** A Needs you row is a row like the others, with its warm light and the request in its line. Nothing is answered on the Threads page: the row opens its thread, where the request's sheet opens as before. The sidebar's rows are the same.
 - **A Max held sideways too.** It shows the list at the reading width, not columns of cards.
 - **The unfolded Duo** keeps its columns of cards when no thread is open, answerable in place, and the list beside an open thread.
-- **The header (#1849).** The counts line is gone, since each section counts its own threads. The computer menu shares the search row, as it already did at regular width. The computers that can't be reached share one note, their names joined as the language joins a list, and its Try again tries each of them.
+- **The header (#1849).** The counts line is gone, since each section counts its own threads. The computer menu shares the search row, as it already did at regular width. The computers that can't be reached share one note, their names joined as the language joins a list, and its Try again tries each of them on its own.
+- **The rail's ground.** Zach saw the rail not match the theme: it painted the plain page ground over the strip while the page beside it carries the theme's wash, so the strip read as a darker panel. The rail in the strip now draws no ground, and Threads, Computers and Settings carry their wash on under the strip, so the strip is the page's own in every theme. A rail in a column of its own keeps the page's ground.
 
 ## Context
 
