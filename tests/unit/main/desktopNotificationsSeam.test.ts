@@ -10,8 +10,9 @@ import { emptyDesktopState } from '../../../src/main/hosts/inactiveLocalHost'
 import { desktopWindowClient } from '../../../src/main/agents/hostService'
 import { ThreadAlerts } from '../../../src/main/notifications/threadAlerts'
 import { createDesktopNotifier, type DesktopNotifier } from '../../../src/main/notifications/desktopNotifier'
+import { openNotificationThread } from '../../../src/main/notifications/openNotificationThread'
 import { hostEntityKey } from '../../../src/shared/clientIdentity'
-import { ALERT_SETTLE_MS } from '../../../src/shared/desktopNotifications'
+import { ALERT_SETTLE_MS, type NotificationOpening } from '../../../src/shared/desktopNotifications'
 import type { AgentFollowup, AgentState, AgentThread } from '../../../src/shared/agents'
 
 const LOCAL = '11111111-1111-4111-8111-111111111111'
@@ -42,7 +43,7 @@ function host(hostId: string, kind: 'local' | 'remote', threads: AgentThread[]) 
     state.followups = followups
     broadcast(state)
   }
-  return { connection, push }
+  return { connection, push, state }
 }
 
 interface Made { readonly options: Record<string, unknown>; press(): void }
@@ -50,6 +51,7 @@ interface Made { readonly options: Record<string, unknown>; press(): void }
 describe('desktop notifications across the router, tracker and notifier (ADR-0117)', () => {
   let router: DesktopHostRouter, tracker: ThreadAlerts, notifier: DesktopNotifier
   let made: Made[], opened: string[], pending: Promise<void>[]
+  let destinations: NotificationOpening[]
   let switches: { needsYou: boolean; finished: boolean }
   let local: ReturnType<typeof host>, remote: ReturnType<typeof host>
 
@@ -59,9 +61,9 @@ describe('desktop notifications across the router, tracker and notifier (ADR-011
 
   beforeEach(() => {
     vi.useFakeTimers()
-    made = []; opened = []; pending = []
+    made = []; opened = []; pending = []; destinations = []
     switches = { needsYou: true, finished: true }
-    router = new DesktopHostRouter(emptyDesktopState)
+    router = new DesktopHostRouter(emptyDesktopState, { watcherEnabled: true })
     notifier = createDesktopNotifier({
       create: options => {
         const listeners = new Map<string, (...args: unknown[]) => void>()
@@ -70,7 +72,10 @@ describe('desktop notifications across the router, tracker and notifier (ADR-011
       },
       isSupported: () => true,
       switches: async () => ({ ...switches }),
-      open: threadId => { opened.push(threadId) },
+      open: threadId => {
+        opened.push(threadId)
+        pending.push(openNotificationThread(router, threadId, hostEntityKey(LOCAL, 'watcher')).then(opening => { destinations.push(opening) }))
+      },
       log: () => undefined,
     })
     tracker = new ThreadAlerts({
@@ -107,7 +112,80 @@ describe('desktop notifications across the router, tracker and notifier (ADR-011
     for (const option of ['actions', 'hasReply', 'silent']) expect(made[1]?.options).not.toHaveProperty(option)
 
     made[0]!.press()
+    await flush()
     expect(opened).toEqual([key])
+    expect(router.shell()).toMatchObject({ activeThreadId: key, activeProjectId: hostEntityKey(REMOTE, 'project') })
+  })
+
+  it('switches from another project to the notified thread without answering its request', async () => {
+    local.state.host.projects.push({ id: 'other', title: 'Other', path: '/other' })
+    await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'mine') }, desktopWindowClient())
+    local.push([thread('mine'), thread('elsewhere', { projectId: 'other' })])
+    local.push([thread('mine'), thread('elsewhere', { projectId: 'other', requests: [ask('question')] })])
+    await flush()
+    made[0]!.press()
+    await flush()
+    expect(router.shell()).toMatchObject({ activeThreadId: hostEntityKey(LOCAL, 'elsewhere'), activeProjectId: hostEntityKey(LOCAL, 'other') })
+    expect(local.state.host.threads[1]!.requests).toEqual([ask('question')])
+    expect(destinations).toEqual([{ page: 'threads' }])
+  })
+
+  it('opens Watcher for its own question instead of selecting a room hidden from Threads', async () => {
+    const key = hostEntityKey(LOCAL, 'watcher')
+    await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'mine') }, desktopWindowClient())
+    local.push([thread('mine'), thread('watcher', { kind: 'watcher' })])
+    local.push([thread('mine'), thread('watcher', { kind: 'watcher', requests: [ask('question')] })])
+    await flush()
+    expect(made[0]?.options.groupId).toBe(key)
+    made[0]!.press()
+    await flush()
+    expect(destinations).toEqual([{ page: 'watcher', notice: expect.any(String) }])
+    expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'mine'))
+    expect(local.state.host.threads[1]!.requests).toEqual([ask('question')])
+  })
+
+  it('keeps a useful thread and explains a notification whose thread was cleared', async () => {
+    await router.command({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'mine') }, desktopWindowClient())
+    local.push([thread('mine'), thread('gone')])
+    local.push([thread('mine'), thread('gone', { requests: [ask('question')] })])
+    await flush()
+    local.push([thread('mine')])
+    made[0]!.press()
+    await flush()
+    expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'mine'))
+    expect(destinations).toEqual([{ page: 'threads', notice: expect.stringContaining('no longer available') }])
+  })
+
+  it('selects an available thread when a cleared notification had no usable selection', async () => {
+    const opening = await openNotificationThread(router, hostEntityKey(LOCAL, 'cleared'))
+    expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'mine'))
+    expect(opening).toEqual({ page: 'threads', notice: expect.stringContaining('no longer available') })
+  })
+
+  it('explains a Watcher room on another computer without selecting its hidden thread', async () => {
+    remote.push([thread('theirs'), thread('watcher', { kind: 'watcher' })])
+    const opening = await openNotificationThread(router, hostEntityKey(REMOTE, 'watcher'), hostEntityKey(LOCAL, 'watcher'))
+    expect(opening).toEqual({ page: 'threads', notice: expect.stringContaining('Open Sotto on its computer') })
+    expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'mine'))
+  })
+
+  it('opens an earlier Watcher conversation in Threads, where that history is visible', async () => {
+    local.push([thread('mine'), thread('history', { kind: 'watcher-history' })])
+    const opening = await openNotificationThread(router, hostEntityKey(LOCAL, 'history'), hostEntityKey(LOCAL, 'watcher'))
+    expect(opening).toEqual({ page: 'threads' })
+    expect(router.shell().activeThreadId).toBe(hostEntityKey(LOCAL, 'history'))
+  })
+
+  it('explains a cleared thread even when there are no other threads to select', async () => {
+    local.push([]); remote.push([])
+    expect(await openNotificationThread(router, hostEntityKey(LOCAL, 'cleared'))).toEqual({ page: 'threads', notice: expect.stringContaining('no longer available') })
+    expect(router.shell().activeThreadId).toBeNull()
+  })
+
+  it('explains a failed selection instead of losing the notification click', async () => {
+    const command = vi.spyOn(router, 'command').mockRejectedValueOnce(new Error('connection closed'))
+    expect(await openNotificationThread(router, hostEntityKey(LOCAL, 'mine'))).toEqual({ page: 'threads', notice: expect.stringContaining('Check its host') })
+    expect(command).toHaveBeenCalledExactlyOnceWith({ type: 'select-thread', threadId: hostEntityKey(LOCAL, 'mine') }, desktopWindowClient())
   })
 
   it('says nothing for the thread the window shows, and a new request once the window loses the focus', async () => {

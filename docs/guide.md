@@ -1137,7 +1137,7 @@ On a Mac, Sotto shows a macOS notification when a thread needs you or has finish
 
 Both switches are on until you turn them off. The first notification makes macOS ask whether Sotto may show them. macOS shows them only for an app it can find and validate, such as Sotto installed in Applications; a copy run from another folder, or Sotto started from a development checkout, shows none. If nothing appears, allow Sotto in System Settings → Notifications. Sound follows System Settings too.
 
-A notification shows the thread's title and one plain line, such as "Codex finished." or "Claude Code is asking a question.", with the computer's name when more than one computer is connected and the thread runs on another one. It never shows the question or the reply. Press it to bring Sotto forward on that thread. It has no buttons, so you still answer in Sotto.
+A notification shows the thread's title and one plain line, such as "Codex finished." or "Claude Code is asking a question.", with the computer's name when more than one computer is connected and the thread runs on another one. It never shows the question or the reply. Press it to bring Sotto forward on that thread and its project. Watcher's own question opens its room. If a thread was cleared or its Watcher room is on another computer, Sotto keeps an available thread open and explains where to go. It has no buttons, so you still answer in Sotto. Sotto's own sends do not replace the notices for your sends.
 
 No notification appears when:
 

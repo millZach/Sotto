@@ -1,5 +1,5 @@
 import { useEffect } from 'react'
-import type { NotificationsBridge } from '../../../shared/desktopNotifications'
+import type { NotificationOpening, NotificationsBridge } from '../../../shared/desktopNotifications'
 import { useOwlFeature } from './owlFeature'
 
 /** The notifications bridge while the window shows notifications (ADR-0117): the Owl list turns it on and main offered it. */
@@ -9,10 +9,10 @@ export function useDesktopNotifications(): NotificationsBridge | undefined {
 }
 
 /**
- * A pressed notification shows Threads. Main has already brought the window forward and selected the thread, so the
- * window only changes page.
+ * Main has brought the window forward and selected the thread or a fallback. The window opens its room and explains
+ * any fallback without turning a notification into an answer (ADR-0117).
  */
-export function useOpenThreadsOnNotification(showThreads: () => void): void {
+export function useOpenNotification(open: (opening: NotificationOpening) => void): void {
   const bridge = useDesktopNotifications()
-  useEffect(() => bridge?.onOpened(showThreads), [bridge, showThreads])
+  useEffect(() => bridge?.onOpened(open), [bridge, open])
 }

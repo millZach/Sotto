@@ -27,7 +27,8 @@ import {
 import { useApp, type AppNavigation } from './state/AppContext'
 import { setTerminalPreferences } from './tools/terminalPreferences'
 import { useDictationOn } from './state/dictationFeature'
-import { useOpenThreadsOnNotification } from './state/desktopNotifications'
+import { useOpenNotification } from './state/desktopNotifications'
+import type { NotificationOpening } from '../../shared/desktopNotifications'
 import { useMemoryEnabled } from './state/memoryFeature'
 import { useReleaseTrack } from './state/useReleaseTrack'
 import { releaseTrackName } from '../../shared/releaseTrack'
@@ -272,9 +273,12 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   // Turning dictation off while the Dictate room is open moves to Threads, so the switch lights a tab.
   useEffect(() => { if (!dictationOn && app.navigation === 'home') app.actions.navigate('threads') }, [app.actions, app.navigation, dictationOn])
 
-  // A pressed notification: main brought the window forward and selected the thread; the window shows Threads (ADR-0117).
-  const showThreads = useCallback(() => app.actions.navigate('threads'), [app.actions])
-  useOpenThreadsOnNotification(showThreads)
+  const [notificationNotice, setNotificationNotice] = useState<string | null>(null)
+  const openNotification = useCallback((opening: NotificationOpening) => {
+    setNotificationNotice(opening.notice ?? null)
+    app.actions.navigate(opening.page)
+  }, [app.actions])
+  useOpenNotification(openNotification)
 
   useEffect(() => {
     if (journalSearchRequest > 0 && app.navigation === 'home') document.querySelector<HTMLInputElement>('.journal-search__input')?.focus()
@@ -575,6 +579,10 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
         <ToastRegion messages={[
           ...app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform)),
           ...(themeNotice === null ? [] : [themeNotice]),
+          ...(notificationNotice === null ? [] : [{
+            id: 'notification-open',
+            message: <>{notificationNotice} <button type="button" className="tt-toast__link tt-focusable" onClick={() => setNotificationNotice(null)}><Trans>Dismiss</Trans></button></>,
+          }]),
           ...(settingsNotice === null ? [] : [{
             id: 'settings-save', tone: 'error' as const,
             message: <>{settingsNotice} <button type="button" className="tt-toast__link tt-focusable" aria-label={t`Dismiss dictionary save notice`} onClick={() => setSettingsNotice(null)}><Trans>Dismiss</Trans></button></>,
