@@ -1154,6 +1154,8 @@ struct HeldDetail {
     /// Answers whose own receipt the computer confirmed, as `host/thread/request`, so a Threads card can say Answered
     /// only for those. An answer whose request left without that receipt is not in here.
     @Published private(set) var confirmedAnswers: Set<String> = []
+    /// Each thread's chip presses its agent hasn't confirmed yet, and the ones it refused, by `ThreadRef.id` (ADR-0166).
+    @Published private(set) var threadSettingsPending: [String: PendingThreadSettings] = [:]
     /// Whether the computer confirmed this iPhone's answer to a request.
     func answerConfirmed(_ requestID: String, in ref: ThreadRef) -> Bool {
         confirmedAnswers.contains(ref.hostID + "/" + ref.threadID + "/" + requestID)
@@ -1386,8 +1388,12 @@ struct HeldDetail {
         // --ui-watcher-can-answer the laptop lets this iPhone answer; with --ui-watcher-asks Watcher itself is asking.
         let watching = arguments.contains("--ui-watcher")
         let watcherAnswers = watching && arguments.contains("--ui-watcher-can-answer")
-        let caps: [String: Bool] = ["submit": false, "interrupt": false, "questions": false, "permissions": false, "projects": true, "threads": true]
-        let answeringCaps: [String: Bool] = ["submit": false, "interrupt": false, "questions": true, "permissions": true, "projects": true, "threads": true]
+        // The thread settings journey: the idle Add keyboard shortcuts thread runs on a known model whose computer changes a
+        // thread's settings in place, and the laptop lets this iPhone answer, so every mode can be chosen (ADR-0166).
+        let settingThreads = arguments.contains("--ui-thread-settings")
+        var caps: [String: Bool] = ["submit": false, "interrupt": false, "questions": false, "permissions": false, "projects": true, "threads": true]
+        var answeringCaps: [String: Bool] = ["submit": false, "interrupt": false, "questions": true, "permissions": true, "projects": true, "threads": true]
+        if settingThreads { caps["configureThread"] = true; answeringCaps["configureThread"] = true }
         let rows: [(String, String, String, String, Int)] = [
             ("release", "Choose the release target", "sotto", "idle", 2),
             ("iphone", "Refine the iPhone thread view", "sotto", "running", 6),
@@ -1422,6 +1428,10 @@ struct HeldDetail {
                 if asking { row["requests"] = [Self.fixtureQuestion] }
             }
             if id == "wiring" { row["backgroundWork"] = [["type": "agent"]] }
+            if id == "iphone" && settingThreads { row["modelId"] = "fixture-model"; row["runtimeMode"] = "approval-required" }
+            if id == "shortcuts" && settingThreads {
+                row["modelId"] = "fixture-model"; row["reasoningEffort"] = "high"; row["runtimeMode"] = "approval-required"
+            }
             // Finished while nothing showed it, so Recent marks it until it is opened (ADR-0046).
             if id == "shortcuts" { row["finishedUnread"] = true }
             if id == "settings" || id == "notes" { row["settledAt"] = date }
@@ -1483,15 +1493,15 @@ struct HeldDetail {
         // Watcher's model offers all four modes in the Watcher journeys, as Codex does.
         let modes: [String] = watching ? WatcherPermissions.modes : ["approval-required", "full-access"]
         for (host, name) in [(laptop, "Laptop"), (studio, "Studio Mac")] {
-            let answers = (asking || watcherAnswers) && host == laptop
+            let answers = (asking || watcherAnswers || settingThreads) && host == laptop
             let hostCaps = answers ? answeringCaps : caps
             let pairing = decode(Pairing.self, ["v": 1, "hostId": host, "clientId": "ui-fixture", "token": "not-a-credential"])
             computers.append(SavedComputer(address: "https://fixture.invalid.ts.net", pairing: pairing, reportedName: name))
             let shellObject: [String: Any] = ["hostId": host, "host": ["hostId": host, "name": name,
                 "threads": threads[host] ?? [], "projects": [["id": "sotto", "title": "Sotto", "path": "D:\\Talk to Text Application"],
                     ["id": "panel", "title": "Panel tools", "path": "D:\\Engineering\\Panel tools"], ["id": "house", "title": "House", "path": "D:\\House"]],
-                "models": [["id": "fixture-model", "name": "GPT-6.1 Sol", "provider": "Codex", "providerId": "codex", "ready": true,
-                    "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes]],
+                "models": settingThreads ? Self.fixtureSettingModels(modes) : [["id": "fixture-model", "name": "GPT-6.1 Sol", "provider": "Codex", "providerId": "codex", "ready": true,
+                    "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes]] as [[String: Any]],
                 "providers": [["id": "codex", "connection": "connected", "capabilities": hostCaps]], "capabilities": hostCaps]]
             fixtureShells[host] = shellObject
             let shell = decode(Shell.self, shellObject)
@@ -1659,6 +1669,18 @@ struct HeldDetail {
     | Drawer toggle | Terminal mode | No | Move the toggle on screen before the drawer opens |
     | Tooltips | Every pane | No | Name the chord only while the shortcut is on |
     """
+    /// Codex's models in the thread settings journey: Sol with Fast and Ultra fast in Codex's own words, Astra with Fast,
+    /// and one not ready, which the model chip leaves out.
+    private static func fixtureSettingModels(_ modes: [String]) -> [[String: Any]] {
+        let fast: [String: Any] = ["id": "fast", "name": "Fast", "description": "Faster answers. Uses more of your plan."]
+        let ultra: [String: Any] = ["id": "ultrafast", "name": "Ultra fast", "description": "The fastest answers. Uses the most of your plan."]
+        return [["id": "fixture-model", "name": "GPT-6.1 Sol", "provider": "Codex", "providerId": "codex", "ready": true,
+                 "reasoningEfforts": ["low", "medium", "high", "xhigh"], "defaultReasoningEffort": "high", "runtimeModes": modes, "speeds": [fast, ultra]],
+                ["id": "fixture-astra", "name": "GPT-6 Astra", "provider": "Codex", "providerId": "codex", "ready": true,
+                 "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "medium", "runtimeModes": modes, "speeds": [fast]],
+                ["id": "fixture-luna", "name": "GPT-6.1 Luna", "provider": "Codex", "providerId": "codex", "ready": false,
+                 "reasoningEfforts": ["low", "medium"], "runtimeModes": modes]]
+    }
     /// The fixture has no computer to carry an answer, so once the answer is checked its request leaves the thread, as
     /// it would when the computer confirmed it.
     private func settleFixtureAnswer(_ request: AgentRequest, in ref: ThreadRef) throws {
@@ -3619,6 +3641,7 @@ struct HeldDetail {
             if let allowed = next.clientCapabilities?.mayAnswer { $0.mayAnswer = allowed }
         }
         noticeChanges(next, from: hostID)
+        observeThreadSettings(next, from: hostID)
         // Live evidence can arrive after the acknowledgement timed out. Never resend to settle it.
         // A Keychain write failure is local feedback, not a lost connection to the computer.
         for item in scoped(hostID) {
@@ -3890,4 +3913,129 @@ struct AgentsSource {
     let models: [ThreadModel]
     /// Whether the computer says which failures a client has shown (`failure-seen`).
     let failuresSeen: Bool
+}
+
+// MARK: - A thread's settings from its reply box (ADR-0166)
+
+extension AppModel {
+    /// How long a confirmed change is held for the thread to show it, as the desktop holds one (`CONFIRMED_HOLD_MS`).
+    static let settingHold: UInt64 = 4_000_000_000
+
+    /// What the thread's chips draw, or nil where they stay off its box.
+    func threadSettings(_ ref: ThreadRef) -> ThreadSettingsPanel? {
+        guard let thread = self.thread(ref), let shell = live[ref.hostID]?.shell else { return nil }
+        let source = provider(for: ref)
+        return ThreadSettingsPanel.make(thread: thread, catalog: shell.host.models ?? [], capabilities: capabilities(for: ref),
+                                        providerConnected: source == nil || source?.connection == "connected", online: online(ref.hostID),
+                                        mayAnswer: mayAnswer(ref.hostID), unconfirmed: ThreadSettings.unconfirmed(shell, threadID: ref.threadID),
+                                        promptOnItsWay: ThreadSettings.promptOnItsWay(shell, threadID: ref.threadID) || preparingSends.contains(ref.id),
+                                        pending: threadSettingsPending[ref.id] ?? PendingThreadSettings())
+    }
+    /// Chooses a model, effort, speed or permission mode for the thread. The chip shows it at once; the computer passes it
+    /// to the agent, and a refusal puts the chip back and says why. A press made while the last one is on its way waits,
+    /// and only the newest is sent once that one answers.
+    func chooseSetting(_ kind: ThreadSettingKind, _ value: String, in ref: ThreadRef) {
+        guard let panel = threadSettings(ref), panel.pressable(kind), let thread = self.thread(ref) else { return }
+        if kind == .permissions {
+            guard let mode = panel.permissions.first(where: { $0.id == value }), panel.mayChoose(mode) else { return }
+        }
+        let value = kind == .model ? ThreadSettings.modelChoice(value, thread: thread, catalog: panel.models) : value
+        var pending = threadSettingsPending[ref.id] ?? PendingThreadSettings()
+        let press = pending.press(kind, value: value, patch: ThreadSettings.patch(kind, value: value, model: panel.model),
+                                  showing: panel.unpressed[kind], drawn: panel.drawn)
+        threadSettingsPending[ref.id] = pending.isEmpty ? nil : pending
+        if let press { Task { await saveSetting(press, kind, in: ref, carrying: panel.drawn.speed) } }
+    }
+    /// Sends a refused change once more, where it could be chosen now.
+    func retrySetting(_ kind: ThreadSettingKind, in ref: ThreadRef) {
+        guard let panel = threadSettings(ref), var pending = threadSettingsPending[ref.id], let wanted = pending.refusals[kind]?.wanted,
+              panel.canRetry(kind, wanted: wanted) else { return }
+        let press = pending.retry(kind, drawn: panel.drawn)
+        threadSettingsPending[ref.id] = pending.isEmpty ? nil : pending
+        if let press { Task { await saveSetting(press, kind, in: ref, carrying: panel.drawn.speed) } }
+    }
+    /// Sends a press and, while newer presses of the same setting wait behind it, the newest of them in turn. Each answer
+    /// is recorded, then the thread as it now stands is read again, so a change the computer kept and let go of before
+    /// the answer was recorded never stays on the chip. A model change the agent took without the speed the thread had
+    /// chosen (`carrying`) is said on the bolt's line, as the desktop says it.
+    private func saveSetting(_ first: PendingThreadSettings.Press, _ kind: ThreadSettingKind, in ref: ThreadRef, carrying speed: String) async {
+        var press = first
+        while true {
+            let outcome = await configureThread(press, kind, in: ref)
+            guard var pending = threadSettingsPending[ref.id] else { return }
+            let next = pending.answered(kind, sent: press.value, outcome: outcome)
+            if kind == .model, case .confirmed = outcome, speed != ThreadSettings.standard, let shell = live[ref.hostID]?.shell,
+               let thread = shell.host.threads.first(where: { $0.id == ref.threadID }), ThreadSettings.speed(of: thread) == ThreadSettings.standard {
+                let model = CatalogEntry.model(shell.host.models ?? [], id: thread.modelId)
+                pending.refuse(.speed, wanted: speed, patch: ThreadSettings.patch(.speed, value: speed, model: model), error: ThreadSettingWords.speedNotCarriedError)
+            }
+            threadSettingsPending[ref.id] = pending.isEmpty ? nil : pending
+            if let shell = live[ref.hostID]?.shell { observeThreadSettings(shell, from: ref.hostID) }
+            if let hold = pending.holdToken(kind) {
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: Self.settingHold)
+                    guard let self, var held = self.threadSettingsPending[ref.id] else { return }
+                    held.expire(kind, hold: hold)
+                    self.threadSettingsPending[ref.id] = held.isEmpty ? nil : held
+                }
+            }
+            guard let next else { return }
+            press = next
+        }
+    }
+    /// Sends one change and reads what became of it from the thread the computer answers with. A change is never sent
+    /// again on its own: a lost answer leaves the chip on what the thread last reported, with Try again.
+    private func configureThread(_ press: PendingThreadSettings.Press, _ kind: ThreadSettingKind, in ref: ThreadRef) async -> PendingThreadSettings.Outcome {
+        #if DEBUG && os(iOS)
+        if isUIFixture { return await configureFixtureThread(press, kind, in: ref) }
+        #endif
+        guard let connection = connections[ref.hostID], let epoch = generations[ref.hostID] else { return .refused(nil) }
+        do {
+            let command = try Commands.configureThread(threadID: ref.threadID, patch: press.patch)
+            let result = try await connection.callReceived(["op": .string("command"), "command": command], as: Shell.self, id: UUID().uuidString.lowercased())
+            guard generations[ref.hostID] == epoch else { return .refused(nil) }
+            try applyShell(result.value, from: ref.hostID, sequence: result.sequence, reconcileAnswers: false)
+            return PendingThreadSettings.outcome(of: result.value, kind, sent: press.value, threadID: ref.threadID)
+        } catch let refusal as HostRefusal {
+            return .refused(refusal.localizedDescription)
+        } catch {
+            return .refused(nil)
+        }
+    }
+    /// Lets go of what each thread on this computer now shows, and of every thread it no longer lists.
+    private func observeThreadSettings(_ shell: Shell, from hostID: String) {
+        guard !threadSettingsPending.isEmpty else { return }
+        let prefix = hostID + "/"
+        for (key, held) in threadSettingsPending where key.hasPrefix(prefix) {
+            let threadID = String(key.dropFirst(prefix.count))
+            guard let thread = shell.host.threads.first(where: { $0.id == threadID }) else { threadSettingsPending[key] = nil; continue }
+            var next = held
+            next.observe(ThreadSettings.values(thread, model: CatalogEntry.model(shell.host.models ?? [], id: thread.modelId)),
+                         unconfirmed: ThreadSettings.unconfirmed(shell, threadID: threadID))
+            if next != held { threadSettingsPending[key] = next.isEmpty ? nil : next }
+        }
+    }
+
+    #if DEBUG && os(iOS)
+    /// The fixture's agent takes a change a moment after it goes, and a permission change only after eight seconds, so the
+    /// journey sees the chip marked and the line saying what is still in force.
+    private func configureFixtureThread(_ press: PendingThreadSettings.Press, _ kind: ThreadSettingKind, in ref: ThreadRef) async -> PendingThreadSettings.Outcome {
+        try? await Task.sleep(nanoseconds: kind == .permissions ? 8_000_000_000 : 300_000_000)
+        guard var root = fixtureShells[ref.hostID], var host = root["host"] as? [String: Any], var rows = host["threads"] as? [[String: Any]],
+              let index = rows.firstIndex(where: { ($0["id"] as? String) == ref.threadID }) else { return .refused(nil) }
+        for (key, value) in press.patch {
+            switch value {
+            case .string(let text): rows[index][key] = text
+            case .bool(let flag): rows[index][key] = flag
+            case .null: rows[index][key] = NSNull()
+            default: break
+            }
+        }
+        host["threads"] = rows; root["host"] = host; fixtureShells[ref.hostID] = root
+        guard let shell = try? JSONDecoder().decode(Shell.self, from: JSONSerialization.data(withJSONObject: root)) else { return .refused(nil) }
+        update(ref.hostID) { $0.shell = shell }
+        observeThreadSettings(shell, from: ref.hostID)
+        return PendingThreadSettings.outcome(of: shell, kind, sent: press.value, threadID: ref.threadID)
+    }
+    #endif
 }

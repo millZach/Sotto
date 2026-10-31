@@ -156,11 +156,13 @@ public struct Shell: Decodable, Equatable, Sendable {
     public let followups: [Followup]?
     /// Queued replies the queue has taken from their delivery, by draft. Older hosts send none.
     public let followupReceipts: [DeliveryReceipt]?
+    /// Thread settings changes the provider never gave a result for, which the computer keeps (ADR-0166). Read item by item.
+    public var unconfirmedSettings: ThreadList<UnconfirmedSetting>? = nil
     /// The thread records a shell push carried beside a state whose own list is empty, from a host that sends this
     /// connection only the ones that changed (`changed-thread-records`). Always nil once a shell leaves `HostConnection`,
     /// which puts the whole list back (`ThreadRecordsCache`).
     public var threadRecords: ChangedThreadRecords? = nil
-    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher }
+    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher, unconfirmedSettings }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         hostId = try c.decodeIfPresent(String.self, forKey: .hostId)
@@ -175,6 +177,7 @@ public struct Shell: Decodable, Equatable, Sendable {
         followups = try c.decodeIfPresent([Followup].self, forKey: .followups)
         followupReceipts = try c.decodeIfPresent([DeliveryReceipt].self, forKey: .followupReceipts)
         watcher = c.tolerant(WatcherPhoneState.self, .watcher)
+        unconfirmedSettings = c.tolerant(ThreadList<UnconfirmedSetting>.self, .unconfirmedSettings)
     }
     public func validate(hostID: String) throws {
         guard hostId == hostID, host.hostId == hostID,
@@ -202,12 +205,24 @@ public struct ProviderCapabilities: Decodable, Equatable, Sendable {
     public let projects: Bool?; public let threads: Bool?
     /// Whether the provider takes a message into a running turn, and compacts a thread's context when asked.
     public let steer: Bool?; public let compact: Bool?
+    /// Whether a thread's settings change in place, and whether a started thread's model and effort do too, or only its
+    /// permissions. Older computers send neither, and their threads' chips stay off the reply box (ADR-0166).
+    public var configureThread: Bool? = nil
+    public var configureThreadModel: Bool? = nil
 }
 public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let hostId: String?; public let projectId: String; public let title: String
     public let providerId: String?; public let status: String; public let requests: [AgentRequest]
     /// The thread's model in its computer's catalog (`host.models`), which says whether it takes photos.
     public let modelId: String?
+    /// What the thread runs with besides its model, for the reply box's chips (ADR-0166): its effort, Sotto's permission
+    /// mode or its provider's own, and its speed (`speed`, null at Standard, or the older `fastMode`). Older computers
+    /// may send none of them.
+    public var reasoningEffort: String? = nil
+    public var runtimeMode: String? = nil
+    public var providerMode: String? = nil
+    public var speed: String? = nil
+    public var fastMode: Bool? = nil
     public let earlierAvailable: Bool?; public let archivedAt: String?; public let summary: Summary?
     public let workspaceSettledAt: String?; public let settledAt: String?; public let settledOverride: String?
     public let backgroundWork: [BackgroundWork]?; public let compaction: Compaction?
@@ -381,7 +396,11 @@ public struct Attachment: Decodable, Identifiable, Equatable, Sendable {
     public var hasPreview: Bool { preview != nil }
 }
 public struct DeliveryReceipt: Decodable, Equatable, Sendable { public let threadId: String; public let draftId: String }
-public struct Delivery: Decodable, Equatable, Sendable { public let threadId: String; public let draftId: String; public let status: String }
+public struct Delivery: Decodable, Equatable, Sendable {
+    public let threadId: String; public let draftId: String; public let status: String
+    /// A delivery the user set aside, which no longer waits to go. Older computers never send it.
+    public var setAside: Bool? = nil
+}
 public struct AgentRequest: Decodable, Equatable, Identifiable, Sendable {
     public let id: String; public let kind: String; public let text: String; public let options: [RequestOption]
     public let questions: [Question]?; public let permissionChoices: [PermissionChoice]?; public let context: RequestContext?; public let delivery: String?
