@@ -499,7 +499,7 @@ it.skipIf(!BENCH || process.env.SOTTO_AUDIT_SOCKET !== '1')('measures what the h
   }
   const desktopAccepts = ['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'provider-opencode', 'provider-cursor', 'watcher-reads']
   await ask(desktop, 'hello', { op: 'hello', afterSeq: 9_007_199_254_740_991, accepts: desktopAccepts })
-  await ask(phone, 'hello', { op: 'hello', afterSeq: 9_007_199_254_740_991, accepts: ['detail-delta', 'client-liveness', 'activity-summaries', 'model-catalog-revision', 'provider-opencode', 'provider-cursor'] })
+  await ask(phone, 'hello', { op: 'hello', afterSeq: 9_007_199_254_740_991, accepts: ['detail-delta', 'client-liveness', 'activity-summaries', 'model-catalog-revision', 'provider-opencode', 'provider-cursor', 'changed-thread-records'] })
   const helloBytes = { desktop: Buffer.byteLength(nativeStringify(desktop.messages.find(message => message.id === 'hello'))), phone: Buffer.byteLength(nativeStringify(phone.messages.find(message => message.id === 'hello'))) }
   const streamIds = p.streamSessions.map(session => p.control.shell().host.threads.find(thread => thread.title === `Synthetic thread ${session}`)?.id).filter((id): id is string => id !== undefined)
   // The desktop's own client of this host, as main runs it for a paired host: its work per push is profiled below.

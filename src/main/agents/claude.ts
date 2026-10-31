@@ -29,7 +29,7 @@ import { subagentRoleInstructions } from '../../shared/workerRoles'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
 import { resolveModel } from '../../shared/modelCatalog'
 import { DEFAULT_ULTRACODE_EFFORT, ULTRACODE, ultracodeRunsAt, type UltracodeEffort } from '../../shared/ultracode'
-import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { questionInstructions } from './questionInstructions'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
@@ -323,9 +323,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
   profileRefusalHandler(id: string) {
     const generation = this.generation, runtime = this.runtimes.get(id), spare = this.spares.get(id)
     if (!runtime && !spare) return undefined
-    return (reason: string) => {
+    return (reason: string, history = false) => {
       if (generation !== this.generation || this.runtimes.get(id) !== runtime || this.spares.get(id) !== spare) return
-      return this.stopWatcher(id, this.resolvedWatcherProfiles.get(id), reason, generation, runtime)
+      return this.stopWatcher(id, this.resolvedWatcherProfiles.get(id), reason, generation, runtime, !history)
     }
   }
   private browserTools: BrowserAgentTools | undefined
@@ -367,12 +367,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
     } catch (error) {
       this.checkProfileContinuation(id, generation, runtime)
       const reason = error instanceof WatcherProfileRefusal ? error.message : 'Watcher’s saved profile could not be verified. Its session was stopped. Reopen Watcher to recover.'
-      await this.stopWatcher(id, this.resolvedWatcherProfiles.get(id), reason, generation, runtime)
+      await this.stopWatcher(id, this.resolvedWatcherProfiles.get(id), reason, generation, runtime, !(error instanceof WatcherHistoryRefusal))
       throw error instanceof WatcherProfileRefusal ? error : new WatcherProfileRefusal(reason)
     }
   }
+  /** `providerError` is false for an earlier Watcher conversation, whose refusal says nothing about Claude Code itself. */
   private async stopWatcher(id: string, profile: WatcherLaunchProfile | undefined, reason: string,
-    generation = this.generation, expectedRuntime?: Runtime): Promise<void> {
+    generation = this.generation, expectedRuntime?: Runtime, providerError = true): Promise<void> {
     this.checkProfileContinuation(id, generation, expectedRuntime)
     try { profile?.revoke(reason) } catch { /* A broken tool-server cleanup must still stop its provider process. */ }
     const spare = this.spares.get(id)
@@ -394,7 +395,8 @@ export class ClaudeStreamJsonHost implements AgentHost {
       }
       this.changed(id)
     }
-    this.state.error = reason; this.emit()
+    if (providerError) this.state.error = reason
+    this.emit()
   }
   private readonly usage: NativeUsage
   private readonly aliasStore: AtomicJsonStore<Record<string, Alias>>
@@ -688,7 +690,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const watched = [...this.observed].filter(id => aliases[id] && aliases[id].kind !== 'personal' && !aliases[id].rollbackPending)
     const startNext = async (): Promise<void> => {
       for (let id = watched.shift(); id !== undefined && generation === this.generation; id = watched.shift()) {
-        try { await this.start(id) } catch (error) { if (generation === this.generation) { this.threads.get(id)!.status = 'error'; this.changed(id); this.state.error = error instanceof WatcherProfileRefusal ? error.message : CLAUDE_RESUME_FAILED_SESSION } }
+        try { await this.start(id) } catch (error) {
+          if (generation !== this.generation) continue
+          this.threads.get(id)!.status = 'error'; this.changed(id)
+          if (!(error instanceof WatcherHistoryRefusal)) this.state.error = error instanceof WatcherProfileRefusal ? error.message : CLAUDE_RESUME_FAILED_SESSION
+        }
       }
     }
     await Promise.all(Array.from({ length: Math.min(Math.max(1, this.options.connectStarts ?? CONNECT_STARTS), watched.length) }, startNext))
@@ -737,10 +743,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const generation = this.generation
       stops.push(this.stopSession(id).catch(() => undefined).then(() => {
         if (generation !== this.generation || !this.state.connected || !this.observed.has(id) || !this.aliases[id] || this.aliases[id].rollbackPending) return
-        void this.start(id).catch(() => {
+        void this.start(id).catch((error: unknown) => {
           if (generation !== this.generation) return
           const thread = this.threads.get(id); if (thread) { thread.status = 'error'; this.changed(id) }
-          this.state.error = CLAUDE_RESUME_FAILED; this.emit()
+          if (!(error instanceof WatcherHistoryRefusal)) this.state.error = CLAUDE_RESUME_FAILED
+          this.emit()
         })
       }))
     }
@@ -837,7 +844,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
     for (const id of this.observed) if (this.aliases[id]) void this.start(id).catch(error => {
       if (generation !== this.generation) return
       const thread = this.threads.get(id); if (thread) { thread.status = 'error'; this.changed(id) }
-      this.state.error = error instanceof WatcherProfileRefusal ? error.message : CLAUDE_RESUME_FAILED; this.emit()
+      // An earlier Watcher conversation in view is read only history: refusing to start it is not Claude Code failing.
+      if (!(error instanceof WatcherHistoryRefusal)) this.state.error = error instanceof WatcherProfileRefusal ? error.message : CLAUDE_RESUME_FAILED
+      this.emit()
     })
     // A thread coming into view catches up at once, from its cursor, with what was written while nobody looked: work done
     // in Claude Code outside Sotto shows as it opens rather than at the poll's next tick (#992). A read that fails is

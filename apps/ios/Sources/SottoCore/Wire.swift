@@ -158,6 +158,10 @@ public struct Shell: Decodable, Equatable, Sendable {
     public let followupReceipts: [DeliveryReceipt]?
     /// Thread settings changes the provider never gave a result for, which the computer keeps (ADR-0166). Read item by item.
     public var unconfirmedSettings: ThreadList<UnconfirmedSetting>? = nil
+    /// The thread records a shell push carried beside a state whose own list is empty, from a host that sends this
+    /// connection only the ones that changed (`changed-thread-records`). Always nil once a shell leaves `HostConnection`,
+    /// which puts the whole list back (`ThreadRecordsCache`).
+    public var threadRecords: ChangedThreadRecords? = nil
     private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher, unconfirmedSettings }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
@@ -181,7 +185,8 @@ public struct Shell: Decodable, Equatable, Sendable {
     }
 }
 public struct HostSnapshot: Decodable, Equatable, Sendable {
-    public let hostId: String?; public let name: String; public let threads: [ThreadSummary]
+    /// `threads` is a `var` only so the connection can put back the records a push left out (`ThreadRecordsCache`).
+    public let hostId: String?; public let name: String; public var threads: [ThreadSummary]
     public let projects: [Project]; public let providers: [Provider]?
     /// Always whole once a shell leaves `HostConnection`: a catalog the host named by revision is put back there.
     public var models: [ThreadModel]?
