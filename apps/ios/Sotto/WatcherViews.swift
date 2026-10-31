@@ -1772,6 +1772,7 @@ private struct WatcherPermissionSheet: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .presentationBackground { SheetBackdrop(wash: false) }
+        .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)
     }
 
@@ -2169,6 +2170,7 @@ private struct WatchPicker: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .presentationBackground { SheetBackdrop(wash: false) }
+        .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)
     }
     private func pickRow(_ row: HostedThread) -> some View {

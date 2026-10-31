@@ -188,6 +188,7 @@ private struct AgentsSheet: View {
         // Ends when nothing is running or the sheet goes.
         .task(id: AgentsRoster.followsAgents(page?.rows ?? [])) { if AgentsRoster.followsAgents(page?.rows ?? []) { await follow() } }
         .presentationBackground { SheetBackdrop(wash: false) }
+        .environment(\.sottoOnSheet, true)
         .presentationCornerRadius(Radius.xl)
         .accessibilityAction(.escape) { dismiss() }
     }
