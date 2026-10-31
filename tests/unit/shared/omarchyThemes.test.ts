@@ -12,7 +12,7 @@ import { BUILT_IN_THEMES, DEFAULT_THEME_ID, resolveThemeFor, parseCustomThemes }
 import { OMARCHY_THEME_ID, OMARCHY_TEXT_PAIRS, guardOmarchyColors, omarchySuccessText, parseOmarchyTheme, readableOmarchyMix } from '../../../src/shared/themes/omarchy'
 import { OMARCHY_CSS_TEXT_PAIRS, OMARCHY_GRAPHIC_COLOR_TOKENS } from '../../fixtures/renderer/omarchyTextSurfaces'
 import { parseTokenBlocks, rootDeclarations, resolveColor, contrast, over } from '../../fixtures/renderer/themeTokenResolver'
-import { PAINTED_TEXT_PAIRS, paintedContrast, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
+import { PAINTED_TEXT_PAIRS, paintedContrast, placeholderApartFromText, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
 
 const entries = Object.entries(fixtures.themes)
 const blocks = parseTokenBlocks(readFileSync('src/renderer/src/styles/tokens.css', 'utf8'))
@@ -78,6 +78,9 @@ describe('Omarchy M3 and readability check', () => {
     for (const pair of PAINTED_TEXT_PAIRS) {
       expect(paintedContrast(painted, pair), `${name}: ${pair.ink} on ${pair.surface.join(' + ')} (${pair.where})`).toBeGreaterThanOrEqual(4.5)
     }
+    // The muted foreground can be lifted to the body text for Changes, but the composer's placeholder still reads as a
+    // hint: dimmer than typed text, not the same ink.
+    expect(placeholderApartFromText(painted), `${name}: placeholder against typed text`).toBeGreaterThanOrEqual(1.2)
   })
   it.each(entries)('%s keeps widget status text readable through the widget token projection', (name, fixture) => {
     const theme = parseOmarchyTheme(fixture.rendered, name)
