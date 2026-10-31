@@ -1283,7 +1283,7 @@ private struct WatcherOwnChangeLine: View {
 // MARK: - Cards that wait on the user (4B)
 
 /// A question or permission in Watcher's page: a worker's own card, or Watcher's own. One-tap answers are made here and go
-/// to the thread that asked, as the user's own answer under this iPhone's Can answer: through the computer that runs
+/// to the thread that asked, as the user's own answer under this iPhone's answers grant: through the computer that runs
 /// Watcher for its own threads, or, for a thread on another computer this iPhone is paired with, to that computer, as
 /// the thread's own page would send it. Anything more opens the request sheet. Watcher answers nothing.
 private struct WatcherRequestCard: View {
@@ -1728,7 +1728,7 @@ private struct WatcherPermissionChip: View {
 }
 
 /// The four modes, each with what Watcher does under it, the chosen one ticked; then what stays true in every mode. An
-/// iPhone without Can answer on that computer can choose only to keep Watcher asking first, and the sheet says so.
+/// iPhone that can't answer on that computer can choose only to keep Watcher asking first, and the sheet says so.
 private struct WatcherPermissionSheet: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.

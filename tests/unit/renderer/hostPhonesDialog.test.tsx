@@ -12,7 +12,7 @@ import type { PhonesState } from '../../../src/shared/phones'
 afterEach(cleanup)
 
 const REMOTE = '22222222-2222-4222-8222-222222222222'
-const PHONE = { clientId: 'phone-1', name: 'Zach’s iPhone', pairedAt: '2026-10-03T09:00:00.000Z', connected: true, canAnswer: false }
+const PHONE = { clientId: 'phone-1', name: 'Zach’s iPhone', pairedAt: '2026-10-03T09:00:00.000Z', connected: true, canAnswer: true }
 function phones(patch: Partial<PhonesState> = {}): PhonesState {
   return phonesState({ enabled: true, localHostRunning: true, phase: 'on', servePort: undefined, tailscale: { status: 'ok', hostName: 'forge', dnsName: 'forge.tail5728ca.ts.net' }, serve: { status: 'ok' },
     address: 'https://forge.tail5728ca.ts.net:8443', computerName: 'forge', defaultName: 'forge', code: null, phones: [PHONE], answersAvailable: true, ...patch })

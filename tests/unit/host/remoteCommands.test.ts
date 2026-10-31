@@ -130,7 +130,7 @@ describe('remote command allow-list', () => {
       // Neither becomes an ordinary remote command or grants answer authority.
       'watcher-control', 'watcher-read',
       'watcher-phone-read', 'watcher-phone-send', 'watcher-phone-answer', 'watcher-phone-prepare-stop-all', 'watcher-phone-stop-all',
-      // Optional phone management: pairing admits watching; permissive mode changes recheck Can answer.
+      // Optional phone management: pairing admits watching; permissive mode changes recheck the answers grant.
       'watcher-phone-set-permission', 'watcher-phone-watch', 'watcher-phone-unwatch',
       // Optional phone steering: removing the user's own follow-up for Watcher, by its queue item, needs only the pairing (#1229).
       'watcher-phone-remove-followup',

@@ -299,6 +299,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
           mayAnswer: client => policy?.mayGrant(client).allowed ?? false,
           setAnswers: (clientId, allowed) => {
             if (!policy) throw new Error('Permission policies are unavailable on this host.')
+            // A phone's pairing is its grant, and Remove the only revocation (ADR-0033); `--deny-answers` is for a desktop.
+            if (!allowed && tailnet.isPhone(clientId)) throw new Error('Remove a phone to stop it answering.')
             policy.setRemoteAnswers(clientId, allowed, 'The user allowed this paired device to answer permission requests on the host.')
           },
         })

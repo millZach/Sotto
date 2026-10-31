@@ -16,7 +16,7 @@ private final class ReceiptPause: @unchecked Sendable {
 
 /// The Watcher tab on the real AppModel, against a scripted computer that runs Watcher (ADR-0073, amended October 11,
 /// 2026): only a computer that offers it gets a tab, the tab's dot and badge, answers that go to the thread that asked
-/// under Can answer, Stop all that asks first, the box's one draft ID per exact text, and Watcher's own alerts.
+/// under an answers grant, Stop all that asks first, the box's one draft ID per exact text, and Watcher's own alerts.
 final class WatcherModelTests: XCTestCase {
     private let laptop = "00000000-0000-4000-8000-000000000001"
     private let forge = "00000000-0000-4000-8000-000000000009"
@@ -1318,10 +1318,10 @@ final class WatcherModelTests: XCTestCase {
         let model = try await fixture(features: Self.manageFeatures, spec: Spec(status: "idle", runtimeMode: "approval-required", currentMode: "approval-required"))
         let before = page(Spec(status: "idle"))
         manage({ _, _ in
-            try self.json(#"{"status":"refused","code":"PERMISSION_TOO_WIDE","message":"This phone needs Can answer to let Watcher act without asking. Nothing changed.","retryable":false}"#)
+            try self.json(#"{"status":"refused","code":"PERMISSION_TOO_WIDE","message":"This phone can’t answer on this computer, so Watcher keeps asking first. Nothing changed. Change Watcher’s permissions in Sotto on this computer.","retryable":false}"#)
         }, read: { before })
         await model.setWatcherPermission("auto-accept-edits", on: laptop)
-        XCTAssertEqual(model.feedback, "This phone needs Can answer to let Watcher act without asking. Nothing changed.",
+        XCTAssertEqual(model.feedback, "This phone can’t answer on this computer, so Watcher keeps asking first. Nothing changed. Change Watcher’s permissions in Sotto on this computer.",
                        "The computer's refusal, in its own words")
         XCTAssertEqual(model.watcherPermission(laptop), "approval-required", "The chip goes back")
         XCTAssertTrue(model.watcherManaging.isEmpty)

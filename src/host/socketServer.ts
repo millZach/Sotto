@@ -31,7 +31,7 @@ import { desktopDefaultsReceiptSchema } from '../shared/desktopDefaults'
 import { ProviderSignInRefusal, type ProviderSignIns } from './providerSignIn'
 import { DEFLATE_RESPONSE, deflateOffered, SocketFrames } from './socketFrames'
 import { CutBodies } from '../shared/activityBodies'
-import { hostPhonesCommandSchema, type HostPhonesCommand, type PhonesState } from '../shared/phones'
+import { hostAdminPhonesCommandSchema, type HostAdminPhonesCommand, type PhonesState } from '../shared/phones'
 import { CommandReceipts, type CommandReceipt } from './commandReceipts'
 import { HttpBudgets } from './httpBudgets'
 import { PAGE_REQUESTS_PER_MINUTE, QUESTION_PAGE_PATH, serveQuestionPage } from './questionPageRoute'
@@ -49,7 +49,7 @@ import type { HostThreadMoves } from '../main/agents/threadMovesHost'
 
 /** The HTTP listener's request bodies, checked against schemas built once rather than on every request. */
 const adminPhonesRequest = z.object({}).strict()
-const adminPhonesCommandRequest = z.object({ command: hostPhonesCommandSchema }).strict()
+const adminPhonesCommandRequest = z.object({ command: hostAdminPhonesCommandSchema }).strict()
 const adminTailnetRequest = z.object({ enabled: z.boolean().optional() }).strict()
 const adminClientRequest = z.object({ clientId: z.string().min(1).max(512) }).strict()
 const pairRequest = z.object({ v: z.literal(1), code: z.string().min(1).max(32), name: z.string().min(1).max(256) }).strict()
@@ -247,7 +247,7 @@ export interface HostPhonesAnswer { readonly state: PhonesState; readonly url?: 
 export interface HostTailnetAnswer { readonly enabled: boolean; readonly state: PhonesState; readonly error?: string | undefined }
 export interface HostPhonesAdministration {
   get(): PhonesState
-  command(command: HostPhonesCommand): Promise<HostPhonesAnswer>
+  command(command: HostAdminPhonesCommand): Promise<HostPhonesAnswer>
   /** Reads `tailnetConnections`, or sets it and waits for Serve to follow. */
   tailnet(request: { readonly enabled?: boolean | undefined }): Promise<HostTailnetAnswer>
 }
@@ -1852,8 +1852,6 @@ export async function startSocketServer(options: SocketServerOptions) {
     peers: (): number => peers.size,
     /** The paired clients holding an open socket now, each once. */
     connectedClients: (): string[] => [...new Set([...peers].map(peer => peer.client.clientId))],
-    /** A changed policy is reflected in every client's own next shell without reopening its session. */
-    refreshCapabilities: (): void => { shellPublisher.publish(service.shell()) },
     /**
      * Closes at once every socket whose client is no longer paired, after a revocation made outside this listener, and
      * every phone's while phones are not admitted, after phone access turned off with the listener staying up.

@@ -1,5 +1,7 @@
 # A host's phone access is turned on from the desktop
 
+October 30, 2026 amendment: [ADR-0033, October 30 amendment](0033-the-desktop-lets-paired-phones-reach-its-threads.md#october-30-amendment-pairing-a-phone-lets-it-answer). A phone the dialog's code paired can answer on the host from its pairing, so each phone in the dialog has **Remove** and no **Can answer**, and the host writes the record at every start for a listed phone without one. The host's `--deny-answers` refuses a listed phone. A phone paired from the host's own `--pairing-code` before this dialog existed is not listed, is not a phone to the host, and keeps whatever `--allow-answers` gave it.
+
 ## Status
 
 Accepted October 4, 2026, by the owner's choice of variant B, "Dialog from the row", in `docs/prototypes/host-phone-access-prototype.html`. The owner asked for it after the iPhone could not add forge, a host with no monitor: the error said to turn on phone access in Settings > Phones on forge, which nobody can open there. They chose a switch per host over relaying every host's threads through the main computer, the host's pairing code and paired phones shown on this computer, Sotto saying plainly when Tailscale is missing or Serve is off on the host rather than installing anything, and the iPhone's Add computer naming this route. Amends [ADR-0033](0033-the-desktop-lets-paired-phones-reach-its-threads.md), which said the headless host sends no name, and [ADR-0025](0025-headless-host-and-client-identity.md).

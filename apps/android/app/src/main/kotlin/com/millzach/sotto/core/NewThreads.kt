@@ -62,7 +62,7 @@ data class ThreadModel(
             }
         }
 
-    // Prefer an asking mode. A grant is never selected just because Can answer is on.
+    // Prefer an asking mode. A grant is never selected just because this phone may answer.
     val startingPermission: String get() = permissions.firstOrNull { !it.grants }?.id ?: ""
 }
 

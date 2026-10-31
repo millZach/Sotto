@@ -795,7 +795,7 @@ msgid "A merged thread stays put until you settle it."
 msgstr ""
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
-msgid "A paired phone reads threads and replies. It answers questions and permissions only after you turn on Can answer for it."
+msgid "A paired phone reads threads, replies, and answers questions and permissions. Remove a phone to take that away."
 msgstr ""
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
@@ -1271,14 +1271,6 @@ msgstr ""
 #. After a step that is done, as in "Signed in by the agent".
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "by the agent"
-msgstr ""
-
-#: src/renderer/src/features/settings/phoneParts.tsx
-msgid "Can answer"
-msgstr ""
-
-#: src/renderer/src/features/settings/phoneParts.tsx
-msgid "Can answer: let {name} answer questions and permissions"
 msgstr ""
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
