@@ -31,12 +31,12 @@ function holdingMessage(holder: CheckoutHolder): string {
  * nothing was changed and what to do; `threadId` names the thread holding it, when one does, so a window can open it.
  */
 export class CheckoutHeldRefusal extends GitActionRefusal {
-  constructor(message: string, readonly threadId: string | undefined, private readonly said?: { readonly holding: string; readonly recovery: string }) { super(message) }
+  constructor(message: string, readonly threadId: string | undefined, private readonly parts?: { readonly holding: string; readonly recovery: string }) { super(message) }
   /**
-   * The same hold with what was not done said in place of "Nothing was changed.", such as "Nothing was brought back."
-   * for Bring changes back (#1866). The message as it is when the refusal was made without its parts.
+   * The same hold with `outcome` in place of "Nothing was changed.", such as "Nothing was brought back." for Bring changes
+   * back (#1866). The message as it is when the refusal was made without its parts.
    */
-  saying(nothing: string): string { return this.said ? `${this.said.holding} ${nothing} ${this.said.recovery}` : this.message }
+  withOutcome(outcome: string): string { return this.parts ? `${this.parts.holding} ${outcome} ${this.parts.recovery}` : this.message }
 }
 
 export function checkoutMutationRefusal(holder: CheckoutHolder): CheckoutHeldRefusal {

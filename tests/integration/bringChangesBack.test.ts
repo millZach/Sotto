@@ -4,6 +4,7 @@ import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { GitActions } from '../../src/main/agents/gitActions'
+import { CheckoutHeldRefusal } from '../../src/main/agents/checkoutMutations'
 import type { AgentThread } from '../../src/shared/agents'
 import { GitStatusReader } from '../../src/main/agents/gitStatus'
 import { BRING_BACK_NO_TARGET, BRING_BACK_OFF, BRING_BACK_QUESTION_GONE, bringBackTarget } from '../../src/shared/bringChangesBack'
@@ -226,6 +227,22 @@ describe('bringing a thread’s commits back to the branch of the thread it bega
         await expect(f.host.bringChangesBack({ threadId: 'parent', actionId: randomUUID(), away: { moveId, from, target: 'main' } })).rejects.toThrow()
       }
     } finally { held() }
+    expect(git(project, 'for-each-ref', 'refs/sotto/incoming')).toBe('')
+    expect(main()).toBe(before)
+  })
+
+  it('refuses a branch from another machine while a thread holds the parent’s folder as a hold that names it, and lets the ref go (#1866)', async () => {
+    const { f, project, main } = await family()
+    const { elsewhere, from, land } = await arrival(project, f.root)
+    await commitFile(elsewhere, 'away.txt', 'from forge\n', 'Work done on forge')
+    const before = main()
+    f.host.setPendingThreadWork(id => id === 'parent', () => 'failed-followups')
+    const { moveId } = land()
+    const refusal = await f.host.bringChangesBack({ threadId: 'parent', actionId: randomUUID(), away: { moveId, from, target: 'main' } }).then(() => null, (error: unknown) => error)
+    // The folder is held before Git runs, so the press's own reply says so, with the thread that holds it, as a Git action's does.
+    expect(refusal).toBeInstanceOf(CheckoutHeldRefusal)
+    expect((refusal as CheckoutHeldRefusal).message).toBe('Thread "WAV preview stall" has queued follow-ups that did not send. Nothing was brought back. Resume or remove them, then try again.')
+    expect((refusal as CheckoutHeldRefusal).threadId).toBe('parent')
     expect(git(project, 'for-each-ref', 'refs/sotto/incoming')).toBe('')
     expect(main()).toBe(before)
   })
