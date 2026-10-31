@@ -55,6 +55,10 @@ final class WatcherTests: XCTestCase {
         let standard = try XCTUnwrap(WatcherSettings.press(.speed, value: ThreadSettings.standard, current: current, catalog: catalog))
         guard case .object(let request)? = standard["request"] else { return XCTFail("Missing request") }
         XCTAssertEqual(request["speed"], .null); XCTAssertTrue(request.keys.contains("speed"))
+        XCTAssertEqual(request["reasoningEffort"], .string("high"), "A speed change keeps Watcher's effort, which a model named alone would reset")
+        // Ultracode is never Watcher's.
+        let claude = try decode([ThreadModel].self, #"[{"id":"opus","name":"Opus 5.5","provider":"Claude Code","providerId":"claude","ready":true,"reasoningEfforts":["high","max","ultracode"]}]"#)
+        XCTAssertEqual(WatcherSettings.efforts(claude.first), ["high", "max"])
         // Another provider's model starts a new Watcher there, through the same open.
         XCTAssertTrue(WatcherSettings.replaces("opus", current: current, catalog: catalog))
         XCTAssertFalse(WatcherSettings.replaces("astra", current: current, catalog: catalog))

@@ -1773,14 +1773,8 @@ private struct WatcherSettingsRow: View {
         picks += 1
         Task { await model.chooseWatcherSetting(kind, value, on: hostID) }
     }
-    /// One choice in a chip's menu, a toggle so iOS marks the one in force, as in a thread's box.
-    @ViewBuilder private func option(_ name: String, line: String? = nil, chosen: Bool, action: @escaping () -> Void) -> some View {
-        let isOn = Binding(get: { chosen }, set: { if $0 { action() } })
-        if let line {
-            Toggle(isOn: isOn) { Text(verbatim: name); Text(verbatim: line) }
-        } else {
-            Toggle(isOn: isOn) { Text(verbatim: name) }
-        }
+    private func option(_ name: String, line: String? = nil, chosen: Bool, action: @escaping () -> Void) -> some View {
+        SettingOption(name: name, line: line, chosen: chosen, action: action)
     }
 
     private var modelMenu: some View {
@@ -1811,7 +1805,7 @@ private struct WatcherSettingsRow: View {
     }
 
     @ViewBuilder private var effortMenu: some View {
-        let efforts = shownModel?.reasoningEfforts ?? []
+        let efforts = WatcherSettings.efforts(shownModel)
         if !efforts.isEmpty, let values {
             let shown = values.effort.isEmpty ? String(localized: "Default effort") : EffortWords.name(values.effort)
             Menu {

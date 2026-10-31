@@ -366,9 +366,9 @@ export class WatcherPhoneService {
     const refused = (result: { status: string }): WatcherRefusal | null => result.status === 'refused' ? result as WatcherRefusal : null
     if (action === 'open') {
       const { target: _target, ...choice } = request as WatcherPhoneOpen; void _target
-      return refused(await this.watcher.open(choice))
+      return refused(await this.watcher.open(choice, check))
     }
-    if (action === 'new') return refused(await this.watcher.startNew())
+    if (action === 'new') return refused(await this.watcher.startNew(check))
     if (action === 'dismiss-handover') return refused(this.watcher.dismissHandover())
     const threadId = request.target.threadId
     const stopped = await this.control.commandFromWatcherPhone({ type: 'interrupt', threadId },

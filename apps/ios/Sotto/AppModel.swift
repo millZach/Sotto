@@ -849,11 +849,18 @@ extension AppModel {
     /// Why the model, effort and speed chips can't be pressed now, as on the desktop: while Watcher's turn runs or a card
     /// of its own waits, while another change to Watcher is on its way, or away from its computer. Nil when they can.
     func watcherSettingsHeld(_ hostID: String) -> String? {
-        guard let page = watcherPage(hostID), page.current != nil, online(hostID) else { return ThreadSettings.FixedReason.away.hint }
+        guard let page = watcherPage(hostID), let current = page.current, online(hostID), current.connected else { return ThreadSettings.FixedReason.away.hint }
         if watcherManaging.contains(Self.composerKey(hostID)) || watcherManaging.contains(Self.permissionKey(hostID)) {
             return String(localized: "Can change once the last change to Watcher is done.")
         }
-        return watcherPermissionFixed(hostID) ? WatcherPermissions.fixedHint : nil
+        if watcherPermissionFixed(hostID) { return WatcherPermissions.fixedHint }
+        // A message on its way starts a turn, which a change would run behind; a permission mode its provider hasn't
+        // confirmed holds the rest, as on a thread's chips (ADR-0166).
+        if watcherSending[hostID] != nil || page.draftDeliveries?.contains(where: { ["queued", "submitting", "uncertain"].contains($0.status) }) == true
+            || page.followups?.contains(where: { $0.status == "dispatching" || $0.status == "uncertain" }) == true {
+            return ThreadSettings.FixedReason.working.hint
+        }
+        return watcherPermissionInForce(hostID) != nil ? ThreadSettings.FixedReason.unconfirmed.hint : nil
     }
     /// Chooses Watcher's model, effort or speed. The chip shows it at once; another provider's model starts a new Watcher.
     /// Refused, the chip goes back and the computer's words say why.

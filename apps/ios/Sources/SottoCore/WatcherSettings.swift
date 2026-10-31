@@ -48,6 +48,10 @@ public enum WatcherSettings {
                                    permissions: "", speed: current.speed ?? ThreadSettings.standard)
     }
 
+    /// The effort levels Watcher's chip offers on a model: the model's own, without Ultracode, which is a person's choice
+    /// for a thread and never Watcher's (ADR-0148, decision 6).
+    public static func efforts(_ model: ThreadModel?) -> [String] { (model?.reasoningEfforts ?? []).filter { $0 != "ultracode" } }
+
     /// Whether a model is another provider's, so choosing it starts a new Watcher.
     public static func replaces(_ modelID: String, current: WatcherPhoneState.Current, catalog: [ThreadModel]) -> Bool {
         guard let chosen = CatalogEntry.model(catalog, id: modelID) else { return false }
@@ -66,9 +70,12 @@ public enum WatcherSettings {
             if chosen.id == model(current, catalog: catalog)?.id { return nil }
             return WatcherWire.open(target: current.target, provider: provider, modelID: chosen.id)
         case .effort:
+            guard efforts(model(current, catalog: catalog)).contains(value) else { return nil }
             return WatcherWire.open(target: current.target, provider: current.provider, modelID: current.modelId, effort: value)
         case .speed:
-            return WatcherWire.open(target: current.target, provider: current.provider, modelID: current.modelId, speed: value)
+            // The model goes with the change, so the effort goes too: a model named alone takes its default effort.
+            return WatcherWire.open(target: current.target, provider: current.provider, modelID: current.modelId,
+                                    effort: shown.effort, speed: value)
         case .permissions:
             return nil
         }

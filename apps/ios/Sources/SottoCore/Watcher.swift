@@ -208,11 +208,8 @@ public enum WatcherWire {
         guard ["approval-required", "auto-accept-edits", "auto", "full-access"].contains(runtimeMode) else { throw ClientError.invalidRequest }
         return ["op": .string("watcher-phone-set-permission"), "request": .object(["runtimeMode": .string(runtimeMode)])]
     }
-    public static func watch(target: WatcherTarget) -> [String: JSONValue] { watchOperation("watcher-phone-watch", target) }
-    public static func unwatch(target: WatcherTarget) -> [String: JSONValue] { watchOperation("watcher-phone-unwatch", target) }
-    private static func watchOperation(_ operation: String, _ target: WatcherTarget) -> [String: JSONValue] {
-        ["op": .string(operation), "request": .object(["target": .object(["hostId": .string(target.hostId), "threadId": .string(target.threadId)])])]
-    }
+    public static func watch(target: WatcherTarget) -> [String: JSONValue] { targetOperation("watcher-phone-watch", target) }
+    public static func unwatch(target: WatcherTarget) -> [String: JSONValue] { targetOperation("watcher-phone-unwatch", target) }
     /// Watcher's model, effort or speed, through the computer's own Watcher open: another provider's model starts a new
     /// Watcher there. A speed of `standard` goes as null; nil leaves the speed as it is.
     public static func open(target: WatcherTarget, provider: String, modelID: String, effort: String? = nil, speed: String? = nil) -> [String: JSONValue] {
@@ -222,12 +219,13 @@ public enum WatcherWire {
         return ["op": .string("watcher-phone-open"), "request": .object(request)]
     }
     /// New Watcher, on the current one's provider, model, effort, speed and permissions, with a handover of this one offered.
-    public static func startNew(target: WatcherTarget) -> [String: JSONValue] { currentOperation("watcher-phone-new", target) }
+    public static func startNew(target: WatcherTarget) -> [String: JSONValue] { targetOperation("watcher-phone-new", target) }
     /// Stops Watcher's own turn.
-    public static func stopTurn(target: WatcherTarget) -> [String: JSONValue] { currentOperation("watcher-phone-stop-turn", target) }
+    public static func stopTurn(target: WatcherTarget) -> [String: JSONValue] { targetOperation("watcher-phone-stop-turn", target) }
     /// Puts the handover offer away: the new Watcher's first message goes without it.
-    public static func dismissHandover(target: WatcherTarget) -> [String: JSONValue] { currentOperation("watcher-phone-dismiss-handover", target) }
-    private static func currentOperation(_ operation: String, _ target: WatcherTarget) -> [String: JSONValue] {
+    public static func dismissHandover(target: WatcherTarget) -> [String: JSONValue] { targetOperation("watcher-phone-dismiss-handover", target) }
+    /// An operation whose request names one thread: a watched one, or the current Watcher.
+    private static func targetOperation(_ operation: String, _ target: WatcherTarget) -> [String: JSONValue] {
         ["op": .string(operation), "request": .object(["target": targetValue(target)])]
     }
     private static func targetValue(_ target: WatcherTarget) -> JSONValue {
