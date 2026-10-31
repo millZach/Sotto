@@ -1915,7 +1915,8 @@ import UIKit
     }
     /// A menu's item whose words start with these, wherever iOS draws the menu.
     private func menuItem(_ start: String) -> XCUIElement {
-        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", start)).firstMatch
+        let kinds = [XCUIElement.ElementType.button.rawValue, XCUIElement.ElementType.switch.rawValue]
+        return app.descendants(matching: .any).matching(NSPredicate(format: "elementType IN %@ AND label BEGINSWITH %@", kinds, start)).firstMatch
     }
     /// Waits for an element to read this value: a chip settling on a choice.
     private func waitForValue(_ element: XCUIElement, _ value: String, timeout: TimeInterval = 10) -> XCTWaiter.Result {

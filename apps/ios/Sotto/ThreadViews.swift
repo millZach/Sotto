@@ -2187,13 +2187,25 @@ private struct ThreadSettingsRow: View {
         return opens
     }
 
+    /// One choice in a chip's menu. A toggle, so iOS marks the one in force by its state, which it keeps at the
+    /// accessibility text sizes where it drops a menu item's images; the line is the item's second text, its subtitle.
+    @ViewBuilder private func option(_ name: String, line: String? = nil, chosen: Bool, action: @escaping () -> Void) -> some View {
+        let isOn = Binding(get: { chosen }, set: { if $0 { action() } })
+        if let line {
+            Toggle(isOn: isOn) {
+                Text(verbatim: name)
+                Text(verbatim: line)
+            }
+        } else {
+            Toggle(isOn: isOn) { Text(verbatim: name) }
+        }
+    }
+
     private var modelMenu: some View {
         Menu {
             Section(panel.provider) {
                 ForEach(panel.models) { item in
-                    Button { choose(.model, item.id) } label: {
-                        if item.id == panel.model?.id { Label(item.name, systemImage: "checkmark") } else { Text(verbatim: item.name) }
-                    }
+                    option(item.name, chosen: item.id == panel.model?.id) { choose(.model, item.id) }
                 }
             }
         } label: {
@@ -2216,13 +2228,8 @@ private struct ThreadSettingsRow: View {
             Menu {
                 Section(String(localized: "Effort", comment: "The field for how hard a new thread's model reasons.")) {
                     ForEach(Array(panel.efforts.enumerated()), id: \.element) { index, level in
-                        Button { choose(.effort, level) } label: {
-                            Label {
-                                Text(verbatim: EffortWords.name(level))
-                                Text(verbatim: EffortWords.line(level, index: index, count: panel.efforts.count))
-                            } icon: {
-                                if level == panel.effort { Image(systemName: "checkmark") }
-                            }
+                        option(EffortWords.name(level), line: EffortWords.line(level, index: index, count: panel.efforts.count), chosen: level == panel.effort) {
+                            choose(.effort, level)
                         }
                     }
                 }
@@ -2274,13 +2281,8 @@ private struct ThreadSettingsRow: View {
             Menu {
                 Section(String(localized: "Permissions", comment: "The field for the permission mode a new thread starts in.")) {
                     ForEach(panel.permissions) { mode in
-                        Button { choose(.permissions, mode.id) } label: {
-                            Label {
-                                Text(verbatim: mode.name)
-                                if let line = mode.asks ?? ThreadSettingWords.permissionLine(mode.id, provider: panel.provider) { Text(verbatim: line) }
-                            } icon: {
-                                if mode.id == panel.permission { Image(systemName: "checkmark") }
-                            }
+                        option(mode.name, line: mode.asks ?? ThreadSettingWords.permissionLine(mode.id, provider: panel.provider), chosen: mode.id == panel.permission) {
+                            choose(.permissions, mode.id)
                         }
                         .disabled(!panel.mayChoose(mode))
                     }
