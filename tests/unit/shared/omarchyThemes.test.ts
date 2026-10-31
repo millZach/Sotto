@@ -177,11 +177,13 @@ describe('Omarchy M3 and readability check', () => {
     // October 25 amendment), and when DeepSeek's mark got its badge colour, and when the effort trace's halo got its
     // strength for dark and light rooms (ADR-0019, October 26 amendment), and when the Appearance preview could paint a
     // half of its own (`[data-theme-scope]`), and when the Glass theme's see-through tokens and the card's
-    // solid colour arrived (ADR-0150), and when the collapsed rail's trays got their group colours (ADR-0146, October 28 amendment); none of them changes a palette.
+    // solid colour arrived (ADR-0150), and when the collapsed rail's trays got their group colours (ADR-0146, October 28 amendment),
+    // and when text sizes and corners got their scale of `--tt-type-*` and `--tt-radius-*` steps (ADR-0169); none of them
+    // changes a palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
     const tokenHash = createHash('sha256').update(tokenText).digest('hex')
-    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('6effc1758095634b7f8265bde5360865d034e81daa258c9d5503269178cee4d4')
+    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('22649f496c6473b17dce8dc79f122e5bf48579aa6322e696f9c9fb7479aedb8a')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

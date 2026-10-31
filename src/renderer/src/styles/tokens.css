@@ -385,9 +385,31 @@
   /* How strongly the effort trace's halo falls on the room (effortTrace.css); a light room takes a little more. */
   --tt-effort-trace-halo: .55;
 
-  --tt-radius-sm: 6px;
-  --tt-radius-md: 10px;
-  --tt-radius-lg: 14px;
+  /* Type sizes (ADR-0169). Every font-size in a renderer stylesheet names one of these steps, and
+     scaleTokens.test.ts holds it there. `--tt-text-*` already names text colours, so sizes are `--tt-type-*`. */
+  --tt-type-micro: 11px; /* Keys, badges and tiny marks */
+  --tt-type-caption: 12px; /* Times, counts, statuses, metadata */
+  --tt-type-small: 13px; /* Descriptions, controls, most interface text */
+  --tt-type-body: 14px; /* Sidebar rows, fields, menu items */
+  --tt-type-reading: 15px; /* Transcript, composer, journal entries, settings labels */
+  --tt-type-lead: 16px; /* Dialog titles, section intros, request prompts */
+  --tt-type-heading: 18px; /* Sidebar brand, empty-room headings */
+  --tt-type-figure: 22px; /* Figures in a narrow room, sub-titles */
+  --tt-type-title: 28px; /* Room titles and large figures */
+
+  /* Corners (ADR-0169), by what they round. Every border-radius names one of these steps. */
+  --tt-radius-mark: 2px; /* Meters, legend squares, focus marks */
+  --tt-radius-tag: 4px; /* Tags, keys, chips, small close buttons */
+  --tt-radius-control: 6px; /* Buttons, fields, composer chips */
+  --tt-radius-row: 8px; /* Sidebar and menu rows, icon buttons */
+  --tt-radius-inset: 10px; /* Code blocks, menus, notes inside a card */
+  --tt-radius-card: 14px; /* Cards, the composer, the Dictate bar */
+  --tt-radius-overlay: 20px; /* Dialogs and the widget */
+  --tt-radius-full: 50%; /* Dots and rings: a circle on a square box, never a pill (ADR-0110) */
+  /* The names before the scale, kept so whatever names them still rounds the same. */
+  --tt-radius-sm: var(--tt-radius-control);
+  --tt-radius-md: var(--tt-radius-inset);
+  --tt-radius-lg: var(--tt-radius-card);
   --tt-font-ui:
     'Figtree', ui-sans-serif, system-ui, -apple-system,
     BlinkMacSystemFont, 'Segoe UI', sans-serif;
