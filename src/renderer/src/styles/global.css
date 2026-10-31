@@ -1561,18 +1561,19 @@ textarea.tt-input {
   color: var(--tt-text);
 }
 
-/* A toast's one action, such as the settle toast's Undo (ADR-0165): a quiet outlined button, as Watch's Undo is. */
+/* A toast's one action, such as the settle toast's Undo (ADR-0165): a text button in the accent's text colour, as Zach's
+   pick drew it, with no outline. */
 .tt-toast__action {
   flex: none;
   height: 26px;
-  padding: 0 11px;
-  border: 1px solid var(--tt-field-border);
+  padding: 0 8px;
+  border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--tt-text);
+  color: var(--tt-accent-text);
   font: inherit;
   font-weight: 600;
-  transition: background-color 120ms ease, border-color 120ms ease;
+  transition: background-color 120ms ease;
 }
 
 .tt-toast__action:hover {

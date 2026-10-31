@@ -34,7 +34,7 @@ The mock-up offered A, the settled row held as one line, "Settled" with Undo in 
 - Every user Settle on the desktop can be taken back from where the user's eyes and hands already are, without opening the Settled shelf.
 - The Windows design captures do not change: none of them settles a thread, and the empty toast region takes no room.
 - Watcher's room shows the toast in the window's corner, beside the window's own corner toasts; should a theme or update notice stand there at the same moment, one covers the other until it goes.
-- The toast's look is the window's toast (`.tt-toast`) with a new shared `.tt-toast__action` button for its one action, drawn as Watch's Undo is; `.tt-toast__dismiss` is its Dismiss. The gap and the toast's place are in `settleUndo.css`, on `themeTokens.test.ts`'s owned list.
+- The toast's look is the one Zach picked in the mock-up: the window's toast (`.tt-toast`) as a plain fill, with neither its hairline nor the coloured stripe at its left edge (#1926; #1830 took the same stripe off six cards). Its one action is a new shared `.tt-toast__action`, a text button in the accent's text colour with no outline; `.tt-toast__dismiss` is its Dismiss. The window's other toasts keep their stripe. The gap and the toast's place are in `settleUndo.css`, on `themeTokens.test.ts`'s owned list.
 - On a Mac the Edit menu holds Undo on Cmd+Z. Whether the window still hears Cmd+Z outside a text field is not yet checked on a Mac; Undo's Tab stop is the keyboard's way there either way.
 - The iPhone's Settle with Undo is #1859's, not this decision's.
 
