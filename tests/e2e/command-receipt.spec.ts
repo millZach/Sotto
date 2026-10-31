@@ -49,11 +49,14 @@ async function watchAgentTraffic(launched: LaunchedSotto): Promise<() => Promise
       const request = args[1] as { type?: string; text?: string; threadId?: string } | undefined
       traffic.inFlight++
       try {
-        const receipt = await command(...args) as { activeThreadId: string | null; error: string | null; host: { models: unknown; threads: { id: string; modelId: string }[] } }
+        type Thread = { id: string; modelId: string }
+        const receipt = await command(...args) as { activeThreadId: string | null; error: string | null; host: { models: unknown; threads: Thread[] | { changed: Thread[] } } }
+        // The page asks for its threads as changed thread records (ADR-0028, October 30); a new thread is always among them.
+        const threads = Array.isArray(receipt.host.threads) ? receipt.host.threads : receipt.host.threads.changed
         traffic.lastReply = { bytes: JSON.stringify(receipt).length, activeThreadId: receipt.activeThreadId, models: receipt.host.models }
         if (request?.type === 'save-thread-draft') traffic.lastDraft = request.text ?? ''
         if (request?.type === 'create-thread' && request.threadId) {
-          const thread = receipt.host.threads.find(thread => thread.id === request.threadId)
+          const thread = threads.find(thread => thread.id === request.threadId)
           traffic.lastCreation = { threadId: request.threadId, activeThreadId: receipt.activeThreadId,
             createdThreadId: thread?.id ?? null, modelId: thread?.modelId ?? null, error: receipt.error }
         }

@@ -118,6 +118,28 @@ describe('AgentStateBroadcaster thread records (#1330)', () => {
     broadcaster.send(shell(rebuilt(changed)), deliver)
     expect(sent[1]!.host.threads).toEqual({ revision: 2, base: 1, changed: [changed[2]] })
   })
+
+  it('gives a reply asked for as changes only the records changed since the last broadcast, and moves no base', () => {
+    const broadcaster = new AgentStateBroadcaster()
+    const { sent, deliver } = recorder()
+    const first = threads()
+    // No broadcast yet: the reply lists every thread, as a complete broadcast does.
+    expect(broadcaster.encodeChangedThreadRecordsReceipt(shell(first)).host.threads).toMatchObject({ base: null, changed: first })
+    broadcaster.send(shell(first), deliver)
+    const held = sent[0]!.host.threads.revision
+    const changed = rebuilt(first)
+    changed[2] = { ...changed[2]!, status: 'error' }
+    const reply = broadcaster.encodeChangedThreadRecordsReceipt(shell(changed))
+    expect(reply.host.threads).toMatchObject({ base: held, changed: [changed[2]] })
+    expect(reply.host.threads.removed).toBeUndefined()
+    expect(reply.host.threads.order).toBeUndefined()
+    // The next broadcast is measured from the same one, and carries the same change.
+    broadcaster.send(shell(rebuilt(changed)), deliver)
+    expect(sent[1]!.host.threads).toMatchObject({ base: held, changed: [changed[2]] })
+    // After the window read the whole state, a reply lists every thread again.
+    broadcaster.windowRead()
+    expect(broadcaster.encodeChangedThreadRecordsReceipt(shell(changed)).host.threads).toMatchObject({ base: null, changed })
+  })
 })
 
 describe('samePlainData', () => {
