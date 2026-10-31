@@ -32,8 +32,9 @@ struct ComputersView: View {
     }
 }
 
-/// One computer: whether it can be reached, and what it last shared. Pairing let this iPhone answer there, so the card
-/// says nothing about answering (ADR-0033, October 30 amendment). The card opens the computer's page; one that can't be reached offers Try again.
+/// One computer: whether it can be reached, and what it last shared. One card with plain lines and no tiles inside it
+/// (#1863). Pairing let this iPhone answer there, so the card says nothing about answering (ADR-0033, October 30
+/// amendment). The card opens the computer's page; one that can't be reached offers Try again.
 private struct ComputerCard: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dynamicTypeSize) private var textSize
@@ -44,14 +45,11 @@ private struct ComputerCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             NavigationLink(value: ComputerRoute(hostID: hostID)) {
-                VStack(alignment: .leading, spacing: Space.s4) {
-                    header
-                    facts
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-                .accessibilityElement(children: .combine)
-                .accessibilityHint("Opens this computer’s details")
+                header
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .accessibilityElement(children: .combine)
+                    .accessibilityHint("Opens this computer’s details")
             }
             .buttonStyle(PressStyle())
             if status == .unreachable {
@@ -68,33 +66,54 @@ private struct ComputerCard: View {
             }
         }
         .padding(Space.s4)
-        .failedEdge(status == .unreachable, tint: 0.09)
-        .sottoCard(status == .online ? .online : .plain)
+        .sottoCard()
     }
 
-    private var header: some View {
-        HStack(spacing: Space.s3) {
-            Image(systemName: "desktopcomputer")
-                .font(.system(size: 18, weight: .medium))
-                .foregroundStyle(status == .online ? Palette.accentText : Palette.muted)
-                .frame(width: 42, height: 42)
-                .background(status == .online ? Palette.accent.opacity(0.14) : Palette.fillSoft, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(verbatim: name).font(.sotto(.lead, .bold)).foregroundStyle(Palette.ink)
-                    .lineLimit(textSize.isAccessibilitySize ? 3 : 1)
-                HStack(spacing: Space.s2) {
-                    ComputerDot(status: status)
-                    Text(status.words).font(.sotto(.small)).foregroundStyle(Palette.muted)
+    /// The name with one line under it, and the computer's state at the trailing edge. At the largest text sizes the
+    /// state goes under the name instead, so the name keeps the width.
+    @ViewBuilder private var header: some View {
+        if textSize.isAccessibilitySize {
+            HStack(spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: Space.s1) {
+                    title
+                    state
+                    detail
                 }
+                Spacer(minLength: Space.s2)
+                chevron
             }
-            Spacer(minLength: Space.s2)
-            Image(systemName: "chevron.right").font(.footnote).foregroundStyle(Palette.muted).accessibilityHidden(true)
+        } else {
+            HStack(spacing: Space.s3) {
+                VStack(alignment: .leading, spacing: 2) {
+                    title
+                    detail
+                }
+                Spacer(minLength: Space.s2)
+                state
+                chevron
+            }
         }
     }
+    private var title: some View {
+        Text(verbatim: name).font(.sotto(.lead, .bold)).foregroundStyle(Palette.ink)
+            .lineLimit(textSize.isAccessibilitySize ? 3 : 1)
+    }
+    private var state: some View {
+        HStack(spacing: Space.s2) {
+            ComputerDot(status: status)
+            Text(status.words).font(.sotto(.small)).foregroundStyle(Palette.muted)
+        }
+    }
+    private var detail: some View {
+        Text(verbatim: line).font(.sotto(.small)).foregroundStyle(Palette.muted)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+    private var chevron: some View {
+        Image(systemName: "chevron.right").font(.footnote).foregroundStyle(Palette.muted).accessibilityHidden(true)
+    }
 
-    private var facts: some View { Fact(title: projectWords, detail: threadWords) }
-
+    /// Under the name: what it last shared, "3 projects, 7 threads".
+    private var line: String { "\(projectWords), \(threadWords)" }
     private var shared: ComputerThreads? { model.lists.first { $0.hostID == hostID } }
     private var projectWords: String {
         let count = shared?.projects.count ?? 0
@@ -103,22 +122,6 @@ private struct ComputerCard: View {
     private var threadWords: String {
         let count = shared?.threads.filter { !ThreadGroups.isUnsent($0) }.count ?? 0
         return count == 1 ? String(localized: "1 thread") : String(localized: "\(count) threads")
-    }
-}
-
-/// One fact about a computer in a small tile.
-private struct Fact: View {
-    let title: String
-    let detail: String
-    var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.sotto(.body, .semibold)).foregroundStyle(Palette.ink)
-            Text(detail).font(.sotto(.small)).foregroundStyle(Palette.muted)
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, Space.s3).padding(.vertical, Space.s2)
-        .background(Palette.fillSofter, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 }
 
@@ -228,8 +231,7 @@ private struct ComputerStatusCard: View {
         }
         .padding(Space.s4)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .failedEdge(status == .unreachable, tint: 0.09)
-        .sottoCard(status == .online ? .online : .plain)
+        .sottoCard()
     }
 }
 

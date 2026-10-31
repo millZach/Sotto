@@ -13,6 +13,9 @@ import type { ThreadRow } from '../agents/threadFacts'
 import type { ThreadDraftStore } from '../agents/threadDraftStore'
 import { ThreadPane } from '../agents/ThreadPane'
 import { ThreadWorkingCopyNotice } from '../agents/ThreadWorkingCopy'
+import { roomView, type RoomView } from './watcherRoomView'
+
+export { roomView, type RoomView } from './watcherRoomView'
 
 /** The beside pane's composer; Watcher's own is `watcher-prompt`. */
 export const BESIDE_PROMPT_ID = 'watcher-beside-prompt'
@@ -20,22 +23,6 @@ export const BESIDE_PANE_ID = 'watcher-beside-pane'
 /** Where Escape belongs to something inside the pane: an open popup, or the trigger of one (a picker, a menu button). */
 const POPUP_OWNS_ESCAPE = '[role="dialog"], [role="menu"], [role="listbox"], [aria-expanded="true"]:is([aria-haspopup]:not([aria-haspopup="false"]), [role="combobox"])'
 
-/**
- * Watcher's room keeps its own view, apart from the Threads page's panes and selection (the plan, section 6): the one
- * thread open beside Watcher, and how much of the width Watcher's conversation takes. It lasts as long as the window, so
- * a trip to another room comes back to the room as it was left.
- */
-export interface RoomView { readonly besideId: string | null; readonly share: number }
-let view: RoomView = { besideId: null, share: 0.5 }
-const listeners = new Set<() => void>()
-export const roomView = {
-  get: (): RoomView => view,
-  set(patch: Partial<RoomView>): void {
-    view = { ...view, ...patch }
-    for (const listener of [...listeners]) listener()
-  },
-  subscribe(listener: () => void): () => void { listeners.add(listener); return () => { listeners.delete(listener) } },
-}
 export function useRoomView(): RoomView { return useSyncExternalStore(roomView.subscribe, roomView.get, roomView.get) }
 
 /**

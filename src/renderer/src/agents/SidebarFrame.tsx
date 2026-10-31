@@ -231,6 +231,11 @@ export interface SidebarFrameProps {
   readonly onProjectAdded?: ((projectId: string) => void) | undefined
   /** A line directly under the search, above the list: the Threads sidebar's Needs attention count. */
   readonly afterSearch?: ReactNode
+  /**
+   * What stands just above the foot: the Threads sidebar's settle toast (ADR-0167). Open, it is in the column's own flow,
+   * so it covers no row; on the collapsed rail it stands beside the rail's foot.
+   */
+  readonly toast?: ReactNode
 }
 
 /**
@@ -238,7 +243,7 @@ export interface SidebarFrameProps {
  * list, and the foot. The top row is the frameless window's drag region, which is why every control in it is marked no-drag. A Sotto Owl
  * build paints its night sky behind the top row and the search field while the sidebar is open.
  */
-export function SidebarFrame({ state, command, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title, children, collapsedContent, extraError, onDismissExtraError, notice, onProjectAdded, afterSearch }: SidebarFrameProps): ReactNode {
+export function SidebarFrame({ state, command, label, query, searchPlaceholder, onQuery, onNew, newLabel, NewIcon, newShortcut, platform, foot, title, children, collapsedContent, extraError, onDismissExtraError, notice, onProjectAdded, afterSearch, toast }: SidebarFrameProps): ReactNode {
   const app = useOptionalApp()
   const { t } = useLingui()
   const heading = title === undefined ? t`Threads` : title
@@ -272,6 +277,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
     {extraError ? <p className="thread-nav__error tt-paragraph" role="alert">{extraError}{onDismissExtraError ? <button type="button" className="thread-nav__action tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`} onClick={onDismissExtraError}><X size={14} aria-hidden="true" /></button> : null}</p> : null}
     {notice}
     <div className="thread-nav__scroll">{children}</div>
+    {size.collapsed ? null : toast}
     {size.collapsed ? null : foot ?? <SidebarFoot />}
     </div>
     {size.collapsed ? <div className="thread-nav__rail">
@@ -279,6 +285,7 @@ export function SidebarFrame({ state, command, label, query, searchPlaceholder, 
       <button ref={toggle} type="button" className="thread-nav__action tt-focusable" aria-label={t`Expand sidebar`} title={t`Expand sidebar`} onClick={() => size.collapse(false)}><PanelLeftOpen size={16} aria-hidden="true" /></button>
       {railOn && watcherOn ? <RailWatcher /> : null}
       <div className="thread-nav__rail-list">{collapsedContent ?? <button type="button" className="thread-nav__action tt-focusable" aria-label={newLabel} title={newLabel} onClick={onNew}><NewIcon size={16} aria-hidden="true" /></button>}</div>
+      {toast}
       {foot ?? <SidebarFoot />}
     </div> : <SidebarResize size={size} onResizing={setResizing} />}
   </aside>

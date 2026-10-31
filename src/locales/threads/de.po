@@ -1237,6 +1237,11 @@ msgstr ""
 msgid "{threadTitle} wants to start a cloud iPhone."
 msgstr ""
 
+#. A toast after Undo could not restore a settled thread; {title} is its name and {refusal} says why.
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "{title} is still settled. {refusal}"
+msgstr ""
+
 #. {title} is a visual's title: its source.
 #. {title} is the title of a diagram: its Mermaid source.
 #: src/renderer/src/agents/InteractiveVisualCard.tsx
@@ -1581,6 +1586,7 @@ msgstr ""
 msgid "Actions for {projectTitle}"
 msgstr ""
 
+#: src/renderer/src/agents/RailTile.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Actions for {title}"
 msgstr ""
@@ -3531,6 +3537,7 @@ msgstr ""
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 #: src/renderer/src/agents/HostUpdates.tsx
 #: src/renderer/src/agents/NeedsYouQueue.tsx
+#: src/renderer/src/agents/SettleToast.tsx
 #: src/renderer/src/agents/SidebarFrame.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 #: src/renderer/src/agents/ThreadTranscript.tsx
@@ -5473,8 +5480,8 @@ msgstr ""
 msgid "On {hostName}"
 msgstr ""
 
-#. Leads a Git action refused because another thread or Sotto holds the folder. Nothing failed and nothing was changed.
-#: src/renderer/src/agents/GitActionButton.tsx
+#. Leads a Git action or Bring changes back refused because another thread or Sotto holds the folder. Nothing failed and nothing was changed.
+#: src/renderer/src/agents/checkoutHold.ts
 msgid "On hold"
 msgstr ""
 
@@ -5506,7 +5513,7 @@ msgstr ""
 #. A sidebar row's menu: open the thread in the focused pane.
 #. Opens the thread.
 #: src/renderer/src/agents/NeedsYouQueue.tsx
-#: src/renderer/src/agents/ThreadSidebar.tsx
+#: src/renderer/src/agents/threadMenu.tsx
 msgid "Open"
 msgstr ""
 
@@ -5564,6 +5571,7 @@ msgstr ""
 msgid "Open {title}, the thread this one continues"
 msgstr ""
 
+#: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Open beside"
@@ -6388,6 +6396,7 @@ msgstr ""
 msgid "Refused when last read"
 msgstr ""
 
+#: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Regenerate title"
@@ -6514,11 +6523,12 @@ msgstr ""
 
 #. Rename the thread.
 #. Rename the thread.
+#: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
-#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Rename"
 msgstr ""
 
+#: src/renderer/src/agents/RailTile.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Rename {title}"
@@ -6624,8 +6634,8 @@ msgstr ""
 
 #. Restore a settled thread to open work.
 #. Restore a settled thread to open work.
+#: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
-#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Restore"
 msgstr ""
 
@@ -6977,8 +6987,8 @@ msgstr ""
 
 #. Settle the thread: put it away on the Settled shelf.
 #. Settle the thread: put it away on the Settled shelf.
+#: src/renderer/src/agents/threadMenu.tsx
 #: src/renderer/src/agents/ThreadPane.tsx
-#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Settle"
 msgstr ""
 
@@ -7009,6 +7019,21 @@ msgstr ""
 #: src/renderer/src/agents/ThreadPane.tsx
 #: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "Settled"
+msgstr ""
+
+#. A toast after the user settled a thread; {title} is the thread's name.
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "Settled {title}"
+msgstr ""
+
+#. A toast after the user settled a thread and Sotto removed its worktree folder; {title} is the thread's name.
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "Settled {title} and removed its worktree. The branch is kept."
+msgstr ""
+
+#. A toast while a cleanup rule removes a settled thread's worktree folder; {title} is the thread's name.
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "Settled {title}. Removing its worktree…"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
@@ -7326,6 +7351,11 @@ msgstr ""
 
 #: src/renderer/src/agents/delegationWords.ts
 msgid "Sotto could not compare the permission it asked for with this thread's own, so it could not tell how much a new thread may have. {nothing}"
+msgstr ""
+
+#. A toast after Undo got no answer; {title} is the thread's name.
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "Sotto could not confirm that {title} came back. If it is still on the Settled shelf, restore it from there."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadTranscript.tsx
@@ -8503,8 +8533,10 @@ msgstr ""
 msgid "This Sotto cannot change what Watcher may do without asking."
 msgstr ""
 
+#. Stands for a thread's name in "Settled this thread" when it has none.
 #. The thread that delegated, inside a sentence.
 #: src/renderer/src/agents/delegationWords.ts
+#: src/renderer/src/agents/ThreadWorkingCopy.tsx
 msgid "this thread"
 msgstr ""
 
@@ -8868,6 +8900,14 @@ msgstr ""
 
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "Unconfirmed answer"
+msgstr ""
+
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "Undo"
+msgstr ""
+
+#: src/renderer/src/agents/SettleToast.tsx
+msgid "Undo: restore {title}"
 msgstr ""
 
 #. A background agent's status.
@@ -9291,7 +9331,7 @@ msgstr ""
 msgid "was {from} tokens"
 msgstr ""
 
-#: src/renderer/src/agents/ThreadSidebar.tsx
+#: src/renderer/src/agents/threadMenu.tsx
 msgctxt "Put a thread under Watcher's watch"
 msgid "Watch"
 msgstr ""

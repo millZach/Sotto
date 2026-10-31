@@ -15,6 +15,7 @@ import { claimRoomFocus } from '../components/AppShell'
 import { useOptionalApp } from '../state/AppContext'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAgents } from '../agents/AgentContext'
+import { SettleToast } from '../agents/SettleToast'
 import { KeyedGlyph } from '../agents/composerPlate'
 import { threadChordCap } from '../agents/threadShortcuts'
 import { WayOffThePage } from '../agents/SidebarFrame'
@@ -656,6 +657,8 @@ export function WatcherView({ now: fixedNow, update = null }: {
       </div>
     </section>
     <PageWindowControls />
+    {/* The room has no sidebar, so a Settle pressed in the pane beside Watcher offers its Undo in the window's corner (ADR-0167). */}
+    {state !== null ? <SettleToast command={command} threads={state.host.threads} placement="corner" /> : null}
     {listOpen ? <WatcherOverviewList groups={groups} watched={room?.watchedThreadIds ?? new Set()} besideId={besideRow?.thread.id ?? null}      liveClock={fixedNow === undefined} anchor={listButton} opener={listOpener} onOpen={openThread} onClose={closeList} /> : null}
   </div>}</Marked>
 }

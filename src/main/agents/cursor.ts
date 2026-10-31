@@ -34,7 +34,7 @@ import { effortAfterChange, validatePromptAttachments, validateThreadOptions } f
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { markTurnActivity } from './turnActivity'
-import { WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
+import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { WATCHER_SYSTEM_PROMPT } from './watcherPrompt'
 import { assertWatcherPermission, assertWatcherPermissionChoice, watcherThreadTools } from './watcherProviderTools'
 import { WATCHER_COMPACTED_NOTE, watcherRequestLine } from './watcherRequestNote'
@@ -596,6 +596,8 @@ export class CursorAcpHost implements AgentHost {
   private markOpenFailed(id: string, error: unknown): void {
     if (!this.aliases[id]) return
     this.thread(id).status = 'error'
+    // An earlier Watcher conversation in view is read only history: refusing to open it is not Cursor failing.
+    if (error instanceof WatcherHistoryRefusal) { this.emit(); return }
     this.state.error = error instanceof Error && error.message ? error.message : 'A Cursor thread could not be opened. Your thread is kept. Reconnect Cursor to try again.'
     this.emit()
   }

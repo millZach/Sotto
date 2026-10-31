@@ -1,9 +1,11 @@
 import React, { useEffect, useId, useRef, type ReactNode } from 'react'
-import { AlertCircle, CheckCircle2, GitMerge, X } from 'lucide-react'
+import { AlertCircle, CheckCircle2, CirclePause, GitMerge, X } from 'lucide-react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { Button } from '../components/Button'
 import { Isolated, plainText } from '../components/isolated'
 import { bringWords, outcomeWords, questionWords, readyWords, fileCount, type BringBackView } from './bringChangesBack.logic'
+import { openHolderWords } from './checkoutHold'
+import { shownWords } from './interfaceWords'
 import './bringChangesBack.css'
 
 /**
@@ -11,11 +13,13 @@ import './bringChangesBack.css'
  * the offer, then the merge-commit question or the outcome in its place (pick B of the continue prototype, in place).
  * The Git action owns it and its menu offers the same press, so Git still acts from one place (ADR-0027).
  */
-export function BringChangesBack({ view, parentTitle, machine, busy, takeFocus, onBring, onMergeCommit, onNotNow, onDismiss, onHide, onCommit, onOpenParent }: {
+export function BringChangesBack({ view, parentTitle, machine, holder, busy, takeFocus, onBring, onMergeCommit, onNotNow, onDismiss, onHide, onCommit, onOpenParent }: {
   readonly view: BringBackView
   readonly parentTitle: string
   /** The machine the thread it began from is on, when that is not this thread's own (#1030). */
   readonly machine?: string | undefined
+  /** The thread whose work holds the folder where the target is checked out, and how to open it, for a hold (#1866). */
+  readonly holder?: { readonly title: string; readonly open: () => void } | undefined
   /** A press is on its way to the host. */
   readonly busy: boolean
   /** This pane pressed and is waiting for the answer: the question or outcome that arrives takes the focus. */
@@ -88,7 +92,7 @@ export function BringChangesBack({ view, parentTitle, machine, busy, takeFocus, 
     </section>
   }
   const words = outcomeWords(view.record, parentTitle, machine)
-  const Icon = words.tone === 'error' ? AlertCircle : CheckCircle2
+  const Icon = words.tone === 'error' ? AlertCircle : words.tone === 'held' ? CirclePause : CheckCircle2
   return <section ref={region} tabIndex={-1} className="bring-back" data-tone={words.tone} role={words.tone === 'error' ? 'alert' : 'status'} aria-label={plainText(words.title)}
     onKeyDown={event => { if (event.key === 'Escape' && !event.defaultPrevented) { event.preventDefault(); event.stopPropagation(); dismiss() } }}>
     <Icon size={16} aria-hidden="true" className="bring-back__icon" />
@@ -99,6 +103,7 @@ export function BringChangesBack({ view, parentTitle, machine, busy, takeFocus, 
     <div className="bring-back__actions">
       {words.commit ? <Button variant="secondary" onClick={onCommit}><Trans>Commit…</Trans></Button> : null}
       {words.openParent ? <Button variant="secondary" onClick={onOpenParent}><Trans>Open {parentTitle}</Trans></Button> : null}
+      {words.tone === 'held' && holder ? <Button variant="secondary" className="bring-back__open" onClick={holder.open}><Isolated text={shownWords(openHolderWords(holder.title))} /></Button> : null}
       <button type="button" className="bring-back__dismiss tt-focusable" aria-label={t`Dismiss`} title={t`Dismiss`} onClick={dismiss}>
         <X size={14} aria-hidden="true" />
       </button>

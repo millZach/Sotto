@@ -193,6 +193,8 @@ describe('the manual composer', () => {
     expect(stop.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
     expect(stop.parentElement).toHaveClass('thread-prompt__actions')
     expect(send).toHaveClass('thread-prompt__disc')
+    // Queue is the list-plus the full composer's Queue key draws, not an arrow into a tray, which reads as Download.
+    expect(send.querySelector('svg.lucide-list-plus')).not.toBeNull()
     // The shield stands at the pill's start, after attach (ADR-0161).
     expect(shield.closest('.thread-prompt__lead')).not.toBeNull()
   })

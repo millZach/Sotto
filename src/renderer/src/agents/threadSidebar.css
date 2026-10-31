@@ -95,6 +95,9 @@
 .thread-nav__list { display: contents; }
 /* A row's or a folder's menu: the pane menu's look, shown in the top layer at the row or at the pointer. */
 .pane-menu__list.thread-row-menu { position: fixed; inset: auto; z-index: 60; box-sizing: border-box; margin: 0; max-height: calc(100vh - 16px); overflow-y: auto; color: var(--tt-text); }
+/* Rename from a rail tile: the row's field, in the menu's frame beside the tile, as wide as a sidebar row's title. */
+.pane-menu__list.thread-nav__rail-rename { width: 260px; max-width: calc(100vw - 16px); }
+.thread-nav__rail-rename .thread-nav__rename { width: 100%; box-sizing: border-box; }
 .thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 4px 4px 12px; }
 .thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; letter-spacing: .02em; }

@@ -6280,6 +6280,14 @@ msgstr "Ultracode effort"
 msgid "Undo"
 msgstr "Undo"
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Undo a settle"
+msgstr "Undo a settle"
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Undo already uses {keys}. Pick other keys."
+msgstr "Undo already uses {keys}. Pick other keys."
+
 #. A systemd unit, the file that starts a service.
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "Unit"
@@ -6818,6 +6826,10 @@ msgstr "Where new workers start"
 #: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
 msgid "Where Watcher and the owls for your threads live. Its colors come from your theme."
 msgstr "Where Watcher and the owls for your threads live. Its colors come from your theme."
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "While the toast at the sidebar’s foot offers Undo. A text field keeps these keys for its own typing."
+msgstr "While the toast at the sidebar’s foot offers Undo. A text field keeps these keys for its own typing."
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "While Tools is closed, Changes opens on its own when a turn leaves 3 more changed files or 50 more changed lines."

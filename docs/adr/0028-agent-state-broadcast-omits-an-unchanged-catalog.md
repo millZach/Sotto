@@ -288,12 +288,17 @@ already holds, so the router and the window's broadcast meet it by identity. A p
 hold, which should not happen on one ordered connection, is not shown. The client reads the shell whole instead, and
 the host's next push lists every record. A new connection starts with nothing held on either side.
 
-The iPhone does not accept the feature yet, and is sent every record in every push, as is any client that does not
-accept it. Its SottoCore client is a later change.
+**The iPhone accepts it too, and puts each push's list back the same way** (`ThreadRecordsCache` in SottoCore, ported
+from `threadReassembly.ts`). The connection holds the records beside the catalog it holds, in socket order, and a push
+it cannot put back starts the connection again, as a catalog revision it does not hold does. The new connection's hello
+lists every record. An earlier iPhone build, the Android client and any other client that does not accept the feature
+are sent every record in every push.
 
 On the benchmark, three runs before and after on forge, with one host thread streaming for 60 pushes: a desktop push
 fell from 232,942 bytes to 11,929-11,950 (about 11,100 to about 1,970 deflated). The first push of a connection, and
 the first after a `shell` read, lists every record (205 KB). The desktop client's work on its pushes fell from
 295-303 ms to 67-73 ms, about 5 ms to 1.2 ms a push. The host's shell sends to its three clients fell from 287-293 ms to
 236-248 ms. The whole process, host, clients, router and window together, used 889-945 ms of CPU against 1,490-1,532 ms.
-The window was broadcast the same thread records as before (`docs/perf/2026-10-30-host-shell-thread-records.md`).
+The window was broadcast the same thread records as before. For a phone, a shell push after a send on the open thread
+fell from 220,462 bytes to 6,946, and reading one push on a Mac test runner from 3.88-4.44 ms for every record to 0.68 ms for
+one changed record put back (`docs/perf/2026-10-30-host-shell-thread-records.md`).

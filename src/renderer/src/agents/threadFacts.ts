@@ -603,6 +603,32 @@ function folder(id: string, project: AgentProject | undefined, rows: readonly Th
   }
 }
 
+const NOTHING_HELD: ReadonlyMap<string, string> = new Map()
+
+/**
+ * The open folders with each held thread's row put back where it stood, for the held gap (ADR-0167): a Settle pressed with
+ * the pointer over the list leaves its row's place empty until the pointer leaves, so nothing slides under it. Settling
+ * changes no row's activity, so a row put back by activity lands in its own place, and a folder the settle emptied, or
+ * moved down by taking its latest thread, stands where it stood. A folder's counts stay those of its open rows. Only a
+ * thread settled by itself is held, never one whose project was settled; one still open (its settle on its way, or
+ * already restored) is left where it is. `placed` names each row put back with its folder.
+ */
+export function holdSettledRows(open: readonly ProjectFolder[], settled: readonly ProjectFolder[], held: ReadonlySet<string>): { readonly open: readonly ProjectFolder[]; readonly placed: ReadonlyMap<string, string> } {
+  if (held.size === 0) return { open, placed: NOTHING_HELD }
+  const back = settled.filter(item => !item.settled).flatMap(item => item.rows.filter(row => row.settledBy === 'thread' && held.has(row.thread.id)).map(row => ({ row, home: item })))
+  if (back.length === 0) return { open, placed: NOTHING_HELD }
+  const folders = new Map(open.map(item => [item.id, item]))
+  const placed = new Map<string, string>()
+  for (const { row, home } of back) {
+    const base = folders.get(home.id) ?? { ...home, rows: [], working: 0, needs: 0, activityAt: Number.NaN }
+    const rows = [...base.rows, row].sort((first, second) => byActivity({ activityAt: first.activityAt, id: first.thread.id }, { activityAt: second.activityAt, id: second.thread.id }))
+    const activityAt = Number.isFinite(row.activityAt) && (!Number.isFinite(base.activityAt) || row.activityAt > base.activityAt) ? row.activityAt : base.activityAt
+    folders.set(home.id, { ...base, rows, activityAt })
+    placed.set(row.thread.id, home.id)
+  }
+  return { open: [...folders.values()].sort(byActivity), placed }
+}
+
 /**
  * Project folders for the sidebar. Open folders hold each unsettled project's open threads;
  * Settled holds whole settled projects plus individually settled threads under their own project.
