@@ -1,5 +1,5 @@
 import type { AgentActivity } from './agentActivity'
-import type { AgentActivityDelta, AgentMessage, AgentMessageDelta, AgentThreadDetail,
+import type { AgentActivityAppend, AgentActivityDelta, AgentMessage, AgentMessageDelta, AgentThreadDetail,
   AgentThreadDetailDelta, AgentThreadDetailUpdate } from './agents'
 
 /**
@@ -33,6 +33,45 @@ export function agentActivitySignature(record: AgentActivity): string {
   ].join('|')
 }
 function size(value: string | undefined): number { return value === undefined ? -1 : value.length }
+
+/** What a field grew by at its end, `''` when it is as it was, or undefined when it changed any other way. */
+function grownBy(before: string | undefined, after: string | undefined): string | undefined {
+  if (before === after) return ''
+  return before !== undefined && after !== undefined && after.length > before.length && after.startsWith(before) ? after.slice(before.length) : undefined
+}
+
+/**
+ * The append that takes `held` to `record`, when the record's output, text or both only grew at their end and every other
+ * field holds what it held: a command streaming its output into a running record. Undefined for any other change, which
+ * goes as the record whole. The other fields are compared by value, not by the signature, which tells some of them apart
+ * only by length: a plan whose explanation grew while a step changed to another of the same length goes whole.
+ */
+function appendOf(held: AgentActivity, record: AgentActivity): AgentActivityAppend | undefined {
+  const output = grownBy(held.output, record.output), text = grownBy(held.text, record.text)
+  if (output === undefined || text === undefined || !output && !text || !sameBesideBodies(held, record)) return undefined
+  return { id: record.id, ...output ? { appendOutput: output } : {}, ...text ? { appendText: text } : {} }
+}
+/**
+ * Whether two records hold the same value in every field but `output` and `text`: identity first, then the JSON of a field
+ * that is an object. A field absent and one present as undefined are the same. Fields written in another key order read as
+ * changed, which only sends the record whole.
+ */
+function sameBesideBodies(held: AgentActivity, record: AgentActivity): boolean {
+  const before = held as unknown as Record<string, unknown>, after = record as unknown as Record<string, unknown>
+  const same = (key: string): boolean => {
+    const left = before[key], right = after[key]
+    return left === right || typeof left === 'object' && typeof right === 'object' && left !== null && right !== null
+      && JSON.stringify(left) === JSON.stringify(right)
+  }
+  for (const key in after) if (key !== 'output' && key !== 'text' && !same(key)) return false
+  for (const key in before) if (key !== 'output' && key !== 'text' && !(key in after) && before[key] !== undefined) return false
+  return true
+}
+/** `record` as an append leaves it: its output and text with the append's joined at their end, every other field as it was. */
+function grown(record: AgentActivity, output: string | undefined, text: string | undefined): AgentActivity {
+  return { ...record, ...output ? { output: (record.output ?? '') + output } : {}, ...text ? { text: (record.text ?? '') + text } : {} }
+}
+function isAppend(item: AgentActivityDelta): item is AgentActivityAppend { return !('record' in item) && !('removed' in item) }
 
 /**
  * The delta from the detail a window holds to the history a thread now has, or null when no delta can
@@ -70,15 +109,15 @@ export function diffAgentThreadDetail(base: AgentThreadDetail,
   }
   const heldActivities = shared ? base.activities!.slice(shared) : base.activities ?? []
   const nextActivities = shared ? next.activities!.slice(shared) : next.activities ?? []
-  const signatures = sameActivities ? undefined : activitySignature === agentActivitySignature
-    ? new Map(heldActivities.map(record => [record.id, activitySignature(record)])) : undefined
-  const heldRecords = signatures === undefined && !sameActivities ? new Map(heldActivities.map(record => [record.id, record])) : undefined
+  const heldRecords = sameActivities ? undefined : new Map(heldActivities.map(record => [record.id, record]))
   const present = new Set(sameActivities ? [] : nextActivities.map(record => record.id))
   if (!sameActivities) for (const record of heldActivities) if (!present.has(record.id)) activityDeltas.push({ id: record.id, removed: true })
   if (!sameActivities) for (const record of nextActivities) {
-    const held = heldRecords?.get(record.id)
-    if (held === record || (held !== undefined ? activitySignature(held) : signatures?.get(record.id)) === activitySignature(record)) continue
-    activityDeltas.push({ record: structuredClone(record) })
+    const held = heldRecords!.get(record.id)
+    if (held === record || held !== undefined && activitySignature(held) === activitySignature(record)) continue
+    // Only grown at its end, as a command's output does while it runs: the new text alone (window only, `AgentActivityAppend`).
+    const append = held === undefined ? undefined : appendOf(held, record)
+    activityDeltas.push(append ?? { record: structuredClone(record) })
   }
   const delta: AgentThreadDetailDelta = { threadId: base.threadId, baseRevision: base.revision, revision, messageDeltas, activityDeltas }
   // A delta must reproduce exactly the history it describes. Applying it here costs references, not
@@ -125,10 +164,12 @@ export function applyAgentThreadDetailDelta(base: AgentThreadDetail, delta: Agen
   if (delta.activityDeltas.length <= FEW_RECORDS) {
     const activities = [...base.activities]
     for (const item of delta.activityDeltas) {
-      const id = 'removed' in item ? item.id : item.record.id
+      const id = activityDeltaId(item)
       let position = activities.length - 1
       while (position >= 0 && activities[position]!.id !== id) position--
       if ('removed' in item) { if (position >= 0) activities.splice(position, 1) }
+      // An append grows the record held; one this detail does not hold cannot be applied.
+      else if (isAppend(item)) { if (position < 0) return null; activities[position] = grown(activities[position]!, item.appendOutput, item.appendText) }
       else if (position >= 0) activities[position] = item.record
       else activities.push(item.record)
     }
@@ -139,7 +180,11 @@ export function applyAgentThreadDetailDelta(base: AgentThreadDetail, delta: Agen
   const records = new Map(base.activities.map(record => [record.id, record]))
   for (const item of delta.activityDeltas) {
     if ('removed' in item) records.delete(item.id)
-    else records.set(item.record.id, item.record)
+    else if (isAppend(item)) {
+      const held = records.get(item.id)
+      if (held === undefined) return null
+      records.set(item.id, grown(held, item.appendOutput, item.appendText))
+    } else records.set(item.record.id, item.record)
   }
   return { threadId: base.threadId, revision: delta.revision, messages, activities: [...records.values()] }
 }
@@ -159,7 +204,7 @@ export function mergeAgentThreadDetailUpdates(pending: AgentThreadDetailUpdate, 
   for (const item of next.activityDeltas) {
     const position = activityDeltas.findIndex(held => activityDeltaId(held) === activityDeltaId(item))
     if (position === -1) activityDeltas.push(item)
-    else activityDeltas[position] = item
+    else activityDeltas[position] = joinActivity(activityDeltas[position]!, item)
   }
   return { threadId: pending.threadId, baseRevision: pending.baseRevision, revision: next.revision, messageDeltas: foldMessageDeltas(pending, next), activityDeltas }
 }
@@ -185,7 +230,7 @@ export function foldAgentThreadDetailUpdates(pending: AgentThreadDetailUpdate, n
     if (held === undefined) { activityDeltas.push(item); continue }
     if (!('removed' in item)) {
       if ('removed' in held) activityDeltas.push(item)
-      else activityDeltas[last] = item
+      else activityDeltas[last] = joinActivity(held, item)
       continue
     }
     if ('removed' in held) continue
@@ -212,7 +257,33 @@ function foldMessageDeltas(pending: AgentThreadDetailDelta, next: AgentThreadDet
 
 function removes(delta: AgentThreadDetailDelta): boolean { return delta.activityDeltas.some(item => 'removed' in item) }
 function messageDeltaId(item: AgentMessageDelta): string { return 'appendText' in item ? item.id : item.message.id }
-function activityDeltaId(item: AgentActivityDelta): string { return 'removed' in item ? item.id : item.record.id }
+function activityDeltaId(item: AgentActivityDelta): string { return 'record' in item ? item.record.id : item.id }
+/**
+ * One record's change after another as one: a whole record replaces what came before it, and an append joins the text
+ * before it, an earlier append's or a whole record's.
+ */
+function joinActivity(held: AgentActivityDelta, item: AgentActivityDelta): AgentActivityDelta {
+  if (!isAppend(item) || 'removed' in held) return item
+  if ('record' in held) return { record: grown(held.record, item.appendOutput, item.appendText) }
+  const output = (held.appendOutput ?? '') + (item.appendOutput ?? ''), text = (held.appendText ?? '') + (item.appendText ?? '')
+  return { id: held.id, ...output ? { appendOutput: output } : {}, ...text ? { appendText: text } : {} }
+}
+/**
+ * `delta` with each append as the record it leaves, read from `records`, the history the delta takes its thread to: what a
+ * reader that is sent whole records is sent, a socket client among them. Each is looked for from the end, where a running
+ * command's record is, so a long thread's history is not read for every chunk of output. Null when `records` does not
+ * hold one, which a delta made from that history never names.
+ */
+export function withAppendsWhole(delta: AgentThreadDetailDelta, records: readonly AgentActivity[]): AgentThreadDetailDelta | null {
+  if (!delta.activityDeltas.some(isAppend)) return delta
+  const activityDeltas: AgentActivityDelta[] = []
+  for (const item of delta.activityDeltas) {
+    const record = isAppend(item) ? records.findLast(held => held.id === item.id) : undefined
+    if (isAppend(item) && record === undefined) return null
+    activityDeltas.push(record === undefined ? item : { record: structuredClone(record) })
+  }
+  return { ...delta, activityDeltas }
+}
 function sameOrder(applied: readonly { id: string }[], next: readonly { id: string }[]): boolean {
   return applied.length === next.length && applied.every((item, index) => item.id === next[index]!.id)
 }

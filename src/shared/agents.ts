@@ -1209,15 +1209,22 @@ export const agentActivityDeltaSchema = z.union([
   z.object({ record: agentActivitySchema }).strict(),
   z.object({ id: z.string(), removed: z.literal(true) }).strict(),
 ])
-export type AgentActivityDelta = z.infer<typeof agentActivityDeltaSchema>
+/**
+ * The text a running record's output, its text or both grew by at their end, when nothing else about it changed: a
+ * command streaming its output costs the new lines, not the record. Only the main window is sent it (`appends` on
+ * `subscribeThreadDetail`); every other reader, a socket client among them, is sent the record whole, so the host
+ * protocol's activity delta is still a record or a removal (`agentActivityDeltaSchema`).
+ */
+export type AgentActivityAppend = { id: string; appendOutput?: string; appendText?: string }
+export type AgentActivityDelta = z.infer<typeof agentActivityDeltaSchema> | AgentActivityAppend
 export const agentThreadDetailDeltaSchema = z.object({
   threadId: id, baseRevision: z.number().int().nonnegative(), revision: z.number().int().nonnegative(),
   messageDeltas: z.array(agentMessageDeltaSchema),
   activityDeltas: z.array(agentActivityDeltaSchema).max(MAX_AGENT_ACTIVITIES),
 }).strict()
-export type AgentThreadDetailDelta = z.infer<typeof agentThreadDetailDeltaSchema>
+export type AgentThreadDetailDelta = Omit<z.infer<typeof agentThreadDetailDeltaSchema>, 'activityDeltas'> & { activityDeltas: AgentActivityDelta[] }
 export const agentThreadDetailUpdateSchema = z.union([agentThreadDetailSchema, agentThreadDetailDeltaSchema])
-export type AgentThreadDetailUpdate = z.infer<typeof agentThreadDetailUpdateSchema>
+export type AgentThreadDetailUpdate = AgentThreadDetail | AgentThreadDetailDelta
 
 /**
  * Whether a message is a visual an agent drew (ADR-0056): Sotto's own `visual:` message, carrying the visual. This is
