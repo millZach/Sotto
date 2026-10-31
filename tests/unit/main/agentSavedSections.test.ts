@@ -231,6 +231,32 @@ describe('Watcher\u2019s own file', () => {
     expect(await file()).toBe(stringified())
   })
 
+  it('hands a later save of agents.json to its store while an earlier one is still being written (#1935)', async () => {
+    const { inside, file, stringified } = await fixture()
+    await inside.persist()
+    // The first save's write is held on its way to the disk, as a slow disk holds it, inside the store, which writes what
+    // it is handed in order.
+    const disk = inside.store as unknown as { writeImmediately(serialized: unknown): Promise<void> }
+    const writeImmediately = disk.writeImmediately.bind(disk), entered = deferred<void>(), release = deferred<void>()
+    let held = false
+    vi.spyOn(disk, 'writeImmediately').mockImplementation(async serialized => {
+      if (!held) { held = true; entered.resolve(); await release.promise }
+      return writeImmediately(serialized)
+    })
+    const handed = vi.spyOn(inside.store, 'write')
+    inside.state.activeThreadId = 'first'
+    const first = inside.persist()
+    await entered.promise
+    inside.state.activeThreadId = 'second'
+    const second = inside.persist()
+    // The later save reaches the store without waiting for the earlier one to land, and lands after it.
+    await vi.waitFor(() => expect(handed).toHaveBeenCalledTimes(2))
+    release.resolve()
+    await Promise.all([first, second])
+    expect(await file()).toBe(stringified())
+    expect(JSON.parse(await file())).toMatchObject({ activeThreadId: 'second' })
+  })
+
   it('writes Watcher\u2019s file again after a failed write that a record serializing to the same text took over (review)', async () => {
     const { inside, watcherFile, watcherStringified } = await fixture()
     await inside.persist()

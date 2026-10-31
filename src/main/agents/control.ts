@@ -1035,8 +1035,12 @@ export class AgentControl {
   private readonly watcherStore: AtomicJsonStore<{ watcher: WatcherRecord }>
   /** The newest write of Watcher's file: the record, its text and the write's landing. */
   private queuedWatcherWrite: { record: WatcherRecord; text: string; written: Promise<void> } | undefined
-  /** Every write of `agents.json`, in the order the saves were made, each after the write of Watcher's file it follows. */
-  private agentsWrites: Promise<void> = Promise.resolve()
+  /**
+   * When the newest save's write of `agents.json` was handed to its store. Each is handed after the one before it, so the
+   * store, which writes in the order it is handed writes, lands them in the order the saves were made; none waits for an
+   * earlier one to land.
+   */
+  private agentsHanded: Promise<void> = Promise.resolve()
   /** Watcher's record as its own file held it at start, which `agents.json` is read beside in place of its own. */
   private ownWatcher: WatcherRecord | undefined
   private persistedDrafts = new Map<string, string>()
@@ -2806,12 +2810,13 @@ export class AgentControl {
       const outbox = structuredClone(saved.outbox)
       const drafts = this.draftSignatures(saved.threadDrafts)
       this.pendingDraftWrites.add(drafts)
-      // `agents.json` is written in the order the saves were made, each once the write of Watcher's file it follows has
-      // landed, so a crash between the two leaves Watcher's record ahead of the rest and never behind it. A write of
-      // Watcher's file that fails leaves `agents.json` as it was.
+      // `agents.json` is handed to its store in the order the saves were made, each once the write of Watcher's file it
+      // follows has landed, so a crash between the two leaves Watcher's record ahead of the rest and never behind it. A
+      // write of Watcher's file that fails leaves `agents.json` as it was.
       const serialized = joinSavedText(text)
-      const written = this.agentsWrites.then(() => watcherWritten).then(() => this.store.write(saved as Saved, serialized))
-      this.agentsWrites = written.catch(() => undefined)
+      const turn = Promise.all([this.agentsHanded, watcherWritten])
+      const written = turn.then(() => this.store.write(saved as Saved, serialized))
+      this.agentsHanded = turn.then(() => undefined, () => undefined)
       const current: QueuedWrite = { text, outbox, written }
       this.queuedWrite = current
       try {
