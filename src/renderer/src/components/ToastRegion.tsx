@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, type ReactNode } from 'react'
+import React, { type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import { X } from 'lucide-react'
 
@@ -11,22 +11,9 @@ export interface ToastMessage {
 
 function Toast({ toast }: { readonly toast: ToastMessage }): ReactNode {
   const { t } = useLingui()
-  const ref = useRef<HTMLDivElement>(null)
   const dismiss = toast.onDismiss
-  useEffect(() => {
-    if (dismiss === undefined) return
-    const clickAway = (event: PointerEvent): void => {
-      if (event.target instanceof Node && !ref.current?.contains(event.target)) dismiss()
-    }
-    document.addEventListener('pointerdown', clickAway, true)
-    window.addEventListener('blur', dismiss)
-    return () => {
-      document.removeEventListener('pointerdown', clickAway, true)
-      window.removeEventListener('blur', dismiss)
-    }
-  }, [dismiss])
   return (
-    <div ref={ref} className="tt-toast" data-dismissible={dismiss ? '' : undefined} data-tone={toast.tone ?? 'info'}
+    <div className="tt-toast" data-dismissible={dismiss ? '' : undefined} data-tone={toast.tone ?? 'info'}
       role={toast.tone === 'error' ? 'alert' : 'status'} onKeyDown={event => {
         if (event.key !== 'Escape' || dismiss === undefined) return
         event.preventDefault()

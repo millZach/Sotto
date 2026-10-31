@@ -98,7 +98,7 @@ You need Windows 10 or 11 (x64), an Apple silicon Mac with macOS 12 or newer, or
 xattr -dr com.apple.quarantine /Applications/Sotto.app
 ```
 
-If automatic paste needs a macOS permission, the notice offers **Open System Settings** and a close button. It appears once per cause each time Sotto starts and clears when you dismiss it, click elsewhere, send a prompt or restore paste access.
+If automatic paste needs a macOS permission, the notice offers **Open System Settings** and a close button. It clears when you dismiss it, send a prompt or restore paste access. A dismissed notice stays quiet while that permission is denied; if access is restored and later lost again, Sotto shows a new notice.
 
 In Sotto Owl, the Glass theme makes the window see-through to the desktop, blurred, with frosted panes; menus, dialogs, code and the terminal stay solid. While Sotto runs, its Dock icon takes the colours of the theme you saved, sized to match the other Mac icons. Its menu bar icon is the menu bar owl: the owl in colour on a branch, flapping its wings every few seconds, glancing around and blinking. It sits still with reduced motion. Choose its body (Slate, Ink or Light) and eyes (Sotto teal, Ice blue or Amber) in Settings → Appearance. A press on the bare background, around a thread's messages or its composer, sends waves of 0s and 1s in your theme's accent through the room behind the page, and they fade within a few seconds; turn the click effect off in Settings → Appearance, and reduced motion leaves it out.
 

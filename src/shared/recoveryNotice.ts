@@ -31,7 +31,8 @@ export function isPastePermissionNotice(code: RecoveryNotice['code']): code is P
   return code === 'ACCESSIBILITY_PERMISSION_REQUIRED' || code === 'AUTOMATION_PERMISSION_REQUIRED'
 }
 
-export const recoveryNoticeEventSchema = recoveryNoticeSchema.extend({ cleared: z.literal(true).optional() })
+// An explicit false starts a new permission failure; retained snapshots carry only the code.
+export const recoveryNoticeEventSchema = recoveryNoticeSchema.extend({ cleared: z.boolean().optional() })
 export type RecoveryNoticeEvent = z.infer<typeof recoveryNoticeEventSchema>
 
 export const recoveryNoticesSchema = z

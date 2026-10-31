@@ -23,11 +23,35 @@ describe('paste permission recovery', () => {
     trusted = true
     await recovery.check()
     expect(notices.list()).toEqual([{ code: 'HISTORY_RECOVERED' }])
-    notices.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' })
-    notices.publish({ code: 'AUTOMATION_PERMISSION_REQUIRED' })
     await recovery.check()
     expect(status).toHaveBeenCalledTimes(2)
     expect(automation).toHaveBeenCalledTimes(2)
+    trusted = false
+    notices.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' })
+    notices.publish({ code: 'AUTOMATION_PERMISSION_REQUIRED' })
+    await recovery.check()
+    expect(notices.list()).toHaveLength(3)
+    expect(status).toHaveBeenCalledTimes(3)
+    expect(automation).toHaveBeenCalledTimes(3)
+  })
+
+  it.each(['permission restored', 'paste succeeds'])('resets dismissed causes when %s', async recovered => {
+    const notices = new RecoveryNoticeCenter()
+    const recovery = createPastePermissionRecovery(notices, { status: () => 'trusted', requestOnce: vi.fn() }, async () => true)
+    for (const code of ['ACCESSIBILITY_PERMISSION_REQUIRED', 'AUTOMATION_PERMISSION_REQUIRED'] as const) {
+      notices.publish({ code })
+      notices.clear(code)
+      notices.publish({ code })
+    }
+    expect(notices.list()).toEqual([])
+    if (recovered === 'permission restored') await recovery.check()
+    else recovery.pasted()
+    notices.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' })
+    notices.publish({ code: 'AUTOMATION_PERMISSION_REQUIRED' })
+    expect(notices.list()).toEqual([
+      { code: 'ACCESSIBILITY_PERMISSION_REQUIRED' },
+      { code: 'AUTOMATION_PERMISSION_REQUIRED' },
+    ])
   })
 
   it('checks Automation once while the previous check is still answering', async () => {
@@ -52,5 +76,8 @@ describe('paste permission recovery', () => {
     const recovery = createPastePermissionRecovery(notices, { status: () => 'untrusted', requestOnce: vi.fn() }, vi.fn())
     recovery.pasted()
     expect(notices.list()).toEqual([{ code: 'HISTORY_RECOVERED' }])
+    notices.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' })
+    notices.publish({ code: 'AUTOMATION_PERMISSION_REQUIRED' })
+    expect(notices.list()).toHaveLength(3)
   })
 })

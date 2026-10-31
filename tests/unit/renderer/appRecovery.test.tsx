@@ -8,6 +8,7 @@ import { AppProvider, createProductionDictationController, useApp, type AppContr
 import { type SottoBridge } from '../../../src/shared/contracts'
 import { DEFAULT_SETTINGS, type AppSettings } from '../../../src/shared/settings'
 import type { RecoveryNotice, RecoveryNoticeEvent } from '../../../src/shared/recoveryNotice'
+import { RecoveryNoticeCenter } from '../../../src/main/storage/recoveryNoticeCenter'
 import { ThreadComposer } from '../../../src/renderer/src/agents/ThreadComposer'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
@@ -280,11 +281,8 @@ describe('Sotto application onboarding integration', () => {
   it.each([
     ['ACCESSIBILITY_PERMISSION_REQUIRED', 'close'],
     ['ACCESSIBILITY_PERMISSION_REQUIRED', 'escape'],
-    ['ACCESSIBILITY_PERMISSION_REQUIRED', 'click away'],
-    ['ACCESSIBILITY_PERMISSION_REQUIRED', 'leave window'],
     ['AUTOMATION_PERMISSION_REQUIRED', 'close'],
     ['AUTOMATION_PERMISSION_REQUIRED', 'escape'],
-    ['AUTOMATION_PERMISSION_REQUIRED', 'click away'],
   ] as const)('dismisses %s with %s and ignores a replay of the same cause', async (code, action) => {
     let notify!: (notice: RecoveryNoticeEvent) => void
     const bridge = createBridge({
@@ -300,12 +298,43 @@ describe('Sotto application onboarding integration', () => {
     else if (action === 'escape') {
       dismiss.focus()
       await userEvent.keyboard('{Escape}')
-    } else if (action === 'leave window') fireEvent.blur(window)
-    else fireEvent.pointerDown(document.body)
+    }
     expect(screen.queryByText(/copied the transcript instead of pasting it/i)).not.toBeInTheDocument()
     expect(bridge.dismissPastePermissionNotice).toHaveBeenCalledWith(code)
     act(() => notify({ code }))
     expect(screen.queryByText(/copied the transcript instead of pasting it/i)).not.toBeInTheDocument()
+  })
+
+  it.each([
+    ['ACCESSIBILITY_PERMISSION_REQUIRED', false],
+    ['ACCESSIBILITY_PERMISSION_REQUIRED', true],
+    ['AUTOMATION_PERMISSION_REQUIRED', false],
+    ['AUTOMATION_PERMISSION_REQUIRED', true],
+  ] as const)('keeps %s across outside interaction and shows a later failure after recovery, dismissed=%s', async (code, dismissed) => {
+    const notices = new RecoveryNoticeCenter()
+    notices.publish({ code })
+    const bridge = createBridge({
+      platform: 'darwin',
+      getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS, onboardingComplete: true })),
+      listRecoveryNotices: async () => notices.list(),
+      onRecoveryNotice: listener => notices.subscribe(listener),
+      dismissPastePermissionNotice: vi.fn(async code => { notices.clear(code); return { ok: true as const } }),
+    })
+    renderApp(bridge)
+    const text = await screen.findByText(/copied the transcript instead of pasting it/i)
+    fireEvent.pointerDown(document.body)
+    fireEvent.blur(window)
+    expect(text).toBeVisible()
+    expect(bridge.dismissPastePermissionNotice).not.toHaveBeenCalled()
+    if (dismissed) {
+      await userEvent.click(within(text.closest('.tt-toast')!).getByRole('button', { name: 'Dismiss' }))
+      act(() => notices.publish({ code }))
+      expect(screen.queryByText(/copied the transcript instead of pasting it/i)).not.toBeInTheDocument()
+    }
+    act(() => notices.resolve(code))
+    expect(screen.queryByText(/copied the transcript instead of pasting it/i)).not.toBeInTheDocument()
+    act(() => notices.publish({ code }))
+    expect(screen.getByText(/copied the transcript instead of pasting it/i)).toBeVisible()
   })
 
   it('does not revive a resolved permission notice when the initial list arrives late', async () => {

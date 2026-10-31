@@ -23,7 +23,7 @@ describe('RecoveryNoticeCenter', () => {
     expect(listener.mock.calls).toEqual([
       [{ code: 'SETTINGS_RECOVERED' }],
       [{ code: 'HISTORY_RECOVERED' }],
-      [{ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' }],
+      [{ code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: false }],
     ])
     unsubscribe()
     center.publish({ code: 'SETTINGS_RECOVERED' })
@@ -40,7 +40,7 @@ describe('RecoveryNoticeCenter', () => {
     expect(center.list()).toEqual([{ code: 'SETTINGS_RECOVERED' }])
   })
 
-  it('clears a notice for every subscriber and keeps its cause seen until the next launch', () => {
+  it('dismisses a notice for every subscriber and suppresses the same unresolved cause', () => {
     const center = new RecoveryNoticeCenter()
     const listener = vi.fn()
     center.subscribe(listener)
@@ -56,5 +56,22 @@ describe('RecoveryNoticeCenter', () => {
     const restarted = new RecoveryNoticeCenter()
     restarted.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' })
     expect(restarted.list()).toEqual([{ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' }])
+  })
+
+  it.each([false, true])('allows a new permission failure after recovery, dismissed=%s', dismissed => {
+    const center = new RecoveryNoticeCenter()
+    const listener = vi.fn()
+    center.subscribe(listener)
+    for (const code of ['ACCESSIBILITY_PERMISSION_REQUIRED', 'AUTOMATION_PERMISSION_REQUIRED'] as const) {
+      center.publish({ code })
+      if (dismissed) center.clear(code)
+      expect(center.hasUnresolved(code)).toBe(true)
+      center.resolve(code)
+      expect(center.hasUnresolved(code)).toBe(false)
+      expect(center.list()).not.toContainEqual({ code })
+      center.publish({ code })
+      expect(center.list()).toContainEqual({ code })
+      expect(listener).toHaveBeenLastCalledWith({ code, cleared: false })
+    }
   })
 })

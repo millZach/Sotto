@@ -1,4 +1,4 @@
-import { recoveryNoticeSchema, type RecoveryNotice, type RecoveryNoticeEvent } from '../../shared/recoveryNotice'
+import { isPastePermissionNotice, recoveryNoticeSchema, type PastePermissionNoticeCode, type RecoveryNotice, type RecoveryNoticeEvent } from '../../shared/recoveryNotice'
 
 export class RecoveryNoticeCenter {
   private readonly notices = new Map<RecoveryNotice['code'], RecoveryNotice>()
@@ -10,7 +10,17 @@ export class RecoveryNoticeCenter {
     if (this.seen.has(notice.code)) return
     this.seen.add(notice.code)
     this.notices.set(notice.code, notice)
-    this.notify(notice)
+    this.notify(isPastePermissionNotice(notice.code) ? Object.freeze({ ...notice, cleared: false }) : notice)
+  }
+
+  /** Dismissed permission failures still need a recovery check before they can notify again. */
+  hasUnresolved(code: PastePermissionNoticeCode): boolean {
+    return this.seen.has(code)
+  }
+
+  resolve(code: PastePermissionNoticeCode): void {
+    this.seen.delete(code)
+    this.clear(code)
   }
 
   clear(code: RecoveryNotice['code']): void {

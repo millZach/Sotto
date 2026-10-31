@@ -622,6 +622,9 @@ describe('typed preload bridge', () => {
     recoveryEvent?.({}, { code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: true, transcript: 'private words' })
     expect(listener).toHaveBeenCalledTimes(2)
     expect(listener).toHaveBeenLastCalledWith({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: true })
+    recoveryEvent?.({}, { code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: false })
+    expect(listener).toHaveBeenCalledTimes(3)
+    expect(listener).toHaveBeenLastCalledWith({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: false })
     unsubscribe()
 
     electronMock.ipcRenderer.invoke.mockResolvedValueOnce([

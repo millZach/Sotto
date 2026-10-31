@@ -282,7 +282,7 @@ export function AppProvider({
   const [settingsRequest, setSettingsRequest] = useState<SettingsRequest | null>(null)
   const [helpRequest, setHelpRequest] = useState<HelpRequest | null>(null)
   const [recoveryNotices, setRecoveryNotices] = useState<readonly RecoveryNotice[]>([])
-  // A clear event can beat the initial list response. Never let that old snapshot revive the notice.
+  // A clear event can beat the initial list response. Only a newly raised failure can revive the notice.
   const clearedRecoveryNotices = useRef(new Set<RecoveryNotice['code']>())
   const [update, setUpdate] = useState<UpdateStatus | null>(null)
   // The navigation and the update as of the last render, for navigate(), which is made once.
@@ -317,6 +317,7 @@ export function AppProvider({
   const historyTailRef = useRef<Promise<void>>(Promise.resolve())
 
   const commitRecoveryNotice = useCallback((notice: RecoveryNoticeEvent): void => {
+    if (notice.cleared === false) clearedRecoveryNotices.current.delete(notice.code)
     if (notice.cleared) {
       clearedRecoveryNotices.current.add(notice.code)
       setRecoveryNotices(current => current.filter(candidate => candidate.code !== notice.code))
@@ -326,7 +327,7 @@ export function AppProvider({
     setRecoveryNotices((current) =>
       current.some((candidate) => candidate.code === notice.code)
         ? current
-        : [...current, notice],
+        : [...current, { code: notice.code }],
     )
   }, [])
 
