@@ -92,10 +92,13 @@ struct MainTabs: View {
             if case .column(leading: true, width: let strip) = place { rail(shown, clear: Space.s4, grounded: true).frame(width: strip) }
             if sidebar {
                 ThreadSidebar(open: openFromSidebar).equatable()
-                    .transition(reduceMotion ? .opacity : .move(edge: .leading).combined(with: .opacity))
+                    // With Reduce Motion it fades in on its own, so nothing of the page beside it moves.
+                    .modifier(FadeOnAppear(enabled: reduceMotion))
+                    .transition(reduceMotion ? .identity : .move(edge: .leading).combined(with: .opacity))
             }
             VStack(spacing: 0) {
-                pages.modifier(FadeIn(key: fades))
+                // The theme's ground stays behind the page as it fades in, so no other colour shows through.
+                pages.modifier(FadeIn(key: fades)).background { if glass == nil { PageGround().ignoresSafeArea().accessibilityHidden(true) } }
                 if place == .bottom && covered.isEmpty && !keyboard {
                     TabsBar(tab: $tab, threadsBadge: model.threadsBadge, watcher: model.watcherHostID == nil ? nil : model.watcherTab,
                             style: duo == .upright ? .row : .bar, reselect: reselect)
@@ -105,8 +108,7 @@ struct MainTabs: View {
             }
             if case .column(leading: false, width: let strip) = place { rail(shown, clear: Space.s4, grounded: true).frame(width: strip) }
         }
-        // With Reduce Motion the sidebar's own transition is a fade, so it still eases rather than cutting.
-        .animation(.easeInOut(duration: reduceMotion ? 0.2 : 0.25), value: sidebar)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: sidebar)
         // Folding or unfolding the Duo reshapes the page into its new place rather than jumping there; with Reduce
         // Motion the page fades in instead (Zach, TestFlight build 45, point 6).
         .animation(reduceMotion ? nil : .spring(response: 0.48, dampingFraction: 0.9), value: duo)
@@ -212,10 +214,7 @@ struct MainTabs: View {
         let asking = groups.asking(row)
         if asking.ref != row.ref { routes.append(ThreadRoute(ref: asking.ref)) }
         // It comes in with the unfolding, beside the sidebar sliding in, rather than pushing across the new screen.
-        var still = Transaction()
-        still.disablesAnimations = true
-        withTransaction(still) { threadPath = NavigationPath(routes) }
-        fades += 1
+        quietly { threadPath = NavigationPath(routes) }
     }
     /// Whether the folded Duo's strip holds an open thread's controls rather than the tabs.
     private func threadRail(_ duo: DuoLayout) -> Bool {
@@ -237,7 +236,7 @@ struct MainTabs: View {
     private var pages: some View {
         TabView(selection: $tab) {
             NavigationStack(path: $threadPath) {
-                ThreadsView(open: { ref in push(ThreadRoute(ref: ref)) }).threadDestination()
+                ThreadsView(open: { ref in threadPath.append(ThreadRoute(ref: ref)) }).threadDestination()
             }
                 .environment(\.pageTop, tops[.threads, default: 0])
                 .toolbar(.hidden, for: .tabBar)
@@ -258,12 +257,11 @@ struct MainTabs: View {
                 .tag(Tab.settings)
         }
     }
-    /// A thread opened from the Threads page pushes in, as iOS's own pages do; with Reduce Motion it fades in instead.
-    private func push(_ route: ThreadRoute) {
-        guard reduceMotion else { threadPath.append(route); return }
+    /// Changes a tab's path without a push or a pop, and fades the page in instead.
+    private func quietly(_ change: () -> Void) {
         var still = Transaction()
         still.disablesAnimations = true
-        withTransaction(still) { threadPath.append(route) }
+        withTransaction(still, change)
         fades += 1
     }
     /// A thread chosen in the sidebar opens in place of the one showing, on the tab that shows it, with a quick fade
@@ -271,10 +269,7 @@ struct MainTabs: View {
     private func openFromSidebar(_ ref: ThreadRef) {
         drawer = false
         guard ref != model.selected else { return }
-        fades += 1
-        var swap = Transaction()
-        swap.disablesAnimations = true
-        withTransaction(swap) {
+        quietly {
             if tab == .watcher, !watcherPath.isEmpty {
                 watcherPath.removeLast()
                 watcherPath.append(ThreadRoute(ref: ref))
@@ -467,8 +462,8 @@ extension View {
 
 /// A page that comes in by anything but a push or a pop, such as another tab, another thread from the sidebar, or the
 /// Duo unfolding onto a thread, fades in from the ground: short, as the prototype has it (Zach, TestFlight build 45,
-/// point 6), and a little longer with Reduce Motion, where it stands in for every move. A push and a pop stay iOS's own,
-/// with its swipe back.
+/// point 6), and a little longer with Reduce Motion, where it stands in for the fold's reshaping. A push and a pop stay
+/// iOS's own, with its swipe back, and with Reduce Motion they follow iOS's own Prefer Cross-Fade Transitions.
 private struct FadeIn: ViewModifier {
     let key: Int
     @State private var shown = 1.0
@@ -485,6 +480,18 @@ private struct FadeIn: ViewModifier {
                     withAnimation(.easeOut(duration: reduceMotion ? 0.2 : 0.16)) { shown = 1 }
                 }
             }
+    }
+}
+
+/// Fades a view in when it first shows, while `enabled`: the sidebar with Reduce Motion, which then neither slides nor
+/// moves the page beside it.
+private struct FadeOnAppear: ViewModifier {
+    let enabled: Bool
+    @State private var shown = false
+    func body(content: Content) -> some View {
+        content
+            .opacity(!enabled || shown ? 1 : 0)
+            .onAppear { if enabled { withAnimation(.easeOut(duration: 0.2)) { shown = true } } }
     }
 }
 
