@@ -397,16 +397,16 @@ import UIKit
         reveal(settled)
         XCTAssertTrue(!search.exists || search.frame.minY < restingTop - 40, "Search scrolls away with the list, as one sheet")
 
-        // Search's keyboard closes on a tap outside the field, and on scrolling the list. The summary above search is
-        // somewhere to tap that does nothing else.
-        let counts = byID("thread-counts")
-        reveal(counts, swipingDown: true)
+        // Search's keyboard closes on a tap outside the field, and on scrolling the list. The Needs you heading under
+        // search is somewhere to tap that does nothing else.
+        let heading = byID("threads-heading-needs")
+        reveal(heading, swipingDown: true)
         reveal(search)
         let keyboard = app.keyboards.firstMatch
         search.tap()
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "Search opens the keyboard")
-        XCTAssertTrue(counts.isHittable)
-        counts.tap()
+        XCTAssertTrue(heading.isHittable)
+        heading.tap()
         XCTAssertTrue(waitUntilGone(keyboard), "A tap outside search closes its keyboard")
         search.tap()
         XCTAssertTrue(keyboard.waitForExistence(timeout: 5), "Search opens the keyboard again")
@@ -775,22 +775,19 @@ import UIKit
         capture("question-glow-after")
     }
 
-    /// A question with a few choices is answered on its Threads card: the chip chosen there is the question's answer.
-    func testAOneTapQuestionIsAnsweredOnItsCard() {
+    /// Needs you is a row like the others, with nothing to answer on the Threads page itself: the row opens its thread,
+    /// and the question opens there (ADR-0151, amended October 30, 2026, Zach's pick A).
+    func testANeedsYouRowOpensItsThreadOnTheQuestion() {
         launch(Self.fixture + ["--ui-question-while-reading"])
-        let chip = app.buttons["Ctrl+J"]
-        // Whole and clear of the floating tab bar. At the largest text on the Pro Max, a chip mostly under the bar is
-        // hittable to XCTest only at its top corner, outside its capsule, and on CI the press there opened the thread.
-        reveal(chip, fullyVisible: true)
-        chip.tap()
-        XCTAssertTrue(chip.isSelected, "The pressed chip is chosen on its card")
-        // Another card on Threads has its own Send answer, which stays off until one of its chips is chosen.
-        let send = app.buttons.matching(NSPredicate(format: "label == %@ AND enabled == true", "Send answer")).firstMatch
-        XCTAssertTrue(send.waitForExistence(timeout: 5), "Choosing a chip readies its card's Send answer")
-        reveal(send, fullyVisible: true)
-        send.tap()
-        XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The chosen chip goes as the question's answer")
-        capture("threads-glow-card-answered")
+        let thread = row("iphone")
+        reveal(thread)
+        XCTAssertTrue(thread.label.contains("Refine the iPhone thread view"))
+        XCTAssertFalse(app.buttons["Send answer"].exists, "The Threads page answers nothing in place")
+        XCTAssertFalse(app.buttons["Ctrl+J"].exists, "A Needs you row shows no choices")
+        capture("threads-list-needs-you")
+        thread.tap()
+        XCTAssertTrue(app.buttons["request-send-answer"].waitForExistence(timeout: 5), "The row opens its thread on the question")
+        XCTAssertTrue(app.buttons["request-option-j"].exists)
     }
 
     // MARK: Watcher (ADR-0073, amended October 11, 2026)
@@ -1957,9 +1954,10 @@ import UIKit
     /// Threads and Computers at the top in the Glow look, dark then light.
     func testThreadsAndComputersInTheGlowLook() {
         launch(Self.fixture)
-        let counts = byID("thread-counts")
-        XCTAssertTrue(counts.exists)
-        XCTAssertTrue(counts.label.contains("2 working"), "The summary counts the threads at work")
+        let working = byID("threads-heading-working")
+        XCTAssertTrue(working.exists)
+        XCTAssertTrue(working.label.contains("2"), "Working now counts the threads at work")
+        XCTAssertFalse(byID("thread-counts").exists, "The sections count their threads; there is no counts line (#1849)")
         XCTAssertTrue(app.buttons["Try reaching Studio Mac again"].exists, "A computer that can't be reached offers Try again")
         XCTAssertFalse(app.tab("Watcher").exists, "A computer that doesn't run Watcher gives it no tab")
         capture("threads-glow-dark")

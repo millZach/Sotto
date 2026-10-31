@@ -178,7 +178,7 @@ struct MainTabs: View {
     private var pages: some View {
         TabView(selection: $tab) {
             NavigationStack(path: $threadPath) {
-                ThreadsView(openCreated: { ref in threadPath.append(ThreadRoute(ref: ref)) }).threadDestination()
+                ThreadsView(open: { ref in threadPath.append(ThreadRoute(ref: ref)) }).threadDestination()
             }
                 .environment(\.pageTop, tops[.threads, default: 0])
                 .toolbar(.hidden, for: .tabBar)
@@ -462,9 +462,9 @@ private struct DuoThreadBar: ViewModifier {
     }
 }
 
-/// The threads beside an open thread on the unfolded Duo, as on the desktop (Zach's picks, October 30, 2026): Needs
-/// you, Working now and Recent in the Threads page's order, a row each, the open thread on the chip the chosen tab wears.
-/// A press opens another thread in place of the one showing. The settled shelf stays on the Threads page.
+/// The threads beside an open thread on the unfolded Duo, as on the desktop (Zach's picks, October 30, 2026): the
+/// thread list, the open thread on the chip the chosen tab wears. A press opens another thread in place of the one
+/// showing. The settled shelf stays on the Threads page.
 struct ThreadSidebar: View, Equatable {
     @EnvironmentObject var model: AppModel
     let open: (ThreadRef) -> Void
@@ -489,17 +489,7 @@ struct ThreadSidebar: View, Equatable {
                 .frame(minHeight: 44)
                 .padding(.horizontal, Space.s2)
                 .padding(.top, Space.s3)
-                section(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), groups.questions) { row in
-                    SidebarRow(row: row, tone: .warning, line: "\(ThreadState(row.thread).words) · \(row.computer)", chosen: row.ref == model.selected) { open(row.ref) }.equatable()
-                }
-                section(String(localized: "Working now"), groups.working) { row in
-                    SidebarRow(row: row, tone: .accent, line: Words.place(row), chosen: row.ref == model.selected) { open(row.ref) }.equatable()
-                }
-                section(String(localized: "Recent", comment: "The heading over threads that finished lately."), groups.recent) { row in
-                    let unread = groups.isUnreadFinish(row)
-                    SidebarRow(row: row, tone: unread ? .accent : row.failed ? .danger : .off, line: recentLine(row, unread: unread),
-                               chosen: row.ref == model.selected) { open(row.ref) }.equatable()
-                }
+                ThreadListSections(groups: groups, chosen: model.selected, identifier: "sidebar-thread-", open: open)
             }
             .padding(.horizontal, Space.s2)
             .padding(.bottom, Space.s6)
@@ -512,59 +502,153 @@ struct ThreadSidebar: View, Equatable {
             NewThreadSheet(opened: { ref in model.newThreadOpened(ref); open(ref) })
         }
     }
-    @ViewBuilder private func section<Row: View>(_ title: String, _ rows: [HostedThread],
+    /// It draws from the model it watches, its width and whether it has New thread; the closure never changes what it draws.
+    static func == (lhs: ThreadSidebar, rhs: ThreadSidebar) -> Bool { lhs.width == rhs.width && lhs.newThread == rhs.newThread }
+}
+
+/// The thread list (CONTEXT.md): Needs you, Working now and Recent, a row each, as the desktop's sidebar lists them
+/// (Zach's pick A, rows only, October 30, 2026). The Threads page shows it on every iPhone but the unfolded Duo, and the
+/// unfolded Duo's sidebar shows it beside a thread. A Needs you row is a row like the others: its thread opens on its
+/// question.
+struct ThreadListSections: View {
+    @EnvironmentObject var model: AppModel
+    let groups: FocusThreads
+    /// The thread showing beside the list, on the accent's soft chip.
+    var chosen: ThreadRef? = nil
+    /// Each row's identifier starts with this: `thread-` on the Threads page, `sidebar-thread-` beside a thread.
+    var identifier = "thread-"
+    let open: (ThreadRef) -> Void
+    var body: some View {
+        let watched = model.watchedThreadIDs
+        VStack(alignment: .leading, spacing: 0) {
+            section(String(localized: "Needs you", comment: "The heading over threads waiting on the user's answer."), "needs", groups.questions) { row in
+                rowView(row, .needs, watched)
+            }
+            section(String(localized: "Working now"), "working", groups.working) { row in rowView(row, .working, watched) }
+            section(String(localized: "Recent", comment: "The heading over threads that finished lately."), "recent", groups.recent) { row in
+                rowView(row, .recent(unread: groups.isUnreadFinish(row)), watched)
+            }
+        }
+    }
+    private func rowView(_ row: HostedThread, _ kind: ThreadListRow.Kind, _ watched: Set<String>) -> some View {
+        let isWatched = watched.contains(row.id)
+        return ThreadListRow(row: row, kind: kind, watched: isWatched, chosen: row.ref == chosen,
+                             canWatch: model.canChangeWatch(row.ref), identifier: identifier,
+                             open: { open(row.ref) },
+                             setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })
+            .equatable()
+    }
+    @ViewBuilder private func section<Row: View>(_ title: String, _ id: String, _ rows: [HostedThread],
                                                  @ViewBuilder row: @escaping (HostedThread) -> Row) -> some View {
         if !rows.isEmpty {
-            HStack(spacing: Space.s2) {
-                Text(title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
-                Text("\(rows.count)").font(.sotto(.small)).foregroundStyle(Palette.muted)
-            }
-            .padding(.horizontal, Space.s3)
-            .padding(.top, Space.s5)
-            .padding(.bottom, Space.s1)
-            .accessibilityElement(children: .combine)
-            .accessibilityAddTraits(.isHeader)
+            ThreadListHeading(title: title, count: rows.count, id: id)
             ForEach(rows) { row($0) }
         }
     }
-    /// It draws from the model it watches, its width and whether it has New thread; the closure never changes what it draws.
-    static func == (lhs: ThreadSidebar, rhs: ThreadSidebar) -> Bool { lhs.width == rhs.width && lhs.newThread == rhs.newThread }
-    /// A recent row's line, as the Threads page writes it: just finished, can't be reached, failed, or where it lives.
-    private func recentLine(_ row: HostedThread, unread: Bool) -> String {
-        if unread { return String(localized: "Just finished · \(row.computer)", comment: "%@ is the computer's name.") }
-        if !row.reachable { return "\(row.status.words) · \(row.computer)" }
-        if row.failed { return "\(ThreadState(row.thread).words) · \(row.computer)" }
-        return Words.place(row)
+}
+
+/// A section's quiet heading in the thread list: its name and how many threads it holds.
+struct ThreadListHeading: View {
+    let title: String
+    let count: Int
+    let id: String
+    var body: some View {
+        HStack(spacing: Space.s2) {
+            Text(title).font(.sotto(.small, .semibold)).foregroundStyle(Palette.muted)
+            Text("\(count)").font(.sotto(.small)).foregroundStyle(Palette.muted)
+        }
+        .padding(.horizontal, Space.s3)
+        .padding(.top, Space.s5)
+        .padding(.bottom, Space.s1)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityIdentifier("threads-heading-\(id)")
     }
 }
 
-/// One thread in the sidebar: its light, title and line, and how long ago, on the accent's soft chip while it is open.
-private struct SidebarRow: View, Equatable {
+/// One thread in the thread list: its light, title and line, and how long ago, on the accent's soft chip while it is
+/// open beside the list. A thread Watcher can keep going offers Watch or Stop watching on a long press.
+struct ThreadListRow: View, Equatable {
+    /// Which section it is in; a recent or settled thread that finished while nothing showed it is `unread`.
+    enum Kind: Equatable { case needs, working, recent(unread: Bool) }
     let row: HostedThread
-    let tone: Light.Tone
-    let line: String
+    let kind: Kind
+    let watched: Bool
     let chosen: Bool
+    let canWatch: Bool
+    let identifier: String
     let open: () -> Void
+    let setWatched: (Bool) -> Void
     @Environment(\.dynamicTypeSize) private var typeSize
-    /// What the row draws: the thread's title, state and times, its line, light and chip.
-    static func == (lhs: SidebarRow, rhs: SidebarRow) -> Bool {
-        lhs.row.id == rhs.row.id && lhs.row.thread.title == rhs.row.thread.title && lhs.line == rhs.line && lhs.chosen == rhs.chosen
-            && lhs.tone == rhs.tone && ThreadState(lhs.row.thread) == ThreadState(rhs.row.thread)
+    /// What the row draws: the thread's title, state, place and times, its section, light and chip.
+    static func == (lhs: ThreadListRow, rhs: ThreadListRow) -> Bool {
+        lhs.row.id == rhs.row.id && lhs.kind == rhs.kind && lhs.watched == rhs.watched && lhs.chosen == rhs.chosen
+            && lhs.canWatch == rhs.canWatch && lhs.identifier == rhs.identifier && lhs.line == rhs.line && lhs.label == rhs.label
             && lhs.row.thread.summary?.runningTurnStartedAt == rhs.row.thread.summary?.runningTurnStartedAt
             && lhs.row.thread.summary?.lastMessageAt == rhs.row.thread.summary?.lastMessageAt
     }
+    private var state: ThreadState { ThreadState(row.thread) }
+    private var unread: Bool { if case .recent(true) = kind { return true } else { return false } }
+    private var tone: Light.Tone {
+        switch kind {
+        case .needs: return .warning
+        case .working: return .accent
+        case .recent(let unread): return unread ? .accent : row.failed ? .danger : .off
+        }
+    }
+    /// What the row says under its title: the request it waits on, where a working thread lives, or for a recent one
+    /// just finished, can't be reached, failed, or where it lives, as the Threads page always wrote it.
+    private var line: String {
+        switch kind {
+        case .needs: return "\(state.words) · \(row.computer)"
+        case .working: return Words.place(row)
+        case .recent(let unread):
+            if unread { return String(localized: "Just finished · \(row.computer)", comment: "%@ is the computer's name.") }
+            if !row.reachable { return "\(row.status.words) · \(row.computer)" }
+            if row.failed { return "\(state.words) · \(row.computer)" }
+            return Words.place(row)
+        }
+    }
+    /// The row as VoiceOver reads it: its title, then its state where that matters, then where it runs.
+    private var label: String {
+        let place = Words.place(row)
+        let spoken: String
+        switch kind {
+        case .needs, .working: spoken = "\(row.thread.title), \(state.words), \(place)"
+        case .recent(let unread):
+            if unread {
+                spoken = String(localized: "\(row.thread.title), just finished, not opened yet, \(place)",
+                                comment: "First %@ is the thread's title; second is where it runs: its agent, project and computer.")
+            } else if !row.reachable { spoken = "\(row.thread.title), \(row.status.words), \(place)" }
+            else if row.failed { spoken = "\(row.thread.title), \(state.words), \(place)" }
+            else { spoken = "\(row.thread.title), \(place)" }
+        }
+        return watched ? String(localized: "\(spoken), watched by Watcher", comment: "%@ is what VoiceOver reads of the thread before this: its title and where it runs.") : spoken
+    }
     var body: some View {
-        // At the accessibility text sizes the sidebar's width can't hold a title on one line: titles and lines wrap and
-        // the age goes under them.
+        if canWatch {
+            button.contextMenu {
+                Button { setWatched(!watched) } label: {
+                    Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                }
+            }
+        } else {
+            button
+        }
+    }
+    private var button: some View {
+        // At the accessibility text sizes a title can't hold one line: titles and lines wrap and the age goes under them.
         let large = typeSize.isAccessibilitySize
         let ago = Words.ago(row.thread.summary?.runningTurnStartedAt ?? row.thread.summary?.lastMessageAt)
-        Button(action: open) {
+        return Button(action: open) {
             HStack(alignment: .top, spacing: Space.s3) {
-                Light(tone: tone, breathing: tone == .accent && ThreadState(row.thread).workInProgress).padding(.top, 6)
+                Light(tone: tone, breathing: kind == .working).padding(.top, 6)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(verbatim: row.thread.title).font(.sotto(.body, .semibold))
+                    Text(verbatim: row.thread.title).font(.sotto(.body, unread ? .bold : .semibold))
                         .foregroundStyle(chosen ? Palette.accentText : Palette.ink).lineLimit(large ? 4 : 1)
-                    Text(verbatim: line).font(.sotto(.caption)).foregroundStyle(Palette.muted).lineLimit(large ? 3 : 1)
+                    PlaceLine(providerID: row.thread.providerId, watched: watched, text: line,
+                              tone: row.failed ? Palette.dangerText : Palette.muted)
+                        .lineLimit(large ? 3 : 1)
                     if large, let ago { Text(ago).font(.sotto(.caption)).foregroundStyle(Palette.muted) }
                 }
                 Spacer(minLength: Space.s1)
@@ -580,10 +664,10 @@ private struct SidebarRow: View, Equatable {
         }
         .buttonStyle(PressStyle())
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "\(row.thread.title), \(line)"))
+        .accessibilityLabel(Text(verbatim: label))
         .accessibilityAddTraits(chosen ? [.isButton, .isSelected] : .isButton)
         .accessibilityHint("Opens the thread")
-        .accessibilityIdentifier("sidebar-thread-\(row.id)")
+        .accessibilityIdentifier("\(identifier)\(row.id)")
     }
 }
 

@@ -10,6 +10,8 @@ Amended October 29, 2026: the reply box takes the shape of Messages' composer. Z
 
 Amended October 30, 2026: the box floats over a fade. With nothing behind them, the box and **+** let the conversation show in the gaps between them, and Watcher's box lay over a card's second choice (#1847). The page's ground now fades in a little above the reply box, Watcher's box and the pull request sheet's Babysit button, solid from their top down to the screen's edge, so what scrolls under them fades out first. The box itself still floats, solid with its shadow.
 
+Amended October 30, 2026: on every iPhone but the unfolded Duo, Threads is the thread list, a row each, and nothing is answered on its rows: a question or permission is answered in its thread, as ADR-0039 first had it. The unfolded Duo's Threads page keeps its cards, answerable in place as below ([ADR-0151](0151-the-iphone-sets-threads-side-by-side-at-regular-width.md), amended).
+
 This amends [ADR-0039](0039-the-iphone-opens-on-focus-threads.md). Its navigation stands: Threads, Computers and Settings, questions and permissions first, Settled collapsed. What changes is how the app looks and moves, the thread page, and what Settings holds.
 
 ## The look
