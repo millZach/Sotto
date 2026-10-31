@@ -323,9 +323,9 @@ export class ClaudeStreamJsonHost implements AgentHost {
   profileRefusalHandler(id: string) {
     const generation = this.generation, runtime = this.runtimes.get(id), spare = this.spares.get(id)
     if (!runtime && !spare) return undefined
-    return (reason: string) => {
+    return (reason: string, history = false) => {
       if (generation !== this.generation || this.runtimes.get(id) !== runtime || this.spares.get(id) !== spare) return
-      return this.stopWatcher(id, this.resolvedWatcherProfiles.get(id), reason, generation, runtime)
+      return this.stopWatcher(id, this.resolvedWatcherProfiles.get(id), reason, generation, runtime, !history)
     }
   }
   private browserTools: BrowserAgentTools | undefined
@@ -743,10 +743,11 @@ export class ClaudeStreamJsonHost implements AgentHost {
       const generation = this.generation
       stops.push(this.stopSession(id).catch(() => undefined).then(() => {
         if (generation !== this.generation || !this.state.connected || !this.observed.has(id) || !this.aliases[id] || this.aliases[id].rollbackPending) return
-        void this.start(id).catch(() => {
+        void this.start(id).catch((error: unknown) => {
           if (generation !== this.generation) return
           const thread = this.threads.get(id); if (thread) { thread.status = 'error'; this.changed(id) }
-          this.state.error = CLAUDE_RESUME_FAILED; this.emit()
+          if (!(error instanceof WatcherHistoryRefusal)) this.state.error = CLAUDE_RESUME_FAILED
+          this.emit()
         })
       }))
     }

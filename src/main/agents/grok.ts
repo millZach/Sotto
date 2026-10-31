@@ -881,7 +881,10 @@ export class GrokAcpHost implements AgentHost {
       this.state.connected = true; delete this.state.error
       // Each watched session loads in a new process of its own, where it is not yet resident, so a pending
       // mode change is applied by the load itself: nothing is left over to close first.
-      await Promise.all(Object.entries(this.aliases).filter(([id, alias]) => alias.kind !== 'personal' && alias.grokSessionId && this.observed.has(id)).map(([id]) => this.loadSession(id, true)))
+      await Promise.all(Object.entries(this.aliases).filter(([id, alias]) => alias.kind !== 'personal' && alias.grokSessionId && this.observed.has(id)).map(([id]) => this.loadSession(id, true).catch((error: unknown) => {
+        // An earlier Watcher conversation in view stays unopened; the rest of Grok Build connects as usual.
+        if (!(error instanceof WatcherHistoryRefusal)) throw error
+      })))
       if (generation !== this.generation) throw new Error('Grok connection was cancelled.')
       this.reaper.start()
       await this.pollHistory()
