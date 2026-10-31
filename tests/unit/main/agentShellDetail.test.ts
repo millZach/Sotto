@@ -335,6 +335,32 @@ describe('detail deltas while a thread streams', () => {
     expect(update.messageDeltas).toEqual([])
   })
 
+  it('sends the window the output a running command grew by, and every other listener the record whole', async () => {
+    const f = await fixture()
+    // The main window applies appends; a socket server's listener, like every other, does not ask for them.
+    const window: AgentThreadDetailUpdate[] = [], others: AgentThreadDetailUpdate[] = []
+    f.control.subscribeThreadDetail(item => window.push(item), { appends: true })
+    f.control.subscribeThreadDetail(item => others.push(item))
+    await f.control.command({ type: 'observe-threads', threadIds: ['workshop'] })
+    f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'stream-1', text: 'Working', activities: [record('build', { output: 'npm test\n' })] })
+    await f.control.command({ type: 'refresh' })
+    // Each holds what it was sent: the last whole detail, and the deltas after it.
+    const held = (updates: AgentThreadDetailUpdate[]): AgentThreadDetail => {
+      const start = updates.findLastIndex(update => !isAgentThreadDetailDelta(update))
+      return updates.slice(start + 1).reduce<AgentThreadDetail>((detail, update) => applyAgentThreadDetailDelta(detail, delta(update))!, whole(updates[start]))
+    }
+    let windowHeld = held(window), othersHeld = held(others)
+    window.length = 0; others.length = 0
+    f.host.event({ type: 'stream', threadId: 'workshop', messageId: 'stream-1', text: 'Working', activities: [record('build', { output: 'npm test\n12 passed\n' })] })
+    await f.control.command({ type: 'refresh' })
+    expect(delta(window[0]).activityDeltas).toEqual([{ id: 'build', appendOutput: '12 passed\n' }])
+    expect(delta(others[0]).activityDeltas).toEqual([{ record: expect.objectContaining({ id: 'build', output: 'npm test\n12 passed\n' }) }])
+    windowHeld = applyAgentThreadDetailDelta(windowHeld, delta(window[0]))!
+    othersHeld = applyAgentThreadDetailDelta(othersHeld, delta(others[0]))!
+    expect(windowHeld).toEqual(othersHeld)
+    expect(windowHeld).toEqual(f.control.threadDetail('workshop'))
+  })
+
   it('carries only the activity the host keeps beside the window, and the rest once the window widens', async () => {
     const f = await fixture()
     const details: AgentThreadDetailUpdate[] = []

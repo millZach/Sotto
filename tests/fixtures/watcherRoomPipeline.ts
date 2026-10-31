@@ -39,7 +39,7 @@ export async function measureWatcherRoom(window: BrowserWindow, streamCount: num
     const service = new LocalHostService({ control, events: workspace })
     const router = new DesktopHostRouter(() => emptyDesktopState(control.hostId()), { watcherEnabled: true, streamingPublishCost: true })
     router.add({ hostId: control.hostId()!, name: 'This computer', kind: 'local', service,
-      detail: id => control.threadDetail(id), preview: request => control.attachmentPreview(request), subscribeDetail: listener => control.subscribeThreadDetail(listener) })
+      detail: id => control.threadDetail(id), preview: request => control.attachmentPreview(request), subscribeDetail: listener => control.subscribeThreadDetail(listener, { appends: true }) })
     watcher.useRemoteHosts(router.watcherHosts())
     const broadcaster = new AgentStateBroadcaster()
     const shellPublisher = coalesceAgentStatePublishes(state => broadcaster.send(state, payload => { window.webContents.send('shell', payload); return true }))

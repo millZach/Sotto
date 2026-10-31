@@ -12,7 +12,7 @@ export function agentBridgeFor(control: AgentControl, overrides: Partial<AgentBr
     get: async () => control.shell(),
     command: request => control.command(request).then(agentShell),
     onState: listener => control.subscribe(listener),
-    onThreadDetail: listener => control.subscribeThreadDetail(listener),
+    onThreadDetail: listener => control.subscribeThreadDetail(listener, { appends: true }),
     threadDetail: async threadId => control.threadDetail(threadId),
     stageAttachment: ({ name, mimeType, bytes }) => control.stageAttachment({ name, mimeType, bytes }),
     attachmentContent: request => control.attachmentContent(request.digest),

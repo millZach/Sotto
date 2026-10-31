@@ -1135,7 +1135,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request),
     offersBabysitting: () => hostService.supportsBabysitting === true,
     hostFolders: request => hostService.hostFolders(request),
-    subscribeDetail: listener => agentControl.subscribeThreadDetail(listener),
+    // The main window applies appends: a running command's output crosses as its new lines (ADR-0025, October 30 amendment).
+    subscribeDetail: listener => agentControl.subscribeThreadDetail(listener, { appends: true }),
     questionPage: token => agentControl.questionPage(token),
     questionPageOpened: token => agentControl.questionPageOpened(token),
   })

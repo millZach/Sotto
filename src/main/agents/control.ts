@@ -55,7 +55,7 @@ import type { ThreadTitleExchange } from '../llm/threadTitle'
 import type { NextPromptHooks } from './nextPrompts'
 import { requestQuestionsDigest, type BindRequestDraftDecision } from './requestDrafts'
 import { requestDraftProvider, requestDraftQuestions } from '../../shared/requestDrafts'
-import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, isAgentThreadDetailDelta, mergeAgentThreadDetailUpdates } from '../../shared/agentThreadDetail'
+import { agentActivitySignature, applyAgentThreadDetailDelta, diffAgentThreadDetail, isAgentThreadDetailDelta, mergeAgentThreadDetailUpdates, withAppendsWhole } from '../../shared/agentThreadDetail'
 import { resolveFilesBinding } from '../files/binding'
 import { THREAD_SCOPED_COMMAND_TYPES } from '../../shared/threadLanes'
 import type { FilesBinding } from '../files/service'
@@ -1202,7 +1202,8 @@ export class AgentControl {
   private broadcastCancel: (() => void) | null = null
   private broadcastOpen = false
   private broadcastPending = false
-  private readonly detailListeners = new Set<(update: AgentThreadDetailUpdate) => void>()
+  /** Each detail listener, and whether it is sent appends (`AgentActivityAppend`) or every changed record whole. */
+  private readonly detailListeners = new Map<(update: AgentThreadDetailUpdate) => void, { readonly appends: boolean }>()
   /**
    * Per thread: the version of the messages last handed out (see `detailMessageKeys`), the signature of the activity beside
    * them, and the revision that stands for both.
@@ -2173,7 +2174,7 @@ export class AgentControl {
     const revision = this.detailRevision(thread, pane)
     if (this.detailListeners.size && this.detailSnapshots.has(threadId) && this.publishedDetail.get(threadId) !== revision) {
       const update = this.detailUpdate(thread, revision, pane)
-      if (update) for (const listener of this.detailListeners) listener(update)
+      if (update) this.emitDetail(threadId, update)
     }
     return this.wholeDetail(thread, revision, pane)
   }
@@ -2401,9 +2402,25 @@ export class AgentControl {
     if (signature === undefined) { signature = agentActivitySignature(record); this.certifiedDetailSignatures.set(record, signature) }
     return signature
   }
-  subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void): () => void {
-    this.detailListeners.add(listener)
+  /**
+   * Hears every viewed thread's detail as it changes. `appends`: the listener applies `AgentActivityAppend`, so a record
+   * whose output or text only grew is sent as the text it grew by. Only the main window's own stream asks for it; every
+   * other listener, a socket server's among them, is sent every changed record whole.
+   */
+  subscribeThreadDetail(listener: (update: AgentThreadDetailUpdate) => void, options: { readonly appends?: boolean } = {}): () => void {
+    this.detailListeners.set(listener, { appends: options.appends === true })
     return () => this.detailListeners.delete(listener)
+  }
+  /** Hands each detail listener `update`, every append in it as the record whole to one that is not sent appends. */
+  private emitDetail(threadId: string, update: AgentThreadDetailUpdate): void {
+    let whole: AgentThreadDetailUpdate | null | undefined
+    for (const [listener, { appends }] of this.detailListeners) {
+      if (appends || !isAgentThreadDetailDelta(update)) { listener(update); continue }
+      if (whole === undefined) whole = withAppendsWhole(update, this.detailSnapshots.get(threadId)?.activities ?? [])
+      // The snapshot the delta was applied to holds every record it appends to. Were one missing, the listener would miss
+      // this update, its next delta would not follow, and it would read the thread whole, as after any update it missed.
+      if (whole !== null) listener(whole)
+    }
   }
   /** The branches a thread's folder offers, read on request rather than pushed with every state. */
   gitRefs(request: GitRefsRequest): Promise<GitRefsPage> {
@@ -2961,7 +2978,7 @@ export class AgentControl {
       const revision = this.detailRevision(thread, pane)
       if (this.publishedDetail.get(threadId) === revision) continue
       const update = this.detailUpdate(thread, revision, pane)
-      if (update) for (const listener of this.detailListeners) listener(update)
+      if (update) this.emitDetail(threadId, update)
     }
   }
   /** The delta from what this thread's window already holds, or the whole detail when no delta can say it. */
@@ -6830,7 +6847,7 @@ class SentDetail {
       // A record removed and later brought back under its ID is new to the window again.
       for (const item of update.activityDeltas) {
         if ('removed' in item) this.records.delete(item.id)
-        else this.records.add(item.record.id)
+        else this.records.add('record' in item ? item.record.id : item.id)
       }
       return
     }

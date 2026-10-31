@@ -443,7 +443,7 @@ export async function ownerScalePipeline(root: string, scale: OwnerScale, stream
     bindRequestDraftDecision: (target, decisionId, answers): Promise<void> => requestDrafts.bindDecision(target, decisionId, answers) })
   watcher?.useRemoteHosts(router.watcherHosts())
   router.add({ hostId: localHostId, name: 'This computer', kind: 'local', service,
-    detail: id => control.threadDetail(id), preview: request => control.attachmentPreview(request), subscribeDetail: listener => control.subscribeThreadDetail(listener) })
+    detail: id => control.threadDetail(id), preview: request => control.attachmentPreview(request), subscribeDetail: listener => control.subscribeThreadDetail(listener, { appends: true }) })
 
   // The remote host, as a socket connection holds it: its last pushed state, copied whole for a `shell()` and read in place
   // for a `view()`. Its threads each held a question the user answered. Its catalog lists a few Muse models, which a
