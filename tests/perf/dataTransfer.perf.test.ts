@@ -443,6 +443,8 @@ it.skipIf(!BENCH)('measures what main moves per chunk and per action', async () 
   for (const [name, action] of Object.entries(p.actions)) results[name] = await scenario(() => until(action()), 1_000, name)
   // Typing an answer saves it at every pause: the next save, after the first, is what each pause costs.
   results['saveAnswerDraft again'] = await scenario(() => until(p.actions.saveAnswerDraft()), 1_000, 'saveAnswerDraft again')
+  // A send after the first: what every later thread command costs, Watcher's identity among it, read again after a save.
+  results['send again'] = await scenario(() => until(p.actions.send()), 1_000, 'send again')
   // Two turns of a thread nobody is looking at, a second apart, each adding one activity record (C1).
   results['background turns'] = await scenario(async () => {
     const thread = p.adapter.state.threads.find(item => item.id === BACKGROUND)!
