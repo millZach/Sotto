@@ -24,7 +24,7 @@ The thread composer floats over the transcript's foot, so the thread runs on und
 
 **4. Motion.** The card moves between the two heights over 200 milliseconds; with reduced motion it changes at once. Only its top moves: the branch toolbar and the row under the card hide but keep their place while slim, so the card's foot stays where it stood (the user's ask on October 24, 2026: "no movement other than the shrink of the composer"). Nothing beside it moves while it does: not the transcript, the pane's scroll or Watcher's night scene (October 24, 2026, after the user's report on Owl 0.1.41; `docs/verification/composer-slim-steady.md`). Nothing is announced; the textbox and the disc keep their names.
 
-**5. Cost.** The transcript tells the pane only when the reader crosses the line, never on each scroll, so a scroll does no React work of its own.
+**5. Cost.** The transcript tells the pane when the reader crosses the line and, since October 31, 2026, at each scroll the reader makes while reading back, so a composer brought back full slims again. The pane's state does not change for a scroll that leaves the composer as it was, so React draws nothing again for it; the transcript's own growth is never told.
 
 **6. Stable shows nothing of it.** The renderer asks `useOwlFeature('composer-shrink')` before slimming and before a key in the transcript goes to the composer; in Watcher's pane it asks for Watcher too. With the feature off the composer keeps its full size and a key pressed in the transcript stays there. Main has no part.
 

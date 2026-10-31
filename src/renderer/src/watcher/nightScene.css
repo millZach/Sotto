@@ -33,11 +33,12 @@
 .watcher-scene__tip b { overflow: hidden; color: var(--tt-text); font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 /* The scene's inks, read and never seen: the text colour for its ink and the accent for its accent; on its borders the
    other colours the conversation's words take, the secondary tier and links at rest and pointed at, which with the text
-   set how strong the column's ink may go (ADR-0126), and the muted tier the glass composer writes in; on its outline
+   set how strong the column's ink may go (ADR-0126), and the muted tier the glass composer writes in; as its text
+   decoration the hint tier its prompt's placeholder takes; on its outline
    the composer's card, which sets how thick the glass must be; and the glyph face. */
 .watcher-scene__ink { position: absolute; top: 0; left: 0; width: 0; height: 0; overflow: hidden; visibility: hidden; pointer-events: none;
   color: var(--tt-text); background-color: var(--tt-accent); border-top-color: var(--tt-text-2); border-right-color: var(--tt-link); border-bottom-color: var(--watcher-link-hover);
-  border-left-color: var(--tt-text-muted); outline-color: var(--tt-card); font-family: var(--tt-font-mono); }
+  border-left-color: var(--tt-text-muted); text-decoration-color: var(--tt-text-hint); outline-color: var(--tt-card); font-family: var(--tt-font-mono); }
 
 /* ---------- The column over the scene ---------- */
 /* The user's pick on October 23, 2026 (variant D of docs/prototypes/watcher-floating-composer-prototype.html, ADR-0126):

@@ -181,12 +181,13 @@ describe('Omarchy M3 and readability check', () => {
     // strength for dark and light rooms (ADR-0019, October 26 amendment), and when the Appearance preview could paint a
     // half of its own (`[data-theme-scope]`), and when the Glass theme's see-through tokens and the card's
     // solid colour arrived (ADR-0150), and when the collapsed rail's trays got their group colours (ADR-0146, October 28 amendment),
-    // and when text sizes and corners got their scale of `--tt-type-*` and `--tt-radius-*` steps (ADR-0169); none of them
-    // changes a palette.
+    // and when text sizes and corners got their scale of `--tt-type-*` and `--tt-radius-*` steps (ADR-0169), and when the
+    // prompt's placeholder got its hint tier, `--tt-text-hint`, from the theme's Muted text role (October 31, 2026); none
+    // of them changes a palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
     const tokenHash = createHash('sha256').update(tokenText).digest('hex')
-    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('570049fc7b0764670705cec9166363d95fbbe8a34dd7c34341d4351ecbc487cb')
+    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('fa77b6d9d24c0b3c195b9739fb59a8330bf6dd5b52fcaf7e26750d098030672b')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })

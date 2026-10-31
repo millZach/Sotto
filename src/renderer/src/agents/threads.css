@@ -238,13 +238,9 @@
 /* The placeholder is muted ink, as every other field's is, and reads at 4.5:1 on the composer card in every theme
    (paintedTextPairs.ts). While a turn runs it is the only thing that says what typing will do ("Queued until you answer
    the card"), so it is text, not decoration (#1819). The next prompt's ghost keeps its translucent ink (nextPrompt.css).
-   It is drawn from the theme's own Muted text role, as --tt-text-muted is from its muted foreground: an Omarchy theme can
-   lift the muted foreground all the way to the body text so Changes' line numbers read on its selected rows, and a hint
-   in body ink reads as typed words. In the built-in themes the two roles are the same colour or nearly so. */
-.prompt-editor {
-  --placeholder-ink: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-text-muted) 85%, var(--theme-text)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
-  white-space: pre-wrap; overflow-wrap: anywhere;
-}
+   It is the hint tier (tokens.css), muted ink drawn from the theme's own Muted text role, so it never takes the body
+   text's colour. */
+.prompt-editor { --placeholder-ink: var(--tt-text-hint); white-space: pre-wrap; overflow-wrap: anywhere; }
 .prompt-editor p { margin: 0; }
 .prompt-editor[data-empty="true"]::before { content: attr(data-placeholder); color: var(--placeholder-ink); float: left; height: 0; pointer-events: none; }
 .prompt-editor[aria-disabled="true"] { cursor: not-allowed; }
