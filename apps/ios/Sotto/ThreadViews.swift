@@ -264,6 +264,21 @@ private final class FollowBox {
 }
 
 /// A message, or a run of steps, as the conversation draws it.
+/// A rule across the conversation naming the model a thread moved from and to (ADR-0171), as quiet as a step's line.
+private struct ModelMovedLine: View {
+    let words: String
+    var body: some View {
+        HStack(spacing: Space.s2) {
+            Rectangle().fill(Palette.hairline).frame(height: 1)
+            Text(verbatim: words).font(.sotto(.caption)).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
+                .layoutPriority(1)
+            Rectangle().fill(Palette.hairline).frame(height: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("thread-model-moved")
+    }
+}
+
 private struct ConversationRow: Identifiable {
     let item: TimelineItem
     /// The provider's name heads an answer that doesn't follow another answer.
@@ -447,8 +462,13 @@ private struct Conversation: View {
                         .padding(.vertical, Space.s7)
                         .paragraphDirection()
                 }
+                // Where Sotto moved the thread off a model its provider stopped offering (ADR-0171).
+                let moved = thread?.modelMoved
+                let movedAfter = moved.flatMap { $0.anchor(in: detail?.messages ?? []) }.map { "message-" + $0 }
+                if let moved, movedAfter == nil, !rows.isEmpty { ModelMovedLine(words: moved.words(provider: provider)) }
                 ForEach(rows) { row in
                     rowView(row, provider: provider, working: row.id == working, last: row.id == last, scroll: scroll)
+                    if let moved, row.id == movedAfter { ModelMovedLine(words: moved.words(provider: provider)) }
                 }
             } else if model.detailProblem == nil || !online {
                 (model.status(ref.hostID) == .unreachable ? Text("Reconnect to read this thread.") : Text("Reading this thread…"))
@@ -2191,9 +2211,18 @@ private struct ThreadSettingsRow: View {
 
     private var modelMenu: some View {
         Menu {
+            let lineup = ModelLineup.split(panel.models)
             Section(panel.provider) {
-                ForEach(panel.models) { item in
+                ForEach(lineup.latest) { item in
                     option(item.name, chosen: item.id == panel.model?.id) { choose(.model, item.id) }
+                }
+                // Older models of each line wait in a closed submenu (ADR-0171).
+                if !lineup.legacy.isEmpty {
+                    Menu("Legacy") {
+                        ForEach(lineup.legacy) { item in
+                            option(item.name, chosen: item.id == panel.model?.id) { choose(.model, item.id) }
+                        }
+                    }
                 }
             }
         } label: {

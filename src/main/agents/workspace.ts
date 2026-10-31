@@ -44,8 +44,9 @@ import { SubagentStore, subagentActivityClassification } from './subagentStore'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentRow, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
 import { validateThreadOptions } from './threadOptions'
 import { resolveModel } from '../../shared/modelCatalog'
+import { LINEUP_PROVIDERS, retiredModelSuccessor } from '../../shared/modelLineup'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
-import { isThreadArchived, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isThreadArchived, isThreadClosed, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { delegatedThreadsBelow } from '../../shared/delegation'
 import { npmCi, preparePackages, type PackageInstaller } from './checkWorktree'
 import { checkoutIdentity, existingWorkingDirectory, movedBranchRef, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
@@ -4368,9 +4369,36 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (held && held.incoming === incoming && held.output === previous && isImmutableModels(incoming)) return previous
     const models = new Map(previous.map(model => [model.id, model.ready ? { ...model, ready: false } : model]))
     for (const model of incoming) models.set(model.id, model)
+    const retired = this.dropRetiredModels(models, incoming)
     const output = isImmutableModels(incoming) ? immutableModels([...models.values()]) : [...models.values()]
     this.modelInputs = { incoming, output }
+    // A thread opened before its provider sent this catalog moves now, once the accept that brought it is done.
+    if (retired && this.watched.size) queueMicrotask(() => { if (!this.stopping) this.moveOffRetiredModels([...this.watched.keys()]) })
     return output
+  }
+  /**
+   * Retired models leave the catalog (ADR-0171). A Claude Code or Codex model kept from an earlier catalog is retired once
+   * that provider sends a catalog with ready models that does not name it. It stays, not ready and shown nowhere, only while
+   * a thread is still on it, so the thread can say what it moved from when it is next opened (`moveOffRetiredModels`).
+   * Another provider's kept models, and a provider not connected now, are left as they are. Answers whether any retired
+   * model is still kept for a thread.
+   */
+  private dropRetiredModels(models: Map<string, AgentModel>, incoming: readonly AgentModel[]): boolean {
+    let fresh: Set<ProviderId> | undefined
+    for (const model of incoming) if (model.ready && model.providerId && LINEUP_PROVIDERS.has(model.providerId)) (fresh ??= new Set()).add(model.providerId)
+    if (!fresh) return false
+    let named: Set<string> | undefined
+    let used: Set<string> | undefined
+    let kept = false
+    for (const [id, model] of models) {
+      if (model.ready || !model.providerId || !fresh.has(model.providerId)) continue
+      named ??= new Set(incoming.map(item => item.id))
+      if (named.has(id)) continue
+      used ??= new Set(this.state.snapshot.threads.map(thread => thread.modelId))
+      if (used.has(id)) kept = true
+      else models.delete(id)
+    }
+    return kept
   }
   /**
    * One publication of the inner host's activity, as thread changes already applied to `incoming` (#925). The threads it
@@ -4452,6 +4480,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
       ...(old?.continuedIn ? { continuedIn: old.continuedIn } : {}),
       ...(old?.startedFrom ? { startedFrom: old.startedFrom } : {}),
+      ...(old?.modelMoved ? { modelMoved: old.modelMoved } : {}),
       ...(old?.babysitting ? { babysitting: old.babysitting } : {}),
       ...(old?.babysitEnded ? { babysitEnded: old.babysitEnded } : {}),
       ...(old?.wakeUpMessageIds ? { wakeUpMessageIds: old.wakeUpMessageIds } : {}),
@@ -5659,7 +5688,43 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (this.gitStatus && !this.threadById(id)?.worktree?.git) void this.onLane(id, () => this.readGitStatus(id, false)).catch(() => undefined)
       changed = true
     }
+    this.moveOffRetiredModels(wanted)
     if (changed) this.publish()
+  }
+  /** Threads moving off a retired model now, so a second look while the first change runs sends no second one. */
+  private readonly retiredMoves = new Set<string>()
+  /**
+   * A thread in view on a retired Claude Code or Codex model moves to its successor (ADR-0171), by the same settings change
+   * a press in its composer makes. It happens when the thread is opened, which starts its client anyway, so a thread nobody
+   * opens starts nothing. A thread that is closed, working or waiting on the user is left until it is next opened as it may
+   * be. Where the two models' names differ, the thread keeps a note of the move (`modelMoved`).
+   */
+  private moveOffRetiredModels(ids: Iterable<string>): void {
+    const models = this.state.snapshot.models
+    for (const id of ids) {
+      const thread = this.threadById(id)
+      if (!thread || this.retiredMoves.has(id) || thread.status === 'running' || thread.requests.length || isThreadClosed(thread)) continue
+      // The catalog's own entry, not its base's: a long-context variant the catalog never listed runs as its base does (#346).
+      const entry = models.find(model => model.id === thread.modelId)
+      if (!entry || entry.ready || !entry.providerId || !LINEUP_PROVIDERS.has(entry.providerId)) continue
+      const successor = retiredModelSuccessor(models, entry.id, entry.name)
+      if (!successor) continue
+      this.retiredMoves.add(id)
+      void this.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: successor.id }).then(result => {
+        const moved = this.threadById(id)
+        if (!result.accepted || !moved) return
+        if (successor.name !== entry.name) this.touched(moved).modelMoved = { from: entry.name, to: successor.name, at: new Date().toISOString() }
+        // The last thread on the retired model has left it, so it leaves the catalog now rather than at the provider's next.
+        const snapshot = this.state.snapshot
+        if (!snapshot.threads.some(thread => thread.modelId === entry.id)) {
+          snapshot.models = snapshot.models.filter(model => model.id !== entry.id)
+          this.restTouched = true
+        }
+        this.dirty = true
+        this.writeSoon()
+        this.publish()
+      }).catch(() => undefined).finally(() => this.retiredMoves.delete(id))
+    }
   }
   /**
    * Early start (#769), on the thread's own lane so it orders with its sends. A started thread's provider session is

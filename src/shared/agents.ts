@@ -334,6 +334,11 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
    * thread provider's own label, so a model from Anthropic on OpenCode never reads as Claude Code.
    */
   source: id.optional(),
+  /**
+   * A Claude Code or Codex model with a newer model of its line in the same catalog (ADR-0171). Menus list it under a closed
+   * Legacy section rather than with the newest. Set by the adapter from `markLegacyModels`; other providers never set it.
+   */
+  legacy: z.boolean().optional(),
 })
 /** The model source OpenCode's free models come from (ADR-0087); the model menu says so on its row. */
 export const OPENCODE_ZEN_SOURCE = 'OpenCode Zen'
@@ -403,6 +408,9 @@ export const threadHandoverProofSchema = z.object({ prefixLength: z.number().int
   /** The first message's Sotto message ID, once its send said it: the only message a copy without the words may split. */
   messageId: id.optional() }).strict()
 export type ThreadHandoverProof = z.infer<typeof threadHandoverProofSchema>
+/** A thread Sotto moved off a model its provider stopped offering (ADR-0171): from and to by name, and when. */
+export const threadModelMovedSchema = z.object({ from: z.string().min(1).max(300), to: z.string().min(1).max(300), at: z.string().datetime() })
+export type ThreadModelMoved = z.infer<typeof threadModelMovedSchema>
 /**
  * The thread a **continued thread** continues (ADR-0089): its Sotto thread ID, its provider, when, and the proof of the
  * handover its first message carried, once that message was sent.
@@ -588,6 +596,11 @@ export const agentThreadSchema = z.object({
    * from older hosts. A value this build cannot read drops the link rather than the thread.
    */
   continuedFrom: threadContinuedFromSchema.optional().catch(undefined),
+  /**
+   * Sotto moved this thread off a model its provider stopped offering (ADR-0171): the two models' names and when. The
+   * thread's note follows the last message written before then. Present only when the names differ. Sotto's record.
+   */
+  modelMoved: threadModelMovedSchema.optional().catch(undefined),
   continuedIn: z.array(threadContinuedInSchema).max(THREAD_CONTINUED_IN_MAX).optional().catch(undefined),
   /**
    * The thread this one began from, when it was an agent continued as its own thread or a fork at a reply (#1028). Sotto's

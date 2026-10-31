@@ -1,6 +1,7 @@
 import { z } from 'zod'
 import { agentRuntimeModeSchema, agentSpeedSchema, everyProvider, parsePublicProviderEntityId, PROVIDER_LABELS, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type ProviderId } from './agents'
 import { resolveModel } from './modelCatalog'
+import { modelInForce } from './modelLineup'
 import { watcherProviderIds } from './providerProfile'
 import { nearestRuntimeMode, RUNTIME_MODE_ORDER } from './newThreadDefaults'
 import { effortKey, effortRank } from './reasoningEfforts'
@@ -254,10 +255,12 @@ export interface RoleStartChoice {
 }
 export function roleInForce(id: WorkerRoleId, choices: WorkerRoleChoices, models: readonly AgentModel[]): RoleInForce {
   const role = workerRole(id), choice = choices[id], fallback = roleDefaultInForce(id, models)
-  const chosen = choice ? resolveModel(models, choice.modelId) : undefined
+  // A choice of a model its provider has retired runs on the newest of that model's line (ADR-0171).
+  const chosenId = choice ? modelInForce(models, choice.modelId) : undefined
+  const chosen = chosenId ? resolveModel(models, chosenId) : undefined
   const choiceReady = usable(id, chosen)
   const start: RoleStartChoice | undefined = choice && choiceReady
-    ? { model: chosen!, modelId: choice.modelId, reasoningEffort: fitEffort(choice.reasoningEffort, chosen), speed: fitSpeed(choice.speed, chosen), runtimeMode: fitRuntimeMode(choice.runtimeMode ?? role.permission, chosen), from: 'choice' }
+    ? { model: chosen!, modelId: chosenId!, reasoningEffort: fitEffort(choice.reasoningEffort, chosen), speed: fitSpeed(choice.speed, chosen), runtimeMode: fitRuntimeMode(choice.runtimeMode ?? role.permission, chosen), from: 'choice' }
     // While a chosen model's provider is away, the default in force starts on the permission the user chose, as near as
     // its model offers at or below it, never on the role's own wider one.
     : fallback ? { model: fallback.model, modelId: fallback.model.id, reasoningEffort: fallback.reasoningEffort, speed: fitSpeed(choice?.speed, fallback.model),

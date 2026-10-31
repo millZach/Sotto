@@ -1,12 +1,12 @@
 import React, { memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useMark } from '../components/marks'
 import { createPortal, flushSync } from 'react-dom'
-import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
+import { ArrowDown, ArrowRightLeft, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
 import { msg, ph, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentActivity } from '../../../shared/agentActivity'
-import { hostForThread, isThreadBusy, isVisualMessage, type AgentMessage, type AgentState, type ThreadContinuedIn } from '../../../shared/agents'
+import { hostForThread, isThreadBusy, isVisualMessage, type AgentMessage, type AgentState, type ThreadContinuedIn, type ThreadModelMoved } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useAgents, type AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
@@ -517,7 +517,33 @@ function withoutFinishedNews(groups: readonly ActivityGroup[] | undefined, liveT
 /** The briefs a delegating thread sent to this thread, by their message IDs, and that thread's name (ADR-0081). */
 export interface DelegatedBriefs { readonly ids: ReadonlySet<string>; readonly from: string }
 
-export const MessageList = memo(function MessageList({ messages, provider, running, sending = false, placement, context, streamText = true, threadId, speaker, delegations, backgroundWork, briefs, continuedIn }: {
+/**
+ * Where Sotto moved a thread off a model its provider stopped offering (ADR-0171): a rule across the transcript, as a
+ * compaction's is, after the last turn begun before the move. It says what the thread was on and what it runs on now.
+ */
+function ModelMovedLine({ moved, provider }: { readonly moved: ThreadModelMoved; readonly provider: string }): ReactNode {
+  const { t } = useLingui()
+  const { from, to } = moved
+  const words = t({ message: `${provider} no longer offers ${from}, so this thread now uses ${to}.`, comment: '{provider} is a provider, such as Claude Code; {from} and {to} are model names, such as Opus 5.5.' })
+  return <p className="thread-boundary" role="note" aria-label={words}>
+    <span className="thread-boundary__rule" aria-hidden="true" />
+    <span className="thread-boundary__label"><ArrowRightLeft className="thread-boundary__icon" size={13} strokeWidth={1.8} aria-hidden="true" /><span>{words}</span></span>
+    <span className="thread-boundary__rule" aria-hidden="true" />
+  </p>
+}
+
+/** The index of the last turn begun at or before `at`, or -1 when every turn began after it. */
+function turnBefore(turns: readonly TranscriptTurn[], at: string): number {
+  const moment = Date.parse(at)
+  let found = -1
+  turns.forEach((turn, index) => {
+    const first = turn.user ?? turn.replies[0]
+    if (first && Date.parse(first.createdAt) <= moment) found = index
+  })
+  return found
+}
+
+export const MessageList = memo(function MessageList({ messages, provider, running, sending = false, placement, context, streamText = true, threadId, speaker, delegations, backgroundWork, briefs, continuedIn, modelMoved }: {
   readonly messages: readonly AgentMessage[]; readonly provider: string; readonly running: boolean
   /** A prompt the user sent is drawn below these messages until the history carries it, so the newest reply here is not the one being written. */
   readonly sending?: boolean
@@ -534,6 +560,8 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   readonly briefs?: DelegatedBriefs | undefined
   /** Links to the threads that continue this one, by the user message that began the turn each follows (ADR-0089). */
   readonly continuedIn?: ReadonlyMap<string, readonly ThreadContinuedIn[]> | undefined
+  /** Sotto moved this thread off a retired model (ADR-0171); its note follows the turn begun last before the move. */
+  readonly modelMoved?: ThreadModelMoved | undefined
 }): ReactNode {
   // Turns are re-split on every arrival but hold the same messages; sharing their structure lets the
   // memoised turns below compare equal.
@@ -553,12 +581,16 @@ export const MessageList = memo(function MessageList({ messages, provider, runni
   const writing = live && !sending && last?.role === 'assistant' && !isVisualMessage(last) && !placement.after.get(last.id)?.length ? last.id : undefined
   // A Watcher news turn that wrote no reply shows nothing once it has finished (variant b); one that failed or stopped still says so.
   const unshown = (groups: readonly ActivityGroup[] | undefined): readonly ActivityGroup[] | undefined => speaker === 'watcher' ? withoutFinishedNews(groups, context.liveTurn) : groups
+  const movedAfter = modelMoved ? turnBefore(turns, modelMoved.at) : undefined
+  const movedLine = modelMoved ? <ModelMovedLine moved={modelMoved} provider={provider} /> : null
   return <><ActivityGroups groups={unshown(placement.leading)} context={context} />
+  {movedAfter === -1 ? movedLine : null}
   {turns.map((turn, index) => <React.Fragment key={turn.key}>
     <ActivityGroups groups={unshown(placement.before.get((turn.user ?? turn.replies[0])!.id))} context={context} />
     <TurnView turn={turn} provider={provider} running={live}
       last={index === turns.length - 1} writing={writing} placement={placement} context={context} streamText={streamText} threadId={threadId} speaker={speaker}
       delegations={turn.user ? delegations?.get(turn.user.id) : undefined} backgroundWork={index === turns.length - 1 ? agents : undefined} briefs={briefs} continuedIn={turn.user ? continuedIn?.get(turn.user.id) : undefined} />
+    {movedAfter === index ? movedLine : null}
   </React.Fragment>)}
   <ActivityGroups groups={unshown(placement.trailing)} context={context} />
   <DelegatedWork views={delegations?.get('')} />
@@ -1104,7 +1136,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
         {startView && startHandoverWaiting ? <StartHandoverCard key={thread.id} view={startView} createdAt={startView.start.at} /> : null}
         {thread.messages.length || showsActivity ? <ActivityBodyContext.Provider value={bodyHost}><ThreadStartContext.Provider value={startView ?? (thread.startedFrom && !watcher ? 'off' : null)}><ForkContext.Provider value={forkOptions}><DelegationWorldProvider world={delegationWorld}><ContinueLinksContext.Provider value={continueLinks}><HandoverFromContext.Provider value={handoverFrom}>
           <MessageRowsContext.Provider value={rows}><MessageList messages={messages} provider={row.provider} running={thread.status === 'running'} sending={sending.some(item => item.status === 'queued' || item.status === 'submitting' || item.status === 'accepted')} placement={placement} context={activity} streamText={streamText} threadId={thread.id} speaker={watcher ? 'watcher' : undefined}
-          delegations={delegatedWork.size ? delegatedWork : undefined} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} /></MessageRowsContext.Provider>
+          delegations={delegatedWork.size ? delegatedWork : undefined} backgroundWork={backgroundAgents} briefs={briefs} continuedIn={continuedIn?.size ? continuedIn : undefined} modelMoved={thread.modelMoved} /></MessageRowsContext.Provider>
         </HandoverFromContext.Provider></ContinueLinksContext.Provider></DelegationWorldProvider></ForkContext.Provider></ThreadStartContext.Provider></ActivityBodyContext.Provider>
           : thread.historyStatus === 'loading' ? <div className="thread-history-skeleton" aria-hidden="true"><i /><i /><i /></div>
             : thread.historyStatus === 'error' || !empty || greets || startView ? null

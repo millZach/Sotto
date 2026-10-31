@@ -485,3 +485,55 @@ describe('provider model picker', () => {
     })
   })
 })
+
+describe('Claude Code and Codex lineups (ADR-0171)', () => {
+  const lineup: AgentModel[] = [
+    { id: 'default', name: 'Default (recommended)', provider: 'Claude Code', providerId: 'claude', ready: true, recommended: true },
+    { id: 'opus', name: 'Opus 5.5', provider: 'Claude Code', providerId: 'claude', ready: true },
+    { id: 'opus-5', name: 'Opus 5', provider: 'Claude Code', providerId: 'claude', ready: true, legacy: true },
+    { id: 'sonnet', name: 'Sonnet 5.5', provider: 'Claude Code', providerId: 'claude', ready: true },
+    { id: 'sonnet-4-6', name: 'Sonnet 4.6', provider: 'Claude Code', providerId: 'claude', ready: true, legacy: true },
+    { id: 'retired', name: 'Fable 5.1', provider: 'Claude Code', providerId: 'claude', ready: false },
+    { id: 'sol', name: 'GPT-6.1-Sol', provider: 'Codex', providerId: 'codex', ready: true },
+  ]
+  const rows = (): string[] => screen.getAllByRole('option').map(option => option.textContent ?? '')
+
+  it('leads with the newest of each line, leaves out what cannot be chosen, and opens Legacy on a press', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(<ModelPicker models={lineup} modelId="opus" disabled={false} onChange={onChange} />)
+    await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    expect(rows()).toEqual(['Default (recommended)', 'Opus 5.5', 'Sonnet 5.5'])
+    expect(screen.queryByText('Unavailable')).not.toBeInTheDocument()
+    const legacy = screen.getByRole('button', { name: /Legacy/ })
+    expect(legacy).toHaveAttribute('aria-expanded', 'false')
+    expect(legacy).toHaveTextContent('2 models')
+    await user.click(legacy)
+    expect(legacy).toHaveAttribute('aria-expanded', 'true')
+    expect(within(screen.getByRole('group', { name: 'Legacy' })).getAllByRole('option').map(option => option.textContent)).toEqual(['Opus 5', 'Sonnet 4.6'])
+    await user.click(screen.getByRole('option', { name: 'Sonnet 4.6' }))
+    expect(onChange).toHaveBeenCalledExactlyOnceWith('sonnet-4-6')
+  })
+
+  it('opens with Legacy shown when the thread is on a legacy model, and a search finds legacy models', async () => {
+    const user = userEvent.setup()
+    render(<ModelPicker models={lineup} modelId="opus-5" disabled={false} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    expect(screen.getByRole('button', { name: /Legacy/ })).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('option', { name: 'Opus 5' })).toHaveAttribute('aria-selected', 'true')
+    await user.type(screen.getByRole('textbox', { name: 'Search models' }), 'opus')
+    expect(rows()).toEqual(['Opus 5.5', 'Opus 5'])
+    expect(screen.queryByRole('button', { name: /Legacy/ })).not.toBeInTheDocument()
+  })
+
+  it('lists nothing for a provider that is not connected, and says why', async () => {
+    const user = userEvent.setup()
+    const away = lineup.map(model => model.providerId === 'claude' ? { ...model, ready: false } : model)
+    render(<ModelPicker models={away} modelId="sol" disabled={false} onChange={vi.fn()} />)
+    await user.click(screen.getByRole('combobox', { name: 'Thread model' }))
+    await user.click(screen.getByRole('tab', { name: 'Claude Code' }))
+    expect(screen.queryAllByRole('option')).toEqual([])
+    expect(screen.getByRole('note')).toHaveTextContent('Claude Code is not connected. Connect it in Settings › Providers to choose a model.')
+  })
+})
+

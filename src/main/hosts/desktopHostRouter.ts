@@ -13,6 +13,7 @@ import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { BABYSITTING_RETIRED } from '../agents/babysitting'
 import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
 import { parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
+import { modelInForce } from '../../shared/modelLineup'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts, WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
 import { randomUUID } from 'node:crypto'
@@ -879,7 +880,7 @@ export class DesktopHostRouter {
           // Settings > Providers is this computer's own page, whichever host is selected for new work.
           ...(connection.kind === 'local' ? { enabledProviders: enabledThreadProviders(original.configuration), checkClientUpdates: original.configuration.checkClientUpdates,
             museDisableSandbox: original.configuration.museDisableSandbox, claudeUltracodeEffort: original.configuration.claudeUltracodeEffort,
-            agentModelId: defaultThreadModelId(original.configuration, original.host.models, original.reasoningAccounts) } : {}),
+            agentModelId: modelInForce(original.host.models, defaultThreadModelId(original.configuration, original.host.models, original.reasoningAccounts)) } : {}),
         })),
       },
       threadDrafts: entries.flatMap(item => item.state.threadDrafts ?? []),
@@ -1736,7 +1737,7 @@ export class DesktopHostRouter {
     const { newThreadRuntimeMode: _mode, ...configuration } = state.configuration
     void _mode
     const own = local.configuration
-    return { ...state, configuration: { ...configuration, newThreadModelId: defaultNewThreadModelId(own, local.host.models, local.reasoningAccounts),
+    return { ...state, configuration: { ...configuration, newThreadModelId: modelInForce(local.host.models, defaultNewThreadModelId(own, local.host.models, local.reasoningAccounts)),
       newThreadReasoningEffort: own.newThreadReasoningEffort, ...(own.newThreadRuntimeMode !== undefined ? { newThreadRuntimeMode: own.newThreadRuntimeMode } : {}) } }
   }
   /**
