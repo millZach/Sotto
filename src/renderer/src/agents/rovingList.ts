@@ -22,14 +22,20 @@ export const ROVING_KEY = 'data-roving-key'
 
 const CONTROL = 'button, a[href], input:not([type="hidden"]), select, textarea, [tabindex]'
 
-/** Every control drawn in the list that keeps a tab stop of its own, a row's own actions and an open menu's rows aside. */
+/**
+ * Every control drawn in the list, a row's own actions and an open menu's or card's rows aside: each keeps `tabindex` -1
+ * but the one stop. A hidden list (the sidebar collapsed to its rail) still has its stop, so expanding it needs no update.
+ */
 function listStops(list: HTMLElement): HTMLElement[] {
-  return [...list.querySelectorAll<HTMLElement>(CONTROL)].filter(control => control.closest(`[${ROW_ACTIONS}], [role="menu"], [role="dialog"], [hidden], [inert]`) === null)
+  return [...list.querySelectorAll<HTMLElement>(CONTROL)].filter(control => control.closest(`[${ROW_ACTIONS}], [role="menu"], [role="dialog"]`) === null)
 }
+
+const enabled = (control: HTMLElement): boolean => !(control as HTMLButtonElement).disabled
+const reachable = (control: HTMLElement): boolean => enabled(control) && control.closest('[hidden], [inert]') === null
 
 /** The list's controls a press can reach, in the order they are drawn. */
 export function listControls(list: HTMLElement): HTMLElement[] {
-  return listStops(list).filter(control => !(control as HTMLButtonElement).disabled)
+  return listStops(list).filter(reachable)
 }
 
 const typing = (target: EventTarget): boolean => target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement
@@ -57,30 +63,32 @@ export function useRovingList(ref: RefObject<HTMLElement | null>, { tree }: { re
     held.current = { control, key: control.getAttribute(ROVING_KEY), index: Math.max(0, controls.indexOf(control)), focused: true }
   }, [])
   /**
-   * Gives the stop to the control the list holds: the one last focused, or the row drawn anew in its place, or until the
-   * focus has been here the thread on screen (`aria-current`), or the first. A disabled control keeps `-1` too, so it
-   * cannot become a second stop when it is enabled again.
+   * Gives the stop to the control the list holds: the one last focused, or the same row drawn anew, or until the focus
+   * has been here the thread on screen (`aria-current`), or the first. A disabled control keeps `-1` too, so it cannot
+   * become a second stop when it is enabled again.
    */
   const sync = useCallback((): void => {
     const list = ref.current
     if (list === null) return
     const stops = listStops(list)
-    const controls = stops.filter(control => !(control as HTMLButtonElement).disabled)
+    const candidates = stops.filter(enabled)
     const memory = held.current
-    // A control that had the focus and was taken away (a row settled from its menu) hands it to the one now in its place.
-    if (memory.focused && memory.control !== null && !memory.control.isConnected && (document.activeElement === null || document.activeElement === document.body)) {
-      memory.focused = false
-      const next = controls[Math.min(memory.index, controls.length - 1)]
-      if (next !== undefined) { take(next, controls); next.focus(); return }
-    }
-    const stop = (memory.control !== null && controls.includes(memory.control) ? memory.control : undefined)
-      ?? (memory.key === null ? undefined : controls.find(control => control.getAttribute(ROVING_KEY) === memory.key))
-      ?? controls.find(control => control.getAttribute('aria-current') === 'page') ?? controls[0]
+    const keyed = memory.key === null ? undefined : candidates.find(control => control !== memory.control && control.getAttribute(ROVING_KEY) === memory.key)
+    // A control that had the focus and was taken away hands it on: to the same row drawn anew (an Owl rail tile that moved
+    // to another part), or else to the one now in its place (a row settled from its menu).
+    const lost = memory.focused && memory.control !== null && !memory.control.isConnected && (document.activeElement === null || document.activeElement === document.body)
+    const reach = candidates.filter(reachable)
+    const handed = lost ? keyed ?? reach[Math.min(memory.index, reach.length - 1)] : undefined
+    const stop = handed ?? (memory.control !== null && candidates.includes(memory.control) ? memory.control : undefined) ?? keyed
+      ?? candidates.find(control => control.getAttribute('aria-current') === 'page') ?? candidates[0]
     for (const control of stops) {
       const wanted = control === stop ? '0' : '-1'
       if (control.getAttribute('tabindex') !== wanted) control.setAttribute('tabindex', wanted)
     }
-  }, [ref, take])
+    if (!lost) return
+    memory.focused = false
+    handed?.focus()
+  }, [ref])
   // Kept by a watch on the list rather than on every render: a folder, a row or a preview drawn or gone, the thread on
   // screen changing, a control enabled. A working row's clock rewrites its own text every second, which changes nothing.
   const watched = useRef<{ list: HTMLElement | null; stop: () => void }>({ list: null, stop: () => undefined })
@@ -106,7 +114,8 @@ export function useRovingList(ref: RefObject<HTMLElement | null>, { tree }: { re
     list.addEventListener('focusout', left)
     watched.current = { list, stop: () => { observer?.disconnect(); list.removeEventListener('focusout', left) } }
   })
-  useLayoutEffect(() => () => { watched.current.stop() }, [])
+  // Reset as well as stopped, so a mount that runs again (React's development double run) watches the list again.
+  useLayoutEffect(() => () => { watched.current.stop(); watched.current = { list: null, stop: () => undefined } }, [])
 
   const onFocus = useCallback((event: FocusEvent<HTMLElement>): void => {
     const list = ref.current
@@ -138,7 +147,14 @@ export function useRovingList(ref: RefObject<HTMLElement | null>, { tree }: { re
     if (!tree || (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft')) return
     const expanded = target.getAttribute('aria-expanded')
     if (event.key === 'ArrowRight') {
-      if (expanded === 'false') { event.preventDefault(); target.click() } else if (expanded === 'true') go(at + 1)
+      if (expanded === 'false') { event.preventDefault(); target.click(); return }
+      if (expanded !== 'true') return
+      // Into an open folder, the shelf or a list a control opens, and only into it: an empty one goes nowhere.
+      event.preventDefault()
+      const controlled = target.getAttribute('aria-controls')
+      const scope = target.hasAttribute(ROVING_TOGGLE) ? target.closest(`[${ROVING_GROUP}]`) : controlled === null ? null : document.getElementById(controlled)
+      const next = controls[at + 1]
+      if (next !== undefined && scope?.contains(next) === true) next.focus()
       return
     }
     if (expanded === 'true') { event.preventDefault(); target.click(); return }

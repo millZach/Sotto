@@ -192,18 +192,23 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
   // Settle's and Restore's keys act on the focused thread, so only that thread's row says them, as its buttons do.
   const shelfKeys = panes.currentThreadId === id
   const renameKey = panes.rowKeys?.rename ?? true
+  // Each action once, for the menu and the hover icon alike, so the two cannot drift apart.
+  const openBeside = (): void => panes.onOpenBeside(id)
+  const regenerate = (): void => void command({ type: 'regenerate-thread-title', threadId: id })
+  const settleRow = (): void => void settle(row.thread, row.project)
+  const restoreRow = (): void => void command({ type: 'restore-thread', threadId: id })
   // The row's actions in words, with the keys that do the same from the row: the hover icons' twin for the keyboard
   // and the right-click. Built only while the menu is open.
   const menuGroups = (): PaneMenuItem[][] => [
     [{ id: 'open', label: t({ message: 'Open', comment: 'A sidebar row\'s menu: open the thread in the focused pane.' }), icon: <MessageSquare size={15} aria-hidden="true" />, shortcut: { plain: 'Enter', keys: 'Enter' }, run: () => onOpen(id) },
-      ...besideAvailable && !open ? [{ id: 'beside', label: t`Open beside`, icon: <Columns2 size={15} aria-hidden="true" />, shortcut: menuKeys(panes.openBesideChord?.label), run: () => panes.onOpenBeside(id) }] : []],
+      ...besideAvailable && !open ? [{ id: 'beside', label: t`Open beside`, icon: <Columns2 size={15} aria-hidden="true" />, shortcut: menuKeys(panes.openBesideChord?.label), run: openBeside }] : []],
     [...canRename ? [{ id: 'rename', label: t({ message: 'Rename', comment: 'Rename the thread.' }), icon: <Pencil size={15} aria-hidden="true" />, shortcut: renameKey ? { plain: 'F2', keys: 'F2' } : undefined, run: () => setRenaming(true) }] : [],
-      ...canRegenerate ? [{ id: 'regenerate', label: t`Regenerate title`, icon: <Sparkles size={15} aria-hidden="true" />, disabled: busy, run: () => void command({ type: 'regenerate-thread-title', threadId: id }) }] : [],
+      ...canRegenerate ? [{ id: 'regenerate', label: t`Regenerate title`, icon: <Sparkles size={15} aria-hidden="true" />, disabled: busy, run: regenerate }] : [],
       ...canWatch && watchActions !== null ? [{ id: 'watch', label: t({ message: 'Watch', context: 'Put a thread under Watcher\'s watch' }), icon: <WatcherOwl size={15} />, shown: watched, run: () => void watchActions.setThread(id, !watched) }] : []],
     row.settledBy === null
-      ? [{ id: 'settle', label: t({ message: 'Settle', comment: 'Settle the thread: put it away on the Settled shelf.' }), icon: <Archive size={15} aria-hidden="true" />, disabled: busy, shortcut: shelfKeys ? menuKeys(panes.settleShortcut) : undefined, run: () => void settle(row.thread, row.project) }]
+      ? [{ id: 'settle', label: t({ message: 'Settle', comment: 'Settle the thread: put it away on the Settled shelf.' }), icon: <Archive size={15} aria-hidden="true" />, disabled: busy, shortcut: shelfKeys ? menuKeys(panes.settleShortcut) : undefined, run: settleRow }]
       : row.settledBy === 'thread'
-        ? [{ id: 'restore', label: t({ message: 'Restore', comment: 'Restore a settled thread to open work.' }), icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: busy, shortcut: shelfKeys ? menuKeys(panes.restoreShortcut) : undefined, run: () => void command({ type: 'restore-thread', threadId: id }) }] : [],
+        ? [{ id: 'restore', label: t({ message: 'Restore', comment: 'Restore a settled thread to open work.' }), icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: busy, shortcut: shelfKeys ? menuKeys(panes.restoreShortcut) : undefined, run: restoreRow }] : [],
   ]
   if (renaming) return <><li className="thread-nav__row" data-current={current || undefined} data-open={open && !current ? true : undefined}>
     <span className="thread-nav__item thread-nav__item--renaming">
@@ -243,17 +248,17 @@ const ThreadNavRow = memo(function ThreadNavRow({ row, current, open, busy, live
     </button>
     {/* The pointer's shortcuts to the row's menu. They leave the Tab order to the menu, which says the same in words. */}
     <span className="thread-nav__row-actions" {...{ [ROW_ACTIONS]: '' }}>
-      {besideAvailable && !open ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Open ${title} beside`} title={panes.openBesideChord ? `${t`Open beside`} ${panes.openBesideChord.label.suffix}` : t`Open beside`} onClick={() => panes.onOpenBeside(row.thread.id)}><Columns2 size={16} aria-hidden="true" /></button> : null}
+      {besideAvailable && !open ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Open ${title} beside`} title={panes.openBesideChord ? `${t`Open beside`} ${panes.openBesideChord.label.suffix}` : t`Open beside`} onClick={openBeside}><Columns2 size={16} aria-hidden="true" /></button> : null}
       {canRename ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Rename ${title}`} title={renameKey ? `${t`Rename thread`} (F2)` : t`Rename thread`} onClick={() => setRenaming(true)}><Pencil size={16} aria-hidden="true" /></button> : null}
       {canRegenerate
-        ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Regenerate title for ${title}`} title={t`Regenerate title`} disabled={busy} onClick={() => void command({ type: 'regenerate-thread-title', threadId: row.thread.id })}><Sparkles size={16} aria-hidden="true" /></button>
+        ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Regenerate title for ${title}`} title={t`Regenerate title`} disabled={busy} onClick={regenerate}><Sparkles size={16} aria-hidden="true" /></button>
         : null}
       {/* The owl: Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
       {canWatch ? <WatchRowToggle threadId={row.thread.id} title={title} /> : null}
       {row.settledBy === null
-        ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Settle ${title}`} title={panes.settleShortcut ? `${t`Settle thread`} ${panes.settleShortcut.suffix}` : t`Settle thread`} aria-keyshortcuts={panes.currentThreadId === row.thread.id ? panes.settleShortcut?.keys : undefined} disabled={busy} onClick={() => void settle(row.thread, row.project)}><Archive size={16} aria-hidden="true" /></button>
+        ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Settle ${title}`} title={panes.settleShortcut ? `${t`Settle thread`} ${panes.settleShortcut.suffix}` : t`Settle thread`} aria-keyshortcuts={shelfKeys ? panes.settleShortcut?.keys : undefined} disabled={busy} onClick={settleRow}><Archive size={16} aria-hidden="true" /></button>
         : row.settledBy === 'thread'
-          ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Restore ${title}`} title={panes.restoreShortcut ? `${t`Restore thread`} ${panes.restoreShortcut.suffix}` : t`Restore thread`} aria-keyshortcuts={panes.currentThreadId === row.thread.id ? panes.restoreShortcut?.keys : undefined} disabled={busy} onClick={() => void command({ type: 'restore-thread', threadId: row.thread.id })}><ArchiveRestore size={16} aria-hidden="true" /></button>
+          ? <button type="button" className="thread-nav__action tt-focusable" tabIndex={-1} aria-label={t`Restore ${title}`} title={panes.restoreShortcut ? `${t`Restore thread`} ${panes.restoreShortcut.suffix}` : t`Restore thread`} aria-keyshortcuts={shelfKeys ? panes.restoreShortcut?.keys : undefined} disabled={busy} onClick={restoreRow}><ArchiveRestore size={16} aria-hidden="true" /></button>
           : null}
     </span>
     {menu !== null ? <RowMenu label={t`Actions for ${title}`} groups={menuGroups()} anchor={() => rowItem.current} place={menu}

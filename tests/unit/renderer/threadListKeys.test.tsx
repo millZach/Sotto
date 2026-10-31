@@ -195,6 +195,57 @@ describe('the thread list (ADR-0164)', () => {
   })
 })
 
+describe('the thread list as rows move (ADR-0164)', () => {
+  it('follows a focused row drawn again in another folder, and keeps one stop', async () => {
+    sessionStorage.setItem(FOLDER_TOGGLES_KEY, JSON.stringify(['open:workshop', 'open:notes']))
+    const state = threadsStateFixture()
+    const view = render(sidebar(state))
+    const moving = row('Grok voice previews')
+    act(() => moving.focus())
+    const moved: AgentState = { ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.title === 'Grok voice previews' ? { ...thread, projectId: 'notes' } : thread) } }
+    view.rerender(sidebar(moved))
+    await act(async () => { await Promise.resolve() })
+    const again = row('Grok voice previews')
+    expect(again).not.toBe(moving)
+    expect(again.closest('.thread-folder')!.querySelector('.thread-folder__toggle')!.getAttribute('aria-label')).toMatch(/^notes/)
+    expect(again).toHaveFocus()
+    expect(stops()).toEqual([again])
+  })
+})
+
+describe('the thread list across a collapse (ADR-0164)', () => {
+  it('keeps one stop when the sidebar starts collapsed and is expanded', () => {
+    localStorage.setItem('sotto.threadWorkspace.sidebar', JSON.stringify({ collapsed: true }))
+    render(sidebar(threadsStateFixture()))
+    act(() => { screen.getByRole('button', { name: 'Expand sidebar' }).click() })
+    expect(stops()).toEqual([row('Visual gate flake')])
+  })
+
+  it('keeps one stop under React\'s development double run, as folders open', async () => {
+    render(<React.StrictMode>{sidebar(threadsStateFixture())}</React.StrictMode>)
+    act(() => { toggle(/^sotto-site \d+ threads?$/).click() })
+    await act(async () => { await Promise.resolve() })
+    expect(stops()).toEqual([row('Visual gate flake')])
+    expect(row('Footer links')).toHaveAttribute('tabindex', '-1')
+  })
+
+  it('goes nowhere on Right from an open folder with nothing inside it', () => {
+    render(sidebar(threadsStateFixture()))
+    const settled = within(list()).getByRole('button', { name: /^Settled/ })
+    act(() => settled.focus())
+    press('ArrowRight')
+    expect(settled).toHaveAttribute('aria-expanded', 'true')
+    const empty = threadsStateFixture()
+    cleanup()
+    render(sidebar({ ...empty, host: { ...empty.host, threads: empty.host.threads.filter(thread => thread.projectId !== 'workshop') } }))
+    const workshop = toggle(/^workshop/)
+    act(() => workshop.focus())
+    expect(workshop).toHaveAttribute('aria-expanded', 'true')
+    press('ArrowRight')
+    expect(workshop).toHaveFocus()
+  })
+})
+
 describe('the collapsed rail (ADR-0164)', () => {
   it('is one Tab stop walked with Up and Down', () => {
     render(sidebar(threadsStateFixture()))

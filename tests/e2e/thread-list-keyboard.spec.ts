@@ -180,6 +180,19 @@ test('the thread list is one Tab stop with a row menu, and F6 goes round the sid
     await footer.getByRole('button', { name: 'Close Footer links pane' }).click()
     await expect(footer).toHaveCount(0)
 
+    // At 1280x800 with reduced motion on, the menu is whole and still.
+    await size(launched, 1280, 800)
+    await row.focus()
+    await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
+    await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
+    await page.keyboard.press('Shift+F10')
+    await expect(menu).toBeVisible()
+    await insideWindow(page, menu)
+    expect(await menu.evaluate(node => getComputedStyle(node).animationName)).toBe('none')
+    await page.keyboard.press('Escape')
+    await expect(row).toBeFocused()
+    await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'system' }))
+
     // At the minimum window the row and its menu are whole.
     await size(launched, 820, 560)
     await row.focus()
