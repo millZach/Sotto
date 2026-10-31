@@ -302,3 +302,31 @@ the first after a `shell` read, lists every record (205 KB). The desktop client'
 The window was broadcast the same thread records as before. For a phone, a shell push after a send on the open thread
 fell from 220,462 bytes to 6,946, and reading one push on a Mac test runner from 3.88-4.44 ms for every record to 0.68 ms for
 one changed record put back (`docs/perf/2026-10-30-host-shell-thread-records.md`).
+
+## October 30, 2026: a broadcast keeps the parts that did not change
+
+The October 22 section left every field of the shell but the threads whole on every broadcast. That is the drafts, the
+receipt lists, the deliveries, the projects, the providers, the paired hosts and the settings, and nearly none of it
+changes while a reply streams. On the owner-scale benchmark a broadcast with one thread streaming was 14,580 bytes, about
+2.7 KB of it the record that changed, up to seventeen times a second. With full receipt lists the audit estimated about
+80 KB a broadcast. The page then walked every one of those parts again in state sharing, all fresh objects.
+
+**A broadcast leaves out each part that holds what the broadcast its threads are measured from held, and names it in
+`kept`** (`withKeptParts` in `agentStateBroadcast.ts`). The parts are the shell's top-level fields and its `host` fields,
+but the threads; a catalog's encoding (a revision, or the catalog whole) is a part like any other. Main keeps the parts of
+the last broadcast the window was delivered, under its thread revision, and compares each with `samePlainData`, identity
+first. It keeps nothing when the threads list every record, as after the window read the whole state: `windowRead`
+drops the parts with the threads' base, and a delivery a read voided leaves neither.
+
+**The page puts each kept part back from the broadcast it applied, before anything reads the state.** It holds the last
+broadcast whose threads it applied, as it crossed with its kept parts put back. A broadcast measured from it gets each
+kept part back as that very object, so state sharing meets it by identity. One measured from a broadcast the page does not
+hold, or naming a part it does not hold, is read whole through `AGENT_GET`, as a broadcast whose threads cannot be
+applied is. Command receipts keep carrying every part.
+
+On the owner-scale benchmark, three runs each on Owl, a broadcast with one thread streaming fell from 14,580 bytes to
+2,680, with three from 18,818 to 6,918, and a draft save's from 12,600 to 1,452. In `windowChangedThreads.perf.test.ts`
+(291 threads, three streaming) a streaming broadcast fell from 13,624-13,635 bytes to 4,358-4,410 on Owl and from 12,574
+to 4,466 on stable. The page's work per broadcast fell from 0.212-0.216 ms to 0.126-0.127 on Owl and from 0.189-0.194 to
+0.128-0.136 on stable, and main's from 0.076-0.079 to 0.062-0.065 and 0.120-0.129 to 0.113-0.118
+(`docs/perf/2026-10-30-window-kept-parts.md`).

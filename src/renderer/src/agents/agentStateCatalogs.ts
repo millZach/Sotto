@@ -230,20 +230,65 @@ function createReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCa
   threads: ThreadReassembly = createThreadReassembly()): (raw: unknown) => void {
   let recovering = false
   let pending: unknown = null
+  /**
+   * The broadcast this subscription last applied, as it crossed with its kept parts put back, under its thread revision: the
+   * broadcast a later one's kept parts are read from (ADR-0028, October 30 kept parts).
+   */
+  let applied: { readonly revision: number; readonly state: Record<string, unknown> } | null = null
 
-  /** Caches whatever catalogs a broadcast carried in full, and applies its threads, without delivering it. */
-  const seed = (raw: unknown): void => {
-    if (!isStateLike(raw)) return
-    threads(raw.host.threads)
-    resolveCatalog(catalogs, hostCatalogKey(raw.host.hostId), raw.host.models)
-    for (const client of raw.host.clientHosts ?? []) resolveCatalog(catalogs, clientCatalogKey(client.hostId), client.models)
+  /**
+   * `raw` with the parts it kept put back from the broadcast applied, so every reader meets a whole state, and the parts that
+   * did not change are that broadcast's own objects. Undefined when it kept parts measured from a broadcast this
+   * subscription does not hold.
+   */
+  const whole = (raw: AgentState): AgentState | undefined => {
+    const wire = raw as unknown as { kept?: unknown; host: { kept?: unknown; threads?: { base?: unknown } } }
+    const kept = Array.isArray(wire.kept) ? wire.kept as string[] : [], hostKept = Array.isArray(wire.host.kept) ? wire.host.kept as string[] : []
+    if (!kept.length && !hostKept.length) return raw
+    if (applied === null || wire.host.threads?.base !== applied.revision) return undefined
+    const held = applied.state, heldHost = held.host as Record<string, unknown>
+    if (!kept.every(key => Object.hasOwn(held, key)) || !hostKept.every(key => Object.hasOwn(heldHost, key))) return undefined
+    const { kept: _kept, ...top } = wire as unknown as Record<string, unknown>
+    const { kept: _hostKept, ...host } = wire.host as unknown as Record<string, unknown>
+    void _kept; void _hostKept
+    // What the broadcast carries is never replaced: only a part it left out is put back.
+    for (const key of kept) if (!Object.hasOwn(top, key)) top[key] = held[key]
+    for (const key of hostKept) if (!Object.hasOwn(host, key)) host[key] = heldHost[key]
+    return { ...top, host } as unknown as AgentState
+  }
+  /** Holds `raw`, put back whole, as the broadcast applied, once its threads were. */
+  const apply = (raw: AgentState): void => {
+    const revision = (raw.host.threads as unknown as { revision?: unknown }).revision
+    applied = typeof revision === 'number' ? { revision, state: raw as unknown as Record<string, unknown> } : null
   }
 
-  const process = (raw: unknown): void => {
-    if (!isStateLike(raw)) return
+  /**
+   * Applies a broadcast's threads when its kept parts can be put back, and holds it as the broadcast applied: the parts held
+   * are always those of the broadcast whose thread records are held. Undefined when its threads were not applied.
+   */
+  const applyThreads = (raw: AgentState | undefined): AgentThread[] | undefined => {
+    const list = raw === undefined ? undefined : threads(raw.host.threads)
+    if (list !== undefined) apply(raw!)
+    return list
+  }
+
+  /** Caches whatever catalogs a broadcast carried in full, and applies its threads, without delivering it. */
+  const seed = (incoming: unknown): void => {
+    if (!isStateLike(incoming)) return
+    const raw = whole(incoming)
+    applyThreads(raw)
+    const named = raw ?? incoming
+    resolveCatalog(catalogs, hostCatalogKey(named.host.hostId), named.host.models)
+    for (const client of named.host.clientHosts ?? []) resolveCatalog(catalogs, clientCatalogKey(client.hostId), client.models)
+  }
+
+  const process = (incoming: unknown): void => {
+    if (!isStateLike(incoming)) return
+    // A broadcast whose kept parts this subscription cannot put back is read whole below, as a missed one is.
+    const raw = whole(incoming)
     // Both are looked at before either is found missing, so what the broadcast carried is kept either way.
-    const list = threads(raw.host.threads)
-    const assembled = assembleState(catalogs, raw)
+    const list = applyThreads(raw)
+    const assembled = assembleState(catalogs, raw ?? incoming)
     if (assembled !== undefined && list !== undefined) { listener({ ...assembled, host: { ...assembled.host, threads: list } }); return }
     // This window cannot name every catalog the broadcast referred to, or cannot apply its threads: a fresh
     // window, a reload, or a broadcast it never received. `get()` always answers in full, so recovering there
@@ -252,7 +297,7 @@ function createReassembler(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCa
     // the broadcast after it. Every catalog the broadcast carried in full is cached by the attempt above.
     recovering = true
     bridge.get().then(full => {
-      rememberRecovered(catalogs, raw, full)
+      rememberRecovered(catalogs, raw ?? incoming, full)
       listener(full)
       // Main answers `get()` in order with its broadcasts, so one kept while this was in flight was sent
       // before the answer and is older than it. Delivering it now would put an older state on screen after

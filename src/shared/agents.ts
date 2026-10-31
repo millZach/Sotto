@@ -1111,16 +1111,24 @@ export interface AgentThreadsBroadcast {
   /** Every thread's Sotto ID in order, when the order or the threads differ from `base`'s. Absent when they do not. */
   order?: string[]
 }
+/** A part of the shell a broadcast may keep: any field but its host (ADR-0028, October 30 kept parts). */
+export type KeptPart = Exclude<keyof AgentState, 'host'>
+/** A part of the shell's host a broadcast may keep: any field but its threads. */
+export type KeptHostPart = Exclude<keyof AgentHostSnapshot, 'threads'>
 export type AgentHostSnapshotBroadcast = Omit<AgentHostSnapshot, 'models' | 'clientHosts' | 'threads'> & {
   models: AgentModelCatalogBroadcast
   clientHosts?: AgentClientHostBroadcast[]
   threads: AgentThreadsBroadcast
+  /** The host's parts this broadcast left out, as the broadcast its threads are measured from had them (`kept`). */
+  kept?: KeptHostPart[]
 }
 /**
  * What actually crosses `sotto:agents:state`: `AgentState` with its catalogs replaced by `AgentModelCatalogBroadcast`
- * and its threads by `AgentThreadsBroadcast`.
+ * and its threads by `AgentThreadsBroadcast`. `kept` names the parts this broadcast left out, at the top and in `host`,
+ * because they hold what the broadcast its threads are measured from held (ADR-0028, October 30 kept parts): they are
+ * absent here, and the page puts them back before anything reads the state.
  */
-export type AgentStateBroadcast = Omit<AgentState, 'host'> & { host: AgentHostSnapshotBroadcast }
+export type AgentStateBroadcast = Omit<AgentState, 'host'> & { host: AgentHostSnapshotBroadcast; kept?: KeptPart[] }
 
 const PRIMARY_CATALOG_KEY = '__primary__'
 
