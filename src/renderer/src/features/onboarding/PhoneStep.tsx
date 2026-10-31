@@ -95,7 +95,8 @@ export function PhoneStep({ heading, phoneAccess, onUpdateSettings, onOpenLink, 
             {beta === 'opened' ? <span className="onboarding-ready" role="status"><Check aria-hidden="true" size={15} /><Trans>Opened in your browser</Trans></span> : null}
             {beta === 'failed' ? <span className="onboarding-recovery" role="alert"><Trans>Your browser did not open. On your iPhone, go to {betaAddress} instead.</Trans></span> : null}
           </div>
-          <Button variant={beta === 'opened' ? 'secondary' : 'primary'} onClick={() => void openBeta()}>
+          {/* The filled button on the last step is Finish setup; the beta is a choice beside it (#1824). */}
+          <Button variant="secondary" onClick={() => void openBeta()}>
             <ExternalLink aria-hidden="true" size={15} />
             <Trans>Get the iPhone beta</Trans>
           </Button>

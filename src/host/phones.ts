@@ -5,7 +5,7 @@ import { PhoneAccess, type PhoneAccessEvent, type PhoneAccessOptions, type Phone
 import { TailscaleCli } from '../main/phones/tailscale'
 import type { AppSettings } from '../shared/settings'
 import type { HostPhoneAccessSummary } from '../shared/hostProtocol'
-import type { HostPhonesCommand, PhonesState } from '../shared/phones'
+import type { HostAdminPhonesCommand, PhonesState } from '../shared/phones'
 import type { DesktopClients } from './desktopClients'
 import type { HostPhonesAdministration, HostPhonesAnswer, HostTailnetAnswer } from './socketServer'
 
@@ -52,6 +52,8 @@ export interface HostPhoneAccess {
   subscribe(listener: (address: string | undefined) => void): () => void
   /** Told after a client was revoked on either listener: a desktop leaves the record, and the last one turns `tailnetConnections` off. */
   revoked(clientId: string): void
+  /** Whether this client paired as a phone, whose answers only Remove takes away. */
+  isPhone(clientId: string): boolean
   close(): Promise<void>
 }
 
@@ -59,6 +61,7 @@ const NO_PAGE = 'Tailscale did not give a page to open. Open the Tailscale admin
 /** For the first 5 minutes after a host starts, its phone access looks again at a Tailscale that is missing or a Serve that failed. */
 export const HOST_START_RETRY_WINDOW_MS = 5 * 60_000
 const NOT_SAVED = 'Phone access could not be saved on this host. Nothing was changed. Try again.'
+const ALWAYS_ANSWERS = 'A paired phone can always answer now. To stop a phone answering, remove it. Nothing was changed.'
 const TAILNET_NOT_SAVED = 'Tailnet connections could not be saved on this host. Nothing was changed. Try again.'
 
 /** The tailnet address in a phone access state: there only while Serve carries the listener. */
@@ -99,7 +102,7 @@ export function startHostPhoneAccess(options: HostPhoneAccessOptions): HostPhone
   })
   // Tailscale's checks take seconds, so they run beside the host's start rather than in front of it.
   const started = access.start().catch(() => options.log?.('phone-access-start-failed'))
-  const command = async (request: HostPhonesCommand): Promise<HostPhonesAnswer> => {
+  const command = async (request: HostAdminPhonesCommand): Promise<HostPhonesAnswer> => {
     await started
     if (request.type === 'set-enabled') {
       try { await options.settings.update({ phoneAccess: request.enabled }) }
@@ -112,6 +115,8 @@ export function startHostPhoneAccess(options: HostPhoneAccessOptions): HostPhone
       const url = access.serveSetupUrl()
       return url ? { state: access.get(), url } : { state: access.get(), error: NO_PAGE }
     }
+    // Only a desktop from before pairing granted answers sends this (see `hostAdminPhonesCommandSchema`).
+    if (request.type === 'set-can-answer') return request.allowed ? { state: access.get() } : { state: access.get(), error: ALWAYS_ANSWERS }
     // Each refusal is a sentence written for the owner: that a phone is gone, that a code needs phone access on.
     try { return { state: await access.command(request) } }
     catch (error) { return { state: access.get(), error: error instanceof Error ? error.message : 'Phone access could not be changed. Nothing was changed. Try again.' } }
@@ -142,6 +147,7 @@ export function startHostPhoneAccess(options: HostPhoneAccessOptions): HostPhone
     peers: () => access.peers(),
     subscribe: listener => access.watch(brief => listener(tailnetAddress(brief))),
     revoked,
+    isPhone: clientId => access.isPhone(clientId),
     close: async () => { await started; await revoking; await access.close() },
   }
 }

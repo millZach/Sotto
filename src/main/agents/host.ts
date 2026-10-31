@@ -475,6 +475,12 @@ export interface AgentHost {
   useThreadHistory?(source: ThreadHistorySource): void
   observeThreads?(threadIds: readonly string[]): void
   /**
+   * The threads the user has settled (CONTEXT.md, Settled), as a run begins, by the caller's IDs. An adapter may leave
+   * them out of work it does for every saved thread once, such as Codex catching a rollout up after an update, and do it
+   * when the thread is opened instead (#992, Zach's call on October 30).
+   */
+  useSettledThreads?(threadIds: readonly string[]): void
+  /**
    * Early start (#769): start this thread's provider session now, the way its next action would, because the user began
    * typing in its composer. A thread whose native session has not started yet has none to start; with `draft` the
    * adapter may instead start the client that thread's first send would use, but it never creates a provider session,

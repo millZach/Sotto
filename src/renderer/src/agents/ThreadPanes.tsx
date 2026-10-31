@@ -1,9 +1,10 @@
 import React, { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react'
 import { useLingui } from '@lingui/react/macro'
 import { Marked, useMark } from '../components/marks'
-import { Columns3, GripVertical, LayoutGrid, Maximize2, Minimize2, X } from 'lucide-react'
+import { ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Columns3, LayoutGrid, Maximize2, Minimize2 } from 'lucide-react'
 import type { ProviderId } from '../../../shared/agents'
 import { ProviderMark } from './ProviderMark'
+import type { PaneMenuItem } from './PaneMenu'
 import { useOptionalApp } from '../state/AppContext'
 import { chordMatches } from './branchToolbar.logic'
 import { claimedThreadChord, threadChordLabel } from './threadShortcuts'
@@ -26,6 +27,32 @@ export interface PaneLabel {
   readonly attention?: string | undefined
 }
 
+/** A pane's close, drawn last in its header; present in a split, where closing a pane leaves the others. */
+export interface PaneClose {
+  readonly label: string
+  readonly title: string
+  readonly keys: string | undefined
+  readonly run: () => void
+}
+
+/**
+ * What the pane area hands each pane's header (ADR-0163): its layout rows for the ··· menu, its close, and, while panes
+ * stand side by side, its title as the handle that moves it.
+ */
+export interface PaneChrome {
+  /** Zoom pane or Show all panes, the arrangement and Move pane; empty with one pane. */
+  readonly layout: readonly PaneMenuItem[]
+  readonly close?: PaneClose | undefined
+  /** Dragging the title moves the pane to another pane's place. */
+  readonly handle?: {
+    readonly start: (event: DragEvent<HTMLElement>) => void
+    readonly end: () => void
+  } | undefined
+}
+
+/** A pane outside the pane area, or before it knows its place: no layout rows, no close, no handle. */
+const NO_CHROME: PaneChrome = { layout: [] }
+
 export interface ThreadPanesProps {
   /** The arrangement on screen; panes whose thread is missing are already left out. */
   readonly layout: SplitLayout
@@ -37,7 +64,7 @@ export interface ThreadPanesProps {
   readonly focusedId: string | null
   /** A sidebar thread is being dragged; drop targets appear for it. */
   readonly dragging: string | null
-  readonly renderPane: (threadId: string) => ReactNode
+  readonly renderPane: (threadId: string, chrome: PaneChrome) => ReactNode
   readonly onFocusPane: (threadId: string) => void
   /** A change that only rearranges the view: sizes, order, arrangement or zoom. */
   readonly onLayoutChange: (layout: SplitLayout) => void
@@ -207,6 +234,14 @@ function DropZone({ label, name, target, fallback, type, onDrop, style }: {
 /** Boxes for an arrangement at even sizes: where panes would land after a drop. */
 const evenBoxes = (shape: readonly number[]): CSSProperties[] => placements(shape, [], []).panes.map(pane => ({ left: offset(pane.x), top: offset(pane.y), width: extent(pane.x), height: extent(pane.y) }))
 
+/** Move pane's directions, in the order the menu lists them; up and down only between rows of a grid. */
+const MOVES = [
+  { key: 'ArrowLeft', across: false, icon: ArrowLeft },
+  { key: 'ArrowRight', across: false, icon: ArrowRight },
+  { key: 'ArrowUp', across: true, icon: ArrowUp },
+  { key: 'ArrowDown', across: true, icon: ArrowDown },
+] as const
+
 /** The next pane in reading order from `index` in the direction of an arrow key, following rows in the grid. */
 function neighbour(shape: readonly number[], index: number, key: string): number | null {
   const count = shape.reduce((total, row) => total + row, 0)
@@ -296,14 +331,23 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
     onFocusPane(id)
     window.setTimeout(() => document.getElementById(tabDomId(id))?.focus(), 0)
   }
-  const onGripKey = (event: KeyboardEvent<HTMLButtonElement>, threadId: string): void => {
-    const index = layout.panes.indexOf(threadId)
-    const next = neighbour(shape, index, event.key)
-    if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(event.key)) return
-    event.preventDefault()
-    if (next === null) return
+  /** Move pane: the pane trades places with its neighbour, and the move is said aloud. */
+  const movePaneTo = (threadId: string, next: number): void => {
     const name = title(threadId), position = next + 1, count = layout.panes.length
-    change(movePane(layout, index, next), t({ message: `${name} moved to pane ${{ position: shownCount(position) }} of ${{ count: shownCount(count) }}`, comment: '{name} is a thread\'s title.' }))
+    change(movePane(layout, layout.panes.indexOf(threadId), next), t({ message: `${name} moved to pane ${{ position: shownCount(position) }} of ${{ count: shownCount(count) }}`, comment: '{name} is a thread\'s title.' }))
+  }
+  /** One Move pane row for each neighbour the pane has: beside it in its row, and above or below in a grid. */
+  const moveRows = (threadId: string): PaneMenuItem[] => {
+    const index = layout.panes.indexOf(threadId)
+    const row = slotOf(shape, index).row
+    return MOVES.flatMap(move => {
+      if (move.across && shape.length === 1) return []
+      const next = neighbour(shape, index, move.key)
+      if (next === null || (!move.across && slotOf(shape, next).row !== row)) return []
+      const Icon = move.icon
+      const label = move.key === 'ArrowLeft' ? t`Move pane left` : move.key === 'ArrowRight' ? t`Move pane right` : move.key === 'ArrowUp' ? t`Move pane up` : t`Move pane down`
+      return [{ id: `move-${move.key}`, label, icon: <Icon size={15} aria-hidden="true" />, run: () => movePaneTo(threadId, next) }]
+    })
   }
   const onAreaKey = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (!split || event.defaultPrevented || event.repeat) return
@@ -330,9 +374,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
         style={{ left: offset(pane.x), top: offset(pane.y), width: extent(pane.x), height: extent(pane.y) }}
         onDrop={(threadId, target) => {
           setMoving(null)
-          if (target.kind !== 'pane') return
-          const name = title(threadId), position = target.index + 1, count = layout.panes.length
-          change(movePane(layout, layout.panes.indexOf(threadId), target.index), t({ message: `${name} moved to pane ${{ position: shownCount(position) }} of ${{ count: shownCount(count) }}`, comment: '{name} is a thread\'s title.' }))
+          if (target.kind === 'pane') movePaneTo(threadId, target.index)
         }} />)}
     </div>
     : dragging === null ? null
@@ -395,50 +437,40 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
       {paneIds.map((id, index) => {
         const focused = id === focusedId
         const hidden = single && id !== shownId
-        // The arrangement switch sits on the focused pane, and stays on the shown pane when the window alone makes the view
-        // compact: the arrangement chosen there may be the one that does not fit, and the other may.
-        const arranges = paneIds.length > 2 && (placed !== null ? focused : narrow && id === shownId)
+        // The arrangement is offered in every pane's menu while panes stand side by side (opening a menu focuses its pane),
+        // and stays on the shown pane when the window alone makes the view compact: the arrangement chosen there may be
+        // the one that does not fit, and the other may.
+        const arranges = paneIds.length > 2 && (placed !== null || (narrow && id === shownId))
         const zooms = !narrow || layout.zoomed
         const name = title(id)
-        const controls = (arranges ? 1 : 0) + (placed ? 1 : 0) + (zooms ? 1 : 0) + 1
+        const zoomKeys = zoomChord ? threadChordLabel(zoomChord, panePlatform) : null
+        const closeKeys = closeChord ? threadChordLabel(closeChord, panePlatform) : null
+        const chrome: PaneChrome = !split ? NO_CHROME : {
+          layout: [
+            ...zooms ? [{ id: 'zoom', label: layout.zoomed ? t`Show all panes` : t`Zoom pane`, icon: layout.zoomed ? <Minimize2 size={15} aria-hidden="true" /> : <Maximize2 size={15} aria-hidden="true" />,
+              shortcut: zoomKeys ? { plain: zoomKeys.plain, keys: zoomKeys.keys } : undefined, run: () => toggleZoom(id) }] : [],
+            ...arranges ? [{ id: 'arrange', label: layout.arrangement === 'row' ? t`Arrange in a grid` : t`Arrange in a single row`,
+              icon: layout.arrangement === 'row' ? <LayoutGrid size={15} aria-hidden="true" /> : <Columns3 size={15} aria-hidden="true" />, run: toggleArrangement }] : [],
+            ...placed ? moveRows(id) : [],
+          ],
+          close: { label: t({ message: `Close ${name} pane`, comment: '{name} is a thread\'s title.' }), title: closeKeys ? `${t`Close pane`} ${closeKeys.suffix}` : t`Close pane`, keys: closeKeys?.keys, run: () => onClosePane(id) },
+          handle: placed ? {
+            start: event => {
+              event.dataTransfer.setData(PANE_DRAG_TYPE, id); event.dataTransfer.effectAllowed = 'move'
+              // The targets cover the title, and Chromium cancels a drag whose source is covered while it starts.
+              moveStart.current = window.setTimeout(() => setMoving(id), 0)
+            },
+            end: () => { window.clearTimeout(moveStart.current); setMoving(null) },
+          } : undefined,
+        }
         return <React.Fragment key={id}><Marked>{marks => <section id={paneDomId(id)} className="thread-pane" data-room-backdrop="" data-thread-id={id} data-focused={focused || undefined} data-hidden={hidden || undefined}
-          data-placed={placed !== null || undefined} data-under-controls={index === underControls || undefined} data-controls={split ? controls : undefined} {...marks}
+          data-placed={placed !== null || undefined} data-under-controls={index === underControls || undefined} {...marks}
           aria-label={paneName(id)} role={single ? 'tabpanel' : 'region'} style={placed ? boxStyle(`pane-${index}`) : undefined}
           // A hidden pane stays mounted for its scroll position and draft, but out of reach.
           inert={hidden}
           onPointerDownCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}
           onFocusCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}>
-          {/* The layout controls come first, like the header they sit in, so tabbing leaves a pane from its composer. */}
-          {split ? <div className="thread-pane__controls" data-count={controls}>
-            {arranges
-              ? <button type="button" className="thread-pane__control tt-focusable" data-pane-chrome aria-pressed={layout.arrangement === 'row'}
-                aria-label={t`Single row`} title={layout.arrangement === 'row' ? t`Arrange in a grid` : t`Arrange in a single row`}
-                onClick={toggleArrangement}>
-                {layout.arrangement === 'row' ? <LayoutGrid size={16} aria-hidden="true" /> : <Columns3 size={16} aria-hidden="true" />}
-              </button>
-              : null}
-            {placed ? <button type="button" className="thread-pane__control thread-pane__grip tt-focusable" data-pane-chrome draggable
-              aria-label={t({ message: `Move ${name} pane`, comment: '{name} is a thread\'s title.' })} aria-roledescription={t`movable pane`} aria-description={t`Drag to another pane, or use the arrow keys`} title={t`Drag or use arrow keys to move`}
-              onKeyDown={event => onGripKey(event, id)}
-              onDragStart={event => {
-                event.dataTransfer.setData(PANE_DRAG_TYPE, id); event.dataTransfer.effectAllowed = 'move'
-                // The targets cover the grip, and Chromium cancels a drag whose source is covered while it starts.
-                moveStart.current = window.setTimeout(() => setMoving(id), 0)
-              }}
-              onDragEnd={() => { window.clearTimeout(moveStart.current); setMoving(null) }}>
-              <GripVertical size={16} aria-hidden="true" />
-            </button> : null}
-            {zooms ? <button type="button" className="thread-pane__control tt-focusable" aria-keyshortcuts={zoomChord ? threadChordLabel(zoomChord, panePlatform).keys : undefined}
-              aria-label={layout.zoomed ? t`Show all panes` : t({ message: `Zoom ${name} pane`, comment: '{name} is a thread\'s title.' })} title={`${layout.zoomed ? t`Show all panes` : t`Zoom pane`}${zoomChord ? ` ${threadChordLabel(zoomChord, panePlatform).suffix}` : ''}`}
-              onClick={() => toggleZoom(id)}>
-              {layout.zoomed ? <Minimize2 size={16} aria-hidden="true" /> : <Maximize2 size={16} aria-hidden="true" />}
-            </button> : null}
-            <button type="button" className="thread-pane__control thread-pane__close tt-focusable" data-pane-chrome data-pane-close aria-label={t({ message: `Close ${name} pane`, comment: '{name} is a thread\'s title.' })} aria-keyshortcuts={closeChord ? threadChordLabel(closeChord, panePlatform).keys : undefined} title={closeChord ? `${t`Close pane`} ${threadChordLabel(closeChord, panePlatform).suffix}` : t`Close pane`}
-              onClick={() => onClosePane(id)}>
-              <X size={16} aria-hidden="true" />
-            </button>
-          </div> : null}
-          {renderPane(id)}
+          {renderPane(id, chrome)}
         </section>}</Marked>
         {dividersAfter.get(index)}</React.Fragment>
       })}

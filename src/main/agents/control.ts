@@ -2,7 +2,7 @@ import { catalogWithoutHeld, heldProviderChosenBy } from './heldProviderGate'
 import { firstHeldProvider, heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { WatcherMessageDisplay } from './watcherMessageDisplay'
 import { clonePlainData } from './cloneHostSnapshot'
-import { CheckoutSendRefusal, type CheckoutPendingWork } from './checkoutMutations'
+import { CheckoutHeldRefusal, CheckoutSendRefusal, type CheckoutPendingWork } from './checkoutMutations'
 import type { ShortTextPurpose, ShortTextFailureReason } from '../llm/shortTextWriter'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
@@ -773,8 +773,9 @@ export class AgentControl {
    * guard, asked again as it dispatches, and is never taken for the user's own command, so it answers nothing and changes
    * no permission.
    */
-  commandFromMove(command: Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'settle-thread' }>, guard: () => void): Promise<AgentState> {
-    if (!['create-thread', 'manual-send', 'settle-thread'].includes(command.type)) throw new Error('A move cannot answer requests or change permissions.')
+  commandFromMove(command: Extract<AgentCommand, { type: 'create-thread' | 'manual-send' | 'interrupt' | 'settle-thread' }>, guard: () => void): Promise<AgentState> {
+    // A move called off with Keep it here (#1178 part 4) stops and settles the thread it made.
+    if (!['create-thread', 'manual-send', 'interrupt', 'settle-thread'].includes(command.type)) throw new Error('A move cannot answer requests or change permissions.')
     const parsed = agentCommandSchema.parse(command); guard(); this.watcherOrigins.set(parsed, { guard })
     return this.admitCommandShell(parsed)
   }
@@ -3644,6 +3645,8 @@ export class AgentControl {
   /** T3's Git commands, answered in the host's words: a refusal is the notice, never a thrown error the window has to guess at. */
   private async gitCommand(command: GitCommand): Promise<AgentState> {
     const host = this.dependencies.host
+    // A refusal because another thread or Sotto holds the folder says so on this reply alone, with the thread (#1823).
+    let checkoutHold: AgentState['checkoutHold']
     try {
       this.thread(command.threadId)
       switch (command.type) {
@@ -3726,9 +3729,12 @@ export class AgentControl {
           break
         }
       }
-    } catch (error) { this.setCommandError(error, error instanceof Error ? error.message : 'The Git command failed.') }
+    } catch (error) {
+      this.setCommandError(error, error instanceof Error ? error.message : 'The Git command failed.')
+      if (error instanceof CheckoutHeldRefusal) checkoutHold = error.threadId === undefined ? {} : { threadId: error.threadId }
+    }
     this.publish()
-    return this.reply()
+    return checkoutHold === undefined ? this.reply() : { ...this.reply(), checkoutHold }
   }
   /**
    * The reader that babysits this host's threads' pull requests (ADR-0061), and what the queue asks it before each
@@ -3962,7 +3968,7 @@ export class AgentControl {
     let whole = this.sharedWholeStateReplies.get(reply)
     if (!whole) { whole = reply.then(shell => ({ ...this.get(), error: shell.error, ...(shell.worktreeReclaimPreview ? { worktreeReclaimPreview: shell.worktreeReclaimPreview } : {}),
       ...(shell.threadDeletePreview ? { threadDeletePreview: shell.threadDeletePreview } : {}), ...(shell.threadClearPreview ? { threadClearPreview: shell.threadClearPreview } : {}),
-      ...(shell.threadClearResult ? { threadClearResult: shell.threadClearResult } : {}) })); this.sharedWholeStateReplies.set(reply, whole) }
+      ...(shell.threadClearResult ? { threadClearResult: shell.threadClearResult } : {}), ...(shell.checkoutHold ? { checkoutHold: shell.checkoutHold } : {}) })); this.sharedWholeStateReplies.set(reply, whole) }
     return whole
   }
   /**

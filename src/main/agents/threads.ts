@@ -142,6 +142,8 @@ export class SottoThreadHost implements AgentHost {
   }
   /** Undefined until something says what it is looking at; a connection never invents a watched set. */
   private observed: readonly string[] | undefined
+  /** The settled threads the caller last named, handed on again when the adapter connects. */
+  private settled: readonly string[] | undefined
   /** Per Sotto thread with no binding yet: the session ID an early start used, which its first send then reserves. */
   private readonly unbound = new Map<string, string>()
 
@@ -229,6 +231,7 @@ export class SottoThreadHost implements AgentHost {
   async connect(): Promise<AgentHostSnapshot> {
     await this.registry.load()
     if (this.observed) this.observeThreads(this.observed)
+    if (this.settled) this.useSettledThreads(this.settled)
     return this.read(() => this.inner.connect())
   }
 
@@ -518,6 +521,13 @@ export class SottoThreadHost implements AgentHost {
     if (bound) return bound
     for (const [threadId, id] of this.unbound) if (id === sessionId) return threadId
     return undefined
+  }
+  useSettledThreads(threadIds: readonly string[]): void {
+    this.settled = [...threadIds]
+    this.inner.useSettledThreads?.(threadIds.flatMap(threadId => {
+      const binding = this.registry.byThread(threadId)
+      return binding?.provider === this.provider ? [binding.sessionId] : []
+    }))
   }
   observeThreads(threadIds: readonly string[]): void {
     this.observed = [...threadIds]

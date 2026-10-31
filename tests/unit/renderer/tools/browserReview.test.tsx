@@ -11,7 +11,7 @@ import { BrowserStore } from '../../../../src/renderer/src/tools/browserStore'
 import { BROWSER_PLAYER_MIN_WIDTH, BROWSER_PLAYER_MOVE_STEP, BROWSER_PLAYER_MOVE_STEP_LARGE, BrowserPlayerStore } from '../../../../src/renderer/src/tools/browserPlayerStore'
 import { appendBrowserFeedback, BrowserFeedback } from '../../../../src/renderer/src/tools/BrowserFeedback'
 import { ToolsPanelStore } from '../../../../src/renderer/src/tools/toolsPanelStore'
-import { ToolsPanelToggle } from '../../../../src/renderer/src/tools/ToolsPanel'
+import { ThreadPaneMenu } from '../../../../src/renderer/src/agents/ThreadPaneMenu'
 import { ThreadDraftStore } from '../../../../src/renderer/src/agents/threadDraftStore'
 import { threadsStateFixture } from '../../../fixtures/renderer/liveAgentState'
 import { handleOf } from '../../../fixtures/stagedImages'
@@ -166,23 +166,24 @@ describe('the browser player', () => {
   it('never lights the pane dot for a thread it is only pinned to (#331)', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore(); const state = threadsStateFixture()
     render(<>
-      <section className="thread-pane" data-thread-id="visual-gate"><ToolsPanelToggle store={store} state={state} /></section>
-      <section className="thread-pane" data-thread-id="grok-previews"><ToolsPanelToggle store={store} state={state} /></section>
+      <section className="thread-pane" data-thread-id="visual-gate"><ThreadPaneMenu threadId="visual-gate" tools terminal={false} layout={[]} groups={[]} toolsStore={store} state={state} /></section>
+      <section className="thread-pane" data-thread-id="grok-previews"><ThreadPaneMenu threadId="grok-previews" tools terminal={false} layout={[]} groups={[]} toolsStore={store} state={state} /></section>
       <BrowserPlayer state={state} focusedThreadId="grok-previews" bridge={browser.bridge} store={store} autoShow={false} playerStore={playerStore} />
     </>)
     await waitFor(() => expect(store.browser.taskSnapshot()).toHaveLength(1))
-    const [waitingPane, otherPane] = screen.getAllByRole('button', { name: 'Tools' })
+    // The dot and its words are the ··· button's, where Tools is a row (ADR-0163).
+    const [waitingPane, otherPane] = screen.getAllByRole('button', { name: 'More actions' })
     expect(waitingPane).not.toHaveAccessibleDescription(/browser request/)
     act(() => browser.emit({ type: 'task', task: task({ updatedAt: 3, pendingAction: { id: '44444444-4444-4444-8444-444444444444', action: { type: 'navigate', url: 'http://localhost:5173/about' }, description: 'Go to /about', expiresAt: Date.now() + 1000 } }) }))
     expect(waitingPane).toHaveAccessibleDescription('A browser request is waiting for your answer')
-    expect(waitingPane!.querySelector('.tools-toggle__agents-dot')).not.toBeNull()
+    expect(waitingPane!.querySelector('.tools-dot')).not.toBeNull()
     expect(otherPane).not.toHaveAccessibleDescription(/browser request/)
-    expect(otherPane!.querySelector('.tools-toggle__agents-dot')).toBeNull()
+    expect(otherPane!.querySelector('.tools-dot')).toBeNull()
     // Pinning Tools to visual-gate (the waiting task's thread) from the other pane must not light that pane's own dot.
     act(() => store.pin('visual-gate'))
-    expect(otherPane!.querySelector('.tools-toggle__agents-dot')).toBeNull()
+    expect(otherPane!.querySelector('.tools-dot')).toBeNull()
     act(() => browser.emit({ type: 'task', task: task({ updatedAt: 4 }) }))
-    expect(waitingPane!.querySelector('.tools-toggle__agents-dot')).toBeNull()
+    expect(waitingPane!.querySelector('.tools-dot')).toBeNull()
   })
   it('moves the task’s page into Tools > Browser without pinning', async () => {
     const browser = fake(); const store = new ToolsPanelStore(); const playerStore = new BrowserPlayerStore()

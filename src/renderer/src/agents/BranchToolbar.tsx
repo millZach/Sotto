@@ -11,6 +11,8 @@ import { parsePullRequestReference } from '../../../shared/gitPullRequests'
 import { CheckoutPullRequestDialog } from '../tools/PullRequestDialogs'
 import { toolsPanelStore } from '../tools/toolsPanelStore'
 import { useOptionalApp } from '../state/AppContext'
+import { Isolated } from '../components/isolated'
+import { holdingThread, openHolderWords } from './checkoutHold'
 import type { AgentConnection } from './AgentContext'
 import { moveListboxFocus } from './listboxKeys'
 import { writeClipboard } from './richActions'
@@ -74,7 +76,8 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   const opener = useContext(PullRequestOpenerContext)
   const [busy, setBusy] = useState<'workspace' | 'branch' | null>(null)
   // Sotto's words are kept as messages and read when shown, so a change of language rewords them; main's come as written.
-  const [notice, setNotice] = useState<{ readonly text: LaterWords; readonly tone: 'error' | 'status' } | null>(null)
+  // A refusal because another thread holds the folder names it, and the line offers to open it (#1823).
+  const [notice, setNotice] = useState<{ readonly text: LaterWords; readonly tone: 'error' | 'status'; readonly holder?: string } | null>(null)
   const workspaceTrigger = useRef<HTMLButtonElement>(null)
   const branchTrigger = useRef<HTMLButtonElement>(null)
   const [workspaceOpen, setWorkspaceOpen] = useState(false)
@@ -100,6 +103,8 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
     setBusy(lane); setNotice(null)
     try {
       const result = await command(request)
+      // A hold is no failure: the host's words say what holds the folder and that nothing was changed, without "Failed".
+      if (result?.error && result.checkoutHold) { setNotice({ text: result.error, tone: 'error', ...(result.checkoutHold.threadId !== undefined ? { holder: result.checkoutHold.threadId } : {}) }); return false }
       if (!result || result.error) { setNotice({ text: failure(result?.error), tone: 'error' }); return false }
       return true
     } catch { setNotice({ text: unconfirmed, tone: 'error' }); return false }
@@ -160,7 +165,10 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
   const hostName = threadHostName(state, row.thread)
   const draftWorktree = newWorktreeDraft(thread)
   const workspace = workspaceLabel(thread)
-  const noticeLine = notice ? <p className="branch-toolbar__notice tt-paragraph" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{shownWords(notice.text)}</p> : null
+  const holder = holdingThread(state.host.threads, notice?.holder, row.thread.id)
+  const noticeLine = notice ? <p className="branch-toolbar__notice tt-paragraph" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}>{shownWords(notice.text)}
+    {holder ? <> <button type="button" className="branch-toolbar__open tt-focusable" onClick={() => { void command({ type: 'select-thread', threadId: holder.id }) }}>
+      <Isolated text={shownWords(openHolderWords(holder.title))} /></button></> : null}</p> : null
   return <div className="branch-toolbar" role="group" aria-label={t`Branch toolbar`} data-busy={busy ?? undefined} data-header={header || undefined}>
     {!header ? <><LabelPill icon={thread.remoteHost ? Server : Laptop} label={t`Run on`} value={hostName}
       title={thread.remoteHost ? t`The thread runs on this host; it was chosen when the thread was made.` : t`The thread runs on this computer.`} /><Separator /></> : null}
@@ -177,7 +185,7 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
         onPick={pick} onCreate={create} onCopy={copyName} onStartFromOrigin={value => void setStartFromOrigin(value)} onCheckoutPullRequest={reference => setCheckout(reference)} />
     </span>
     {noticeSlot ? createPortal(noticeLine, noticeSlot) : noticeLine}
-    {checkout !== null ? <CheckoutPullRequestDialog threadId={thread.id} initialReference={checkout} command={command} worktreeAllowed={!locked} localMovesToCheckout={!locked && thread.worktree?.mode !== 'shared'}
+    {checkout !== null ? <CheckoutPullRequestDialog threadId={thread.id} threads={state.host.threads} initialReference={checkout} command={command} worktreeAllowed={!locked} localMovesToCheckout={!locked && thread.worktree?.mode !== 'shared'}
       onClose={() => { setCheckout(null); branchTrigger.current?.focus() }} onDone={text => { setCheckout(null); setNotice({ text, tone: 'status' }); branchTrigger.current?.focus() }} /> : null}
   </div>
 }

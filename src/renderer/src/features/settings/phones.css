@@ -6,6 +6,12 @@
 .phones-needs-host > p { flex: 1; min-width: 0; }
 .phones-needs-host > .tt-button { flex: 0 0 auto; }
 .phones-switch { padding-top: 6px; }
+/* On Settings › Hosts & phones the switch, the checks and Pair a phone are rows of one card (ADR-0110, #1831); a remote
+   host's Phones dialog lays the same parts out its own way below. */
+.hosts-settings .phones-card > .phones-steps { padding: 0; border: 0; }
+.phones-card .phones-steps > li { padding: 14px 0; border-bottom: 2px solid var(--tt-card-inset); }
+.phones-card .phones-code { min-height: 0; justify-items: end; align-content: center; border: 0; background: none; padding: 0; text-align: end; }
+.phones-card .phones-code[data-code] { justify-items: start; border-radius: var(--tt-radius-md); background: var(--tt-card-inset); padding: 18px 20px; text-align: start; }
 .phones-switch .tt-toggle { grid-template-columns: 36px minmax(0, 1fr); }
 .phones-switch .tt-field__description { max-width: 560px; }
 
@@ -30,7 +36,6 @@
 .phones-how b { color: var(--tt-text); font-weight: 600; }
 .hosts-settings .phones-note { margin-top: 10px; font-size: 13px; }
 .phones-code { display: grid; align-content: center; justify-items: start; gap: 12px; min-width: 0; min-height: 150px; border: 1px solid transparent; border-radius: var(--tt-radius-lg); background: var(--tt-card); padding: 18px 20px; }
-.phones-code[data-off] { border: 1px dashed var(--tt-hairline); background: transparent; }
 .hosts-settings .phones-code > p { margin: 0; font-size: 13px; }
 .phones-code__value { color: var(--tt-text); font: 600 36px/1 var(--tt-font-mono); letter-spacing: 0.08em; white-space: nowrap; }
 .phones-code__value > i { display: inline-block; width: 0.45em; }
@@ -40,18 +45,17 @@
 .phones-count__bar > i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--tt-accent); }
 .phones-code__actions { display: flex; flex-wrap: wrap; gap: 4px; margin-left: -14px; }
 
-/* Paired phones reuse the host rows; Can answer is a labelled switch beside Remove. */
+/* Paired phones reuse the host rows, with Remove their one control. */
 .phones-list { margin-top: 10px; }
+.phones-settings .phones-name { margin-top: 0; }
 .hosts-settings .phones-grant { margin-top: 1px; font-size: 13px; }
-.phones-answer { display: inline-flex; align-items: center; gap: 8px; color: var(--tt-text-muted); font-size: 13px; }
-.phones-name { max-width: 420px; }
-.phones-name .tt-field { display: grid; gap: 5px; }
-.phones-name .tt-input { min-height: 36px; }
+/* The name phones show is a row on its own card, as Settings' fields are. */
 .phones-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
 @media (max-width: 1100px) {
   .phones-pair { grid-template-columns: minmax(0, 1fr); }
   .phones-code { min-height: 0; }
+  .phones-card .phones-code:not([data-code]) { justify-items: start; text-align: start; }
 }
 
 /* A remote host's Phones dialog (ADR-0050): the same switch, checklist and phones, set closer together. */

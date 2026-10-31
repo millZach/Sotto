@@ -34,6 +34,12 @@ Zach, October 29, 2026, on the question card for part 3 (tag `prototype/move-thr
 - **Asking Watcher in words** puts the same preview in Watcher's conversation as Sotto's own card, with Move and Not now. Nothing moves until the press; the move cards then follow as before.
 - **Nothing in the sheet starts ticked.** Zach ticks each thread to move, and Move stays off until one is. This changes part 2's sheet, which moved every thread that could. Read here, and said on #1178: threads already pointed at start ticked, the one a thread's More menu opened the sheet for and those Watcher named from his words.
 
+Zach, October 30, 2026, on the question card for part 4 (tag `prototype/move-threads-reconcile`):
+
+- **Keep it here asks first, on the card,** when the other machine already made the new thread: "Stop the new thread on forge and keep this one here?", with **Stop it there and keep this one** and **Cancel**.
+- **Keep it here appears only while a move waits** on a machine that is not answering, as ADR-0105 says.
+- **A press while that machine can't be reached is remembered** and done as soon as it is back; the thread stays fenced until then.
+
 ## Build order
 
 1. **Core, This computer to a paired host.** The move record (`moves.json`, states fenced, branch sent, thread started, first turn ended, source settled, or given back, written before anything is sent, every step idempotent by the move's ID); the fence (the source refuses sends while it moves); eligibility with its plain words; the branch over the host socket (`DesktopBranchMoves`); the handover and facts block built here; an optional host-v1 feature that makes the new thread from the incoming ref and sends its first prompt, idempotent by move ID; confirmation, settling the source, and re-pointing Watcher's watch. Driven over IPC as a prepare/move pair modelled on Stop all. No UI yet.
@@ -153,3 +159,55 @@ After Sol's standards and spec reviews of part 3b (October 29):
 - A proposal's thread on a machine no longer listed is named as a paired machine, never as This computer.
 - The sheet a More menu opens shows its thread's box too, ticked.
 
+## Part 4, as built (October 30, 2026)
+
+- `src/shared/threadMoves.ts`: `keep` in `thread-move` under `thread-move-keep`, its answer, the `kept` refusal of a start, the press (`{ moveId, answer: 'keep-here' }`), the card's `keeping`, and the words.
+- `src/main/agents/threadMovesHost.ts`: `keep` records the move as called off first (`kept` on the record), a record made then for a move never started, so every later start is refused; then it interrupts and settles the thread it made, if any. The coordinator's `commandFromMove` takes `interrupt` for it.
+- `src/main/agents/threadMoves.ts`: the press is saved in `moves.json` (`keeping`), apart from the move's record so a step under way never loses it; the move's next step calls it off (`callOff`), and only the machine's answer ends it in the new terminal state `kept` (`endKept`), Watcher's watch coming back if it had gone. A move never asked to start ends at once. Watcher hears of it as `kept`.
+- `src/renderer/src/watcher/MoveThreads.tsx`: **Keep it here** on a waiting move's card, asking first on the card when the new thread exists, focus going to Cancel and back; the keeping card while it waits.
+
+Decisions made while building:
+
+- "Reconciling" by an exact read after a restart, without the user's press, is what each step's idempotent retry already gives, so part 4 adds only Keep it here's read: the `keep` request is the exact, fencing read the ADR describes.
+- A refusal of `keep` proves nothing about a thread there, so the move stays fenced and asks again; only `kept` ends it.
+- A kept move with no thread there lets go of its incoming ref; one whose thread was stopped and settled keeps it, since that thread's worktree was made from it.
+
+After Sol's standards review of part 4 (October 30):
+
+- The machine a move went to says it kept the move only once the thread it made has stopped: a turn the interrupt did not stop fails the step, nothing settled, and the desktop asks again.
+- A press made while a step is under way is not lost: settling the source checks for it before and after Watcher's watch moves, and calls the move off instead.
+- A watch that had gone to the new thread is tried again a few times on its way back before the move ends without it.
+- Escape anywhere in the card's question puts it away.
+
+After Sol's spec review of part 4 (October 30):
+
+- A host asked to hold a thread may hold it whatever happens to its answer, so the move records that it asked (`holdAsked`) first, and a move given back or kept has that host let go of it unless the host refused outright. This also closes the same gap in part 3's give back.
+- The card asks first whenever the machine was asked to start the new thread, its answer heard or not ("…if it made one").
+- Watcher's watch comes back before the machine is asked to call the move off, while the new thread is still there to take it from.
+- A thread made there whose ID was never heard here still keeps the branch its worktree came from (`keptMade`).
+
+After Sol's confirmation pass on part 4 (October 30):
+
+- Main says when a move can be kept here (`keepable` on its card): it waits on a machine, with no step under way and not already ending or kept. A press during a step under way, settling the source among them, is refused as not waiting, so it never races the step.
+- Bringing Watcher's watch back has tries of its own, apart from the tries to carry it.
+
+
+## Move suggestions, #1309, as built (October 30, 2026)
+
+Zach's picks on the question card, October 30 (tag `prototype/move-suggestions`):
+
+1. **When Sotto looks: A, no new reads.** A suggestion comes only from the readings the machines line already takes, when Watcher places work or the user opens a machine's panel. His October 23 call that nothing reads machines on a timer stands.
+2. **Where: A, under the machines line.** One line under the line that says what is wrong, gone once the machine reads fine.
+3. **Which threads: A, one named thread, and Choose threads….** The thread at a clean point that worked most recently, with one press to move it, and Choose threads… for the sheet.
+4. **Not now: A.** It hides the suggestion until that machine reads fine again.
+
+As built:
+
+- The window alone (`MoveSuggestion.tsx`, the plan in `moveSuggestionPlan.ts`). Main and the host protocol do not change: the line uses the sheet's own `prepare` and `start`.
+- The machine with room is the one with the most headroom (`headroom` in `list_machines`, #1694), This computer first among equals. A machine whose headroom is null never has room, so a Mac, whose memory reads unknown, is never offered as one.
+- What the line asks about is worked out from the machines alone, so a thread's update does no work for it. Each troubled machine's reading, toward the machine with room, asks main's preview once about that machine's threads that the window can see might move (not running a turn, showing no card, no uncommitted work as its host last read it, not put away, delegated or Watcher's), most recently worked first, in the hundreds a preview takes until one would move now, four hundreds at most, so its previews stay below the eight main keeps; that one is named. It asks nothing while the Move threads sheet is open, so it never pushes out the sheet's own preview, and a reading cut short by the sheet opening is asked once it closes. When none on the first troubled machine would, the next is asked. Each answer is kept by its machine's own reading, so the same reading never asks again, however the threads change under it, the line goes and comes back, another machine reads or the user says Not now to another machine, and an answer that comes late fills only its own reading.
+- A named thread that has since started a turn, shows a card or reads uncommitted work is not named, and the next troubled machine is asked in its place. Work uncommitted since its host last read the folder, and background work, are main's to see, on the press.
+- Move asks for a fresh preview of that thread and starts it. One that would start narrower opens the sheet for that thread at the same machine (`targetHostId`), where it asks first. A check that failed and a start whose answer was lost say so differently, and a press's answer shows only on the reading it was pressed on; every button waits while one is under way. A pressed reading says nothing more until the next one.
+- Choose threads… opens the sheet with the machine named (`{ kind: 'all', targetHostId }`), which goes straight to it, nothing ticked.
+- After the press or Not now, focus goes to that machine's name on the machines line, wide or narrow, whichever shows.
+- Not now is held by the window while it lives, not saved; a reading that shows the machine connected and neither busy, short nor unknown forgets it.

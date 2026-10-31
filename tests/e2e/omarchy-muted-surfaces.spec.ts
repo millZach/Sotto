@@ -6,7 +6,7 @@ import fixtures from '../fixtures/omarchy-themes.json'
 import legacyCache from '../fixtures/omarchy-theme-cache-v0070.json'
 import { ownedE2EProfile } from './support/e2eProfile'
 import { measurePaintedPair } from './support/paintedPair'
-import { launchSotto, closeSotto, firstSottoWindow, openThreads, openPage } from './support/sottoLaunch'
+import { launchSotto, closeSotto, firstSottoWindow, openThreads, openPage, toggleTools } from './support/sottoLaunch'
 import { promptField, fillPrompt } from './support/prompt'
 import { resizeContentWindow } from './support/sottoWindow'
 import { contrastRatio } from '../../src/shared/themes/color'
@@ -71,7 +71,7 @@ test('Omarchy muted text reads on real selected rows, hover rows, bubbles and la
     if (await split.getAttribute('aria-checked') !== 'true') await split.click()
     await page.getByRole('radiogroup', { name: 'Dark theme' }).getByRole('radio', { name: /^Omarchy Tokyo Night$/ }).click()
     await openThreads(page)
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     await panel.getByRole('tab', { name: 'Changes', exact: true }).click()
     await panel.getByRole('button', { name: 'Expand colours.txt', exact: true }).click()
@@ -86,14 +86,14 @@ test('Omarchy muted text reads on real selected rows, hover rows, bubbles and la
     const collect = async (theme: string, group: string) => {
       // Narrow nested outputs hide the sidebar while Tools is open. Drive each
       // surface where it is visible, rather than sampling hidden sidebar nodes.
-      await page.getByRole('button', { name: 'Tools', exact: true }).click()
+      await toggleTools(page)
       await expect(page.locator('.thread-nav__row[data-current]').first()).toBeVisible()
       await record(theme, group, 'selected sidebar row', page.locator('.thread-nav__row[data-current] .thread-nav__time').first())
       const hoverRow = page.locator('.thread-nav__row:not([data-current])').filter({ visible: true }).first()
       await hoverRow.hover()
       await record(theme, group, 'hovered sidebar row', hoverRow.locator('.thread-nav__time'))
       await record(theme, group, 'message bubble', page.locator('.thread-message[data-role="user"] time').first())
-      await page.getByRole('button', { name: 'Tools', exact: true }).click()
+      await toggleTools(page)
       const expand = panel.getByRole('button', { name: 'Expand colours.txt', exact: true })
       if (await expand.isVisible()) await expand.click()
       for (const kind of ['context', 'add', 'remove']) {

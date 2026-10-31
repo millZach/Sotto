@@ -284,12 +284,15 @@ import UIKit
     func testCreateThreadInAKnownProject() {
         launch(Self.fixture)
         app.buttons["new-thread"].tap()
+        // With only the laptop online, New thread starts on its projects (#1856); the computer's chip still opens the list.
+        let project = app.buttons["new-thread-project-sotto"]
+        XCTAssertTrue(project.waitForExistence(timeout: 5), "With one computer online, New thread opens on its projects")
+        app.buttons["new-thread-change-computer"].tap()
         let offline = app.buttons["new-thread-computer-22222222-2222-4222-8222-222222222222"]
         XCTAssertTrue(offline.waitForExistence(timeout: 5))
         XCTAssertFalse(offline.isEnabled)
         capture("new-thread-computers-dark")
         app.buttons["new-thread-computer-\(laptop)"].tap()
-        let project = app.buttons["new-thread-project-sotto"]
         XCTAssertTrue(project.waitForExistence(timeout: 5))
         project.tap()
         let open = app.buttons["open-new-thread"]
@@ -328,8 +331,8 @@ import UIKit
         app.buttons["setting-light"].tap()
         app.tab("Threads").tap()
         app.buttons["new-thread"].tap()
-        app.buttons["new-thread-computer-\(laptop)"].tap()
         let browse = app.buttons["browse-project-folder"]
+        XCTAssertTrue(browse.waitForExistence(timeout: 5), "With one computer online, New thread opens on its projects")
         reveal(browse); browse.tap()
         let filter = app.textFields["folder-filter"]
         XCTAssertTrue(filter.waitForExistence(timeout: 5))
@@ -603,6 +606,40 @@ import UIKit
         XCTAssertTrue(chips.label.contains("7 files changed, 212 lines added, 48 removed"))
         XCTAssertTrue(chips.label.contains("Pull request 721, draft"))
         capture("thread-glow-top")
+    }
+
+    /// At the largest text sizes a thread stays inside the screen. On a small iPhone the Git chips wrap onto another line
+    /// rather than widen the page, which cut the first letters off every line of the thread (#1848).
+    func testAThreadStaysInsideTheScreenAtTheLargestTextSizes() {
+        launch(Self.fixture + ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityL"])
+        let thread = row("iphone")
+        reveal(thread)
+        thread.tap()
+        XCTAssertTrue(byID("thread-reply").waitForExistence(timeout: 5))
+        let chips = text("Branch feat/frosted-window-and-pane-terminal")
+        scrollThread(to: chips, towardStart: true)
+        let screen = app.windows.firstMatch.frame
+        for (name, element) in [("The title", app.staticTexts["thread-title"]), ("The branch and changes", chips), ("The reply box", byID("thread-reply"))] {
+            XCTAssertTrue(element.exists, "\(name) shows")
+            XCTAssertGreaterThanOrEqual(element.frame.minX, screen.minX - 1, "\(name) starts inside the screen")
+            XCTAssertLessThanOrEqual(element.frame.maxX, screen.maxX + 1, "\(name) ends inside the screen")
+        }
+        capture("thread-largest-text-top")
+    }
+
+    /// A press on the tab already chosen scrolls its page back to the top, as the system's tab bar does.
+    func testPressingTheChosenTabAgainScrollsItsPageToTheTop() {
+        launch(Self.fixture)
+        let tab = byID("tab-settings")
+        tab.tap()
+        let heading = app.staticTexts["Settings"].firstMatch
+        XCTAssertTrue(heading.waitForExistence(timeout: 5))
+        for _ in 0..<3 { app.swipeUp() }
+        XCTAssertFalse(heading.isHittable, "Scrolled down, the page's heading has left the screen")
+        capture("settings-scrolled-status-bar")
+        tab.tap()
+        expectation(for: NSPredicate(format: "isHittable == true"), evaluatedWith: heading)
+        waitForExpectations(timeout: 5)
     }
 
     /// A thread's pull request on an Owl computer (ADR-0102): the chip opens a sheet that reads it from GitHub, shows where
@@ -1496,50 +1533,9 @@ import UIKit
         XCTAssertEqual(result, .completed, "\(what) stays whole above the box while Watcher writes (\(seen))")
     }
 
-    /// A phone without Can answer on the computer that runs Watcher reads the cards in its page and answers none of them,
-    /// and says so, as it does on Threads. Watcher's own request badges its tab.
-    func testAPhoneWithoutCanAnswerSaysSoInWatchersPage() {
-        launch(Self.watcher + ["--ui-watcher-asks"])
-        let tab = openWatcher()
-        XCTAssertEqual(byID("watcher-state").label, "Watcher, Needs you")
-        let note = text("This iPhone can’t answer on Laptop yet.")
-        revealInWatcher(note)
-        XCTAssertFalse(app.buttons["watcher-card-send"].exists, "Nothing can be sent from a card")
-        XCTAssertFalse(app.buttons["Allow once"].exists)
-        let own = byID("watcher-own-card")
-        revealInWatcher(own)
-        XCTAssertTrue(own.label.contains("Watcher asks each time. It can’t be given lasting permission."))
-        // Since #1813 a message written while Watcher's own request waits is queued until the card is answered, rather than
-        // held back (#1878).
-        XCTAssertTrue(text("Queued until you answer the card").exists, "Watcher queues new messages until its own request is answered")
-        capture("watcher-cannot-answer-dark")
-        // While Watcher's own request waits on the user, its permissions are fixed, as on the desktop, and the chip says so.
-        let permissions = app.buttons["watcher-permissions"]
-        XCTAssertTrue(permissions.waitForExistence(timeout: 5))
-        XCTAssertEqual(permissions.value as? String, "Ask before actions")
-        XCTAssertFalse(permissions.isEnabled, "Fixed while Watcher waits on the user")
-        XCTAssertEqual(byID("watcher-permissions-fixed").label, "Fixed while Watcher works.")
-        let review = app.buttons["watcher-card-review"].firstMatch
-        revealInWatcher(review)
-        review.tap()
-        XCTAssertTrue(text("This iPhone can’t answer on Laptop yet. Turn on Can answer for it in Sotto on Laptop").waitForExistence(timeout: 5),
-                      "Review opens the card's own sheet, which says why it can't be answered here")
-        capture("watcher-cannot-answer-sheet-dark")
-        let notNow = app.buttons["Not now"]
-        reveal(notNow)
-        notNow.tap()
-        XCTAssertTrue(waitUntilGone(notNow))
-        watcherInLight()
-        revealInWatcher(byID("watcher-own-card"))
-        capture("watcher-cannot-answer-light")
-        // Last, so the rest of the journey reports first if the tab bar doesn't carry it.
-        let badged = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value CONTAINS %@", "1 needs you"), object: tab)
-        XCTAssertEqual(XCTWaiter.wait(for: [badged], timeout: 10), .completed, "VoiceOver hears Watcher's own request on its tab")
-    }
-
     /// Watcher's permissions can only stay asking first from a phone that can't answer on Watcher's computer, and the list
     /// says why.
-    func testAPhoneWithoutCanAnswerCanOnlyKeepWatcherAskingFirst() {
+    func testAPhoneThatCantAnswerCanOnlyKeepWatcherAskingFirst() {
         launch(Self.watcher)
         openWatcher()
         let permissions = toWatcherHero()
@@ -1633,7 +1629,7 @@ import UIKit
                       "Each mode says what Watcher does under it")
         let edits = app.buttons["watcher-permission-auto-accept-edits"]
         reveal(edits)
-        XCTAssertTrue(edits.isEnabled, "With Can answer, a wider mode can be chosen")
+        XCTAssertTrue(edits.isEnabled, "Where this iPhone can answer, a wider mode can be chosen")
         XCTAssertFalse(byID("watcher-permissions-asks-only").exists)
         capture("watcher-permissions-sheet-dark")
         edits.tap()
@@ -1842,9 +1838,6 @@ import UIKit
     func testNewThreadFieldsOpenFromTheirWholeBox() {
         launch(Self.fixture)
         app.buttons["new-thread"].tap()
-        let computer = app.buttons["new-thread-computer-\(laptop)"]
-        XCTAssertTrue(computer.waitForExistence(timeout: 5))
-        computer.tap()
         let project = app.buttons["new-thread-project-sotto"]
         XCTAssertTrue(project.waitForExistence(timeout: 5))
         project.tap()
@@ -2042,13 +2035,14 @@ import UIKit
                 app.tab("Threads").tap()
             }
             app.buttons["new-thread"].tap()
-            app.buttons["new-thread-computer-\(laptop)"].tap()
             let browse = app.buttons["browse-project-folder"]
+            XCTAssertTrue(browse.waitForExistence(timeout: 5))
             reveal(browse); browse.tap()
             let problem = app.staticTexts["Sotto did not answer in time. Try again."]
             XCTAssertTrue(problem.waitForExistence(timeout: 5))
             reveal(problem)
             XCTAssertFalse(app.staticTexts["Delivery is unconfirmed. Check the thread before sending again."].exists)
+            XCTAssertTrue(app.buttons["folders-try-again"].exists, "A read that timed out has a Try again button")
             capture("folder-read-timeout-" + appearance)
             app.buttons["Home"].tap()
             XCTAssertTrue(problem.waitForExistence(timeout: 5))

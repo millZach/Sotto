@@ -848,7 +848,7 @@ it('never leaves Watcher’s live permission and its saved choice apart when the
   vi.spyOn(f.control, 'updateWatcher').mockRejectedValueOnce(new Error('Synthetic save failure'))
   expect(await f.service.setPermission({ runtimeMode: 'full-access' })).toMatchObject({ status: 'refused' })
   expect({ live: live(), saved: saved() }).toEqual(before)
-  // The phone loses Can answer at the save: the same.
+  // The phone loses its answers grant at the save: the same.
   expect(await f.service.setPermission({ runtimeMode: 'full-access' }, () => { throw new Error('Synthetic revoked phone') })).toMatchObject({ status: 'refused' })
   expect({ live: live(), saved: saved() }).toEqual(before)
   // The provider refuses the change: the saved choice goes back too.

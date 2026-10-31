@@ -549,9 +549,13 @@ it('shares a pairing store already loaded, as a headless host does, so a phone p
   const pairing = new PairedClients(root)
   await pairing.load()
   const fake = fakeTailscale(), server = fakeServer()
-  const policy = { mayGrant: () => ({ allowed: false }), setRemoteAnswers: vi.fn() }
+  const policy = { mayGrant: () => ({ allowed: false }), ensureRemoteAnswers: vi.fn<(clientId: string, note: string) => boolean>(() => true), setRemoteAnswers: vi.fn() }
   const { access } = create({ tailscale: fake.tailscale, startServer: server.startServer, pairing, policy })
+  const before = await pairing.redeem(pairing.issuePairingCode().code, 'Paired before start')
+  // Until the phones' record is read, no client counts as a phone, so `--deny-answers` still reaches a desktop then.
+  expect(access.isPhone(before.clientId)).toBe(false)
   await access.start()
+  await pairing.revoke(before.clientId)
   // A desktop paired with the same host is no phone: it is never listed, and the dialog cannot remove it.
   const desktop = await pairing.redeem(pairing.issuePairingCode().code, 'Sotto desktop')
   const shown = await access.command({ type: 'show-code' })
@@ -559,15 +563,22 @@ it('shares a pairing store already loaded, as a headless host does, so a phone p
   const phone = await pairing.redeem(shown.code!.code, 'Zach’s iPhone')
   server.started[0]!.onPaired!(phone.clientId)
   expect(access.get().phones).toMatchObject([{ name: 'Zach’s iPhone' }])
+  // Pairing by code lets the phone answer; the desktop's answers stay the launch script's to set.
+  expect(policy.ensureRemoteAnswers.mock.calls.map(([clientId]) => clientId)).toEqual([phone.clientId])
+  expect(access.isPhone(phone.clientId)).toBe(true)
+  expect(access.isPhone(desktop.clientId)).toBe(false)
   await expect(access.command({ type: 'remove', clientId: desktop.clientId })).rejects.toThrow('no longer paired')
-  await expect(access.command({ type: 'set-can-answer', clientId: desktop.clientId, allowed: true })).rejects.toThrow('no longer paired')
   expect(policy.setRemoteAnswers).not.toHaveBeenCalled()
   expect(pairing.list().map(client => client.name)).toEqual(['Sotto desktop', 'Zach’s iPhone'])
   await access.close()
-  // The phones are remembered across a restart.
-  const again = create({ tailscale: fake.tailscale, startServer: fakeServer().startServer, pairing })
+  // The phones are remembered across a restart, which gives each its answers again where it has none, and no desktop.
+  // Remembering is written behind the pairing, so the restart waits for it rather than racing it.
+  await vi.waitFor(async () => expect(JSON.parse(await readFile(join(root, 'phone-clients.json'), 'utf8'))).toContain(phone.clientId))
+  policy.ensureRemoteAnswers.mockClear()
+  const again = create({ tailscale: fake.tailscale, startServer: fakeServer().startServer, pairing, policy })
   await again.access.start()
   expect(again.access.get().phones.map(item => item.name)).toEqual(['Zach’s iPhone'])
+  expect(policy.ensureRemoteAnswers.mock.calls.map(([clientId]) => clientId)).toEqual([phone.clientId])
   await again.access.command({ type: 'remove', clientId: phone.clientId })
   expect(again.access.get().phones).toEqual([])
   await again.access.close()

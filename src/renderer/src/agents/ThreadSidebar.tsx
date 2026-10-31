@@ -381,7 +381,8 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
         <ChevronRight size={12} aria-hidden="true" className="thread-folder__chevron" />
         <Folder size={14} aria-hidden="true" /><span className="thread-folder__title">{folder.title}</span>{host ? <HostBadge host={host} /> : null}
         {!expanded ? <Indicators id={indicatorsId} working={folder.working} needs={folder.needs} hidden={indicatorsHidden} /> : null}
-        <span className="thread-folder__count" aria-hidden="true">{folder.rows.length}</span>
+        {/* An empty folder shows its name alone; the room says once that there are no threads (#1834). */}
+        {folder.rows.length ? <span className="thread-folder__count" aria-hidden="true">{folder.rows.length}</span> : null}
       </button>
       {project !== undefined ? <span className="thread-folder__actions">
         {section === 'open' ? <button type="button" className="thread-nav__action tt-focusable" aria-label={t`New thread in ${projectTitle}`}
@@ -401,7 +402,6 @@ const FolderView = memo(function FolderView({ folder, section, panes, activeProj
     </ul> : null}
     {expanded ? <ul className="thread-folder__rows" id={listId}>
       {renderRows(onOpen, panes)}
-      {!folder.rows.length ? <li className="thread-nav__empty">{section === 'open' ? t`No open threads.` : t`No threads yet.`}</li> : null}
     </ul> : null}
   </div>
 })

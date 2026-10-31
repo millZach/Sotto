@@ -5,7 +5,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto, openThreads } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, toggleTools } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 const shots = evidenceDirectory('artifacts/phase-four-git')
@@ -44,7 +44,7 @@ test('inspects a completed checkpoint and explicitly rewinds files and the same 
       await writeFile(join(repo, 'notes.txt'), 'My unrelated later notes\n')
       await openThreads(page)
       await page.getByRole('button', { name: 'Checkpoint review', exact: true }).first().click()
-      await page.getByRole('button', { name: 'Tools', exact: true }).click()
+      await toggleTools(page)
       const panel = page.getByRole('complementary', { name: 'Tools' })
       await panel.getByRole('tab', { name: 'Changes' }).click()
       await panel.getByRole('button', { name: 'Checkpoints', exact: true }).click()

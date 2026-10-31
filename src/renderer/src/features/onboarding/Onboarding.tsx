@@ -77,8 +77,6 @@ type StepGroup = 'start' | 'dictation' | 'agents' | 'elsewhere'
 interface SetupStep {
   readonly id: StepId
   readonly group: StepGroup
-  /** The step's name in the progress line, read in the interface language; Omarchy and iPhone are names. */
-  readonly title: MessageDescriptor | string
 }
 
 /** The progress bar's group names, in the interface language where they are shown. */
@@ -91,18 +89,18 @@ const GROUP_NAMES: Readonly<Record<StepGroup, MessageDescriptor>> = {
 
 /** First-run setup, in order: what Sotto is, how it looks, dictation, the coding agents, and other places to use it. */
 const STEPS: readonly SetupStep[] = [
-  { id: 'welcome', group: 'start', title: msg({ message: 'Welcome', comment: 'First-run setup: the first step' }) },
-  { id: 'look', group: 'start', title: msg({ message: 'Look', comment: 'First-run setup: the step that chooses how Sotto looks' }) },
-  { id: 'microphone', group: 'dictation', title: msg({ message: 'Microphone', comment: 'First-run setup: the microphone step' }) },
-  { id: 'speech-model', group: 'dictation', title: msg`Speech model` },
-  { id: 'shortcut', group: 'dictation', title: msg({ message: 'Shortcut', comment: 'First-run setup: the dictation shortcut step' }) },
-  { id: 'agents', group: 'agents', title: msg`Coding agents` },
-  { id: 'project', group: 'agents', title: msg`First project` },
-  { id: 'computers', group: 'elsewhere', title: msg`Other computers` },
-  { id: 'phone', group: 'elsewhere', title: 'iPhone' },
+  { id: 'welcome', group: 'start' },
+  { id: 'look', group: 'start' },
+  { id: 'microphone', group: 'dictation' },
+  { id: 'speech-model', group: 'dictation' },
+  { id: 'shortcut', group: 'dictation' },
+  { id: 'agents', group: 'agents' },
+  { id: 'project', group: 'agents' },
+  { id: 'computers', group: 'elsewhere' },
+  { id: 'phone', group: 'elsewhere' },
 ]
 const GROUPS = [...new Set(STEPS.map(step => step.group))]
-const LINUX_STEPS: readonly SetupStep[] = [STEPS[0]!, { id: 'omarchy', group: 'start', title: 'Omarchy' }, ...STEPS.slice(1)]
+const LINUX_STEPS: readonly SetupStep[] = [STEPS[0]!, { id: 'omarchy', group: 'start' }, ...STEPS.slice(1)]
 
 /**
  * The microphone test passes once Sotto hears a voice, the level Settings' test counts as one, for this long in all,
@@ -113,12 +111,20 @@ const LEVEL_READ_MS = 50
 /** How long the test listens before it says it has heard nothing yet. */
 const NOTHING_HEARD_MS = 6000
 
+/**
+ * The optional steps after dictation, the Agents and Elsewhere groups: the coding agents connect on their own, a project
+ * can be added from the sidebar any time, and one computer needs no other. Until their task has started, Skip for now is
+ * the filled button there and the step's own action is secondary (#1824). The dictation steps are Sotto's first job, so
+ * their test and their choice stay the filled button; the iPhone step ends in Finish setup.
+ */
+const SKIP_FIRST: ReadonlySet<StepId> = new Set(['agents', 'project', 'computers'])
+
 const openInBrowser = async (url: string): Promise<boolean> => {
   const result = await window.sotto?.openExternalLink?.(url).catch(() => null)
   return result?.ok === true
 }
 
-/** A step's heading and one-line lead. The bar above the card already names the step, so only the welcome has an eyebrow. */
+/** A step's heading and one-line lead, which names the step; the bar above the card says which step it is and its group. */
 function StepHeading({ title, lead, headingRef }: {
   readonly title: string
   readonly lead: ReactNode
@@ -326,13 +332,12 @@ export function Onboarding({
   const done = stepDone(step.id)
   const stepNumber = index + 1
   const stepCount = steps.length
-  const stepTitle = typeof step.title === 'string' ? step.title : i18n._(step.title)
 
   return (
     <main className="onboarding-shell" aria-labelledby="onboarding-heading">
       <nav className="onboarding-progress" aria-label={t`Setup progress: step ${stepNumber} of ${stepCount}`}>
         <span className="onboarding-progress__text" aria-live="polite" aria-atomic="true">
-          <Trans>Step {stepNumber} of {stepCount} · {stepTitle}</Trans>
+          <Trans>Step {stepNumber} of {stepCount}</Trans>
         </span>
         <ol aria-hidden="true">
           {GROUPS.map(group => {
@@ -355,7 +360,6 @@ export function Onboarding({
           {step.id === 'welcome' ? (
             <section aria-labelledby="onboarding-heading">
               <SottoMark className="onboarding-welcome__mark" />
-              <p className="onboarding-eyebrow"><Trans>Welcome to Sotto</Trans></p>
               {heading(t`Talk to your computer and your coding agents`, platform === 'linux'
                 ? t`Set up Sotto in Omarchy in the next step, then hold F9 to talk. Sotto copies your words, then pastes them into the focused app or terminal. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.`
                 : t`Press a shortcut and speak, and your words arrive as text wherever you were typing. Sotto also runs Codex, Claude Code, Grok Build and Devin threads in one window, on this computer or another.`)}
@@ -533,7 +537,7 @@ export function Onboarding({
         <footer className="onboarding-actions">
           {index > 0 ? <Button variant="ghost" onClick={goBack} disabled={finishing || step.id === 'omarchy' && omarchy.busy}><Trans>Back</Trans></Button> : <span />}
           {step.id === 'welcome' ? <Button onClick={advance}><Trans>Get started</Trans></Button> : null}
-          {step.id !== 'welcome' && !last ? <Button variant={done ? 'primary' : 'secondary'} disabled={step.id === 'omarchy' && omarchy.busy} onClick={advance}>{done ? t`Continue` : t`Skip for now`}</Button> : null}
+          {step.id !== 'welcome' && !last ? <Button variant={done || SKIP_FIRST.has(step.id) ? 'primary' : 'secondary'} disabled={step.id === 'omarchy' && omarchy.busy} onClick={advance}>{done ? t`Continue` : t`Skip for now`}</Button> : null}
           {last ? (
             <Button onClick={() => void finish()} disabled={(microphoneState !== 'ready' && !microphoneSkipped) || finishing}>
               {finishing ? t`Saving setup...` : t`Finish setup`}

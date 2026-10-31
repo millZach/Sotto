@@ -22,8 +22,9 @@
 /* A notice above the panes (recovered work) scrolls within its own box before it squeezes the composer below it. */
 .threads-view .thread-workspace > .thread-workspace__body[data-panes] { min-height: min(560px, calc(100% - 140px)); }
 .threads-view .thread-workspace > .provider-recovery { min-height: min(140px, 30%); }
-/* One 44px row: the provider mark, the name, its project, and at the end the Tools toggle and the More menu.
-   The row is the window's drag handle, so everything that can be clicked or typed in opts out of dragging. */
+/* One 44px row: the provider mark, the name, its project, then pinned to the right in a fixed order the Git action, Watch,
+   the ··· menu and, in a split, close (ADR-0163). The row is the window's drag handle, so everything that can be clicked
+   or typed in opts out of dragging; the title opts out too, since in a split it is the handle that moves the pane. */
 .thread-workspace__head { display: flex; align-items: center; gap: 4px; flex: none; height: 44px; padding: 0 6px 0 18px; -webkit-app-region: drag; }
 .thread-workspace__head :is(.thread-workspace__title, .thread-workspace__actions, button, input, a) { -webkit-app-region: no-drag; }
 .thread-workspace__title { display: flex; align-items: center; gap: 10px; min-width: 0; margin-right: auto; }
@@ -43,7 +44,7 @@
 .thread-workspace__actions { display: flex; flex: none; align-items: center; gap: 2px; }
 .thread-workspace__error { margin: 12px 24px 0; }
 
-/* The header's icon buttons: the Tools toggle, the More menu, and anything a pane adds beside them. */
+/* The header's icon buttons: the ··· menu, close, and anything a pane adds beside them. */
 .pane-action { display: grid; place-items: center; width: 30px; height: 30px; flex: none; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .pane-action:hover:not(:disabled), .pane-action[aria-pressed='true'], .pane-action[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .pane-action:active:not(:disabled):not([aria-pressed='true']):not([aria-expanded='true']) { background: var(--tt-hover-strong); color: var(--tt-text); }
@@ -61,8 +62,17 @@
 .pane-menu__item:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
 .pane-menu__item:disabled { color: var(--tt-text-muted); cursor: default; }
 .pane-menu__item:disabled > svg { opacity: .55; }
+/* A row that shows something ticks while it shows, and a row with keys names them at its end, muted, in a title's words. */
+.pane-menu__label { flex: 1 1 auto; min-width: 0; }
+.pane-menu__end { display: inline-flex; flex: none; align-items: center; gap: 8px; margin-left: 18px; color: var(--tt-text-muted); }
+.pane-menu__end > svg { color: var(--tt-text-2); }
+.pane-menu__end kbd { font: inherit; font-size: 12px; }
+/* Tools' dot, on the ··· button of the pane that lists Tools: agents working, or the attention colour while a delegated
+   thread waits for you. It sits above-left of the dots, where it sat on the Tools icon. */
+.tools-dot { position: absolute; top: 3px; left: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); box-shadow: 0 0 0 2px var(--tt-canvas); pointer-events: none; }
+.tools-dot[data-needs] { background: var(--tt-attention); }
 
-.thread-transcript { position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
+.thread-transcript { --thread-jump-gap: 14px; position: relative; display: flex; flex: 1; min-height: 0; flex-direction: column; }
 /* Positioned so absolute content (a diagram's hidden text) scrolls inside the transcript instead of stretching the pane. */
 /* Scroll anchoring is on because the containment below gives an offscreen message an estimated height: without it,
    a message resolving to its true height as the reader scrolls back through the history moves the text under them
@@ -154,17 +164,25 @@
 .thread-pane > .thread-transcript { min-height: min(160px, 30%); }
 .thread-workspace__compose { display: flex; flex: 0 1 auto; flex-direction: column; min-height: 0; padding: 10px max(24px, calc((100% - 760px) / 2)) 20px; }
 .thread-workspace__compose > * { flex: none; }
-/* The composer floats: the transcript runs on under it and its padding keeps the last line clear of the card. The strip
-   around the card lets presses through to the transcript beneath. A waiting question stacks the composer again, so the
-   questions keep their scroll above the message bar and nothing in the transcript hides under them. */
+/* Keep the scroll box steady, but stop its words above the floating composer, including the strips beside the card.
+   Padding brings the last line clear; clipping also protects every line while reading back. */
 .thread-pane:not([data-greeting], [data-questions]) { --thread-compose-height: var(--thread-compose-measured, 0px); }
 .thread-pane > .thread-transcript + .thread-greeting-slot:empty + .thread-workspace__compose { position: relative; z-index: 2; margin-top: calc(-1 * var(--thread-compose-height, 0px)); pointer-events: none; }
 .thread-workspace__compose > * { pointer-events: auto; }
-.thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: var(--thread-compose-height, 0px); }
-/* Stacked under a waiting question, the transcript still runs on under the card's top edge and rounded corners rather than
-   stopping in a hard line above it. Only the scroller reaches down, so the pane keeps every size it had. */
-.thread-pane[data-questions] > .thread-transcript > .thread-workspace__transcript { --thread-compose-height: 26px; margin-bottom: -26px; }
-.thread-pane .thread-transcript__jump { bottom: calc(14px + var(--thread-compose-height, 0px)); }
+/* Leave the existing scrollbar gutter whole; only the conversation ends above the floating controls. */
+.thread-transcript__viewport {
+  --thread-compose-cover: var(--thread-compose-height, 0px); --thread-jump-band: 0px;
+  --thread-readable-bottom: calc(100% - var(--thread-compose-cover) - var(--thread-jump-band));
+  display: flex; flex: 1; min-height: 0;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, calc(100% - var(--tt-scrollbar-size)) 100%, calc(100% - var(--tt-scrollbar-size)) var(--thread-readable-bottom), 0 var(--thread-readable-bottom));
+}
+.thread-pane .thread-workspace__transcript { padding-bottom: calc(28px + var(--thread-compose-height, 0px)); scroll-padding-bottom: calc(var(--thread-compose-cover) + var(--thread-jump-band)); }
+.thread-transcript:has(> .thread-transcript__jump) > .thread-transcript__viewport { --thread-jump-band: calc(var(--thread-jump-height, 0px) + 2 * var(--thread-jump-gap)); }
+/* A waiting question keeps 26px of conversation under its rounded corners (#1815), without clipping those words.
+   Jump still sits above the stacked composer, so its clear band also includes that overlap. */
+.thread-pane[data-questions] > .thread-transcript > .thread-transcript__viewport { --thread-compose-height: 26px; --thread-compose-cover: 0px; margin-bottom: -26px; }
+.thread-pane[data-questions] > .thread-transcript:has(> .thread-transcript__jump) > .thread-transcript__viewport { --thread-jump-band: calc(var(--thread-jump-height, 0px) + 2 * var(--thread-jump-gap) + var(--thread-compose-height)); }
+.thread-pane .thread-transcript__jump { bottom: calc(var(--thread-jump-gap) + var(--thread-compose-height, 0px)); }
 /* The slim composer (ADR-0125; Owl only, the user's pick B of docs/prototypes/composer-shrink-prototype.html): while the
    user reads back, a floating composer with nothing in it is one line with its disc beside it. The options row steps
    away, and the branch toolbar and the row under the card hide but keep their place, so the card's foot never moves
@@ -186,11 +204,12 @@
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt__actions > * > .thread-prompt__word:has(+ .thread-prompt__key) { display: none; }
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt__actions > :has(> .thread-prompt__key) { padding: 0 4px; }
 .threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt > .thread-prompt__footer { position: absolute; top: 50%; right: 10px; margin: 0; transform: translateY(-50%); }
-.thread-pane[data-slim] .thread-transcript__jump { bottom: calc(14px + var(--thread-compose-shown, var(--thread-compose-height, 0px))); }
-/* The composer, its card and the card's field take their size at once, slim or full: the pane lays the transcript out by
+.thread-pane[data-slim] .thread-transcript__jump { bottom: calc(var(--thread-jump-gap) + var(--thread-compose-shown, var(--thread-compose-height, 0px))); }
+.thread-pane[data-slim]:not(:has(> .thread-workspace__compose[data-slim-moving])) .thread-transcript__viewport { --thread-compose-cover: var(--thread-compose-shown, var(--thread-compose-height, 0px)); }
+/* The readable edge, composer, its card and the card's field take their size at once, slim or full: the pane lays the transcript out by
    the composer's measured height, and the 1ms transition reduced motion gives every property (global.css), which a window
    in the background never finishes, would leave that room a step behind the composer and the pane with room to scroll. */
-.thread-workspace__compose, .thread-workspace__compose > .thread-prompt, .thread-workspace__compose > .thread-prompt :is(textarea, .prompt-editor) { transition: none; }
+.thread-transcript__viewport, .thread-workspace__compose, .thread-workspace__compose > .thread-prompt, .thread-workspace__compose > .thread-prompt :is(textarea, .prompt-editor) { transition: none; }
 /* Text under the card that has no surface of its own keeps the pane's, so it never reads over the transcript beneath. */
 .thread-workspace__compose > .thread-pane__meta { background: var(--tt-canvas); }
 .thread-workspace__compose > .thread-followups { background: var(--followups-surface); }
@@ -213,11 +232,10 @@
 .thread-prompt .screenshot-input__tools > small { order: 1; grid-column: 1 / -1; margin-top: 6px; }
 .thread-prompt > .thread-prompt__footer { grid-column: 2; }
 .thread-prompt .prompt-editor { display: block; width: 100%; min-height: 36px; max-height: 220px; overflow-y: auto; resize: vertical; padding: 0; border: 0; outline: 0; box-shadow: none; background: transparent; color: var(--tt-text); font: inherit; font-size: 15px; line-height: 1.5; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
-/* Placeholder ink is muted ink let through at 55%: words nobody has typed yet read as unaccepted, the way Claude Code's
-   desktop draws them (Drake's ask, October 24, 2026). The next prompt's ghost wears the same ink (nextPrompt.css), its
-   Tab keycap excepted. Suggestion ink stands outside the 4.5:1 text pairs (paintedTextPairs.ts): the ghost is hidden
-   from speech beside its spoken description, and a placeholder stands beside its field's label. */
-.prompt-editor { --placeholder-ink: color-mix(in srgb, var(--tt-text-muted) 55%, transparent); white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The placeholder is muted ink, as every other field's is, and reads at 4.5:1 on the composer card in every theme
+   (paintedTextPairs.ts). While a turn runs it is the only thing that says what typing will do ("Queued until you answer
+   the card"), so it is text, not decoration (#1819). The next prompt's ghost keeps its translucent ink (nextPrompt.css). */
+.prompt-editor { --placeholder-ink: var(--tt-text-muted); white-space: pre-wrap; overflow-wrap: anywhere; }
 .prompt-editor p { margin: 0; }
 .prompt-editor[data-empty="true"]::before { content: attr(data-placeholder); color: var(--placeholder-ink); float: left; height: 0; pointer-events: none; }
 .prompt-editor[aria-disabled="true"] { cursor: not-allowed; }

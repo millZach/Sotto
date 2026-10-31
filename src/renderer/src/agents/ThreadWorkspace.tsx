@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, type ReactNode } from 'react'
 import { useToolsPanelChrome } from '../tools/toolsPanelStore'
-import { ToolsPanel, ToolsPanelToggle } from '../tools/ToolsPanel'
+import { ToolsPanel } from '../tools/ToolsPanel'
 import { hideDrawerFromInside, PaneTerminalDrawer } from '../tools/PaneTerminalDrawer'
-import { PaneTerminalToggle, usePaneTerminalShortcut } from '../tools/PaneTerminalToggle'
+import { usePaneTerminalShortcut } from '../tools/PaneTerminalToggle'
 import { paneTerminalTarget } from '../tools/paneTerminalShortcut'
 import { paneTerminalChromeStore } from '../tools/paneTerminalStore'
 import { useAgents } from './AgentContext'
@@ -60,9 +60,10 @@ export function ThreadWorkspace(props: Pick<ThreadsViewProps, 'now' | 'updateCon
 
   return <ThreadsView {...props}
     tools={tools => <ToolsPanel {...tools} />}
-    focusedPaneActions={<ToolsPanelToggle />}
-    // A thread on a paired host keeps its terminal on that machine, as Tools says, so its pane has no drawer.
-    paneActions={({ row }) => row.thread.remoteHost ? null : <PaneTerminalToggle threadId={row.thread.id} />}
+    // Tools and each pane's Terminal drawer are rows of the pane's ··· menu (ADR-0163). A thread on a paired host keeps
+    // its terminal on that machine, as Tools says, so its pane has no drawer.
+    paneTools
+    paneTerminal={({ row }) => !row.thread.remoteHost}
     paneWorkingCopy={({ row, command: paneCommand }) => <ThreadWorkingCopy thread={row.thread} project={row.project} command={paneCommand} />}
     paneNotice={({ row, command: paneCommand, focusPrompt }) => <ThreadWorkingCopyNotice key={`working-copy-${row.thread.id}`} thread={row.thread} project={row.project} command={paneCommand} onRecovered={focusPrompt} />}
     paneDrawer={({ row }) => row.thread.remoteHost ? null : <PaneTerminalDrawer key={`terminal-drawer-${row.thread.id}`} threadId={row.thread.id} thread={row.thread} project={row.project} />}

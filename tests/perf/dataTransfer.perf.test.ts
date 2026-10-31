@@ -13,7 +13,10 @@
  * Switches: `SOTTO_AUDIT_TRACK=stable`; `SOTTO_AUDIT_LONG=0` for short threads (long ones hold 2,000 activity records of
  * about 3 KB and 550 messages, the size of forge's longest real threads); `SOTTO_AUDIT_WATCHER=<scale>`;
  * `SOTTO_AUDIT_PROFILE=<scenario,...>` writes a CPU profile of each named scenario to the temporary folder;
- * `SOTTO_AUDIT_STACKS=1` names where each post to the store worker over 1 MB was made.
+ * `SOTTO_AUDIT_STACKS=1` names where each post to the store worker over 1 MB was made; `SOTTO_AUDIT_REPLY_PARTS=1` prints what a
+ * command's reply to the window is made of; `SOTTO_AUDIT_WORKER=1` runs the thread
+ * store on the store worker as the build compiles it, so a read made there leaves main and the wire counted is the worker
+ * handle's own, rather than writing on main and building the wire beside it.
  */
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -35,6 +38,7 @@ import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentState } from '../../src/shared/agents'
 import { ownerScalePipeline, type OwnerScalePipeline, type OwnerScaleTrack } from '../fixtures/ownerScalePipeline'
 import { median } from '../fixtures/perfBench'
+import { builtStoreWorker } from '../fixtures/storeWorker'
 
 const BENCH = process.env.SOTTO_PERF_BENCH === '1'
 /** `SOTTO_AUDIT_STRINGIFY_SITES=1`: where each counted `JSON.stringify` call was made, three frames deep. */
@@ -42,6 +46,7 @@ const STRINGIFY_SITES = process.env.SOTTO_AUDIT_STRINGIFY_SITES === '1'
 const TRACK = (process.env.SOTTO_AUDIT_TRACK ?? 'owl') as OwnerScaleTrack
 const WATCHER_SCALE = Number(process.env.SOTTO_AUDIT_WATCHER ?? '1')
 const LONG = process.env.SOTTO_AUDIT_LONG !== '0'
+const WORKER = process.env.SOTTO_AUDIT_WORKER === '1'
 
 interface Channel { messages: number; bytes: number; max: number; encodeMs: number }
 interface Tally {
@@ -99,9 +104,10 @@ const nativePost = ThreadStoreWriterOnWorker.prototype.post
 const nativeStringify = JSON.stringify
 const nativeClone = globalThis.structuredClone
 let depth = 0
-const handle = StoreWorker.prototype as unknown as { wire(this: unknown, write: unknown, preserved: () => readonly string[]): unknown; list(this: unknown, entry: unknown): unknown }
+const handle = StoreWorker.prototype as unknown as { wire(this: unknown, write: unknown, preserved: () => readonly string[]): unknown }
 const wire = handle.wire
-const wireContext: { sent: Map<string, unknown>; nextVersion: number; list(entry: unknown): unknown } = { sent: new Map(), nextVersion: 1, list(entry) { return handle.list.call(this, entry) } }
+/** Writing on main, the handle the wire is built on: what it remembers sending, with the handle's own methods. */
+const wireContext: unknown = Object.assign(Object.create(StoreWorker.prototype) as object, { sent: new Map(), bases: new Map(), nextVersion: 1 })
 
 /** Calls, real milliseconds and a size of what each counted method returned or read, by name. */
 const COUNTED: [object, string, string, ((result: unknown, args: unknown[]) => number)?][] = [
@@ -113,6 +119,9 @@ const COUNTED: [object, string, string, ((result: unknown, args: unknown[]) => n
   [WorkspaceHost.prototype, 'watcherRead', 'workspace.watcherRead'],
   [WorkspaceHost.prototype, 'trackSubagents', 'workspace.trackSubagents'],
   [WorkspaceHost.prototype, 'applyEvents', 'workspace.applyEvents'],
+  [WorkspaceHost.prototype, 'holdActivities', 'workspace.holdActivities', result => (result as unknown[] | undefined)?.length ?? 0],
+  // Main receiving a piece of a list the store worker read back, and owning its records.
+  [StoreWorker.prototype, 'readAnswered', 'storeWorker.readAnswered', (_, args) => (args[0] as { activities?: unknown[] }).activities?.length ?? 0],
   [AgentControl.prototype, 'persist', 'control.persist'],
   [AgentControl.prototype, 'mutateWatcher', 'control.mutateWatcher'],
 ]
@@ -121,6 +130,23 @@ function count(name: string, ms: number, size: number): void {
   if (!on) return
   const entry = tally.methods[name] ??= { calls: 0, ms: 0, size: 0 }
   entry.calls++; entry.ms += ms; entry.size += size
+}
+/** Tallies one write as it crosses to the store worker, and the time spent building it. */
+function tallyWire(wired: unknown, wireMs: number): void {
+  if (on) {
+    channel('store worker wire', wired)
+    if (process.env.SOTTO_AUDIT_STACKS === '1') {
+      const bytes = serialize(wired).byteLength
+      if (bytes > 1_000_000) {
+        const where = sourceFrames(8)
+        tally.bigPosts[where] = (tally.bigPosts[where] ?? 0) + bytes
+      }
+    }
+    tally.wireMs += wireMs
+    const entries = (wired as { entries?: unknown[] }).entries ?? ((wired as { entry?: unknown }).entry ? [(wired as { entry: unknown }).entry] : [])
+    for (const entry of entries as { ids?: unknown[]; changed?: unknown[]; whole?: unknown[] }[]) { tally.wireIds += entry.ids?.length ?? 0; tally.wireRecords += (entry.changed?.length ?? 0) + (entry.whole?.length ?? 0) }
+  }
+  hookMs += wireMs
 }
 function install(): void {
   for (const [target, method, name, size] of COUNTED) {
@@ -158,26 +184,18 @@ function install(): void {
     return nativeWrite.call(this, serialized)
   }
   // What crosses to the store worker is the wire the worker's handle makes of each write: a list it was sent before goes as
-  // the records that changed since, plus every ID. Built here with the handle's own `wire`, against one memory of what was
-  // sent kept across scenarios, as the worker's handle keeps it.
-  ThreadStoreWriterOnWorker.prototype.post = function (this: ThreadStoreWriterOnWorker, write, confirm) {
+  // the records that changed since, plus every ID. On the worker, it is the handle's own; writing on main, it is built here
+  // with the handle's own `wire`, against one memory of what was sent kept across scenarios, as the worker's handle keeps it.
+  if (WORKER) handle.wire = function (this: unknown, write: unknown, preserved: () => readonly string[]) {
+    const started = realNow()
+    const wired = wire.call(this, write, preserved)
+    tallyWire(wired, realNow() - started)
+    return wired
+  }
+  else ThreadStoreWriterOnWorker.prototype.post = function (this: ThreadStoreWriterOnWorker, write, confirm) {
     const started = realNow()
     const wired = wire.call(wireContext, write, () => [])
-    const wireMs = realNow() - started
-    if (on) {
-      channel('store worker wire', wired)
-      if (process.env.SOTTO_AUDIT_STACKS === '1') {
-        const bytes = serialize(wired).byteLength
-        if (bytes > 1_000_000) {
-          const where = sourceFrames(8)
-          tally.bigPosts[where] = (tally.bigPosts[where] ?? 0) + bytes
-        }
-      }
-      tally.wireMs += wireMs
-      const entries = (wired as { entries?: unknown[] }).entries ?? ((wired as { entry?: unknown }).entry ? [(wired as { entry: unknown }).entry] : [])
-      for (const entry of entries as { ids?: unknown[]; changed?: unknown[]; whole?: unknown[] }[]) { tally.wireIds += entry.ids?.length ?? 0; tally.wireRecords += (entry.changed?.length ?? 0) + (entry.whole?.length ?? 0) }
-    }
-    hookMs += wireMs
+    tallyWire(wired, realNow() - started)
     return nativePost.call(this, write, confirm)
   }
   JSON.stringify = function (...args: Parameters<typeof JSON.stringify>) {
@@ -205,6 +223,7 @@ function uninstall(): void {
   AgentStateBroadcaster.prototype.send = nativeSend
   ;(AtomicJsonStore.prototype as unknown as { writeImmediately: typeof nativeWrite }).writeImmediately = nativeWrite
   ThreadStoreWriterOnWorker.prototype.post = nativePost
+  handle.wire = wire
   JSON.stringify = nativeStringify
   globalThis.structuredClone = nativeClone
 }
@@ -212,7 +231,8 @@ function uninstall(): void {
 // The fake clock, stepped as ownerScaleWorkBudget steps it, waiting for file work between steps.
 const STEP_MS = 5
 const turn = globalThis.setImmediate
-const fileWorkInFlight = (): boolean => process.getActiveResourcesInfo().some(name => /^(FSReq|FileHandle|CloseReq)/u.test(name))
+// On the store worker, its handle holds its port referenced while a write or a read is unanswered.
+const fileWorkInFlight = (): boolean => process.getActiveResourcesInfo().some(name => /^(FSReq|FileHandle|CloseReq)/u.test(name) || WORKER && name === 'MessagePort')
 async function filesSettled(): Promise<void> {
   for (let quiet = 0; quiet < 3;) {
     await new Promise<void>(resolve => { turn(resolve) })
@@ -296,16 +316,21 @@ const BACKGROUND = 'idle-20'
 const roots: string[] = []
 const results: Record<string, unknown> = {}
 let pipeline: OwnerScalePipeline | undefined
+let worker: Awaited<ReturnType<typeof builtStoreWorker>> | undefined
 
-beforeAll(() => { install(); vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] }) })
+beforeAll(async () => {
+  if (BENCH && WORKER) worker = await builtStoreWorker()
+  install(); vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'setInterval', 'clearInterval', 'Date', 'performance'] })
+}, 120_000)
 afterAll(async () => {
   vi.useRealTimers(); uninstall()
+  await worker?.dispose()
   for (const root of roots) await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 100 })
 })
 
 it.skipIf(!BENCH)('measures what main moves per chunk and per action', async () => {
   const root = await mkdtemp(join(tmpdir(), 'sotto-transfer-audit-')); roots.push(root)
-  pipeline = await until(ownerScalePipeline(root, { threads: 1, history: 1, watcher: WATCHER_SCALE }, 3, TRACK))
+  pipeline = await until(ownerScalePipeline(root, { threads: 1, history: 1, watcher: WATCHER_SCALE }, 3, TRACK, { storeWorker: worker?.path }))
   const p = pipeline
   await pass(1_000)
   if (LONG) await lengthen(p, p.streamSessions, [BACKGROUND])
@@ -315,26 +340,62 @@ it.skipIf(!BENCH)('measures what main moves per chunk and per action', async () 
   results.wholeStateJsonBytes = Buffer.byteLength(nativeStringify(whole))
   results.wholeStateThreads = whole.host.threads.length
   results.idle = await scenario(async () => { await pass(10_000) }, 0, 'idle')
-  // A1: a command's reply to the window, as the preload takes it (zod) and the page shares it, and A7: the startup shell
-  // the page caches every 2 s. Timed on the machine's clock, median of 15.
+  // A1: a command's reply to the window, as main encodes it, the preload checks it and the page completes and shares it, and
+  // A7: the startup shell the page caches every 2 s. The window holds a broadcast from the same encoder, as main has one for
+  // its window; the page asks for its replies as that version of it does. Timed on the machine's clock, median of 15.
   {
-    const { agentCommandReceiptSchema } = await import('../../src/shared/agents')
+    const shared = await import('../../src/shared/agents') as typeof import('../../src/shared/agents') & { agentCommandChangedThreadRecordsReceiptSchema?: { parse(input: unknown): unknown } }
     const { createStateSharing } = await import('../../src/renderer/src/agents/stateSharing')
     const { cacheableShell } = await import('../../src/renderer/src/agents/shellCache')
+    const { wrapAgentBridge } = await import('../../src/renderer/src/agents/agentStateCatalogs')
     const { desktopWindowClient } = await import('../../src/main/agents/hostService')
-    const encoder = new AgentStateBroadcaster()
-    const replies: unknown[] = []
-    for (let index = 0; index < 16; index++) {
-      const result = await until(p.router.command({ type: 'save-thread-draft', composer: 'manual', threadId: p.openThread, draftId: `00000000-0000-4000-a000-${index.toString(16).padStart(12, '0')}`, text: `Synthetic draft ${index}`, attachments: [], requestId: null }, desktopWindowClient()))
-      replies.push(encoder.encodeReceipt(result as AgentState))
-    }
-    const timed = (work: (index: number) => unknown) => { const samples: number[] = []; for (let index = 1; index < replies.length; index++) { const started = realNow(); work(index); samples.push(realNow() - started) } return Math.round(median(samples) * 100) / 100 }
-    const decoded = replies.map(reply => structuredClone(reply))
+    const encoder = new AgentStateBroadcaster() as AgentStateBroadcaster & { encodeChangedThreadRecordsReceipt?: (state: AgentState) => unknown }
+    // The window's broadcasts, from the same encoder, to the page's subscription, as main sends its window each change.
+    let toPage: ((state: unknown) => void) | undefined
+    const broadcast = (state: AgentState): void => { encoder.send(state, payload => { toPage?.(structuredClone(payload)); return true }) }
+    const changes = typeof encoder.encodeChangedThreadRecordsReceipt === 'function'
+    const schema = changes ? shared.agentCommandChangedThreadRecordsReceiptSchema! : shared.agentCommandReceiptSchema
+    let reply: unknown
+    const wire = { get: async () => structuredClone(whole), onState: (listener: (state: unknown) => void) => { toPage = listener; return () => undefined },
+      command: async () => reply, ...changes ? { commandWithChangedThreadRecords: async () => reply } : {} }
+    const page = wrapAgentBridge(wire as never)
+    let held: AgentState | undefined
+    page.onState(state => { held = state })
+    broadcast(whole)
     const sharing = createStateSharing()
-    sharing(undefined, decoded[0])
-    results.commandReply = { bytes: serialize(replies[0]).byteLength, threads: (replies[0] as AgentState).host.threads.length,
-      zodParseMs: timed(index => agentCommandReceiptSchema.parse(decoded[index])), structuredCloneMs: timed(index => structuredClone(replies[index])),
-      shareMs: timed(index => sharing(decoded[index - 1], decoded[index])) }
+    let shown = sharing(undefined, held!)
+    const samples = { bytes: [] as number[], ipcMs: [] as number[], preloadMs: [] as number[], pageMs: [] as number[], shareMs: [] as number[] }
+    for (let index = 0; index < 16; index++) {
+      // What the window was last broadcast: the state as it stood before this command.
+      broadcast(p.router.shell() as AgentState)
+      shown = sharing(shown, held!)
+      const result = await until(p.router.command({ type: 'save-thread-draft', composer: 'manual', threadId: p.openThread, draftId: `00000000-0000-4000-a000-${index.toString(16).padStart(12, '0')}`, text: `Synthetic draft ${index}`, attachments: [], requestId: null }, desktopWindowClient()))
+      const encoded = changes ? encoder.encodeChangedThreadRecordsReceipt!(result as AgentState) : encoder.encodeReceipt(result as AgentState)
+      let started = realNow()
+      const decoded = structuredClone(encoded)
+      const ipcMs = realNow() - started
+      started = realNow()
+      reply = schema.parse(decoded)
+      const preloadMs = realNow() - started
+      started = realNow()
+      const state = await page.command({ type: 'save-thread-draft' } as never)
+      const pageMs = realNow() - started
+      started = realNow()
+      shown = sharing(shown, state)
+      const shareMs = realNow() - started
+      if (index === 1 && process.env.SOTTO_AUDIT_REPLY_PARTS === '1') {
+        const { host, ...rest } = encoded as unknown as Record<string, unknown> & { host: Record<string, unknown> & { threads: { changed?: unknown[] } | unknown[] } }
+        const { threads, ...hostRest } = host
+        const sizes = (parts: Record<string, unknown>): [string, number][] => Object.entries(parts).map(([key, value]): [string, number] => [key, serialize(value).byteLength]).sort((x, y) => y[1] - x[1]).slice(0, 8)
+        console.log(`REPLY-PARTS ${JSON.stringify({ changed: Array.isArray(threads) ? threads.length : threads.changed?.length, threadBytes: serialize(threads).byteLength,
+          hostRestBytes: serialize(hostRest).byteLength, rest: Object.fromEntries(sizes(rest)), host: Object.fromEntries(sizes(hostRest)) })}`)
+      }
+      if (index === 0) continue
+      samples.bytes.push(serialize(encoded).byteLength); samples.ipcMs.push(ipcMs); samples.preloadMs.push(preloadMs); samples.pageMs.push(pageMs); samples.shareMs.push(shareMs)
+    }
+    const at = (values: number[]) => Math.round(median(values) * 100) / 100
+    results.commandReply = { changedThreadRecords: changes, threads: shown.host.threads.length, bytes: at(samples.bytes), ipcCopyMs: at(samples.ipcMs), preloadCheckMs: at(samples.preloadMs),
+      pageCompleteMs: at(samples.pageMs), shareMs: at(samples.shareMs) }
     const cached = cacheableShell(whole)
     const started = realNow(), text = nativeStringify(cached)
     results.shellCache = { chars: text.length, stringifyMs: Math.round((realNow() - started) * 100) / 100 }
@@ -413,7 +474,7 @@ it.skipIf(!BENCH || process.env.SOTTO_AUDIT_SOCKET !== '1')('measures what the h
   const { rawPeer } = await import('../fixtures/rawHostPeer')
   const { deflateRawSync } = await import('node:zlib')
   const root = await mkdtemp(join(tmpdir(), 'sotto-transfer-socket-')); roots.push(root)
-  const p = await until(ownerScalePipeline(root, { threads: 1, history: 1, watcher: WATCHER_SCALE }, 3, TRACK))
+  const p = await until(ownerScalePipeline(root, { threads: 1, history: 1, watcher: WATCHER_SCALE }, 3, TRACK, { storeWorker: worker?.path }))
   await pass(1_000)
   if (LONG) await lengthen(p, p.streamSessions)
   const service = new LocalHostService({ control: p.control, events: p.workspace, ...(p.watcher ? { watcher: p.watcher } : {}) })

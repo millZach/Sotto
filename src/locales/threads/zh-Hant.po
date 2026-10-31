@@ -3628,17 +3628,9 @@ msgstr ""
 msgid "Draft not saved. <0>Save again</0>"
 msgstr ""
 
-#: src/renderer/src/agents/ThreadPanes.tsx
-msgid "Drag or use arrow keys to move"
-msgstr ""
-
 #: src/renderer/src/agents/AttachmentViewer.tsx
 #: src/renderer/src/agents/diagrams/DiagramViewer.tsx
 msgid "Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit"
-msgstr ""
-
-#: src/renderer/src/agents/ThreadPanes.tsx
-msgid "Drag to another pane, or use the arrow keys"
 msgstr ""
 
 #: src/renderer/src/agents/AttachmentViewer.tsx
@@ -4352,6 +4344,7 @@ msgid "Include {path}"
 msgstr ""
 
 #: src/renderer/src/agents/gitActionButton.logic.ts
+#: src/renderer/src/agents/ThreadPane.tsx
 msgid "Initialize Git"
 msgstr ""
 
@@ -4941,16 +4934,23 @@ msgid "Morning. What’s first?"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadPanes.tsx
-msgid "movable pane"
-msgstr ""
-
-#. {name} is a thread's title.
-#: src/renderer/src/agents/ThreadPanes.tsx
-msgid "Move {name} pane"
-msgstr ""
-
-#: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Move here"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadPanes.tsx
+msgid "Move pane down"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadPanes.tsx
+msgid "Move pane left"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadPanes.tsx
+msgid "Move pane right"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadPanes.tsx
+msgid "Move pane up"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
@@ -5235,10 +5235,6 @@ msgstr ""
 msgid "No models were returned. Refresh this provider to check again."
 msgstr ""
 
-#: src/renderer/src/agents/ThreadSidebar.tsx
-msgid "No open threads."
-msgstr ""
-
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "No preview for this file type"
 msgstr ""
@@ -5268,7 +5264,6 @@ msgid "No skills match “{query}”."
 msgstr ""
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
-#: src/renderer/src/agents/ThreadSidebar.tsx
 msgid "No threads yet."
 msgstr ""
 
@@ -5471,6 +5466,11 @@ msgstr ""
 msgid "On {hostName}"
 msgstr ""
 
+#. Leads a Git action refused because another thread or Sotto holds the folder. Nothing failed and nothing was changed.
+#: src/renderer/src/agents/GitActionButton.tsx
+msgid "On hold"
+msgstr ""
+
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "On Muse 1.4.7 or newer, Muse threads get Sotto's browser, visual, pull request babysitting and delegation tools, and Watcher runs on Muse. Skills are unavailable. Muse does not write thread titles, branch names, commit messages or pull request drafts; Sotto keeps its default text."
 msgstr ""
@@ -5523,6 +5523,8 @@ msgstr ""
 msgid "Open {threadTitle}"
 msgstr ""
 
+#. {title} is the title of the thread that holds this folder. Opens that thread.
+#: src/renderer/src/agents/checkoutHold.ts
 #: src/renderer/src/agents/NeedsYouQueue.tsx
 msgid "Open {title}"
 msgstr ""
@@ -7230,10 +7232,6 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadMonitor.tsx
 msgid "since {since}"
-msgstr ""
-
-#: src/renderer/src/agents/ThreadPanes.tsx
-msgid "Single row"
 msgstr ""
 
 #: src/renderer/src/agents/SkillPill.tsx
@@ -9655,11 +9653,6 @@ msgstr ""
 #: src/renderer/src/agents/AttachmentViewer.tsx
 #: src/renderer/src/agents/diagrams/DiagramViewer.tsx
 msgid "Zoom"
-msgstr ""
-
-#. {name} is a thread's title.
-#: src/renderer/src/agents/ThreadPanes.tsx
-msgid "Zoom {name} pane"
 msgstr ""
 
 #: src/renderer/src/agents/AttachmentViewer.tsx

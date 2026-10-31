@@ -19,15 +19,17 @@
 
 /* ---------- Watching a thread ---------- */
 /* Watcher's own controls ease their hover as the shared buttons do, so a wash or an edge settles in instead of snapping. */
-/* Watch in a thread's pane header: a pill, lit in the accent while Watcher watches the thread. Narrow panes keep the owl.
-   The lit fill is the accent mixed into the surface under it, so it is solid and its text is measured against what shows. */
+/* Watch in a thread's pane header: a pill, lit in the accent while Watcher watches the thread. The lit fill is the accent
+   mixed into the surface under it, so it is solid and its text is measured against what shows. In the Threads workspace
+   it keeps its word at every pane width, so nothing in the header moves as a divider is dragged (ADR-0163); a narrow pane
+   beside Watcher keeps the owl alone. */
 .watch-toggle { display: inline-flex; flex: none; align-items: center; gap: 6px; height: 30px; padding: 0 11px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 6px;
   background: transparent; color: var(--tt-text-2); font: inherit; font-size: 13px; white-space: nowrap;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .watch-toggle:hover { border-color: var(--tt-border-faint); background: var(--tt-hover); color: var(--tt-text); }
 .watch-toggle:active:not(:disabled):not([aria-pressed='true']) { border-color: var(--tt-border-faint); background: var(--tt-hover-strong); color: var(--tt-text); }
 .watch-toggle[aria-pressed='true'] { border-color: color-mix(in srgb, var(--tt-accent-text) 50%, transparent); background: color-mix(in srgb, var(--tt-accent) 14%, var(--tt-canvas)); color: var(--tt-text); }
-@container thread-pane (width < 520px) { .watch-toggle { padding: 0 7px; } .watch-toggle__text { display: none; } }
+@container thread-pane (width < 520px) { .watcher-beside .watch-toggle { padding: 0 7px; } .watcher-beside .watch-toggle__text { display: none; } }
 /* The owl among a sidebar row's actions, in the accent while pressed. */
 .thread-nav__action.watch-row-toggle[aria-pressed='true'] { color: var(--tt-accent-text); }
 /* The owl at the end of a row in All threads: a ring when not watched, lit when watched. It spans the row's first two lines. */
@@ -394,17 +396,18 @@
 :root[data-reduced-motion='on'] .watcher-group__chevron { transition: none; }
 
 /* ---------- The first time ---------- */
-/* The room as it will be: what Watcher is, just above Watcher's composer, which is ready to send its first message. */
+/* The room as it will be: what Watcher does in one sentence, left-aligned just above Watcher's composer, which is ready to
+   send its first message; How Watcher works opens Help at the rest (#1822). */
 .watcher-first { display: flex; flex-direction: column; }
-.watcher-first__intro { display: flex; flex-direction: column; align-items: center; margin: auto auto 0; padding-bottom: 6px; text-align: center; }
-.watcher-first__intro h2 { margin: 10px 0 8px; font-size: 18px; font-weight: 600; letter-spacing: -.2px; }
-.watcher-first__intro p { max-width: 470px; margin: 0 0 10px; color: var(--tt-text-2); font-size: 14px; line-height: 1.6; }
+.watcher-first__intro { display: flex; flex-direction: column; align-items: flex-start; margin: auto 0 0; padding-bottom: 6px; text-align: start; }
+.watcher-first__intro p { max-width: 640px; margin: 0 0 10px; color: var(--tt-text-2); font-size: 14px; line-height: 1.6; }
 .watcher-first__intro p:last-child { margin-bottom: 0; }
-.watcher-first__owl { color: var(--tt-text-2); }
+.watcher-first__how { display: inline; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-accent-text); font: inherit; font-weight: 500;
+  text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; }
+.watcher-first__how:hover { text-decoration-color: currentColor; }
 .watcher-first__missing { color: var(--tt-text-2); }
 .watcher-first__error { margin: 0 0 8px; }
 @media (max-height: 760px) {
-  .watcher-first__intro h2 { margin: 6px 0 6px; }
   .watcher-first__intro p { font-size: 13.5px; line-height: 1.5; }
 }
 
@@ -664,6 +667,12 @@ label.move-sheet__name { cursor: default; }
 .move-card__steps > li[data-done] { background: var(--tt-activity); }
 .move-card[data-tone='needs'] .move-card__steps > li[data-done] { background: var(--watcher-needs-ink); }
 .move-card__actions { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; padding-left: 23px; }
+/* Keep it here's question on the card (part 4, Zach's pick of October 30): what stops and what stays, before it does. */
+.move-card__confirm { margin: 8px 0 0 23px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--watcher-needs-ink) 45%, var(--tt-hairline)); border-radius: var(--tt-radius-sm);
+  color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.move-card__confirm p { margin: 0; }
+.move-card__confirm strong { color: var(--tt-text); font-weight: 600; }
+.move-card__confirm .move-card__actions { padding-left: 0; margin-top: 8px; }
 .move-card__actions .tt-button { min-height: 32px; padding: 0 12px; font-size: 13px; }
 .move-card__refused { color: var(--tt-error-text); }
 
@@ -696,3 +705,14 @@ label.move-sheet__name { cursor: default; }
 .watcher-new-note__carried { display: flex; flex-direction: column; width: min(460px, 100%); margin: 4px 0 0; padding: 0; list-style: none; text-align: left; font-size: 13px; color: var(--tt-text-2); }
 .watcher-new-note__carried li { padding: 7px 0; border-top: 1px solid var(--tt-hairline); overflow-wrap: anywhere; }
 .watcher-new-note__carried strong { color: var(--tt-text); font-weight: 600; }
+
+/* A move suggestion under the machines line (#1309): what is wrong, which machine has room and the one thread to move,
+   then Move, Choose threads… and Not now. It sits at the line's measure, under its rule, and is gone once pressed. */
+.watcher-move-suggestion { position: relative; z-index: 5; display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 6px 12px; margin: 0 max(24px, calc((100% - 760px) / 2));
+  padding: 8px 0 10px; box-shadow: inset 0 -1px 0 var(--tt-hairline); color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.watcher-move-suggestion__text { flex: 1 1 280px; min-width: 0; margin: 0; overflow-wrap: anywhere; }
+.watcher-move-suggestion__text b { color: var(--tt-text); font-weight: 500; }
+.watcher-move-suggestion__refused { flex: 1 1 100%; order: 2; margin: 0; color: var(--watcher-needs-ink); }
+.watcher-move-suggestion__actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.watcher-move-suggestion__actions .tt-button { min-height: 30px; padding: 0 11px; font-size: 12.5px; }
+@media (max-width: 980px) { .watcher-move-suggestion { margin: 0 18px; } }

@@ -10,7 +10,7 @@ import { promisify } from 'node:util'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { AgentActivity, ObservedAgent } from '../../src/shared/agentActivity'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import { terminalOutput, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -229,8 +229,9 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     await openThreads(page)
     await page.evaluate(() => document.fonts.ready)
     await page.getByRole('button', { name: 'Workshop', exact: true }).first().click()
-    const toggle = page.getByRole('button', { name: 'Tools', exact: true })
-    await toggle.click()
+    // Tools is a row of the pane's ··· menu (ADR-0163); the ··· button is where the panel hands focus back.
+    const toggle = page.locator('[data-opens="tools"]')
+    await toggleTools(page)
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     const sheet = panel.locator('.tools-panel__sheet')
     const rail = panel.getByRole('tablist', { name: 'Tools', exact: true })
@@ -415,7 +416,7 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     await page.keyboard.press('Escape')
     await expect(panel).toBeHidden()
     await expect(toggle).toBeFocused()
-    await toggle.click()
+    await toggleTools(page)
     await setWidth('normal')
     await select('Browser')
     await resize(launched, 820, 560)
@@ -431,21 +432,21 @@ test('The Tools rail keeps every surface usable at three window sizes and three 
     await expect(page.locator('.threads-view > .thread-nav')).toBeVisible()
     await expect(page.locator('.thread-workspace__tools')).toBeHidden()
     await expect(toggle).toBeFocused()
-    await toggle.click()
+    await toggleTools(page)
     await expect(page.locator('.threads-view > .thread-nav')).toBeHidden()
     await browserBounds(launched, url)
     await resize(launched, 1280, 800)
     await panel.getByRole('button', { name: 'Close tools panel', exact: true }).click()
     await expect(panel).toBeHidden()
     await expect.poll(async () => (await nativeViews(launched)).length).toBe(0)
-    await toggle.click()
+    await toggleTools(page)
     await browserBounds(launched, url)
 
     // Reduced motion: the panel arrives without animating and nothing on any surface keeps moving.
     await page.evaluate(async () => window.sotto!.updateSettings({ reducedMotion: 'on' }))
     await expect(page.locator('html')).toHaveAttribute('data-reduced-motion', 'on')
     await panel.getByRole('button', { name: 'Close tools panel', exact: true }).click()
-    await toggle.click()
+    await toggleTools(page)
     expect(await sheet.evaluate(element => getComputedStyle(element).animationName)).toBe('none')
     for (const tool of TOOLS) {
       await select(tool)
@@ -560,7 +561,7 @@ test('Changes reads every scope, turns from checkpoints, at three window sizes, 
       await openThreads(page)
       await page.evaluate(() => document.fonts.ready)
       await page.getByRole('button', { name: 'Scopes review', exact: true }).first().click()
-      await page.getByRole('button', { name: 'Tools', exact: true }).click()
+      await toggleTools(page)
       const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
       await panel.getByRole('tab', { name: 'Changes', exact: true }).click()
       const scope = panel.getByRole('combobox', { name: 'Diff scope' })

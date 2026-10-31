@@ -438,6 +438,39 @@ describe('BranchToolbar', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
     expect(screen.getByRole('status')).toHaveTextContent('Checked out PR #42 on fix/greeting.')
   })
+  it('words a switch held by another thread as the host does, without Failed, and opens that thread (#1823)', async () => {
+    const holder = thread({ id: 'thread-2', title: 'Visual gate flake' })
+    const words = 'Thread "Visual gate flake" is waiting for your answer. Nothing was changed. Answer it, then try again.'
+    const current = thread()
+    const { command } = mount(current, { others: [holder], command: async request => request.type === 'git-switch-branch' ? { ...state([current, holder]), error: words, checkoutHold: { threadId: 'thread-2' } } : state([current, holder]) })
+    await openPicker()
+    fireEvent.click(screen.getByRole('option', { name: 'feature' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(words)
+    expect(alert).not.toHaveTextContent('Failed to switch ref')
+    fireEvent.click(within(alert).getByRole('button', { name: 'Open Visual gate flake' }))
+    expect(command).toHaveBeenLastCalledWith({ type: 'select-thread', threadId: 'thread-2' })
+  })
+  it('offers to open the thread holding the folder when a checkout is refused for it, and closes the dialog (#1823)', async () => {
+    const detail = { number: 42, url: 'https://github.com/o/r/pull/42', title: 'Fix the greeting', body: '', state: 'open', draft: false, baseBranch: 'main', headBranch: 'fix/greeting', crossRepository: false,
+      reviewDecision: null, mergeable: 'mergeable', checks: [], mergeMethods: ['merge'], autoMergeAllowed: true, autoMerge: null, behindBy: 0, canUpdateBranch: true, linked: null, branch: false }
+    const holder = thread({ id: 'thread-2', title: 'Visual gate flake' })
+    const current = thread()
+    const words = 'Thread "Visual gate flake" is working in this folder. Nothing was changed. Wait for it to finish before changing this folder.'
+    const { command } = mount(current, { others: [holder], command: async request => request.type === 'git-checkout-pull-request' ? { ...state([current, holder]), error: words, checkoutHold: { threadId: 'thread-2' } } : state([current, holder]) })
+    vi.stubGlobal('sotto', { agents: { ...window.sotto!.agents, gitPullRequest: vi.fn(async () => detail) } })
+    await openPicker()
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search refs' }), { target: { value: '#42' } })
+    fireEvent.click(await screen.findByRole('option', { name: /Checkout pull request/u }))
+    const dialog = await screen.findByRole('dialog', { name: 'Checkout pull request' })
+    await within(dialog).findByText('Fix the greeting', {}, { timeout: 3_000 })
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Local' }))
+    const alert = await within(dialog).findByRole('alert')
+    expect(alert).toHaveTextContent(words)
+    fireEvent.click(within(alert).getByRole('button', { name: 'Open Visual gate flake' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(command).toHaveBeenLastCalledWith({ type: 'select-thread', threadId: 'thread-2' })
+  })
   it('says Local moves a draft set to a new worktree into the project checkout', async () => {
     mount(thread({ worktree: { mode: 'independent', status: 'pending' } }))
     vi.stubGlobal('sotto', { agents: { ...window.sotto!.agents, gitPullRequest: vi.fn(async () => null) } })

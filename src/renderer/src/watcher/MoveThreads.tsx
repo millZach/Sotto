@@ -81,11 +81,12 @@ export function useMoveMachines(offered: boolean, bridge: HostsBridge | undefine
 
 /**
  * What the sheet was opened for: threads on every machine from Watcher's header, or one thread from its More menu, with
- * the machine it is on when that is not This computer.
+ * the machine it is on when that is not This computer. A move suggestion names the machine with room the threads would go
+ * to, `targetHostId`, so the sheet goes straight to it (#1309).
  */
 export type MoveSheetRequest =
-  | { readonly kind: 'all' }
-  | { readonly kind: 'one'; readonly threadId: string; readonly title: string; readonly hostId?: string | undefined }
+  | { readonly kind: 'all'; readonly targetHostId?: string | undefined }
+  | { readonly kind: 'one'; readonly threadId: string; readonly title: string; readonly hostId?: string | undefined; readonly targetHostId?: string | undefined }
 class MoveSheetStore {
   private request: MoveSheetRequest | null = null
   /** Where focus goes once the sheet closes, when the control that opened it is gone. */
@@ -229,7 +230,7 @@ export function MoveThreadsSheetHost(): ReactNode {
   const request = useSyncExternalStore(moveSheetStore.subscribe, moveSheetStore.get)
   const bridge = useThreadMovesBridge()
   if (request === null || bridge === undefined) return null
-  return <MoveThreadsSheet key={request.kind === 'one' ? request.threadId : 'all'} request={request} bridge={bridge} />
+  return <MoveThreadsSheet key={request.kind === 'one' ? `${request.threadId}:${request.targetHostId ?? ''}` : `all:${request.targetHostId ?? ''}`} request={request} bridge={bridge} />
 }
 
 function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequest; readonly bridge: ThreadMovesBridge }): ReactNode {
@@ -273,7 +274,9 @@ function MoveThreadsSheet({ request, bridge }: { readonly request: MoveSheetRequ
     } catch { setPhase({ kind: 'refused', message: t`Sotto could not check which threads can move. Nothing was moved. Try again.` }) }
   }
   // One machine to choose, once the paired machines are known: the sheet goes straight to it, as there is nothing to choose.
-  const only = hosts !== null && connected.length === 1 ? connected[0]! : null
+  // So it does to the machine a move suggestion named, once that machine is among them.
+  const named = request.targetHostId !== undefined ? connected.find(machine => machine.hostId === request.targetHostId) ?? null : null
+  const only = named ?? (hosts !== null && connected.length === 1 ? connected[0]! : null)
   const started = useRef(false)
   useEffect(() => {
     if (started.current || phase.kind !== 'choose' || only === null) return
@@ -419,6 +422,14 @@ const STEPS: readonly ThreadMoveCard['state'][] = ['fenced', 'branch-sent', 'thr
 export function moveCardWords(card: ThreadMoveCard): { readonly lead: string; readonly short: string; readonly tone: 'working' | 'needs' | 'ready' | 'quiet'; readonly line: string | null } {
   const machine = card.machine, from = card.from
   const stays = from ? i18n._(msg`Stays on ${from}`) : i18n._(msg`Stays here`)
+  // Keep it here (part 4, Zach's picks of October 30): the press is kept until the machine the move went to calls it off.
+  if (card.keeping && STEPS.includes(card.state) && card.state !== 'source-settled') {
+    const lead = from ? i18n._(msg`Keeping it on ${from}`) : i18n._(msg`Keeping it here`)
+    const line = from
+      ? i18n._(msg`You chose to keep this thread on ${from}. Sotto asks ${machine} to call the move off, and to stop and settle the new thread if it made one, as soon as ${machine} answers. This thread takes no sends until then. Nothing was lost.`)
+      : i18n._(msg`You chose to keep this thread here. Sotto asks ${machine} to call the move off, and to stop and settle the new thread if it made one, as soon as ${machine} answers. This thread takes no sends until then. Nothing was lost.`)
+    return { lead, short: card.waiting ? i18n._(msg`Waiting for ${card.waitingOn ?? machine}`) : i18n._(msg`Asking ${machine}`), tone: 'needs', line }
+  }
   if (card.waiting && STEPS.includes(card.state) && card.state !== 'source-settled') {
     // Main says which machine it waits on: the one it goes to, or the host its thread is on.
     const waitsOn = card.waitingOn ?? machine
@@ -435,7 +446,8 @@ export function moveCardWords(card: ThreadMoveCard): { readonly lead: string; re
     case 'given-back': return { lead: i18n._(msg`Not moved`), short: stays, tone: 'quiet', line: card.words ?? null }
     case 'asks': return { lead: i18n._(msg`Not moved yet`), short: i18n._(msg`Waits for you`), tone: 'needs', line: card.words ?? null }
     case 'kept': { const kept = from ? i18n._(msg`Kept on ${from}`) : i18n._(msg`Kept here`)
-      return { lead: kept, short: kept, tone: 'quiet', line: from ? i18n._(msg`Nothing was sent to ${machine}. You can send to it on ${from} as before.`) : i18n._(msg`Nothing was sent to ${machine}. You can send here as before.`) } }
+      // A move called off with Keep it here says what main did; one kept from its card that asked first, that nothing went.
+      return { lead: kept, short: kept, tone: 'quiet', line: card.words ?? (from ? i18n._(msg`Nothing was sent to ${machine}. You can send to it on ${from} as before.`) : i18n._(msg`Nothing was sent to ${machine}. You can send here as before.`)) } }
     case 'stays': return { lead: i18n._(msg`Not moved`), short: stays, tone: 'quiet', line: card.words ?? null }
   }
 }
@@ -453,11 +465,21 @@ function MoveCard({ card, threads, answer }: { readonly card: ThreadMoveCard; re
   const moved = card.moved ? threads.describe(card.moved) : null
   const link = (thread: NonNullable<typeof moved>, label: string): ReactNode => thread.threadId === null ? <span className="receipt-card__name">{label}</span>
     : <button type="button" className="receipt-link tt-focusable" aria-label={t`Open ${label} on ${card.machine} beside Watcher`} {...threads.press(thread.threadId)}>{label}</button>
-  const press = async (choice: 'move' | 'keep'): Promise<void> => {
+  // Keep it here asks first on the card when the machine made the new thread, since it stops that thread (Zach, October 30).
+  const [confirming, setConfirming] = useState(false)
+  // The question takes focus on Cancel as it opens, and Cancel gives it back to Keep it here.
+  const keepRef = useRef<HTMLButtonElement>(null), cancelRef = useRef<HTMLButtonElement>(null), asked = useRef(false)
+  useEffect(() => {
+    if (confirming) { asked.current = true; cancelRef.current?.focus() } else if (asked.current) { asked.current = false; keepRef.current?.focus() }
+  }, [confirming])
+  // Main says when a move can be kept here: waiting on its machine, with nothing under way and not already ending.
+  const keepable = card.keepable === true
+  const press = async (choice: 'move' | 'keep' | 'keep-here'): Promise<void> => {
     if (answer === undefined || pending) return
     setPending(true); setRefusal(null)
     try {
-      const result = await answer({ cardId: card.id, answer: choice })
+      const result = await answer(choice === 'keep-here' ? { moveId: card.id, answer: 'keep-here' } : { cardId: card.id, answer: choice })
+      if (result.status === 'ok') setConfirming(false)
       if (result.status === 'refused') setRefusal(result.message)
     } catch { setRefusal(t`Sotto could not reach the move. Nothing changed. Try again.`) }
     setPending(false)
@@ -495,6 +517,20 @@ function MoveCard({ card, threads, answer }: { readonly card: ThreadMoveCard; re
       <Button variant="primary" disabled={pending || answer === undefined} onClick={() => void press('move')}>
         {card.startsOn ? t`Move it on ${card.startsOn}` : t`Move it anyway`}</Button>
       <Button variant="secondary" disabled={pending || answer === undefined} onClick={() => void press('keep')}>{card.from === undefined ? <Trans>Keep it here</Trans> : <Trans>Keep it on {card.from}</Trans>}</Button>
+    </div> : null}
+    {keepable && confirming ? <div className="move-card__confirm" role="group" aria-labelledby={`${card.id}-confirm`}
+      onKeyDown={event => { if (event.key === 'Escape') { event.stopPropagation(); setConfirming(false) } }}>
+      <p id={`${card.id}-confirm`} className="tt-paragraph"><strong>{card.moved === undefined
+        ? card.from === undefined ? t`Stop the new thread on ${card.machine} if it made one, and keep this one here?` : t`Stop the new thread on ${card.machine} if it made one, and keep this one on ${card.from}?`
+        : card.from === undefined ? t`Stop the new thread on ${card.machine} and keep this one here?` : t`Stop the new thread on ${card.machine} and keep this one on ${card.from}?`}</strong>{' '}
+        {t`Sotto stops it and settles it on ${card.machine}, and this thread takes sends again once ${card.machine} says so.`}</p>
+      <div className="move-card__actions">
+        <Button variant="primary" disabled={pending || answer === undefined} onClick={() => void press('keep-here')}>{card.from === undefined ? t`Stop it there and keep this one` : t`Stop it there and keep this one on ${card.from}`}</Button>
+        <Button ref={cancelRef} variant="secondary" disabled={pending} onClick={() => setConfirming(false)}><Trans>Cancel</Trans></Button>
+      </div>
+    </div> : keepable ? <div className="move-card__actions">
+      <Button ref={keepRef} variant="secondary" disabled={pending || answer === undefined} onClick={() => { if (card.moved || card.startAsked) setConfirming(true); else void press('keep-here') }}>
+        {card.from === undefined ? <Trans>Keep it here</Trans> : <Trans>Keep it on {card.from}</Trans>}</Button>
     </div> : null}
     {refusal !== null ? <p className="receipt-card__placement move-card__refused tt-paragraph" role="alert">{refusal}</p> : null}
   </li>
@@ -565,7 +601,8 @@ function MoveProposalCard({ proposal, threads, answer }: { readonly proposal: Th
     setPending(false)
   }
   const machine = proposal.machine
-  const said = proposal.state === 'moved' ? plural(proposal.threads.filter(item => item.ticked).length, { one: `You asked to move # thread to ${machine}. Sotto reports its move here.`, other: `You asked to move # threads to ${machine}. Sotto reports each move here.` })
+  // Its moves' own line follows with their cards, so this one says only which of Watcher's threads the user chose.
+  const said = proposal.state === 'moved' ? plural(proposal.threads.filter(item => item.ticked).length, { one: `You chose # of the threads Watcher proposed moving to ${machine}.`, other: `You chose # of the threads Watcher proposed moving to ${machine}.` })
     : proposal.state === 'dismissed' ? t`You chose not to move these threads to ${machine}. Nothing was moved.`
       : going.length === 0 ? t`Watcher proposed moving threads to ${machine}, but none can move now. Each says why.`
         : plural(going.length, { one: `Watcher proposes moving # thread to ${machine}. Nothing moves until you press Move.`, other: `Watcher proposes moving # threads to ${machine}. Nothing moves until you press Move.` })

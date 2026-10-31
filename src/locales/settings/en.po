@@ -795,8 +795,8 @@ msgid "A merged thread stays put until you settle it."
 msgstr "A merged thread stays put until you settle it."
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
-msgid "A paired phone reads threads and replies. It answers questions and permissions only after you turn on Can answer for it."
-msgstr "A paired phone reads threads and replies. It answers questions and permissions only after you turn on Can answer for it."
+msgid "A paired phone reads threads, replies, and answers questions and permissions. Remove a phone to take that away."
+msgstr "A paired phone reads threads, replies, and answers questions and permissions. Remove a phone to take that away."
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "A phone cannot run the host"
@@ -1272,14 +1272,6 @@ msgstr "By hand"
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "by the agent"
 msgstr "by the agent"
-
-#: src/renderer/src/features/settings/phoneParts.tsx
-msgid "Can answer"
-msgstr "Can answer"
-
-#: src/renderer/src/features/settings/phoneParts.tsx
-msgid "Can answer: let {name} answer questions and permissions"
-msgstr "Can answer: let {name} answer questions and permissions"
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
 msgid "Can connect"
@@ -4430,10 +4422,6 @@ msgstr "Resume threads after a restart"
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "Room the preview shows"
 msgstr "Room the preview shows"
-
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Run a quick input-level test."
-msgstr "Run a quick input-level test."
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 #: src/renderer/src/features/settings/settingsPages.ts

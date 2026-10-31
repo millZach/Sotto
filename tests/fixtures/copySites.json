@@ -1,6 +1,6 @@
 {
   "src/host/socketServer.ts": {
-    "shell()": 10
+    "shell()": 9
   },
   "src/main/agents/activitySnapshots.ts": {
     "cloneHostSnapshot(": 2,

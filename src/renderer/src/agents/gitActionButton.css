@@ -23,6 +23,8 @@
 .git-action-notice strong { color: var(--tt-text); font-weight: 500; }
 .git-action-notice[data-tone='error'] strong { color: inherit; }
 .git-action-notice .tt-button { gap: 6px; min-height: 34px; padding: 0 12px; font-size: 14px; }
+/* Open <title> carries another thread's title, which can be long: it wraps inside the notice rather than widening it. */
+.git-action-notice .git-action-notice__open { max-width: 100%; height: auto; padding-block: 6px; white-space: normal; overflow-wrap: anywhere; text-align: start; }
 .git-action-notice__dismiss { display: grid; place-items: center; width: 28px; height: 28px; flex: none; padding: 0; border: 0; border-radius: 6px; background: transparent; color: inherit; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .git-action-notice__dismiss:hover { background: var(--tt-hover); }
 .git-action-notice__dismiss:active:not(:disabled) { background: var(--tt-hover-strong); }

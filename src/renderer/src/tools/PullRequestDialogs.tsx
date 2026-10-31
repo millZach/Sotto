@@ -7,10 +7,14 @@ import { limitedWords } from './pullRequestSurface.logic'
 import type { AgentCommand, AgentState } from '../../../shared/agents'
 import { Button } from '../components/Button'
 import { useDialogFocus } from '../components/useDialogFocus'
+import { Isolated } from '../components/isolated'
+import { holdingThread, openHolderWords } from '../agents/checkoutHold'
+import { shownWords } from '../agents/interfaceWords'
 import { stateLabel } from './pullRequestSurface.logic'
 
 type Command = (command: AgentCommand) => Promise<AgentState | null>
 const RESOLVE_DELAY_MS = 450
+const NO_THREADS: readonly { readonly id: string; readonly title: string }[] = []
 
 /** The bridge call a dialog resolves a reference through; absent in a window without the preload. */
 export function pullRequestBridge(): ((request: GitPullRequestRequest) => Promise<GitPullRequestRead>) | undefined {
@@ -23,12 +27,16 @@ function referenceProblem(reference: string): string | null {
   return parsePullRequestReference(reference) ? null : i18n._(msg`Use a pull request URL, 123, or #123.`)
 }
 
-/** Sends one pull request command and answers with the refusal in the host's words, or the host's notice when it went through. */
-export async function sendCommand(command: Command, request: AgentCommand, fallback: string): Promise<{ error: string | null; notice: string | null }> {
+/**
+ * Sends one pull request command and answers with the refusal in the host's words, or the host's notice when it went
+ * through, and the thread holding the folder when the refusal is a hold another thread caused (#1823).
+ */
+export async function sendCommand(command: Command, request: AgentCommand, fallback: string): Promise<{ error: string | null; notice: string | null; holder?: string }> {
   try {
     const result = await command(request)
     if (!result) return { error: fallback, notice: null }
-    return { error: result.error ?? null, notice: result.notice ?? null }
+    const holder = result.error ? result.checkoutHold?.threadId : undefined
+    return { error: result.error ?? null, notice: result.notice ?? null, ...(holder !== undefined ? { holder } : {}) }
   } catch { return { error: fallback, notice: null } }
 }
 
@@ -83,8 +91,10 @@ export function LinkPullRequestDialog({ threadId, command, onClose, onLinked }: 
  * typed, and the pull request is checked out Local, in the thread's folder (the project's own checkout for a
  * draft), or into a Worktree of its own, which only a thread that has not started can take.
  */
-export function CheckoutPullRequestDialog({ threadId, initialReference, command, worktreeAllowed, localMovesToCheckout, onClose, onDone }: {
+export function CheckoutPullRequestDialog({ threadId, threads = NO_THREADS, initialReference, command, worktreeAllowed, localMovesToCheckout, onClose, onDone }: {
   readonly threadId: string
+  /** The window's threads, for opening the one holding the folder when a checkout is refused for it (#1823). */
+  readonly threads?: readonly { readonly id: string; readonly title: string }[]
   readonly initialReference: string
   readonly command: Command
   /** False once the thread has a folder of its own; Worktree then says why it is unavailable. */
@@ -101,6 +111,7 @@ export function CheckoutPullRequestDialog({ threadId, initialReference, command,
   const [resolving, setResolving] = useState(false)
   const [preparing, setPreparing] = useState<'local' | 'worktree' | null>(null)
   const [failure, setFailure] = useState<string | null>(null)
+  const [holderId, setHolderId] = useState<string | undefined>(undefined)
   const field = useRef<HTMLInputElement>(null)
   const dialog = useDialogFocus({ onEscape: () => { if (!preparing) onClose() }, initialFocus: field })
   const titleId = useId(), fieldId = useId(), descriptionId = useId()
@@ -125,14 +136,15 @@ export function CheckoutPullRequestDialog({ threadId, initialReference, command,
   const problem = referenceProblem(reference)
   const confirm = async (mode: 'local' | 'worktree'): Promise<void> => {
     if (!detail || preparing) return
-    setPreparing(mode); setFailure(null)
+    setPreparing(mode); setFailure(null); setHolderId(undefined)
     const result = await sendCommand(command, { type: 'git-checkout-pull-request', threadId, reference: detail.url, mode }, t`Could not check out the pull request.`)
     setPreparing(null)
-    if (result.error) { setFailure(result.error); return }
+    if (result.error) { setFailure(result.error); setHolderId(result.holder); return }
     const number = detail.number
     onDone(result.notice ?? t({ message: `Checked out PR #${number}.`, comment: '{number} is the pull request\'s number.' }))
   }
   const ready = detail !== null && !resolving && preparing === null
+  const holder = holdingThread(threads, holderId, threadId)
   return <div className="tt-dialog-backdrop" role="presentation">
     <section ref={dialog} className="tt-dialog pull-request-dialog" role="dialog" aria-modal="true" aria-labelledby={titleId} aria-describedby={descriptionId} aria-busy={preparing !== null || undefined}>
       <h2 id={titleId}>{t`Checkout pull request`}</h2>
@@ -140,7 +152,7 @@ export function CheckoutPullRequestDialog({ threadId, initialReference, command,
       <label htmlFor={fieldId}>{t`Pull request`}</label>
       <input ref={field} id={fieldId} className="tt-focusable" value={reference} placeholder={t`PR URL, checkout command, or #42`} maxLength={2_048} autoComplete="off" spellCheck={false}
         aria-invalid={problem ? true : undefined}
-        onChange={event => { setReference(event.target.value); setFailure(null) }}
+        onChange={event => { setReference(event.target.value); setFailure(null); setHolderId(undefined) }}
         onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); if (ready) void confirm('local') } }} />
       {detail ? <div className="pull-request-dialog__resolved">
         <p><strong>{detail.title}</strong></p>
@@ -148,7 +160,9 @@ export function CheckoutPullRequestDialog({ threadId, initialReference, command,
       </div> : null}
       {resolving && !detail ? <div className="tt-dialog__status" role="status">{t`Resolving pull request...`}</div> : null}
       {problem && reference.trim() !== initialReference.trim() ? <div className="tt-dialog__status tt-dialog__status--error" role="alert">{problem}</div>
-        : failure ?? resolveFailure ? <div className="tt-dialog__status tt-dialog__status--error" role="alert">{failure ?? resolveFailure}</div> : null}
+        : failure ?? resolveFailure ? <div className="tt-dialog__status tt-dialog__status--error" role="alert">{failure ?? resolveFailure}
+          {failure && holder ? <> <button type="button" className="pull-request-dialog__open tt-focusable" onClick={() => { onClose(); void command({ type: 'select-thread', threadId: holder.id }) }}>
+            <Isolated text={shownWords(openHolderWords(holder.title))} /></button></> : null}</div> : null}
       <div className="tt-dialog__actions">
         <Button variant="secondary" disabled={preparing !== null} onClick={onClose}>{t`Cancel`}</Button>
         <Button variant="secondary" disabled={!ready} onClick={() => void confirm('local')}>{preparing === 'local' ? t`Preparing local...` : t({ message: 'Local', comment: 'Checks a pull request out in the thread\'s own folder.' })}</Button>

@@ -1,14 +1,19 @@
 import React, { useCallback, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useMark } from '../components/marks'
-import { Archive, ArchiveRestore, ArrowRightLeft, Columns2, CornerDownRight, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
+import { Archive, ArchiveRestore, ArrowRightLeft, Columns2, CornerDownRight, FolderGit2, Pencil, Plug, Shrink, Sparkles, X } from 'lucide-react'
 import { capabilitiesForThread, isThreadBusy, providerWritesShortText, type AgentState } from '../../../shared/agents'
 import { isThreadArchived, isThreadClosed, isThreadTurnRunning, threadOrnamentAllowed } from '../../../shared/threadActivity'
 import { continueThreadRefusal } from '../../../shared/continueThread'
 import { ThreadNameField } from './ThreadName'
 import type { AgentConnection } from './AgentContext'
-import { PaneMenu, type PaneMenuItem } from './PaneMenu'
-import { GitActionButton } from './GitActionButton'
+import type { PaneMenuItem } from './PaneMenu'
+import { ThreadPaneMenu } from './ThreadPaneMenu'
+import type { PaneChrome, PaneClose } from './ThreadPanes'
+import { GitActionButton, type GitActionHandle } from './GitActionButton'
+import { quickAction } from './gitActionButton.logic'
+import { claimedThreadChord, threadChordLabel } from './threadShortcuts'
+import { useOptionalApp } from '../state/AppContext'
 import { ProviderMark } from './ProviderMark'
 import { AgentRequestCard } from './requests/AgentRequestCard'
 import { messageLinks } from './requests/messageLinks'
@@ -49,6 +54,11 @@ import { composerSlim, slimMoving, useSlimMotion } from './slimComposer'
 import { isPutAway, moveSheetStore, useMoveMachines, useMovesOffered } from '../watcher/MoveThreads'
 
 type Command = AgentConnection['command']
+
+/** A press inside the title that belongs to a control there, not to the pane's handle. */
+const INSIDE_CONTROL = 'button, input, textarea, select, a, [contenteditable], [role="menu"]'
+/** A pane outside the Threads workspace's pane area: no layout rows, no close of its own, no handle. */
+const NO_CHROME: PaneChrome = { layout: [] }
 
 /** How long a send may take to empty the greeting and still carry the composer down with it. */
 const LIFT_WINDOW_MS = 2_000
@@ -108,8 +118,8 @@ function shownHeight(compose: HTMLElement): number {
 }
 
 /**
- * The composer floats over the transcript's foot: the pane learns its height, so the transcript scrolls under it and
- * keeps room to bring its last line clear of the card. While the composer is slim (ADR-0125) it keeps that room, so the
+ * The composer floats over the transcript's foot: the pane learns its height, so the transcript keeps a steady scroll
+ * box and a readable edge above the card. While the composer is slim (ADR-0125) it keeps that room, so the
  * transcript neither moves nor changes size; the pane learns how much of it shows, for the Jump button, and keeps the
  * card's full height, which Watcher's night scene lays out by. While the card moves between the two the composer keeps
  * that room too (slimComposer.ts), and nothing is read until the card has settled.
@@ -187,11 +197,20 @@ export interface ThreadPaneProps {
   readonly promptId: string
   /** The latest command error, passed only to the focused pane. */
   readonly error: string | null
-  /** Present in a split: closes this view only. */
+  /** Present beside Watcher: closes this view only. In the Threads workspace, a split's close comes with `chrome`. */
   readonly onClose?: (() => void) | undefined
+  /**
+   * What the Threads workspace's pane area hands the header (ADR-0163): Zoom pane, the arrangement and Move pane for the
+   * ··· menu, the close in a split, and the title as the handle that moves the pane. Absent beside Watcher.
+   */
+  readonly chrome?: PaneChrome | undefined
+  /** The ··· menu lists Tools: the focused pane in the Threads workspace. */
+  readonly tools?: boolean | undefined
+  /** The ··· menu lists the pane's own Terminal drawer. */
+  readonly terminal?: boolean | undefined
   /** The working-copy control, placed after the project title in the header. */
   readonly workingCopy?: ReactNode
-  /** Placed at the end of the header actions. */
+  /** Placed after Watch, before the ··· menu: beside Watcher, Open in Threads. */
   readonly actions?: ReactNode
   /** Placed directly above the composer. */
   readonly notice?: ReactNode
@@ -214,8 +233,9 @@ export interface ThreadPaneProps {
  * One thread's view: header and controls, its own transcript position and its own composer.
  * Everything here acts on `row.thread.id`; a split workspace mounts one per open thread.
  */
-export function ThreadPane({ row, state, command, store, focused, promptId, error, onClose, onOpenBeside, workingCopy, actions, notice, drawer, now, watcherHeader, watcherEmpty }: ThreadPaneProps): ReactNode {
+export function ThreadPane({ row, state, command, store, focused, promptId, error, onClose, chrome, tools = false, terminal = false, onOpenBeside, workingCopy, actions, notice, drawer, now, watcherHeader, watcherEmpty }: ThreadPaneProps): ReactNode {
   const { t } = useLingui()
+  const app = useOptionalApp()
   const [followSignal, setFollowSignal] = useState(0)
   const [renaming, setRenaming] = useState(false)
   const renameReturn = useRef<HTMLElement | null>(null)
@@ -329,15 +349,29 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     // alone and offers no rewrite, and neither does a Devin thread, whose provider writes nothing.
     ...(!isThreadArchived(thread) && !renaming && thread.titleSource !== 'user' && providerWritesShortText(thread.providerId)
       ? [{ id: 'regenerate', label: t`Regenerate title`, icon: <Sparkles size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'regenerate-thread-title', threadId: thread.id }) }] : []),
-    ...(onOpenBeside ? [{ id: 'beside', label: t`Open beside`, icon: <Columns2 size={15} aria-hidden="true" />, run: onOpenBeside }] : []),
   ]
+  // Open beside leads the layout rows; Tools, the drawer and the pane area's rows follow it in ThreadPaneMenu.
+  const beside: PaneMenuItem | undefined = onOpenBeside ? { id: 'beside', label: t`Open beside`, icon: <Columns2 size={15} aria-hidden="true" />, run: onOpenBeside } : undefined
+  // Initialize Git, for a folder the host read as no repository: the ··· menu's row, pressed on the Git action so its
+  // notice is the Git action's (ADR-0163). It was the Git action's button, and the only one-time control in the header.
+  const gitAction = useRef<GitActionHandle>(null)
+  const initialize: PaneMenuItem[] = !closed && quickAction(thread.worktree?.git)?.kind === 'init'
+    ? [{ id: 'git-init', label: t`Initialize Git`, icon: <FolderGit2 size={15} aria-hidden="true" />, run: () => gitAction.current?.initialize() }] : []
+  // Settle and Restore answer their keys for the focused thread wherever the Threads page has it; beside Watcher they do not.
+  const platform = app?.platform ?? 'win32'
+  const chordShown = (id: 'settle' | 'restore'): PaneMenuItem['shortcut'] => {
+    const chord = chrome ? claimedThreadChord(app?.settings, id, platform) : null
+    if (chord === null) return undefined
+    const label = threadChordLabel(chord, platform)
+    return { plain: label.plain, keys: label.keys }
+  }
   // Compaction is offered where it can run: the banner under the composer only ever recommends it.
   const context: PaneMenuItem[] = compactionOffered(capabilities, thread) && rowConnected && !closed && !compactionBusy(thread, threadBusy)
     ? [{ id: 'compact', label: t`Compact context`, icon: <Shrink size={15} aria-hidden="true" />, run: () => void command({ type: 'compact-thread', threadId: thread.id }) }] : []
   const shelf: PaneMenuItem[] = row.settledBy === null
-    ? [{ id: 'settle', label: t({ message: 'Settle', comment: 'Settle the thread: put it away on the Settled shelf.' }), icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void settleThread(thread, row.project) }]
+    ? [{ id: 'settle', label: t({ message: 'Settle', comment: 'Settle the thread: put it away on the Settled shelf.' }), icon: <Archive size={15} aria-hidden="true" />, disabled: threadBusy, shortcut: chordShown('settle'), run: () => void settleThread(thread, row.project) }]
     : row.settledBy === 'thread'
-      ? [{ id: 'restore', label: t({ message: 'Restore', comment: 'Restore a settled thread to open work.' }), icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: threadBusy, run: () => void command({ type: 'restore-thread', threadId: thread.id }) }] : []
+      ? [{ id: 'restore', label: t({ message: 'Restore', comment: 'Restore a settled thread to open work.' }), icon: <ArchiveRestore size={15} aria-hidden="true" />, disabled: threadBusy, shortcut: chordShown('restore'), run: () => void command({ type: 'restore-thread', threadId: thread.id }) }] : []
   // Continue on another provider (ADR-0089; Owl only): the composer begins it, with the model picker open on the other providers.
   const continueOn = useContinueEnabled() && !ownPane && thread.nativeSessionStarted !== false && thread.remoteHost !== true && !isThreadArchived(thread)
     && thread.kind !== 'watcher' && thread.kind !== 'watcher-history'
@@ -363,6 +397,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const { items: removal, dialog: deleteDialog } = useDeleteThread(row, state, command, { ownPane })
   const focusAnswerComposer = (): void => { document.getElementById(promptId)?.focus() }
   const title = thread.title, provider = row.provider
+  const paneChrome = chrome ?? NO_CHROME
+  const handle = paneChrome.handle
+  const pressedControl = useRef(false)
+  const close: PaneClose | undefined = paneChrome.close ?? (onClose ? { label: t({ message: `Close ${title} pane`, comment: '{title} is a thread\'s title.' }), title: t`Close pane`, keys: undefined, run: onClose } : undefined)
   // A key typed in the transcript is the start of a message: the composer takes it, and comes back full to show it.
   const typeAhead = slimOn ? focusAnswerComposer : undefined
   // Slim, the disc is pressed where it stands: focus would bring the composer back full and move the disc from under the
@@ -375,8 +413,14 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     focusAnswerComposer()
   }
   return <>
-    {ownPane ? watcherHeader : <header className="thread-workspace__head">
-      <div className="thread-workspace__title">
+    {/* The header says the pane has its own Terminal drawer, for the drawer's keys to find it (paneTerminalShortcut.ts). */}
+    {ownPane ? watcherHeader : <header className="thread-workspace__head" data-terminal-drawer={terminal || undefined}>
+      {/* The title, project and folder; while panes stand side by side it is the handle that moves the pane (ADR-0163).
+          A press on a control inside it, such as the working copy, stays that control's. */}
+      <div className="thread-workspace__title" data-pane-handle={handle ? '' : undefined} draggable={handle && !renaming ? true : undefined}
+        onPointerDown={handle ? event => { pressedControl.current = (event.target as Element).closest(INSIDE_CONTROL) !== null } : undefined}
+        onDragStart={handle ? event => { if (pressedControl.current || renaming) { event.preventDefault(); return } handle.start(event) } : undefined}
+        onDragEnd={handle ? () => handle.end() : undefined}>
         <ProviderMark provider={row.providerId} name={row.provider} size={16} />
         {watched ? <WatchedBadge size={16} /> : null}
         {renaming
@@ -389,15 +433,19 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
         </span>
         <span className="thread-workspace__branches" ref={setBranchSlot} />
       </div>
+      {/* Pinned to the right in a fixed order, so nothing here moves as the pane narrows: the Git action (once the host
+          has read a repository's status), Watch, the ··· menu and, in a split, close (ADR-0163). */}
       <div className="thread-workspace__actions">
+        {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
+        {!closed ? <GitActionButton ref={gitAction} thread={thread} state={state} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {/* Watch, pressed while Watcher watches this thread (Owl only; nothing without Watcher's bridge). */}
         {thread.kind === 'watcher' || thread.kind === 'watcher-history' ? null : <WatchHeaderToggle threadId={thread.id} title={thread.title} />}
-        {/* T3's Git action: the quick action its status decides, the chevron with the rest (ADR-0027). */}
-        {!closed ? <GitActionButton thread={thread} state={state} command={command} noticeSlot={gitNoticeSlot} onExplainedError={setGitExplained} /> : null}
         {actions}
-        <PaneMenu groups={[naming, [...continuing, ...moving], context, shelf, recovery, removal]} />
+        <ThreadPaneMenu threadId={thread.id} state={state} beside={beside} layout={paneChrome.layout} tools={tools} terminal={terminal}
+          groups={[initialize, naming, [...continuing, ...moving], context, shelf, recovery, removal]} />
+        {close ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-chrome data-pane-close aria-label={close.label}
+          aria-keyshortcuts={close.keys} title={close.title} onClick={close.run}><X size={16} aria-hidden="true" /></button> : null}
       </div>
-      {onClose ? <button type="button" className="pane-action thread-pane__close tt-focusable" data-pane-close aria-label={t({ message: `Close ${title} pane`, comment: '{title} is a thread\'s title.' })} title={t`Close pane`} onClick={onClose}><X size={16} aria-hidden="true" /></button> : null}
     </header>}
     {/* Delegated by the thread that started this one, a link back (ADR-0081; Owl only). */}
     {ownPane ? null : <DelegatedBy thread={thread} state={state} command={command} />}

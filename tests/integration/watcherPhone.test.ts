@@ -94,7 +94,7 @@ it('offers phone Watcher only on its desktop listener and leaves old phones ordi
   expect(stable.watcher.state().current).not.toBeNull()
 })
 
-it('admits a paired phone origin without Can answer, keeps the computer defaults, deduplicates its exact draft and refuses forged or retired origins', async () => {
+it('admits a paired phone origin without an answers grant, keeps the computer defaults, deduplicates its exact draft and refuses forged or retired origins', async () => {
   const f = await fixture(), peer = await f.pair(), packet = f.send(peer.paired.clientId)
   const sent = await peer.call('send', packet)
   expect(watcherPhoneSendResultSchema.parse(sent.result)).toMatchObject({ status: 'ok' })
@@ -229,7 +229,7 @@ it('projects grouped replies with one row per thread and keeps remote owning car
   expect((shell.result as { host: { threads: { id: string }[] } }).host.threads.some(row => row.id === remoteTarget.threadId)).toBe(false)
 })
 
-it('projects worker cards inside Watcher and routes the user answer to the worker under freshly checked Can answer without takeover', async () => {
+it('projects worker cards inside Watcher and routes the user answer to the worker under a freshly checked answers grant without takeover', async () => {
   const f = await fixture(), peer = await f.pair()
   await peer.call('send', f.send(peer.paired.clientId)); const worker = await f.start()
   f.native(worker.threadId).requests = [{ id: 'native-permission', kind: 'permission', text: 'Synthetic worker permission', options: [] }]

@@ -9,7 +9,7 @@ import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
-import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, userMessageTexts, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import { terminalOutput, threadTerminal, waitForShellPrompt } from './support/terminal'
 import { evidenceDirectory } from '../fixtures/evidence'
 
@@ -123,7 +123,7 @@ test('daily mixed-provider workspace joins independent work, tools, reviewed com
     await expect(pane(first).getByLabel('output code block')).toContainText('Hello')
     await capture(page, 'mixed-threads-diagram-activity')
     await focusThread(page, first, 'Daily implementation')
-    await pane(first).getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(pane(first))
     const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
     await panel.getByRole('button', { name: 'Pin to Daily implementation', exact: true }).click()
     await focusThread(page, second, 'Daily review')
@@ -270,7 +270,7 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     await page.evaluate(async () => window.sotto!.agents!.command({ type: 'restore-thread', threadId: 'grok-previews' }))
     await expect(sidebar.getByRole('region', { name: 'Projects' }).getByRole('button', { name: 'Grok voice previews', exact: true })).toBeVisible()
     await focusThread(page, key('grok-previews'), 'Grok voice previews')
-    await pane('grok-previews').getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(pane('grok-previews'))
     const panel = page.getByRole('complementary', { name: 'Tools' })
     await panel.getByRole('button', { name: 'Pin to Grok voice previews', exact: true }).click()
     await focusThread(page, key('footer-links'), 'Footer links')
@@ -297,7 +297,7 @@ test('mixed pane drafts, queued work, settlement and preferences recover without
     await expectPromptText(prompt('footer-links'), 'Newer unsent Codex draft.')
     // Tools chrome is explicitly session-scoped; reopening follows the currently focused thread.
     await expect(page.getByRole('complementary', { name: 'Tools' })).toBeHidden()
-    await pane('footer-links').getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(pane('footer-links'))
     await expect(page.getByRole('complementary', { name: 'Tools' }).getByRole('button', { name: 'Pin to Footer links', exact: true })).toBeVisible()
     await expect(page.locator('html')).toHaveAttribute('data-theme', 'light')
     expect(await page.evaluate(async () => window.sotto!.getSettings())).toMatchObject({ appearance: 'light', lightTheme: 'clay', darkTheme: 'graphite', webLinkDestination: 'embedded' })

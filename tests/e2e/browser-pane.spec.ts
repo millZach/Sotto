@@ -6,7 +6,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test, type Locator, type Page } from '@playwright/test'
 import type { BrowserTask } from '../../src/shared/browser'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 /**
@@ -89,7 +89,7 @@ test('the quiet browser pane opens on its own, speaks in one strip, and puts a s
         const tasks = () => page.evaluate(async () => { const result = await window.sotto!.browser!.tasks({ threadId: 'workshop' }); return result.ok ? result.value : [] })
 
         // Tools is open on Files, and the user is elsewhere: the agent's page takes Tools to Browser.
-        await page.getByRole('button', { name: 'Tools', exact: true }).click()
+        await toggleTools(page)
         const panel = page.getByRole('complementary', { name: 'Tools', exact: true })
         await panel.getByRole('tab', { name: 'Files' }).click()
         await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur())

@@ -5,7 +5,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { expect, test } from '@playwright/test'
 import type { BrowserTask } from '../../src/shared/browser'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, type LaunchedSotto, toggleTools } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 const SHOTS = evidenceDirectory('artifacts/agent-browser')
@@ -118,7 +118,7 @@ test('agents and users share the real browser page, permissions, feedback and vi
     await expect(player.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
     await player.getByRole('button', { name: 'Hide the browser; the agent keeps working' }).click()
     await expect(player).toBeHidden(); expect((await tasks())[0]?.status).toBe('working')
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     await panel.getByRole('combobox', { name: 'Browser viewport size' }).selectOption('390x844')
     const emulated = await launched.app.evaluate(async ({ webContents }, url) => webContents.getAllWebContents().find(item => item.getURL() === url)!.executeJavaScript('({width:innerWidth,height:innerHeight})'), url)
     expect(emulated).toEqual({ width: 390, height: 844 })
@@ -348,8 +348,9 @@ test('a thread uses the browser without asking by default, the user can stop or 
     await waitingOn('workshop')
     await expect(workshopPlayer).toBeHidden()
     // With the player not opening on its own, the Tools icon of the thread's pane is what says a request waits.
-    await expect(page.getByRole('button', { name: 'Tools', exact: true })).toHaveAccessibleDescription(/A browser request is waiting for your answer/)
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    // The Tools dot is the ··· button's now (ADR-0163), and so are its words.
+    await expect(page.locator('[data-opens="tools"]')).toHaveAccessibleDescription(/A browser request is waiting for your answer/)
+    await toggleTools(page)
     await panel.getByRole('tab', { name: /waiting for your answer/ }).click()
     await expect(panel.getByText(`Open and share this page with the thread: ${url}quiet`, { exact: true })).toBeVisible()
     await shot('auto-show-off-tools')
@@ -401,7 +402,7 @@ test('under the default grant every page in the thread is shared: one the user o
     const privateLine = panel.getByText('This page is private. The agent cannot see it', { exact: true })
 
     // The user opens a page; the agent can read it at once, with nothing pressed.
-    await page.getByRole('button', { name: 'Tools', exact: true }).click()
+    await toggleTools(page)
     await panel.getByRole('tab', { name: 'Browser' }).click()
     await panel.getByRole('textbox', { name: 'Address for a new page' }).fill(url)
     await page.keyboard.press('Enter')

@@ -167,7 +167,7 @@ fun NewThreadScreen(model: AppModel, close: () -> Unit, opened: (ThreadRef) -> U
                                 Text("This model has no supported permission modes. Choose another model.", style = figtree(16), color = p.muted)
                             } else if (!model.mayAnswer(hostID)) {
                                 Text(
-                                    "This phone can start a thread that asks before acting. To answer its permissions here, turn on Can answer in this computer’s Settings › Hosts & phones.",
+                                    "${model.name(hostID)} hasn’t let this phone answer, so this thread starts by asking.",
                                     style = figtree(14), color = p.muted,
                                 )
                             }

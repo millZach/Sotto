@@ -1,6 +1,5 @@
 /* Native request controls, shared by transcript approvals and questions above the composer. */
-.agent-request { display: grid; gap: 10px; margin-top: 16px; padding: 14px 16px; border: 1px solid transparent; border-left: 2px solid var(--tt-attention); border-radius: var(--tt-radius-lg); background: var(--tt-card); cursor: default; }
-.agent-request[data-uncertain] { border-left-color: var(--tt-warning); }
+.agent-request { display: grid; gap: 10px; margin-top: 16px; padding: 14px 16px; border: 1px solid transparent; border-radius: var(--tt-radius-lg); background: var(--tt-card); cursor: default; }
 .agent-request__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; min-width: 0; }
 .agent-request__head strong { font-size: 15px; font-weight: 600; letter-spacing: -.1px; overflow-wrap: anywhere; }
 .agent-request__tag { display: inline-block; padding: 1px 7px; border: 1px solid transparent; border-radius: 4px; background: var(--tt-card-inset); color: var(--tt-text-muted); font-size: 12px; line-height: 18px; font-weight: 500; }
@@ -43,7 +42,7 @@
 .agent-request__no-link { display: flex; align-items: flex-start; gap: 12px; margin: 0; padding: 9px 12px; border: 1px dashed var(--tt-field-border); border-radius: var(--tt-radius-md); color: var(--tt-text-muted); font-size: 13.5px; line-height: 1.45; overflow-wrap: anywhere; }
 .agent-request__no-link > svg { flex: none; margin-top: 2px; }
 /* A prototype waiting for review (ADR-0108, variant A): a slim strip above the composer, its page rows beside the title. */
-.prototype-ready { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 10px; padding: 8px 8px 8px 14px; border: 1px solid transparent; border-left: 2px solid var(--tt-accent); border-radius: var(--tt-radius-md); background: var(--tt-card); animation: question-arrive 180ms ease-out; }
+.prototype-ready { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin: 0 0 10px; padding: 8px 8px 8px 14px; border: 1px solid transparent; border-radius: var(--tt-radius-md); background: var(--tt-card); animation: question-arrive 180ms ease-out; }
 .prototype-ready__title { display: flex; flex: none; align-items: center; gap: 8px; color: var(--tt-text); font-size: 14px; font-weight: 600; }
 .prototype-ready__title > svg { flex: none; color: var(--tt-accent-text); }
 .prototype-ready .agent-request__link-rows { flex: 1 1 260px; min-width: 0; }
@@ -99,7 +98,6 @@
 .thread-workspace__compose > .thread-questions { flex: 0 1 auto; min-height: 48px; max-height: min(480px, 60vh); margin-bottom: 10px; overflow: auto; border: 1px solid transparent; border-radius: 16px; background: var(--tt-card); scrollbar-width: thin; scroll-padding-block: 8px; }
 .thread-questions .agent-request + .agent-request { border-top: 2px solid var(--tt-card-inset); }
 .agent-request[data-placement='composer'] { position: relative; margin-top: 0; padding: 16px 18px; border: 0; border-radius: 0; background: var(--tt-card); animation: question-arrive 180ms ease-out; }
-.thread-questions:has(.agent-request[data-uncertain]) { border-color: var(--tt-warning); }
 .agent-request[data-placement='composer'] .agent-request__form { gap: 12px; }
 .agent-request[data-placement='composer'] .agent-request__question legend:not(.tt-visually-hidden) { padding-right: 28px; }
 .agent-request[data-placement='composer'] .agent-request__prompt { font-size: 16px; font-weight: 600; }
