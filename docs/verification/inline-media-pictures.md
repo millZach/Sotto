@@ -17,6 +17,6 @@ A Claude Code thread over the fake CLI (`tests/fixtures/fakeClaudeThread.mjs`) c
 
 ## Not checked here
 
-- Windows and macOS: CI's Desktop result runs the spec there.
+- Windows and macOS: the spec ran only here, on Omarchy. CI's desktop journeys do not include it.
 - The iPhone: the Swift compiles only in CI's Native iOS client job. Its decoding of a step's pictures and the `thread-media` request are covered by `PhotoTests`; the tiles were not seen on a device or simulator.
 - Codex: covered by `tests/unit/main/threadMedia.test.ts`, not in the running app.

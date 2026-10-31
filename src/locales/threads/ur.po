@@ -3025,6 +3025,10 @@ msgstr ""
 msgid "Could not load this thread’s messages."
 msgstr ""
 
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Could not load. Nothing was lost. Scroll back to it to try again."
+msgstr ""
+
 #. A step in the browser line; starts lowercase.
 #: src/renderer/src/agents/browserLine.ts
 msgid "could not look at the page"
@@ -5225,7 +5229,7 @@ msgid "No local commits to push."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
-msgid "No longer kept on this computer"
+msgid "No longer kept on its computer"
 msgstr ""
 
 #: src/renderer/src/agents/ModelPicker.tsx

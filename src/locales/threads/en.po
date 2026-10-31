@@ -3025,6 +3025,10 @@ msgstr "Could not list the folders on {place}. Nothing was changed. Try again."
 msgid "Could not load this thread’s messages."
 msgstr "Could not load this thread’s messages."
 
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Could not load. Nothing was lost. Scroll back to it to try again."
+msgstr "Could not load. Nothing was lost. Scroll back to it to try again."
+
 #. A step in the browser line; starts lowercase.
 #: src/renderer/src/agents/browserLine.ts
 msgid "could not look at the page"
@@ -5225,8 +5229,8 @@ msgid "No local commits to push."
 msgstr "No local commits to push."
 
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
-msgid "No longer kept on this computer"
-msgstr "No longer kept on this computer"
+msgid "No longer kept on its computer"
+msgstr "No longer kept on its computer"
 
 #: src/renderer/src/agents/ModelPicker.tsx
 #: src/renderer/src/agents/ProviderModelList.tsx

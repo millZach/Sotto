@@ -64,6 +64,14 @@ export class ThreadMediaStore {
   private readonly historyEnabled: () => boolean
   private readonly now: () => number
   private readonly keepBytes: number
+  /** Captures since the index was last written; it is written with the next upkeep, never on a capture. */
+  private unsaved = false
+  /** What the kept pictures hold together, so a capture knows at once when it passed the limit. */
+  private total = 0
+  /** Writes under way, by digest: a tile can ask for a picture before its bytes reach the store. */
+  private readonly staging = new Map<string, Promise<unknown>>()
+  /** A sweep a capture asked for because the pictures passed their limit; it runs after the capture, off the update path. */
+  private sweepQueued = false
 
   constructor(directory: string, { historyEnabled = () => true, now = () => Date.now(), keepBytes = THREAD_MEDIA_KEEP_BYTES }: {
     readonly historyEnabled?: () => boolean; readonly now?: () => number; readonly keepBytes?: number } = {}) {
@@ -77,7 +85,12 @@ export class ThreadMediaStore {
     const saved = await this.keptFile.peek().catch(() => ({ version: 1 as const, kept: {} }))
     this.kept.clear()
     for (const [digest, entry] of Object.entries(saved.kept)) if (this.content.has(digest)) this.kept.set(digest, entry)
+    // A picture captured after the index was last written, before a crash, is taken back as captured now, not swept.
+    const now = this.now()
+    for (const { digest, sizeBytes } of this.content.kept()) if (!this.kept.has(digest)) { this.kept.set(digest, { sizeBytes, at: now }); this.unsaved = true }
+    this.total = [...this.kept.values()].reduce((sum, entry) => sum + entry.sizeBytes, 0)
   }
+  private limit(): number { return this.historyEnabled() ? this.keepBytes : Math.min(this.keepBytes, THREAD_MEDIA_KEEP_MEMORY_BYTES) }
 
   /**
    * Handles for a tool result's pictures, made at once so the row that carries them is written now; the bytes reach the
@@ -95,14 +108,25 @@ export class ThreadMediaStore {
       const index = handles.length
       handles.push({ id: `m${index}`, digest, kind: 'image', mimeType: picture.mimeType, sizeBytes: bytes.byteLength,
         ...(size ? { width: size.width, height: size.height } : {}), name: `picture-${index + 1}.${NAMES[picture.mimeType]}`, source })
+      if (!this.kept.has(digest)) this.total += bytes.byteLength
       this.kept.set(digest, { sizeBytes: bytes.byteLength, at: this.now() })
-      if (!this.content.has(digest)) void this.content.stage({ name: 'picture', mimeType: picture.mimeType, bytes }).catch(() => undefined)
-      if (this.historyEnabled()) void this.saveKept()
+      if (!this.content.has(digest) && !this.staging.has(digest)) {
+        const write = this.content.stage({ name: 'picture', mimeType: picture.mimeType, bytes }, { digest }).catch(() => undefined)
+          .finally(() => this.staging.delete(digest))
+        this.staging.set(digest, write)
+      }
+      this.unsaved = true
+    }
+    // Past the limit, the oldest go now rather than at the next upkeep, so a burst of screenshots never holds more for long.
+    if (this.total > this.limit() && !this.sweepQueued) {
+      this.sweepQueued = true
+      setTimeout(() => { this.sweepQueued = false; void this.sweep().catch(() => undefined) }, 0)
     }
     return handles
   }
 
   private saveKept(): Promise<void> {
+    this.unsaved = false
     return this.keptFile.writeLatest(() => ({ version: 1, kept: Object.fromEntries(this.kept) })).catch(() => undefined)
   }
 
@@ -112,29 +136,36 @@ export class ThreadMediaStore {
    */
   async read(record: AgentActivity | null, mediaId: string): Promise<string | null> {
     const handle = record?.media?.find(item => item.id === mediaId)
-    if (!handle || !this.content.keeps({ digest: handle.digest, mimeType: handle.mimeType, sizeBytes: handle.sizeBytes })) return null
+    if (!handle) return null
+    // A picture asked for before its bytes reached the store is read once they have.
+    await this.staging.get(handle.digest)
+    if (!this.content.keeps({ digest: handle.digest, mimeType: handle.mimeType, sizeBytes: handle.sizeBytes })) return null
     const bytes = await this.content.read(handle.digest)
     return bytes ? `data:${handle.mimeType};base64,${bytes.toString('base64')}` : null
   }
 
-  /** Lets the pictures captured longest ago go until what is kept fits: `keepBytes` on disk, less in memory. */
+  /**
+   * Upkeep, every 30 seconds with the attachment store's: writes the index if pictures were captured since, and lets the
+   * pictures captured longest ago go until what is kept fits, `keepBytes` on disk and less in memory.
+   */
   async sweep(): Promise<void> {
-    const limit = this.historyEnabled() ? this.keepBytes : Math.min(this.keepBytes, THREAD_MEDIA_KEEP_MEMORY_BYTES)
-    let total = 0
-    for (const entry of this.kept.values()) total += entry.sizeBytes
-    if (total > limit) {
+    const limit = this.limit()
+    if (this.total > limit) {
       for (const [digest, entry] of [...this.kept].sort((a, b) => a[1].at - b[1].at)) {
-        if (total <= limit) break
-        this.kept.delete(digest); total -= entry.sizeBytes
+        if (this.total <= limit) break
+        this.kept.delete(digest); this.total -= entry.sizeBytes
       }
-      if (this.historyEnabled()) await this.saveKept()
+      this.unsaved = true
     }
+    // The index is written here, in upkeep, so a capture never serializes it however many pictures it holds.
+    if (this.unsaved && this.historyEnabled()) await this.saveKept()
+    await this.content.idle()
     await this.content.sweep(() => new Set(this.kept.keys()), 0)
   }
 
   /** Lets every picture go: Keep local history was turned off (ADR-0170). */
   async clear(): Promise<void> {
-    this.kept.clear()
+    this.kept.clear(); this.total = 0
     await this.keptFile.write({ version: 1, kept: {} }).catch(() => undefined)
     await this.content.sweep(() => new Set(), 0)
   }

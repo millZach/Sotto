@@ -39,6 +39,8 @@ const MOUNTS = 5
 const MOUNT_WARMUP = 2
 /** How many tiles count as near the screen at once: a screen and a half either side of a pane's worth. */
 const NEAR = 6
+/** How many one-turn scroll steps each run takes; fewer than the page's tiles less the near ones, so every step brings one in. */
+const SCROLL_STEPS = 30
 const NOW = Date.parse('2026-10-31T12:00:00Z')
 const TILE = 'data:image/jpeg;base64,/9j/4AAQ'
 
@@ -131,21 +133,23 @@ describe('inline media cost', () => {
       const chunkReact = committed / ITERATIONS
       const chunkReads = threadMediaRequests() - readsBeforeChunks
 
-      // Scrolling up a tile at a time: the near window moves by one.
+      // Scrolling up a turn at a time: the near window moves by one, the same SCROLL_STEPS steps with pictures or without.
+      // Without pictures nothing on the page watches the scroll, which is the cost a step had before (the baseline).
       const all = tiles()
       const steps: number[] = []
       const readsBeforeScroll = threadMediaRequests()
       let mostHeld = holding()
-      for (let end = all.length - 1; end >= NEAR && pictures; end -= 1) {
+      for (let step = 0; step < SCROLL_STEPS; step += 1) {
+        const end = all.length - 1 - step
         const started = performance.now()
-        await act(async () => { DrivenObserver.near(new Set(all.slice(end - NEAR, end))) })
+        await act(async () => { DrivenObserver.near(new Set(all.slice(Math.max(0, end - NEAR), Math.max(0, end)))) })
         await flush()
         steps.push(performance.now() - started)
         mostHeld = Math.max(mostHeld, holding())
       }
       const scrollReads = threadMediaRequests() - readsBeforeScroll
       const result = { tiles: all.length, mountMs: round(median(mounts), 2), chunkMs: round(median(samples), 2), chunkReactMs: round(chunkReact, 3),
-        chunkCommits, chunkReads, mountReads, scrollSteps: steps.length, scrollStepMs: steps.length ? round(median(steps), 2) : 0, scrollReads, mostHeld }
+        chunkCommits, chunkReads, mountReads, scrollSteps: steps.length, scrollStepMs: round(median(steps), 2), scrollReads, mostHeld }
       rendered.unmount()
       return result
     }
@@ -163,11 +167,13 @@ describe('inline media cost', () => {
     // Opening reads only the near tiles; each scroll step reads only the tile that came near.
     expect(withPictures.mountReads).toBe(NEAR)
     expect(withPictures.scrollReads).toBe(withPictures.scrollSteps)
+    expect(without.scrollReads).toBe(0)
     // A tile that leaves lets go of its picture, so the page never holds more than the near ones.
     expect(withPictures.mostHeld).toBeLessThanOrEqual(NEAR)
     if (process.env.SOTTO_PERF_ASSERT === '1') {
       expect(withPictures.chunkReactMs).toBeLessThan(Math.max(without.chunkReactMs * 1.25, without.chunkReactMs + 0.5))
       expect(withPictures.mountMs).toBeLessThan(without.mountMs * 1.5)
+      expect(withPictures.scrollStepMs).toBeLessThan(without.scrollStepMs + 5)
     }
   }, 300_000)
 })

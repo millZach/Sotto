@@ -74,6 +74,23 @@ describe('the thread media store', () => {
     expect(await store.read(null, 'm0')).toBeNull()
   })
 
+  it('answers a tile that asks before the picture reached the store, once it has', async () => {
+    const store = new ThreadMediaStore(await folder())
+    await store.load()
+    const handle = store.capture([{ mimeType: 'image/png', data: b64(png(3, 2, 9)) }], 'tool')
+    expect(await store.read({ media: handle } as AgentActivity, 'm0')).toBe(`data:image/png;base64,${b64(png(3, 2, 9))}`)
+  })
+
+  it('lets the oldest go as soon as a capture passes the limit, without waiting for upkeep', async () => {
+    let now = 1
+    const store = new ThreadMediaStore(await folder(), { now: () => now, keepBytes: 80 })
+    await store.load()
+    const first = store.capture([{ mimeType: 'image/png', data: b64(png(3, 2, 4)) }], 'tool'); now = 2
+    store.capture([{ mimeType: 'image/png', data: b64(png(3, 2, 5)) }], 'tool'); now = 3
+    store.capture([{ mimeType: 'image/png', data: b64(png(3, 2, 6)) }], 'tool')
+    await expect.poll(() => store.read({ media: first } as AgentActivity, 'm0')).toBeNull()
+  })
+
   it('refuses a picture that is not the type it claims, is not one of the four types, or is too large', async () => {
     const store = new ThreadMediaStore(await folder())
     await store.load()

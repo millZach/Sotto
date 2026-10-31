@@ -51,8 +51,17 @@ describe('an agent\'s pictures in a turn (ADR-0170)', () => {
   it('says a picture is no longer kept when its host has let it go', async () => {
     threadMedia.mockResolvedValue(null as never)
     render(<ThreadMediaTiles groups={[{ ...groups[0]!, records: [{ ...record, id: 'gone', media: [media(0)] }] }]} threadId="thread" />)
-    await waitFor(() => expect(screen.getByText('No longer kept on this computer')).toBeTruthy())
+    await waitFor(() => expect(screen.getByText('No longer kept on its computer')).toBeTruthy())
     threadMedia.mockImplementation(async (request: { size: string }) => ({ dataUrl: request.size === 'tile' ? TILE : WHOLE }))
+  })
+
+  it('says a read failed, not that the picture is gone, and keeps nothing so it can try again', async () => {
+    threadMedia.mockRejectedValueOnce(new Error('disconnected'))
+    render(<ThreadMediaTiles groups={[{ ...groups[0]!, records: [{ ...record, id: 'flaky', media: [media(0)] }] }]} threadId="thread" />)
+    await waitFor(() => expect(screen.getByText('Could not load. Nothing was lost. Scroll back to it to try again.')).toBeTruthy())
+    cleanup()
+    render(<ThreadMediaTiles groups={[{ ...groups[0]!, records: [{ ...record, id: 'flaky', media: [media(0)] }] }]} threadId="thread" />)
+    await waitFor(() => expect(document.querySelectorAll('.thread-media img[src]')).toHaveLength(1))
   })
 
   it('draws nothing while the Owl feature is off, and reads nothing', async () => {

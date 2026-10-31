@@ -462,10 +462,15 @@ private struct AgentPictureTile: View {
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .onAppear { previews.appeared(key) }
-            .onDisappear { previews.disappeared(key) }
+            // A tile that scrolls away lets go of its picture; the shared cache keeps the thumbnail for its return.
+            .onDisappear { previews.disappeared(key); image = nil }
             .task(id: key) {
                 if image == nil { image = previews.cached(key) }
-                if image == nil { image = await previews.thumbnail(key, model: model); missing = image == nil }
+                guard image == nil else { return }
+                let read = await previews.thumbnail(key, model: model)
+                // A read that ends after the tile left draws nothing into it.
+                guard !Task.isCancelled else { return }
+                image = read; missing = read == nil
             }
     }
 }

@@ -159,7 +159,9 @@ export class AttachmentStore {
    * setting, for bytes that were already on disk elsewhere (`inlineStager`) and so are not new.
    */
   stage(input: { readonly name: string; readonly mimeType: string; readonly bytes: Uint8Array; readonly dimensions?: AgentAttachmentDimensions | undefined },
-    { onDisk = false }: { readonly onDisk?: boolean } = {}): Promise<AgentAttachmentHandle> {
+    { onDisk = false, digest: known }: { readonly onDisk?: boolean
+      /** The bytes' SHA-256, from a caller in main that has just hashed them (the thread media store), so they are not hashed twice. */
+      readonly digest?: string } = {}): Promise<AgentAttachmentHandle> {
     const image = isImageAttachment(input.mimeType)
     if (!image && (!this.acceptsFiles || !agentMimeTypeSchema.safeParse(input.mimeType).success)) return Promise.reject(new RefusedImage(SCREENSHOT_WRONG_TYPE))
     if (input.bytes.byteLength < 1 || input.bytes.byteLength > attachmentLimitBytes(input.mimeType)) {
@@ -167,7 +169,7 @@ export class AttachmentStore {
     }
     if (image && !bytesHaveRasterSignature(input.mimeType, input.bytes)) return Promise.reject(new RefusedImage(SCREENSHOT_NOT_ITS_TYPE))
     const bytes = Buffer.from(input.bytes.buffer, input.bytes.byteOffset, input.bytes.byteLength)
-    const digest = createHash('sha256').update(bytes).digest('hex')
+    const digest = known ?? createHash('sha256').update(bytes).digest('hex')
     // The sizes are the composer's word for what it attached and staged; they describe, and are never read as content.
     const parsed = agentAttachmentHandleSchema.safeParse({ id: randomUUID(), name: input.name.trim() || (image ? 'Screenshot' : 'File'), mimeType: input.mimeType,
       sizeBytes: bytes.byteLength, digest, ...(image && input.dimensions ? { dimensions: input.dimensions } : {}) })
@@ -249,6 +251,8 @@ export class AttachmentStore {
   }
 
   has(digest: string): boolean { return this.held.has(digest) }
+  /** Every content kept, with its size: what the thread media store takes back into its index after a crash (ADR-0170). */
+  kept(): { readonly digest: string; readonly sizeBytes: number }[] { return [...this.held.values()].map(({ digest, sizeBytes }) => ({ digest, sizeBytes })) }
   /** Whether content is only in memory: kept while history was off, and gone after a restart. */
   inMemory(digest: string): boolean { return Boolean(this.held.get(digest)?.memory) }
   /**

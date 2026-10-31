@@ -5,7 +5,7 @@ import { plural } from '@lingui/core/macro'
 import type { AgentActivity, AgentActivityMedia } from '../../../shared/agentActivity'
 import { AttachmentViewer, type ViewerImage } from './AttachmentViewer'
 import type { ActivityGroup } from './threadActivityView'
-import { useThreadMediaSource, type ThreadMediaOrigin } from './threadMediaSources'
+import { useThreadMediaSource, watchNear, type ThreadMediaOrigin } from './threadMediaSources'
 import { useOwlFeature } from '../state/owlFeature'
 
 /** One picture as a tile and the viewer know it: its handle and where it is found. */
@@ -17,28 +17,6 @@ export function mediaDetails(media: AgentActivityMedia): string {
   return [TYPE_NAMES[media.mimeType], media.width && media.height ? `${media.width}×${media.height}` : null].filter(Boolean).join(' · ')
 }
 
-/**
- * Each scroller's one observer, shared by all its tiles: a tile is near when it is within a screen and a half of what is in
- * view, and only a near tile holds its picture (ADR-0170). A tile scrolled further away lets go of it.
- */
-const observers = new WeakMap<Element, { observer: IntersectionObserver; listeners: Map<Element, (near: boolean) => void> }>()
-function watchNear(element: Element, listener: (near: boolean) => void): () => void {
-  const root = element.closest('.thread-workspace__transcript')
-  if (typeof IntersectionObserver === 'undefined') { listener(true); return () => undefined }
-  const key = root ?? document.documentElement
-  let entry = observers.get(key)
-  if (!entry) {
-    const listeners = new Map<Element, (near: boolean) => void>()
-    const observer = new IntersectionObserver(changes => { for (const change of changes) listeners.get(change.target)?.(change.isIntersecting) },
-      { root, rootMargin: '150% 0px' })
-    entry = { observer, listeners }
-    observers.set(key, entry)
-  }
-  const held = entry
-  held.listeners.set(element, listener)
-  held.observer.observe(element)
-  return () => { held.observer.unobserve(element); held.listeners.delete(element) }
-}
 
 /** "Picture 2": a picture's name on its tile and in the viewer, by its place among the turn's pictures. */
 function pictureName(t: ReturnType<typeof useLingui>['t'], number: number): string {
@@ -52,13 +30,15 @@ function MediaTile({ shown, index, count, onOpen }: {
   const frame = useRef<HTMLButtonElement>(null)
   const [near, setNear] = useState(false)
   useEffect(() => frame.current ? watchNear(frame.current, setNear) : undefined, [])
-  const { source, awaiting } = useThreadMediaSource(shown.origin, 'tile', near)
+  const { source, awaiting, failed: unread } = useThreadMediaSource(shown.origin, 'tile', near)
   const [failed, setFailed] = useState(false)
   useEffect(() => setFailed(false), [source])
   const number = index + 1
   const name = pictureName(t, number)
   const details = mediaDetails(shown.media)
-  const missing = near && !awaiting && (source === null || failed)
+  // A read that failed is tried again when the tile next comes near; a picture its host no longer keeps is gone.
+  const status = !near || awaiting ? null : unread || failed ? t`Could not load. Nothing was lost. Scroll back to it to try again.`
+    : source === null ? t`No longer kept on its computer` : null
   return <figure className="rich-attachment rich-attachment--image thread-media" role="listitem" data-media-id={shown.media.id}>
     <button type="button" ref={frame} className="rich-attachment__frame tt-focusable"
       aria-label={t({ message: `Open picture ${number} of ${count}, from ${shown.record.title}`, comment: '{number} of {count} pictures in a turn; {title} names the step that made it.' })}
@@ -67,7 +47,7 @@ function MediaTile({ shown, index, count, onOpen }: {
         : <ImageIcon size={18} aria-hidden="true" className="thread-media__placeholder" />}
     </button>
     <figcaption><span className="rich-attachment__name" title={shown.record.title}>{name}</span>
-      <span className="rich-attachment__meta">{missing ? t`No longer kept on this computer` : details}</span></figcaption>
+      <span className="rich-attachment__meta">{status ?? details}</span></figcaption>
   </figure>
 }
 

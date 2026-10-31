@@ -7,35 +7,38 @@ export interface ThreadMediaOrigin { readonly threadId: string; readonly activit
 // Tiles are small (main makes them at tile size), so a few dozen are kept between scrolls; a whole picture only while
 // the viewer shows it and the one before.
 const LIMITS = { tile: 48, full: 2 } as const
-const kept = { tile: new Map<string, Promise<string | null>>(), full: new Map<string, Promise<string | null>>() }
+/** What a read came back with: the picture, `null` when its host keeps no such picture, or `failed` when the read itself failed. */
+type Read = string | null | 'failed'
+const kept = { tile: new Map<string, Promise<Read>>(), full: new Map<string, Promise<Read>>() }
 let requests = 0
 
 /** How many reads of pictures this window has made since it started, for the inline media benchmark. */
 export function threadMediaRequests(): number { return requests }
 
-function request(origin: ThreadMediaOrigin, size: 'tile' | 'full'): Promise<string | null> {
+function request(origin: ThreadMediaOrigin, size: 'tile' | 'full'): Promise<Read> {
   const cache = kept[size]
   const key = JSON.stringify([origin.threadId, origin.activityId, origin.mediaId])
   const hit = cache.get(key)
   if (hit) { cache.delete(key); cache.set(key, hit); return hit }
   const bridge = window.sotto?.agents
   requests += 1
-  const pending: Promise<string | null> = bridge?.threadMedia
-    ? bridge.threadMedia({ ...origin, size }).then(result => agentThreadMediaResultSchema.safeParse(result).data?.dataUrl ?? null, () => null)
+  const pending: Promise<Read> = bridge?.threadMedia
+    ? bridge.threadMedia({ ...origin, size }).then(result => agentThreadMediaResultSchema.safeParse(result).data?.dataUrl ?? null, () => 'failed' as const)
     : Promise.resolve(null)
   cache.set(key, pending)
   // A picture main could not hand over may be there later; only the ones it did are kept.
-  void pending.then(source => { if (source === null && cache.get(key) === pending) cache.delete(key) })
+  void pending.then(source => { if ((source === null || source === 'failed') && cache.get(key) === pending) cache.delete(key) })
   while (cache.size > LIMITS[size]) cache.delete(cache.keys().next().value!)
   return pending
 }
 
 /**
  * The picture a handle names, read from main only while `wanted`: a tile that is near the screen, or the viewer. When it
- * stops being wanted the source goes, so the window lets go of the decoded picture. `awaiting` while the read is out.
+ * stops being wanted the source goes, so the window lets go of the decoded picture. `awaiting` while the read is out;
+ * `failed` when the read itself failed, which is tried again the next time the picture is wanted.
  */
-export function useThreadMediaSource(origin: ThreadMediaOrigin | undefined, size: 'tile' | 'full', wanted = true): { readonly source: string | null; readonly awaiting: boolean } {
-  const [read, setRead] = useState<{ readonly key: string; readonly source: string | null } | null>(null)
+export function useThreadMediaSource(origin: ThreadMediaOrigin | undefined, size: 'tile' | 'full', wanted = true): { readonly source: string | null; readonly awaiting: boolean; readonly failed: boolean } {
+  const [read, setRead] = useState<{ readonly key: string; readonly source: Read } | null>(null)
   const key = origin && wanted ? JSON.stringify([origin.threadId, origin.activityId, origin.mediaId, size]) : null
   useEffect(() => {
     if (key === null || !origin) { setRead(null); return }
@@ -45,5 +48,28 @@ export function useThreadMediaSource(origin: ThreadMediaOrigin | undefined, size
     // The key names the origin and size whole, so it alone decides when to read again.
   }, [key])
   const current = read !== null && read.key === key ? read : null
-  return { source: current?.source ?? null, awaiting: key !== null && current === null }
+  return { source: current?.source === 'failed' ? null : current?.source ?? null, awaiting: key !== null && current === null, failed: current?.source === 'failed' }
+}
+
+/**
+ * Each scroller's one observer, shared by all its tiles and the viewer's strip: a tile is near when it is within a screen and a half of what is in
+ * view, and only a near tile holds its picture (ADR-0170). A tile scrolled further away lets go of it.
+ */
+const observers = new WeakMap<Element, { observer: IntersectionObserver; listeners: Map<Element, (near: boolean) => void> }>()
+export function watchNear(element: Element, listener: (near: boolean) => void): () => void {
+  const root = element.closest('.thread-workspace__transcript')
+  if (typeof IntersectionObserver === 'undefined') { listener(true); return () => undefined }
+  const key = root ?? document.documentElement
+  let entry = observers.get(key)
+  if (!entry) {
+    const listeners = new Map<Element, (near: boolean) => void>()
+    const observer = new IntersectionObserver(changes => { for (const change of changes) listeners.get(change.target)?.(change.isIntersecting) },
+      { root, rootMargin: '150% 0px' })
+    entry = { observer, listeners }
+    observers.set(key, entry)
+  }
+  const held = entry
+  held.listeners.set(element, listener)
+  held.observer.observe(element)
+  return () => { held.observer.unobserve(element); held.listeners.delete(element) }
 }
