@@ -38,6 +38,26 @@ const REGISTRY_TIMEOUT_MS = 10_000
 const REGISTRY_MAX_BYTES = 256 * 1024
 const UPDATE_TIMEOUT_MS = 5 * 60 * 1000
 const published = z.object({ version: z.string().min(1).max(64) })
+/** Claude Code's own release feed, which its native installer and `claude update` read (ADR-0165). */
+const CLAUDE_RELEASES = 'https://downloads.claude.ai/claude-code-releases'
+/** A channel answers with one version on a line, `2.1.314`, so anything longer is not an answer. */
+const CLAUDE_RELEASE_BYTES = 64
+const CLAUDE_RELEASE = /^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/u
+const claudeSettings = z.object({ autoUpdatesChannel: z.enum(['latest', 'stable']).optional() })
+/** The release channel a native Claude Code follows. */
+export type ClaudeReleaseChannel = 'latest' | 'stable'
+/**
+ * The channel `claude update` installs from: `autoUpdatesChannel` in Claude Code's own settings, in `CLAUDE_CONFIG_DIR`
+ * or `~/.claude`, and `latest`, Claude Code's default, when they name none or cannot be read.
+ */
+export async function claudeReleaseChannel(environment: NodeJS.ProcessEnv = process.env): Promise<ClaudeReleaseChannel> {
+  const configured = environment.CLAUDE_CONFIG_DIR
+  const home = configured && isAbsolute(configured) ? configured : join(homedir(), '.claude')
+  try {
+    const settings = claudeSettings.safeParse(JSON.parse(await readFile(join(home, 'settings.json'), 'utf8')))
+    return settings.success ? settings.data.autoUpdatesChannel ?? 'latest' : 'latest'
+  } catch { return 'latest' }
+}
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 /**
@@ -681,6 +701,25 @@ export class ProviderClients {
     } catch { return undefined }
   }
 
+  /**
+   * The version a native Claude Code's channel offers, the one `claude update` installs. npm's `latest` tag can be ahead
+   * of it for hours, and a native install offered that version could not reach it (ADR-0165).
+   */
+  private async publishedClaudeNativeVersion(channel: ClaudeReleaseChannel, afresh: boolean): Promise<string | undefined> {
+    const key = `claude-native:${channel}`, cached = this.cache.get(key)
+    if (!afresh && cached && cached.expiresAt > this.now()) return cached.version
+    try {
+      const response = await this.fetchImpl(`${CLAUDE_RELEASES}/${channel}`, { redirect: 'error', signal: AbortSignal.timeout(REGISTRY_TIMEOUT_MS), headers: { accept: 'text/plain' } })
+      if (!response.ok) { await response.body?.cancel().catch(() => undefined); return undefined }
+      const body = await response.text()
+      if (body.length > CLAUDE_RELEASE_BYTES) return undefined
+      const version = body.trim()
+      if (!CLAUDE_RELEASE.test(version)) return undefined
+      this.cache.set(key, { version, expiresAt: this.now() + PUBLISHED_CACHE_MS })
+      return version
+    } catch { return undefined }
+  }
+
   private async publishedMuseVersion(channel: MuseChannel, afresh: boolean): Promise<string | undefined> {
     // Even an untyped caller cannot turn a channel response or a setting into another endpoint.
     if (channel !== 'muse-stable' && channel !== 'muse-canary') return undefined
@@ -705,7 +744,11 @@ export class ProviderClients {
     environment: NodeJS.ProcessEnv = process.env, options: { readonly afresh?: boolean } = {}): Promise<ProviderClientUpdate> {
     const install = await detectClientInstall(provider, executable, environment, this.platform)
     const museChannel = provider === 'muse' ? await museReleaseChannel(executable, environment) : undefined
-    const latest = install.channel === 'devin-app' || provider === 'muse' && museChannel === undefined ? undefined : await this.publishedVersion(provider, museChannel, options.afresh === true)
+    // A native Claude Code is compared with what its own updater can install, and an npm one with npm's `latest` (ADR-0165).
+    const claudeChannel = provider === 'claude' && install.channel === 'self-update' ? await claudeReleaseChannel(environment) : undefined
+    const latest = install.channel === 'devin-app' || provider === 'muse' && museChannel === undefined ? undefined
+      : claudeChannel ? await this.publishedClaudeNativeVersion(claudeChannel, options.afresh === true)
+      : await this.publishedVersion(provider, museChannel, options.afresh === true)
     const behind = provider === 'muse'
       ? Boolean(latest && (compareMuseVersions(installed, latest) ?? 0) < 0)
       : provider === 'cursor' ? Boolean(latest && parseCursorVersion(installed) && compareCursorVersions(installed, latest) < 0)
