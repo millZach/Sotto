@@ -36,6 +36,7 @@ Only what the tree does not say for itself.
 Sotto's look is quiet: one room under a thin strip, set in Figtree, dark by default, with colour coming from the chosen theme rather than the component (ADR-0011, and `CONTEXT.md` under Main window). Read those before proposing a look; the character is the part that is hard to get back. What every UI change keeps:
 
 - Colour comes from a theme role through a `--tt-*` token. `themeTokens.test.ts` checks every stylesheet on its `owned` list for literals; a new stylesheet goes on that list.
+- Text sizes and corners come from the scale's `--tt-type-*` and `--tt-radius-*` steps (ADR-0169). `scaleTokens.test.ts` checks every renderer stylesheet, and a value off the scale needs its reason on that test's exception list.
 - Light, dark and reduced motion all checked. Text meets 4.5:1 on the surface it sits on.
 - Desktop-native: a window with a drag strip, a tray and a floating widget, not a page in a frame. Verify at 1600x1000, 1280x800 and the 820x560 minimum; nothing overflows or clips at the minimum.
 - The whole app works from the keyboard, and the keyboard path is designed rather than inherited. Focus moves in the order the eye does, every control has an accessible name that says what a press does, anything that opens answers Escape, controls inside the drag strip opt out of dragging, and a new shortcut checks against the global dictation hotkey before it claims a chord.

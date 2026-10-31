@@ -1,41 +1,41 @@
 /* Settings → Dictation's OpenRouter speech model list (Owl cloud-dictation, ADR-0160): a ranked list of radio rows,
    each with an accuracy bar and a speed bar, and a tooltip with the price and whether the host keeps audio. */
 /* The line saying the saved key is used: a full row, so its divider spans the card as every other row's does. */
-.cloud-models__saved-key > p { max-width: 68ch; margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.cloud-models__saved-key > p { max-width: 68ch; margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .cloud-models { display: grid; gap: 10px; padding: 14px 0; min-width: 0; }
 .cloud-models__label { display: grid; gap: 2px; }
-.cloud-models__title { color: var(--tt-text); font-size: 14px; font-weight: 600; }
-.cloud-models__description { color: var(--tt-text-muted); font-size: 13px; max-width: 68ch; }
-.cloud-models__note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.cloud-models__title { color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; }
+.cloud-models__description { color: var(--tt-text-muted); font-size: var(--tt-type-small); max-width: 68ch; }
+.cloud-models__note { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .cloud-models__note > p { margin: 0; }
 .cloud-models__note--warn { color: var(--tt-warning-text); }
-.cloud-models__table { min-width: 0; border: 1px solid var(--tt-border); border-radius: 8px; background: var(--tt-card-inset); }
+.cloud-models__table { min-width: 0; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-row); background: var(--tt-card-inset); }
 .cloud-models__head,
 .cloud-models__row { display: grid; grid-template-columns: 22px 18px minmax(0, 1fr) minmax(90px, 140px) minmax(70px, 110px); align-items: center; gap: 10px; padding: 9px 12px; }
-.cloud-models__head { color: var(--tt-text-muted); font-size: 12px; border-bottom: 1px solid var(--tt-border); }
+.cloud-models__head { color: var(--tt-text-muted); font-size: var(--tt-type-caption); border-bottom: 1px solid var(--tt-border); }
 .cloud-models__head > span:first-child,
 .cloud-models__rank { text-align: right; }
 .cloud-models__row { position: relative; border-bottom: 1px solid var(--tt-border-faint); outline-offset: -2px; }
 .cloud-models__row:hover { background: var(--tt-hover); }
 .cloud-models__row[data-checked] { background: var(--tt-accent-surface); }
-.cloud-models__rank { color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.cloud-models__rank { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 .cloud-models__radio { width: 16px; height: 16px; border: 2px solid var(--tt-text-muted); border-radius: 50%; }
 .cloud-models__row[data-checked] .cloud-models__radio { border-color: var(--tt-primary); background: var(--tt-primary); box-shadow: inset 0 0 0 3px var(--tt-card-inset); }
-.cloud-models__name { overflow: hidden; color: var(--tt-text); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; }
+.cloud-models__name { overflow: hidden; color: var(--tt-text); font-size: var(--tt-type-body); text-overflow: ellipsis; white-space: nowrap; }
 .cloud-models__row[data-checked] .cloud-models__name { color: var(--tt-accent-surface-text); }
-.cloud-models__maker { color: var(--tt-text-muted); font-size: 12px; }
-.cloud-models__keeps { margin-left: 6px; color: var(--tt-warning-text); font-size: 11px; }
+.cloud-models__maker { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.cloud-models__keeps { margin-left: 6px; color: var(--tt-warning-text); font-size: var(--tt-type-micro); }
 .cloud-models__measure { display: grid; gap: 3px; min-width: 0; }
-.cloud-models__bar { position: relative; height: 6px; overflow: hidden; border-radius: 2px; background: var(--tt-hover-strong); }
-.cloud-models__bar > i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--tt-primary); }
-.cloud-models__figure { overflow: hidden; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
+.cloud-models__bar { position: relative; height: 6px; overflow: hidden; border-radius: var(--tt-radius-mark); background: var(--tt-hover-strong); }
+.cloud-models__bar > i { position: absolute; inset: 0 auto 0 0; border-radius: var(--tt-radius-mark); background: var(--tt-primary); }
+.cloud-models__figure { overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; text-overflow: ellipsis; white-space: nowrap; }
 .cloud-models__row[data-checked] .cloud-models__figure { color: var(--tt-accent-surface-text); }
-.cloud-models__tip { display: none; position: absolute; z-index: 20; top: calc(100% - 2px); right: 12px; width: min(300px, 80%); padding: 9px 11px; border: 1px solid var(--tt-border); border-radius: 8px; background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); color: var(--tt-text); font-size: 12.5px; line-height: 1.45; pointer-events: none; }
+.cloud-models__tip { display: none; position: absolute; z-index: 20; top: calc(100% - 2px); right: 12px; width: min(300px, 80%); padding: 9px 11px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-row); background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); color: var(--tt-text); font-size: var(--tt-type-caption); line-height: 1.45; pointer-events: none; }
 .cloud-models__tip > strong { font-weight: 600; }
 .cloud-models__row:hover > .cloud-models__tip,
 .cloud-models__row:focus-visible > .cloud-models__tip { display: block; }
 .cloud-models__row[data-tip-quiet] > .cloud-models__tip { display: none; }
-.cloud-models__more { width: 100%; padding: 9px 12px; border: 0; border-radius: 0 0 8px 8px; background: transparent; color: var(--tt-accent-text); font: inherit; font-size: 13px; text-align: left; }
+.cloud-models__more { width: 100%; padding: 9px 12px; border: 0; border-radius: 0 0 var(--tt-radius-row) var(--tt-radius-row); background: transparent; color: var(--tt-accent-text); font: inherit; font-size: var(--tt-type-small); text-align: left; }
 .cloud-models__more:hover { background: var(--tt-hover); }
 /* At the 820x560 minimum the speed column goes; each row's tooltip still says it. */
 @media (max-width: 1000px) {

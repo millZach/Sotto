@@ -2,8 +2,8 @@
 
 /* Clear now: its words and age on the left, the button that opens the list on the right, as other Settings rows sit. */
 .thread-clear-now { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 20px; }
-.thread-clear-now h3 { margin: 0; font-size: 15px; font-weight: 500; }
-.thread-clear-now__age { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 4px 0 0; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; }
+.thread-clear-now h3 { margin: 0; font-size: var(--tt-type-reading); font-weight: 500; }
+.thread-clear-now__age { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 4px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; }
 .thread-clear-now__age .tt-select { width: auto; min-width: 104px; background-color: transparent; border-color: var(--tt-hairline); }
 
 /* The dialogs keep their title and buttons in view and scroll what lies between, down to the 820x560 window. */
@@ -14,12 +14,12 @@
 .thread-clear p { margin: 0; }
 .thread-clear__age { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
 .thread-clear__age > span { color: var(--tt-text-2); }
-.thread-clear__heading { margin: 16px 0 6px; color: var(--tt-text); font-size: 13px; font-weight: 600; }
+.thread-clear__heading { margin: 16px 0 6px; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 600; }
 .thread-clear__list { list-style: none; max-height: 168px; overflow: auto; margin: 0; padding: 0; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-card-inset); }
 .thread-clear__list li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 12px; padding: 7px 12px; border-bottom: 1px solid var(--tt-hairline); }
 .thread-clear__list li:last-child { border-bottom: 0; }
 .thread-clear__title { overflow: hidden; color: var(--tt-text); text-overflow: ellipsis; white-space: nowrap; }
-.thread-clear__note { color: var(--tt-text-muted); font-size: 12.5px; text-align: right; }
+.thread-clear__note { color: var(--tt-text-muted); font-size: var(--tt-type-caption); text-align: right; }
 /* A kept thread's reason can run to a clause; it takes the wider share and wraps. */
 .thread-clear__list--kept li { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); }
 .thread-clear__list--kept .thread-clear__note { color: var(--tt-warning-text); }

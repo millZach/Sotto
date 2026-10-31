@@ -8,7 +8,7 @@
   display: block;
   width: 56px;
   height: 56px;
-  border-radius: 13px;
+  border-radius: var(--tt-radius-card);
   box-shadow: 0 12px 28px color-mix(in srgb, var(--tt-accent) 24%, transparent);
 }
 
@@ -34,11 +34,11 @@
 .onboarding-card .onboarding-look__mode {
   min-height: 32px;
   border: 0;
-  border-radius: 4px;
+  border-radius: var(--tt-radius-tag);
   background: transparent;
   padding: 0 14px;
   color: var(--tt-text-muted);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   font-weight: 600;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
@@ -59,7 +59,7 @@
   display: grid;
   gap: 7px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--tt-radius-inset);
   background: var(--tt-card-inset);
   padding: 7px;
   color: var(--tt-text);
@@ -84,7 +84,7 @@
   height: 56px;
   overflow: hidden;
   border: 1px solid;
-  border-radius: 8px;
+  border-radius: var(--tt-radius-row);
 }
 
 .onboarding-look__side {
@@ -107,7 +107,7 @@
   left: 36%;
   width: 44%;
   height: 5px;
-  border-radius: 2px;
+  border-radius: var(--tt-radius-mark);
   opacity: 0.85;
 }
 
@@ -123,12 +123,12 @@
   bottom: 8px;
   width: 34px;
   height: 12px;
-  border-radius: 4px;
+  border-radius: var(--tt-radius-tag);
 }
 
 .onboarding-look__name {
   padding: 0 2px;
-  font-size: 13px;
+  font-size: var(--tt-type-small);
   font-weight: 600;
 }
 
@@ -138,7 +138,7 @@
   display: grid;
   margin: 0;
   overflow: hidden;
-  border-radius: 12px;
+  border-radius: var(--tt-radius-inset);
   background: var(--tt-card-inset);
   padding: 0;
   list-style: none;
@@ -162,7 +162,7 @@
   width: 32px;
   height: 32px;
   place-items: center;
-  border-radius: 9px;
+  border-radius: var(--tt-radius-row);
   background: var(--tt-card);
   color: var(--tt-text);
 }
@@ -179,7 +179,7 @@
 
 .onboarding-agent__name span {
   color: var(--tt-text-muted);
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
 }
 
 .onboarding-agent__name .onboarding-agent__failure {
@@ -192,7 +192,7 @@
   gap: 5px;
   padding: 3px 0;
   color: var(--tt-text-muted);
-  font-size: 12px;
+  font-size: var(--tt-type-caption);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -221,7 +221,7 @@
   justify-content: space-between;
   gap: 12px;
   color: var(--tt-text-muted);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
 }
 
 /* ---- first project and other computers ---- */
@@ -240,7 +240,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  border-radius: 12px;
+  border-radius: var(--tt-radius-inset);
   background: var(--tt-card-inset);
   padding: 12px 14px;
 }
@@ -267,7 +267,7 @@
 .onboarding-host span span {
   overflow: hidden;
   color: var(--tt-text-muted);
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -280,11 +280,11 @@
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  border-radius: 12px;
+  border-radius: var(--tt-radius-inset);
   background: var(--tt-card-inset);
   padding: 14px 16px;
   color: var(--tt-text-muted);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
 }
 
 .onboarding-hosts__empty svg {
@@ -311,7 +311,7 @@
   grid-template-columns: 28px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: start;
-  border-radius: 12px;
+  border-radius: var(--tt-radius-inset);
   background: var(--tt-card-inset);
   padding: 12px 16px;
 }
@@ -329,7 +329,7 @@
 
 .onboarding-phone > li > div > span {
   color: var(--tt-text-muted);
-  font-size: 13px;
+  font-size: var(--tt-type-small);
 }
 
 .onboarding-phone > li > div .tt-button {
@@ -341,9 +341,9 @@
   width: 26px;
   height: 26px;
   place-items: center;
-  border-radius: 4px;
+  border-radius: var(--tt-radius-tag);
   background: var(--tt-card);
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
   font-weight: 700;
 }
 
@@ -353,11 +353,11 @@
   align-items: center;
   gap: 14px;
   margin-top: 4px;
-  border-radius: 10px;
+  border-radius: var(--tt-radius-inset);
   background: var(--tt-card);
   padding: 8px 8px 8px 12px;
   color: var(--tt-text-muted);
-  font-size: 12.5px;
+  font-size: var(--tt-type-caption);
   line-height: 1.4;
 }
 
@@ -365,7 +365,7 @@
   flex: none;
   color: var(--tt-text);
   font-family: var(--tt-font-mono);
-  font-size: 19px;
+  font-size: var(--tt-type-heading);
   font-weight: 500;
   letter-spacing: 0.14em;
   white-space: nowrap;
@@ -381,7 +381,7 @@
   .onboarding-welcome__mark {
     width: 44px;
     height: 44px;
-    border-radius: 10px;
+    border-radius: var(--tt-radius-inset);
   }
 
   .onboarding-look__themes {

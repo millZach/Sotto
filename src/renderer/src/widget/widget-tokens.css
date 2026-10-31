@@ -19,9 +19,27 @@
   --tt-primary: var(--theme-update-foreground);
   --tt-activity: var(--theme-accent);
   --tt-error: var(--theme-error-foreground);
-  --tt-radius-sm: 10px;
-  --tt-radius-md: 12px;
-  --tt-radius-lg: 14px;
+  /* The type and corner scale, the same steps as tokens.css (ADR-0169); scaleTokens.test.ts holds the copy equal. */
+  --tt-type-micro: 11px;
+  --tt-type-caption: 12px;
+  --tt-type-small: 13px;
+  --tt-type-body: 14px;
+  --tt-type-reading: 15px;
+  --tt-type-lead: 16px;
+  --tt-type-heading: 18px;
+  --tt-type-figure: 22px;
+  --tt-type-title: 28px;
+  --tt-radius-mark: 2px;
+  --tt-radius-tag: 4px;
+  --tt-radius-control: 6px;
+  --tt-radius-row: 8px;
+  --tt-radius-inset: 10px;
+  --tt-radius-card: 14px;
+  --tt-radius-overlay: 20px;
+  --tt-radius-full: 50%;
+  --tt-radius-sm: var(--tt-radius-control);
+  --tt-radius-md: var(--tt-radius-inset);
+  --tt-radius-lg: var(--tt-radius-card);
 }
 
 :root,

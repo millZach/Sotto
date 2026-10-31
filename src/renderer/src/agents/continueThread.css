@@ -4,16 +4,16 @@
 
 /* Under the turn that stopped at its limit, in the transcript's column. */
 .continue-now { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: -12px 0 26px; }
-.continue-now__lead { color: var(--tt-text-2); font-size: 13.5px; }
-.continue-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; padding: 0 11px; border: 1px solid var(--tt-field-border); border-radius: 6px;
-  background: transparent; color: var(--tt-text); font: inherit; font-size: 13.5px; white-space: nowrap;
+.continue-now__lead { color: var(--tt-text-2); font-size: var(--tt-type-small); }
+.continue-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; height: 30px; padding: 0 11px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control);
+  background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-small); white-space: nowrap;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .continue-chip:hover:not([aria-disabled='true']), .continue-chip[aria-pressed='true'] { border-color: var(--tt-border-faint); background: var(--tt-hover); }
 .continue-chip:active:not([aria-disabled='true']):not([aria-pressed='true']) { background: var(--tt-hover-strong); }
 .continue-chip[aria-pressed='true'] { border-color: var(--tt-accent-border); }
 /* A provider that cannot take the thread now keeps its place, dashed, with why beside its name. */
 .continue-chip[aria-disabled='true'] { border-style: dashed; color: var(--tt-text-muted); cursor: not-allowed; }
-.continue-chip small { color: var(--tt-text-muted); font-size: 12px; }
+.continue-chip small { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .continue-chip > svg { flex: none; }
 .continue-chip .provider-mark[data-provider='codex'], .continue-note .provider-mark[data-provider='codex'] { color: var(--tt-provider-codex); }
 .continue-chip .provider-mark[data-provider='claude'], .continue-note .provider-mark[data-provider='claude'] { color: var(--tt-provider-claude); }
@@ -23,7 +23,7 @@
 
 /* Over the composer, as Watcher's handover offer is: what sending does, where the new thread works, what it carries. */
 .continue-strip { margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--tt-accent-border); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated);
-  color: var(--tt-text); font-size: 13.5px; line-height: 1.45; }
+  color: var(--tt-text); font-size: var(--tt-type-small); line-height: 1.45; }
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .continue-strip {
     animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1);
@@ -45,30 +45,30 @@
 .continue-strip__chips .thread-chip-menu__list { min-width: 260px; max-width: min(360px, calc(100vw - 48px)); }
 .continue-strip__chips .thread-chip-menu__list button > span { white-space: normal; }
 /* What is fixed for now, said as a chip that opens nothing. */
-.continue-strip__fact { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 1px dashed var(--tt-field-border); border-radius: 4px;
-  color: var(--tt-text-2); font-size: 13px; white-space: nowrap; }
+.continue-strip__fact { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 9px; border: 1px dashed var(--tt-field-border); border-radius: var(--tt-radius-tag);
+  color: var(--tt-text-2); font-size: var(--tt-type-small); white-space: nowrap; }
 .continue-strip__fact > svg { flex: none; }
 .continue-strip__ledger { margin: 8px 0 0 23px; color: var(--tt-text-2); }
-.continue-strip__read { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.continue-strip__read { padding: 0; border: 0; border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
 .continue-strip__read:disabled { color: var(--tt-text-muted); cursor: progress; }
 /* The words themselves, as the new thread receives them: a short scrolling block, so the composer keeps its room. */
 .continue-strip__text { max-height: min(200px, 26vh); margin: 8px 0 0 23px; padding: 10px 12px; overflow: auto; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-sm);
-  background: var(--tt-surface-sunken); color: var(--tt-text); font-size: 13px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+  background: var(--tt-surface-sunken); color: var(--tt-text); font-size: var(--tt-type-small); line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
 .continue-strip__error { margin: 6px 0 0 23px; color: var(--tt-error-text); }
 /* Said once, when the new thread starts narrower than this one, until a permission is chosen below. */
 .continue-strip__permission { margin: 6px 0 0 23px; color: var(--tt-text-2); }
 
 /* In each thread's history: where it continues from, and where it was continued. Sotto's notes, so dashed and quiet. */
 .continue-note { display: flex; align-items: flex-start; gap: 9px; margin: 0 0 22px; padding: 10px 12px; border: 1px dashed var(--tt-border); border-radius: var(--tt-radius-md);
-  color: var(--tt-text-2); font-size: 13.5px; line-height: 1.5; }
+  color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
 .continue-note > svg { flex: none; margin-top: 2px; color: var(--tt-text-muted); }
 .continue-note > p { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .continue-note strong { color: var(--tt-text); font-weight: 600; }
 .continue-note .provider-mark { display: inline-block; margin: 0 4px 0 2px; vertical-align: -2px; }
-.continue-note__open { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.continue-note__open { padding: 0; border: 0; border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 3px; }
 
 /* The line under the composer of the thread that was continued. */
-.continue-composer-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 7px 6px 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
+.continue-composer-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 7px 6px 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.5; }
 .continue-composer-note > svg { flex: none; }
 
 /* A narrow pane: the send says Continue alone, so the chips and the button keep one row. */

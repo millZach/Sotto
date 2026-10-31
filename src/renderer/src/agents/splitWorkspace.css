@@ -50,7 +50,7 @@
    takes its own back. A docked tools panel takes the corner instead and reserves the room itself. */
 .threads-view:not([data-tools='docked']) .thread-panes[data-narrow] .thread-panes__tabs { padding-right: calc(12px + var(--threads-winctl-inset, 0px)); }
 .threads-view .thread-panes[data-narrow] .thread-pane[data-under-controls] { --threads-pane-inset: 0px; }
-.threads-view .thread-panes__tab { display: inline-flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: min(260px, 50%); min-height: 40px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; font-weight: 500; transition: color 120ms ease; }
+.threads-view .thread-panes__tab { display: inline-flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: min(260px, 50%); min-height: 40px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); font-weight: 500; transition: color 120ms ease; }
 .threads-view .thread-panes__tab > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .threads-view .thread-panes__tab:hover { color: var(--tt-text-2); }
 .threads-view .thread-panes__tab:focus-visible { outline-offset: -3px; }
@@ -62,13 +62,13 @@
 .threads-view .thread-panes__drops[data-layout='boxes'] { display: block; }
 .threads-view .thread-panes__drop { position: relative; display: grid; place-items: center; min-width: 0; min-height: 0; }
 .threads-view .thread-panes__drops[data-layout='boxes'] > .thread-panes__drop { position: absolute; }
-.threads-view .thread-panes__drop::before { position: absolute; inset: 10px; border: 1px dashed color-mix(in srgb, var(--tt-activity) 45%, transparent); border-radius: 16px; content: ''; transition: background-color .16s ease, border-color .16s ease; }
+.threads-view .thread-panes__drop::before { position: absolute; inset: 10px; border: 1px dashed color-mix(in srgb, var(--tt-activity) 45%, transparent); border-radius: var(--tt-radius-card); content: ''; transition: background-color .16s ease, border-color .16s ease; }
 .threads-view .thread-panes__drop[data-over]::before { border-style: solid; border-color: var(--tt-activity); background: var(--tt-activity-wash); }
-.threads-view .thread-panes__drop-label { position: relative; padding: 8px 14px; border: 1px solid var(--threads-field-border); border-radius: 6px; background: var(--threads-field); color: var(--tt-text); font-size: 14px; opacity: 0; pointer-events: none; transition: opacity .16s ease; }
+.threads-view .thread-panes__drop-label { position: relative; padding: 8px 14px; border: 1px solid var(--threads-field-border); border-radius: var(--tt-radius-control); background: var(--threads-field); color: var(--tt-text); font-size: var(--tt-type-body); opacity: 0; pointer-events: none; transition: opacity .16s ease; }
 .threads-view .thread-panes__drop[data-over] .thread-panes__drop-label { opacity: 1; }
 /* A preview of a new arrangement covers the panes it rearranges, and names the thread each box keeps. */
 .threads-view .thread-panes__drops[data-preview] { background: var(--tt-surface); }
-.threads-view .thread-panes__drop-name { position: absolute; top: 28px; left: 30px; right: 30px; overflow: hidden; color: var(--tt-text-2); font-size: 14px; text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
+.threads-view .thread-panes__drop-name { position: absolute; top: 28px; left: 30px; right: 30px; overflow: hidden; color: var(--tt-text-2); font-size: var(--tt-type-body); text-overflow: ellipsis; white-space: nowrap; pointer-events: none; }
 
 /* A thread on screen in another pane is outlined in the sidebar; the focused one keeps the filled row. */
 .threads-view .thread-nav__row[data-open] { border-color: var(--threads-selected-border); }

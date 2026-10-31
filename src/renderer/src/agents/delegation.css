@@ -9,15 +9,15 @@
 .thread-message ~ .delegated-work { margin-top: -12px; margin-bottom: 28px; }
 /* In the fold, after any folded reply: the fold's own ledger edge and spacing. */
 .thread-work__body > ul.delegated-work { margin: 4px 0 12px 1px; padding-left: 10px; border-left: 1px solid var(--tt-hairline); }
-.delegated-work__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 2px 8px; min-width: 0; font-size: 14px; }
+.delegated-work__row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 2px 8px; min-width: 0; font-size: var(--tt-type-body); }
 .delegated-work__glyph { flex: none; color: var(--tt-text-muted); }
 /* The name cell does not clip, so a focused link's ring shows whole; the link truncates itself. */
 .delegated-work__name { display: flex; align-items: baseline; gap: 8px; min-width: 0; color: var(--tt-text); font-weight: 500; white-space: nowrap; }
 .delegated-work__name > :last-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .delegated-work__kind { flex: none; color: var(--tt-text-2); font-weight: 400; }
 .delegated-work__refused { color: var(--tt-text); }
-.delegated-work__state { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
-.delegated-work__meta, .delegated-work__line { grid-column: 2 / -1; margin: 0; font-size: 12.5px; line-height: 1.5; }
+.delegated-work__state { display: inline-flex; align-items: center; gap: 6px; font-size: var(--tt-type-small); white-space: nowrap; }
+.delegated-work__meta, .delegated-work__line { grid-column: 2 / -1; margin: 0; font-size: var(--tt-type-caption); line-height: 1.5; }
 .delegated-work__meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 7px; color: var(--tt-text-muted); }
 .delegated-work__meta .provider-mark { color: var(--tt-text-muted); }
 .delegated-work__machine { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
@@ -29,13 +29,13 @@
 .thread-work__delegated { color: var(--tt-text-muted); }
 /* Work that outlives a finished turn's reply, under that reply. */
 .delegated-work-still { display: grid; gap: 8px; margin: -12px 0 28px; padding-top: 10px; border-top: 1px solid var(--tt-hairline); }
-.delegated-work-still__heading { margin: 0; color: var(--tt-text-muted); font-size: 13px; }
+.delegated-work-still__heading { margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .delegated-work-still > .delegated-work { margin: 0; }
 /* A delegated thread's name is a link: underlined, in the text's own colour, opening the thread in this pane. */
-.delegation-link { display: inline; min-width: 0; max-width: 100%; overflow: hidden; padding: 0; border: 0; border-radius: 3px; background: none; color: var(--tt-text); font: inherit; font-weight: 500;
+.delegation-link { display: inline; min-width: 0; max-width: 100%; overflow: hidden; padding: 0; border: 0; border-radius: var(--tt-radius-mark); background: none; color: var(--tt-text); font: inherit; font-weight: 500;
   text-align: left; text-decoration: underline; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); text-overflow: ellipsis; text-underline-offset: 3px; white-space: nowrap; }
 .delegation-link:hover { text-decoration-color: currentColor; }
-.delegation-outcome { display: inline-flex; flex: none; align-items: center; gap: 6px; font-size: 13px; white-space: nowrap; }
+.delegation-outcome { display: inline-flex; flex: none; align-items: center; gap: 6px; font-size: var(--tt-type-small); white-space: nowrap; }
 
 /* An outcome's word and its ring, coloured by what it means for the thread that delegated. */
 .delegated-work__state:is([data-state='working'], [data-state='background']) { color: var(--tt-activity); }
@@ -60,30 +60,30 @@
 /* Waiting on the user: a filled warning dot, still. Starting: the dashed ring of something not yet under way. */
 .delegation-ring[data-state='needs-you'] { border: 0; background: var(--tt-warning-text); mask: none; }
 .delegation-ring[data-state='starting'] { border: 1.5px dashed var(--tt-text-muted); background: none; mask: none; }
-.delegation-ring[data-outcome='stopped'] { width: 9px; height: 9px; border-color: var(--tt-text-muted); border-radius: 2px; }
+.delegation-ring[data-outcome='stopped'] { width: 9px; height: 9px; border-color: var(--tt-text-muted); border-radius: var(--tt-radius-mark); }
 /* An outcome as Sotto last read it on a machine that is not connected (#1310): greyed, and a working ring stands still. */
 .delegated-work__state[data-last-read] { color: var(--tt-text-muted); }
 .delegation-ring[data-last-read]:is([data-outcome='working'], [data-outcome='background']) { background: conic-gradient(var(--tt-text-muted) 0 32%, color-mix(in srgb, var(--tt-text-muted) 22%, transparent) 32% 100%); }
 .delegation-ring[data-last-read]:is([data-outcome='failed'], [data-outcome='unknown'], [data-outcome='paused']) { border-color: var(--tt-text-muted); }
 /* Why a start on another machine began at Ask for approval there, under its row's line. */
-.delegated-work__held { display: flex; grid-column: 2 / -1; gap: 6px; margin: 0; color: var(--tt-text-2); font-size: 12.5px; line-height: 1.5; }
+.delegated-work__held { display: flex; grid-column: 2 / -1; gap: 6px; margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-caption); line-height: 1.5; }
 .delegated-work__held > svg { flex: none; margin-top: 3px; color: var(--tt-warning-text); }
 
 /* A check's reply (#1312, Zach's pick C on October 28, 2026, variant C of docs/prototypes/check-reply-card-prototype.html):
    the reply's first line in quotes as the row's second line, the rest in a tray over the bottom of the transcript on a
    press. Another thread's words wear a dashed edge in field-border, as a brief does in the thread it was sent to. No
    colour anywhere comes from what the reply says. */
-.check-open { flex: none; min-height: 24px; padding: 0; border: 0; border-radius: 2px; background: transparent; color: var(--tt-link); font: inherit; font-size: 12.5px; font-weight: 600;
+.check-open { flex: none; min-height: 24px; padding: 0; border: 0; border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-link); font: inherit; font-size: var(--tt-type-caption); font-weight: 600;
   text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 3px; }
-.check-pre { margin: 0; color: var(--tt-text); font: 12.5px/1.55 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; }
-.check-excerpt { display: flex; grid-column: 2 / -1; align-items: baseline; gap: 6px; min-width: 0; margin: 1px 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
+.check-pre { margin: 0; color: var(--tt-text); font: var(--tt-type-caption)/1.55 var(--tt-font-mono); white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2; }
+.check-excerpt { display: flex; grid-column: 2 / -1; align-items: baseline; gap: 6px; min-width: 0; margin: 1px 0; color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
 .check-excerpt__who { flex: none; color: var(--tt-text-muted); }
 .check-excerpt q { min-width: 0; overflow: hidden; color: var(--tt-text-2); text-overflow: ellipsis; white-space: nowrap; }
-.check-excerpt__cut { flex: none; color: var(--tt-text-muted); font-size: 12.5px; white-space: nowrap; }
+.check-excerpt__cut { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
 .check-excerpt .check-open { margin-left: 4px; }
 /* Its reply was not kept here, or a press could not read it just now: said in a sentence. */
-.check-unkept, .check-failed { grid-column: 2 / -1; margin: 1px 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.5; }
-.delegated-work__row[data-tray-open] { border-radius: 6px; box-shadow: 0 0 0 4px var(--tt-hover), inset 0 0 0 100vmax var(--tt-hover); }
+.check-unkept, .check-failed { grid-column: 2 / -1; margin: 1px 0; color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.5; }
+.delegated-work__row[data-tray-open] { border-radius: var(--tt-radius-control); box-shadow: 0 0 0 4px var(--tt-hover), inset 0 0 0 100vmax var(--tt-hover); }
 .check-tray { position: absolute; bottom: var(--thread-compose-height, 0px); left: max(24px, calc((100% - 760px) / 2)); right: max(24px, calc((100% - 760px) / 2)); z-index: 3;
   display: flex; flex-direction: column; max-height: min(400px, 74%); border: 1px solid var(--tt-field-border); border-bottom: 0; border-radius: var(--tt-radius-lg) var(--tt-radius-lg) 0 0;
   background: var(--tt-surface-elevated); box-shadow: var(--tt-shadow-lg); }
@@ -91,15 +91,15 @@
 .check-tray:focus { outline: none; }
 .check-tray:focus-visible { outline: 3px solid var(--tt-focus-ring); outline-offset: -3px; }
 .check-tray__head { display: flex; flex: none; align-items: flex-start; gap: 10px; padding: 10px 8px 8px 14px; border-bottom: 1px solid var(--tt-hairline); }
-.check-tray__who { display: grid; flex: 1; gap: 1px; min-width: 0; margin: 0; color: var(--tt-text-2); font-size: 12.5px; font-weight: 400; }
-.check-tray__who b { overflow: hidden; color: var(--tt-text); font-size: 13.5px; font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
+.check-tray__who { display: grid; flex: 1; gap: 1px; min-width: 0; margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 400; }
+.check-tray__who b { overflow: hidden; color: var(--tt-text); font-size: var(--tt-type-small); font-weight: 500; text-overflow: ellipsis; white-space: nowrap; }
 .check-tray__close { display: grid; flex: none; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: var(--tt-radius-sm); background: transparent; color: var(--tt-text-2); }
 .check-tray__close:hover { background: var(--tt-hover); color: var(--tt-text); }
-.check-tray__text { flex: 1 1 auto; min-height: 0; overflow: auto; margin: 0 4px 0 14px; padding: 10px 10px 10px 14px; border-left: 2px dashed var(--tt-field-border); font-size: 12.5px; scrollbar-width: thin; }
+.check-tray__text { flex: 1 1 auto; min-height: 0; overflow: auto; margin: 0 4px 0 14px; padding: 10px 10px 10px 14px; border-left: 2px dashed var(--tt-field-border); font-size: var(--tt-type-caption); scrollbar-width: thin; }
 .check-tray__text:focus-visible { outline: 2px solid var(--tt-focus-ring); outline-offset: -2px; }
 /* A reply that scrolls fades its last line while more of it is below. */
 .check-tray__text[data-more] { mask-image: linear-gradient(to bottom, currentColor calc(100% - 1.8em), transparent); }
-.check-tray__foot { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 2px 14px; margin: 0; padding: 7px 14px 9px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: 12.5px; }
+.check-tray__foot { display: flex; flex: none; flex-wrap: wrap; align-items: center; gap: 2px 14px; margin: 0; padding: 7px 14px 9px; border-top: 1px solid var(--tt-hairline); color: var(--tt-text-2); font-size: var(--tt-type-caption); }
 /* The transcript's own narrow column: the tray keeps to it. */
 @media (max-width: 980px) { .check-tray { left: 18px; right: 18px; } }
 @container thread-pane (max-width: 720px) or ((max-height: 600px) and (max-width: 1000px)) { .threads-view .thread-pane .check-tray { left: 18px; right: 18px; } }
@@ -118,13 +118,13 @@
 
 /* "Delegated by" the thread that started this one, under the header and in the transcript's column. */
 .delegated-by { display: flex; flex: none; align-items: center; gap: 8px; min-width: 0; margin: 0 max(24px, calc((100% - 760px) / 2)); padding: 2px 0 10px;
-  box-shadow: inset 0 -1px 0 var(--tt-hairline); color: var(--tt-text-muted); font-size: 13px; }
+  box-shadow: inset 0 -1px 0 var(--tt-hairline); color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .delegated-by > svg { flex: none; }
 .delegated-by > span:first-of-type { display: flex; align-items: baseline; gap: 4px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .delegated-by__gone { color: var(--tt-text-2); }
 
 /* The line under the composer: what Stop also stops, or what the user's turn in a delegated thread does. */
-.delegation-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 7px 6px 0; color: var(--tt-text-muted); font-size: 12px; line-height: 1.5; }
+.delegation-note { display: flex; align-items: center; gap: 6px; margin: 0; padding: 7px 6px 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.5; }
 .delegation-note > svg { flex: none; }
 .delegation-note > span { min-width: 0; }
 
@@ -133,7 +133,7 @@
    stands that opens the list, and a short row per angle with its ring, its title, its word and Stop while it works. The
    list is indented to the lead's title, so it reads as the lead's own. */
 .thread-swarm { display: grid; gap: 1px; margin: -1px 0 3px; padding-left: 26px; list-style: none; }
-.thread-swarm__toggle { display: flex; align-items: baseline; gap: 6px; min-width: 0; min-height: 24px; padding: 2px 8px 2px 4px; border: 0; border-radius: 6px; background: none; color: var(--tt-text-muted); font: inherit; font-size: 12px; text-align: left; }
+.thread-swarm__toggle { display: flex; align-items: baseline; gap: 6px; min-width: 0; min-height: 24px; padding: 2px 8px 2px 4px; border: 0; border-radius: var(--tt-radius-control); background: none; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-caption); text-align: left; }
 .thread-swarm__toggle:hover:not(:disabled) { background: var(--threads-hover); color: var(--tt-text-2); }
 .thread-swarm__toggle:disabled { cursor: default; }
 .thread-swarm__toggle:disabled .thread-swarm__chevron { visibility: hidden; }
@@ -141,13 +141,13 @@
 .thread-swarm[data-open] .thread-swarm__chevron { rotate: 90deg; }
 .thread-swarm__facts { min-width: 0; line-height: 1.45; font-variant-numeric: tabular-nums; }
 .thread-swarm__angles { display: grid; gap: 1px; margin: 0 0 0 10px; padding: 0 0 0 8px; border-left: 1px solid var(--tt-hairline); list-style: none; }
-.thread-swarm__angle { display: flex; align-items: center; min-width: 0; border: 1px solid transparent; border-radius: 6px; }
+.thread-swarm__angle { display: flex; align-items: center; min-width: 0; border: 1px solid transparent; border-radius: var(--tt-radius-control); }
 .thread-swarm__angle:hover { background: var(--threads-hover); }
 .thread-swarm__angle[data-current] { background: var(--threads-selected); border-color: var(--threads-selected-border); }
-.thread-swarm__open { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 8px; flex: 1; min-width: 0; min-height: 28px; padding: 3px 8px; border: 0; border-radius: 6px; background: none; color: var(--tt-text-2); font: inherit; font-size: 13px; text-align: left; }
+.thread-swarm__open { display: grid; grid-template-columns: 10px minmax(0, 1fr) auto; align-items: center; gap: 8px; flex: 1; min-width: 0; min-height: 28px; padding: 3px 8px; border: 0; border-radius: var(--tt-radius-control); background: none; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); text-align: left; }
 .thread-swarm__angle[data-current] .thread-swarm__open { color: var(--tt-text); }
 .thread-swarm__title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-swarm__state { color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; }
+.thread-swarm__state { color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
 .thread-swarm__state[data-outcome='working'], .thread-swarm__state[data-outcome='background'] { color: var(--tt-activity); }
 .thread-swarm__state[data-outcome='needs'] { color: var(--tt-warning-text); }
 .thread-swarm__state:is([data-outcome='failed'], [data-outcome='refused']) { color: var(--tt-error-text); }

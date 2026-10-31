@@ -31,13 +31,13 @@
   margin: 0;
   overflow: hidden;
   color: var(--tt-text);
-  font-size: 14px;
+  font-size: var(--tt-type-body);
   font-weight: 600;
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.visual-card__kind { flex: none; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: 12px; white-space: nowrap; }
+.visual-card__kind { flex: none; color: var(--tt-text-muted); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); white-space: nowrap; }
 .visual-card__actions { display: flex; flex: none; align-items: center; gap: 2px; }
 /* A narrow column keeps the title and the controls; the kind is in the image's name and the source's label. */
 @container (max-width: 360px) { .visual-card__kind { display: none; } }
@@ -60,7 +60,7 @@
   margin: 0;
   padding: 11px 14px 0;
   color: var(--tt-text-muted);
-  font-size: 14px;
+  font-size: var(--tt-type-body);
   line-height: 1.45;
 }
 .visual-card__notice[data-tone='problem'] { color: var(--tt-text-2); }
@@ -71,7 +71,7 @@
   padding: 2px 18px 14px;
   border-top: 1px solid var(--tt-hairline);
   color: var(--tt-text-2);
-  font-size: 15px;
+  font-size: var(--tt-type-reading);
   line-height: 1.6;
   overflow-wrap: anywhere;
 }
@@ -82,7 +82,7 @@
 .visual-card__steps li::marker { color: var(--tt-text-muted); font-variant-numeric: tabular-nums; }
 
 /* Read all swaps the walkthrough for the intro and the numbered steps, and reads Step through while they show. */
-.visual-card__read-all { min-height: 30px; margin-right: 4px; padding: 0 12px; font-size: 13px; }
+.visual-card__read-all { min-height: 30px; margin-right: 4px; padding: 0 12px; font-size: var(--tt-type-small); }
 .visual-card__read-all[data-reading-all] { border-color: transparent; background: var(--tt-hover-strong); color: var(--tt-text); }
 
 /* A walkthrough's step pictures are layered in one place; each has the drawing's size. The fade's length,

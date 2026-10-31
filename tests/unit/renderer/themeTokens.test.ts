@@ -23,6 +23,7 @@ import {
 } from '../../fixtures/renderer/themeTokenResolver'
 import { PAINTED_TEXT_PAIRS, paintedContrast, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
 import { visionDistance } from '../../fixtures/renderer/colourVision'
+import { scaleSteps } from '../../fixtures/renderer/scaleSteps'
 
 const tokensCss = readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8')
 const tokenBlocks = parseTokenBlocks(tokensCss)
@@ -376,9 +377,15 @@ describe('main-window theme tokens', () => {
     expect(sheets.length).toBeGreaterThan(60)
     // The floating widget keeps its capsule until Zach decides its shape; it is the one sheet this rule leaves alone.
     const undecided = new Set([join(root, 'widget', 'widget.css')])
+    // Corners are written as steps of the scale (ADR-0169), so each is read at the size its step draws.
+    const steps = scaleSteps(tokensCss)
+    const drawn = (value: string): string => value.replace(/var\((--tt-radius-[a-z]+)\)/gu, (step, name: string) => {
+      const size = steps.get(name)
+      return size === undefined ? step : drawn(size)
+    })
     const capsules: string[] = []
     for (const path of sheets) {
-      const css = readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
+      const css = drawn(readFileSync(path, 'utf8').replace(/\/\*[\s\S]*?\*\//gu, ''))
       expect(css.match(/\b9{3,}px|--tt-radius-pill/gu) ?? [], relative(process.cwd(), path)).toEqual([])
       if (undecided.has(path)) continue
       // A corner of 50 pixels or more, or a corner at least half a rule's own height on anything but a square, rounds

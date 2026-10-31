@@ -5,7 +5,7 @@
 .subagent-item { margin-left: calc(var(--subagent-depth, 0) * 18px); }
 .subagent-item + .subagent-item { border-top: 1px solid var(--tt-hairline); }
 .subagent-item[data-nested] { border-top: 0; border-left: 1px solid var(--tt-hairline); padding-left: 8px; }
-.subagent-head { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: start; column-gap: 10px; width: 100%; min-height: 94px; padding: 16px 6px 16px 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.subagent-head { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: start; column-gap: 10px; width: 100%; min-height: 94px; padding: 16px 6px 16px 4px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text); font: inherit; text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .subagent-head:hover { background: var(--tt-hover); }
 .subagent-head:active:not(:disabled) { background: var(--tt-hover-strong); }
 .subagent-dot { width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: var(--tt-text-muted); }
@@ -13,27 +13,27 @@
 .subagent-dot[data-status='failed'] { background: var(--tt-error); }
 .subagent-dot[data-status='unknown'] { outline: 1px solid var(--tt-text-muted); box-shadow: inset 0 0 0 1.5px var(--tt-sidebar); }
 .subagent-main { min-width: 0; }
-.subagent-title { display: block; overflow: hidden; font-size: 15px; font-weight: 550; line-height: 20px; white-space: nowrap; text-overflow: ellipsis; }
-.subagent-description { display: block; overflow: hidden; margin-top: 6px; color: var(--tt-text-muted); font-size: 13px; line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
-.subagent-meta { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 8px; color: var(--tt-text-muted); font-size: 12px; line-height: 18px; }
+.subagent-title { display: block; overflow: hidden; font-size: var(--tt-type-reading); font-weight: 550; line-height: 20px; white-space: nowrap; text-overflow: ellipsis; }
+.subagent-description { display: block; overflow: hidden; margin-top: 6px; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 20px; text-overflow: ellipsis; white-space: nowrap; }
+.subagent-meta { display: flex; align-items: center; gap: 8px; min-width: 0; margin-top: 8px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 18px; }
 .subagent-model { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .subagent-run { white-space: nowrap; }
-.subagent-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; padding-top: 2px; color: var(--tt-text-muted); font-size: 12px; }
+.subagent-right { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; padding-top: 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .subagent-time { display: flex; align-items: center; gap: 7px; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .subagent-time svg { transition: transform 160ms ease; }
 .subagent-head[aria-expanded='true'] .subagent-time svg { transform: rotate(90deg); }
 .subagent-details { margin: 0 5px 10px 22px; padding: 4px 0 12px; }
-.subagent-details h3 { margin: 12px 0 5px; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
-.subagent-details p { margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.subagent-details h3 { margin: 12px 0 5px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; }
+.subagent-details p { margin: 0; color: var(--tt-text-2); font-size: var(--tt-type-body); line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .subagent-result { border-left: 2px solid var(--tt-hairline); padding-left: 12px; }
 .subagent-previous { margin-top: 17px; border-top: 1px solid var(--tt-hairline); padding-top: 12px; }
-.subagent-previous summary { color: var(--tt-text-muted); font-size: 13px; overflow-wrap: anywhere; }
+.subagent-previous summary { color: var(--tt-text-muted); font-size: var(--tt-type-small); overflow-wrap: anywhere; }
 .subagents-older { margin-top: 18px; }
 .subagents-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 190px; padding: 30px; color: var(--tt-text-muted); text-align: center; }
-.subagents-empty p { margin: 0; font-size: 14px; }
+.subagents-empty p { margin: 0; font-size: var(--tt-type-body); }
 /* A workflow stays one row (#339): a strip of one segment per agent under its title, and its count. */
 .subagent-strip { display: flex; gap: 3px; min-width: 0; height: 6px; margin-top: 10px; overflow: hidden; }
-.subagent-strip > i { flex: 1 1 0; min-width: 0; border-radius: 3px; background: var(--tt-border); }
+.subagent-strip > i { flex: 1 1 0; min-width: 0; border-radius: var(--tt-radius-mark); background: var(--tt-border); }
 .subagent-strip > i[data-status='running'] { background: var(--tt-activity); }
 .subagent-strip > i[data-status='completed'] { background: var(--tt-text-muted); }
 .subagent-strip > i[data-status='failed'] { background: var(--tt-error); }
@@ -45,18 +45,18 @@
 .subagents-back__rule { flex: none; width: 1px; height: 18px; background: var(--tt-hairline); }
 .subagent-workflow { margin: 4px 6px 10px 4px; padding: 6px 0 16px; border-bottom: 1px solid var(--tt-hairline); }
 .subagent-workflow > .subagent-strip { height: 8px; margin: 0 0 10px; }
-.subagent-workflow__facts { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0; color: var(--tt-text-muted); font-size: 12px; line-height: 18px; font-variant-numeric: tabular-nums; }
+.subagent-workflow__facts { display: flex; flex-wrap: wrap; gap: 4px 10px; margin: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 18px; font-variant-numeric: tabular-nums; }
 .subagent-workflow__facts > strong { color: var(--tt-text-2); font-weight: 500; }
 .subagent-workflow__facts > span { overflow-wrap: anywhere; }
 .subagent-details.subagent-workflow__details { margin: 4px 0 0; padding: 0; animation: none; }
-.subagent-workflow__heading { margin: 4px 4px 0; color: var(--tt-text-muted); font-size: 12px; font-weight: 600; }
-.subagent-workflow__empty { margin: 12px 4px; color: var(--tt-text-muted); font-size: 14px; }
+.subagent-workflow__heading { margin: 4px 4px 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; }
+.subagent-workflow__empty { margin: 12px 4px; color: var(--tt-text-muted); font-size: var(--tt-type-body); }
 /* Delegated threads beside the provider's agents (ADR-0081, variant B of the roster prototype): one list, newest start
    first. A 16-pixel lead holds a delegated thread's provider mark or an agent's dot, so the two line up. */
 .subagents-list[data-mixed] .subagent-head { grid-template-columns: 16px minmax(0, 1fr) auto; }
 .subagents-list[data-mixed] .subagent-dot { justify-self: center; }
 .subagents-list[data-mixed] .subagent-details { margin-left: 30px; }
-.delegated-row { --delegated-needs: color-mix(in srgb, var(--tt-attention) 7%, transparent); position: relative; border-radius: 6px; }
+.delegated-row { --delegated-needs: color-mix(in srgb, var(--tt-attention) 7%, transparent); position: relative; border-radius: var(--tt-radius-control); }
 /* A delegated thread's row: title and time, then its brief and its outcome, then its facts across the row's width, which
    leave the open control its corner. */
 .subagent-item--thread .subagent-head { grid-template-areas: 'lead title time' 'lead desc status' 'lead meta meta'; }
@@ -65,12 +65,12 @@
 .subagent-item--thread .delegated-row__title-line { grid-area: title; }
 .subagent-item--thread .subagent-description { grid-area: desc; }
 .subagent-item--thread .subagent-meta { grid-area: meta; min-height: 26px; }
-.subagent-item--thread .subagent-time { grid-area: time; justify-self: end; padding-top: 2px; color: var(--tt-text-muted); font-size: 12px; }
-.subagent-item--thread .delegated-row__status { grid-area: status; justify-self: end; align-self: center; margin: 6px 0 0 10px; font-size: 12px; line-height: 20px; }
+.subagent-item--thread .subagent-time { grid-area: time; justify-self: end; padding-top: 2px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
+.subagent-item--thread .delegated-row__status { grid-area: status; justify-self: end; align-self: center; margin: 6px 0 0 10px; font-size: var(--tt-type-caption); line-height: 20px; }
 .delegated-row__mark { display: grid; place-items: center; height: 20px; color: var(--tt-text-2); }
 .delegated-row__title-line { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .delegated-row__title-line .subagent-title { min-width: 0; }
-.delegated-row__marker { flex: none; padding: 0 6px; border: 1px solid transparent; border-radius: 4px; background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: 11px; font-weight: 500; line-height: 16px; }
+.delegated-row__marker { flex: none; padding: 0 6px; border: 1px solid transparent; border-radius: var(--tt-radius-tag); background: var(--tt-surface-sunken); color: var(--tt-text-2); font-size: var(--tt-type-micro); font-weight: 500; line-height: 16px; }
 /* The meta line leaves room for the open control, which sits at the row's bottom right as a sibling of its expander. */
 .delegated-row .subagent-meta { padding-right: 132px; }
 .delegated-row__status { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
@@ -87,13 +87,13 @@
 .delegated-row__status[data-outcome='finished'] { color: var(--tt-text-2); }
 .delegated-row__status .delegation-ring[data-outcome='finished'] { border: 1.5px solid var(--tt-success); background: radial-gradient(circle, var(--tt-success) 0 28%, transparent 30%); }
 .delegated-row__open { position: absolute; right: 6px; bottom: 16px; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border: 1px solid var(--tt-border);
-  border-radius: 6px; background: var(--tt-surface); color: var(--tt-text-2); font: inherit; font-size: 12.5px; white-space: nowrap;
+  border-radius: var(--tt-radius-control); background: var(--tt-surface); color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-caption); white-space: nowrap;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .delegated-row__open:hover { background: var(--tt-hover-strong); color: var(--tt-text); }
 .delegated-row__open[data-needs] { border-color: var(--tt-attention); color: var(--tt-text); }
 .delegated-row__open-short { display: none; }
-.delegated-row__shown { position: absolute; right: 8px; bottom: 20px; display: inline-flex; align-items: center; gap: 5px; color: var(--tt-text-2); font-size: 12px; white-space: nowrap; pointer-events: none; }
+.delegated-row__shown { position: absolute; right: 8px; bottom: 20px; display: inline-flex; align-items: center; gap: 5px; color: var(--tt-text-2); font-size: var(--tt-type-caption); white-space: nowrap; pointer-events: none; }
 .delegated-row__shown > svg { color: var(--tt-activity); }
 /* A delegated thread waiting on you: the attention edge and a faint tint. The one in the pane: the selected tone. */
 .delegated-row[data-needs] { background: var(--delegated-needs); box-shadow: inset 2px 0 0 var(--tt-attention); }
@@ -103,21 +103,21 @@
    that machine's rows under it. A machine that is not connected says so beside its count, and a notice above the roster
    says its threads are as Sotto last read them. */
 .roster-machine + .roster-machine { margin-top: 18px; }
-.roster-machine__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 2px 4px 6px; color: var(--tt-text-muted); font-size: 13px; font-weight: 400; line-height: 20px; }
+.roster-machine__head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; margin: 2px 4px 6px; color: var(--tt-text-muted); font-size: var(--tt-type-small); font-weight: 400; line-height: 20px; }
 .roster-machine__name { display: inline-flex; align-items: center; gap: 6px; color: var(--tt-text); font-weight: 600; }
 .roster-machine__name > svg { flex: none; align-self: center; color: var(--tt-accent-text, var(--tt-text-muted)); }
 .roster-machine__off { color: var(--tt-warning-text); }
-.roster-machine__note { margin: 0 4px 8px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.5; }
-.roster-notice { display: flex; gap: 8px; margin: 0 0 14px; padding: 10px 12px; border-radius: 6px; background: var(--tt-card); color: var(--tt-text); font-size: 13px; line-height: 1.5; }
+.roster-machine__note { margin: 0 4px 8px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.5; }
+.roster-notice { display: flex; gap: 8px; margin: 0 0 14px; padding: 10px 12px; border-radius: var(--tt-radius-control); background: var(--tt-card); color: var(--tt-text); font-size: var(--tt-type-small); line-height: 1.5; }
 .roster-notice > svg { flex: none; margin-top: 2px; color: var(--tt-warning-text); }
 /* A row whose machine is not connected keeps its last outcome, greyed and still. */
 .delegated-row__status[data-last-read] { color: var(--tt-text-muted); }
 .delegated-row:is([data-needs], [data-shown]) .delegated-row__status[data-last-read] { color: var(--tt-text-2); }
 /* Why its start began at Ask for approval on its machine: a line of its own between the brief and the facts. */
 .subagent-item--thread .subagent-head[data-held] { grid-template-areas: 'lead title time' 'lead desc status' 'lead held held' 'lead meta meta'; }
-.delegated-row__held { grid-area: held; display: flex; gap: 6px; min-width: 0; margin-top: 6px; color: var(--tt-text-2); font-size: 12px; line-height: 18px; }
+.delegated-row__held { grid-area: held; display: flex; gap: 6px; min-width: 0; margin-top: 6px; color: var(--tt-text-2); font-size: var(--tt-type-caption); line-height: 18px; }
 .delegated-row__held > svg { flex: none; margin-top: 2px; color: var(--tt-warning-text); }
-.subagent-details p.delegated-row__source { margin-bottom: 4px; color: var(--tt-text-muted); font-size: 12.5px; }
+.subagent-details p.delegated-row__source { margin-bottom: 4px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .subagent-details:not(.subagent-workflow__details) { animation: subagent-reveal .14s ease-out; }
   :root:not([data-reduced-motion='on']) .subagent-strip > i[data-status='running'] { animation: subagent-breathe 1.6s ease-in-out infinite alternate; }

@@ -1,7 +1,7 @@
 /* Settings > Hosts & phones: the switch, the setup checklist, Pair a phone and the paired phones (ADR-0033). */
 .phones-settings { gap: 22px; }
-.phones-mono { font-family: var(--tt-font-mono); font-size: 13px; font-weight: 500; color: var(--tt-text); overflow-wrap: anywhere; }
-.phones-how b.phones-mono { font-size: 13.5px; font-weight: 500; }
+.phones-mono { font-family: var(--tt-font-mono); font-size: var(--tt-type-small); font-weight: 500; color: var(--tt-text); overflow-wrap: anywhere; }
+.phones-how b.phones-mono { font-size: var(--tt-type-small); font-weight: 500; }
 .phones-needs-host { align-items: center; margin-top: 0; }
 .phones-needs-host > p { flex: 1; min-width: 0; }
 .phones-needs-host > .tt-button { flex: 0 0 auto; }
@@ -22,33 +22,33 @@
 .phones-steps [data-step='ok'] .phones-step__mark { color: var(--tt-success); }
 .phones-steps [data-step='failed'] .phones-step__mark { color: var(--tt-error); }
 .phones-step__copy { flex: 1 1 260px; min-width: 0; }
-.phones-step__copy > b { display: block; font-size: 15px; font-weight: 500; line-height: 1.35; }
+.phones-step__copy > b { display: block; font-size: var(--tt-type-reading); font-weight: 500; line-height: 1.35; }
 .phones-steps [data-step='waiting'] .phones-step__copy > b { color: var(--tt-text-muted); }
-.hosts-settings .phones-step__copy > p { margin: 3px 0 0; font-size: 13px; line-height: 1.5; }
+.hosts-settings .phones-step__copy > p { margin: 3px 0 0; font-size: var(--tt-type-small); line-height: 1.5; }
 .hosts-settings .phones-steps [data-step='failed'] .phones-step__copy > p { color: var(--tt-text); }
-.phones-address { font-size: 12.5px; color: var(--tt-text-muted); }
+.phones-address { font-size: var(--tt-type-caption); color: var(--tt-text-muted); }
 .phones-step__actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 6px; margin-left: auto; }
 .phones-steps > li > .tt-button { margin-left: auto; }
 
 /* Pair a phone: the steps on the left, the code on the right. */
 .phones-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(250px, 320px); align-items: stretch; gap: 24px; }
-.phones-how { display: grid; gap: 6px; margin: 10px 0 0; padding: 0 0 0 20px; color: var(--tt-text-muted); font-size: 14px; }
+.phones-how { display: grid; gap: 6px; margin: 10px 0 0; padding: 0 0 0 20px; color: var(--tt-text-muted); font-size: var(--tt-type-body); }
 .phones-how b { color: var(--tt-text); font-weight: 600; }
-.hosts-settings .phones-note { margin-top: 10px; font-size: 13px; }
+.hosts-settings .phones-note { margin-top: 10px; font-size: var(--tt-type-small); }
 .phones-code { display: grid; align-content: center; justify-items: start; gap: 12px; min-width: 0; min-height: 150px; border: 1px solid transparent; border-radius: var(--tt-radius-lg); background: var(--tt-card); padding: 18px 20px; }
-.hosts-settings .phones-code > p { margin: 0; font-size: 13px; }
-.phones-code__value { color: var(--tt-text); font: 600 36px/1 var(--tt-font-mono); letter-spacing: 0.08em; white-space: nowrap; }
+.hosts-settings .phones-code > p { margin: 0; font-size: var(--tt-type-small); }
+.phones-code__value { color: var(--tt-text); font: 600 var(--tt-type-title)/1 var(--tt-font-mono); letter-spacing: 0.08em; white-space: nowrap; }
 .phones-code__value > i { display: inline-block; width: 0.45em; }
-.phones-count { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--tt-text-muted); font-size: 13px; }
+.phones-count { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .phones-count b { color: var(--tt-text); font-weight: 600; font-variant-numeric: tabular-nums; }
-.phones-count__bar { position: relative; flex: 0 0 auto; width: 120px; height: 3px; overflow: hidden; border-radius: 2px; background: var(--tt-hairline); }
-.phones-count__bar > i { position: absolute; inset: 0 auto 0 0; border-radius: 2px; background: var(--tt-accent); }
+.phones-count__bar { position: relative; flex: 0 0 auto; width: 120px; height: 3px; overflow: hidden; border-radius: var(--tt-radius-mark); background: var(--tt-hairline); }
+.phones-count__bar > i { position: absolute; inset: 0 auto 0 0; border-radius: var(--tt-radius-mark); background: var(--tt-accent); }
 .phones-code__actions { display: flex; flex-wrap: wrap; gap: 4px; margin-left: -14px; }
 
 /* Paired phones reuse the host rows, with Remove their one control. */
 .phones-list { margin-top: 10px; }
 .phones-settings .phones-name { margin-top: 0; }
-.hosts-settings .phones-grant { margin-top: 1px; font-size: 13px; }
+.hosts-settings .phones-grant { margin-top: 1px; font-size: var(--tt-type-small); }
 /* The name phones show is a row on its own card, as Settings' fields are. */
 .phones-live { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
@@ -66,26 +66,26 @@
 .host-phones-approval { align-items: flex-start; }
 .host-phones-approval__copy { display: grid; flex: 1; gap: 10px; min-width: 0; }
 .host-phones-approval__actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; }
-.host-phones-approval__actions > .tt-button { min-height: 32px; padding: 0 14px; font-size: 13px; }
+.host-phones-approval__actions > .tt-button { min-height: 32px; padding: 0 14px; font-size: var(--tt-type-small); }
 /* Before the host is read, every check waits, and the switch is not shown. */
 .host-phones-unread { border-top: 1px solid var(--tt-hairline); }
-.hosts-settings .host-phones-unread .phones-step__copy > p { margin: 2px 0 0; font-size: 13px; }
+.hosts-settings .host-phones-unread .phones-step__copy > p { margin: 2px 0 0; font-size: var(--tt-type-small); }
 .host-phones .phones-switch { padding: 12px 0; border-block: 1px solid var(--tt-hairline); }
 .host-phones-steps { border-top: 0; }
 .host-phones-steps > li { gap: 6px 12px; padding: 10px 0; }
 .host-phones-steps > li:last-child { border-bottom: 0; }
-.host-phones-steps .phones-step__copy > b { font-size: 14px; }
+.host-phones-steps .phones-step__copy > b { font-size: var(--tt-type-body); }
 .host-phones-command { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin-top: 6px; }
 .host-phones-command > code { padding: 4px 8px; border-radius: var(--tt-radius-sm); background: var(--tt-surface-sunken); }
 .host-phones-pair { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; }
-.hosts-settings .host-phones-pair > p { flex: 1 1 240px; margin: 0; font-size: 13px; }
+.hosts-settings .host-phones-pair > p { flex: 1 1 240px; margin: 0; font-size: var(--tt-type-small); }
 .host-phones-code { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-lg); background: var(--tt-surface-sunken); padding: 12px 14px; }
-.host-phones-code .phones-code__value { font-size: 28px; }
+.host-phones-code .phones-code__value { font-size: var(--tt-type-title); }
 .host-phones-code__copy { display: grid; flex: 1 1 220px; gap: 6px; min-width: 0; }
-.hosts-settings .host-phones-code__copy > p { margin: 0; color: var(--tt-text); font-size: 13px; }
+.hosts-settings .host-phones-code__copy > p { margin: 0; color: var(--tt-text); font-size: var(--tt-type-small); }
 .host-phones-code__actions { display: flex; flex-wrap: wrap; gap: 4px; }
-.host-phones-list > h3 { font-size: 14px; color: var(--tt-text-muted); }
-.hosts-settings .host-phones-list > p { font-size: 13px; }
+.host-phones-list > h3 { font-size: var(--tt-type-body); color: var(--tt-text-muted); }
+.hosts-settings .host-phones-list > p { font-size: var(--tt-type-small); }
 .host-phones-list .phones-list { margin-top: 6px; }
 .host-phones-list .hosts-row { padding: 10px 0; }
 .host-phones-remove { flex-wrap: wrap; align-items: center; margin: 4px 0 10px; }

@@ -5,7 +5,7 @@
    from the column's edges by --thread-nav-inset, so the same parts sit in the same boxes in all of them. */
 .thread-nav { --thread-nav-inset: 10px; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--tt-hairline); padding: 0; background: var(--threads-sidebar); }
 .thread-nav__head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 6px 12px 8px; }
-.thread-nav__head h1 { margin: 0; font-size: 18px; font-weight: 500; letter-spacing: -.35px; }
+.thread-nav__head h1 { margin: 0; font-size: var(--tt-type-heading); font-weight: 500; letter-spacing: -.35px; }
 .thread-nav__head-actions { display: flex; gap: 2px; }
 .thread-nav__head .tt-button { width: 36px; min-height: 36px; padding: 0; }
 
@@ -22,72 +22,72 @@
 /* The brand: the mark with the wordmark beside it (a thread row's provider mark is .thread-nav__mark, further
    down). On macOS the traffic lights take the left end of the row and no mark sits beside them: a spacer stands
    in the brand's place and keeps the actions at the row's right end. */
-.thread-nav__brand { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 8px; min-width: 18px; margin-right: auto; color: var(--tt-text); font-size: 14px; font-weight: 600; letter-spacing: -0.1px; }
+.thread-nav__brand { display: inline-flex; flex: 0 1 auto; align-items: center; gap: 8px; min-width: 18px; margin-right: auto; color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 600; letter-spacing: -0.1px; }
 .thread-nav__spacer { flex: 1 1 auto; min-width: 0; }
 .thread-nav__glyph { flex: none; width: 18px; height: 18px; }
 /* Sotto Owl: the mark alone as the brand, larger, in the room the wordmark leaves. */
 .thread-nav__tile { flex: none; width: 24px; height: 24px; }
 .thread-nav__brand:has(.thread-nav__tile) { min-width: 24px; }
 .thread-nav__wordmark { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-nav__top .tt-button { width: 28px; min-height: 28px; padding: 0; border-radius: 7px; -webkit-app-region: no-drag; }
+.thread-nav__top .tt-button { width: 28px; min-height: 28px; padding: 0; border-radius: var(--tt-radius-control); -webkit-app-region: no-drag; }
 .thread-nav__top .tt-button > svg { flex: none; }
 
 /* The room switch in the foot, and Watcher's floating switch, which draws the same one. */
 .thread-nav__seg { display: inline-flex; flex: none; justify-content: center; gap: 6px; -webkit-app-region: no-drag; }
 
-.thread-nav__error { display: flex; align-items: flex-start; gap: 6px; margin: 0 8px 8px; padding: 8px 6px 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; color: var(--threads-warning-text); font-size: 13px; line-height: 1.45; }
+.thread-nav__error { display: flex; align-items: flex-start; gap: 6px; margin: 0 8px 8px; padding: 8px 6px 8px 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-row); color: var(--threads-warning-text); font-size: var(--tt-type-small); line-height: 1.45; }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .thread-nav__error { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); } }
 .threads-search { position: relative; display: flex; flex: none; align-items: center; height: 32px; margin: 0 8px 8px; color: var(--tt-text-muted); }
 .threads-search > svg { position: absolute; left: 9px; top: 50%; translate: 0 -50%; pointer-events: none; }
-.threads-search .tt-input { width: 100%; height: 100%; min-height: 0; padding: 0 28px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--threads-field); font-size: 13.5px; font-weight: 400; }
+.threads-search .tt-input { width: 100%; height: 100%; min-height: 0; padding: 0 28px 0 32px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: var(--threads-field); font-size: var(--tt-type-small); font-weight: 400; }
 .threads-search .tt-input::-webkit-search-cancel-button { display: none; }
 /* The sidebar's own controls ease their hover as the shared buttons do; reduced motion clamps it in global.css. */
-.threads-search__clear { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); translate: 0 -50%; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.threads-search__clear { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; border-radius: var(--tt-radius-tag); background: transparent; color: var(--tt-text-muted); translate: 0 -50%; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .threads-search__clear:hover { background: var(--threads-hover); color: var(--tt-text); }
 .threads-search__clear:active { background: var(--threads-selected); color: var(--tt-text); }
 /* Needs attention: how many failed turns no client has shown, under the search, with Dismiss all beside it (ADR-0092).
    The count gives way before the button does, so the line keeps one row at the narrowest sidebar. */
-.thread-nav__attention { display: flex; flex: none; align-items: center; gap: 8px; min-height: 32px; margin: 0 8px 8px; padding: 2px 3px 2px 10px; border-radius: 8px; background: var(--tt-warning-surface); color: var(--tt-warning-text); font-size: 12.5px; font-weight: 600; line-height: 1.3; }
+.thread-nav__attention { display: flex; flex: none; align-items: center; gap: 8px; min-height: 32px; margin: 0 8px 8px; padding: 2px 3px 2px 10px; border-radius: var(--tt-radius-row); background: var(--tt-warning-surface); color: var(--tt-warning-text); font-size: var(--tt-type-caption); font-weight: 600; line-height: 1.3; }
 .thread-nav__attention > i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-attention); }
 .thread-nav__attention-count { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-nav__attention-dismiss { flex: none; min-height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; font-weight: 500; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+.thread-nav__attention-dismiss { flex: none; min-height: 28px; padding: 0 10px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text); font: inherit; font-size: var(--tt-type-caption); font-weight: 500; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .thread-nav__attention-dismiss:hover:not([aria-disabled='true']) { background: var(--tt-hover); }
 .thread-nav__attention-dismiss:active:not([aria-disabled='true']) { background: var(--tt-hover-strong); }
 .thread-nav__attention-dismiss[aria-disabled='true'] { cursor: default; opacity: .6; }
 /* Needs you (ADR-0135): under the search, one entry per thread that needs the user. A filled card like every
    container (ADR-0110); need is said by each entry's ring and status words, never by an outline or a capsule. */
-.needs-you { flex: none; margin: 0 8px 8px; padding: 8px 10px 4px; border-radius: 8px; background: var(--tt-card); color: var(--tt-text); }
+.needs-you { flex: none; margin: 0 8px 8px; padding: 8px 10px 4px; border-radius: var(--tt-radius-row); background: var(--tt-card); color: var(--tt-text); }
 .needs-you__head { display: flex; align-items: center; gap: 6px; }
-.needs-you__heading { margin: 0; font-size: 13px; font-weight: 600; }
-.needs-you__count { padding: 0 5px; border-radius: 4px; background: var(--tt-card-inset); color: var(--tt-text-2); font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; }
-.needs-you__oldest { margin-left: auto; color: var(--tt-text-muted); font-size: 11.5px; white-space: nowrap; }
+.needs-you__heading { margin: 0; font-size: var(--tt-type-small); font-weight: 600; }
+.needs-you__count { padding: 0 5px; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text-2); font-size: var(--tt-type-caption); font-weight: 600; font-variant-numeric: tabular-nums; }
+.needs-you__oldest { margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; }
 .needs-you__entries { margin: 2px 0 0; padding: 0; list-style: none; }
 .needs-you__entry { padding: 7px 0 5px; border-top: 2px solid var(--tt-card-inset); }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .needs-you__entry { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); } }
 .needs-you__top { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.needs-you__title { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.needs-you__wait { flex: none; color: var(--tt-text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.needs-you__title { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: var(--tt-type-small); font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.needs-you__wait { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; }
 .needs-you__status { color: var(--threads-warning-text); font-weight: 600; }
-.needs-you__tag { padding: 0 5px; border-radius: 4px; background: var(--tt-card-inset); color: var(--tt-text-2); font-weight: 600; }
+.needs-you__tag { padding: 0 5px; border-radius: var(--tt-radius-tag); background: var(--tt-card-inset); color: var(--tt-text-2); font-weight: 600; }
 /* What the thread needs, then its one press: on one line while they fit, the press under the words when they do not. */
-.needs-you__need { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin: 3px 0 2px 17px; color: var(--tt-text-muted); font-size: 11.5px; }
+.needs-you__need { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; margin: 3px 0 2px 17px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .needs-you__need > .needs-you__status { margin-right: auto; }
 .needs-you__actions { display: flex; flex-wrap: wrap; gap: 6px; margin-left: auto; }
 .needs-you__foot { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 0 4px; border-top: 2px solid var(--tt-card-inset); }
-.needs-you__overflow { margin-right: auto; color: var(--tt-text-muted); font-size: 11.5px; }
+.needs-you__overflow { margin-right: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 /* A waiting thread's card, popped open over the sidebar beside its entry or its rail tile (ADR-0135, October 29
    amendment). It holds the thread's own request card, or why its last turn failed. */
 .needs-you-card { position: fixed; inset: auto; margin: 0; box-sizing: border-box; width: min(380px, calc(100vw - 24px)); max-height: calc(100vh - 24px); overflow: auto;
-  padding: 10px 12px 8px; border: 1px solid var(--tt-field-border); border-radius: 10px; background: var(--tt-surface-elevated); color: var(--tt-text);
+  padding: 10px 12px 8px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-inset); background: var(--tt-surface-elevated); color: var(--tt-text);
   box-shadow: 0 16px 48px var(--tt-shadow-color); z-index: 60; font: inherit; }
 .needs-you-card:popover-open { display: block; }
 .needs-you-card:focus-visible { outline: 2px solid var(--tt-focus); outline-offset: 1px; }
 .needs-you-card__head { display: flex; align-items: flex-start; gap: 8px; }
-.needs-you-card__title { flex: 1; min-width: 0; margin: 0; font-size: 13.5px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
-.needs-you-card__close { display: grid; place-items: center; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); }
+.needs-you-card__title { flex: 1; min-width: 0; margin: 0; font-size: var(--tt-type-small); font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
+.needs-you-card__close { display: grid; place-items: center; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: var(--tt-radius-tag); background: transparent; color: var(--tt-text-muted); }
 .needs-you-card__close:hover { background: var(--tt-hover); color: var(--tt-text); }
-.needs-you-card__kind { margin: 2px 0 0; color: var(--threads-warning-text); font-size: 12px; font-weight: 600; }
-.needs-you-card__reason { margin: 8px 0 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
+.needs-you-card__kind { margin: 2px 0 0; color: var(--threads-warning-text); font-size: var(--tt-type-caption); font-weight: 600; }
+.needs-you-card__reason { margin: 8px 0 0; color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.45; overflow-wrap: anywhere; }
 /* The request card inside keeps its controls and drops its own frame: the popped card is the frame. */
 .needs-you-card .agent-request { margin-top: 8px; padding: 0; border: 0; background: transparent; }
 .needs-you-card__foot { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 6px; border-top: 2px solid var(--tt-card-inset); }
@@ -100,10 +100,10 @@
 .thread-nav__rail-rename .thread-nav__rename { width: 100%; box-sizing: border-box; }
 .thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 4px 4px 12px; }
-.thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; letter-spacing: .02em; }
-.thread-nav__label span { color: var(--tt-text-muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
+.thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 500; letter-spacing: .02em; }
+.thread-nav__label span { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 400; font-variant-numeric: tabular-nums; }
 /* The shelf: a chevron and one word. How many threads are behind it is in the button's own name. */
-.thread-nav__settled { width: calc(100% - 8px); min-height: 30px; margin: 8px 4px 2px; padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: transparent; font-size: 13.5px; text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.thread-nav__settled { width: calc(100% - 8px); min-height: 30px; margin: 8px 4px 2px; padding: 0 8px 0 10px; border: 0; border-radius: var(--tt-radius-control); background: transparent; font-size: var(--tt-type-small); text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-nav__settled:hover { background: var(--threads-hover); color: var(--tt-text); }
 .thread-nav__settled > span { color: var(--tt-text-2); }
 .thread-folder__chevron { flex: none; transition: transform .16s ease; }
@@ -113,13 +113,13 @@
 .thread-nav__indicators i { display: block; width: 6px; height: 6px; border-radius: 50%; }
 .thread-nav__indicators [data-state='needs'] i { background: var(--tt-attention); }
 .thread-nav__indicators [data-state='working'] i { background: var(--tt-activity); }
-.thread-nav__empty { margin: 4px 8px 12px; color: var(--tt-text-muted); font-size: 13px; line-height: 1.5; list-style: none; }
+.thread-nav__empty { margin: 4px 8px 12px; color: var(--tt-text-muted); font-size: var(--tt-type-small); line-height: 1.5; list-style: none; }
 
 /* A project group: a bold title with its actions on hover, then its rows flush under it. */
 .thread-folder { margin: 0 0 12px; }
-.thread-folder__head { position: relative; display: flex; align-items: center; border-radius: 7px; }
+.thread-folder__head { position: relative; display: flex; align-items: center; border-radius: var(--tt-radius-control); }
 .thread-folder__head:hover, .thread-folder__head[data-peeking] { background: var(--threads-hover); }
-.thread-folder__toggle { display: flex; flex: 1; align-items: center; gap: 5px; min-width: 0; min-height: 28px; padding: 0 8px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; }
+.thread-folder__toggle { display: flex; flex: 1; align-items: center; gap: 5px; min-width: 0; min-height: 28px; padding: 0 8px 0 6px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-caption); font-weight: 600; text-align: left; }
 .thread-folder__toggle > svg { flex: none; color: var(--tt-text-muted); }
 /* Expanded, the rows themselves say the group is open; collapsed, the chevron is the only sign left. */
 .thread-folder__toggle[aria-expanded='true'] > .thread-folder__chevron { display: none; }
@@ -127,7 +127,7 @@
 .thread-folder[data-active] .thread-folder__toggle { color: var(--tt-text); }
 .thread-folder__actions, .thread-nav__row-actions { display: flex; gap: 2px; padding-right: 2px; }
 .thread-folder__rows { margin: 0; padding: 0; list-style: none; }
-.thread-nav__action { display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+.thread-nav__action { display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .thread-nav__action:hover:not(:disabled) { background: var(--threads-hover); color: var(--tt-text); }
 .thread-nav__action:active:not(:disabled) { background: var(--threads-selected); color: var(--tt-text); }
 .thread-nav__action:disabled { opacity: .5; cursor: not-allowed; }
@@ -142,7 +142,7 @@
 .thread-folder__toggle .host-badge[data-kind='local'] { max-width: none; }
 @media (hover: none) { .thread-folder__actions, .thread-nav__row-actions { opacity: 1; } }
 
-.thread-nav__row { position: relative; display: flex; align-items: flex-start; margin: 1px 0; border: 1px solid transparent; border-radius: 7px; }
+.thread-nav__row { position: relative; display: flex; align-items: flex-start; margin: 1px 0; border: 1px solid transparent; border-radius: var(--tt-radius-control); }
 .thread-nav__row:hover { background: var(--threads-hover); }
 .thread-nav__row[data-current] { background: var(--threads-selected); border-color: var(--threads-selected-border); }
 /* Hidden actions take no pointer; shown, they take their own width so the row button (and a click on
@@ -150,8 +150,8 @@
 .thread-nav__row-actions { position: absolute; top: 1px; right: 0; pointer-events: none; }
 .thread-nav__row:hover .thread-nav__row-actions, .thread-nav__row:focus-within .thread-nav__row-actions, .thread-nav__row[data-current] .thread-nav__row-actions { position: static; flex: none; pointer-events: auto; }
 @media (hover: none) { .thread-nav__row-actions { position: static; flex: none; pointer-events: auto; } }
-.thread-nav__item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; flex: 1; min-width: 0; padding: 8px 10px 8px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); text-align: left; font: inherit; }
-.thread-nav[data-mode] .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 0; min-height: 34px; padding: 0 8px 0 10px; border-radius: 7px; }
+.thread-nav__item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; flex: 1; min-width: 0; padding: 8px 10px 8px 8px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); text-align: left; font: inherit; }
+.thread-nav[data-mode] .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 0; min-height: 34px; padding: 0 8px 0 10px; border-radius: var(--tt-radius-control); }
 .thread-nav__mark { display: grid; place-items: center; width: 18px; height: 18px; color: var(--tt-text-muted); }
 /* Provider tokens are badge fills; as glyph colour they read at 10:1 or more on the dark sidebar. The light
    fills are too pale for a glyph, so there they are mixed halfway toward the text colour (3.9:1 or more
@@ -169,16 +169,16 @@
 :root[data-theme='light'] .thread-nav__mark[data-provider='grok'] { --threads-provider-fill: var(--tt-provider-grok); }
 :root[data-theme='light'] .thread-nav__mark[data-provider='devin'] { --threads-provider-fill: var(--tt-provider-devin); }
 .thread-nav__item--renaming { display: flex; padding: 6px 8px; cursor: default; }
-.thread-nav__rename, .thread-workspace__rename { min-width: 0; flex: 1; padding: 4px 6px; border: 1px solid var(--tt-border); border-radius: 6px; background: var(--tt-surface-2, transparent); color: var(--tt-text); font: inherit; }
-.thread-nav__rename { font-size: 14px; font-weight: 500; }
+.thread-nav__rename, .thread-workspace__rename { min-width: 0; flex: 1; padding: 4px 6px; border: 1px solid var(--tt-border); border-radius: var(--tt-radius-control); background: var(--tt-surface-2, transparent); color: var(--tt-text); font: inherit; }
+.thread-nav__rename { font-size: var(--tt-type-body); font-weight: 500; }
 .thread-workspace__rename { font-size: inherit; font-weight: inherit; }
 :is(.thread-nav__rename, .thread-workspace__rename)[aria-invalid] { border-color: var(--tt-danger, #d46a6a); }
 /* 14px is the floor for a row title: the 760px window recomposes around it and never shrinks the type. */
-.thread-nav__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; font-weight: 500; }
+.thread-nav__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--tt-type-body); font-weight: 500; }
 .thread-nav__row[data-current] .thread-nav__title { color: var(--tt-text); }
-.thread-nav__time { color: var(--tt-text-muted); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.thread-nav__time { color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
 /* What a row that wants you says where the clock would be; the whole sentence is the row's accessible description. */
-.thread-nav__needs { max-width: 96px; overflow: hidden; color: var(--tt-attention); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.thread-nav__needs { max-width: 96px; overflow: hidden; color: var(--tt-attention); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .thread-nav__row:is(:hover, :focus-within, [data-current]) :is(.thread-nav__time, .thread-nav__needs) { visibility: hidden; }
 
 /* The status ring: an outline while the thread is idle, a ring that turns while it works, amber when it wants
@@ -198,7 +198,7 @@
 @keyframes thread-ring { to { rotate: 360deg; } }
 
 /* Thread rows pair this status with a provider. */
-.thread-nav__status { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: 12px; white-space: nowrap; text-overflow: ellipsis; }
+.thread-nav__status { grid-column: 2 / -1; display: flex; gap: 6px; align-items: center; min-width: 0; overflow: hidden; color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; text-overflow: ellipsis; }
 .thread-nav__status i { display: none; flex: none; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
 .thread-nav__status[data-state='working'] { color: var(--tt-activity); }
 .thread-nav__status[data-state='needs'], .thread-nav__status[data-state='working'][data-disconnected] { color: var(--threads-warning-text); }
@@ -214,7 +214,7 @@
 .thread-nav__status[data-prototype] > svg { flex: none; display: inline-block; margin-right: 5px; vertical-align: -2px; color: var(--tt-accent-text); }
 
 .provider-mark { display: block; flex: none; fill: currentColor; }
-.provider-mark--initial { display: grid; place-items: center; border: 1px solid currentColor; border-radius: 4px; font-size: 10px; font-weight: 600; line-height: 1; }
+.provider-mark--initial { display: grid; place-items: center; border: 1px solid currentColor; border-radius: var(--tt-radius-tag); font-size: var(--tt-type-micro); font-weight: 600; line-height: 1; }
 
 @media (max-width: 820px) {
   .thread-nav[data-mode] .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr); }
@@ -230,7 +230,7 @@
 .thread-nav__expanded { display: flex; flex: 1; flex-direction: column; min-height: 0; min-width: 0; }
 .thread-nav__expanded[hidden] { display: none; }
 .thread-nav__collapse { flex: none; -webkit-app-region: no-drag; }
-.thread-nav[data-mode='threads'] .thread-folder__toggle { font-size: 14.5px; font-weight: 500; }
+.thread-nav[data-mode='threads'] .thread-folder__toggle { font-size: var(--tt-type-body); font-weight: 500; }
 .thread-nav[data-mode='threads'] .thread-folder__toggle[aria-expanded='true'] > .thread-folder__chevron { display: block; }
 /* Here the room for the actions is the toggle's own padding, the width of two actions and the usual 8px, and the actions lie over it. A
    folder offers two actions, one or none, so reserving their width beside the toggle put the counts on different edges and left a strip of
@@ -239,37 +239,37 @@
 .thread-nav[data-mode='threads'] .thread-folder__toggle { padding-right: calc(var(--thread-folder-actions) + 8px); }
 .thread-nav[data-mode='threads'] .thread-folder__actions { width: var(--thread-folder-actions); margin-left: calc(-1 * var(--thread-folder-actions)); justify-content: flex-end; pointer-events: none; }
 .thread-nav[data-mode='threads'] .thread-folder__actions > * { pointer-events: auto; }
-.thread-folder__count { margin-left: auto; color: var(--tt-text-muted); font-size: 12px; }
+.thread-folder__count { margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 /* A closed folder's dots sit just before the count, which stays last and so keeps the column's edge. */
 .thread-nav__indicators + .thread-folder__count { margin-left: 0; }
 .thread-folder__head:is(:hover, :focus-within, [data-peeking]) .thread-folder__count { visibility: hidden; }
 /* The folder peek (Owl): a closed folder rested on opens in place as a preview, under a guide line on the sunken
    surface so it never reads as opened. Its foot says Preview and offers the real opening. */
 .thread-folder__preview { margin: 2px 0 4px 17px; padding: 2px 2px 4px 8px; border-left: 2px solid var(--tt-border); background: var(--tt-surface-sunken); }
-.thread-folder__preview-foot { display: flex; align-items: center; gap: 8px; padding: 5px 8px 6px; color: var(--tt-text-muted); font-size: 11.5px; list-style: none; }
-.thread-folder__preview-action { padding: 2px 8px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 11.5px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.thread-folder__preview-foot { display: flex; align-items: center; gap: 8px; padding: 5px 8px 6px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); list-style: none; }
+.thread-folder__preview-action { padding: 2px 8px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-caption); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-folder__preview-action:hover { background: var(--threads-hover); color: var(--tt-text); }
 @keyframes thread-folder-preview { from { opacity: 0; transform: translateX(-4px); } }
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .thread-folder__preview { animation: thread-folder-preview 120ms ease-out; }
 }
 .thread-nav .thread-nav__row--details .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; padding: 9px 10px; row-gap: 5px; width: 100%; }
-.thread-nav__row--details .thread-nav__title { font-size: 14px; line-height: 1.4; }
+.thread-nav__row--details .thread-nav__title { font-size: var(--tt-type-body); line-height: 1.4; }
 .thread-nav__row--details .thread-nav__time { display: block; visibility: visible; }
-.thread-nav__metadata { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+.thread-nav__metadata { grid-column: 2 / -1; display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 /* The provider is its mark alone, in the provider's colour; a wide sidebar adds the model's name after it. */
 .thread-nav__provider { display: flex; align-items: center; gap: 6px; min-width: 0; overflow: hidden; white-space: nowrap; }
 .thread-nav__provider .thread-nav__mark { flex: none; width: 14px; height: 14px; }
 .thread-nav__provider .thread-nav__model { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .thread-nav__metadata .thread-nav__status { display: block; margin-left: auto; min-width: 0; flex-shrink: 0; max-width: 70%; text-overflow: ellipsis; }
 .thread-nav__model, .thread-nav__copy-kind { display: none; }
-.thread-nav__branch { display: none; grid-column: 2 / -1; align-items: center; gap: 5px; min-width: 0; color: var(--tt-text-muted); font-size: 12px; }
+.thread-nav__branch { display: none; grid-column: 2 / -1; align-items: center; gap: 5px; min-width: 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 .thread-nav__branch > svg, .thread-nav__copy-kind { flex: none; }
 .thread-nav__branch-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .thread-nav__branch[data-working-copy-state='error'] { color: var(--tt-warning-text); }
 /* The current row's selection is a tint, so its amber takes the on-tint tone. */
 .thread-nav__row[data-current] :is(.thread-nav__branch[data-working-copy-state='error'], .thread-nav__status[data-state='needs'], .thread-nav__status[data-state='working'][data-disconnected]) { color: var(--tt-warning-on-tint); }
-.thread-nav .thread-nav__row--details .thread-nav__row-actions { position: absolute; top: auto; bottom: 3px; right: 1px; opacity: 0; pointer-events: none; border-radius: 6px; background: var(--tt-sidebar); }
+.thread-nav .thread-nav__row--details .thread-nav__row-actions { position: absolute; top: auto; bottom: 3px; right: 1px; opacity: 0; pointer-events: none; border-radius: var(--tt-radius-control); background: var(--tt-sidebar); }
 .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__row-actions { position: absolute; opacity: 1; pointer-events: auto; }
 .thread-nav__row--details[data-current] .thread-nav__row-actions { background: var(--tt-selected); }
 .thread-nav__row--details:is(:hover, :focus-within) .thread-nav__metadata { padding-right: 114px; }
@@ -283,29 +283,29 @@
 .thread-nav--mac .thread-nav__rail { padding-top: 44px; }
 .thread-nav__rail-list { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: thin; }
 .thread-nav__rail-list nav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 4px 0; }
-.thread-nav__rail-thread { position: relative; flex: none; width: 32px; height: 34px; border: 1px solid var(--tt-hairline); border-radius: 7px; color: var(--tt-text); background: transparent; font: inherit; font-size: 14px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.thread-nav__rail-thread { position: relative; flex: none; width: 32px; height: 34px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-control); color: var(--tt-text); background: transparent; font: inherit; font-size: var(--tt-type-body); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-nav__rail-thread:hover { background: var(--tt-hover); }
 .thread-nav__rail-thread:active:not(:disabled):not([aria-current]) { background: var(--tt-hover-strong); }
 .thread-nav__rail-thread[aria-current] { background: var(--tt-selected); border-color: var(--tt-focus); }
 .thread-nav__rail-thread .thread-nav__ring { position: absolute; right: -1px; bottom: -1px; }
-.thread-nav__rail-thread .thread-nav__ring[data-background] { width: 12px; height: 12px; right: -2px; bottom: -2px; border-radius: 3px; background: var(--threads-sidebar); }
+.thread-nav__rail-thread .thread-nav__ring[data-background] { width: 12px; height: 12px; right: -2px; bottom: -2px; border-radius: var(--tt-radius-mark); background: var(--threads-sidebar); }
 /* Owl's rail (ADR-0146): Watcher's tile under Expand, the threads it watches under it, smaller tiles for resting threads. */
-.thread-nav__rail-mark { font-size: 12.5px; font-weight: 600; }
+.thread-nav__rail-mark { font-size: var(--tt-type-caption); font-weight: 600; }
 .thread-nav__rail-watcher { display: grid; place-items: center; background: var(--tt-surface-elevated); }
 .thread-nav__rail-group { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; }
 .thread-nav__rail-group + .thread-nav__rail-group { margin-top: 4px; }
 /* A part of two or more tiles sits in a tray: a faint wash and an edge in its own group colour (Drake's pick r3,
    October 28, 2026). Sized to the tiles, it gives way to the rail's scrollbar rather than clip. */
-.thread-nav__rail-tray { width: 44px; max-width: 100%; padding: 8px 0; border-radius: 16px; background: color-mix(in srgb, var(--rail-group) 7%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rail-group) 22%, transparent); }
+.thread-nav__rail-tray { width: 44px; max-width: 100%; padding: 8px 0; border-radius: var(--tt-radius-card); background: color-mix(in srgb, var(--rail-group) 7%, transparent); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--rail-group) 22%, transparent); }
 .thread-nav__rail-tray[data-hue='1'] { --rail-group: var(--tt-rail-group-1); }
 .thread-nav__rail-tray[data-hue='2'] { --rail-group: var(--tt-rail-group-2); }
 .thread-nav__rail-tray[data-hue='3'] { --rail-group: var(--tt-rail-group-3); }
 .thread-nav__rail-tray[data-hue='4'] { --rail-group: var(--tt-rail-group-4); }
 /* The owl on a watched tile, in the muted text colour the owl on a watched row takes (Drake's pick D, October 27, 2026). */
-.thread-nav__rail-watched-mark { position: absolute; left: -4px; top: -4px; display: grid; place-items: center; width: 13px; height: 13px; border-radius: 4px; background: var(--threads-sidebar); color: var(--tt-text-muted); }
+.thread-nav__rail-watched-mark { position: absolute; left: -4px; top: -4px; display: grid; place-items: center; width: 13px; height: 13px; border-radius: var(--tt-radius-tag); background: var(--threads-sidebar); color: var(--tt-text-muted); }
 /* Amber means only that it waits on you: the whole edge, so it keeps 3:1 by day. */
 .thread-nav__rail-thread[data-waiting]:not([aria-current]) { border-color: var(--tt-attention); }
-.thread-nav__rail-thread[data-resting] { width: 26px; height: 26px; border-radius: 6px; font-size: 11px; font-weight: 500; color: var(--tt-text-muted); }
+.thread-nav__rail-thread[data-resting] { width: 26px; height: 26px; border-radius: var(--tt-radius-control); font-size: var(--tt-type-micro); font-weight: 500; color: var(--tt-text-muted); }
 /* The rail hides the switch, so the foot's hairline lies flat as its first row: it tops the foot, 8px over the page links. */
 .thread-nav__rail .thread-nav__foot { width: 100%; margin-inline: 0; justify-content: center; padding: 0 0 8px; }
 .thread-nav__rail .thread-nav__foot-rule { flex: 1 0 100%; width: auto; height: 1px; margin: 0 0 6px; }
@@ -328,17 +328,17 @@
 .thread-nav .thread-nav__row--details:is(:hover, :focus-within, [data-current]) .thread-nav__time { visibility: visible; }
 
 /* Keep main up to date's line under a project's name (ADR-0142, variant A). */
-.thread-folder__main { padding: 1px 8px 6px 26px; color: var(--tt-text-muted); font-size: 12.5px; line-height: 1.4; }
+.thread-folder__main { padding: 1px 8px 6px 26px; color: var(--tt-text-muted); font-size: var(--tt-type-caption); line-height: 1.4; }
 .thread-folder__main-line { margin: 0; overflow-wrap: anywhere; }
 .thread-folder__main-behind { color: var(--tt-warning-text); }
 .thread-folder__main-updated { color: var(--tt-success); }
-.thread-folder__main-press { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 2px; }
-.thread-folder__main-dismiss { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 4px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); vertical-align: middle; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.thread-folder__main-press { padding: 0; border: 0; border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.thread-folder__main-dismiss { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 4px; padding: 0; border: 0; border-radius: var(--tt-radius-tag); background: transparent; color: var(--tt-text-muted); vertical-align: middle; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-folder__main-dismiss:hover { background: var(--tt-hover); color: var(--tt-text); }
 .thread-folder__main-dismiss:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-folder__main-list { margin-top: 5px; }
 .thread-folder__main-list ul { margin: 0 0 4px; padding: 0; list-style: none; }
 .thread-folder__main-list li { display: flex; gap: 8px; min-width: 0; padding: 1px 0; }
 .thread-folder__main-kind { flex: none; width: 64px; color: var(--tt-text-muted); }
-.thread-folder__main-path { min-width: 0; overflow: hidden; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.thread-folder__main-path { min-width: 0; overflow: hidden; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); text-overflow: ellipsis; white-space: nowrap; }
 .thread-folder__main-more, .thread-folder__main-failed { margin: 0 0 4px; }

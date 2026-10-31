@@ -1,11 +1,11 @@
 .screenshot-input { min-width: 0; }
 .screenshot-previews { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; margin-top: 12px; }
 .screenshot-previews figure { position: relative; margin: 0; }
-.screenshot-previews__picture { position: relative; display: block; overflow: hidden; border-radius: 8px; box-shadow: 0 0 0 1px var(--tt-field-border), 0 2px 6px var(--tt-shadow-color); }
+.screenshot-previews__picture { position: relative; display: block; overflow: hidden; border-radius: var(--tt-radius-row); box-shadow: 0 0 0 1px var(--tt-field-border), 0 2px 6px var(--tt-shadow-color); }
 .screenshot-previews img, .screenshot-previews__placeholder { display: block; width: 100%; height: 72px; object-fit: cover; }
 .screenshot-previews__placeholder { background: var(--tt-hover-strong); }
 /* A scaled-down image's sizes (ADR-0030), on the picture's corner. The joined sizes break it into two lines at most. */
-.screenshot-previews__resized { position: absolute; bottom: 4px; left: 4px; max-width: calc(100% - 8px); padding: 1px 5px; border-radius: 4px; background: color-mix(in oklab, var(--tt-surface-elevated) 90%, transparent); color: var(--tt-text); font-size: 9px; line-height: 1.3; font-variant-numeric: tabular-nums; }
+.screenshot-previews__resized { position: absolute; bottom: 4px; left: 4px; max-width: calc(100% - 8px); padding: 1px 5px; border-radius: var(--tt-radius-tag); background: color-mix(in oklab, var(--tt-surface-elevated) 90%, transparent); color: var(--tt-text); font-size: var(--tt-type-micro); line-height: 1.3; font-variant-numeric: tabular-nums; }
 /* Plain images rest as a deck: the first card on top and up to two peeking out behind it, which fan out into their row
    under the pointer or the keyboard. The deck always takes the row's width, so fanning moves nothing around it. */
 .screenshot-deck { display: flex; flex: 0 1 auto; gap: 8px; min-width: 0; isolation: isolate; }
@@ -13,7 +13,7 @@
 .screenshot-deck figure:nth-child(2) { transform: translateX(calc(var(--i) * (-100% - 8px))) translate(5px, -2px) rotate(2deg); }
 .screenshot-deck figure:nth-child(n + 3) { transform: translateX(calc(var(--i) * (-100% - 8px))) translate(10px, -4px) rotate(4deg); }
 .screenshot-deck figure:nth-child(n + 4) { opacity: 0; }
-.screenshot-deck__count { position: absolute; right: -6px; bottom: -6px; z-index: 2; min-width: 20px; height: 20px; padding: 0 5px; border-radius: 5px; background: var(--tt-accent); color: var(--tt-on-accent); font-size: 11px; font-weight: 600; line-height: 20px; text-align: center; transition: opacity 180ms ease-out; }
+.screenshot-deck__count { position: absolute; right: -6px; bottom: -6px; z-index: 2; min-width: 20px; height: 20px; padding: 0 5px; border-radius: var(--tt-radius-tag); background: var(--tt-accent); color: var(--tt-on-accent); font-size: var(--tt-type-micro); font-weight: 600; line-height: 20px; text-align: center; transition: opacity 180ms ease-out; }
 .screenshot-deck .screenshot-previews__resized { opacity: 0; transition: opacity 180ms ease-out; }
 .screenshot-deck button { opacity: 0; transition: opacity 180ms ease-out, background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .screenshot-deck:is(:hover, :focus-within) figure { transform: none; opacity: 1; }
@@ -24,41 +24,41 @@
 }
 :root[data-reduced-motion='on'] :is(.screenshot-deck figure, .screenshot-deck__count, .screenshot-deck .screenshot-previews__resized, .screenshot-deck button) { transition: none; }
 /* Point at something's picture (ADR-0154) is a tile of its own, wide enough to read the element's name and the comment under it. */
-.screenshot-previews figure[data-pointed] { width: 168px; padding: 4px; border: 1px solid var(--tt-field-border); border-radius: 9px; background: var(--tt-field); }
-.screenshot-previews figure[data-pointed] .screenshot-previews__picture { border-radius: 5px; box-shadow: none; }
-.screenshot-previews figcaption { min-width: 0; margin-top: 5px; color: var(--tt-text-muted); font-size: 10px; }
+.screenshot-previews figure[data-pointed] { width: 168px; padding: 4px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-row); background: var(--tt-field); }
+.screenshot-previews figure[data-pointed] .screenshot-previews__picture { border-radius: var(--tt-radius-tag); box-shadow: none; }
+.screenshot-previews figcaption { min-width: 0; margin-top: 5px; color: var(--tt-text-muted); font-size: var(--tt-type-micro); }
 .screenshot-previews figcaption > span, .screenshot-previews__note { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .screenshot-previews__note { margin-top: 2px; color: var(--tt-text-2); }
-.screenshot-previews button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid var(--tt-border-faint); border-radius: 4px; background: var(--tt-hover-strong); color: var(--tt-text); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.screenshot-previews button { position: absolute; top: -6px; right: -6px; display: grid; place-items: center; width: 20px; height: 20px; padding: 0; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-tag); background: var(--tt-hover-strong); color: var(--tt-text); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 /* Attached files that are not images (ADR-0131): one-line pills under the image tiles, the name cut in the middle. */
 .attached-files { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 0; padding: 0; list-style: none; }
 .screenshot-previews + .attached-files { margin-top: 10px; }
-.attached-file { display: flex; align-items: center; gap: 7px; max-width: min(100%, 240px); height: 32px; padding: 0 4px 0 9px; border: 1px solid var(--tt-field-border); border-radius: 8px; background: var(--tt-field); font-size: 12.5px; }
+.attached-file { display: flex; align-items: center; gap: 7px; max-width: min(100%, 240px); height: 32px; padding: 0 4px 0 9px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-row); background: var(--tt-field); font-size: var(--tt-type-caption); }
 .attached-file > svg { flex: none; color: var(--tt-text-muted); }
 .attached-file__name { display: flex; min-width: 0; color: var(--tt-text); white-space: nowrap; }
 .attached-file__head { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .attached-file__tail { flex: none; }
-.attached-file__size { flex: none; color: var(--tt-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.attached-file button { position: relative; display: grid; flex: none; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+.attached-file__size { flex: none; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.attached-file button { position: relative; display: grid; flex: none; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: var(--tt-radius-tag); background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .attached-file button::before { content: ''; position: absolute; inset: -5px; }
 .attached-file button:hover:not(:disabled) { background: var(--tt-hover); color: var(--tt-text); }
 .attached-file button:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .attached-file button:disabled { opacity: .5; cursor: default; }
 /* Drag-over: a quiet dashed edge in the focus colour and one line, over the whole composer. */
 .screenshot-input__drop { position: absolute; inset: -1px; z-index: 3; display: grid; place-items: center; border: 1.5px dashed var(--tt-focus-ring); border-radius: inherit; background: color-mix(in oklab, var(--tt-card) 80%, transparent); pointer-events: none; }
-.screenshot-input__drop span { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: 8px; background: var(--tt-card); color: var(--tt-text); font-size: 14px; font-weight: 500; }
+.screenshot-input__drop span { display: inline-flex; align-items: center; gap: 8px; padding: 6px 12px; border-radius: var(--tt-radius-row); background: var(--tt-card); color: var(--tt-text); font-size: var(--tt-type-body); font-weight: 500; }
 .screenshot-input__drop svg { color: var(--tt-accent-text); }
 .screenshot-input__tools { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
 .screenshot-input__tools .tt-button { width: 26px; min-height: 26px; padding: 0; color: var(--tt-text-muted); }
-.screenshot-input__tools small { color: var(--tt-text-muted); font-size: 11px; }
+.screenshot-input__tools small { color: var(--tt-text-muted); font-size: var(--tt-type-micro); }
 .thread-options { display: flex; flex-wrap: wrap; gap: 8px; }
 .thread-options label { display: grid; gap: 5px; min-width: 0; }
-.thread-options label > span { color: var(--tt-text-muted); font-size: 10.5px; }
-.thread-options select { max-width: 220px; min-height: 29px; padding: 4px 8px; border: 1px solid var(--tt-field-border); border-radius: 7px; background: var(--tt-field); color: var(--tt-text-2); font: inherit; font-size: 11.5px; }
+.thread-options label > span { color: var(--tt-text-muted); font-size: var(--tt-type-micro); }
+.thread-options select { max-width: 220px; min-height: 29px; padding: 4px 8px; border: 1px solid var(--tt-field-border); border-radius: var(--tt-radius-control); background: var(--tt-field); color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-caption); }
 .thread-options select:disabled { opacity: .55; }
 .thread-options-bar { flex: 1; min-width: 0; }
 .thread-prompt__footer > .tt-button, .thread-workspace__compose .agent-composer__footer > .agent-actions { flex-shrink: 0; align-self: flex-end; }
-.thread-options-bar > small { display: block; margin-top: 7px; color: var(--tt-text-muted); font-size: 10.5px; }
+.thread-options-bar > small { display: block; margin-top: 7px; color: var(--tt-text-muted); font-size: var(--tt-type-micro); }
 .new-thread-dialog .thread-options { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px 12px; }
 .new-thread-dialog .thread-options label:first-child { grid-column: 1 / -1; }
 .new-thread-dialog .thread-options select { max-width: none; width: 100%; }

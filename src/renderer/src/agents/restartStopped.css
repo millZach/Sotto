@@ -4,8 +4,8 @@
 
 /* Under the search, in the working threads line's margins. */
 .restart-bands { display: grid; flex: none; gap: 8px; margin: 0 8px 8px; }
-.restart-band { padding: 8px 10px; border: 1px solid var(--tt-hairline); border-radius: 8px; background: var(--tt-surface-elevated); color: var(--tt-text-2);
-  font-size: 12.5px; line-height: 1.45; overflow-wrap: anywhere; }
+.restart-band { padding: 8px 10px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-row); background: var(--tt-surface-elevated); color: var(--tt-text-2);
+  font-size: var(--tt-type-caption); line-height: 1.45; overflow-wrap: anywhere; }
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .restart-band {
     animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1);
@@ -17,11 +17,11 @@
 .restart-band__threads { display: grid; gap: 1px; max-height: 8.6em; margin: 3px 0 0; padding: 2px 3px 2px 22px; overflow-y: auto; list-style: none; }
 /* A short window keeps the list to three names, so the threads below keep their room; the rest scroll into view. */
 @media (max-height: 640px) { .restart-band__threads { max-height: 4.6em; } }
-.restart-band__thread { display: block; max-width: 100%; padding: 1px 0; overflow: hidden; border: 0; border-radius: 3px; background: transparent; color: var(--tt-text-2);
+.restart-band__thread { display: block; max-width: 100%; padding: 1px 0; overflow: hidden; border: 0; border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-text-2);
   font: inherit; text-align: left; text-overflow: ellipsis; white-space: nowrap;
   transition: color 120ms ease; }
 .restart-band__thread:hover { color: var(--tt-text); text-decoration: underline; text-underline-offset: 2px; }
-.restart-band__cancel, .restart-strip__cancel { flex: none; padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit;
+.restart-band__cancel, .restart-strip__cancel { flex: none; padding: 0; border: 0; border-radius: var(--tt-radius-mark); background: transparent; color: var(--tt-link); font: inherit;
   text-decoration: underline; text-underline-offset: 3px; }
 .restart-band__cancel { margin: 6px 0 0 22px; }
 .restart-band__cancel[aria-disabled='true'], .restart-strip__cancel[aria-disabled='true'] { color: var(--tt-text-muted); cursor: progress; }
@@ -29,7 +29,7 @@
 
 /* Over the composer, where the continue strip sits, in its shape with a quieter edge. */
 .restart-strip { margin: 0 0 8px; padding: 8px 12px; border: 1px solid var(--tt-hairline); border-radius: var(--tt-radius-md); background: var(--tt-surface-elevated);
-  color: var(--tt-text-2); font-size: 13px; line-height: 1.45; }
+  color: var(--tt-text-2); font-size: var(--tt-type-small); line-height: 1.45; }
 .restart-strip[data-tone='error'] { border-color: var(--tt-error-border); }
 .restart-strip__lead { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 4px 8px; }
 .restart-strip__lead > svg { flex: none; margin-top: 2px; color: var(--tt-text-muted); }
