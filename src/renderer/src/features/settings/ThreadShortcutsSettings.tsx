@@ -9,7 +9,7 @@ import type { SottoPlatform } from '../../../../shared/platform'
 import type { AppSettings, SettingsPatch } from '../../../../shared/settings'
 import { DEFAULT_THREAD_SHORTCUTS, isPageShortcut, resolveThreadShortcut, type ThreadShortcutChoices, type ThreadShortcutId } from '../../../../shared/threadShortcuts'
 import { parseAccelerator, parseChord } from '../../agents/branchToolbar.logic'
-import { acceleratorForChord, chordFromAccelerator, menuOwnedChord, sameThreadKeys } from '../../agents/threadShortcuts'
+import { acceleratorForChord, chordFromAccelerator, menuOwnedChord, sameThreadKeys, SETTLE_UNDO_CHORD } from '../../agents/threadShortcuts'
 import { changesChord } from '../../tools/changesShortcut'
 import { pageChordHolder, pageShortcutShown, usePageShortcutGates } from '../../components/pageShortcuts'
 import { ShortcutKey } from '../../components/ShortcutKey'
@@ -155,6 +155,10 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
     }
     if (sameThreadKeys(chord, 'mod+k', platform)) {
       return msg`Search transcripts already uses ${keys}. Pick other keys.`
+    }
+    // Undo after a Settle (ADR-0167), and every text field's own undo.
+    if (sameThreadKeys(chord, SETTLE_UNDO_CHORD, platform)) {
+      return msg`Undo already uses ${keys}. Pick other keys.`
     }
     // The application menu sees its accelerators before the window does, so these keys would never arrive.
     const menuOwned = menuOwnedChord(chord, platform)
@@ -331,12 +335,13 @@ export function ThreadShortcutsSettings({ settings, platform, onUpdateSettings, 
     fixedRow(t`Rename the thread`, <Trans>On a row in the thread list.</Trans>, 'F2', 'rename'),
     fixedRow(t`Move between sidebar, pane and composer`, <Trans>Shift+F6 goes back. In a split it goes round every pane. A terminal keeps F6; Ctrl+Tab leaves it.</Trans>, 'F6', 'regions'),
     fixedRow(t`Search transcripts`, <Trans>Opens the Dictate room on its search, from any page.</Trans>, acceleratorOf('mod+k'), 'search'),
+    fixedRow(t`Undo a settle`, <Trans>While the toast at the sidebar’s foot offers Undo. A text field keeps these keys for its own typing.</Trans>, acceleratorOf(SETTLE_UNDO_CHORD), 'undo-settle'),
     fixedRow(t`Terminal search & text size`, <Trans>The terminal’s own keys, while a terminal holds them.</Trans>, acceleratorOf('mod+f'), 'terminal'),
     fixedRow(t`Settings`, platform === 'darwin'
       ? <Trans>macOS’s own Settings chord, from the app menu.</Trans>
       : <Trans>Opens Settings from any page.</Trans>, 'CommandOrControl+,', 'settings'),
   ]
-  const fixedMatches = query === '' || 'fixed dictation send steer search thread list arrows menu rename regions sidebar pane composer f6 terminal settings'.includes(query)
+  const fixedMatches = query === '' || 'fixed dictation send steer search thread list arrows menu rename regions sidebar pane composer f6 undo settle terminal settings'.includes(query)
   const changedCount = GROUPS.flatMap(groupRows).filter(row => changed(row.id)).length
 
   return (
