@@ -1,14 +1,16 @@
 import { readFile, stat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
-import { watcherRecordSchema, type WatcherRecord } from '../../shared/watcher'
+import type { WatcherRecord } from '../../shared/watcher'
 import type { AgentThread } from '../../shared/agents'
 import type { ProviderId } from '../../shared/agents'
 import type { WatcherProfileTools, ThreadLaunchProfiles, WatcherLaunchProfile } from './host'
 import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
 import { migrateWatcherRecord } from './watcherRecords'
+import { samePlainData } from './agentStateBroadcast'
 
-const savedIdentity = z.object({ watcher: z.preprocess(migrateWatcherRecord, watcherRecordSchema) })
+/** `agents.json` as the identity check reads it: an object, whose Watcher record `migrateWatcherRecord` checks. */
+const savedFile = z.object({ watcher: z.unknown().optional() })
 type Identity = Pick<WatcherRecord, 'current' | 'creation' | 'history'>
 export const WATCHER_DISABLED = 'Watcher is available in Sotto Owl. Open an Owl build to continue. Nothing was sent.'
 const IDENTITY_FAILURE = 'Watcher’s saved identity could not be verified. Nothing was sent. Restart Sotto to recover.'
@@ -18,6 +20,12 @@ export class WatcherLaunchProfiles implements ThreadLaunchProfiles {
   private tools: WatcherProfileTools | undefined
   private readonly revoked = new Map<string, string>()
   private cached: { signature: string; identity: Identity | undefined } | undefined
+  /**
+   * The last Watcher record read from the file that passed its check, as read, and the identity it holds. Every save of
+   * `agents.json` changes its signature, and most leave the record as it was, so a record the same as this one is not
+   * checked again (#1759): the check reads nothing but the record, so it would give the same identity.
+   */
+  private checked: { record: unknown; identity: Identity } | undefined
   /** Previous valid identity is evidence for refusal only, never permission to launch. */
   private lastKnown: Identity | undefined
   private readTail: Promise<void> = Promise.resolve()
@@ -45,8 +53,13 @@ export class WatcherLaunchProfiles implements ThreadLaunchProfiles {
       }
       let identity: Identity | undefined
       try {
-        const record = savedIdentity.parse(JSON.parse(await readFile(join(this.directory, 'agents.json'), 'utf8'))).watcher
-        identity = { current: record.current, creation: record.creation, history: record.history }
+        const saved = savedFile.parse(JSON.parse(await readFile(join(this.directory, 'agents.json'), 'utf8'))).watcher
+        if (this.checked !== undefined && samePlainData(this.checked.record, saved)) identity = this.checked.identity
+        else {
+          const record = migrateWatcherRecord(saved)
+          identity = { current: record.current, creation: record.creation, history: record.history }
+          this.checked = { record: saved, identity }
+        }
       } catch { /* Invalid/unreadable data cannot confer a profile. Keep lastKnown only for refusal. */ }
       // Do not associate a read of the old file with a replacement's signature, or admit an
       // identity superseded while reading. A continuously changing file refuses this check.

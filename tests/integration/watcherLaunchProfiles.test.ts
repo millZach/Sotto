@@ -8,7 +8,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 import { WatcherLaunchProfiles } from '../../src/main/agents/watcherLaunchProfiles'
 import { SottoThreadHost, ThreadRegistry } from '../../src/main/agents/threads'
 import { FakeProviderHost } from '../fixtures/fakeProviderHost'
-import { emptyWatcherRecord } from '../../src/shared/watcher'
+import { emptyWatcherRecord, watcherRecordSchema } from '../../src/shared/watcher'
 import type { AgentThread } from '../../src/shared/agents'
 import type { WatcherProfileTools, ThreadLaunchProfiles } from '../../src/main/agents/host'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
@@ -73,6 +73,38 @@ it.each(['current', 'creation', 'history'] as const)('retains last known %s iden
   expect(f.tools.mcpServer).not.toHaveBeenCalled()
   await writeFile(join(f.root, 'agents.json'), '{}')
   expect(await f.source.profileFor(f.threadId)).toBeUndefined()
+})
+
+it('checks Watcher’s record again only when a save changed it, and reads the file after every save (#1759)', async () => {
+  const f = await setup(), path = join(f.root, 'agents.json')
+  const store = AtomicJsonStore.compact(path, value => value, () => ({}))
+  const reads = vi.spyOn(fs, 'readFile'), checks = vi.spyOn(watcherRecordSchema, 'parse')
+  expect(await f.source.profileFor(f.threadId)).toMatchObject({ kind: 'watcher' })
+  expect(checks).toHaveBeenCalledTimes(1)
+  // A save of the rest of agents.json, as a draft or an outbox write makes, leaves the record as it was.
+  for (let save = 0; save < 3; save++) {
+    await store.write({ watcher: f.record, outbox: [{ id: `delivery-${save}` }] })
+    expect(await f.source.profileFor(f.threadId)).toMatchObject({ kind: 'watcher' })
+  }
+  expect(reads.mock.calls.filter(([file]) => file === path)).toHaveLength(4)
+  expect(checks).toHaveBeenCalledTimes(1)
+  // A changed record is checked, and its identity is the one that counts.
+  const replacement = randomUUID()
+  f.record.current!.target.threadId = replacement
+  await store.write({ watcher: f.record })
+  await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
+  expect(await f.source.profileFor(replacement)).toMatchObject({ kind: 'watcher' })
+  expect(checks).toHaveBeenCalledTimes(2)
+})
+
+it('refuses a record that no longer passes its check after one that did', async () => {
+  const f = await setup()
+  expect(await f.source.profileFor(f.threadId)).toMatchObject({ kind: 'watcher' })
+  await writeFile(join(f.root, 'agents.json'), JSON.stringify({ watcher: { ...f.record, version: 999 } }))
+  await expect(f.source.profileFor(f.threadId)).rejects.toThrow('saved identity')
+  // The record that passed before is the one that counts again once it is saved again.
+  await f.save()
+  expect(await f.source.profileFor(f.threadId)).toMatchObject({ kind: 'watcher' })
 })
 
 it('isolates unknown ordinary kinds but refuses both special kinds when identity is invalid', async () => {
