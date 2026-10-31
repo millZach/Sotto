@@ -178,6 +178,7 @@ export default tseslint.config(
       'artifacts/issue-146/**',
       'artifacts/filled-cards-and-setup-card/**',
       'artifacts/settings-footer-status-clearance/**',
+      'artifacts/type-radius-scale/**',
       'artifacts/codex-connection-recovery/**',
       'artifacts/devin-local-provider/**',
       'artifacts/muse-provider/**',

@@ -261,6 +261,8 @@ artifacts/workspace-picker/
 artifacts/filled-cards-and-setup-card/
 # Settings' footer status on its own line (#1907); the cited before and after captures are committed
 artifacts/settings-footer-status-clearance/
+# Text sizes and corners on the named scale (#1833); the cited after captures are committed
+artifacts/type-radius-scale/
 artifacts/codex-restored-replies/
 
 # Native iPhone Focus verification captures; force-add only images cited by the note.
