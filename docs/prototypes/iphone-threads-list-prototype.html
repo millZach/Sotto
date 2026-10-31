@@ -1,0 +1,306 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. The Threads tab as the Duo's sidebar list, on an upright iPhone and the folded Duo.
+  Zach, October 30, 2026: on an upright iPhone and the folded Duo the Threads tab becomes the list the unfolded Duo's
+  sidebar shows (#1904): Needs you, Working now and Recent, a row each, like the desktop's sidebar, in place of today's
+  cards; a press opens the thread full screen and Back returns. The unfolded Duo keeps the list beside the open thread.
+  Folds in #1849: no counts line, the computer menu in the search row.
+  The question: how Needs you rows carry their question. ?needs=A|B|C.
+    A. Rows only: a Needs you row is a row like the others; the thread opens on its question.
+    B. Rows with the question: the question's first line under the title, on a warm tint.
+    C. Rows with quick answers: B, plus the choices as small buttons where this iPhone can answer.
+  Zach picked A, rows only, on October 30, 2026, and the list on a Max held sideways too, at the reading width.
+  ?theme=light shows light. Press a row to open its thread, Back to return.
+  Synthetic data only. No network, no persistence. Colours are Glass's palette from ThemePalettes.swift, sizes in points.
+-->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>iPhone Threads as the sidebar list (prototype)</title>
+<style>
+@font-face{font-family:Figtree;src:url('../../apps/ios/Sotto/Resources/Figtree.ttf') format('truetype'),url('Figtree.ttf') format('truetype');font-weight:400}
+@font-face{font-family:Figtree;src:url('../../apps/ios/Sotto/Resources/Figtree-SemiBold.ttf') format('truetype'),url('Figtree-SemiBold.ttf') format('truetype');font-weight:600}
+@font-face{font-family:Figtree;src:url('../../apps/ios/Sotto/Resources/Figtree-Bold.ttf') format('truetype'),url('Figtree-Bold.ttf') format('truetype');font-weight:700}
+:root,[data-theme=dark]{
+  --canvas:#111418;--ground1:#0c1015;--ground2:#151b22;--surface:#1b1e23;--raised:#21252a;--ink:#f9fafc;--muted:#ccd1d9;
+  --hair:#2f3339;--accent:#69caff;--onaccent:#071727;--accentsurface:#1a3b51;--accenttext:#84d2ff;--warning:#fe9a00;
+  --warnsurface:#3c311e;--warntext:#ffc183;--message:#202e3e;--placeholder:#c5cbd2;--chrome:#0b0d10;--glass:rgba(49,54,60,.55);
+  --composer:#262a30;--shadow:rgba(0,0,0,.45)}
+[data-theme=light]{
+  --canvas:#f0f2f6;--ground1:#f4f7fb;--ground2:#e6ecf4;--surface:#f9fafc;--raised:#ffffff;--ink:#101419;--muted:#43484f;
+  --hair:#ccd1d9;--accent:#0064b5;--onaccent:#fcfcfc;--accentsurface:#d4e7fc;--accenttext:#0f518f;--warning:#fe9a00;
+  --warnsurface:#f9edd9;--warntext:#785128;--message:#dae6f3;--placeholder:#484e55;--chrome:#e3e6eb;--glass:rgba(255,255,255,.6);
+  --composer:#e7eaef;--shadow:rgba(16,20,25,.14)}
+*{box-sizing:border-box;margin:0}
+html{-webkit-text-size-adjust:100%}
+body{font-family:Figtree,system-ui,sans-serif;background:#07080a;color:#e9ebef;min-height:100vh}
+body.light{background:#d9dde3;color:#14181d}
+header.bar{position:sticky;top:0;z-index:10;background:rgba(7,8,10,.92);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  padding:10px 12px calc(10px);border-bottom:1px solid #22262c;display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center}
+body.light header.bar{background:rgba(217,221,227,.92);border-color:#c3c8cf}
+.seg{display:flex;background:#1a1d22;border-radius:12px;padding:3px;gap:2px}
+body.light .seg{background:#c8cdd4}
+.seg button{font:inherit;font-size:15px;font-weight:600;border:0;background:none;color:inherit;opacity:.7;padding:9px 14px;border-radius:9px;min-height:40px;cursor:pointer}
+.seg button[aria-pressed=true]{background:#3a76a8;color:#fff;opacity:1}
+h1{font-size:15px;font-weight:700;margin-right:auto}
+main{padding:14px 12px 60px;max-width:1500px;margin:0 auto}
+.lede{font-size:15px;line-height:1.45;max-width:760px;margin:0 0 6px}
+.lede b{font-weight:700}
+.note{font-size:13.5px;line-height:1.45;opacity:.75;max-width:760px;margin:0 0 16px}
+.grid{display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start}
+.grid figure{flex:1 1 100%}
+@media (min-width:1000px){.grid figure{flex:0 1 var(--w)}}
+figure{margin:0}
+figcaption{font-size:13px;font-weight:600;opacity:.8;margin:0 0 6px}
+.fit{width:100%;position:relative;overflow:hidden;border-radius:22px;box-shadow:0 0 0 1px #2a2e35}
+body.light .fit{box-shadow:0 0 0 1px #b7bdc6}
+.screen{position:absolute;left:0;top:0;transform-origin:0 0;overflow:hidden;font-family:Figtree,system-ui,sans-serif;color:var(--ink);
+  background:radial-gradient(120% 80% at 20% 0%,var(--ground2),var(--ground1) 60%,var(--canvas));}
+.strip{position:absolute;top:0;right:0;bottom:0;background:var(--chrome)}
+.clock{position:absolute;top:30px;width:100%;text-align:center;font-weight:700;font-size:17px;color:var(--ink)}
+.batt{position:absolute;top:58px;left:50%;margin-left:-19px;width:38px;height:38px;border-radius:50%;border:3px solid #34c759;border-bottom-color:transparent}
+/* page content */
+.page{position:absolute;top:0;bottom:0}
+.h1{font-weight:700;font-size:30px;letter-spacing:-.2px}
+.plus{width:44px;height:44px;border-radius:50%;background:var(--surface);border:1px solid var(--hair);display:grid;place-items:center;color:var(--accent);font-size:26px;font-weight:400}
+.chiprow{display:flex;gap:10px;align-items:center;flex-wrap:nowrap}
+.pill{height:40px;border-radius:20px;border:1px solid var(--hair);background:var(--surface);display:flex;align-items:center;padding:0 14px;font-size:15px;font-weight:600;gap:8px;white-space:nowrap}
+.search{flex:1;color:var(--placeholder);font-weight:400}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:var(--accent);box-shadow:0 0 8px var(--accent)}
+.dot.warn{background:var(--warning);box-shadow:0 0 8px var(--warning)}
+.sec{font-size:15px;font-weight:600;display:flex;align-items:center;gap:8px;margin:18px 0 10px}
+.sec span{opacity:.6;font-weight:400}
+.card{border-radius:20px;background:var(--surface);border:1px solid var(--hair);padding:14px 16px;margin-bottom:12px}
+.card.need{border-color:rgba(254,154,0,.55);box-shadow:0 0 22px rgba(254,154,0,.18)}
+.card.work{border-color:rgba(105,202,255,.35);box-shadow:0 0 22px rgba(105,202,255,.12)}
+.k{font-size:13px;font-weight:600;display:flex;gap:6px;align-items:center;justify-content:space-between}
+.k i{font-style:normal;opacity:.6;font-weight:400}
+.t{font-size:18px;font-weight:600;margin:6px 0 4px}
+.s{font-size:14.5px;color:var(--muted)}
+.need .k b{color:var(--warntext);font-weight:600}
+.work .k b{color:var(--accenttext);font-weight:600}
+/* watcher */
+.wtop{display:flex;align-items:center;gap:10px;background:var(--surface);border:1px solid var(--hair);border-radius:28px;padding:6px}
+.owlb{width:44px;height:44px;border-radius:50%;background:var(--raised);display:grid;place-items:center;color:var(--ink)}
+.segw{flex:1;display:flex;background:var(--canvas);border-radius:22px;padding:3px}
+.segw div{flex:1;text-align:center;font-size:16px;font-weight:600;padding:9px 0;border-radius:19px;color:var(--muted)}
+.segw div.on{background:var(--raised);color:var(--ink)}
+.bubble{margin:16px 0 16px auto;width:max-content;max-width:80%;background:var(--message);padding:10px 16px;border-radius:18px;font-size:16px}
+.who{font-size:13.5px;color:var(--muted);display:flex;gap:6px;align-items:center}
+.msg{font-size:17px;line-height:1.5;margin:6px 0 14px}
+.msg b{font-weight:600}
+.dock{position:absolute;left:0;right:0;bottom:0;padding:0 14px 20px}
+.fade{position:absolute;left:0;right:0;bottom:0;pointer-events:none}
+.comp{display:flex;gap:8px;align-items:flex-end}
+.cplus{width:38px;height:38px;border-radius:50%;background:var(--composer);display:grid;place-items:center;font-size:22px;box-shadow:0 2px 10px var(--shadow)}
+.cbox{flex:1;height:38px;border-radius:19px;background:var(--composer);display:flex;align-items:center;padding:0 14px;color:var(--placeholder);font-size:16px;box-shadow:0 2px 10px var(--shadow)}
+/* tabs */
+.rail{position:absolute;display:flex;flex-direction:column;align-items:center}
+.tab{position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;color:var(--muted);-webkit-tap-highlight-color:transparent}
+.tab .chip{position:absolute;left:50%;transform:translateX(-50%);background:transparent;transition:background .15s}
+.tab.on{color:var(--accenttext)}
+.tab.on .chip{background:var(--accentsurface)}
+.tab svg{position:relative;display:block}
+[data-sbcase] [data-edge]{touch-action:none}
+.tab .lbl{position:relative;font-size:11.5px;font-weight:600;white-space:nowrap;letter-spacing:.1px}
+.tab.on .lbl{font-weight:700}
+.badge{position:absolute;min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:var(--warning);color:#111418;font-size:12px;font-weight:700;display:grid;place-items:center}
+.wdot{position:absolute;width:7px;height:7px;border-radius:50%;background:var(--accent)}
+.today-pill{position:absolute;border-radius:999px;background:var(--glass);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:inset 0 0 0 1px rgba(255,255,255,.12),0 6px 20px var(--shadow)}
+.legend{display:grid;grid-template-columns:1fr;gap:10px;margin:0 0 18px;max-width:900px}
+@media (min-width:700px){.legend{grid-template-columns:1fr 1fr 1fr}}
+.legend div{background:#15181c;border:1px solid #262a30;border-radius:14px;padding:10px 12px;font-size:13.5px;line-height:1.4;cursor:pointer}
+body.light .legend div{background:#eef0f3;border-color:#c3c8cf}
+.legend div.on{border-color:#3a76a8;box-shadow:0 0 0 1px #3a76a8}
+.legend b{font-weight:700;display:block;margin-bottom:2px}
+</style>
+<style>
+.grid figure{flex:0 1 var(--w)}
+@media (max-width:999px){.grid figure{flex:1 1 100%}}
+.row{display:flex;gap:12px;align-items:flex-start;padding:11px 12px;border-radius:14px;cursor:pointer}
+.row:active{background:var(--accentsurface)}
+.row .ti{font-size:16.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.row .ln{font-size:13px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+.row .ag{font-size:12.5px;color:var(--muted);margin-top:3px;white-space:nowrap}
+.row.need-b{background:color-mix(in srgb,var(--warning) 9%,transparent)}
+.q{font-size:14.5px;margin-top:5px;color:var(--ink)}
+.choices{display:flex;gap:8px;margin-top:9px;flex-wrap:wrap}
+.choices span{height:36px;padding:0 14px;border-radius:18px;display:inline-flex;align-items:center;background:var(--surface);border:1px solid var(--hair);font-size:14px;font-weight:600}
+.secH{font-size:13.5px;font-weight:600;color:var(--muted);margin:18px 12px 6px;display:flex;gap:6px}
+.secH span{opacity:.75;font-weight:400}
+.ring{width:8px;height:8px;border-radius:50%;border:1.5px solid var(--muted);display:inline-block}
+.bar{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-around;align-items:flex-start;padding-top:8px}
+.bar .it{display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:500;color:var(--muted);width:80px;cursor:pointer}
+.bar .it.on{color:var(--accenttext)}
+</style>
+</head>
+<body>
+<header class="bar" style="position:sticky;top:0">
+  <h1>Threads as the sidebar list · prototype</h1>
+  <div class="seg" id="needsSeg" role="group" aria-label="Needs you rows"></div>
+  <div class="seg" id="themes" role="group" aria-label="Appearance"></div>
+</header>
+<main>
+  <p class="lede">On an upright iPhone and the folded Duo, the Threads tab becomes the list the unfolded Duo shows beside a thread: <b>Needs you</b>, <b>Working now</b> and <b>Recent</b>, a row each, in place of today’s cards. Press a row to open the thread full screen; <b>Back</b> returns to the list. The unfolded Duo keeps the list beside the open thread, as in #1904, shown last for comparison.</p>
+  <p class="note">The header folds in #1849: no counts line, the computer menu in the search row, unreachable computers in one line. Settled stays folded at the end. Whichever Needs you row you pick is the row the Duo’s sidebar shows too, so there is one list everywhere. Colours are the Glass theme’s.</p>
+  <div class="legend" id="legend"></div>
+  <div class="grid" id="grid"></div>
+</main>
+<script>
+
+const NEEDS = {
+  A: {name: 'A · Rows only', text: 'A Needs you row is a row like the others, with its light. Press it and the thread opens with its question on top. The closest to the desktop’s sidebar.'},
+  B: {name: 'B · Rows with the question', text: 'The question’s first line sits under the title, on a faint warm tint, so you can read what it asks without opening it.'},
+  C: {name: 'C · Rows with quick answers', text: 'B, plus the choices as small buttons where this iPhone can answer, as today’s cards allow. Taller rows; fewer threads fit.'}
+};
+const params = new URLSearchParams(location.search);
+let needs = NEEDS[params.get('needs')] ? params.get('needs') : 'B';
+let theme = params.get('theme') === 'light' ? 'light' : 'dark';
+const I = {
+  threads: (f) => `<svg width="S" height="S" viewBox="0 0 24 24"><path d="M12 3.5c5 0 9 3.2 9 7.3s-4 7.3-9 7.3c-1 0-2-.1-2.9-.4L4.6 20c-.5.2-.9-.3-.7-.7l1-3C3.7 15 3 13 3 10.8 3 6.7 7 3.5 12 3.5Z" ${f ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"'}/></svg>`,
+  watcher: () => `<svg width="S" height="S" viewBox="-2 -2.5 20 20"><path fill="currentColor" fill-rule="evenodd" d="M 1.27 4.8 C 0.84 3.93 0.73 2.31 1.49 1.22 C 1.63 0.95 1.93 0.68 2.06 1.22 C 2.12 2.03 2.71 2.9 3.93 2.9 C 5.83 2.2 10.17 1.76 12.94 3.34 C 13.69 3.28 14.4 2.71 14.45 1.82 C 14.51 1.57 14.73 1.57 14.83 1.98 C 15.32 2.58 15.54 4.26 14.94 5.56 C 15.38 6.1 15.7 7.46 15.7 9.63 C 15.76 12.12 15.290 13.37 13.97 14.24 C 12.75 15.19 10.17 15.24 8 15.24 C 5.8 15.24 3.23 15.19 2.01 14.24 C 0.68 13.37 0.22 12.12 0.27 9.63 C 0.24 7.19 0.52 5.83 1.27 4.8 Z M 1.84 8.95 C 1.82 7.05 2.25 6.07 3.66 6.07 C 5.34 6.02 6.75 6.21 6.73 8.54 C 6.73 10.44 6.1 11.31 4.34 11.31 C 2.58 11.34 1.82 10.58 1.84 8.95 Z M 9.33 9.22 C 9.33 8.14 9.63 7.67 10.44 7.46 L 13.1 6.92 C 13.8 6.78 14.13 7.46 14.13 8.81 C 14.16 10.71 13.69 11.34 11.66 11.34 C 10.17 11.34 9.33 10.71 9.33 9.22 Z"/><circle fill="currentColor" cx="5.29" cy="8.22" r="1.19"/><circle fill="currentColor" cx="10.79" cy="8.87" r="1.19"/></svg>`,
+  computers: (f) => `<svg width="S" height="S" viewBox="0 0 24 24"><rect x="2.8" y="3.8" width="18.4" height="12.4" rx="2" ${f ? 'fill="currentColor"' : 'fill="none" stroke="currentColor" stroke-width="1.7"'}/><path d="M9 20.2h6M12 16.5v3.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/></svg>`,
+  settings: (f) => `<svg width="S" height="S" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/><circle cx="15" cy="6" r="2.3" fill="${f ? 'currentColor' : 'var(--bgk)'}"/><circle cx="8" cy="12" r="2.3" fill="${f ? 'currentColor' : 'var(--bgk)'}"/><circle cx="14" cy="18" r="2.3" fill="${f ? 'currentColor' : 'var(--bgk)'}"/></svg>`
+};
+const TABS = [['threads', 'Threads'], ['watcher', 'Watcher'], ['computers', 'Computers'], ['settings', 'Settings']];
+
+function iconSized(id, on, size) { return I[id](on).split('width="S"').join(`width="${size}"`).split('height="S"').join(`height="${size}"`); }
+function marks(id, size, labelGap) {
+  // Threads' badge and Watcher's working dot ride the icon's top right corner.
+  const half = size / 2;
+  if (id === 'threads') return `<span class="badge" style="left:calc(50% + ${half - 6}px);top:${-7}px">4</span>`;
+  if (id === 'watcher') return `<span class="wdot" style="left:calc(50% + ${half - 3}px);top:${-1}px"></span>`;
+  return '';
+}
+
+const THREADS = [
+  {id: 't1', sec: 'need', title: 'Choose the release target', line: 'Claude Code · Sotto · Laptop', ago: '2m', q: 'Which release should I prepare?', choices: ['TestFlight', 'Desktop']},
+  {id: 't2', sec: 'need', title: 'Fix login test', line: 'Claude Code · Sotto · Laptop', ago: '22m', q: 'Which account should the login test sign in with?', choices: ['Shared', 'Per run']},
+  {id: 't3', sec: 'work', title: 'Babysit #845 release notes', line: 'Codex · Sotto · Laptop', ago: '12m'},
+  {id: 't4', sec: 'work', title: 'Refine the iPhone thread view', line: 'Codex · Sotto · Laptop', ago: '12m'},
+  {id: 't5', sec: 'work', title: 'Clean up the wiring schedule', line: 'Claude Code · Panel tools · Laptop', ago: '20m'},
+  {id: 't6', sec: 'recent', title: 'Add keyboard shortcuts', line: 'Just finished · Laptop', ago: '18m', unread: true},
+  {id: 't7', sec: 'recent', title: 'Compare motor drive options', line: 'Codex · Panel tools · Laptop', ago: '1h'},
+  {id: 't8', sec: 'recent', title: 'Update the lighting plan', line: 'Can’t reach it · Studio Mac', ago: '1d'}
+];
+const SECS = [['need', 'Needs you'], ['work', 'Working now'], ['recent', 'Recent']];
+function light(t) {
+  if (t.sec === 'need') return '<span class="dot warn"></span>';
+  if (t.sec === 'work' || t.unread) return '<span class="dot"></span>';
+  return '<span class="ring"></span>';
+}
+function row(t, open, phone) {
+  const chosen = open === t.id;
+  const extra = t.sec === 'need' && needs !== 'A'
+    ? `<div class="q">${t.q}</div>${needs === 'C' ? `<div class="choices">${t.choices.map(c => `<span>${c}</span>`).join('')}<span style="background:none;border:0;color:var(--accenttext)">More…</span></div>` : ''}` : '';
+  const cls = chosen ? 'style="background:var(--accentsurface)"' : '';
+  return `<div class="row ${t.sec === 'need' && needs !== 'A' ? 'need-b' : ''}" data-thread="${t.id}" ${cls}>
+    <span style="margin-top:7px">${light(t)}</span>
+    <div style="min-width:0;flex:1"><div class="ti" style="${chosen ? 'color:var(--accenttext)' : ''}${t.unread ? ';font-weight:700' : ''}">${t.title}</div>
+    <div class="ln">${t.sec === 'need' && needs === 'A' ? 'Asked you a question · Laptop' : t.line}</div>${extra}</div>
+    <span class="ag">${t.ago} ago</span></div>`;
+}
+function list(open, opts) {
+  const head = opts.heading ? `<div style="display:flex;justify-content:space-between;align-items:center;padding:6px 8px 0 12px">
+      <div class="h1" style="font-size:${opts.small ? 24 : 30}px">Threads</div>${opts.plus ? '<div class="plus">+</div>' : ''}</div>` : '';
+  const controls = opts.controls ? `<div style="display:flex;gap:8px;margin:12px 8px 0">
+      <div class="pill" style="padding:0 12px;height:40px"><span class="dot"></span>All ▾</div>
+      <div class="pill search" style="flex:1;height:40px">⌕ Search threads</div></div>
+    <div style="margin:10px 8px 0;padding:10px 14px;border-radius:14px;border:1px solid var(--hair);background:var(--surface);font-size:14px;display:flex;justify-content:space-between;align-items:center">
+      <span><b style="font-weight:600">Can’t reach Studio Mac.</b> <span style="color:var(--muted)">Its threads as last shared.</span></span><span style="color:var(--accenttext);font-weight:600">Try again</span></div>` : '';
+  const secs = SECS.map(([sec, name]) => {
+    const ts = THREADS.filter(t => t.sec === sec);
+    return `<div class="secH">${name}<span>${ts.length}</span></div>${ts.map(t => row(t, open, opts.phone)).join('')}`;
+  }).join('');
+  const settled = `<div class="secH" style="margin-top:20px">› Settled<span>2</span></div>`;
+  return `${head}${controls}<div style="padding:0 4px">${secs}${opts.settled ? settled : ''}</div>`;
+}
+function thread(id, opts) {
+  const t = THREADS.find(x => x.id === id);
+  const back = opts.back ? `<div data-back role="button" aria-label="Back" style="width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--hair);color:var(--ink);cursor:pointer;font-size:22px">‹</div>` : '';
+  const side = opts.side ? `<div style="width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--hair);color:var(--accenttext)">▤</div>` : '';
+  const state = t.sec === 'need' ? '<span class="dot warn"></span>Needs you' : t.sec === 'work' ? '<span class="dot"></span>Working' : 'Done';
+  const ask = t.sec === 'need' ? `<div class="card need" style="margin-top:14px"><div class="k"><b><span class="dot warn"></span>&nbsp;Question</b></div><div class="t" style="font-size:17px">${t.q}</div>
+      <div class="choices">${t.choices.map(c => `<span>${c}</span>`).join('')}</div></div>` : '';
+  return `<div style="display:flex;gap:8px;align-items:center;padding:10px 14px">${back}${side}
+      <div style="flex:1;min-width:0;text-align:center;font-weight:600;font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${t.title}</div>
+      <div style="height:36px;border-radius:18px;display:flex;align-items:center;gap:6px;padding:0 12px;background:var(--surface);border:1px solid var(--hair);font-size:14px">${state}</div></div>
+    <div style="padding:4px 18px 0;max-width:${opts.reading || 9999}px;margin:0 auto">
+      <div style="font-size:26px;font-weight:700;margin:6px 0 4px">${t.title}</div><div class="s">${t.line}</div>
+      <div class="bubble" style="margin:16px 0 14px auto">Can you check what changed since yesterday?</div>
+      <div class="who">${t.line.split(' · ')[0]} · 6:13 AM</div>
+      <div class="msg">I read the last day of commits on <b>main</b> and the two open pull requests. Three things changed what this thread touches.</div>${ask}</div>
+    <div class="fade" style="height:96px;background:linear-gradient(to bottom,transparent,var(--canvas) 26px)"></div>
+    <div class="dock"><div class="comp" style="max-width:${opts.reading || 9999}px;margin:0 auto"><div class="cplus">+</div><div class="cbox">Reply to this thread</div></div></div>`;
+}
+function phoneBar() {
+  return `<div class="bar" style="height:84px">${TABS.map(([id, n]) => `<div class="it ${id === 'threads' ? 'on' : ''}">${iconSized(id, false, 24)}${n}</div>`).join('')}</div>`;
+}
+function duoRail(x, strip, withPlus = true) {
+  const tabs = TABS.map(([id, n]) => {
+    const on = id === 'threads';
+    return `<div class="tab ${on ? 'on' : ''}" style="width:72px;height:62px"><span class="chip" style="width:60px;height:50px;top:6px;border-radius:14px"></span><span style="position:relative">${iconSized(id, on, 28)}${marks(id, 28)}</span></div>`;
+  }).join('');
+  return `${withPlus ? `<div class="rail" style="left:${x}px;width:${strip}px;top:156px"><div class="plus" style="width:44px;height:44px">+</div></div>` : ''}
+    <div class="rail" style="left:${x}px;width:${strip}px;top:210px;bottom:34px;justify-content:center;gap:8px">${tabs}</div>`;
+}
+function phone(c) {
+  const W = 393, H = 852;
+  const status = `<div style="position:absolute;top:16px;left:44px;font-weight:700;font-size:17px">9:41</div><div style="position:absolute;top:12px;left:50%;margin-left:-62px;width:124px;height:36px;border-radius:20px;background:#000"></div>`;
+  if (c.open) return {W, H, html: `${status}<div class="page" style="left:0;right:0;top:54px">${thread(c.open, {back: true})}</div>`};
+  return {W, H, html: `${status}<div class="page" style="left:0;right:0;top:54px;bottom:84px;overflow:hidden">${list(null, {heading: true, plus: true, controls: true, settled: true, phone: true})}</div>${phoneBar()}`};
+}
+function folded(c) {
+  const W = 466, H = 678, strip = 84, pageW = W - strip;
+  const clock = `<div class="strip" style="width:${strip}px;background:transparent"><div class="clock" style="top:80px">9:41</div><div class="batt" style="top:108px"></div></div>`;
+  if (c.open) return {W, H, html: `${clock}<div class="page" style="left:0;width:${pageW}px">${thread(c.open, {})}</div>
+      <div data-back role="button" aria-label="Back" style="position:absolute;left:${pageW + 20}px;top:170px;width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:var(--surface);border:1px solid var(--hair);cursor:pointer;font-size:22px">‹</div>`};
+  return {W, H, html: `${clock}<div class="page" style="left:0;width:${pageW}px;overflow:hidden">${list(null, {heading: true, controls: true, settled: true, phone: true})}</div>${duoRail(pageW, strip)}`};
+}
+function unfolded(c) {
+  const W = 952, H = 680, strip = 85, sbW = 280;
+  const open = c.open || 't4';
+  const clock = `<div class="strip" style="width:${strip}px;background:transparent"><div class="clock" style="top:28px">9:41</div><div class="batt" style="top:56px"></div></div>`;
+  return {W, H, html: `${clock}<div style="position:absolute;left:0;top:0;bottom:0;width:${sbW}px;border-right:1px solid var(--hair);background:color-mix(in srgb,var(--surface) 70%,transparent);overflow:hidden;padding:8px 4px">${list(open, {heading: true, small: true})}</div>
+    <div class="page" style="left:${sbW}px;width:${W - strip - sbW}px">${thread(open, {side: true, reading: 560})}</div>${duoRail(W - strip, strip).replace('top:156px', 'top:108px').replace('top:210px', 'top:160px')}`};
+}
+const cases = [
+  {pos: phone, cap: 'iPhone upright · Threads'},
+  {pos: folded, cap: 'Duo folded · Threads'},
+  {pos: unfolded, cap: 'Duo unfolded · the list beside the thread (as #1904)'}
+];
+function render() {
+  document.documentElement.dataset.theme = theme;
+  document.body.classList.toggle('light', theme === 'light');
+  document.getElementById('needsSeg').innerHTML = Object.keys(NEEDS).map(k => `<button data-needs="${k}" aria-pressed="${k === needs}">${k}</button>`).join('');
+  document.getElementById('themes').innerHTML = ['dark', 'light'].map(t => `<button data-t="${t}" aria-pressed="${t === theme}">${t === 'dark' ? 'Dark' : 'Light'}</button>`).join('');
+  document.getElementById('legend').innerHTML = Object.entries(NEEDS).map(([k, v]) => `<div data-needs="${k}" class="${k === needs ? 'on' : ''}"><b>${v.name}</b>${v.text}</div>`).join('');
+  document.getElementById('grid').innerHTML = cases.map((c, i) => {
+    const s = c.pos(c);
+    const cap = c.open && c.pos !== unfolded ? c.cap.replace('Threads', 'a thread (Back returns)') : c.cap;
+    return `<figure style="--w:${s.W}px"><figcaption>${cap}</figcaption><div class="fit" data-w="${s.W}" data-h="${s.H}"><div class="screen" data-case="${i}" style="width:${s.W}px;height:${s.H}px;--bgk:var(--canvas)">${s.html}</div></div></figure>`;
+  }).join('');
+  fit();
+  const u = new URL(location.href); u.searchParams.set('needs', needs); u.searchParams.set('theme', theme); history.replaceState(null, '', u);
+}
+function fit() {
+  document.querySelectorAll('.fit').forEach(f => {
+    const w = +f.dataset.w, h = +f.dataset.h, k = Math.min(1, f.clientWidth / w);
+    f.style.height = (h * k) + 'px';
+    f.firstElementChild.style.transform = `scale(${k})`;
+  });
+}
+document.addEventListener('click', e => {
+  const n = e.target.closest('[data-needs]'); if (n) { needs = n.dataset.needs; render(); return; }
+  const t = e.target.closest('[data-t]'); if (t) { theme = t.dataset.t; render(); return; }
+  const scr = e.target.closest('[data-case]'); if (!scr) return;
+  const c = cases[+scr.dataset.case];
+  if (e.target.closest('[data-back]')) { c.open = null; render(); return; }
+  const th = e.target.closest('[data-thread]'); if (th) { c.open = th.dataset.thread; render(); }
+});
+addEventListener('resize', fit);
+render();
+</script>
+</body>
+</html>

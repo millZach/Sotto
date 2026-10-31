@@ -38,6 +38,8 @@ New-thread defaults choose the model, effort, permissions and working copy that 
 
 A question with a few one-tap choices, or a permission, can be answered on its card in Threads again, as the approved study draws it. This amends ADR-0039's "Requests are opened and answered in their thread": the card's top still opens the thread to read the whole request first, and the sheet in the thread is unchanged. A card reads Sending, then Answered when the computer confirms the answer through its own receipt, or No longer waiting when the request left without that (a desktop answer, a stopped turn), before it leaves. Nothing here answers for the user; ADR-0004 and ADR-0033 decide who may answer, as before.
 
+Since October 30, 2026, on every iPhone but the unfolded Duo, Threads is the thread list, a row each, and nothing is answered on its rows: a question or permission is answered in its thread, as ADR-0039 first had it. The unfolded Duo's Threads page keeps its cards, answerable in place as below ([ADR-0151](0151-the-iphone-sets-threads-side-by-side-at-regular-width.md), amended).
+
 Working cards show the step running now only for a thread whose detail this iPhone has read, because the thread list the computer sends carries no steps; otherwise they show the thread's state and how long it has been working.
 
 ## What this does not change
