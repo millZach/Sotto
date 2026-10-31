@@ -22,7 +22,7 @@ function shell(threads: readonly AgentThread[]): AgentState {
 /**
  * Main and one window between them: `publish` broadcasts a shell as `src/main/index.ts` does; `lose` makes the next
  * delivery report success without reaching the page, as a message sent while a window reloads does; the page's `get()`
- * reads the current shell and tells the broadcaster, as `AGENT_GET` does.
+ * reads the current shell and tells the broadcaster, as `AGENT_GET` does. `sent` holds each payload main delivered.
  */
 function wire() {
   const broadcaster = new AgentStateBroadcaster()
@@ -31,18 +31,19 @@ function wire() {
   let lost = 0
   const get = vi.fn(async (): Promise<AgentState> => { broadcaster.windowRead(); return structuredClone(current) })
   const bridge = { get, command: vi.fn(), onState: (next: (raw: unknown) => void) => { listener = next; return () => { listener = null } } } as unknown as AgentWireBridge
-  const delivered: AgentState[] = []
+  const delivered: AgentState[] = [], sent: AgentStateBroadcast[] = []
   const subscribe = (): void => { wrapAgentBridge(bridge).onState(state => delivered.push(state)) }
   const publish = (state: AgentState, ok = true): void => {
     current = state
     broadcaster.send(state, (payload: AgentStateBroadcast) => {
       if (!ok) return false
       if (lost > 0) { lost--; return true }
+      sent.push(payload)
       listener?.(structuredClone(payload))
       return true
     })
   }
-  return { broadcaster, get, delivered, subscribe, publish, lose: () => { lost++ }, emit: (raw: unknown) => listener?.(raw) }
+  return { broadcaster, get, delivered, sent, subscribe, publish, lose: () => { lost++ }, emit: (raw: unknown) => listener?.(raw) }
 }
 
 /** A small seeded generator, so a failure names a sequence that can be run again. */
@@ -215,6 +216,56 @@ describe('the page puts the broadcast thread array back (#1330)', () => {
       await vi.waitFor(() => expect(delivered).toHaveLength(before + 1))
       await new Promise(resolve => { setImmediate(resolve) })
     }
+  })
+})
+
+describe('kept parts (ADR-0028, October 30)', () => {
+  // As the router builds it: every part a new object on every publish, holding what it held.
+  const rebuilt = (state: AgentState, threads: AgentThread[]): AgentState => ({ ...structuredClone(state), host: { ...structuredClone(state.host), threads } })
+
+  it('leaves out each part that did not change, and the page puts back the very part it holds', () => {
+    const { sent, delivered, subscribe, publish: send, get } = wire()
+    subscribe()
+    const a = agentThread({ id: 'a', title: 'A' })
+    const first = { ...shell([a]), activeThreadId: 'a' }
+    send(first)
+    expect(sent[0]).not.toHaveProperty('kept')
+    const second = rebuilt(first, [{ ...a, status: 'running' }])
+    send(second)
+    expect(sent[1]).not.toHaveProperty('configuration')
+    expect(sent[1]!.kept).toEqual(expect.arrayContaining(['configuration', 'activeThreadId']))
+    expect(sent[1]!.host).not.toHaveProperty('projects')
+    expect(sent[1]!.host.kept).toEqual(expect.arrayContaining(['projects', 'capabilities']))
+    expect(sent[1]!.host.threads.changed.map(thread => thread.status)).toEqual(['running'])
+    expect(delivered[1]).toEqual(second)
+    expect(delivered[1]!.configuration).toBe(delivered[0]!.configuration)
+    expect(delivered[1]!.host.projects).toBe(delivered[0]!.host.projects)
+    // A part that changed crosses whole, and the rest stays kept.
+    const third = { ...rebuilt(second, second.host.threads), activeThreadId: null }
+    send(third)
+    expect(sent[2]).toHaveProperty('activeThreadId', null)
+    expect(sent[2]!.kept).not.toContain('activeThreadId')
+    expect(delivered[2]).toEqual(third)
+    expect(get).not.toHaveBeenCalled()
+  })
+
+  it('sends every part after the window read the whole state, and reads it whole for kept parts it does not hold', async () => {
+    const { broadcaster, sent, delivered, subscribe, publish: send, lose, get } = wire()
+    subscribe()
+    const a = agentThread({ id: 'a' })
+    send(shell([a]))
+    broadcaster.windowRead()
+    send(rebuilt(shell([a]), [a]))
+    expect(sent[1]).not.toHaveProperty('kept')
+    expect(sent[1]!.host).not.toHaveProperty('kept')
+    // A broadcast measured from one the page did not apply cannot have its kept parts put back.
+    const lost = rebuilt(shell([a]), [{ ...a, title: 'Lost' }])
+    lose(); send(lost)
+    const after = rebuilt(lost, [{ ...a, title: 'After' }])
+    send(after)
+    expect(sent[2]!.kept?.length).toBeGreaterThan(0)
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(1))
+    await vi.waitFor(() => expect(delivered.at(-1)).toEqual(after))
   })
 })
 
