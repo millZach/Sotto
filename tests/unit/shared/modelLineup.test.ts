@@ -80,6 +80,9 @@ describe('retired models', () => {
     // A choice the catalog never held may be a model the user named: it moves only within its own line.
     const named = publicProviderEntityId('claude', 'model', 'coordinator-model')
     expect(modelInForce(live, named)).toBe(named)
+    // Once a retired model has left the catalog, a choice in the provider's own shape still moves, to its default if need be.
+    expect(modelInForce(live, publicProviderEntityId('codex', 'model', 'gpt-5.5'))).toBe(publicProviderEntityId('codex', 'model', 'gpt-6.1-sol'))
+    expect(modelInForce(live, publicProviderEntityId('claude', 'model', 'claude-fable-5-1'))).toBe(publicProviderEntityId('claude', 'model', 'fable'))
     expect(modelInForce(live, publicProviderEntityId('claude', 'model', 'claude-sonnet-4-5'))).toBe(publicProviderEntityId('claude', 'model', 'sonnet'))
   })
 })

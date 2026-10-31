@@ -55,7 +55,7 @@ export function coordinatorSetupThreads(options: { coordinator: HostSetupCoordin
       }
       const most = [...counts].sort((left, right) => right[1] - left[1])[0]?.[0]
       const fallback = resolveModel(models, modelInForce(models, defaultNewThreadModelId(current.configuration, models, current.reasoningAccounts)))?.id ?? models[0]!.id
-      return { models: models.map(model => ({ id: model.id, name: model.name, provider: model.provider })), modelId: most ?? fallback }
+      return { models: models.map(model => ({ id: model.id, name: model.name, provider: model.provider, ...(model.legacy ? { legacy: true as const } : {}) })), modelId: most ?? fallback }
     },
     async start({ title, modelId, brief, created }) {
       await mkdir(folder, { recursive: true })

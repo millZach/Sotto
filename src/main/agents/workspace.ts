@@ -20,7 +20,7 @@ import { immutableActivities, immutableModels, immutableUpdates, isImmutableActi
 import { readdir, stat, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, THREAD_CONTINUED_IN_MAX, WAKE_UP_MESSAGE_IDS_MAX, type ThreadContinuedFrom, type ThreadContinuedIn, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentMessage, type AgentThread, type AgentThreadStart, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, dropLiveThreadState, threadProviderOf, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, THREAD_CONTINUED_IN_MAX, WAKE_UP_MESSAGE_IDS_MAX, type ThreadContinuedFrom, type ThreadContinuedIn, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentMessage, type AgentThread, type AgentThreadStart, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink, type UsageRecordedUserMessage } from './usageHistory/sink'
@@ -43,8 +43,8 @@ import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type Age
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentRow, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
 import { validateThreadOptions } from './threadOptions'
-import { resolveModel } from '../../shared/modelCatalog'
-import { LINEUP_PROVIDERS, retiredModelSuccessor } from '../../shared/modelLineup'
+import { resolveModel, servedModelName } from '../../shared/modelCatalog'
+import { LINEUP_PROVIDERS, namesOwnModel, retiredModelSuccessor } from '../../shared/modelLineup'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
 import { isThreadArchived, isThreadClosed, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { delegatedThreadsBelow } from '../../shared/delegation'
@@ -247,6 +247,9 @@ const modelProviderKey = (model: AgentModel): string => model.providerId ?? mode
  * the first model that carries them, and read back onto the rest. A model whose modes differ from
  * its provider's first keeps its own.
  */
+/** Settled, by the provider or in Sotto (a project's settling reaches its threads' own record), or archived. */
+const closedHere = (thread: AgentThread): boolean => isThreadClosed(thread) || Boolean(thread.workspaceSettledAt)
+
 function catalogModelsForSave(models: readonly AgentModel[]): AgentModel[] {
   const first = new Map<string, string>()
   return models.map(model => {
@@ -4379,7 +4382,8 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /**
    * Retired models leave the catalog (ADR-0171). A Claude Code or Codex model kept from an earlier catalog is retired once
    * that provider sends a catalog with ready models that does not name it. It stays, not ready and shown nowhere, only while
-   * a thread is still on it, so the thread can say what it moved from when it is next opened (`moveOffRetiredModels`).
+   * an open thread is still on it, so the thread can say what it moved from when it is next opened (`moveOffRetiredModels`).
+   * A settled or archived thread keeps nothing: restored and opened, it moves by its model's ID.
    * Another provider's kept models, and a provider not connected now, are left as they are. Answers whether any retired
    * model is still kept for a thread.
    */
@@ -4394,7 +4398,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (model.ready || !model.providerId || !fresh.has(model.providerId)) continue
       named ??= new Set(incoming.map(item => item.id))
       if (named.has(id)) continue
-      used ??= new Set(this.state.snapshot.threads.map(thread => thread.modelId))
+      used ??= new Set(this.state.snapshot.threads.filter(thread => !closedHere(thread)).map(thread => thread.modelId))
       if (used.has(id)) kept = true
       else models.delete(id)
     }
@@ -5703,10 +5707,13 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const models = this.state.snapshot.models
     for (const id of ids) {
       const thread = this.threadById(id)
-      if (!thread || this.retiredMoves.has(id) || thread.status === 'running' || thread.requests.length || isThreadClosed(thread)) continue
+      if (!thread || this.retiredMoves.has(id) || thread.status === 'running' || thread.requests.length || closedHere(thread)) continue
       // The catalog's own entry, not its base's: a long-context variant the catalog never listed runs as its base does (#346).
-      const entry = models.find(model => model.id === thread.modelId)
-      if (!entry || entry.ready || !entry.providerId || !LINEUP_PROVIDERS.has(entry.providerId)) continue
+      // A thread whose retired model has left the catalog, having been settled meanwhile, moves by the model's ID.
+      const kept = models.find(model => model.id === thread.modelId)
+      const provider = threadProviderOf(thread)
+      if (kept?.ready || !provider || !LINEUP_PROVIDERS.has(provider) || !kept && (resolveModel(models, thread.modelId) || !namesOwnModel(thread.modelId))) continue
+      const entry = kept ?? { id: thread.modelId, name: servedModelName(provider, thread.modelId).replace(/^Claude /u, '') }
       const successor = retiredModelSuccessor(models, entry.id, entry.name)
       if (!successor) continue
       this.retiredMoves.add(id)

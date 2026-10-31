@@ -1,11 +1,11 @@
 import React, { useId, useRef, useState, type ReactNode } from 'react'
-import { ChevronDown, ChevronRight, Search, X } from 'lucide-react'
+import { ChevronDown, Search, X } from 'lucide-react'
 import { plural } from '@lingui/core/macro'
 import { useLingui } from '@lingui/react/macro'
 import type { AgentModel } from '../../../shared/agents'
 import { useAnchoredMenu } from './anchoredMenu'
 import { moveListboxFocus } from './listboxKeys'
-import { countModels, lineupModels, matchesWords, modelSources, newestModelsFirst, searchWords } from './ModelPicker'
+import { countModels, LegacyRow, lineupModels, matchesWords, modelSources, newestModelsFirst, searchWords, useLegacyName } from './ModelPicker'
 import './modelPicker.css'
 
 /**
@@ -43,7 +43,7 @@ export function ProviderModelList({ label, models, agentEntryId }: {
     ? sources.map(source => ({ name: source.name, models: source.models.filter(matches) })).filter(source => source.models.length)
     : [{ name: '', models: (lineup?.latest ?? newestModelsFirst(models)).filter(matches) }].filter(group => group.models.length)
   const legacy = lineup?.legacy.filter(matches) ?? []
-  const legacyName = t({ message: 'Legacy', comment: 'In the model menu: the older models of a provider, kept apart from its newest.' })
+  const legacyName = useLegacyName()
   const count = countModels(models.length)
   const close = (): void => setOpen(false)
   const row = (model: AgentModel): ReactNode => <li key={model.id} tabIndex={-1}>
@@ -80,9 +80,7 @@ export function ProviderModelList({ label, models, agentEntryId }: {
             : <ul key="models">{group.models.map(row)}</ul>)}
           {legacy.length > 0 ? <section aria-label={legacyName}>
             {words.length ? <p className="model-picker__group" aria-hidden="true">{legacyName}<span>{legacy.length}</span></p>
-              : <button type="button" className="model-picker__legacy" aria-expanded={legacyOpen} onClick={() => setLegacyOpen(shown => !shown)}>
-                {legacyOpen ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}{legacyName}<span>{countModels(legacy.length)}</span>
-              </button>}
+              : <LegacyRow open={legacyOpen} count={legacy.length} onToggle={() => setLegacyOpen(shown => !shown)} />}
             {words.length || legacyOpen ? <ul>{legacy.map(row)}</ul> : null}
           </section> : null}
           {!groups.length && !legacy.length && <p className="model-picker__empty tt-paragraph">{t`No matching models.`}</p>}

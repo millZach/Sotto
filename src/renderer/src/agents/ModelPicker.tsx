@@ -52,6 +52,19 @@ export function lineupModels(models: readonly AgentModel[], starred: (model: Age
   return { latest: newestModelsFirst(latest), legacy: newestModelsFirst(legacy) }
 }
 
+/** "Legacy", the name of the section that holds a Claude Code or Codex provider's older models (ADR-0171). */
+export function useLegacyName(): string {
+  const { t } = useLingui()
+  return t({ message: 'Legacy', comment: 'In the model menu: the older models of a provider, kept apart from its newest.' })
+}
+
+/** The closed row under a Claude Code or Codex list that opens its legacy models in place, with how many there are. */
+export function LegacyRow({ open, count, onToggle }: { readonly open: boolean; readonly count: number; readonly onToggle: () => void }): ReactNode {
+  return <button type="button" className="model-picker__legacy" aria-expanded={open} onClick={onToggle}>
+    {open ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}{useLegacyName()}<span>{countModels(count)}</span>
+  </button>
+}
+
 /** Models under the name `by` gives each, in the order each name first appears and each group in the order given. */
 function groupModels(models: readonly AgentModel[], by: (model: AgentModel) => string): Map<string, AgentModel[]> {
   const result = new Map<string, AgentModel[]>()
@@ -201,7 +214,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const legacy = selectedProvider?.legacy ?? []
   const legacyFound = query ? legacy.filter(matchesQuery) : legacy
   const [legacyOpen, setLegacyOpen] = useState(false)
-  const legacyName = t({ message: 'Legacy', comment: 'In the model menu: the older models of a provider, kept apart from its newest.' })
+  const legacyName = useLegacyName()
   const sources = selectedProvider?.sources
   const makers = sources !== undefined && selectedProvider?.providerId === 'cursor'
   // The words a menu of Cursor's model makers uses where a menu of model sources uses its own (ADR-0128).
@@ -376,9 +389,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
         </div>
         : !sources ? <div ref={list} role="listbox" aria-label={providerModels} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
           {filtered.map(model => option(model))}
-          {legacyFound.length > 0 && !query ? <button type="button" className="model-picker__legacy" aria-expanded={legacyOpen} onClick={() => setLegacyOpen(shown => !shown)}>
-            {legacyOpen ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}{legacyName}<span>{countModels(legacyFound.length)}</span>
-          </button> : null}
+          {legacyFound.length > 0 && !query ? <LegacyRow open={legacyOpen} count={legacyFound.length} onToggle={() => setLegacyOpen(shown => !shown)} /> : null}
           {legacyFound.length > 0 && query ? <p className="model-picker__group" aria-hidden="true">{legacyName}<span>{legacyFound.length}</span></p> : null}
           {legacyFound.length > 0 && (query || legacyOpen) ? <div role="group" aria-label={legacyName}>{legacyFound.map(model => option(model))}</div> : null}
           {selectedProvider?.reason !== undefined ? <p className="model-picker__empty tt-paragraph" role="note">{selectedProvider.reason}</p>

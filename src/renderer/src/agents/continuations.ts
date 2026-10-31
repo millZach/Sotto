@@ -97,7 +97,8 @@ export function providerDefaults(state: AgentState, models: readonly AgentModel[
   const providers = [...new Set(models.flatMap(model => model.providerId ? [model.providerId] : []))]
   return providers.flatMap(provider => {
     const own = models.filter(model => model.providerId === provider)
-    const chosen = own.find(model => model.id === modelInForce(own, state.configuration.newThreadModelId)) ?? newestModelsFirst(own)[0]
+    const chosenId = modelInForce(own, state.configuration.newThreadModelId)
+    const chosen = own.find(model => model.id === chosenId) ?? newestModelsFirst(own)[0]
     return chosen ? [chosen] : []
   })
 }

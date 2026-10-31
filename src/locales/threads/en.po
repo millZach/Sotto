@@ -4713,9 +4713,7 @@ msgid "Leave empty to auto-generate"
 msgstr "Leave empty to auto-generate"
 
 #. In the model menu: the older models of a provider, kept apart from its newest.
-#. In the model menu: the older models of a provider, kept apart from its newest.
 #: src/renderer/src/agents/ModelPicker.tsx
-#: src/renderer/src/agents/ProviderModelList.tsx
 msgid "Legacy"
 msgstr "Legacy"
 

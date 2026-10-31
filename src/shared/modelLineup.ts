@@ -16,6 +16,11 @@ import type { ProviderId } from './providerIds'
 export const LINEUP_PROVIDERS: ReadonlySet<ProviderId> = new Set<ProviderId>(['claude', 'codex'])
 
 const VERSION = /\d+(?:\.\d+)*/u
+/** IDs in the shape Claude Code and Codex give their own models, as against a name typed for a model they never listed. */
+const OWN_MODEL_IDS: Readonly<Partial<Record<ProviderId, RegExp>>> = {
+  claude: /^(?:claude-)?(?:opus|sonnet|haiku|fable)\b/iu,
+  codex: /^(?:gpt|codex)-/iu,
+}
 const LONG_CONTEXT_WORDS = /\(?\b(?:with\s+)?1m\s+context\)?/giu
 
 /** A model's version as numbers, from its name or else its ID; empty when neither carries one. */
@@ -89,12 +94,19 @@ export function retiredModelSuccessor<T extends AgentModel>(models: readonly T[]
  * The model ID a saved choice runs on: the choice itself while its provider lists it ready, or the provider is not
  * connected, or it is no lineup provider's; for a retired Claude Code or Codex model, its successor's ID. Settings rows,
  * new-thread defaults and Watcher's choice read their saved model through this, so a retired one is never offered or run.
- * A choice the catalog holds no entry for may be one the user named rather than one retired, so it moves only to a
- * ready model of its own line, never to the provider's default.
+ * A choice the catalog holds no entry for, once retired models have left it, moves the same way when its ID is in the
+ * shape the provider gives its own models (`claude-fable-5-1`, `gpt-5.5`); any other may be a model the user named
+ * rather than one retired, so it moves only to a ready model of its own line, never to the provider's default.
  */
+/** Whether a public model ID is in the shape Claude Code or Codex gives its own models. */
+export function namesOwnModel(modelId: string): boolean {
+  const parsed = parsePublicProviderEntityId(modelId)
+  return parsed?.kind === 'model' && OWN_MODEL_IDS[parsed.provider]?.test(parsed.value) === true
+}
+
 export function modelInForce(models: readonly AgentModel[], modelId: string): string {
   if (!modelId) return modelId
   const entry = resolveModel(models, modelId)
   if (entry?.ready) return modelId
-  return retiredModelSuccessor(models, modelId, entry?.name, entry !== undefined)?.id ?? modelId
+  return retiredModelSuccessor(models, modelId, entry?.name, entry !== undefined || namesOwnModel(modelId))?.id ?? modelId
 }

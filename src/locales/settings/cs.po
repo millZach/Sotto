@@ -547,6 +547,11 @@ msgstr ""
 msgid "{problem} {kept} still works."
 msgstr ""
 
+#. {provider} is a provider, such as Claude Code. Heads its older models in a model list.
+#: src/renderer/src/features/settings/HostSetupView.tsx
+msgid "{provider} · Legacy"
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{providerName} doesn’t offer it."
 msgstr ""

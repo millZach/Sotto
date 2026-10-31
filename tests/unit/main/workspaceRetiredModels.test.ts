@@ -58,4 +58,27 @@ describe('retired models in the workspace', () => {
     adapter.emit()
     await expect.poll(() => f.host.workspaceSnapshot().models.filter(model => model.providerId === 'claude').map(model => model.ready)).toEqual([false, false])
   })
+
+  it('lets a settled thread’s retired model go, and moves the thread by its ID once it is restored and opened', async () => {
+    const f = await workspaceFixture(undefined, { history: true })
+    cleanup.push(async () => { await f.stop(); await f.remove() })
+    const adapter = f.adapters.claude
+    adapter.state.models = [{ id: 'fable', provider: 'Claude Code', name: 'Fable 5.1', ready: true }, { id: 'claude-fable-5', provider: 'Claude Code', name: 'Fable 5', ready: true }]
+    const snapshot = await f.host.connect()
+    const project = snapshot.projects.find(item => item.providerId === 'claude')!
+    await f.host.execute({ type: 'create-thread', commandId: 'create', threadId: 'local', projectId: project.id, title: 'Task', modelId: claude('claude-fable-5') })
+    await f.host.setWorkspaceSettled('thread', 'local', true)
+    const thread = () => f.host.workspaceSnapshot().threads.find(item => item.id === 'local')!
+    adapter.state.models = adapter.state.models.filter(model => model.id === 'fable')
+    adapter.emit()
+    await expect.poll(() => f.host.workspaceSnapshot().models.filter(model => model.providerId === 'claude').map(model => model.id)).toEqual([claude('fable')])
+    f.host.observeThreads(['local'])
+    expect(thread().modelId).toBe(claude('claude-fable-5'))
+
+    await f.host.setWorkspaceSettled('thread', 'local', false)
+    f.host.observeThreads([])
+    f.host.observeThreads(['local'])
+    await expect.poll(() => thread().modelId).toBe(claude('fable'))
+    expect(thread().modelMoved).toMatchObject({ from: 'Fable 5', to: 'Fable 5.1' })
+  })
 })
