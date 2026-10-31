@@ -6,8 +6,17 @@ import { usePaneTerminalShortcut } from '../tools/PaneTerminalToggle'
 import { paneTerminalTarget } from '../tools/paneTerminalShortcut'
 import { paneTerminalChromeStore } from '../tools/paneTerminalStore'
 import { useAgents } from './AgentContext'
-import { ThreadsView, type ThreadsViewProps } from './ThreadsView'
+import { ThreadsView, type ThreadPaneSlot, type ThreadPaneSlotProps, type ThreadToolsSlot, type ThreadsViewProps } from './ThreadsView'
 import { ThreadWorkingCopy, ThreadWorkingCopyNotice } from './ThreadWorkingCopy'
+
+// The pane slots are made once, here rather than inline, so each pane's memo boundary sees the same slot on every update
+// and redraws only for what the slot is handed (#993).
+const tools: ThreadToolsSlot = props => <ToolsPanel {...props} />
+// A thread on a paired host keeps its terminal on that machine, as Tools says, so its pane has no drawer.
+const paneTerminal = ({ row }: ThreadPaneSlotProps): boolean => !row.thread.remoteHost
+const paneWorkingCopy: ThreadPaneSlot = ({ row, command }) => <ThreadWorkingCopy thread={row.thread} project={row.project} command={command} />
+const paneNotice: ThreadPaneSlot = ({ row, command, focusPrompt }) => <ThreadWorkingCopyNotice key={`working-copy-${row.thread.id}`} thread={row.thread} project={row.project} command={command} onRecovered={focusPrompt} />
+const paneDrawer: ThreadPaneSlot = ({ row }) => row.thread.remoteHost ? null : <PaneTerminalDrawer key={`terminal-drawer-${row.thread.id}`} threadId={row.thread.id} thread={row.thread} project={row.project} />
 
 /** Connect the shared tools surface, each pane's actual working copy and its own terminal drawer to the workspace. */
 export function ThreadWorkspace(props: Pick<ThreadsViewProps, 'now' | 'updateControl'>): ReactNode {
@@ -58,15 +67,7 @@ export function ThreadWorkspace(props: Pick<ThreadsViewProps, 'now' | 'updateCon
     return () => window.removeEventListener('keydown', onKey)
   }, [shortcut, selectedThreadId])
 
-  return <ThreadsView {...props}
-    tools={tools => <ToolsPanel {...tools} />}
-    // Tools and each pane's Terminal drawer are rows of the pane's ··· menu (ADR-0163). A thread on a paired host keeps
-    // its terminal on that machine, as Tools says, so its pane has no drawer.
-    paneTools
-    paneTerminal={({ row }) => !row.thread.remoteHost}
-    paneWorkingCopy={({ row, command: paneCommand }) => <ThreadWorkingCopy thread={row.thread} project={row.project} command={paneCommand} />}
-    paneNotice={({ row, command: paneCommand, focusPrompt }) => <ThreadWorkingCopyNotice key={`working-copy-${row.thread.id}`} thread={row.thread} project={row.project} command={paneCommand} onRecovered={focusPrompt} />}
-    paneDrawer={({ row }) => row.thread.remoteHost ? null : <PaneTerminalDrawer key={`terminal-drawer-${row.thread.id}`} threadId={row.thread.id} thread={row.thread} project={row.project} />}
-    onPaneThreadsChange={observe}
-  />
+  // Tools and each pane's Terminal drawer are rows of the pane's ··· menu (ADR-0163).
+  return <ThreadsView {...props} tools={tools} paneTools paneTerminal={paneTerminal}
+    paneWorkingCopy={paneWorkingCopy} paneNotice={paneNotice} paneDrawer={paneDrawer} onPaneThreadsChange={observe} />
 }
