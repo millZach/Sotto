@@ -100,7 +100,7 @@ describe.skipIf(process.platform !== 'linux')("private shell dictation state (Li
 
   it.each([
     ['idle', {}, 'idle'], ['cancelled', {}, 'idle'], ['requesting-permission', {}, 'starting'],
-    ['listening', { startedAt: 1, level: 1 }, 'listening'], ['processing', { stage: 'transcribing', progress: 0.5, startedAt: 1 }, 'transcribing'],
+    ['listening', { startedAt: 1, speaking: true }, 'listening'], ['processing', { stage: 'transcribing', progress: 0.5, startedAt: 1 }, 'transcribing'],
     ['success', { output: 'pasted' }, 'delivered'], ['success', { output: 'copied' }, 'copied'],
     ['error', { code: 'TRANSCRIPTION_FAILED', kept: true }, 'failed'],
   ])('maps %s to %s without taking extra text', (status, extra, state) => {
@@ -121,18 +121,18 @@ describe.skipIf(process.platform !== 'linux')("private shell dictation state (Li
       expect(lstatSync(temp).mode & 0o777).toBe(0o600)
       expect(JSON.parse(readFileSync(target, 'utf8'))).toMatchObject({ version: 1, pid: process.pid, state: 'idle' })
     })
-    file.publish(snapshot({ status: 'listening', level: 1, startedAt: 1 }))
+    file.publish(snapshot({ status: 'listening', speaking: true, startedAt: 1 }))
     expect(lstatSync(file.path).ino).not.toBe(original.ino)
     expect(lstatSync(file.path).mode & 0o777).toBe(0o600)
     expect(readdirSync(join(runtime, 'sotto'))).toEqual(['dictation-state.json'])
     expect(failure).not.toHaveBeenCalled()
   })
-  it('keeps the final state in a burst and ignores level/progress without resetting since', () => {
+  it('keeps the final state in a burst and ignores the speaking gate and progress without resetting since', () => {
     file = new DictationStateFile(runtime, 'top', failure)
     vi.advanceTimersByTime(50)
-    file.publish(snapshot({ status: 'listening', level: 0, startedAt: 1 }))
+    file.publish(snapshot({ status: 'listening', speaking: false, startedAt: 1 }))
     const since = read().since
-    for (let level = 0; level < 100; level++) file.publish(snapshot({ status: 'listening', level, startedAt: 1 }))
+    for (let frame = 0; frame < 100; frame++) file.publish(snapshot({ status: 'listening', speaking: frame % 2 === 0, startedAt: 1 }))
     expect(renamed).toHaveBeenCalledTimes(2)
     vi.advanceTimersByTime(10)
     file.publish(snapshot({ status: 'processing', stage: 'transcribing', progress: 0, startedAt: 1 }))
@@ -147,7 +147,7 @@ describe.skipIf(process.platform !== 'linux')("private shell dictation state (Li
   it('retains the startup process start time in every state and placement write', () => {
     file = new DictationStateFile(runtime, 'top', failure, 12345678)
     for (const fields of [
-      { status: 'requesting-permission' }, { status: 'listening', level: 0, startedAt: 1 },
+      { status: 'requesting-permission' }, { status: 'listening', speaking: false, startedAt: 1 },
       { status: 'processing', stage: 'transcribing', progress: 0, startedAt: 1 },
       { status: 'success', output: 'copied', pidStart: -1 }, { status: 'idle' },
     ]) {
@@ -171,7 +171,7 @@ describe.skipIf(process.platform !== 'linux')("private shell dictation state (Li
     const sessionId = 'sotto-session-A'
     let identifier: string | undefined
     for (const fields of [
-      { status: 'requesting-permission' }, { status: 'listening', startedAt: 1, level: 0 },
+      { status: 'requesting-permission' }, { status: 'listening', startedAt: 1, speaking: false },
       { status: 'processing', startedAt: 1, stage: 'transcribing', progress: 0 }, terminal,
     ]) {
       file.publish(snapshot({ ...fields, sessionId, text: 'PRIVATE TRANSCRIPT', dictation: 'PRIVATE OVERRIDE' }))
@@ -199,12 +199,12 @@ describe.skipIf(process.platform !== 'linux')("private shell dictation state (Li
   it('publishes B\'s own identity when A is cancelled and B starts inside one coalescing window', () => {
     file = new DictationStateFile(runtime, 'top', failure)
     vi.advanceTimersByTime(50)
-    file.publish(snapshot({ status: 'listening', sessionId: 'A', startedAt: 1, level: 0 }))
+    file.publish(snapshot({ status: 'listening', sessionId: 'A', startedAt: 1, speaking: false }))
     const a = read().dictation
     vi.advanceTimersByTime(10)
     file.publish(snapshot({ status: 'cancelled', sessionId: 'A' }))
     file.publish(snapshot({ status: 'requesting-permission', sessionId: 'B' }))
-    file.publish(snapshot({ status: 'listening', sessionId: 'B', startedAt: 2, level: 0 }))
+    file.publish(snapshot({ status: 'listening', sessionId: 'B', startedAt: 2, speaking: false }))
     expect(read().dictation).toBe(a)
     vi.advanceTimersByTime(40)
     const b = read().dictation
@@ -219,10 +219,10 @@ describe.skipIf(process.platform !== 'linux')("private shell dictation state (Li
   })
   it('publishes a new identity even when two snapshots have the same mapped state', () => {
     file = new DictationStateFile(runtime, 'top', failure)
-    file.publish(snapshot({ status: 'listening', sessionId: 'A', startedAt: 1, level: 0 }))
+    file.publish(snapshot({ status: 'listening', sessionId: 'A', startedAt: 1, speaking: false }))
     vi.advanceTimersByTime(50)
     const a = read().dictation
-    file.publish(snapshot({ status: 'listening', sessionId: 'B', startedAt: 2, level: 0 }))
+    file.publish(snapshot({ status: 'listening', sessionId: 'B', startedAt: 2, speaking: false }))
     vi.advanceTimersByTime(50)
     expect(read().dictation).toEqual(expect.any(String))
     expect(read().dictation).not.toBe(a)
@@ -230,7 +230,7 @@ describe.skipIf(process.platform !== 'linux')("private shell dictation state (Li
   it('publishes null without a dictation, including cancellation and a sessionless error', () => {
     file = new DictationStateFile(runtime, 'top', failure)
     expect(read().dictation).toBeNull()
-    file.publish(snapshot({ status: 'listening', startedAt: 1, level: 0 }))
+    file.publish(snapshot({ status: 'listening', startedAt: 1, speaking: false }))
     vi.advanceTimersByTime(50)
     expect(read().dictation).toEqual(expect.any(String))
     for (const fields of [
@@ -244,7 +244,7 @@ describe.skipIf(process.platform !== 'linux')("private shell dictation state (Li
   })
   it('keeps dictation identity and since through edge-only placement', () => {
     file = new DictationStateFile(runtime, 'top', failure)
-    file.publish(snapshot({ status: 'listening', startedAt: 1, level: 0 }))
+    file.publish(snapshot({ status: 'listening', startedAt: 1, speaking: false }))
     vi.advanceTimersByTime(50)
     const { dictation, since } = read()
     file.place('left')

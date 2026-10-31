@@ -1,7 +1,7 @@
 import React from 'react'
 import { readFileSync } from 'node:fs'
 
-import { act, fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 
 import {
@@ -17,57 +17,29 @@ setupWidgetTests()
 
 describe('WidgetApp', () => {
 
-  it('waves the recording bars only while the voice registers, and settles them on silence', () => {
+  it('waves the recording bars while dictation hears a voice, and settles them when it does not', () => {
+    // Whether a voice is heard is the dictation controller's speaking gate (speakingGate.test.ts); the widget is told
+    // when it opens or closes, never each level (#993), and holds no timer of its own.
     vi.useFakeTimers()
-    const listening = (level: number): WidgetSnapshot =>
-      snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, level })
+    const listening = (speaking: boolean): WidgetSnapshot =>
+      snapshot({ status: 'listening', sessionId: 'one', startedAt: 0, speaking })
     const { container, rerender } = render(
-      <WidgetApp snapshot={listening(0.004)} platform="win32" now={0} />,
+      <WidgetApp snapshot={listening(false)} platform="win32" now={0} />,
     )
-    const show = (level: number): void => {
-      rerender(<WidgetApp snapshot={listening(level)} platform="win32" now={0} />)
-    }
     const bars = screen.getByTestId('listening-bars')
     expect(bars).toHaveAttribute('aria-hidden', 'true')
     expect(bars.querySelectorAll('.widget-bars__bar')).toHaveLength(7)
-    // A silence-floor level never starts the wave.
     expect(bars).not.toHaveAttribute('data-speaking')
 
-    // Speech opens the gate immediately.
-    show(0.06)
+    rerender(<WidgetApp snapshot={listening(true)} platform="win32" now={0} />)
     expect(bars).toHaveAttribute('data-speaking', 'true')
-
-    // Inside the hysteresis band the wave simply holds; nothing is scheduled.
-    show(0.015)
-    act(() => vi.advanceTimersByTime(5_000))
-    expect(bars).toHaveAttribute('data-speaking', 'true')
-
-    // Below the release threshold the wave still rides out the hold, so a gap
-    // between words keeps it running, and a real pause settles it.
-    show(0.004)
-    act(() => vi.advanceTimersByTime(300))
-    expect(bars).toHaveAttribute('data-speaking', 'true')
-    act(() => vi.advanceTimersByTime(25))
+    rerender(<WidgetApp snapshot={listening(false)} platform="win32" now={0} />)
     expect(bars).not.toHaveAttribute('data-speaking')
+    expect(vi.getTimerCount()).toBe(0)
 
-    // A voiced frame inside the hold cancels the settle outright.
-    show(0.05)
-    expect(bars).toHaveAttribute('data-speaking', 'true')
-    show(0)
-    act(() => vi.advanceTimersByTime(200))
-    show(0.05)
-    act(() => vi.advanceTimersByTime(5_000))
-    expect(bars).toHaveAttribute('data-speaking', 'true')
-
-    // Out-of-range and non-finite levels are clamped, never trusted raw.
-    show(Number.NaN)
-    act(() => vi.advanceTimersByTime(400))
-    expect(bars).not.toHaveAttribute('data-speaking')
-    show(2)
-    expect(bars).toHaveAttribute('data-speaking', 'true')
-
-    // The level reaches CSS only through that one attribute: no inline
+    // The gate reaches CSS only through that one attribute: no inline
     // heights, no meter, no per-bar state.
+    rerender(<WidgetApp snapshot={listening(true)} platform="win32" now={0} />)
     expect(container.querySelector('[style]')).toBeNull()
     expect(screen.queryByRole('meter')).not.toBeInTheDocument()
     expect([...bars.querySelectorAll('.widget-bars__bar')].every(
@@ -75,29 +47,9 @@ describe('WidgetApp', () => {
     )).toBe(true)
   })
 
-  it('drops a pending bar settle when the widget unmounts mid-hold', () => {
-    vi.useFakeTimers()
-    const { rerender, unmount } = render(
-      <WidgetApp
-        snapshot={snapshot({ status: 'listening', sessionId: 'hold', startedAt: 0, level: 0.4 })}
-        platform="win32" now={0}
-      />,
-    )
-    expect(screen.getByTestId('listening-bars')).toHaveAttribute('data-speaking', 'true')
-    rerender(
-      <WidgetApp
-        snapshot={snapshot({ status: 'listening', sessionId: 'hold', startedAt: 0, level: 0 })}
-        platform="win32" now={0}
-      />,
-    )
-    expect(vi.getTimerCount()).toBe(1)
-    unmount()
-    expect(vi.getTimerCount()).toBe(0)
-  })
-
   it.each([
     ['requesting permission', snapshot({ status: 'requesting-permission', sessionId: 'mark', cancellable: true })],
-    ['listening', snapshot({ status: 'listening', sessionId: 'mark', startedAt: 0, level: 0.4, cancellable: true })],
+    ['listening', snapshot({ status: 'listening', sessionId: 'mark', startedAt: 0, speaking: true, cancellable: true })],
     ['processing', snapshot({
       status: 'processing', sessionId: 'mark', startedAt: 0, stage: 'transcribing',
       progress: 0.5, cancellable: true,
@@ -134,7 +86,7 @@ describe('WidgetApp', () => {
 
     const release = applyRootPresentation({ theme: 'light', palette: split, reducedMotion: 'system' }, false)
     expect(root.dataset.brand).toBe(APP_ICON_BRAND_ATTRIBUTE)
-    render(<WidgetApp snapshot={snapshot({ status: 'listening', sessionId: 'icon', startedAt: 0, level: 0.4 })} platform="win32" now={1_000} />)
+    render(<WidgetApp snapshot={snapshot({ status: 'listening', sessionId: 'icon', startedAt: 0, speaking: true })} platform="win32" now={1_000} />)
     const mark = screen.getByTestId('widget-glyph').querySelector('svg')
     expect(mark).toHaveAttribute('data-tile', APP_ICON_BRAND.tile)
     expect(mark).toHaveAttribute('data-glyph', APP_ICON_BRAND.glyph)
@@ -158,7 +110,7 @@ describe('WidgetApp', () => {
     const { container, rerender } = render(
       <WidgetApp
         snapshot={snapshot({
-          status: 'listening', sessionId: 'announced', startedAt: 0, level: 0.2,
+          status: 'listening', sessionId: 'announced', startedAt: 0, speaking: true,
           cancellable: true,
         })}
         platform="win32" now={1_000}
@@ -219,7 +171,7 @@ describe('WidgetApp', () => {
     rerender(
       <WidgetApp
         snapshot={snapshot({
-          status: 'listening', sessionId: 'vertical', startedAt: 0, level: 0.4,
+          status: 'listening', sessionId: 'vertical', startedAt: 0, speaking: true,
           cancellable: true,
         })}
         platform="win32" now={1_000}
