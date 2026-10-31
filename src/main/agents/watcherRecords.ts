@@ -3,16 +3,16 @@ import { watcherRecordSchema, emptyWatcherRecord, type WatcherRecord } from '../
 const targetKey = (target: { readonly hostId: string; readonly threadId: string }): string => JSON.stringify([target.hostId, target.threadId])
 
 /**
- * The most reservations `agents.json` holds. A build from before #1183 reads the Watcher record with at most eight, the
- * most its Threads in flight limit allowed, and a record it cannot read costs it the whole file: drafts, outbox and
- * configuration go with it. So Sotto still writes no more than eight, whatever is in flight now, and rebuilds the rest
- * when it reads the record again (`rebuildReservations`). They only count Watcher's starts still working; none holds
- * anything back.
+ * The most reservations the saved record holds. A build from before #1183 reads the Watcher record with at most eight, the
+ * most its Threads in flight limit allowed, and a record it cannot read in `agents.json` costs it the whole file: drafts,
+ * outbox and configuration go with it. So Sotto still writes no more than eight, whatever is in flight now, and rebuilds
+ * the rest when it reads the record again (`rebuildReservations`). They only count Watcher's starts still working; none
+ * holds anything back. Since the record has a file of its own (`WATCHER_RECORD_FILE`), such a build reads none of it.
  */
 export const WATCHER_SAVED_RESERVATIONS_MAX = 8
 
 /**
- * The Watcher record as `agents.json` holds it: the live record itself while it has eight reservations or fewer, so
+ * The Watcher record as its saved file holds it: the live record itself while it has eight reservations or fewer, so
  * nothing is copied, and otherwise a shallow copy with eight, those whose delivery is still unresolved first.
  */
 export function watcherRecordForDisk(record: WatcherRecord): WatcherRecord {

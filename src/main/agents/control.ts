@@ -84,6 +84,7 @@ import { isResumeNoteText } from '../../shared/restartResume'
 import { isLimitRestartNoteText } from '../../shared/limitRestart'
 import type { LimitRestart } from './limitRestart'
 import { migrateWatcherRecord, prunePromptTurns, WATCHER_PROMPT_TURNS_KEPT, watcherRecordForDisk } from './watcherRecords'
+import { WATCHER_RECORD_FILE } from './watcherRecordFile'
 import { NOTHING_ARCHIVED, removeArchivedWork, WATCHER_ARCHIVE_BATCH, WatcherArchive, watcherArchiveBatch, watcherWorkVersion, type WatcherArchived } from './watcherArchive'
 
 /** One shared empty array stands in for every shell thread's history; the clone that follows copies nothing. */
@@ -312,17 +313,21 @@ const savedSchema = z.object({
   })),
 })
 type Saved = z.infer<typeof savedSchema>
+/** What `agents.json` holds: the saved state but Watcher's record, which has a file of its own (`WATCHER_RECORD_FILE`). */
+type SavedRest = Omit<Saved, 'watcher'>
+/** Watcher's own file, `{ "watcher": record }`, its record checked once by `migrateWatcherRecord`. */
+const savedWatcherFileSchema = z.object({ watcher: z.unknown().optional() })
 /** A late echo can settle delivery without completing the user's choice to continue with a fresh message. */
 function setAsideUpdatesHeld(item: Pick<AgentDelivery, 'setAside' | 'updatesResumed'>): boolean {
   return item.setAside === true && item.updatesResumed !== true
 }
 /**
- * The sections of `agents.json` that are only ever replaced, never edited: the Watcher record (`mutateWatcher`) and the
- * receipt ledgers (`trimReceipts`). Together they are most of the file on a machine that has used Watcher, so each is
- * serialized once per object and its text kept with it (#1332). An object is frozen as its text is kept, so the text is
- * always what that object serializes to: a write into it throws rather than reaching the file late.
+ * The sections of `agents.json` that are only ever replaced, never edited: the receipt ledgers (`trimReceipts`). Each is
+ * serialized once per object and its text kept with it (#1332), as Watcher's record is in its own file. An object is
+ * frozen as its text is kept, so the text is always what that object serializes to: a write into it throws rather than
+ * reaching the file late.
  */
-const REPLACED_SECTIONS: ReadonlySet<string> = new Set<keyof Saved>(['watcher', 'deliveredDrafts', 'obsoleteDrafts', 'deliveredPromptDigests', 'answeredRequests'])
+const REPLACED_SECTIONS: ReadonlySet<string> = new Set<keyof SavedRest>(['deliveredDrafts', 'obsoleteDrafts', 'deliveredPromptDigests', 'answeredRequests'])
 /**
  * How a replaced section reads while the state is serialized around it. One already kept is replaced by a stand-in
  * string, read as `token` (`"key":` and the stand-in's own JSON); one not kept yet is serialized in place between two
@@ -1026,6 +1031,14 @@ export class AgentControl {
   private providerAvailable(provider: string): boolean { return !this.held.has(provider as ProviderId) }
   private availableProviders(): ProviderId[] { return providerIdSchema.options.filter(provider => this.providerAvailable(provider)) }
   private readonly store: AtomicJsonStore<Saved>
+  /** Watcher's record in its own file (`WATCHER_RECORD_FILE`), written before `agents.json` whenever the record changed. */
+  private readonly watcherStore: AtomicJsonStore<{ watcher: WatcherRecord }>
+  /** The newest write of Watcher's file: the record, its text and the write's landing. */
+  private queuedWatcherWrite: { record: WatcherRecord; text: string; written: Promise<void> } | undefined
+  /** Every write of `agents.json`, in the order the saves were made, each after the write of Watcher's file it follows. */
+  private agentsWrites: Promise<void> = Promise.resolve()
+  /** Watcher's record as its own file held it at start, which `agents.json` is read beside in place of its own. */
+  private ownWatcher: WatcherRecord | undefined
   private persistedDrafts = new Map<string, string>()
   /** Clients may retire their recovery copy only after this exact obsolete-ID snapshot reaches disk. */
   private persistedObsoleteDrafts: NonNullable<AgentState['obsoleteDrafts']> = []
@@ -1321,6 +1334,8 @@ export class AgentControl {
     }
     // Compact: it is rewritten before every send.
     this.store = AtomicJsonStore.compact(join(dependencies.directory, 'agents.json'), input => this.parseSaved(input), () => this.saved())
+    this.watcherStore = AtomicJsonStore.compact(join(dependencies.directory, WATCHER_RECORD_FILE),
+      input => ({ watcher: migrateWatcherRecord(savedWatcherFileSchema.parse(input).watcher) }), () => ({ watcher: emptyWatcherRecord() }))
     this.attachments = new AttachmentStore(dependencies.directory, { historyEnabled: () => dependencies.historyEnabled?.() !== false, missing: dependencies.missingAttachment,
       acceptsFiles: dependencies.attachAnyFile === true })
     this.stageInline = inlineStager(this.attachments)
@@ -1354,6 +1369,9 @@ export class AgentControl {
       const snapshot = this.dependencies.host.workspaceSnapshot?.()
       if (snapshot) this.shownSnapshot(snapshot)
     }
+    // Watcher's record is read from its own file; a store saved before it had one keeps it in `agents.json`, and the next
+    // save moves it across (ADR-0073, October 30, 2026 amendment).
+    if (await this.watcherStore.exists()) this.ownWatcher = (await this.watcherStore.read()).watcher
     try {
       await retireLegacyProvider({ directory: this.dependencies.directory, parse: input => this.parseSaved(input),
         credentials: this.dependencies.credentials })
@@ -1364,12 +1382,14 @@ export class AgentControl {
       throw error
     }
     const saved = await this.store.read()
-    this.watcher = saved.watcher
+    this.watcher = this.ownWatcher ?? saved.watcher
     freezeSaved(this.watcher)
-    this.watcherUnpruned = this.dependencies.watcherEnabled === true && (saved.watcher.promptTurns?.length ?? 0) > WATCHER_PROMPT_TURNS_KEPT
+    // Read from its own file, the record is already there; one read from `agents.json` is written there by the next save.
+    if (this.ownWatcher) this.queuedWatcherWrite = { record: this.watcherForDisk(), text: this.watcherFileText(this.watcherForDisk()), written: Promise.resolve() }
+    this.watcherUnpruned = this.dependencies.watcherEnabled === true && (this.watcher.promptTurns?.length ?? 0) > WATCHER_PROMPT_TURNS_KEPT
     this.watcherMessageDisplay?.update(this.watcherRequestsShown())
     if (this.dependencies.watcherEnabled !== true) {
-      const identities = [saved.watcher.current, saved.watcher.creation?.identity, ...saved.watcher.history]
+      const identities = [this.watcher.current, this.watcher.creation?.identity, ...this.watcher.history]
       for (const identity of identities) if (identity) { this.dormantThreadIds.add(identity.target.threadId); this.dormantWatcherIds.add(identity.target.threadId) }
     }
     // The store comes first: previews, drafts and the queue each name content it keeps, and older files carry
@@ -2641,7 +2661,8 @@ export class AgentControl {
   }
   private parseSaved(input: unknown): Saved {
     const saved = savedSchema.parse(withoutLegacyManagement(input))
-    const identities = [saved.watcher.current, saved.watcher.creation?.identity, ...saved.watcher.history]
+    const watcher = this.ownWatcher ?? saved.watcher
+    const identities = [watcher.current, watcher.creation?.identity, ...watcher.history]
     if (saved.draftThreadId
       && (this.dormantThreadIds.has(saved.draftThreadId) || this.dependencies.watcherEnabled !== true && identities.some(identity => identity?.target.threadId === saved.draftThreadId))) {
       const original = input as { composing?: unknown }
@@ -2658,18 +2679,40 @@ export class AgentControl {
     if (this.watcherOnDisk?.from !== this.watcher) this.watcherOnDisk = { from: this.watcher, record: watcherRecordForDisk(this.watcher) }
     return this.watcherOnDisk.record
   }
-  /** Text of each replaced section, by the object it was serialized from (`REPLACED_SECTIONS`). */
+  /** Text of each replaced section, and of each Watcher record, by the object it was serialized from (`REPLACED_SECTIONS`). */
   private readonly replacedSectionText = new WeakMap<object, string>()
+  /**
+   * Writes Watcher's record to its own file unless it is the record of the newest write made, and gives the landing of the
+   * write that carries it. The record is frozen and only ever replaced, so a save that left it as it was writes nothing.
+   */
+  private writeWatcherRecord(record: WatcherRecord): Promise<void> {
+    const queued = this.queuedWatcherWrite
+    if (queued?.record === record) return queued.written
+    const text = this.watcherFileText(record)
+    if (queued?.text === text) { this.queuedWatcherWrite = { ...queued, record }; return queued.written }
+    const written = this.watcherStore.writeSerialized(text)
+    this.queuedWatcherWrite = { record, text, written }
+    // The disk still holds an older record, so the next save writes whatever it has. The write is known by its landing:
+    // a record that serializes to the same text takes the entry over, and its failure is this write's.
+    written.catch(() => { if (this.queuedWatcherWrite?.written === written) this.queuedWatcherWrite = undefined })
+    return written
+  }
+  /** Watcher's file as text, from the record's text kept with it as each replaced section's is. */
+  private watcherFileText(record: WatcherRecord): string {
+    let text = this.replacedSectionText.get(record)
+    if (text === undefined) { text = JSON.stringify(record); this.keepSectionText(record, text) }
+    return `{"watcher":${text}}`
+  }
   /**
    * The saved state's text, joining to exactly `JSON.stringify(saved)`, from one serialization of the state as before:
    * the same keys in the same order, each replaced section already kept stood in for, and each not kept yet serialized
    * in place and kept as it is cut out (`SECTION_MARKS`).
    */
-  private savedText(saved: Saved): SavedText {
+  private savedText(saved: SavedRest): SavedText {
     const rest: Record<string, unknown> = {}
     const replaced: { mark: SectionMark; section: object; kept: string | undefined }[] = []
     for (const key of Object.keys(saved)) {
-      const value: unknown = saved[key as keyof Saved]
+      const value: unknown = saved[key as keyof SavedRest]
       const mark = SECTION_MARKS.get(key)
       if (!mark || value === null || typeof value !== 'object') { rest[key] = value; continue }
       const kept = this.replacedSectionText.get(value)
@@ -2705,7 +2748,7 @@ export class AgentControl {
     return { parts, sections: spans.map(span => span.text) }
   }
   /** The state serialized whole, for a state whose own words match a section's stand-in or markers. */
-  private savedWhole(saved: Saved): SavedText {
+  private savedWhole(saved: SavedRest): SavedText {
     return { parts: [JSON.stringify(saved)], sections: [] }
   }
   /** Keeps a replaced section's text with it, and freezes it, so the text stays what it serializes to. */
@@ -2750,18 +2793,25 @@ export class AgentControl {
     // Most calls follow a provider snapshot that changed nothing saved, so the state is serialized to compare
     // and never copied: the store writes the text it is handed. Sections only ever replaced keep their text, so
     // such a call serializes only the sections that can change in place, and joins the file only to write it.
-    const saved = this.savedOverLiveState()
+    const { watcher, ...saved } = this.savedOverLiveState()
+    // Watcher's record goes to its own file, and only when it changed (ADR-0073, October 30, 2026 amendment).
+    const watcherWritten = this.writeWatcherRecord(watcher)
     const text = this.savedText(saved)
     const queued = this.queuedWrite
     if (queued && (sameSavedText(text, queued.text) || (!closing && this.onlySettledSettings(saved, saved.outbox, queued)))) {
       // The newest queued write already carries this state, so it is durable when that write lands. A write
       // still in flight is waited for rather than repeated, and its failure is this call's failure.
-      await queued.written
+      await Promise.all([watcherWritten, queued.written])
     } else {
       const outbox = structuredClone(saved.outbox)
       const drafts = this.draftSignatures(saved.threadDrafts)
       this.pendingDraftWrites.add(drafts)
-      const written = this.store.write(saved, joinSavedText(text))
+      // `agents.json` is written in the order the saves were made, each once the write of Watcher's file it follows has
+      // landed, so a crash between the two leaves Watcher's record ahead of the rest and never behind it. A write of
+      // Watcher's file that fails leaves `agents.json` as it was.
+      const serialized = joinSavedText(text)
+      const written = this.agentsWrites.then(() => watcherWritten).then(() => this.store.write(saved as Saved, serialized))
+      this.agentsWrites = written.catch(() => undefined)
       const current: QueuedWrite = { text, outbox, written }
       this.queuedWrite = current
       try {
@@ -2791,7 +2841,7 @@ export class AgentControl {
    * True when the state differs from the newest queued write only by settings entries confirmed inside their own
    * dispatch. The entry's add was the write that mattered; its removal rides on the next write.
    */
-  private onlySettledSettings(saved: Saved, outbox: Saved['outbox'], queued: QueuedWrite): boolean {
+  private onlySettledSettings(saved: SavedRest, outbox: Saved['outbox'], queued: QueuedWrite): boolean {
     if (!this.settledSettings.size) return false
     const kept = queued.outbox.filter(item => !this.settledSettings.has(item.id))
     if (kept.length === queued.outbox.length || JSON.stringify(kept) !== JSON.stringify(outbox)) return false

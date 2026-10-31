@@ -12,6 +12,8 @@ import { addWatcherHistory } from '../fixtures/ownerScale'
 import { WatcherLaunchProfiles } from '../../src/main/agents/watcherLaunchProfiles'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
+import { savedWatcherRecord } from '../fixtures/savedWatcher'
+import { WATCHER_RECORD_FILE } from '../../src/main/agents/watcherRecordFile'
 
 // Watcher's archive (#1759) changes nothing Watcher does: a read of an archived operation, a retry of archived work and a
 // new call under an archived request answer exactly as they did while the live record held them.
@@ -171,8 +173,7 @@ it('archives a long record after an upgrade without holding Sotto up, keeping it
   expect(() => watcherRecordSchema.parse(record)).not.toThrow()
   expect(record.requests.filter(item => item.state !== 'active')).toHaveLength(WATCHER_LIVE_CLOSED_REQUESTS)
   const after = Buffer.byteLength(JSON.stringify(record))
-  const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { watcher: { requests: unknown[] } }
-  expect(saved.watcher.requests).toHaveLength(WATCHER_LIVE_CLOSED_REQUESTS)
+  expect((await savedWatcherRecord<{ requests: unknown[] }>(f.root))!.requests).toHaveLength(WATCHER_LIVE_CLOSED_REQUESTS)
   if (process.env.SOTTO_PERF_BENCH === '1') console.log(`Watcher's archive migration: ${before} bytes to ${after}, ${Math.round(took)} ms`)
   expect(after).toBeLessThan(before / 4)
 })
@@ -297,12 +298,11 @@ it('archives nothing and keeps the record whole where Watcher is off', async () 
   f.control.mutateWatcher(record => addWatcherHistory(record, [{ hostId, threadId: 'synthetic-worker' }, { hostId, threadId: 'synthetic-other' }], { requests: 400, operations: 400 }, { hostId, threadId: 'earlier-watcher' }))
   expect(await f.control.archiveWatcherWork(f.control.watcherRecordView().requests.slice(0, 100).map(item => item.id), () => [])).toBe(0)
   f.control.dispose(); await f.control.closed()
-  const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { watcher: { requests: unknown[] } }
-  expect(saved.watcher.requests).toHaveLength(400)
+  expect((await savedWatcherRecord<{ requests: unknown[] }>(f.root))!.requests).toHaveLength(400)
   expect(await readdir(f.root)).not.toContain(WATCHER_ARCHIVE_FILE)
 })
 
-it("reads no more of agents.json for Watcher's identity check however much closed work Watcher has archived", async () => {
+it("reads no more of Watcher's file for its identity check however much closed work Watcher has archived", async () => {
   /** The bytes the identity check parses after a save, once Watcher has done `requests` requests of work. */
   const checked = async (requests: number): Promise<number> => {
     const workspace = await workspaceFixture(undefined, { history: true })
@@ -323,7 +323,7 @@ it("reads no more of agents.json for Watcher's identity check however much close
     await service.archiveSettled()
     const profiles = new WatcherLaunchProfiles(f.root, () => f.control.hostId(), () => undefined, true)
     expect(await profiles.retainedThreadIds()).toContain(service.state().current!.target.threadId)
-    return Buffer.byteLength(await readFile(join(f.root, 'agents.json'), 'utf8'))
+    return Buffer.byteLength(await readFile(join(f.root, WATCHER_RECORD_FILE), 'utf8'))
   }
   const few = await checked(WATCHER_LIVE_CLOSED_REQUESTS + 50), many = await checked(WATCHER_LIVE_CLOSED_REQUESTS + 2_000)
   expect(many).toBeLessThan(few * 1.05)

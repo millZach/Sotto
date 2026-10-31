@@ -3,6 +3,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
+import { WATCHER_RECORD_FILE } from '../../src/main/agents/watcherRecordFile'
 import { desktopWindowClient } from '../../src/main/agents/hostService'
 import { WatcherService } from '../../src/main/agents/watcher'
 import { createWatcherRoomDesktop } from '../../src/main/agents/watcherRoomDesktop'
@@ -411,7 +412,8 @@ it('starts, reads positions, sends, stops and settles through the owning host wi
   expect(await f.call('send_to_thread', afterSettlement)).toMatchObject({ code: 'REQUEST_NOT_ACTIVE' })
   expect(writes).toHaveBeenCalledOnce()
   expect(f.router.shell().activeThreadId).toBe(selected)
-  const record = await readFile(join(remote.root, 'agents.json'), 'utf8')
+  // The host's saved state, Watcher's record in its own file and the rest in agents.json, keeps the origin and no prompt.
+  const record = await readFile(join(remote.root, 'agents.json'), 'utf8') + await readFile(join(remote.root, WATCHER_RECORD_FILE), 'utf8')
   expect(record).not.toContain(input.firstPrompt); expect(record).toContain('remoteOrigin')
 })
 
