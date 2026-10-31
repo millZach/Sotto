@@ -91,14 +91,15 @@ async function watchAgentTraffic(launched: LaunchedSotto): Promise<() => Promise
 }
 
 /**
- * Waits until `ready` holds, main has answered every command the page sent, and the page has made one round
- * trip to main after that. A read the page makes on receiving a receipt is sent before that round trip's own
- * request, so main has counted it by the time the round trip answers.
+ * Waits until `ready` holds, main has answered every command the page sent, the page has put every reply back, and the page
+ * has made one round trip to main after that. A reply that overtook its broadcast waits for it (#1939), and a read the page
+ * falls back to is answered before that reply is put back, so main has counted it by the time the round trip answers.
  */
 async function settled(page: Page, traffic: () => Promise<AgentTraffic>, ready: (seen: AgentTraffic) => boolean = () => true): Promise<AgentTraffic> {
   await expect.poll(async () => {
     const seen = await traffic()
     if (!ready(seen) || seen.inFlight > 0) return false
+    if (await page.evaluate(() => (document.documentElement.dataset.agentRepliesPending ?? '0') !== '0')) return false
     await page.evaluate(async () => { await window.sotto!.getSettings() })
     return true
   }).toBe(true)

@@ -420,6 +420,23 @@ describe('a command reply asked for as changed thread records (ADR-0028, October
     } finally { vi.useRealTimers() }
   })
 
+  it('marks, in an end-to-end run, how many replies it is still putting back, so a journey counts reads after them', async () => {
+    const root = { dataset: {} as Record<string, string> }
+    vi.stubGlobal('window', { sottoE2E: { scenario: 'success' } })
+    vi.stubGlobal('document', { documentElement: root })
+    try {
+      const f = page()
+      f.page.onState(() => undefined)
+      f.emit(wire({ revision: 1, base: null, changed: [one, two] }, true))
+      f.withChanges.mockResolvedValue(wire({ revision: 3, base: 2, changed: [] }))
+      const reply = f.page.command({ type: 'refresh' })
+      await vi.waitFor(() => { expect(root.dataset.agentRepliesPending).toBe('1') })
+      f.emit(wire({ revision: 2, base: 1, changed: [] }))
+      await reply
+      expect(root.dataset.agentRepliesPending).toBe('0')
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('reads afresh for each reply it cannot put back, so a reply never takes a read begun before its command', async () => {
     const f = page()
     f.page.onState(() => undefined)

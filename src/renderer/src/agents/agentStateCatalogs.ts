@@ -55,12 +55,21 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
   // The thread records the window's subscription was last broadcast, which a reply's changed thread records are put back from.
   let held: ThreadReassembly | undefined
   const completeReceipt = createReceiptCompleter({ get }, catalogs, lastRead, () => held)
+  // An end-to-end run marks how many replies the page is still putting back, so a journey can tell a reply waiting for its
+  // broadcast, and any read it falls back to, from one already answered before it counts the reads (#1939).
+  let puttingBack = 0
+  const marked = typeof window !== 'undefined' && window.sottoE2E !== undefined
+  const mark = (): void => { if (marked) document.documentElement.dataset.agentRepliesPending = String(puttingBack) }
+  const putBack = async (completing: Promise<AgentState>): Promise<AgentState> => {
+    puttingBack++; mark()
+    try { return await completing } finally { puttingBack--; mark() }
+  }
   const result: AgentBridge = {
     ...bridge,
     get,
     onState: listener => { const threads = createThreadReassembly(); held = threads; return bridge.onState(createReassembler({ get }, catalogs, listener, threads)) },
     // A window holding a broadcast asks for a reply's threads as the changed thread records since it (ADR-0028, October 30 amendment).
-    command: async request => completeReceipt(held && bridge.commandWithChangedThreadRecords ? await bridge.commandWithChangedThreadRecords(request) : await bridge.command(request)),
+    command: async request => putBack(completeReceipt(held && bridge.commandWithChangedThreadRecords ? await bridge.commandWithChangedThreadRecords(request) : await bridge.command(request))),
   }
   wrapped.set(bridge, result)
   return result
