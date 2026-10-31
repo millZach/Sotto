@@ -53,6 +53,7 @@ struct ThreadsView: View {
     /// text sizes a third of the width can't hold a title, so the page keeps one column.
     @Environment(\.horizontalSizeClass) private var sizeClass
     @Environment(\.dynamicTypeSize) private var typeSize
+    @Environment(\.duoLayout) private var duo
     private var inColumns: Bool { sizeClass == .regular && !typeSize.isAccessibilitySize }
 
     var body: some View {
@@ -103,10 +104,13 @@ struct ThreadsView: View {
 
     private var heading: some View {
         PageHeading(String(localized: "Threads")) {
-            Button { creating = true } label: { Image(systemName: "plus") }
-                .buttonStyle(GlassCircleStyle())
-                .accessibilityLabel("New thread")
-                .accessibilityIdentifier("new-thread")
+            // On the iPhone Duo, New thread is on the rail instead (ADR-0151, amended).
+            if duo == .none {
+                Button { creating = true } label: { Image(systemName: "plus") }
+                    .buttonStyle(GlassCircleStyle())
+                    .accessibilityLabel("New thread")
+                    .accessibilityIdentifier("new-thread")
+            }
         }
         .padding(.top, Space.s1)
     }
