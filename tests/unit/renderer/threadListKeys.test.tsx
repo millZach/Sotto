@@ -8,6 +8,7 @@ import { describeThreads, organizeWorkspace } from '../../../src/renderer/src/ag
 import { FOLDER_TOGGLES_KEY, ThreadSidebar } from '../../../src/renderer/src/agents/ThreadSidebar'
 import { useOptionalApp, type AppContextValue } from '../../../src/renderer/src/state/AppContext'
 import { threadChordLabel } from '../../../src/renderer/src/agents/threadShortcuts'
+import { followRow } from '../../../src/renderer/src/agents/RowMenu'
 import { threadsStateFixture } from '../../fixtures/agentState'
 
 /**
@@ -29,9 +30,9 @@ beforeEach(() => {
 })
 afterEach(() => { cleanup(); sessionStorage.clear(); localStorage.removeItem('sotto.threadWorkspace.sidebar') })
 
-function sidebar(state: AgentState, overrides: { onOpen?: (id: string) => void; onNewThread?: (projectId?: string) => void; command?: () => Promise<AgentState> } = {}) {
+function sidebar(state: AgentState, overrides: { onOpen?: (id: string) => void; onNewThread?: (projectId?: string) => void; onOpenBeside?: (id: string) => void; command?: (command: unknown) => Promise<AgentState> } = {}) {
   return <ThreadSidebar state={state} organization={organizeWorkspace(state, describeThreads(state, NOW), '')} command={vi.fn(overrides.command ?? (async () => state))} query="" onQuery={vi.fn()}
-    onOpen={overrides.onOpen ?? vi.fn()} onNewThread={overrides.onNewThread ?? vi.fn()} currentThreadId="visual-gate" openThreadIds={['visual-gate']} onOpenBeside={vi.fn()} onDragThread={vi.fn()}
+    onOpen={overrides.onOpen ?? vi.fn()} onNewThread={overrides.onNewThread ?? vi.fn()} currentThreadId="visual-gate" openThreadIds={['visual-gate']} onOpenBeside={overrides.onOpenBeside ?? vi.fn()} onDragThread={vi.fn()}
     newThreadShortcut={threadChordLabel('mod+shift+n', 'win32')} />
 }
 const list = (): HTMLElement => document.querySelector<HTMLElement>('.thread-nav__list')!
@@ -260,5 +261,163 @@ describe('the collapsed rail (ADR-0164)', () => {
     press('End')
     expect(tiles.at(-1)).toHaveFocus()
     expect([...rail.querySelectorAll('[tabindex="0"]')]).toEqual([tiles.at(-1)])
+  })
+})
+
+/** A menu's rows as they read: each one's words and the keys it names. */
+const menuWords = (menu: HTMLElement): (string | null)[][] => [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')]
+  .map(item => [item.querySelector('.pane-menu__label')?.textContent ?? item.textContent, item.getAttribute('aria-keyshortcuts')])
+const collapse = (): HTMLElement => {
+  act(() => { screen.getByRole('button', { name: 'Collapse sidebar' }).click() })
+  return screen.getByRole('navigation', { name: 'Threads' })
+}
+
+describe('the collapsed rail\'s menu (ADR-0164)', () => {
+  it('opens a tile\'s menu on Shift+F10, the menu key and a right-click, with its row\'s words and keys', () => {
+    render(sidebar(threadsStateFixture()))
+    // The rows' menus first, for the words and keys the tiles' must match.
+    act(() => row('Visual gate flake').focus())
+    press('F10', { shiftKey: true })
+    const currentWords = menuWords(screen.getByRole('menu', { name: 'Actions for Visual gate flake' }))
+    press('Escape')
+    const other = workshopRows()[1]!
+    const otherTitle = other.getAttribute('aria-label')!
+    act(() => other.focus())
+    press('ContextMenu')
+    const otherWords = menuWords(screen.getByRole('menu', { name: `Actions for ${otherTitle}` }))
+    press('Escape')
+    expect(otherWords).toContainEqual(['Open beside', 'Control+Enter'])
+
+    const rail = collapse()
+    const tile = within(rail).getByRole('button', { name: 'Visual gate flake' })
+    act(() => tile.focus())
+    press('F10', { shiftKey: true })
+    const menu = within(rail).getByRole('menu', { name: 'Actions for Visual gate flake' })
+    expect(menuWords(menu)).toEqual(currentWords)
+    const items = [...menu.querySelectorAll<HTMLElement>('[role^="menuitem"]')]
+    expect(items[0]).toHaveFocus()
+    // The menu's keys are its own, not the rail's.
+    press('ArrowDown')
+    expect(items[1]).toHaveFocus()
+    press('Escape')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(tile).toHaveFocus()
+    expect([...rail.querySelectorAll('[tabindex="0"]')]).toEqual([tile])
+
+    press('ContextMenu')
+    expect(within(rail).getByRole('menu', { name: 'Actions for Visual gate flake' })).toBeInTheDocument()
+    press('Escape')
+    expect(tile).toHaveFocus()
+
+    // A right-click on another tile opens its menu, with Open beside and its keys, and moves the rail's stop there.
+    const otherTile = within(rail).getByRole('button', { name: otherTitle })
+    expect(fireEvent.contextMenu(otherTile, { clientX: 30, clientY: 200 })).toBe(false)
+    expect(menuWords(within(rail).getByRole('menu', { name: `Actions for ${otherTitle}` }))).toEqual(otherWords)
+    expect([...rail.querySelectorAll('[tabindex="0"]')]).toEqual([otherTile])
+    press('Escape')
+    expect(otherTile).toHaveFocus()
+  })
+
+  it('does from a tile\'s menu what its row\'s does, and leaves the focus on the tile', async () => {
+    const onOpen = vi.fn(), onOpenBeside = vi.fn()
+    const state = threadsStateFixture()
+    const command = vi.fn(async () => state)
+    render(sidebar(state, { onOpen, onOpenBeside, command }))
+    const rail = collapse()
+    const tile = within(rail).getByRole('button', { name: 'Visual gate flake' })
+    act(() => tile.focus())
+    press('F10', { shiftKey: true })
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Open' }))
+    expect(onOpen).toHaveBeenCalledWith('visual-gate')
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(tile).toHaveFocus()
+
+    const other = within(rail).getAllByRole('button').find(button => button !== tile && button.hasAttribute('data-roving-key'))!
+    const otherId = other.getAttribute('data-roving-key')!.replace(/^rail:/u, '')
+    act(() => other.focus())
+    press('ContextMenu')
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Open beside' }))
+    expect(onOpenBeside).toHaveBeenCalledWith(otherId)
+    expect(other).toHaveFocus()
+    // Open beside's keys do the same from the tile, as the menu says.
+    press('Enter', { ctrlKey: true })
+    expect(onOpenBeside).toHaveBeenCalledTimes(2)
+
+    // Settle is the sidebar's own Settle.
+    press('ContextMenu')
+    await act(async () => { fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Settle' })) })
+    expect(command).toHaveBeenCalledWith({ type: 'settle-thread', threadId: otherId })
+  })
+
+  it('renames from a tile\'s menu and from F2 in a field beside the tile, and the focus comes back to the tile', () => {
+    const state = threadsStateFixture()
+    const command = vi.fn(async () => state)
+    render(sidebar(state, { command }))
+    const rail = collapse()
+    const tile = within(rail).getByRole('button', { name: 'Visual gate flake' })
+    act(() => tile.focus())
+    press('F10', { shiftKey: true })
+    fireEvent.click(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Rename' }))
+    const field = within(rail).getByRole('textbox', { name: 'Rename Visual gate flake' })
+    expect(field).toHaveFocus()
+    // The tile stays where it was while the field stands beside it.
+    expect(tile).toBeInTheDocument()
+    press('Escape')
+    expect(within(rail).queryByRole('textbox')).toBeNull()
+    expect(tile).toHaveFocus()
+
+    press('F2')
+    const again = within(rail).getByRole('textbox', { name: 'Rename Visual gate flake' })
+    expect(again).toHaveFocus()
+    expect(fireEvent.keyDown(again, { key: 'ArrowDown' })).toBe(true)
+    fireEvent.change(again, { target: { value: 'Visual gate fixed' } })
+    press('Enter')
+    expect(command).toHaveBeenCalledWith({ type: 'rename-thread', threadId: 'visual-gate', title: 'Visual gate fixed' })
+    expect(within(rail).queryByRole('textbox')).toBeNull()
+    expect(tile).toHaveFocus()
+  })
+
+  it('leaves F2 and Shift+F10 to dictation on the rail too; the menu key still opens the menu', () => {
+    app({ hotkey: 'F2', pressShortcuts: ['Shift+F10'] })
+    render(sidebar(threadsStateFixture()))
+    const rail = collapse()
+    const tile = within(rail).getByRole('button', { name: 'Visual gate flake' })
+    act(() => tile.focus())
+    expect(fireEvent.keyDown(tile, { key: 'F2' })).toBe(true)
+    expect(within(rail).queryByRole('textbox')).toBeNull()
+    expect(fireEvent.keyDown(tile, { key: 'F10', shiftKey: true })).toBe(true)
+    expect(screen.queryByRole('menu')).toBeNull()
+    press('ContextMenu')
+    expect(within(screen.getByRole('menu')).getByRole('menuitem', { name: 'Rename' })).not.toHaveAttribute('aria-keyshortcuts')
+  })
+})
+
+describe('where a row menu opens (ADR-0164)', () => {
+  /** A popover of the menu's size against an anchor at the given box, placed as `followRow` places it. */
+  function placed(box: { left: number; right: number; top: number; bottom: number }, place: Parameters<typeof followRow>[2], side: Parameters<typeof followRow>[3]): { left: string; top: string } {
+    const anchor = document.createElement('button')
+    const popover = document.createElement('div')
+    document.body.append(anchor, popover)
+    anchor.getBoundingClientRect = () => ({ ...box, x: box.left, y: box.top, width: box.right - box.left, height: box.bottom - box.top, toJSON: () => ({}) })
+    popover.getBoundingClientRect = () => ({ left: 0, right: 220, top: 0, bottom: 200, x: 0, y: 0, width: 220, height: 200, toJSON: () => ({}) })
+    const gone = vi.fn()
+    const stop = followRow(popover, () => anchor, place, side, gone)
+    stop?.()
+    anchor.remove(); popover.remove()
+    expect(gone).not.toHaveBeenCalled()
+    return { left: popover.style.left, top: popover.style.top }
+  }
+
+  it('opens under a row for the keys, at a rail tile\'s end, and at the pointer for a right-click', () => {
+    const tile = { left: 10, right: 42, top: 100, bottom: 134 }
+    expect(placed({ left: 4, right: 280, top: 100, bottom: 130 }, 'beside', 'below')).toEqual({ left: '28px', top: '128px' })
+    expect(placed(tile, 'beside', 'end')).toEqual({ left: '50px', top: '100px' })
+    expect(placed(tile, { x: 30, y: 110 }, 'end')).toEqual({ left: '30px', top: '110px' })
+  })
+
+  it('turns up from a low tile\'s foot so it stays inside the window', () => {
+    expect(placed({ left: 10, right: 42, top: innerHeight - 60, bottom: innerHeight - 26 }, 'beside', 'end')).toEqual({ left: '50px', top: `${innerHeight - 26 - 200}px` })
+    // And never closer than 8 pixels to the window's foot.
+    expect(placed({ left: 10, right: 42, top: innerHeight - 30, bottom: innerHeight + 4 }, 'beside', 'end')).toEqual({ left: '50px', top: `${innerHeight - 8 - 200}px` })
   })
 })

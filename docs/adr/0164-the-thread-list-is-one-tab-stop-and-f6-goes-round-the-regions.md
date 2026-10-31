@@ -4,6 +4,8 @@
 
 Accepted October 30, 2026, by Zach's pick A of `docs/prototypes/ui-hillclimb-desktop/thread-list-keyboard-prototype.html` on the tag `prototype/ui-hillclimb-desktop` ("Roving list, row menu"). Issue #1827, from finding 9 of `docs/research/2026-10-29-ui-hillclimb-desktop.md`. **Number provisional until merge** (docs/agents/domain.md).
 
+Amended October 30, 2026: the collapsed rail's tiles open the row menu (issue #1909; below, "October 30, 2026 amendment: the rail's menu").
+
 It changes the keyboard path of surfaces that already exist and goes straight to stable; it is not an Owl feature (ADR-0072). Where it touches Owl features (the Needs you card, the collapsed rail's Owl tiles, the folder peek) it changes only their keys, under their own switches.
 
 Amends [ADR-0133](0133-thread-shortcuts-are-editable-on-a-keyboard-page.md) (Settings › Keyboard's **Fixed & elsewhere** lists four more keys), [ADR-0146](0146-the-collapsed-rail-keeps-watcher-and-a-needs-you-tray.md) (the rail's tiles are one Tab stop) and the folder peek's keys in `docs/plans/collapsed-folder-peek.md`. Keeps [ADR-0135](0135-the-threads-sidebar-opens-on-needs-you.md)'s place for the Needs you card, right after the search field. Takes [ADR-0163](0163-a-pane-header-is-the-git-action-watch-one-menu-and-close.md)'s ··· menu as the model for every menu it adds.
@@ -36,7 +38,7 @@ The mock-up offered today's path and three variants: A, a roving list with a row
 
 **4. Fixed keys that stand down for dictation.** F6, Shift+F6, F2 and Shift+F10 are fixed rather than recorded, and each stands down when one of dictation's shortcuts means the same keys, as every thread shortcut does (`fixedKeyFree`). The menu key and a right-click always open a row's menu. Settings › Keyboard lists them under **Fixed & elsewhere**: Move in the thread list, Open a thread's menu, Rename the thread, and Move between sidebar, pane and composer.
 
-**5. The collapsed rail** is one Tab stop too: Up and Down move between its tiles, Home and End go to its ends, and Enter or Space presses a tile as before. Expand sidebar and Watcher's tile keep their own stops. A tile has no menu yet; that is a follow-up.
+**5. The collapsed rail** is one Tab stop too: Up and Down move between its tiles, Home and End go to its ends, and Enter or Space presses a tile as before. Expand sidebar and Watcher's tile keep their own stops. A tile opens its thread's row menu (October 30, 2026 amendment, below).
 
 ## Consequences
 
@@ -52,3 +54,7 @@ The mock-up offered today's path and three variants: A, a roving list with a row
 - **C, a roving grid.** No menu: the arrows walk into a row's icons. The icons would need to name themselves when focused, and the actions would stay unnamed in words.
 - **Folders and the shelf as their own stops** beside a roving list of rows. It keeps a toggle one Tab away, at the cost of a stop per folder.
 - **A `tree` with `treeitem` rows.** The correct roles for the keys, but every row stops being a button, every spec and capture locator that names a row changes, and a screen reader's browse mode reads a tree differently. Kept open until screen-reader testing asks for it.
+
+## October 30, 2026 amendment: the rail's menu
+
+A thread's tile on the collapsed rail opens the same row menu as its row, on Shift+F10, the menu key and a right-click: the same items in the same words with the same keys, built by the same code (`useThreadMenu`) and drawn by the same `RowMenu`. The keys open it at the tile's end rather than under it, since a tile is too narrow to stand under, level with the tile's top and turned up from its foot where the window is too short; a right-click opens it at the pointer, as on a row. Escape and Tab hand the focus back to the tile, and choosing an item leaves the focus there, as on a row; a tile that goes, as a settled thread's does, hands it to the tile now in its place. The tile answers the keys its menu names: F2 renames, in the row's own field drawn beside the tile in the menu's frame, because a tile has no room to rename in place, and the focus comes back to the tile when it is done; Open beside's keys open the thread beside. Settle is the row's Settle (`useSettleThread`), worktree question included, so whatever follows a row's Settle follows a tile's. Settling the thread on screen from its tile leaves the tile on the rail, settled, as ADR-0146 keeps the focused thread there, where Settle's keys pressed with the rail showing still move on to the top open thread. On Owl, a waiting tile whose press pops its Needs you card names no keys for Open, because Enter pops the card. Watcher's tile has no menu. The Windows design captures do not change: none of them collapses the sidebar or opens a menu, and a closed menu draws nothing.
