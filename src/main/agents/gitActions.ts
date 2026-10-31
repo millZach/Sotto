@@ -48,10 +48,14 @@ export interface GitActionsDependencies {
 /** Said in T3's words, so a reader of both apps meets the same refusal. */
 export class GitActionRefusal extends Error {}
 
-/** Why a bring-back press brought nothing, with what it found: the files holding uncommitted work, or Git's own words. */
+/**
+ * Why a bring-back press brought nothing, with what it found: the files holding uncommitted work, Git's own words, or
+ * for a busy folder the thread whose work holds it (`heldBy`, #1866).
+ */
 export type BringBackRefusalReason = NonNullable<BringBack['refusal']>
 export class BringBackRefusal extends GitActionRefusal {
-  constructor(readonly reason: BringBackRefusalReason, message: string, readonly detail: { readonly files?: number; readonly gitSaid?: string; readonly checkout?: string | null } = {}) { super(message) }
+  constructor(readonly reason: BringBackRefusalReason, message: string,
+    readonly detail: { readonly files?: number; readonly gitSaid?: string; readonly checkout?: string | null; readonly heldBy?: string } = {}) { super(message) }
 }
 
 export interface BringBackInput {

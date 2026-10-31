@@ -5474,8 +5474,8 @@ msgstr "on {date} at {clock}"
 msgid "On {hostName}"
 msgstr "On {hostName}"
 
-#. Leads a Git action refused because another thread or Sotto holds the folder. Nothing failed and nothing was changed.
-#: src/renderer/src/agents/GitActionButton.tsx
+#. Leads a Git action or Bring changes back refused because another thread or Sotto holds the folder. Nothing failed and nothing was changed.
+#: src/renderer/src/agents/checkoutHold.ts
 msgid "On hold"
 msgstr "On hold"
 
