@@ -1,0 +1,3895 @@
+{
+ "measuredAt": "2026-10-30",
+ "checkout": "0790b7dfa",
+ "today": {
+  "type": {
+   "declarations": 1289,
+   "distinct": 32,
+   "distinctPx": 29,
+   "below12": 87,
+   "values": [
+    {
+     "value": "13px",
+     "count": 384,
+     "rooms": [
+      [
+       "Threads pane",
+       112
+      ],
+      [
+       "Settings",
+       101
+      ],
+      [
+       "Threads tools",
+       63
+      ],
+      [
+       "Watcher",
+       30
+      ],
+      [
+       "Usage",
+       19
+      ],
+      [
+       "Threads composer",
+       17
+      ],
+      [
+       "Setup",
+       14
+      ],
+      [
+       "Dictate",
+       9
+      ],
+      [
+       "Threads sidebar",
+       7
+      ],
+      [
+       "Shared controls",
+       7
+      ],
+      [
+       "App frame",
+       2
+      ],
+      [
+       "Memory",
+       1
+      ],
+      [
+       "Updates and start",
+       1
+      ],
+      [
+       "Help",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "12px",
+     "count": 215,
+     "rooms": [
+      [
+       "Threads tools",
+       61
+      ],
+      [
+       "Threads pane",
+       53
+      ],
+      [
+       "Settings",
+       47
+      ],
+      [
+       "Threads composer",
+       14
+      ],
+      [
+       "Watcher",
+       12
+      ],
+      [
+       "Threads sidebar",
+       8
+      ],
+      [
+       "Usage",
+       6
+      ],
+      [
+       "Dictate",
+       4
+      ],
+      [
+       "Updates and start",
+       3
+      ],
+      [
+       "Shared controls",
+       3
+      ],
+      [
+       "Setup",
+       2
+      ],
+      [
+       "App frame",
+       2
+      ]
+     ]
+    },
+    {
+     "value": "12.5px",
+     "count": 203,
+     "rooms": [
+      [
+       "Threads pane",
+       64
+      ],
+      [
+       "Settings",
+       45
+      ],
+      [
+       "Watcher",
+       27
+      ],
+      [
+       "Usage",
+       23
+      ],
+      [
+       "Threads tools",
+       13
+      ],
+      [
+       "Threads sidebar",
+       7
+      ],
+      [
+       "Dictate",
+       6
+      ],
+      [
+       "Setup",
+       6
+      ],
+      [
+       "Threads composer",
+       4
+      ],
+      [
+       "Updates and start",
+       3
+      ],
+      [
+       "Help",
+       3
+      ],
+      [
+       "Shared controls",
+       2
+      ]
+     ]
+    },
+    {
+     "value": "14px",
+     "count": 186,
+     "rooms": [
+      [
+       "Threads pane",
+       68
+      ],
+      [
+       "Settings",
+       53
+      ],
+      [
+       "Threads tools",
+       31
+      ],
+      [
+       "Usage",
+       11
+      ],
+      [
+       "Watcher",
+       6
+      ],
+      [
+       "Threads sidebar",
+       5
+      ],
+      [
+       "Threads composer",
+       4
+      ],
+      [
+       "Memory",
+       3
+      ],
+      [
+       "Setup",
+       3
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "Shared controls",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "13.5px",
+     "count": 84,
+     "rooms": [
+      [
+       "Threads pane",
+       34
+      ],
+      [
+       "Settings",
+       14
+      ],
+      [
+       "Watcher",
+       8
+      ],
+      [
+       "Usage",
+       7
+      ],
+      [
+       "Setup",
+       6
+      ],
+      [
+       "Threads tools",
+       4
+      ],
+      [
+       "Threads sidebar",
+       3
+      ],
+      [
+       "Dictate",
+       3
+      ],
+      [
+       "Updates and start",
+       2
+      ],
+      [
+       "Shared controls",
+       2
+      ],
+      [
+       "Threads composer",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "11.5px",
+     "count": 53,
+     "rooms": [
+      [
+       "Threads pane",
+       21
+      ],
+      [
+       "Threads sidebar",
+       8
+      ],
+      [
+       "Settings",
+       8
+      ],
+      [
+       "Threads composer",
+       7
+      ],
+      [
+       "Updates and start",
+       2
+      ],
+      [
+       "Setup",
+       2
+      ],
+      [
+       "Usage",
+       1
+      ],
+      [
+       "Shared controls",
+       1
+      ],
+      [
+       "Threads tools",
+       1
+      ],
+      [
+       "Watcher",
+       1
+      ],
+      [
+       "Widget",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "15px",
+     "count": 50,
+     "rooms": [
+      [
+       "Threads pane",
+       19
+      ],
+      [
+       "Settings",
+       19
+      ],
+      [
+       "Usage",
+       3
+      ],
+      [
+       "Setup",
+       2
+      ],
+      [
+       "Threads tools",
+       2
+      ],
+      [
+       "Watcher",
+       2
+      ],
+      [
+       "Threads composer",
+       1
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "App frame",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "16px",
+     "count": 19,
+     "rooms": [
+      [
+       "Threads pane",
+       9
+      ],
+      [
+       "Settings",
+       3
+      ],
+      [
+       "Threads composer",
+       2
+      ],
+      [
+       "Memory",
+       2
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "Shared controls",
+       1
+      ],
+      [
+       "Threads tools",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "11px",
+     "count": 17,
+     "rooms": [
+      [
+       "Threads pane",
+       9
+      ],
+      [
+       "Settings",
+       3
+      ],
+      [
+       "Threads sidebar",
+       2
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "Threads tools",
+       1
+      ],
+      [
+       "Widget",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "10.5px",
+     "count": 10,
+     "rooms": [
+      [
+       "Settings",
+       5
+      ],
+      [
+       "Threads pane",
+       3
+      ],
+      [
+       "Threads composer",
+       1
+      ],
+      [
+       "Widget",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "28px",
+     "count": 10,
+     "rooms": [
+      [
+       "Settings",
+       5
+      ],
+      [
+       "Usage",
+       2
+      ],
+      [
+       "Threads pane",
+       1
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "Setup",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "18px",
+     "count": 7,
+     "rooms": [
+      [
+       "Memory",
+       2
+      ],
+      [
+       "Threads pane",
+       1
+      ],
+      [
+       "Threads sidebar",
+       1
+      ],
+      [
+       "Settings",
+       1
+      ],
+      [
+       "Usage",
+       1
+      ],
+      [
+       "Threads tools",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "14.5px",
+     "count": 6,
+     "rooms": [
+      [
+       "Threads pane",
+       4
+      ],
+      [
+       "Threads sidebar",
+       1
+      ],
+      [
+       "Settings",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "22px",
+     "count": 6,
+     "rooms": [
+      [
+       "Settings",
+       2
+      ],
+      [
+       "Usage",
+       2
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "Watcher",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "17px",
+     "count": 5,
+     "rooms": [
+      [
+       "Memory",
+       2
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "Usage",
+       1
+      ],
+      [
+       "Settings",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "20px",
+     "count": 5,
+     "rooms": [
+      [
+       "Settings",
+       2
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "Updates and start",
+       1
+      ],
+      [
+       "Usage",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "19px",
+     "count": 4,
+     "rooms": [
+      [
+       "Usage",
+       2
+      ],
+      [
+       "Threads pane",
+       1
+      ],
+      [
+       "Setup",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "inherit",
+     "count": 3,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ],
+      [
+       "Threads sidebar",
+       1
+      ],
+      [
+       "Settings",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "10px",
+     "count": 3,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ],
+      [
+       "Threads sidebar",
+       1
+      ],
+      [
+       "Widget",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "23px",
+     "count": 3,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ],
+      [
+       "Memory",
+       1
+      ],
+      [
+       "Setup",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "21px",
+     "count": 2,
+     "rooms": [
+      [
+       "Threads pane",
+       2
+      ]
+     ]
+    },
+    {
+     "value": "9px",
+     "count": 2,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ],
+      [
+       "Widget",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "9.5px",
+     "count": 2,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ],
+      [
+       "Settings",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "26px",
+     "count": 2,
+     "rooms": [
+      [
+       "Usage",
+       1
+      ],
+      [
+       "Settings",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "30px",
+     "count": 1,
+     "rooms": [
+      [
+       "Memory",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "27px",
+     "count": 1,
+     "rooms": [
+      [
+       "Memory",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "36px",
+     "count": 1,
+     "rooms": [
+      [
+       "Settings",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "clamp(23px, 1.2cqi + 15px, 31px)",
+     "count": 1,
+     "rooms": [
+      [
+       "Usage",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "clamp(17px, .6cqi + 12px, 20px)",
+     "count": 1,
+     "rooms": [
+      [
+       "Usage",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "34px",
+     "count": 1,
+     "rooms": [
+      [
+       "Usage",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "24px",
+     "count": 1,
+     "rooms": [
+      [
+       "Settings",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "25px",
+     "count": 1,
+     "rooms": [
+      [
+       "Settings",
+       1
+      ]
+     ]
+    }
+   ],
+   "rooms": [
+    {
+     "room": "Threads pane",
+     "count": 406,
+     "distinct": 20
+    },
+    {
+     "room": "Settings",
+     "count": 316,
+     "distinct": 22
+    },
+    {
+     "room": "Threads tools",
+     "count": 178,
+     "distinct": 10
+    },
+    {
+     "room": "Watcher",
+     "count": 87,
+     "distinct": 8
+    },
+    {
+     "room": "Usage",
+     "count": 83,
+     "distinct": 17
+    },
+    {
+     "room": "Threads composer",
+     "count": 51,
+     "distinct": 9
+    },
+    {
+     "room": "Threads sidebar",
+     "count": 44,
+     "distinct": 11
+    },
+    {
+     "room": "Setup",
+     "count": 38,
+     "distinct": 10
+    },
+    {
+     "room": "Dictate",
+     "count": 30,
+     "distinct": 12
+    },
+    {
+     "room": "Shared controls",
+     "count": 17,
+     "distinct": 7
+    },
+    {
+     "room": "Memory",
+     "count": 13,
+     "distinct": 8
+    },
+    {
+     "room": "Updates and start",
+     "count": 12,
+     "distinct": 6
+    },
+    {
+     "room": "App frame",
+     "count": 5,
+     "distinct": 3
+    },
+    {
+     "room": "Widget",
+     "count": 5,
+     "distinct": 5
+    },
+    {
+     "room": "Help",
+     "count": 4,
+     "distinct": 2
+    }
+   ],
+   "inline": [
+    {
+     "file": "src/renderer/src/agents/diagrams/diagramRenderer.ts",
+     "line": 71,
+     "prop": "fontSize",
+     "value": "15"
+    },
+    {
+     "file": "src/renderer/src/agents/diagrams/diagramRenderer.ts",
+     "line": 75,
+     "prop": "fontSize",
+     "value": "'15px'"
+    },
+    {
+     "file": "src/renderer/src/tools/terminalView.ts",
+     "line": 145,
+     "prop": "fontSize",
+     "value": "terminalFontSize()"
+    }
+   ]
+  },
+  "radius": {
+   "declarations": 741,
+   "distinct": 44,
+   "tokenised": 134,
+   "distinctResolved": 37,
+   "values": [
+    {
+     "value": "6px",
+     "count": 137,
+     "rooms": [
+      [
+       "Threads pane",
+       37
+      ],
+      [
+       "Threads tools",
+       34
+      ],
+      [
+       "Settings",
+       27
+      ],
+      [
+       "Watcher",
+       11
+      ],
+      [
+       "Usage",
+       7
+      ],
+      [
+       "Threads composer",
+       6
+      ],
+      [
+       "Threads sidebar",
+       6
+      ],
+      [
+       "Dictate",
+       3
+      ],
+      [
+       "Updates and start",
+       2
+      ],
+      [
+       "Shared controls",
+       2
+      ],
+      [
+       "Setup",
+       1
+      ],
+      [
+       "App frame",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "8px",
+     "count": 71,
+     "rooms": [
+      [
+       "Threads pane",
+       35
+      ],
+      [
+       "Settings",
+       12
+      ],
+      [
+       "Threads composer",
+       6
+      ],
+      [
+       "Threads tools",
+       6
+      ],
+      [
+       "Watcher",
+       6
+      ],
+      [
+       "Threads sidebar",
+       5
+      ],
+      [
+       "Setup",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "50%",
+     "count": 58,
+     "rooms": [
+      [
+       "Threads pane",
+       18
+      ],
+      [
+       "Settings",
+       11
+      ],
+      [
+       "Threads tools",
+       9
+      ],
+      [
+       "Threads sidebar",
+       5
+      ],
+      [
+       "Updates and start",
+       4
+      ],
+      [
+       "Watcher",
+       4
+      ],
+      [
+       "Threads composer",
+       3
+      ],
+      [
+       "Usage",
+       2
+      ],
+      [
+       "Widget",
+       2
+      ]
+     ]
+    },
+    {
+     "value": "4px",
+     "count": 57,
+     "rooms": [
+      [
+       "Threads pane",
+       19
+      ],
+      [
+       "Settings",
+       9
+      ],
+      [
+       "Threads tools",
+       9
+      ],
+      [
+       "Threads sidebar",
+       5
+      ],
+      [
+       "Usage",
+       4
+      ],
+      [
+       "Threads composer",
+       3
+      ],
+      [
+       "Setup",
+       3
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "App frame",
+       1
+      ],
+      [
+       "Updates and start",
+       1
+      ],
+      [
+       "Watcher",
+       1
+      ],
+      [
+       "Widget",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "var(--tt-radius-sm)",
+     "count": 54,
+     "rooms": [
+      [
+       "Settings",
+       19
+      ],
+      [
+       "Threads pane",
+       18
+      ],
+      [
+       "Threads tools",
+       5
+      ],
+      [
+       "Setup",
+       4
+      ],
+      [
+       "Watcher",
+       4
+      ],
+      [
+       "Shared controls",
+       3
+      ],
+      [
+       "Threads sidebar",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "var(--tt-radius-md)",
+     "count": 51,
+     "rooms": [
+      [
+       "Threads pane",
+       22
+      ],
+      [
+       "Settings",
+       15
+      ],
+      [
+       "Setup",
+       4
+      ],
+      [
+       "Threads tools",
+       3
+      ],
+      [
+       "Watcher",
+       3
+      ],
+      [
+       "Shared controls",
+       2
+      ],
+      [
+       "Threads composer",
+       1
+      ],
+      [
+       "Dictate",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "2px",
+     "count": 48,
+     "rooms": [
+      [
+       "Settings",
+       12
+      ],
+      [
+       "Threads pane",
+       10
+      ],
+      [
+       "Usage",
+       9
+      ],
+      [
+       "Dictate",
+       4
+      ],
+      [
+       "Threads composer",
+       3
+      ],
+      [
+       "Watcher",
+       3
+      ],
+      [
+       "Shared controls",
+       2
+      ],
+      [
+       "Setup",
+       2
+      ],
+      [
+       "Threads tools",
+       2
+      ],
+      [
+       "Updates and start",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "7px",
+     "count": 35,
+     "rooms": [
+      [
+       "Threads tools",
+       12
+      ],
+      [
+       "Threads sidebar",
+       8
+      ],
+      [
+       "Threads pane",
+       5
+      ],
+      [
+       "Watcher",
+       4
+      ],
+      [
+       "Threads composer",
+       3
+      ],
+      [
+       "Settings",
+       1
+      ],
+      [
+       "Usage",
+       1
+      ],
+      [
+       "App frame",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "12px",
+     "count": 34,
+     "rooms": [
+      [
+       "Settings",
+       12
+      ],
+      [
+       "Threads pane",
+       5
+      ],
+      [
+       "Setup",
+       5
+      ],
+      [
+       "Usage",
+       3
+      ],
+      [
+       "Threads tools",
+       3
+      ],
+      [
+       "Watcher",
+       3
+      ],
+      [
+       "Threads composer",
+       1
+      ],
+      [
+       "Updates and start",
+       1
+      ],
+      [
+       "Widget",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "3px",
+     "count": 34,
+     "rooms": [
+      [
+       "Watcher",
+       9
+      ],
+      [
+       "Threads pane",
+       7
+      ],
+      [
+       "Settings",
+       6
+      ],
+      [
+       "Threads composer",
+       2
+      ],
+      [
+       "Threads sidebar",
+       2
+      ],
+      [
+       "Usage",
+       2
+      ],
+      [
+       "Shared controls",
+       2
+      ],
+      [
+       "Threads tools",
+       2
+      ],
+      [
+       "App frame",
+       1
+      ],
+      [
+       "Widget",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "5px",
+     "count": 32,
+     "rooms": [
+      [
+       "Threads pane",
+       9
+      ],
+      [
+       "Settings",
+       7
+      ],
+      [
+       "Threads tools",
+       7
+      ],
+      [
+       "Threads sidebar",
+       3
+      ],
+      [
+       "Watcher",
+       2
+      ],
+      [
+       "Threads composer",
+       1
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "Usage",
+       1
+      ],
+      [
+       "Shared controls",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "10px",
+     "count": 28,
+     "rooms": [
+      [
+       "Threads pane",
+       6
+      ],
+      [
+       "Settings",
+       6
+      ],
+      [
+       "Threads tools",
+       5
+      ],
+      [
+       "Setup",
+       3
+      ],
+      [
+       "Watcher",
+       2
+      ],
+      [
+       "Threads composer",
+       1
+      ],
+      [
+       "Threads sidebar",
+       1
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "Memory",
+       1
+      ],
+      [
+       "Usage",
+       1
+      ],
+      [
+       "App frame",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "var(--tt-radius-lg)",
+     "count": 25,
+     "rooms": [
+      [
+       "Threads pane",
+       10
+      ],
+      [
+       "Settings",
+       7
+      ],
+      [
+       "Usage",
+       3
+      ],
+      [
+       "Setup",
+       2
+      ],
+      [
+       "Shared controls",
+       1
+      ],
+      [
+       "Threads tools",
+       1
+      ],
+      [
+       "Watcher",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "0",
+     "count": 14,
+     "rooms": [
+      [
+       "Settings",
+       6
+      ],
+      [
+       "Threads pane",
+       3
+      ],
+      [
+       "Threads composer",
+       1
+      ],
+      [
+       "Threads sidebar",
+       1
+      ],
+      [
+       "Setup",
+       1
+      ],
+      [
+       "Usage",
+       1
+      ],
+      [
+       "App frame",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "inherit",
+     "count": 11,
+     "rooms": [
+      [
+       "Threads pane",
+       3
+      ],
+      [
+       "Settings",
+       3
+      ],
+      [
+       "Usage",
+       2
+      ],
+      [
+       "Threads composer",
+       1
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "Watcher",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "16px",
+     "count": 7,
+     "rooms": [
+      [
+       "Threads pane",
+       3
+      ],
+      [
+       "Settings",
+       2
+      ],
+      [
+       "Threads sidebar",
+       1
+      ],
+      [
+       "Setup",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "1px",
+     "count": 6,
+     "rooms": [
+      [
+       "Threads pane",
+       2
+      ],
+      [
+       "Settings",
+       2
+      ],
+      [
+       "Widget",
+       2
+      ]
+     ]
+    },
+    {
+     "value": "9px",
+     "count": 6,
+     "rooms": [
+      [
+       "Threads tools",
+       3
+      ],
+      [
+       "Threads pane",
+       1
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "Setup",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "14px",
+     "count": 5,
+     "rooms": [
+      [
+       "Threads composer",
+       3
+      ],
+      [
+       "Dictate",
+       1
+      ],
+      [
+       "Widget",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "17px",
+     "count": 2,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ],
+      [
+       "Threads tools",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "20px",
+     "count": 2,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ],
+      [
+       "Widget",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "13px",
+     "count": 2,
+     "rooms": [
+      [
+       "Setup",
+       1
+      ],
+      [
+       "Threads tools",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "14px 14px 0 0",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads composer",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "18px",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads composer",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "var(--tt-radius-lg) var(--tt-radius-lg) 0 0",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "47px",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "25px",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "7px 0 0 7px",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "0 7px 7px 0",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "0 2px 2px 0",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads composer",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "0 6px 6px 0",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "24px",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads composer",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "8px 0 0 8px",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads composer",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "0 8px 8px 0",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads composer",
+       1
+      ]
+     ]
+    },
+    {
+     "value": ".42em",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads composer",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "14px 14px 4px 14px",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "0 var(--tt-radius-sm) var(--tt-radius-sm) 0",
+     "count": 1,
+     "rooms": [
+      [
+       "Threads pane",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "0 0 8px 8px",
+     "count": 1,
+     "rooms": [
+      [
+       "Settings",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "0 0 var(--tt-radius-sm) var(--tt-radius-sm)",
+     "count": 1,
+     "rooms": [
+      [
+       "Settings",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "var(--tt-radius-sm) var(--tt-radius-sm) 0 0",
+     "count": 1,
+     "rooms": [
+      [
+       "Settings",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "11px",
+     "count": 1,
+     "rooms": [
+      [
+       "Usage",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "var(--usage-radius) var(--usage-radius) 0 0",
+     "count": 1,
+     "rooms": [
+      [
+       "Usage",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "2px 2px 0 0",
+     "count": 1,
+     "rooms": [
+      [
+       "Usage",
+       1
+      ]
+     ]
+    },
+    {
+     "value": "3px 3px 0 0",
+     "count": 1,
+     "rooms": [
+      [
+       "Usage",
+       1
+      ]
+     ]
+    }
+   ],
+   "rooms": [
+    {
+     "room": "Threads pane",
+     "count": 223,
+     "distinct": 28
+    },
+    {
+     "room": "Settings",
+     "count": 160,
+     "distinct": 20
+    },
+    {
+     "room": "Threads tools",
+     "count": 103,
+     "distinct": 16
+    },
+    {
+     "room": "Watcher",
+     "count": 54,
+     "distinct": 14
+    },
+    {
+     "room": "Threads composer",
+     "count": 42,
+     "distinct": 21
+    },
+    {
+     "room": "Usage",
+     "count": 40,
+     "distinct": 16
+    },
+    {
+     "room": "Threads sidebar",
+     "count": 38,
+     "distinct": 11
+    },
+    {
+     "room": "Setup",
+     "count": 29,
+     "distinct": 13
+    },
+    {
+     "room": "Dictate",
+     "count": 14,
+     "distinct": 9
+    },
+    {
+     "room": "Shared controls",
+     "count": 13,
+     "distinct": 7
+    },
+    {
+     "room": "Updates and start",
+     "count": 9,
+     "distinct": 5
+    },
+    {
+     "room": "Widget",
+     "count": 9,
+     "distinct": 7
+    },
+    {
+     "room": "App frame",
+     "count": 6,
+     "distinct": 6
+    },
+    {
+     "room": "Memory",
+     "count": 1,
+     "distinct": 1
+    }
+   ],
+   "inline": [
+    {
+     "file": "src/renderer/src/features/settings/themes/themeInspector.ts",
+     "line": 74,
+     "prop": "borderRadius",
+     "value": "`${rectangle.radius"
+    },
+    {
+     "file": "src/renderer/src/tools/PhonePlayer.tsx",
+     "line": 202,
+     "prop": "borderRadius",
+     "value": "Math.round(layout.screen.width * 0.12) + layout.bezel"
+    },
+    {
+     "file": "src/renderer/src/tools/PhonePlayer.tsx",
+     "line": 204,
+     "prop": "borderRadius",
+     "value": "Math.round(layout.screen.width * 0.12)"
+    }
+   ]
+  },
+  "shadow": {
+   "declarations": 151,
+   "distinct": 64,
+   "none": 12,
+   "rooms": [
+    {
+     "room": "Settings",
+     "count": 34,
+     "distinct": 14
+    },
+    {
+     "room": "Threads pane",
+     "count": 32,
+     "distinct": 22
+    },
+    {
+     "room": "Threads tools",
+     "count": 30,
+     "distinct": 19
+    },
+    {
+     "room": "Watcher",
+     "count": 16,
+     "distinct": 10
+    },
+    {
+     "room": "Threads composer",
+     "count": 13,
+     "distinct": 9
+    },
+    {
+     "room": "Setup",
+     "count": 7,
+     "distinct": 6
+    },
+    {
+     "room": "Usage",
+     "count": 5,
+     "distinct": 5
+    },
+    {
+     "room": "Updates and start",
+     "count": 4,
+     "distinct": 2
+    },
+    {
+     "room": "Shared controls",
+     "count": 4,
+     "distinct": 2
+    },
+    {
+     "room": "Threads sidebar",
+     "count": 3,
+     "distinct": 3
+    },
+    {
+     "room": "Widget",
+     "count": 3,
+     "distinct": 3
+    }
+   ],
+   "top": [
+    {
+     "value": "var(--tt-shadow-sm)",
+     "count": 16
+    },
+    {
+     "value": "var(--tt-shadow-lg)",
+     "count": 15
+    },
+    {
+     "value": "var(--tt-shadow-overlay)",
+     "count": 12
+    },
+    {
+     "value": "none",
+     "count": 12
+    },
+    {
+     "value": "0 16px 48px var(--tt-shadow-color)",
+     "count": 11
+    },
+    {
+     "value": "inset 0 0 0 2px var(--tt-focus-ring)",
+     "count": 10
+    },
+    {
+     "value": "inset 0 -1px 0 var(--tt-hairline)",
+     "count": 4
+    },
+    {
+     "value": "0 0 0 2px var(--tt-focus-ring)",
+     "count": 4
+    }
+   ]
+  }
+ },
+ "variants": {
+  "A": {
+   "name": "Snap",
+   "blurb": "Keep every whole size Sotto already leans on and snap the halves and one-offs to the nearest. A half-pixel size goes down to the step below, except under 12 px, where it goes up.",
+   "type": [
+    {
+     "token": "--tt-type-micro",
+     "role": "micro",
+     "px": 11,
+     "use": "Keys, badges and tiny marks",
+     "from": [
+      [
+       "11px",
+       17
+      ],
+      [
+       "10.5px",
+       10
+      ],
+      [
+       "9px",
+       2
+      ],
+      [
+       "10px",
+       3
+      ],
+      [
+       "9.5px",
+       2
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-caption",
+     "role": "caption",
+     "px": 12,
+     "use": "Times, counts, statuses, metadata",
+     "from": [
+      [
+       "12.5px",
+       203
+      ],
+      [
+       "12px",
+       215
+      ],
+      [
+       "11.5px",
+       53
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-small",
+     "role": "small",
+     "px": 13,
+     "use": "Descriptions, controls, most interface text",
+     "from": [
+      [
+       "13.5px",
+       84
+      ],
+      [
+       "13px",
+       384
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-body",
+     "role": "body",
+     "px": 14,
+     "use": "Sidebar rows, fields, menu items",
+     "from": [
+      [
+       "14px",
+       186
+      ],
+      [
+       "14.5px",
+       6
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-reading",
+     "role": "reading",
+     "px": 15,
+     "use": "Transcript, composer, journal entries, settings labels",
+     "from": [
+      [
+       "15px",
+       50
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-lead",
+     "role": "lead",
+     "px": 16,
+     "use": "Dialog titles, section intros, request prompts",
+     "from": [
+      [
+       "16px",
+       19
+      ],
+      [
+       "17px",
+       5
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-heading",
+     "role": "heading",
+     "px": 18,
+     "use": "Sidebar brand, empty-room headings",
+     "from": [
+      [
+       "18px",
+       7
+      ],
+      [
+       "19px",
+       4
+      ],
+      [
+       "20px",
+       5
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-figure",
+     "role": "figure",
+     "px": 22,
+     "use": "Figures in a narrow room, sub-titles",
+     "from": [
+      [
+       "21px",
+       2
+      ],
+      [
+       "23px",
+       3
+      ],
+      [
+       "22px",
+       6
+      ],
+      [
+       "24px",
+       1
+      ],
+      [
+       "25px",
+       1
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-title",
+     "role": "title",
+     "px": 28,
+     "use": "Room titles and large figures",
+     "from": [
+      [
+       "28px",
+       10
+      ],
+      [
+       "30px",
+       1
+      ],
+      [
+       "27px",
+       1
+      ],
+      [
+       "36px",
+       1
+      ],
+      [
+       "26px",
+       2
+      ],
+      [
+       "34px",
+       1
+      ]
+     ]
+    }
+   ],
+   "radius": [
+    {
+     "token": "--tt-radius-mark",
+     "role": "mark",
+     "px": 2,
+     "use": "Meters, legend squares, focus marks"
+    },
+    {
+     "token": "--tt-radius-tag",
+     "role": "tag",
+     "px": 4,
+     "use": "Tags, keys, chips, small close buttons"
+    },
+    {
+     "token": "--tt-radius-control",
+     "role": "control",
+     "px": 6,
+     "use": "Buttons, fields, composer chips (today’s sm)"
+    },
+    {
+     "token": "--tt-radius-row",
+     "role": "row",
+     "px": 8,
+     "use": "Sidebar and menu rows, icon buttons"
+    },
+    {
+     "token": "--tt-radius-inset",
+     "role": "inset",
+     "px": 10,
+     "use": "Code blocks, menus, notes inside a card (today’s md)"
+    },
+    {
+     "token": "--tt-radius-card",
+     "role": "card",
+     "px": 14,
+     "use": "Cards, the composer, the Dictate bar (today’s lg)"
+    },
+    {
+     "token": "--tt-radius-overlay",
+     "role": "overlay",
+     "px": 20,
+     "use": "Dialogs and the widget"
+    },
+    {
+     "token": "--tt-radius-full",
+     "role": "full",
+     "px": "full",
+     "use": "Dots, rings, pills"
+    }
+   ],
+   "typeMap": {
+    "9": 11,
+    "10": 11,
+    "11": 11,
+    "12": 12,
+    "13": 13,
+    "14": 14,
+    "15": 15,
+    "16": 16,
+    "17": 16,
+    "18": 18,
+    "19": 18,
+    "20": 18,
+    "21": 22,
+    "22": 22,
+    "23": 22,
+    "24": 22,
+    "25": 22,
+    "26": 28,
+    "27": 28,
+    "28": 28,
+    "30": 28,
+    "34": 28,
+    "36": 28,
+    "9.5": 11,
+    "10.5": 11,
+    "11.5": 12,
+    "12.5": 12,
+    "13.5": 13,
+    "14.5": 14
+   },
+   "radiusMap": {
+    "1": 2,
+    "2": 2,
+    "3": 2,
+    "4": 4,
+    "5": 4,
+    "6": 6,
+    "7": 6,
+    "8": 8,
+    "9": 8,
+    "10": 10,
+    "11": 10,
+    "12": 10,
+    "13": 14,
+    "14": 14,
+    "16": 14,
+    "17": 14,
+    "18": 20,
+    "20": 20,
+    "24": 20,
+    "5.5": 6
+   },
+   "typeMoves": {
+    "stay": 897,
+    "half": 356,
+    "more": 36,
+    "below12": 34,
+    "byRoom": {
+     "Threads pane": {
+      "stay": 273,
+      "half": 126,
+      "more": 7
+     },
+     "Threads composer": {
+      "stay": 38,
+      "half": 13,
+      "more": 0
+     },
+     "Threads sidebar": {
+      "stay": 24,
+      "half": 19,
+      "more": 1
+     },
+     "Dictate": {
+      "stay": 19,
+      "half": 9,
+      "more": 2
+     },
+     "Memory": {
+      "stay": 8,
+      "half": 0,
+      "more": 5
+     },
+     "Setup": {
+      "stay": 22,
+      "half": 14,
+      "more": 2
+     },
+     "Settings": {
+      "stay": 235,
+      "half": 73,
+      "more": 8
+     },
+     "Updates and start": {
+      "stay": 4,
+      "half": 7,
+      "more": 1
+     },
+     "Usage": {
+      "stay": 44,
+      "half": 31,
+      "more": 8
+     },
+     "Shared controls": {
+      "stay": 12,
+      "half": 5,
+      "more": 0
+     },
+     "App frame": {
+      "stay": 5,
+      "half": 0,
+      "more": 0
+     },
+     "Help": {
+      "stay": 1,
+      "half": 3,
+      "more": 0
+     },
+     "Threads tools": {
+      "stay": 160,
+      "half": 18,
+      "more": 0
+     },
+     "Watcher": {
+      "stay": 51,
+      "half": 36,
+      "more": 0
+     },
+     "Widget": {
+      "stay": 1,
+      "half": 2,
+      "more": 2
+     }
+    }
+   },
+   "radiusMoves": {
+    "stay": 576,
+    "one": 120,
+    "more": 45,
+    "byRoom": {
+     "Threads pane": {
+      "stay": 188,
+      "one": 26,
+      "more": 9
+     },
+     "Threads composer": {
+      "stay": 32,
+      "one": 7,
+      "more": 3
+     },
+     "Threads sidebar": {
+      "stay": 24,
+      "one": 13,
+      "more": 1
+     },
+     "Shared controls": {
+      "stay": 10,
+      "one": 3,
+      "more": 0
+     },
+     "Dictate": {
+      "stay": 12,
+      "one": 2,
+      "more": 0
+     },
+     "Memory": {
+      "stay": 1,
+      "one": 0,
+      "more": 0
+     },
+     "Setup": {
+      "stay": 21,
+      "one": 2,
+      "more": 6
+     },
+     "Settings": {
+      "stay": 130,
+      "one": 16,
+      "more": 14
+     },
+     "Updates and start": {
+      "stay": 8,
+      "one": 0,
+      "more": 1
+     },
+     "Usage": {
+      "stay": 31,
+      "one": 6,
+      "more": 3
+     },
+     "App frame": {
+      "stay": 4,
+      "one": 2,
+      "more": 0
+     },
+     "Threads tools": {
+      "stay": 74,
+      "one": 25,
+      "more": 4
+     },
+     "Watcher": {
+      "stay": 36,
+      "one": 15,
+      "more": 3
+     },
+     "Widget": {
+      "stay": 5,
+      "one": 3,
+      "more": 1
+     }
+    }
+   },
+   "radiusTable": [
+    {
+     "from": "6",
+     "to": "6",
+     "count": 191
+    },
+    {
+     "from": "10",
+     "to": "10",
+     "count": 79
+    },
+    {
+     "from": "8",
+     "to": "8",
+     "count": 71
+    },
+    {
+     "from": "full",
+     "to": "full",
+     "count": 60
+    },
+    {
+     "from": "4",
+     "to": "4",
+     "count": 57
+    },
+    {
+     "from": "2",
+     "to": "2",
+     "count": 48
+    },
+    {
+     "from": "7",
+     "to": "6",
+     "count": 35
+    },
+    {
+     "from": "3",
+     "to": "2",
+     "count": 34
+    },
+    {
+     "from": "12",
+     "to": "10",
+     "count": 34
+    },
+    {
+     "from": "5",
+     "to": "4",
+     "count": 32
+    },
+    {
+     "from": "14",
+     "to": "14",
+     "count": 30
+    },
+    {
+     "from": "0",
+     "to": "0",
+     "count": 14
+    },
+    {
+     "from": "inherit",
+     "to": "inherit",
+     "count": 11
+    },
+    {
+     "from": "16",
+     "to": "14",
+     "count": 7
+    },
+    {
+     "from": "1",
+     "to": "2",
+     "count": 6
+    },
+    {
+     "from": "9",
+     "to": "8",
+     "count": 6
+    },
+    {
+     "from": "13",
+     "to": "14",
+     "count": 2
+    },
+    {
+     "from": "17",
+     "to": "14",
+     "count": 2
+    },
+    {
+     "from": "20",
+     "to": "20",
+     "count": 2
+    },
+    {
+     "from": "14 14 0 0",
+     "to": "14 14 0 0",
+     "count": 2
+    },
+    {
+     "from": "0 6 6 0",
+     "to": "0 6 6 0",
+     "count": 2
+    },
+    {
+     "from": "11",
+     "to": "10",
+     "count": 1
+    },
+    {
+     "from": "18",
+     "to": "20",
+     "count": 1
+    },
+    {
+     "from": "24",
+     "to": "20",
+     "count": 1
+    },
+    {
+     "from": "7 0 0 7",
+     "to": "6 0 0 6",
+     "count": 1
+    },
+    {
+     "from": "0 7 7 0",
+     "to": "0 6 6 0",
+     "count": 1
+    },
+    {
+     "from": "0 2 2 0",
+     "to": "0 2 2 0",
+     "count": 1
+    },
+    {
+     "from": "8 0 0 8",
+     "to": "8 0 0 8",
+     "count": 1
+    },
+    {
+     "from": "0 8 8 0",
+     "to": "0 8 8 0",
+     "count": 1
+    },
+    {
+     "from": "5.5",
+     "to": "6",
+     "count": 1
+    },
+    {
+     "from": "14 14 4 14",
+     "to": "14 14 4 14",
+     "count": 1
+    },
+    {
+     "from": "0 0 8 8",
+     "to": "0 0 8 8",
+     "count": 1
+    },
+    {
+     "from": "0 0 6 6",
+     "to": "0 0 6 6",
+     "count": 1
+    },
+    {
+     "from": "6 6 0 0",
+     "to": "6 6 0 0",
+     "count": 1
+    },
+    {
+     "from": "var(--usage-radius) var(--usage-radius) 0 0",
+     "to": "var(--usage-radius) var(--usage-radius) 0 0",
+     "count": 1
+    },
+    {
+     "from": "2 2 0 0",
+     "to": "2 2 0 0",
+     "count": 1
+    },
+    {
+     "from": "3 3 0 0",
+     "to": "2 2 0 0",
+     "count": 1
+    }
+   ]
+  },
+  "B": {
+   "name": "Six steps",
+   "blurb": "The issue’s six-step ramp, named with the iPhone’s six roles. Nothing is smaller than 12 px. Reading text and settings labels drop from 15 to 14; radii keep four steps, so rows and dialogs lose some roundness.",
+   "type": [
+    {
+     "token": "--tt-type-caption",
+     "role": "caption",
+     "px": 12,
+     "use": "Times, counts, tags, keys, metadata",
+     "from": [
+      [
+       "12.5px",
+       203
+      ],
+      [
+       "12px",
+       215
+      ],
+      [
+       "11px",
+       17
+      ],
+      [
+       "11.5px",
+       53
+      ],
+      [
+       "10.5px",
+       10
+      ],
+      [
+       "9px",
+       2
+      ],
+      [
+       "10px",
+       3
+      ],
+      [
+       "9.5px",
+       2
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-small",
+     "role": "small",
+     "px": 13,
+     "use": "Descriptions, controls, most interface text",
+     "from": [
+      [
+       "13.5px",
+       84
+      ],
+      [
+       "13px",
+       384
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-body",
+     "role": "body",
+     "px": 14,
+     "use": "Sidebar rows, fields, transcript, composer, settings labels",
+     "from": [
+      [
+       "14px",
+       186
+      ],
+      [
+       "15px",
+       50
+      ],
+      [
+       "14.5px",
+       6
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-lead",
+     "role": "lead",
+     "px": 16,
+     "use": "Dialog titles, section intros, headings",
+     "from": [
+      [
+       "16px",
+       19
+      ],
+      [
+       "18px",
+       7
+      ],
+      [
+       "17px",
+       5
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-title",
+     "role": "title",
+     "px": 20,
+     "use": "Empty-room headings, figures",
+     "from": [
+      [
+       "21px",
+       2
+      ],
+      [
+       "19px",
+       4
+      ],
+      [
+       "23px",
+       3
+      ],
+      [
+       "20px",
+       5
+      ],
+      [
+       "22px",
+       6
+      ],
+      [
+       "24px",
+       1
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-display",
+     "role": "display",
+     "px": 28,
+     "use": "Room titles and large figures",
+     "from": [
+      [
+       "28px",
+       10
+      ],
+      [
+       "30px",
+       1
+      ],
+      [
+       "27px",
+       1
+      ],
+      [
+       "36px",
+       1
+      ],
+      [
+       "26px",
+       2
+      ],
+      [
+       "34px",
+       1
+      ],
+      [
+       "25px",
+       1
+      ]
+     ]
+    }
+   ],
+   "radius": [
+    {
+     "token": "--tt-radius-small",
+     "role": "small",
+     "px": 4,
+     "use": "Marks, tags, keys, chips"
+    },
+    {
+     "token": "--tt-radius-control",
+     "role": "control",
+     "px": 6,
+     "use": "Buttons, fields, rows (today’s sm)"
+    },
+    {
+     "token": "--tt-radius-inset",
+     "role": "inset",
+     "px": 10,
+     "use": "Code blocks, menus, notes (today’s md)"
+    },
+    {
+     "token": "--tt-radius-card",
+     "role": "card",
+     "px": 14,
+     "use": "Cards, the composer and dialogs (today’s lg)"
+    },
+    {
+     "token": "--tt-radius-full",
+     "role": "full",
+     "px": "full",
+     "use": "Dots, rings, pills"
+    }
+   ],
+   "typeMap": {
+    "9": 12,
+    "10": 12,
+    "11": 12,
+    "12": 12,
+    "13": 13,
+    "14": 14,
+    "15": 14,
+    "16": 16,
+    "17": 16,
+    "18": 16,
+    "19": 20,
+    "20": 20,
+    "21": 20,
+    "22": 20,
+    "23": 20,
+    "24": 20,
+    "25": 28,
+    "26": 28,
+    "27": 28,
+    "28": 28,
+    "30": 28,
+    "34": 28,
+    "36": 28,
+    "9.5": 12,
+    "10.5": 12,
+    "11.5": 12,
+    "12.5": 12,
+    "13.5": 13,
+    "14.5": 14
+   },
+   "radiusMap": {
+    "1": 4,
+    "2": 4,
+    "3": 4,
+    "4": 4,
+    "5": 4,
+    "6": 6,
+    "7": 6,
+    "8": 6,
+    "9": 10,
+    "10": 10,
+    "11": 10,
+    "12": 10,
+    "13": 14,
+    "14": 14,
+    "16": 14,
+    "17": 14,
+    "18": 14,
+    "20": 14,
+    "24": 14,
+    "5.5": 6
+   },
+   "typeMoves": {
+    "stay": 822,
+    "half": 346,
+    "more": 121,
+    "below12": 0,
+    "byRoom": {
+     "Threads pane": {
+      "stay": 244,
+      "half": 123,
+      "more": 39
+     },
+     "Threads composer": {
+      "stay": 37,
+      "half": 12,
+      "more": 2
+     },
+     "Threads sidebar": {
+      "stay": 21,
+      "half": 19,
+      "more": 4
+     },
+     "Dictate": {
+      "stay": 17,
+      "half": 9,
+      "more": 4
+     },
+     "Memory": {
+      "stay": 6,
+      "half": 0,
+      "more": 7
+     },
+     "Setup": {
+      "stay": 20,
+      "half": 14,
+      "more": 4
+     },
+     "Settings": {
+      "stay": 212,
+      "half": 68,
+      "more": 36
+     },
+     "Updates and start": {
+      "stay": 5,
+      "half": 7,
+      "more": 0
+     },
+     "Usage": {
+      "stay": 39,
+      "half": 31,
+      "more": 13
+     },
+     "Shared controls": {
+      "stay": 12,
+      "half": 5,
+      "more": 0
+     },
+     "App frame": {
+      "stay": 4,
+      "half": 0,
+      "more": 1
+     },
+     "Help": {
+      "stay": 1,
+      "half": 3,
+      "more": 0
+     },
+     "Threads tools": {
+      "stay": 156,
+      "half": 18,
+      "more": 4
+     },
+     "Watcher": {
+      "stay": 48,
+      "half": 36,
+      "more": 3
+     },
+     "Widget": {
+      "stay": 0,
+      "half": 1,
+      "more": 4
+     }
+    }
+   },
+   "radiusMoves": {
+    "stay": 450,
+    "one": 114,
+    "more": 177,
+    "byRoom": {
+     "Threads pane": {
+      "stay": 142,
+      "one": 24,
+      "more": 57
+     },
+     "Threads composer": {
+      "stay": 20,
+      "one": 7,
+      "more": 15
+     },
+     "Threads sidebar": {
+      "stay": 19,
+      "one": 13,
+      "more": 6
+     },
+     "Shared controls": {
+      "stay": 8,
+      "one": 3,
+      "more": 2
+     },
+     "Dictate": {
+      "stay": 8,
+      "one": 2,
+      "more": 4
+     },
+     "Memory": {
+      "stay": 1,
+      "one": 0,
+      "more": 0
+     },
+     "Setup": {
+      "stay": 18,
+      "one": 2,
+      "more": 9
+     },
+     "Settings": {
+      "stay": 105,
+      "one": 14,
+      "more": 41
+     },
+     "Updates and start": {
+      "stay": 7,
+      "one": 0,
+      "more": 2
+     },
+     "Usage": {
+      "stay": 21,
+      "one": 6,
+      "more": 13
+     },
+     "App frame": {
+      "stay": 4,
+      "one": 2,
+      "more": 0
+     },
+     "Threads tools": {
+      "stay": 66,
+      "one": 25,
+      "more": 12
+     },
+     "Watcher": {
+      "stay": 27,
+      "one": 15,
+      "more": 12
+     },
+     "Widget": {
+      "stay": 4,
+      "one": 1,
+      "more": 4
+     }
+    }
+   },
+   "radiusTable": [
+    {
+     "from": "6",
+     "to": "6",
+     "count": 191
+    },
+    {
+     "from": "10",
+     "to": "10",
+     "count": 79
+    },
+    {
+     "from": "8",
+     "to": "6",
+     "count": 71
+    },
+    {
+     "from": "full",
+     "to": "full",
+     "count": 60
+    },
+    {
+     "from": "4",
+     "to": "4",
+     "count": 57
+    },
+    {
+     "from": "2",
+     "to": "4",
+     "count": 48
+    },
+    {
+     "from": "7",
+     "to": "6",
+     "count": 35
+    },
+    {
+     "from": "3",
+     "to": "4",
+     "count": 34
+    },
+    {
+     "from": "12",
+     "to": "10",
+     "count": 34
+    },
+    {
+     "from": "5",
+     "to": "4",
+     "count": 32
+    },
+    {
+     "from": "14",
+     "to": "14",
+     "count": 30
+    },
+    {
+     "from": "0",
+     "to": "0",
+     "count": 14
+    },
+    {
+     "from": "inherit",
+     "to": "inherit",
+     "count": 11
+    },
+    {
+     "from": "16",
+     "to": "14",
+     "count": 7
+    },
+    {
+     "from": "1",
+     "to": "4",
+     "count": 6
+    },
+    {
+     "from": "9",
+     "to": "10",
+     "count": 6
+    },
+    {
+     "from": "13",
+     "to": "14",
+     "count": 2
+    },
+    {
+     "from": "17",
+     "to": "14",
+     "count": 2
+    },
+    {
+     "from": "20",
+     "to": "14",
+     "count": 2
+    },
+    {
+     "from": "14 14 0 0",
+     "to": "14 14 0 0",
+     "count": 2
+    },
+    {
+     "from": "0 6 6 0",
+     "to": "0 6 6 0",
+     "count": 2
+    },
+    {
+     "from": "11",
+     "to": "10",
+     "count": 1
+    },
+    {
+     "from": "18",
+     "to": "14",
+     "count": 1
+    },
+    {
+     "from": "24",
+     "to": "14",
+     "count": 1
+    },
+    {
+     "from": "7 0 0 7",
+     "to": "6 0 0 6",
+     "count": 1
+    },
+    {
+     "from": "0 7 7 0",
+     "to": "0 6 6 0",
+     "count": 1
+    },
+    {
+     "from": "0 2 2 0",
+     "to": "0 4 4 0",
+     "count": 1
+    },
+    {
+     "from": "8 0 0 8",
+     "to": "6 0 0 6",
+     "count": 1
+    },
+    {
+     "from": "0 8 8 0",
+     "to": "0 6 6 0",
+     "count": 1
+    },
+    {
+     "from": "5.5",
+     "to": "6",
+     "count": 1
+    },
+    {
+     "from": "14 14 4 14",
+     "to": "14 14 4 14",
+     "count": 1
+    },
+    {
+     "from": "0 0 8 8",
+     "to": "0 0 6 6",
+     "count": 1
+    },
+    {
+     "from": "0 0 6 6",
+     "to": "0 0 6 6",
+     "count": 1
+    },
+    {
+     "from": "6 6 0 0",
+     "to": "6 6 0 0",
+     "count": 1
+    },
+    {
+     "from": "var(--usage-radius) var(--usage-radius) 0 0",
+     "to": "var(--usage-radius) var(--usage-radius) 0 0",
+     "count": 1
+    },
+    {
+     "from": "2 2 0 0",
+     "to": "4 4 0 0",
+     "count": 1
+    },
+    {
+     "from": "3 3 0 0",
+     "to": "4 4 0 0",
+     "count": 1
+    }
+   ]
+  },
+  "C": {
+   "name": "Fluent",
+   "blurb": "Windows’ own ramp and corners: Caption 12, Body 14, Body Large 18, Subtitle 20, Title 28; 4 px for controls and rows, 8 px for cards and overlays. Each size goes to the role it plays, so 13 px interface text becomes Body 14 and 15 px reading text becomes Body 14 too. At 820 × 560 it costs little room (the Settings card grows 11 px, the dialog 13 px); what it costs is hierarchy and the soft corners.",
+   "type": [
+    {
+     "token": "--tt-type-caption",
+     "role": "caption",
+     "px": 12,
+     "use": "Caption: times, descriptions, metadata",
+     "from": [
+      [
+       "12.5px",
+       203
+      ],
+      [
+       "12px",
+       215
+      ],
+      [
+       "11px",
+       17
+      ],
+      [
+       "11.5px",
+       53
+      ],
+      [
+       "10.5px",
+       10
+      ],
+      [
+       "9px",
+       2
+      ],
+      [
+       "10px",
+       3
+      ],
+      [
+       "9.5px",
+       2
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-body",
+     "role": "body",
+     "px": 14,
+     "use": "Body and Body Strong: all interface and reading text",
+     "from": [
+      [
+       "14px",
+       186
+      ],
+      [
+       "15px",
+       50
+      ],
+      [
+       "13.5px",
+       84
+      ],
+      [
+       "13px",
+       384
+      ],
+      [
+       "14.5px",
+       6
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-body-large",
+     "role": "body-large",
+     "px": 18,
+     "use": "Body Large: dialog titles, section intros",
+     "from": [
+      [
+       "16px",
+       19
+      ],
+      [
+       "18px",
+       7
+      ],
+      [
+       "17px",
+       5
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-subtitle",
+     "role": "subtitle",
+     "px": 20,
+     "use": "Subtitle: headings, small figures",
+     "from": [
+      [
+       "21px",
+       2
+      ],
+      [
+       "19px",
+       4
+      ],
+      [
+       "23px",
+       3
+      ],
+      [
+       "20px",
+       5
+      ],
+      [
+       "22px",
+       6
+      ]
+     ]
+    },
+    {
+     "token": "--tt-type-title",
+     "role": "title",
+     "px": 28,
+     "use": "Title: room titles and large figures",
+     "from": [
+      [
+       "28px",
+       10
+      ],
+      [
+       "30px",
+       1
+      ],
+      [
+       "27px",
+       1
+      ],
+      [
+       "36px",
+       1
+      ],
+      [
+       "26px",
+       2
+      ],
+      [
+       "34px",
+       1
+      ],
+      [
+       "24px",
+       1
+      ],
+      [
+       "25px",
+       1
+      ]
+     ]
+    }
+   ],
+   "radius": [
+    {
+     "token": "--tt-radius-small",
+     "role": "small",
+     "px": 2,
+     "use": "Fluent Small: marks"
+    },
+    {
+     "token": "--tt-radius-control",
+     "role": "control",
+     "px": 4,
+     "use": "Controls, rows, tags, keys"
+    },
+    {
+     "token": "--tt-radius-overlay",
+     "role": "overlay",
+     "px": 8,
+     "use": "Cards, the composer, menus and dialogs"
+    },
+    {
+     "token": "--tt-radius-full",
+     "role": "full",
+     "px": "full",
+     "use": "Dots, rings, pills"
+    }
+   ],
+   "typeMap": {
+    "9": 12,
+    "10": 12,
+    "11": 12,
+    "12": 12,
+    "13": 14,
+    "14": 14,
+    "15": 14,
+    "16": 18,
+    "17": 18,
+    "18": 18,
+    "19": 20,
+    "20": 20,
+    "21": 20,
+    "22": 20,
+    "23": 20,
+    "24": 28,
+    "25": 28,
+    "26": 28,
+    "27": 28,
+    "28": 28,
+    "30": 28,
+    "34": 28,
+    "36": 28,
+    "9.5": 12,
+    "10.5": 12,
+    "11.5": 12,
+    "12.5": 12,
+    "13.5": 14,
+    "14.5": 14
+   },
+   "radiusMap": {
+    "1": 2,
+    "2": 2,
+    "3": 2,
+    "4": 4,
+    "5": 4,
+    "6": 4,
+    "7": 4,
+    "8": 4,
+    "9": 4,
+    "10": 8,
+    "11": 8,
+    "12": 8,
+    "13": 8,
+    "14": 8,
+    "16": 8,
+    "17": 8,
+    "18": 8,
+    "20": 8,
+    "24": 8,
+    "5.5": 4
+   },
+   "typeMoves": {
+    "stay": 426,
+    "half": 346,
+    "more": 517,
+    "below12": 0,
+    "byRoom": {
+     "Threads pane": {
+      "stay": 124,
+      "half": 123,
+      "more": 159
+     },
+     "Threads composer": {
+      "stay": 18,
+      "half": 12,
+      "more": 21
+     },
+     "Threads sidebar": {
+      "stay": 15,
+      "half": 19,
+      "more": 10
+     },
+     "Dictate": {
+      "stay": 7,
+      "half": 9,
+      "more": 14
+     },
+     "Memory": {
+      "stay": 5,
+      "half": 0,
+      "more": 8
+     },
+     "Setup": {
+      "stay": 6,
+      "half": 14,
+      "more": 18
+     },
+     "Settings": {
+      "stay": 109,
+      "half": 68,
+      "more": 139
+     },
+     "Updates and start": {
+      "stay": 4,
+      "half": 7,
+      "more": 1
+     },
+     "Usage": {
+      "stay": 21,
+      "half": 31,
+      "more": 31
+     },
+     "Shared controls": {
+      "stay": 4,
+      "half": 5,
+      "more": 8
+     },
+     "App frame": {
+      "stay": 2,
+      "half": 0,
+      "more": 3
+     },
+     "Help": {
+      "stay": 0,
+      "half": 3,
+      "more": 1
+     },
+     "Threads tools": {
+      "stay": 93,
+      "half": 18,
+      "more": 67
+     },
+     "Watcher": {
+      "stay": 18,
+      "half": 36,
+      "more": 33
+     },
+     "Widget": {
+      "stay": 0,
+      "half": 1,
+      "more": 4
+     }
+    }
+   },
+   "radiusMoves": {
+    "stay": 193,
+    "one": 73,
+    "more": 475,
+    "byRoom": {
+     "Threads pane": {
+      "stay": 55,
+      "one": 18,
+      "more": 150
+     },
+     "Threads composer": {
+      "stay": 12,
+      "one": 3,
+      "more": 27
+     },
+     "Threads sidebar": {
+      "stay": 11,
+      "one": 5,
+      "more": 22
+     },
+     "Shared controls": {
+      "stay": 2,
+      "one": 3,
+      "more": 8
+     },
+     "Dictate": {
+      "stay": 6,
+      "one": 1,
+      "more": 7
+     },
+     "Memory": {
+      "stay": 0,
+      "one": 0,
+      "more": 1
+     },
+     "Setup": {
+      "stay": 6,
+      "one": 0,
+      "more": 23
+     },
+     "Settings": {
+      "stay": 41,
+      "one": 15,
+      "more": 104
+     },
+     "Updates and start": {
+      "stay": 6,
+      "one": 0,
+      "more": 3
+     },
+     "Usage": {
+      "stay": 20,
+      "one": 4,
+      "more": 16
+     },
+     "App frame": {
+      "stay": 2,
+      "one": 1,
+      "more": 3
+     },
+     "Threads tools": {
+      "stay": 20,
+      "one": 9,
+      "more": 74
+     },
+     "Watcher": {
+      "stay": 9,
+      "one": 11,
+      "more": 34
+     },
+     "Widget": {
+      "stay": 3,
+      "one": 3,
+      "more": 3
+     }
+    }
+   },
+   "radiusTable": [
+    {
+     "from": "6",
+     "to": "4",
+     "count": 191
+    },
+    {
+     "from": "10",
+     "to": "8",
+     "count": 79
+    },
+    {
+     "from": "8",
+     "to": "4",
+     "count": 71
+    },
+    {
+     "from": "full",
+     "to": "full",
+     "count": 60
+    },
+    {
+     "from": "4",
+     "to": "4",
+     "count": 57
+    },
+    {
+     "from": "2",
+     "to": "2",
+     "count": 48
+    },
+    {
+     "from": "7",
+     "to": "4",
+     "count": 35
+    },
+    {
+     "from": "3",
+     "to": "2",
+     "count": 34
+    },
+    {
+     "from": "12",
+     "to": "8",
+     "count": 34
+    },
+    {
+     "from": "5",
+     "to": "4",
+     "count": 32
+    },
+    {
+     "from": "14",
+     "to": "8",
+     "count": 30
+    },
+    {
+     "from": "0",
+     "to": "0",
+     "count": 14
+    },
+    {
+     "from": "inherit",
+     "to": "inherit",
+     "count": 11
+    },
+    {
+     "from": "16",
+     "to": "8",
+     "count": 7
+    },
+    {
+     "from": "1",
+     "to": "2",
+     "count": 6
+    },
+    {
+     "from": "9",
+     "to": "4",
+     "count": 6
+    },
+    {
+     "from": "13",
+     "to": "8",
+     "count": 2
+    },
+    {
+     "from": "17",
+     "to": "8",
+     "count": 2
+    },
+    {
+     "from": "20",
+     "to": "8",
+     "count": 2
+    },
+    {
+     "from": "14 14 0 0",
+     "to": "8 8 0 0",
+     "count": 2
+    },
+    {
+     "from": "0 6 6 0",
+     "to": "0 4 4 0",
+     "count": 2
+    },
+    {
+     "from": "11",
+     "to": "8",
+     "count": 1
+    },
+    {
+     "from": "18",
+     "to": "8",
+     "count": 1
+    },
+    {
+     "from": "24",
+     "to": "8",
+     "count": 1
+    },
+    {
+     "from": "7 0 0 7",
+     "to": "4 0 0 4",
+     "count": 1
+    },
+    {
+     "from": "0 7 7 0",
+     "to": "0 4 4 0",
+     "count": 1
+    },
+    {
+     "from": "0 2 2 0",
+     "to": "0 2 2 0",
+     "count": 1
+    },
+    {
+     "from": "8 0 0 8",
+     "to": "4 0 0 4",
+     "count": 1
+    },
+    {
+     "from": "0 8 8 0",
+     "to": "0 4 4 0",
+     "count": 1
+    },
+    {
+     "from": "5.5",
+     "to": "4",
+     "count": 1
+    },
+    {
+     "from": "14 14 4 14",
+     "to": "8 8 4 8",
+     "count": 1
+    },
+    {
+     "from": "0 0 8 8",
+     "to": "0 0 4 4",
+     "count": 1
+    },
+    {
+     "from": "0 0 6 6",
+     "to": "0 0 4 4",
+     "count": 1
+    },
+    {
+     "from": "6 6 0 0",
+     "to": "4 4 0 0",
+     "count": 1
+    },
+    {
+     "from": "var(--usage-radius) var(--usage-radius) 0 0",
+     "to": "var(--usage-radius) var(--usage-radius) 0 0",
+     "count": 1
+    },
+    {
+     "from": "2 2 0 0",
+     "to": "2 2 0 0",
+     "count": 1
+    },
+    {
+     "from": "3 3 0 0",
+     "to": "2 2 0 0",
+     "count": 1
+    }
+   ]
+  }
+ }
+}

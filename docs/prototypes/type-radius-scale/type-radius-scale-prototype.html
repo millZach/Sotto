@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<!-- PROTOTYPE, throwaway. Question (#1833): which type ramp and corner scale should Sotto's renderer move onto?
+     Today plus three candidates, drawn on the same markup so only the scale differs. Every mock element carries
+     today's size (data-fs) or corner (data-r) as read from the stylesheets; a variant maps each value to its step.
+     Counts come from type-radius-scale/measure.mjs; type-radius-scale/build.mjs maps them and fills DATA below. -->
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="data:,">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sotto desktop: type and radius scale (prototype)</title>
+<style>
+@font-face { font-family: 'Figtree'; font-weight: 300 900; src: url('type-radius-scale/figtree-latin.woff2') format('woff2'); }
+@font-face { font-family: 'Spline Sans Mono'; font-weight: 300 700; src: url('type-radius-scale/spline-sans-mono-latin.woff2') format('woff2'); }
+:root { --ui: 'Figtree', ui-sans-serif, system-ui, 'Segoe UI', sans-serif; --mono: 'Spline Sans Mono', ui-monospace, Consolas, monospace; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #0b0c0d; color: #e6e6e6; font: 15px/1.5 var(--ui); }
+a { color: #6fd0c2; }
+header.page, section.block { max-width: 1560px; margin: 0 auto; padding: 0 20px; }
+header.page { padding-top: 26px; }
+header.page h1 { font-size: 24px; font-weight: 600; margin: 0 0 8px; letter-spacing: -.3px; }
+header.page p { color: #b9bec4; margin: 6px 0; max-width: 980px; }
+.rec { background: #15181a; border-radius: 12px; padding: 14px 18px; color: #e6e6e6 !important; max-width: 1000px !important; }
+.rec b { color: #fff; }
+.rec code { font: 13px var(--mono); color: #d7dadf; }
+.keys { font-size: 13.5px; }
+.keys kbd { font: 600 12px var(--ui); background: #22262a; color: #e6e6e6; border-radius: 4px; padding: 1px 6px; }
+section.block { margin-top: 30px; }
+section.block > h2 { font-size: 19px; margin: 0 0 4px; font-weight: 600; }
+section.block > .why { color: #b9bec4; margin: 0 0 12px; max-width: 980px; }
+.pair { display: grid; grid-template-columns: minmax(0, var(--capw, 600px)) minmax(0, 1fr); gap: 18px; align-items: start; }
+.pair.stacked { grid-template-columns: minmax(0, 1fr); }
+.pair figure { margin: 0; min-width: 0; }
+.pair figcaption { font-size: 13px; color: #b9bec4; margin: 0 0 6px; min-height: 20px; }
+.pair figcaption b { color: #e6e6e6; font-weight: 600; }
+.pair img { display: block; max-width: 100%; height: auto; border-radius: 6px; }
+.fit { position: relative; overflow: hidden; border-radius: 6px; }
+.fit.zoom100 { overflow-x: auto; }
+.fit > .frame { transform-origin: top left; }
+.warn-note { color: #f0c46a; }
+
+/* ---- the stage: Sotto's theme roles, copied as values ---- */
+.stage { --room:#040507; --surface:#090a0e; --side:#1d1e20; --card:#111316; --bubble:#14171e; --code:#0b0c10; --panel:#18191d; --panel-edge:#2b2d33; --hair:#24272c; --side-hair:#2c2e33; --field-edge:#383b41;
+  --text:#e8eaee; --text2:#c3c7ce; --muted:#adb1b9; --faint:#8b9098; --accent:#47b8a9; --accent-ink:#04201c; --accent-text:#6dcdbf; --accent-surface:#0c3b36; --sel:#25423f; --sel-edge:#3f6f69;
+  --warn:#ffb900; --warn-surface:#3a301f; --btn:#f2f3f5; --btn-ink:#0b0c0e; --kbd:#202227; --hover:rgba(255,255,255,.06); --lit:rgba(232,234,238,.12); --pill:#e8eaee; --pill-ink:#040507; --err:#ff7b72;
+  --chip-on:#13302c; --chip-on-edge:#2f5f59; --cal0:#1a1c1f; --cal1:#173a36; --cal2:#24605a; --cal3:#33877d; --cal4:#47b8a9; --backdrop:rgba(0,0,0,.6); --meter:#1a1c1f;
+  font-family: var(--ui); color: var(--text); background: var(--room); }
+.stage[data-mode=light] { --room:#f9f8f5; --surface:#fdfcf9; --side:#f2f0ea; --card:#efeeeb; --bubble:#ebe7df; --code:#f3f2ee; --panel:#efece8; --panel-edge:#d9d5cc; --hair:#e2dfd8; --side-hair:#ddd9d0; --field-edge:#cdc8bf;
+  --text:#1f1b16; --text2:#3b3630; --muted:#5d5750; --faint:#69635b; --accent:#007d74; --accent-ink:#ffffff; --accent-text:#00675e; --accent-surface:#cfece7; --sel:#c9e3e0; --sel-edge:#86c2bb;
+  --warn:#924600; --warn-surface:#f7efe3; --btn:#1f1b16; --btn-ink:#f9f8f5; --kbd:#e6e2da; --hover:rgba(0,0,0,.05); --lit:rgba(31,27,22,.1); --pill:#1f1b16; --pill-ink:#f9f8f5; --err:#b3261e;
+  --chip-on:#d6ece8; --chip-on-edge:#86c2bb; --cal0:#e7e4dd; --cal1:#b7dcd6; --cal2:#7fc0b7; --cal3:#3f9d92; --cal4:#007d74; --backdrop:rgba(40,32,24,.28); --meter:#e4e1da; }
+.stage button { font: inherit; color: inherit; border: 0; background: none; padding: 0; }
+.stage svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.stage .sp { flex: 1; }
+.stage [data-clip] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.stage .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 34px; padding: 0 14px; border: 1px solid var(--field-edge); background: transparent; color: var(--text); font-weight: 500; line-height: 1.2; white-space: nowrap; }
+.stage .btn.primary { background: var(--btn); color: var(--btn-ink); border-color: transparent; font-weight: 600; }
+.stage kbd { display: inline-block; min-width: 22px; padding: 2px 7px; border: 1px solid var(--hair); color: var(--text2); font-family: var(--ui); font-weight: 500; line-height: 1.5; text-align: center; }
+.marking [data-moved='half'] { outline: 1px dashed color-mix(in srgb, var(--accent) 80%, transparent); outline-offset: 1px; }
+.marking [data-moved='more'] { outline: 2px solid #ff5fa2; outline-offset: 1px; }
+.marking [data-rmoved='more'] { box-shadow: 0 0 0 2px #ffb3d4 !important; }
+
+/* ---- Threads window ---- */
+.win { display: grid; grid-template-columns: var(--sbw) minmax(0, 1fr); background: var(--room); overflow: hidden; }
+.sb { display: flex; flex-direction: column; min-height: 0; background: var(--side); border-right: 1px solid var(--side-hair); padding: 0 0; overflow: hidden; }
+.sb-top { display: flex; align-items: center; gap: 2px; height: 44px; padding: 0 10px 0 14px; }
+.logo { width: 22px; height: 22px; border-radius: 6px; background: var(--accent); display: grid; place-items: center; }
+.logo::after { content: ''; width: 12px; height: 7px; border-radius: 3px; background: var(--side); }
+.ib { display: grid; place-items: center; width: 28px; height: 28px; color: var(--muted); }
+.sb-search { display: flex; align-items: center; gap: 8px; height: 32px; margin: 0 8px 8px; padding: 0 10px; border: 1px solid var(--hair); background: var(--surface); color: var(--faint); }
+.attn { display: flex; align-items: center; gap: 8px; min-height: 32px; margin: 0 8px 8px; padding: 2px 3px 2px 10px; background: var(--warn-surface); color: var(--warn); font-weight: 600; line-height: 1.3; }
+.attn > i { width: 7px; height: 7px; border-radius: 50%; background: var(--warn); flex: none; }
+.attn > button { margin-left: auto; min-height: 28px; padding: 0 10px; color: var(--text); font-weight: 500; }
+.sb-list { padding: 0 8px; display: grid; gap: 0; }
+.folder { display: flex; align-items: center; gap: 5px; min-height: 30px; padding: 0 8px 0 6px; margin-top: 6px; color: var(--text2); font-weight: 500; }
+.folder .fcount { margin-left: auto; color: var(--muted); }
+.row { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; padding: 8px 10px 8px 8px; margin: 1px 0; border: 1px solid transparent; color: var(--text2); }
+.row.sel { background: var(--sel); border-color: var(--sel-edge); color: var(--text); }
+.row .title { font-weight: 500; }
+.row .time, .row .status { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; justify-self: end; }
+.row .status { overflow: hidden; text-overflow: ellipsis; }
+.row .status.warn { color: var(--warn); } .row .status.work { color: var(--accent-text); }
+.ring { width: 10px; height: 10px; justify-self: center; border: 1.5px solid var(--side-hair); border-radius: 50%; }
+.ring.warn { border-color: var(--warn); } .ring.work { border-color: var(--accent); border-right-color: transparent; }
+.r2 { grid-column: 2 / -1; display: flex; align-items: center; justify-content: space-between; gap: 6px; min-width: 0; }
+.pmark { color: var(--muted); display: flex; }
+.settled { display: flex; align-items: center; gap: 6px; min-height: 30px; margin: 8px 4px 2px; padding: 0 8px 0 10px; color: var(--text2); }
+.foot { margin-top: auto; display: flex; align-items: center; gap: 2px; padding: 12px 12px 10px; color: var(--muted); }
+.foot .ib { width: 30px; height: 30px; }
+.foot .ib.lit { background: var(--lit); color: var(--text); }
+.foot .rule { width: 1px; height: 18px; margin: 0 4px; background: var(--side-hair); }
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.ph { display: flex; align-items: center; gap: 4px; height: 44px; padding: 0 6px 0 18px; flex: none; }
+.ph h2 { margin: 0 0 0 6px; font-weight: 500; letter-spacing: -.2px; flex: 0 1 auto; min-width: 3em; }
+.ph .crumb { display: flex; flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; align-items: center; gap: 7px; color: var(--muted); margin-left: 8px; white-space: nowrap; }
+.ph .btn { min-height: 30px; padding: 0 10px; margin-left: 8px; }
+.ph .pa { display: grid; place-items: center; width: 30px; height: 30px; color: var(--muted); }
+.winctl { display: flex; gap: 16px; padding: 0 12px 0 18px; color: var(--muted); }
+.tx { flex: 1; min-height: 0; overflow: hidden; padding: 16px 24px 0; }
+.tx-col { max-width: 760px; margin: 0 auto; }
+.msg { margin: 0 0 24px; }
+.msg header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; color: var(--muted); }
+.msg header b { color: var(--text2); font-weight: 600; }
+.msg time { font-variant-numeric: tabular-nums; }
+.msg p { margin: 0; color: var(--text2); line-height: 1.6; }
+.msg.user { margin-left: max(24px, 12%); padding: 14px 18px 22px; background: var(--bubble); }
+.writing { margin: -8px 0 22px; color: var(--muted); }
+.req { display: grid; gap: 10px; padding: 14px 16px; background: var(--card); }
+.req strong { font-weight: 600; letter-spacing: -.1px; }
+.req pre { margin: 0; padding: 8px 10px; border: 1px solid var(--hair); background: var(--code); color: var(--text); font-family: var(--mono); line-height: 1.5; white-space: pre-wrap; }
+.req .acts { display: flex; gap: 8px; }
+.req .acts .btn { padding: 0 15px; }
+.compose { flex: none; padding: 12px 24px 16px; }
+.prompt { max-width: 760px; margin: 0 auto; padding: 14px 16px 10px; background: var(--card); border: 0; outline: 0; }
+.prompt .ed { min-height: 36px; color: var(--muted); line-height: 1.5; }
+.prompt .pf { display: flex; align-items: center; gap: 4px; margin-top: 6px; }
+.prompt .chip { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 7px; color: var(--text2); }
+.prompt .stop { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 4px 0 7px; background: var(--pill); color: var(--pill-ink); font-weight: 600; }
+.prompt .stop i { width: 8px; height: 8px; background: currentColor; border-radius: 1px; }
+.prompt .stop kbd { min-width: 20px; padding: 0 5px; height: 20px; border: 0; background: color-mix(in oklab, currentColor 14%, transparent); color: inherit; letter-spacing: .02em; line-height: 20px; }
+
+/* ---- Dictate room ---- */
+.dict { background: var(--room); container-type: inline-size; }
+.dl { display: grid; grid-template-columns: minmax(0, 1fr); grid-template-areas: 'bar' 'stats' 'journal'; max-width: 1180px; margin: 0 auto; padding: 8px var(--dpad) 32px; }
+.dict[data-layout=wide] .dl { grid-template-columns: minmax(0, 1fr) 300px; grid-template-areas: 'bar stats' 'journal stats'; grid-template-rows: auto 1fr; column-gap: 40px; }
+.dbar { grid-area: bar; display: flex; align-items: center; gap: 16px; padding: 14px 16px 14px 20px; border: 1px solid var(--hair); background: var(--surface); }
+.wave { display: flex; gap: 4px; align-items: center; width: 52px; flex: none; }
+.wave i { width: 4px; height: 10px; border-radius: 2px; background: var(--accent); }
+.wave i:nth-child(odd) { height: 7px; opacity: .8; }
+.dwords { flex: 1 1 200px; min-width: 0; display: grid; gap: 2px; }
+.sentence { font-weight: 500; letter-spacing: -.1px; line-height: 1.35; }
+.hint { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; color: var(--faint); line-height: 1.45; }
+.dbar .btn.primary { padding: 0 18px; min-height: 38px; }
+.stats { grid-area: stats; display: grid; gap: 22px; padding-top: 6px; align-content: start; }
+.dict:not([data-layout=wide]) .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 28px; margin-top: 22px; padding-top: 0; }
+.dict:not([data-layout=wide]) .ss[data-wide] { display: none; }
+.dict[data-layout=wide] .ss + .ss { padding-top: 20px; border-top: 1px solid var(--hair); }
+.ss h3 { margin: 0 0 10px; color: var(--text2); font-weight: 600; }
+.fpair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.dict[data-layout=narrow] .fpair { gap: 10px; }
+.fig { margin: 0; color: var(--muted); line-height: 1.35; }
+.fig b { display: block; color: var(--text); font-weight: 500; letter-spacing: -.8px; line-height: 1.1; margin-bottom: 4px; }
+.dict[data-layout=narrow] .fig b { letter-spacing: -.5px; }
+.chart text { fill: var(--faint); font-family: var(--ui); }
+.cal { display: grid; grid-template-columns: 30px repeat(13, 15px); grid-auto-rows: 15px; gap: 5px; align-items: center; }
+.cal span { color: var(--faint); line-height: 1; }
+.cal i { width: 15px; height: 15px; background: var(--cal0); }
+.calfoot { display: flex; justify-content: space-between; align-items: center; gap: 6px 12px; margin-top: 10px; color: var(--muted); }
+.legend { display: inline-flex; align-items: center; gap: 4px; color: var(--faint); }
+.legend i { display: block; width: 10px; height: 10px; }
+.where { display: grid; gap: 11px; margin: 4px 0 0; padding: 0; list-style: none; }
+.where li { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 6px 12px; }
+.where .wn { font-weight: 500; }
+.where .wv { color: var(--text2); font-variant-numeric: tabular-nums; }
+.where .wv small { margin-left: 6px; color: var(--muted); }
+.meter { grid-column: 1 / -1; display: block; height: 6px; overflow: hidden; background: var(--meter); }
+.meter i { display: block; height: 100%; border-radius: inherit; background: var(--accent); }
+.journal { grid-area: journal; min-width: 0; margin-top: 22px; }
+.dict[data-layout=wide] .journal { margin-top: 24px; }
+.tools { display: flex; flex-wrap: wrap; gap: 10px 8px; align-items: center; }
+.jsearch { flex: 1 1 220px; display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 12px; border: 1px solid var(--field-edge); background: var(--surface); color: var(--faint); }
+.more { display: grid; place-items: center; width: 34px; height: 34px; color: var(--muted); }
+.chips { display: flex; flex: 1 0 100%; flex-wrap: wrap; gap: 6px; }
+.chips button { min-height: 30px; padding: 0 11px; border: 1px solid var(--field-edge) !important; color: var(--muted); }
+.chips button.on { background: var(--chip-on); border-color: var(--chip-on-edge) !important; color: var(--accent-text); }
+.day { margin-top: 26px; }
+.day header { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding-bottom: 8px; border-bottom: 1px solid var(--hair); }
+.day h2 { margin: 0; color: var(--text2); font-weight: 600; }
+.day header span { color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.entry { display: grid; grid-template-columns: 74px minmax(0, 1fr) auto; gap: 4px 18px; padding: 14px 0; border-bottom: 1px solid var(--hair); }
+.entry .t { color: var(--faint); padding-top: 2px; font-variant-numeric: tabular-nums; }
+.entry p { margin: 0; }
+.entry .text { color: var(--text); line-height: 1.5; }
+.entry .meta { color: var(--muted); margin-top: 4px; }
+.entry .facts { color: var(--text2); line-height: 1.55; margin-top: 10px; }
+.entry .facts b { font-weight: 600; }
+.entry .btn { min-height: 32px; padding: 0 13px; }
+.entry .del { color: var(--err); border-color: transparent; }
+
+/* ---- Settings ---- */
+.set { background: var(--room); padding: 0 0 24px; }
+.set h2 { margin: 0 0 10px; font-weight: 600; line-height: 1.2; letter-spacing: -1px; }
+.set .intro { margin: 0; color: var(--muted); line-height: 1.5; padding-bottom: 22px; border-bottom: 1px solid var(--hair); }
+.grp { display: flex; align-items: center; gap: 8px; margin: 24px 0 10px; padding: 0 2px; color: var(--text2); font-weight: 600; line-height: 1.35; }
+.card { padding: 4px 20px; background: var(--card); }
+.srow { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 240px); grid-template-areas: 'label control' 'desc control'; gap: 5px 22px; align-items: center; min-height: 66px; padding: 17px 0; border-bottom: 2px solid var(--room); }
+.set[data-w=narrow] .srow { grid-template-columns: minmax(0, 1fr) minmax(140px, 210px); column-gap: 18px; }
+.srow:last-child { border-bottom: 0; }
+.srow .lbl { grid-area: label; font-weight: 500; line-height: 1.35; }
+.srow .desc { grid-area: desc; max-width: 330px; color: var(--muted); line-height: 1.45; }
+.srow .ctl { grid-area: control; justify-self: end; display: flex; align-items: center; gap: 12px; }
+.tog { position: relative; width: 36px; height: 20px; background: var(--accent); display: block; }
+.tog i { position: absolute; top: 3px; right: 3px; width: 14px; height: 14px; background: var(--accent-ink); }
+.select { grid-area: control; display: flex; align-items: center; justify-content: space-between; min-height: 38px; padding: 0 14px 0 12px; background: var(--room); color: var(--text); font-weight: 500; }
+.select::after { content: ''; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid var(--muted); }
+.lvl { display: flex; gap: 4px; align-items: center; height: 34px; }
+.lvl i { width: 4px; height: 6px; border-radius: 2px; background: var(--accent); }
+.lvl i:nth-child(3n) { height: 10px; }
+.add { color: var(--muted); min-height: 30px; padding: 0 8px; }
+.keyset { display: flex; gap: 4px; }
+
+/* ---- dialog ---- */
+.dback { position: relative; background: var(--backdrop); display: grid; place-items: center; }
+.dback::before { content: ''; position: absolute; inset: 0; background: linear-gradient(90deg, var(--side) 0 260px, var(--room) 260px); opacity: .55; z-index: -1; }
+.dlg { width: 590px; max-height: calc(100% - 70px); display: flex; flex-direction: column; overflow: hidden; background: var(--panel); border: 1px solid var(--panel-edge); color: var(--text); box-shadow: 0 28px 90px rgba(0,0,0,.45); }
+.dsearch { display: flex; align-items: center; gap: 10px; padding: 14px 15px; color: var(--muted); }
+.dinput { flex: 1; padding: 6px 0; color: var(--faint); box-shadow: inset 0 -2px 0 var(--accent); }
+.dchoices { padding: 0 10px 8px; overflow: hidden; min-height: 0; }
+.dchoices h3 { margin: 16px 12px 8px; color: var(--muted); font-weight: 400; }
+.choice { display: flex; align-items: center; gap: 12px; width: 100%; padding: 11px 12px; color: var(--muted); }
+.choice.on { background: var(--accent-surface); color: var(--text); }
+.choice > span { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.choice strong { color: var(--text2); font-weight: 500; }
+.choice.on strong { color: var(--text); }
+.choice small { color: var(--muted); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.choice.on small { color: var(--text2); }
+.dkeys { display: flex; flex-wrap: wrap; gap: 16px; padding: 11px 18px; border-top: 1px solid var(--hair); background: var(--surface); color: var(--muted); flex: none; }
+.dkeys kbd { min-width: 20px; padding: 2px 5px; border: 0; background: var(--kbd); color: var(--text2); font: inherit; font-weight: 600; margin-right: 6px; }
+
+/* ---- scales ---- */
+.tablewrap { overflow-x: auto; }
+table.t { border-collapse: collapse; font-size: 13.5px; width: 100%; }
+table.t th, table.t td { text-align: left; padding: 6px 10px; border-bottom: 1px solid #23272b; vertical-align: top; }
+table.t th { color: #b9bec4; font-weight: 600; font-size: 12.5px; }
+table.t td.n { text-align: right; font-variant-numeric: tabular-nums; }
+table.t tr.cur td { background: #13201e; }
+table.t code { font: 12.5px var(--mono); color: #d7dadf; }
+.barcell { display: inline-block; height: 8px; background: #47b8a9; border-radius: 2px; vertical-align: middle; }
+.chipsrc { display: inline-block; margin: 1px 4px 1px 0; padding: 0 6px; border-radius: 4px; background: #1d2124; font-size: 12.5px; color: #cfd3d8; white-space: nowrap; }
+.chipsrc.moved { color: #ffb3d4; }
+.spec { display: grid; gap: 4px; }
+.spec div { display: grid; grid-template-columns: 160px 54px minmax(0, 1fr); gap: 12px; align-items: baseline; }
+.spec code { font: 12.5px var(--mono); color: #cfd3d8; }
+.spec .px { color: #b9bec4; font-size: 13px; text-align: right; font-variant-numeric: tabular-nums; }
+.spec .s { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: #e6e6e6; }
+.radii { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px; }
+.radii div { display: grid; justify-items: center; gap: 6px; font-size: 12.5px; color: #b9bec4; }
+.radii span { width: 64px; height: 44px; background: #1d2124; border: 1px solid #3a3f44; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 24px; }
+details summary { cursor: pointer; color: #b9bec4; font-size: 13.5px; margin: 8px 0; }
+
+/* ---- switcher ---- */
+.switcher { position: fixed; left: 50%; bottom: 12px; transform: translateX(-50%); display: flex; align-items: center; gap: 6px; background: #fff; color: #111; border-radius: 999px; padding: 5px 8px; box-shadow: 0 6px 24px rgba(0,0,0,.5); font: 600 13px var(--ui); z-index: 20; white-space: nowrap; max-width: calc(100vw - 16px); }
+.switcher button { border: 0; background: transparent; color: #111; border-radius: 999px; min-width: 28px; height: 28px; padding: 0 9px; font: inherit; cursor: pointer; }
+.switcher button.arrow { background: #111; color: #fff; padding: 0; width: 28px; }
+.switcher button[aria-pressed=true] { background: #111; color: #fff; }
+.switcher .sep { width: 1px; height: 18px; background: #d0d0d0; }
+.switcher .state { font-weight: 500; color: #333; padding: 0 4px; }
+@media (max-width: 760px) { .switcher .wide-only { display: none; } }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/></symbol>
+  <symbol id="i-folderplus" viewBox="0 0 24 24"><path d="M3 6.5A1.5 1.5 0 0 1 4.5 5H9l2 2.5h8.5A1.5 1.5 0 0 1 21 9v9.5a1.5 1.5 0 0 1-1.5 1.5h-15A1.5 1.5 0 0 1 3 18.5z"/><path d="M12 11v6M9 14h6"/></symbol>
+  <symbol id="i-chevd" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+  <symbol id="i-chevr" viewBox="0 0 24 24"><path d="m10 7 5 5-5 5"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></symbol>
+  <symbol id="i-panel" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="2"/><path d="M10 5v14"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></symbol>
+  <symbol id="i-owl" viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="13" rx="4"/><circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M4 5h11v8H8l-4 3z"/><path d="M15 9h5v8l-3-2h-6v-2"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M5 19V9M10 19V5M15 19v-7M20 19v-4"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3M5.6 5.6l2.1 2.1M16.3 16.3l2.1 2.1M5.6 18.4l2.1-2.1M16.3 7.7l2.1-2.1"/></symbol>
+  <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5M12 17h.01"/></symbol>
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 12a8 8 0 1 1-2.3-5.6M20 4v5h-5"/></symbol>
+  <symbol id="i-clip" viewBox="0 0 24 24"><path d="m20 11-8 8a5 5 0 0 1-7-7l8-8a3.5 3.5 0 0 1 5 5l-8 8a2 2 0 0 1-3-3l7-7"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-dots" viewBox="0 0 24 24"><path d="M5 12h.01M12 12h.01M19 12h.01" stroke-width="3"/></symbol>
+  <symbol id="i-kbd" viewBox="0 0 24 24"><rect x="3" y="6" width="18" height="12" rx="2"/><path d="M7 10h.01M11 10h.01M15 10h.01M8 14h8"/></symbol>
+  <symbol id="i-claude" viewBox="0 0 24 24"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></symbol>
+  <symbol id="i-codex" viewBox="0 0 24 24"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M12 8v8M8.5 10l7 4M15.5 10l-7 4"/></symbol>
+  <symbol id="i-min" viewBox="0 0 24 24"><path d="M6 12h12"/></symbol>
+  <symbol id="i-max" viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1"/></symbol>
+</svg>
+
+<header class="page">
+  <h1>Type and corner scale: today and three candidates (#1833)</h1>
+  <p class="rec" id="rec"><b>Recommendation: A, Snap.</b> Nine named sizes and seven corner sizes, and the app looks the same: of 1,289 size declarations, 897 stay put, 356 move half a pixel, and the 36 that move further are rare headings, figures and tiny marks. B is a cleaner ramp, but it shrinks the text you read most (the transcript, the composer, the journal and settings labels) from 15 to 14 px. C copies Windows: 13 px labels grow to 14 while 15 px reading text shrinks to 14, so the hierarchy flattens, and cards lose their soft corner (14 to 8 px). Sotto's quiet density matters more than matching Fluent. Name the tokens <code>--tt-type-*</code>; <code>--tt-text-*</code> already names text colours.</p>
+  <p>Each surface below is drawn once, with every size and corner read from today's stylesheets, then mapped onto the chosen scale. The real Windows capture sits beside it so you can see the mock matches the app. Colour is the default theme's, copied in as values.</p>
+  <p class="keys"><kbd>←</kbd> <kbd>→</kbd> switch scale · <kbd>F</kbd> flip between Today and the chosen scale in place · <kbd>L</kbd> light or dark · <kbd>W</kbd> window width (1080 as captured, 1600, 820) · <kbd>M</kbd> mark what moved (dashed: half a pixel; pink: 1 px or more) · <kbd>Z</kbd> fit or 100%</p>
+</header>
+
+<section class="block" id="s-dictate">
+  <h2>1. Dictate room: the stats and the day headings</h2>
+  <p class="why"><code>dictate.css</code> alone sets twelve sizes: 11, 12, 12.5, 13, 13.5, 14, 15, 16, 17, 20, 22 and 28 px. At 1600 the stats stand in a 300 px column with the chart, streak and where; under 900 px they sit above the journal; under 600 px the figures drop to 22 px.</p>
+  <div class="pair">
+    <figure><figcaption><b>In the app today</b> · Windows capture, 1080 × 720 window</figcaption><img data-cap="dictate" data-w="800" alt="Today's Dictate room: the dictation bar, the Today and This month figures, the search field, the app chips and the Today day heading"></figure>
+    <figure><figcaption data-label="dictate"></figcaption><div class="fit"><div class="frame dict" data-frame="dictate">
+      <div class="dl">
+        <div class="dbar" data-r="14">
+          <span class="wave"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span>
+          <div class="dwords"><div class="sentence" data-fs="17">Ready when you are.</div>
+            <div class="hint" data-fs="12.5">or press <kbd data-fs="12" data-r="6">Ctrl</kbd><kbd data-fs="12" data-r="6">Shift</kbd><kbd data-fs="12" data-r="6">Space</kbd> in any app</div></div>
+          <button class="btn primary" data-fs="13.5" data-r="6">Start dictation</button>
+        </div>
+        <div class="stats">
+          <section class="ss"><h3 data-fs="13">Today</h3><div class="fpair">
+            <p class="fig" data-fs="12.5" data-figcap><b data-fs="28" data-figure>63</b>words in 3 dictations</p>
+            <p class="fig" data-fs="12.5" data-figcap><b data-fs="28" data-figure>128</b>wpm, usual 129</p></div></section>
+          <section class="ss" data-wide><h3 data-fs="13">Speed, last 30 days</h3>
+            <svg class="chart" viewBox="0 0 300 118" width="300" height="118">
+              <line x1="30" x2="300" y1="26" y2="26" stroke="var(--hair)" stroke-dasharray="3 4"/><line x1="30" x2="300" y1="58" y2="58" stroke="var(--muted)" stroke-dasharray="4 4" opacity=".6"/><line x1="30" x2="300" y1="90" y2="90" stroke="var(--hair)" stroke-dasharray="3 4"/>
+              <path d="M30 34 L48 30 L66 31 L84 34 L102 32 L120 31 L138 33 L156 26 L174 29 L192 27 L210 40 L246 36 L264 82 L282 48 L298 36 L298 98 L30 98 Z" fill="color-mix(in srgb, var(--accent) 14%, transparent)"/>
+              <path d="M30 34 L48 30 L66 31 L84 34 L102 32 L120 31 L138 33 L156 26 L174 29 L192 27 L210 40 L246 36 L264 82 L282 48 L298 36" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linejoin="round"/>
+              <text x="0" y="30" data-fs="11">150</text><text x="0" y="62" data-fs="11">100</text><text x="6" y="94" data-fs="11">50</text>
+              <text x="30" y="114" data-fs="11">Jun 13</text><text x="140" y="114" data-fs="11">Jun 27</text><text x="262" y="114" data-fs="11">Jul 12</text>
+            </svg></section>
+          <section class="ss" data-wide><h3 data-fs="13">4-day streak</h3>
+            <div class="cal" id="cal"></div>
+            <div class="calfoot" data-fs="12.5"><span>Longest 14 days</span><span class="legend" data-fs="12">Less <i data-r="2" style="background:var(--cal0)"></i><i data-r="2" style="background:var(--cal1)"></i><i data-r="2" style="background:var(--cal2)"></i><i data-r="2" style="background:var(--cal3)"></i><i data-r="2" style="background:var(--cal4)"></i> More</span></div></section>
+          <section class="ss" data-wide><h3 data-fs="13">Where, last 30 days</h3><ul class="where">
+            <li><span class="wn" data-fs="13.5">Slack</span><span class="wv" data-fs="13">24%<small data-fs="12">1,245 words</small></span><span class="meter" data-r="2"><i style="width:100%"></i></span></li>
+            <li><span class="wn" data-fs="13.5">Microsoft Teams</span><span class="wv" data-fs="13">18%<small data-fs="12">932 words</small></span><span class="meter" data-r="2"><i style="width:75%"></i></span></li>
+            <li><span class="wn" data-fs="13.5">Windows Terminal</span><span class="wv" data-fs="13">18%<small data-fs="12">931 words</small></span><span class="meter" data-r="2"><i style="width:75%"></i></span></li>
+            <li><span class="wn" data-fs="13.5">Sotto</span><span class="wv" data-fs="13">12%<small data-fs="12">653 words</small></span><span class="meter" data-r="2"><i style="width:52%"></i></span></li></ul></section>
+          <section class="ss"><h3 data-fs="13">This month</h3><div class="fpair">
+            <p class="fig" data-fs="12.5" data-figcap><b data-fs="28" data-figure>15 min</b>saved against typing at 40 wpm</p>
+            <p class="fig" data-fs="12.5" data-figcap><b data-fs="28" data-figure>1 pm</b>your busiest hour</p></div></section>
+        </div>
+        <div class="journal">
+          <div class="tools">
+            <label class="jsearch" data-r="6"><svg class="i"><use href="#i-search"/></svg><span data-fs="13.5">Search transcripts</span></label>
+            <button class="more" data-r="9"><svg class="i"><use href="#i-dots"/></svg></button>
+            <div class="chips"><button class="on" data-fs="12.5" data-r="5">All</button><button data-fs="12.5" data-r="5">Slack</button><button data-fs="12.5" data-r="5">Microsoft Teams</button><button data-fs="12.5" data-r="5">Windows Terminal</button><button data-fs="12.5" data-r="5">Sotto</button><button data-fs="12.5" data-r="5">Notepad</button></div>
+          </div>
+          <section class="day"><header><h2 data-fs="13">Today</h2><span data-fs="12">63 words · 128 wpm</span></header>
+            <div class="entry"><span class="t" data-fs="12.5">11:52 am</span><div><p class="text" data-fs="15">Okay, that looks good. Run the typecheck and the unit suite, and if they pass, open a pull request against main with a plain English title.</p><p class="meta" data-fs="12.5">Windows Terminal · 26 words · 134 wpm</p><p class="facts" data-fs="13.5"><b>12 seconds, 26 words at 134 wpm.</b> English, Parakeet model, in Windows Terminal. Kept on this computer only.</p></div><div style="display:grid;gap:8px;align-content:start"><button class="btn" data-fs="13.5" data-r="6">Copied</button><button class="btn del" data-fs="13.5" data-r="6">Delete</button></div></div>
+            <div class="entry"><span class="t" data-fs="12.5">10:14 am</span><div><p class="text" data-fs="15">Hi Darren, attached are the updated loop drawings for the boiler feed pumps. The only change from last week is the added flow transmitter on the recirculation line.</p><p class="meta" data-fs="12.5">Microsoft Outlook · 28 words · 121 wpm</p></div><span></span></div>
+          </section>
+          <section class="day"><header><h2 data-fs="13">Yesterday</h2><span data-fs="12">35 words · 119 wpm</span></header>
+            <div class="entry"><span class="t" data-fs="12.5">2:40 pm</span><div><p class="text" data-fs="15">Can you make the rows open in place instead of navigating away, and keep keyboard focus on the row that was opened?</p><p class="meta" data-fs="12.5">Sotto · 22 words · 143 wpm</p></div><span></span></div>
+          </section>
+        </div>
+      </div>
+    </div></div></figure>
+  </div>
+</section>
+
+<section class="block" id="s-settings">
+  <h2>2. Settings: a card with rows, descriptions and a switch</h2>
+  <p class="why">The room title is 28, the intro 16, the group heading 14, each row's label 15 and its description 13; the field is 14 and the button 13.5. The card's corner is <code>--tt-radius-lg</code> (14), the field and button 6, the switch 5 with a 3 px thumb.</p>
+  <div class="pair">
+    <figure><figcaption><b>In the app today</b> · Windows capture, the settings column of a 1080 × 720 window</figcaption><img data-cap="settings" data-w="718" alt="Today's Settings, Dictation section: the Microphone card with a switch, a microphone field and a test button, and the Shortcuts card"></figure>
+    <figure><figcaption data-label="settings"></figcaption><div class="fit"><div class="frame set" data-frame="settings">
+      <h2 data-fs="28">Dictation</h2>
+      <p class="intro" data-fs="16">Microphone, speech model &amp; what happens to the text</p>
+      <h3 class="grp" data-fs="14"><svg class="i"><use href="#i-mic"/></svg>Microphone</h3>
+      <div class="card" data-r="14">
+        <div class="srow"><div class="lbl" data-fs="15">Dictate with Sotto</div><div class="desc" data-fs="13">Turn off if you use another dictation app. Sotto stops listening for the hotkey and unloads the speech model.</div><div class="ctl"><span class="tog" data-r="5"><i data-r="3"></i></span></div></div>
+        <div class="srow"><div class="lbl" data-fs="15">Microphone</div><div class="select" data-fs="14" data-r="6">Windows default</div></div>
+        <div class="srow"><div class="lbl" data-fs="15">Microphone test</div><div class="desc" data-fs="13">Check that Sotto can hear you. Access is asked for only while the test runs.</div><div class="ctl"><span class="lvl"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></span><button class="btn" data-fs="13.5" data-r="6">Test microphone</button></div></div>
+      </div>
+      <h3 class="grp" data-fs="14"><svg class="i"><use href="#i-kbd"/></svg>Shortcuts</h3>
+      <div class="card" data-r="14">
+        <div class="srow"><div class="lbl" data-fs="15">Hold to dictate</div><div class="desc" data-fs="13">Add a shortcut to talk only while you hold it.</div><div class="ctl"><button class="add" data-fs="12.5" data-r="6">+ Add</button></div></div>
+        <div class="srow"><div class="lbl" data-fs="15">Press to start and stop</div><div class="desc" data-fs="13">Press Ctrl + Shift + Space to start, and again to finish.</div><div class="ctl keyset"><kbd data-fs="12" data-r="6">Ctrl</kbd><kbd data-fs="12" data-r="6">Shift</kbd><kbd data-fs="12" data-r="6">Space</kbd></div></div>
+      </div>
+    </div></div></figure>
+  </div>
+</section>
+
+<section class="block" id="s-threads">
+  <h2>3. Threads: the sidebar, a pane header, the transcript and the composer</h2>
+  <p class="why">The sidebar sets 12, 12.5, 13.5, 14 and 14.5; its rows round at 7 and 8. The pane title is 15 over a 12.5 path; the transcript reads at 15; the request card is 15 and 14 over 13 px code; the composer is 15 with a 13 model chip and an 11.5 key. The composer has no edge in any state.</p>
+  <div class="pair">
+    <figure><figcaption><b>In the app today</b> · Windows capture, 1080 × 720 window</figcaption><img data-cap="threads" data-w="1080" alt="Today's Threads room: the sidebar with three projects, a thread's header, a short transcript, a request card and the composer"></figure>
+    <figure><figcaption data-label="threads"></figcaption><div class="fit"><div class="frame win" data-frame="threads">
+      <aside class="sb">
+        <div class="sb-top"><span class="logo"></span><span class="sp"></span><span class="ib" data-r="7"><svg class="i"><use href="#i-folderplus"/></svg></span><span class="ib" data-r="7"><svg class="i"><use href="#i-edit"/></svg></span><span class="ib" data-r="7"><svg class="i"><use href="#i-panel"/></svg></span></div>
+        <div class="sb-search" data-r="6"><svg class="i"><use href="#i-search"/></svg><span data-fs="13.5">Search threads</span></div>
+        <div class="attn" data-r="8"><i></i><span data-fs="12.5">1 needs attention</span><button data-fs="12.5" data-r="6">Dismiss all</button></div>
+        <div class="sb-list">
+          <div class="folder" data-r="7"><svg class="i" style="width:14px"><use href="#i-chevd"/></svg><svg class="i"><use href="#i-folder"/></svg><span data-fs="14.5" data-clip>workshop</span><span class="fcount" data-fs="12">3</span></div>
+          <div class="row sel" data-r="8"><i class="ring warn"></i><span class="title" data-fs="14" data-clip>Visual gate flake</span><span class="time" data-fs="12.5">12:41 pm</span><span class="r2"><span class="pmark"><svg class="i" style="width:14px;color:#d9825b"><use href="#i-claude"/></svg></span><span class="status warn" data-fs="12">Needs your approval</span></span></div>
+          <div class="row" data-r="8"><i class="ring"></i><span class="title" data-fs="14" data-clip>Grok voice previews</span><span class="time" data-fs="12.5">7:58 am</span><span class="r2"><span class="pmark"><svg class="i" style="width:14px;color:#d9825b"><use href="#i-claude"/></svg></span><span class="status" data-fs="12">Done</span></span></div>
+          <div class="row" data-r="8"><i class="ring warn"></i><span class="title" data-fs="14" data-clip>Streaming WAV stall</span><span class="time" data-fs="12.5">10:02 am</span><span class="r2"><span class="pmark"><svg class="i" style="width:14px"><use href="#i-codex"/></svg></span><span class="status warn" data-fs="12">Needs attention</span></span></div>
+          <div class="folder" data-r="7"><svg class="i" style="width:14px"><use href="#i-chevd"/></svg><svg class="i"><use href="#i-folder"/></svg><span data-fs="14.5" data-clip>sotto-site</span><span class="fcount" data-fs="12">1</span></div>
+          <div class="row" data-r="8"><i class="ring work"></i><span class="title" data-fs="14" data-clip>Footer links</span><span class="time" data-fs="12.5">3m 00s</span><span class="r2"><span class="pmark"><svg class="i" style="width:14px"><use href="#i-codex"/></svg></span><span class="status work" data-fs="12">Working</span></span></div>
+          <div class="folder" data-r="7"><svg class="i" style="width:14px"><use href="#i-chevd"/></svg><svg class="i"><use href="#i-folder"/></svg><span data-fs="14.5" data-clip>notes</span><span class="fcount" data-fs="12">1</span></div>
+          <div class="row" data-r="8"><i class="ring work"></i><span class="title" data-fs="14" data-clip>Weekly note</span><span class="time" data-fs="12.5">10m 00s</span><span class="r2"><span class="pmark"><svg class="i" style="width:14px"><use href="#i-codex"/></svg></span><span class="status work" data-fs="12">Working</span></span></div>
+          <div class="settled" data-fs="13.5" data-r="7"><svg class="i" style="width:14px"><use href="#i-chevr"/></svg>Settled</div>
+        </div>
+        <div class="foot"><span class="ib" data-r="8"><svg class="i"><use href="#i-mic"/></svg></span><span class="ib" data-r="8"><svg class="i"><use href="#i-owl"/></svg></span><span class="ib lit" data-r="8"><svg class="i"><use href="#i-chat"/></svg></span><span class="rule"></span><span class="ib" data-r="8"><svg class="i"><use href="#i-chart"/></svg></span><span class="ib" data-r="8"><svg class="i"><use href="#i-gear"/></svg></span><span class="ib" data-r="8"><svg class="i"><use href="#i-help"/></svg></span><span class="sp"></span><span class="ib" data-r="8"><svg class="i"><use href="#i-refresh"/></svg></span></div>
+      </aside>
+      <section class="pane">
+        <header class="ph"><svg class="i" style="color:var(--text)"><use href="#i-claude"/></svg><h2 data-fs="15" data-clip>Visual gate flake</h2><span class="crumb" data-fs="12.5">/ workshop</span><span class="crumb" data-fs="12.5"><svg class="i" style="width:14px"><use href="#i-folder"/></svg>Project folder</span><span class="sp"></span><button class="btn" data-fs="13.5" data-r="6"><svg class="i"><use href="#i-owl"/></svg>Watch</button><span class="pa" data-r="8"><svg class="i"><use href="#i-dots"/></svg></span><span class="winctl"><svg class="i"><use href="#i-min"/></svg><svg class="i"><use href="#i-max"/></svg><svg class="i"><use href="#i-x"/></svg></span></header>
+        <div class="tx"><div class="tx-col">
+          <article class="msg user" data-r="14" data-rshape="bubble"><header data-fs="12.5"><b>You</b><time data-fs="12">12:32 pm</time></header><p data-fs="15">Find why the visual gate flakes on the widget listening capture and fix it.</p></article>
+          <article class="msg"><header data-fs="12.5"><b>Claude</b><time data-fs="12">12:41 pm</time></header><p data-fs="15">Found the cause. The listening bars animate from a CSS loop, so the frame depended on where the screenshot landed. Pinned the capture to the reduced-motion branch. I want to run the unit suite before calling it fixed.</p></article>
+          <p class="writing" data-fs="13">Combing the desert</p>
+          <div class="req" data-r="14"><strong data-fs="15">Run a command in workshop</strong><pre data-fs="13" data-r="10">npm test -- --run tests/unit/agents</pre><div class="acts"><button class="btn" data-fs="14" data-r="6">Deny</button><button class="btn primary" data-fs="14" data-r="6">Allow</button></div></div>
+        </div></div>
+        <div class="compose"><div class="prompt" data-r="16">
+          <div class="ed" data-fs="15">Queued until you answer the card</div>
+          <div class="pf"><span class="ib" data-r="6"><svg class="i"><use href="#i-clip"/></svg></span><span class="chip" data-fs="13" data-r="6"><svg class="i" style="width:14px;color:#d9825b"><use href="#i-claude"/></svg>Sonnet 4.5<svg class="i" style="width:12px;opacity:.7"><use href="#i-chevd"/></svg></span><span class="sp"></span><span class="stop" data-fs="12.5" data-r="6"><i></i><kbd data-fs="11.5" data-r="4">Ctrl+Shift+S</kbd></span></div>
+        </div></div>
+      </section>
+    </div></div></figure>
+  </div>
+</section>
+
+<section class="block" id="s-dialog">
+  <h2>4. A dialog: New thread's project chooser</h2>
+  <p class="why">Three levels of corner in one view: the dialog at 20, its choices at 8 and the keys at 4, with a 2 px focus line under the search. Its text is 13, 11.5 and 11 px: the smallest in the Threads room.</p>
+  <div class="pair">
+    <figure><figcaption><b>In the app today</b> · Windows capture of the dialog, 820 × 800 window</figcaption><img data-cap="dialog" data-w="592" alt="Today's New thread chooser: a search field, Local folder under Sources, three projects and a row of keys"></figure>
+    <figure><figcaption data-label="dialog"></figcaption><div class="fit"><div class="frame dback" data-frame="dialog">
+      <div class="dlg" data-r="20">
+        <div class="dsearch"><svg class="i"><use href="#i-search"/></svg><span class="dinput" data-fs="13" data-r="2">Search projects…</span><span class="ib" data-r="6"><svg class="i"><use href="#i-x"/></svg></span></div>
+        <div class="dchoices">
+          <h3 data-fs="11.5">Sources</h3>
+          <div class="choice on" data-r="8"><svg class="i" style="width:20px;height:20px"><use href="#i-folderplus"/></svg><span><strong data-fs="13">Local folder</strong><small data-fs="11.5">Browse a folder on disk</small></span><svg class="i"><use href="#i-chevr"/></svg></div>
+          <h3 data-fs="11.5">Projects</h3>
+          <div class="choice" data-r="8"><svg class="i" style="width:20px;height:20px"><use href="#i-folder"/></svg><span><strong data-fs="13">workshop</strong><small data-fs="11.5">C:/workshop</small></span></div>
+          <div class="choice" data-r="8"><svg class="i" style="width:20px;height:20px"><use href="#i-folder"/></svg><span><strong data-fs="13">sotto-site</strong><small data-fs="11.5">C:/sotto-site</small></span></div>
+          <div class="choice" data-r="8"><svg class="i" style="width:20px;height:20px"><use href="#i-folder"/></svg><span><strong data-fs="13">notes</strong><small data-fs="11.5">C:/notes</small></span></div>
+        </div>
+        <div class="dkeys" data-fs="11"><span><kbd data-r="4">↑</kbd><kbd data-r="4">↓</kbd>Navigate</span><span><kbd data-r="4">Enter</kbd>Select</span><span><kbd data-r="4">Esc</kbd>Close</span></div>
+      </div>
+    </div></div></figure>
+  </div>
+</section>
+
+<section class="block" id="scales">
+  <h2>The scales</h2>
+  <p class="why">How far each candidate moves the renderer's declarations. A size moves half a pixel when it was a half-pixel value; a corner moves 1 px when it was an odd value. The highlighted row is the scale on screen.</p>
+  <div class="tablewrap"><table class="t" id="moves"></table></div>
+  <div class="cols" style="margin-top:20px">
+    <div><h3 style="font-size:15px;margin:0 0 8px" id="tok-title"></h3><p class="why" id="tok-blurb" style="color:#b9bec4;margin:0 0 10px;font-size:14px"></p><div class="tablewrap"><table class="t" id="tokens"></table></div></div>
+    <div><h3 style="font-size:15px;margin:0 0 8px">The ramp, drawn</h3><div class="spec" id="spec"></div><div class="radii" id="radii"></div>
+      <h3 style="font-size:15px;margin:22px 0 8px">Rooms that move 1 px or more</h3><div class="tablewrap"><table class="t" id="rooms"></table></div></div>
+  </div>
+</section>
+
+<section class="block" id="counts">
+  <h2>What the stylesheets hold today</h2>
+  <p class="why" id="counts-why"></p>
+  <div class="cols">
+    <div><h3 style="font-size:15px;margin:0 0 8px">Text sizes</h3><div class="tablewrap"><table class="t" id="c-type"></table></div></div>
+    <div><h3 style="font-size:15px;margin:0 0 8px">Corner radii</h3><div class="tablewrap"><table class="t" id="c-radius"></table></div>
+      <details><summary>Every radius value as written</summary><div class="tablewrap"><table class="t" id="c-radius-all"></table></div></details>
+      <h3 style="font-size:15px;margin:22px 0 8px">Shadows (counted, not proposed)</h3><div class="tablewrap"><table class="t" id="c-shadow"></table></div></div>
+  </div>
+  <p class="why" style="margin-top:14px" id="inline-note"></p>
+  <p class="why">Counts: <a href="type-radius-scale/counts.json">type-radius-scale/counts.json</a>, made by <code>measure.mjs</code> and <code>build.mjs</code> beside it.</p>
+</section>
+<div style="height:90px"></div>
+
+<div class="switcher" role="group" aria-label="Prototype controls">
+  <button class="arrow" id="prev" aria-label="Previous scale">←</button>
+  <button data-v="T" aria-pressed="false">Today</button><button data-v="A" aria-pressed="false">A</button><button data-v="B" aria-pressed="false">B</button><button data-v="C" aria-pressed="false">C</button>
+  <button class="arrow" id="next" aria-label="Next scale">→</button>
+  <span class="sep"></span>
+  <button id="mode" aria-label="Switch light or dark">Dark</button>
+  <button id="width" aria-label="Switch window width">1080</button>
+  <button id="flip" aria-pressed="false" aria-label="Flip between Today and the chosen scale">Flip</button>
+  <button id="mark" class="wide-only" aria-pressed="false" aria-label="Mark what moved">Mark</button>
+  <span class="state wide-only" id="state"></span>
+</div>
+
+<script>const DATA = /*DATA*/{"measuredAt":"2026-10-30","checkout":"0790b7dfa","today":{"type":{"declarations":1289,"distinct":32,"distinctPx":29,"below12":87,"values":[{"value":"13px","count":384,"rooms":[["Threads pane",112],["Settings",101],["Threads tools",63],["Watcher",30],["Usage",19],["Threads composer",17],["Setup",14],["Dictate",9],["Threads sidebar",7],["Shared controls",7],["App frame",2],["Memory",1],["Updates and start",1],["Help",1]]},{"value":"12px","count":215,"rooms":[["Threads tools",61],["Threads pane",53],["Settings",47],["Threads composer",14],["Watcher",12],["Threads sidebar",8],["Usage",6],["Dictate",4],["Updates and start",3],["Shared controls",3],["Setup",2],["App frame",2]]},{"value":"12.5px","count":203,"rooms":[["Threads pane",64],["Settings",45],["Watcher",27],["Usage",23],["Threads tools",13],["Threads sidebar",7],["Dictate",6],["Setup",6],["Threads composer",4],["Updates and start",3],["Help",3],["Shared controls",2]]},{"value":"14px","count":186,"rooms":[["Threads pane",68],["Settings",53],["Threads tools",31],["Usage",11],["Watcher",6],["Threads sidebar",5],["Threads composer",4],["Memory",3],["Setup",3],["Dictate",1],["Shared controls",1]]},{"value":"13.5px","count":84,"rooms":[["Threads pane",34],["Settings",14],["Watcher",8],["Usage",7],["Setup",6],["Threads tools",4],["Threads sidebar",3],["Dictate",3],["Updates and start",2],["Shared controls",2],["Threads composer",1]]},{"value":"11.5px","count":53,"rooms":[["Threads pane",21],["Threads sidebar",8],["Settings",8],["Threads composer",7],["Updates and start",2],["Setup",2],["Usage",1],["Shared controls",1],["Threads tools",1],["Watcher",1],["Widget",1]]},{"value":"15px","count":50,"rooms":[["Threads pane",19],["Settings",19],["Usage",3],["Setup",2],["Threads tools",2],["Watcher",2],["Threads composer",1],["Dictate",1],["App frame",1]]},{"value":"16px","count":19,"rooms":[["Threads pane",9],["Settings",3],["Threads composer",2],["Memory",2],["Dictate",1],["Shared controls",1],["Threads tools",1]]},{"value":"11px","count":17,"rooms":[["Threads pane",9],["Settings",3],["Threads sidebar",2],["Dictate",1],["Threads tools",1],["Widget",1]]},{"value":"10.5px","count":10,"rooms":[["Settings",5],["Threads pane",3],["Threads composer",1],["Widget",1]]},{"value":"28px","count":10,"rooms":[["Settings",5],["Usage",2],["Threads pane",1],["Dictate",1],["Setup",1]]},{"value":"18px","count":7,"rooms":[["Memory",2],["Threads pane",1],["Threads sidebar",1],["Settings",1],["Usage",1],["Threads tools",1]]},{"value":"14.5px","count":6,"rooms":[["Threads pane",4],["Threads sidebar",1],["Settings",1]]},{"value":"22px","count":6,"rooms":[["Settings",2],["Usage",2],["Dictate",1],["Watcher",1]]},{"value":"17px","count":5,"rooms":[["Memory",2],["Dictate",1],["Usage",1],["Settings",1]]},{"value":"20px","count":5,"rooms":[["Settings",2],["Dictate",1],["Updates and start",1],["Usage",1]]},{"value":"19px","count":4,"rooms":[["Usage",2],["Threads pane",1],["Setup",1]]},{"value":"inherit","count":3,"rooms":[["Threads pane",1],["Threads sidebar",1],["Settings",1]]},{"value":"10px","count":3,"rooms":[["Threads pane",1],["Threads sidebar",1],["Widget",1]]},{"value":"23px","count":3,"rooms":[["Threads pane",1],["Memory",1],["Setup",1]]},{"value":"21px","count":2,"rooms":[["Threads pane",2]]},{"value":"9px","count":2,"rooms":[["Threads pane",1],["Widget",1]]},{"value":"9.5px","count":2,"rooms":[["Threads pane",1],["Settings",1]]},{"value":"26px","count":2,"rooms":[["Usage",1],["Settings",1]]},{"value":"30px","count":1,"rooms":[["Memory",1]]},{"value":"27px","count":1,"rooms":[["Memory",1]]},{"value":"36px","count":1,"rooms":[["Settings",1]]},{"value":"clamp(23px, 1.2cqi + 15px, 31px)","count":1,"rooms":[["Usage",1]]},{"value":"clamp(17px, .6cqi + 12px, 20px)","count":1,"rooms":[["Usage",1]]},{"value":"34px","count":1,"rooms":[["Usage",1]]},{"value":"24px","count":1,"rooms":[["Settings",1]]},{"value":"25px","count":1,"rooms":[["Settings",1]]}],"rooms":[{"room":"Threads pane","count":406,"distinct":20},{"room":"Settings","count":316,"distinct":22},{"room":"Threads tools","count":178,"distinct":10},{"room":"Watcher","count":87,"distinct":8},{"room":"Usage","count":83,"distinct":17},{"room":"Threads composer","count":51,"distinct":9},{"room":"Threads sidebar","count":44,"distinct":11},{"room":"Setup","count":38,"distinct":10},{"room":"Dictate","count":30,"distinct":12},{"room":"Shared controls","count":17,"distinct":7},{"room":"Memory","count":13,"distinct":8},{"room":"Updates and start","count":12,"distinct":6},{"room":"App frame","count":5,"distinct":3},{"room":"Widget","count":5,"distinct":5},{"room":"Help","count":4,"distinct":2}],"inline":[{"file":"src/renderer/src/agents/diagrams/diagramRenderer.ts","line":71,"prop":"fontSize","value":"15"},{"file":"src/renderer/src/agents/diagrams/diagramRenderer.ts","line":75,"prop":"fontSize","value":"'15px'"},{"file":"src/renderer/src/tools/terminalView.ts","line":145,"prop":"fontSize","value":"terminalFontSize()"}]},"radius":{"declarations":741,"distinct":44,"tokenised":134,"distinctResolved":37,"values":[{"value":"6px","count":137,"rooms":[["Threads pane",37],["Threads tools",34],["Settings",27],["Watcher",11],["Usage",7],["Threads composer",6],["Threads sidebar",6],["Dictate",3],["Updates and start",2],["Shared controls",2],["Setup",1],["App frame",1]]},{"value":"8px","count":71,"rooms":[["Threads pane",35],["Settings",12],["Threads composer",6],["Threads tools",6],["Watcher",6],["Threads sidebar",5],["Setup",1]]},{"value":"50%","count":58,"rooms":[["Threads pane",18],["Settings",11],["Threads tools",9],["Threads sidebar",5],["Updates and start",4],["Watcher",4],["Threads composer",3],["Usage",2],["Widget",2]]},{"value":"4px","count":57,"rooms":[["Threads pane",19],["Settings",9],["Threads tools",9],["Threads sidebar",5],["Usage",4],["Threads composer",3],["Setup",3],["Dictate",1],["App frame",1],["Updates and start",1],["Watcher",1],["Widget",1]]},{"value":"var(--tt-radius-sm)","count":54,"rooms":[["Settings",19],["Threads pane",18],["Threads tools",5],["Setup",4],["Watcher",4],["Shared controls",3],["Threads sidebar",1]]},{"value":"var(--tt-radius-md)","count":51,"rooms":[["Threads pane",22],["Settings",15],["Setup",4],["Threads tools",3],["Watcher",3],["Shared controls",2],["Threads composer",1],["Dictate",1]]},{"value":"2px","count":48,"rooms":[["Settings",12],["Threads pane",10],["Usage",9],["Dictate",4],["Threads composer",3],["Watcher",3],["Shared controls",2],["Setup",2],["Threads tools",2],["Updates and start",1]]},{"value":"7px","count":35,"rooms":[["Threads tools",12],["Threads sidebar",8],["Threads pane",5],["Watcher",4],["Threads composer",3],["Settings",1],["Usage",1],["App frame",1]]},{"value":"12px","count":34,"rooms":[["Settings",12],["Threads pane",5],["Setup",5],["Usage",3],["Threads tools",3],["Watcher",3],["Threads composer",1],["Updates and start",1],["Widget",1]]},{"value":"3px","count":34,"rooms":[["Watcher",9],["Threads pane",7],["Settings",6],["Threads composer",2],["Threads sidebar",2],["Usage",2],["Shared controls",2],["Threads tools",2],["App frame",1],["Widget",1]]},{"value":"5px","count":32,"rooms":[["Threads pane",9],["Settings",7],["Threads tools",7],["Threads sidebar",3],["Watcher",2],["Threads composer",1],["Dictate",1],["Usage",1],["Shared controls",1]]},{"value":"10px","count":28,"rooms":[["Threads pane",6],["Settings",6],["Threads tools",5],["Setup",3],["Watcher",2],["Threads composer",1],["Threads sidebar",1],["Dictate",1],["Memory",1],["Usage",1],["App frame",1]]},{"value":"var(--tt-radius-lg)","count":25,"rooms":[["Threads pane",10],["Settings",7],["Usage",3],["Setup",2],["Shared controls",1],["Threads tools",1],["Watcher",1]]},{"value":"0","count":14,"rooms":[["Settings",6],["Threads pane",3],["Threads composer",1],["Threads sidebar",1],["Setup",1],["Usage",1],["App frame",1]]},{"value":"inherit","count":11,"rooms":[["Threads pane",3],["Settings",3],["Usage",2],["Threads composer",1],["Dictate",1],["Watcher",1]]},{"value":"16px","count":7,"rooms":[["Threads pane",3],["Settings",2],["Threads sidebar",1],["Setup",1]]},{"value":"1px","count":6,"rooms":[["Threads pane",2],["Settings",2],["Widget",2]]},{"value":"9px","count":6,"rooms":[["Threads tools",3],["Threads pane",1],["Dictate",1],["Setup",1]]},{"value":"14px","count":5,"rooms":[["Threads composer",3],["Dictate",1],["Widget",1]]},{"value":"17px","count":2,"rooms":[["Threads pane",1],["Threads tools",1]]},{"value":"20px","count":2,"rooms":[["Threads pane",1],["Widget",1]]},{"value":"13px","count":2,"rooms":[["Setup",1],["Threads tools",1]]},{"value":"14px 14px 0 0","count":1,"rooms":[["Threads composer",1]]},{"value":"18px","count":1,"rooms":[["Threads composer",1]]},{"value":"var(--tt-radius-lg) var(--tt-radius-lg) 0 0","count":1,"rooms":[["Threads pane",1]]},{"value":"47px","count":1,"rooms":[["Threads pane",1]]},{"value":"25px","count":1,"rooms":[["Threads pane",1]]},{"value":"7px 0 0 7px","count":1,"rooms":[["Threads pane",1]]},{"value":"0 7px 7px 0","count":1,"rooms":[["Threads pane",1]]},{"value":"0 2px 2px 0","count":1,"rooms":[["Threads composer",1]]},{"value":"0 6px 6px 0","count":1,"rooms":[["Threads pane",1]]},{"value":"24px","count":1,"rooms":[["Threads composer",1]]},{"value":"8px 0 0 8px","count":1,"rooms":[["Threads composer",1]]},{"value":"0 8px 8px 0","count":1,"rooms":[["Threads composer",1]]},{"value":".42em","count":1,"rooms":[["Threads composer",1]]},{"value":"14px 14px 4px 14px","count":1,"rooms":[["Threads pane",1]]},{"value":"0 var(--tt-radius-sm) var(--tt-radius-sm) 0","count":1,"rooms":[["Threads pane",1]]},{"value":"0 0 8px 8px","count":1,"rooms":[["Settings",1]]},{"value":"0 0 var(--tt-radius-sm) var(--tt-radius-sm)","count":1,"rooms":[["Settings",1]]},{"value":"var(--tt-radius-sm) var(--tt-radius-sm) 0 0","count":1,"rooms":[["Settings",1]]},{"value":"11px","count":1,"rooms":[["Usage",1]]},{"value":"var(--usage-radius) var(--usage-radius) 0 0","count":1,"rooms":[["Usage",1]]},{"value":"2px 2px 0 0","count":1,"rooms":[["Usage",1]]},{"value":"3px 3px 0 0","count":1,"rooms":[["Usage",1]]}],"rooms":[{"room":"Threads pane","count":223,"distinct":28},{"room":"Settings","count":160,"distinct":20},{"room":"Threads tools","count":103,"distinct":16},{"room":"Watcher","count":54,"distinct":14},{"room":"Threads composer","count":42,"distinct":21},{"room":"Usage","count":40,"distinct":16},{"room":"Threads sidebar","count":38,"distinct":11},{"room":"Setup","count":29,"distinct":13},{"room":"Dictate","count":14,"distinct":9},{"room":"Shared controls","count":13,"distinct":7},{"room":"Updates and start","count":9,"distinct":5},{"room":"Widget","count":9,"distinct":7},{"room":"App frame","count":6,"distinct":6},{"room":"Memory","count":1,"distinct":1}],"inline":[{"file":"src/renderer/src/features/settings/themes/themeInspector.ts","line":74,"prop":"borderRadius","value":"`${rectangle.radius"},{"file":"src/renderer/src/tools/PhonePlayer.tsx","line":202,"prop":"borderRadius","value":"Math.round(layout.screen.width * 0.12) + layout.bezel"},{"file":"src/renderer/src/tools/PhonePlayer.tsx","line":204,"prop":"borderRadius","value":"Math.round(layout.screen.width * 0.12)"}]},"shadow":{"declarations":151,"distinct":64,"none":12,"rooms":[{"room":"Settings","count":34,"distinct":14},{"room":"Threads pane","count":32,"distinct":22},{"room":"Threads tools","count":30,"distinct":19},{"room":"Watcher","count":16,"distinct":10},{"room":"Threads composer","count":13,"distinct":9},{"room":"Setup","count":7,"distinct":6},{"room":"Usage","count":5,"distinct":5},{"room":"Updates and start","count":4,"distinct":2},{"room":"Shared controls","count":4,"distinct":2},{"room":"Threads sidebar","count":3,"distinct":3},{"room":"Widget","count":3,"distinct":3}],"top":[{"value":"var(--tt-shadow-sm)","count":16},{"value":"var(--tt-shadow-lg)","count":15},{"value":"var(--tt-shadow-overlay)","count":12},{"value":"none","count":12},{"value":"0 16px 48px var(--tt-shadow-color)","count":11},{"value":"inset 0 0 0 2px var(--tt-focus-ring)","count":10},{"value":"inset 0 -1px 0 var(--tt-hairline)","count":4},{"value":"0 0 0 2px var(--tt-focus-ring)","count":4}]}},"variants":{"A":{"name":"Snap","blurb":"Keep every whole size Sotto already leans on and snap the halves and one-offs to the nearest. A half-pixel size goes down to the step below, except under 12 px, where it goes up.","type":[{"token":"--tt-type-micro","role":"micro","px":11,"use":"Keys, badges and tiny marks","from":[["11px",17],["10.5px",10],["9px",2],["10px",3],["9.5px",2]]},{"token":"--tt-type-caption","role":"caption","px":12,"use":"Times, counts, statuses, metadata","from":[["12.5px",203],["12px",215],["11.5px",53]]},{"token":"--tt-type-small","role":"small","px":13,"use":"Descriptions, controls, most interface text","from":[["13.5px",84],["13px",384]]},{"token":"--tt-type-body","role":"body","px":14,"use":"Sidebar rows, fields, menu items","from":[["14px",186],["14.5px",6]]},{"token":"--tt-type-reading","role":"reading","px":15,"use":"Transcript, composer, journal entries, settings labels","from":[["15px",50]]},{"token":"--tt-type-lead","role":"lead","px":16,"use":"Dialog titles, section intros, request prompts","from":[["16px",19],["17px",5]]},{"token":"--tt-type-heading","role":"heading","px":18,"use":"Sidebar brand, empty-room headings","from":[["18px",7],["19px",4],["20px",5]]},{"token":"--tt-type-figure","role":"figure","px":22,"use":"Figures in a narrow room, sub-titles","from":[["21px",2],["23px",3],["22px",6],["24px",1],["25px",1]]},{"token":"--tt-type-title","role":"title","px":28,"use":"Room titles and large figures","from":[["28px",10],["30px",1],["27px",1],["36px",1],["26px",2],["34px",1]]}],"radius":[{"token":"--tt-radius-mark","role":"mark","px":2,"use":"Meters, legend squares, focus marks"},{"token":"--tt-radius-tag","role":"tag","px":4,"use":"Tags, keys, chips, small close buttons"},{"token":"--tt-radius-control","role":"control","px":6,"use":"Buttons, fields, composer chips (today’s sm)"},{"token":"--tt-radius-row","role":"row","px":8,"use":"Sidebar and menu rows, icon buttons"},{"token":"--tt-radius-inset","role":"inset","px":10,"use":"Code blocks, menus, notes inside a card (today’s md)"},{"token":"--tt-radius-card","role":"card","px":14,"use":"Cards, the composer, the Dictate bar (today’s lg)"},{"token":"--tt-radius-overlay","role":"overlay","px":20,"use":"Dialogs and the widget"},{"token":"--tt-radius-full","role":"full","px":"full","use":"Dots, rings, pills"}],"typeMap":{"9":11,"10":11,"11":11,"12":12,"13":13,"14":14,"15":15,"16":16,"17":16,"18":18,"19":18,"20":18,"21":22,"22":22,"23":22,"24":22,"25":22,"26":28,"27":28,"28":28,"30":28,"34":28,"36":28,"9.5":11,"10.5":11,"11.5":12,"12.5":12,"13.5":13,"14.5":14},"radiusMap":{"1":2,"2":2,"3":2,"4":4,"5":4,"6":6,"7":6,"8":8,"9":8,"10":10,"11":10,"12":10,"13":14,"14":14,"16":14,"17":14,"18":20,"20":20,"24":20,"5.5":6},"typeMoves":{"stay":897,"half":356,"more":36,"below12":34,"byRoom":{"Threads pane":{"stay":273,"half":126,"more":7},"Threads composer":{"stay":38,"half":13,"more":0},"Threads sidebar":{"stay":24,"half":19,"more":1},"Dictate":{"stay":19,"half":9,"more":2},"Memory":{"stay":8,"half":0,"more":5},"Setup":{"stay":22,"half":14,"more":2},"Settings":{"stay":235,"half":73,"more":8},"Updates and start":{"stay":4,"half":7,"more":1},"Usage":{"stay":44,"half":31,"more":8},"Shared controls":{"stay":12,"half":5,"more":0},"App frame":{"stay":5,"half":0,"more":0},"Help":{"stay":1,"half":3,"more":0},"Threads tools":{"stay":160,"half":18,"more":0},"Watcher":{"stay":51,"half":36,"more":0},"Widget":{"stay":1,"half":2,"more":2}}},"radiusMoves":{"stay":576,"one":120,"more":45,"byRoom":{"Threads pane":{"stay":188,"one":26,"more":9},"Threads composer":{"stay":32,"one":7,"more":3},"Threads sidebar":{"stay":24,"one":13,"more":1},"Shared controls":{"stay":10,"one":3,"more":0},"Dictate":{"stay":12,"one":2,"more":0},"Memory":{"stay":1,"one":0,"more":0},"Setup":{"stay":21,"one":2,"more":6},"Settings":{"stay":130,"one":16,"more":14},"Updates and start":{"stay":8,"one":0,"more":1},"Usage":{"stay":31,"one":6,"more":3},"App frame":{"stay":4,"one":2,"more":0},"Threads tools":{"stay":74,"one":25,"more":4},"Watcher":{"stay":36,"one":15,"more":3},"Widget":{"stay":5,"one":3,"more":1}}},"radiusTable":[{"from":"6","to":"6","count":191},{"from":"10","to":"10","count":79},{"from":"8","to":"8","count":71},{"from":"full","to":"full","count":60},{"from":"4","to":"4","count":57},{"from":"2","to":"2","count":48},{"from":"7","to":"6","count":35},{"from":"3","to":"2","count":34},{"from":"12","to":"10","count":34},{"from":"5","to":"4","count":32},{"from":"14","to":"14","count":30},{"from":"0","to":"0","count":14},{"from":"inherit","to":"inherit","count":11},{"from":"16","to":"14","count":7},{"from":"1","to":"2","count":6},{"from":"9","to":"8","count":6},{"from":"13","to":"14","count":2},{"from":"17","to":"14","count":2},{"from":"20","to":"20","count":2},{"from":"14 14 0 0","to":"14 14 0 0","count":2},{"from":"0 6 6 0","to":"0 6 6 0","count":2},{"from":"11","to":"10","count":1},{"from":"18","to":"20","count":1},{"from":"24","to":"20","count":1},{"from":"7 0 0 7","to":"6 0 0 6","count":1},{"from":"0 7 7 0","to":"0 6 6 0","count":1},{"from":"0 2 2 0","to":"0 2 2 0","count":1},{"from":"8 0 0 8","to":"8 0 0 8","count":1},{"from":"0 8 8 0","to":"0 8 8 0","count":1},{"from":"5.5","to":"6","count":1},{"from":"14 14 4 14","to":"14 14 4 14","count":1},{"from":"0 0 8 8","to":"0 0 8 8","count":1},{"from":"0 0 6 6","to":"0 0 6 6","count":1},{"from":"6 6 0 0","to":"6 6 0 0","count":1},{"from":"var(--usage-radius) var(--usage-radius) 0 0","to":"var(--usage-radius) var(--usage-radius) 0 0","count":1},{"from":"2 2 0 0","to":"2 2 0 0","count":1},{"from":"3 3 0 0","to":"2 2 0 0","count":1}]},"B":{"name":"Six steps","blurb":"The issue’s six-step ramp, named with the iPhone’s six roles. Nothing is smaller than 12 px. Reading text and settings labels drop from 15 to 14; radii keep four steps, so rows and dialogs lose some roundness.","type":[{"token":"--tt-type-caption","role":"caption","px":12,"use":"Times, counts, tags, keys, metadata","from":[["12.5px",203],["12px",215],["11px",17],["11.5px",53],["10.5px",10],["9px",2],["10px",3],["9.5px",2]]},{"token":"--tt-type-small","role":"small","px":13,"use":"Descriptions, controls, most interface text","from":[["13.5px",84],["13px",384]]},{"token":"--tt-type-body","role":"body","px":14,"use":"Sidebar rows, fields, transcript, composer, settings labels","from":[["14px",186],["15px",50],["14.5px",6]]},{"token":"--tt-type-lead","role":"lead","px":16,"use":"Dialog titles, section intros, headings","from":[["16px",19],["18px",7],["17px",5]]},{"token":"--tt-type-title","role":"title","px":20,"use":"Empty-room headings, figures","from":[["21px",2],["19px",4],["23px",3],["20px",5],["22px",6],["24px",1]]},{"token":"--tt-type-display","role":"display","px":28,"use":"Room titles and large figures","from":[["28px",10],["30px",1],["27px",1],["36px",1],["26px",2],["34px",1],["25px",1]]}],"radius":[{"token":"--tt-radius-small","role":"small","px":4,"use":"Marks, tags, keys, chips"},{"token":"--tt-radius-control","role":"control","px":6,"use":"Buttons, fields, rows (today’s sm)"},{"token":"--tt-radius-inset","role":"inset","px":10,"use":"Code blocks, menus, notes (today’s md)"},{"token":"--tt-radius-card","role":"card","px":14,"use":"Cards, the composer and dialogs (today’s lg)"},{"token":"--tt-radius-full","role":"full","px":"full","use":"Dots, rings, pills"}],"typeMap":{"9":12,"10":12,"11":12,"12":12,"13":13,"14":14,"15":14,"16":16,"17":16,"18":16,"19":20,"20":20,"21":20,"22":20,"23":20,"24":20,"25":28,"26":28,"27":28,"28":28,"30":28,"34":28,"36":28,"9.5":12,"10.5":12,"11.5":12,"12.5":12,"13.5":13,"14.5":14},"radiusMap":{"1":4,"2":4,"3":4,"4":4,"5":4,"6":6,"7":6,"8":6,"9":10,"10":10,"11":10,"12":10,"13":14,"14":14,"16":14,"17":14,"18":14,"20":14,"24":14,"5.5":6},"typeMoves":{"stay":822,"half":346,"more":121,"below12":0,"byRoom":{"Threads pane":{"stay":244,"half":123,"more":39},"Threads composer":{"stay":37,"half":12,"more":2},"Threads sidebar":{"stay":21,"half":19,"more":4},"Dictate":{"stay":17,"half":9,"more":4},"Memory":{"stay":6,"half":0,"more":7},"Setup":{"stay":20,"half":14,"more":4},"Settings":{"stay":212,"half":68,"more":36},"Updates and start":{"stay":5,"half":7,"more":0},"Usage":{"stay":39,"half":31,"more":13},"Shared controls":{"stay":12,"half":5,"more":0},"App frame":{"stay":4,"half":0,"more":1},"Help":{"stay":1,"half":3,"more":0},"Threads tools":{"stay":156,"half":18,"more":4},"Watcher":{"stay":48,"half":36,"more":3},"Widget":{"stay":0,"half":1,"more":4}}},"radiusMoves":{"stay":450,"one":114,"more":177,"byRoom":{"Threads pane":{"stay":142,"one":24,"more":57},"Threads composer":{"stay":20,"one":7,"more":15},"Threads sidebar":{"stay":19,"one":13,"more":6},"Shared controls":{"stay":8,"one":3,"more":2},"Dictate":{"stay":8,"one":2,"more":4},"Memory":{"stay":1,"one":0,"more":0},"Setup":{"stay":18,"one":2,"more":9},"Settings":{"stay":105,"one":14,"more":41},"Updates and start":{"stay":7,"one":0,"more":2},"Usage":{"stay":21,"one":6,"more":13},"App frame":{"stay":4,"one":2,"more":0},"Threads tools":{"stay":66,"one":25,"more":12},"Watcher":{"stay":27,"one":15,"more":12},"Widget":{"stay":4,"one":1,"more":4}}},"radiusTable":[{"from":"6","to":"6","count":191},{"from":"10","to":"10","count":79},{"from":"8","to":"6","count":71},{"from":"full","to":"full","count":60},{"from":"4","to":"4","count":57},{"from":"2","to":"4","count":48},{"from":"7","to":"6","count":35},{"from":"3","to":"4","count":34},{"from":"12","to":"10","count":34},{"from":"5","to":"4","count":32},{"from":"14","to":"14","count":30},{"from":"0","to":"0","count":14},{"from":"inherit","to":"inherit","count":11},{"from":"16","to":"14","count":7},{"from":"1","to":"4","count":6},{"from":"9","to":"10","count":6},{"from":"13","to":"14","count":2},{"from":"17","to":"14","count":2},{"from":"20","to":"14","count":2},{"from":"14 14 0 0","to":"14 14 0 0","count":2},{"from":"0 6 6 0","to":"0 6 6 0","count":2},{"from":"11","to":"10","count":1},{"from":"18","to":"14","count":1},{"from":"24","to":"14","count":1},{"from":"7 0 0 7","to":"6 0 0 6","count":1},{"from":"0 7 7 0","to":"0 6 6 0","count":1},{"from":"0 2 2 0","to":"0 4 4 0","count":1},{"from":"8 0 0 8","to":"6 0 0 6","count":1},{"from":"0 8 8 0","to":"0 6 6 0","count":1},{"from":"5.5","to":"6","count":1},{"from":"14 14 4 14","to":"14 14 4 14","count":1},{"from":"0 0 8 8","to":"0 0 6 6","count":1},{"from":"0 0 6 6","to":"0 0 6 6","count":1},{"from":"6 6 0 0","to":"6 6 0 0","count":1},{"from":"var(--usage-radius) var(--usage-radius) 0 0","to":"var(--usage-radius) var(--usage-radius) 0 0","count":1},{"from":"2 2 0 0","to":"4 4 0 0","count":1},{"from":"3 3 0 0","to":"4 4 0 0","count":1}]},"C":{"name":"Fluent","blurb":"Windows’ own ramp and corners: Caption 12, Body 14, Body Large 18, Subtitle 20, Title 28; 4 px for controls and rows, 8 px for cards and overlays. Each size goes to the role it plays, so 13 px interface text becomes Body 14 and 15 px reading text becomes Body 14 too. At 820 × 560 it costs little room (the Settings card grows 11 px, the dialog 13 px); what it costs is hierarchy and the soft corners.","type":[{"token":"--tt-type-caption","role":"caption","px":12,"use":"Caption: times, descriptions, metadata","from":[["12.5px",203],["12px",215],["11px",17],["11.5px",53],["10.5px",10],["9px",2],["10px",3],["9.5px",2]]},{"token":"--tt-type-body","role":"body","px":14,"use":"Body and Body Strong: all interface and reading text","from":[["14px",186],["15px",50],["13.5px",84],["13px",384],["14.5px",6]]},{"token":"--tt-type-body-large","role":"body-large","px":18,"use":"Body Large: dialog titles, section intros","from":[["16px",19],["18px",7],["17px",5]]},{"token":"--tt-type-subtitle","role":"subtitle","px":20,"use":"Subtitle: headings, small figures","from":[["21px",2],["19px",4],["23px",3],["20px",5],["22px",6]]},{"token":"--tt-type-title","role":"title","px":28,"use":"Title: room titles and large figures","from":[["28px",10],["30px",1],["27px",1],["36px",1],["26px",2],["34px",1],["24px",1],["25px",1]]}],"radius":[{"token":"--tt-radius-small","role":"small","px":2,"use":"Fluent Small: marks"},{"token":"--tt-radius-control","role":"control","px":4,"use":"Controls, rows, tags, keys"},{"token":"--tt-radius-overlay","role":"overlay","px":8,"use":"Cards, the composer, menus and dialogs"},{"token":"--tt-radius-full","role":"full","px":"full","use":"Dots, rings, pills"}],"typeMap":{"9":12,"10":12,"11":12,"12":12,"13":14,"14":14,"15":14,"16":18,"17":18,"18":18,"19":20,"20":20,"21":20,"22":20,"23":20,"24":28,"25":28,"26":28,"27":28,"28":28,"30":28,"34":28,"36":28,"9.5":12,"10.5":12,"11.5":12,"12.5":12,"13.5":14,"14.5":14},"radiusMap":{"1":2,"2":2,"3":2,"4":4,"5":4,"6":4,"7":4,"8":4,"9":4,"10":8,"11":8,"12":8,"13":8,"14":8,"16":8,"17":8,"18":8,"20":8,"24":8,"5.5":4},"typeMoves":{"stay":426,"half":346,"more":517,"below12":0,"byRoom":{"Threads pane":{"stay":124,"half":123,"more":159},"Threads composer":{"stay":18,"half":12,"more":21},"Threads sidebar":{"stay":15,"half":19,"more":10},"Dictate":{"stay":7,"half":9,"more":14},"Memory":{"stay":5,"half":0,"more":8},"Setup":{"stay":6,"half":14,"more":18},"Settings":{"stay":109,"half":68,"more":139},"Updates and start":{"stay":4,"half":7,"more":1},"Usage":{"stay":21,"half":31,"more":31},"Shared controls":{"stay":4,"half":5,"more":8},"App frame":{"stay":2,"half":0,"more":3},"Help":{"stay":0,"half":3,"more":1},"Threads tools":{"stay":93,"half":18,"more":67},"Watcher":{"stay":18,"half":36,"more":33},"Widget":{"stay":0,"half":1,"more":4}}},"radiusMoves":{"stay":193,"one":73,"more":475,"byRoom":{"Threads pane":{"stay":55,"one":18,"more":150},"Threads composer":{"stay":12,"one":3,"more":27},"Threads sidebar":{"stay":11,"one":5,"more":22},"Shared controls":{"stay":2,"one":3,"more":8},"Dictate":{"stay":6,"one":1,"more":7},"Memory":{"stay":0,"one":0,"more":1},"Setup":{"stay":6,"one":0,"more":23},"Settings":{"stay":41,"one":15,"more":104},"Updates and start":{"stay":6,"one":0,"more":3},"Usage":{"stay":20,"one":4,"more":16},"App frame":{"stay":2,"one":1,"more":3},"Threads tools":{"stay":20,"one":9,"more":74},"Watcher":{"stay":9,"one":11,"more":34},"Widget":{"stay":3,"one":3,"more":3}}},"radiusTable":[{"from":"6","to":"4","count":191},{"from":"10","to":"8","count":79},{"from":"8","to":"4","count":71},{"from":"full","to":"full","count":60},{"from":"4","to":"4","count":57},{"from":"2","to":"2","count":48},{"from":"7","to":"4","count":35},{"from":"3","to":"2","count":34},{"from":"12","to":"8","count":34},{"from":"5","to":"4","count":32},{"from":"14","to":"8","count":30},{"from":"0","to":"0","count":14},{"from":"inherit","to":"inherit","count":11},{"from":"16","to":"8","count":7},{"from":"1","to":"2","count":6},{"from":"9","to":"4","count":6},{"from":"13","to":"8","count":2},{"from":"17","to":"8","count":2},{"from":"20","to":"8","count":2},{"from":"14 14 0 0","to":"8 8 0 0","count":2},{"from":"0 6 6 0","to":"0 4 4 0","count":2},{"from":"11","to":"8","count":1},{"from":"18","to":"8","count":1},{"from":"24","to":"8","count":1},{"from":"7 0 0 7","to":"4 0 0 4","count":1},{"from":"0 7 7 0","to":"0 4 4 0","count":1},{"from":"0 2 2 0","to":"0 2 2 0","count":1},{"from":"8 0 0 8","to":"4 0 0 4","count":1},{"from":"0 8 8 0","to":"0 4 4 0","count":1},{"from":"5.5","to":"4","count":1},{"from":"14 14 4 14","to":"8 8 4 8","count":1},{"from":"0 0 8 8","to":"0 0 4 4","count":1},{"from":"0 0 6 6","to":"0 0 4 4","count":1},{"from":"6 6 0 0","to":"4 4 0 0","count":1},{"from":"var(--usage-radius) var(--usage-radius) 0 0","to":"var(--usage-radius) var(--usage-radius) 0 0","count":1},{"from":"2 2 0 0","to":"2 2 0 0","count":1},{"from":"3 3 0 0","to":"2 2 0 0","count":1}]}}}/*END DATA*/</script>
+<script>
+const FS = [9, 9.5, 10, 10.5, 11, 11.5, 12, 12.5, 13, 13.5, 14, 14.5, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 30, 34, 36]
+const RS = [1, 2, 3, 4, 5, 5.5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 18, 20, 24]
+const key = (v) => String(v).replace('.', '_')
+const css = document.createElement('style')
+css.textContent = FS.map((v) => `.stage [data-fs="${v}"]{font-size:var(--fs-${key(v)})}`).join('') + RS.map((v) => `.stage [data-r="${v}"]{border-radius:var(--r-${key(v)})}`).join('') +
+  '.stage [data-rshape=bubble]{border-radius:var(--r-14) var(--r-14) var(--r-4) var(--r-14)}'
+document.head.appendChild(css)
+
+const ORDER = ['T', 'A', 'B', 'C']
+const NAMES = { T: 'Today', A: 'A · Snap', B: 'B · Six steps', C: 'C · Fluent' }
+const typeMap = (v, id) => id === 'T' ? v : (DATA.variants[id].typeMap[v] ?? v)
+const radiusMap = (v, id) => id === 'T' ? v : (DATA.variants[id].radiusMap[v] ?? v)
+const WIDTHS = { 1080: { h: 720, side: 280 }, 1600: { h: 1000, side: 280 }, 820: { h: 560, side: 260 } }
+const params = new URLSearchParams(location.search)
+const S = { v: ORDER.includes(params.get('v')) ? params.get('v') : 'T', last: 'A', mode: params.get('mode') === 'light' ? 'light' : 'dark', w: [1080, 1600, 820].includes(+params.get('w')) ? +params.get('w') : 1080, flip: params.get('flip') === '1', mark: params.get('mark') === '1', zoom: params.get('zoom') === '100' }
+if (S.v !== 'T') S.last = S.v
+const effective = () => (S.flip ? (S.v === 'T' ? S.last : 'T') : S.v)
+
+// calendar
+const cal = document.getElementById('cal')
+const days = ['', 'Mon', '', 'Wed', '', 'Fri', '']
+const months = '<span></span>' + Array.from({ length: 13 }, (_, i) => `<span data-fs="11" style="${[1, 6, 11].includes(i) ? '' : 'visibility:hidden'}">${i === 1 ? 'May' : i === 6 ? 'Jun' : i === 11 ? 'Jul' : '·'}</span>`).join('')
+let seed = 7; const rnd = () => (seed = (seed * 9301 + 49297) % 233280) / 233280
+cal.innerHTML = months + days.map((d) => `<span data-fs="11">${d}</span>` + Array.from({ length: 13 }, () => { const l = Math.floor(rnd() * 5); return `<i data-r="2" style="background:var(--cal${l})"></i>` }).join('')).join('')
+
+function applyScale(id) {
+  for (const st of document.querySelectorAll('.stage')) {
+    for (const v of FS) st.style.setProperty(`--fs-${key(v)}`, typeMap(v, id) + 'px')
+    for (const v of RS) st.style.setProperty(`--r-${key(v)}`, radiusMap(v, id) + 'px')
+  }
+}
+function layout() {
+  const W = S.w, { h: H, side } = WIDTHS[W]
+  const room = W - side
+  const d = document.querySelector('[data-frame=dictate]')
+  d.dataset.layout = room >= 900 ? 'wide' : room >= 600 ? 'stack' : 'narrow'
+  d.style.width = room + 'px'; d.style.setProperty('--dpad', Math.min(48, Math.max(20, room * 0.04)) + 'px')
+  for (const b of d.querySelectorAll('[data-figure]')) b.dataset.fs = d.dataset.layout === 'narrow' ? '22' : '28'
+  for (const b of d.querySelectorAll('[data-figcap]')) b.dataset.fs = d.dataset.layout === 'narrow' ? '12' : '12.5'
+  const s = document.querySelector('[data-frame=settings]')
+  const form = W >= 1600 ? 790 : W >= 1080 ? 718 : room - 48
+  s.style.width = form + 'px'; s.dataset.w = W < 900 ? 'narrow' : 'wide'
+  const t = document.querySelector('[data-frame=threads]')
+  t.style.width = W + 'px'; t.style.height = H + 'px'; t.style.setProperty('--sbw', side + 'px')
+  const g = document.querySelector('[data-frame=dialog]')
+  g.style.width = '700px'; g.style.height = Math.min(H, 640) + 'px'
+}
+function markMoved(id) {
+  for (const el of document.querySelectorAll('.stage [data-fs]')) { const v = +el.dataset.fs, d = Math.abs(typeMap(v, id) - v); el.dataset.moved = d === 0 ? '' : d <= 0.5 ? 'half' : 'more'; el.title = `${v} px today, ${typeMap(v, id)} px in ${NAMES[id]}` }
+  for (const el of document.querySelectorAll('.stage [data-r]')) { const v = +el.dataset.r, d = Math.abs(radiusMap(v, id) - v); el.dataset.rmoved = d >= 2 ? 'more' : '' }
+}
+function clipped(frame) {
+  // scrollWidth does not report text cut by an ellipsis here, so compare each label's width with its natural width
+  let n = 0
+  for (const el of frame.querySelectorAll('[data-clip]')) {
+    const now = el.getBoundingClientRect().width
+    const keep = el.getAttribute('style') || ''
+    el.style.cssText = keep + ';flex:none;width:max-content;max-width:none;min-width:0'
+    const natural = el.getBoundingClientRect().width
+    el.setAttribute('style', keep)
+    if (natural > now + 0.1) n++
+  }
+  return n
+}
+function fitAll() {
+  for (const fit of document.querySelectorAll('.fit')) {
+    const fr = fit.firstElementChild, pair = fit.closest('.pair'), img = pair.querySelector('img[data-cap]')
+    const capW = +img.dataset.w, natW = fr.offsetWidth, natH = fr.offsetHeight
+    pair.style.setProperty('--capw', capW + 'px')
+    pair.classList.toggle('stacked', capW + natW + 18 > pair.clientWidth)
+    const avail = fit.parentElement.clientWidth
+    const sc = S.zoom ? 1 : Math.min(1, avail / natW)
+    fr.style.transform = sc === 1 ? '' : `scale(${sc})`
+    fit.style.height = Math.ceil(natH * sc) + 'px'; fit.style.width = S.zoom ? '100%' : Math.ceil(natW * sc) + 'px'
+    fit.classList.toggle('zoom100', S.zoom)
+    fit.dataset.scale = sc
+  }
+}
+const heights = {}
+function measureHeights() {
+  // the natural height of the Dictate and Settings mocks under every scale, at this width, so a label can say what grew
+  for (const id of ORDER) { applyScale(id); heights[id] = { dictate: document.querySelector('[data-frame=dictate]').offsetHeight, settings: document.querySelector('[data-frame=settings]').offsetHeight, threadsClip: clipped(document.querySelector('[data-frame=threads]')), tx: document.querySelector('[data-frame=threads] .tx-col').offsetHeight, sb: document.querySelector('[data-frame=threads] .sb-list').offsetHeight, dlg: document.querySelector('[data-frame=dialog] .dlg').offsetHeight } }
+}
+function delta(d) { return d === 0 ? 'same height' : `${d > 0 ? '+' : '−'}${Math.abs(d)} px` }
+function dlgFit() { const c = document.querySelector('.dchoices'); return c.scrollHeight > c.clientHeight + 1 ? ' · the list scrolls' : '' }
+function labels(id) {
+  const W = S.w, H = WIDTHS[W].h
+  const pct = (name) => { const sc = +document.querySelector(`[data-frame=${name}]`).parentElement.dataset.scale; return sc < 0.999 ? ` · shown at ${Math.round(sc * 100)}%` : '' }
+  const grew = (name) => { if (id === 'T') return ''; const d = heights[id][name] - heights.T[name]; return d === 0 ? ' · same height as Today' : ` · ${Math.abs(d)} px ${d > 0 ? 'taller' : 'shorter'} than Today` }
+  const head = `<b>Mock · ${NAMES[id]}</b>${S.flip ? ' (flipped)' : ''}`
+  document.querySelector('[data-label=dictate]').innerHTML = `${head} · Dictate room of a ${W} × ${H} window${pct('dictate')}${grew('dictate')}`
+  document.querySelector('[data-label=settings]').innerHTML = `${head} · settings column of a ${W} × ${H} window${pct('settings')}${grew('settings')}`
+  const cl = heights[id].threadsClip
+  document.querySelector('[data-label=threads]').innerHTML = `${head} · ${W} × ${H} window${pct('threads')} · ${cl === 0 ? 'no title cut off' : cl === 1 ? '1 title cut off' : cl + ' titles cut off'}${id !== 'T' && cl !== heights.T.threadsClip ? ` (Today: ${heights.T.threadsClip})` : ''}${id === 'T' ? '' : ` · transcript ${delta(heights[id].tx - heights.T.tx)}, sidebar list ${delta(heights[id].sb - heights.T.sb)}`}`
+  document.querySelector('[data-label=dialog]').innerHTML = `${head} · as it sits in a ${W} × ${H} window (backdrop trimmed)${pct('dialog')}${id === 'T' ? '' : ` · dialog ${delta(heights[id].dlg - heights.T.dlg)}`}${dlgFit()}`
+}
+function tables(id) {
+  const rows = ['T', 'A', 'B', 'C'].map((v) => {
+    if (v === 'T') { const t = DATA.today; return `<tr class="${id === 'T' ? 'cur' : ''}"><td><b>Today</b></td><td class="n">${t.type.distinctPx}</td><td class="n">${t.type.declarations}</td><td class="n">–</td><td class="n">–</td><td class="n">${t.type.below12}</td><td class="n">${t.radius.distinctResolved}</td><td class="n">${t.radius.declarations}</td><td class="n">–</td><td class="n">–</td></tr>` }
+    const x = DATA.variants[v], tm = x.typeMoves, rm = x.radiusMoves
+    return `<tr class="${id === v ? 'cur' : ''}"><td><b>${NAMES[v]}</b></td><td class="n">${x.type.length}</td><td class="n">${tm.stay}</td><td class="n">${tm.half}</td><td class="n">${tm.more}</td><td class="n">${tm.below12}</td><td class="n">${x.radius.length - 1} + full</td><td class="n">${rm.stay}</td><td class="n">${rm.one}</td><td class="n">${rm.more}</td></tr>`
+  })
+  document.getElementById('moves').innerHTML = `<thead><tr><th rowspan="2">Scale</th><th colspan="5">Text sizes (${DATA.today.type.declarations} declarations)</th><th colspan="4">Corner radii (${DATA.today.radius.declarations} declarations)</th></tr><tr><th>Steps</th><th>Stay put</th><th>Move 0.5 px</th><th>Move 1 px or more</th><th>Under 12 px</th><th>Steps</th><th>Stay put</th><th>Move 1 px</th><th>Move 2 px or more</th></tr></thead><tbody>${rows.join('')}</tbody>`
+  const tv = id === 'T' ? 'A' : id, x = DATA.variants[tv]
+  document.getElementById('tok-title').textContent = id === 'T' ? 'Today has no type tokens; A is shown' : `${NAMES[id]}: tokens, roles and what maps to each`
+  document.getElementById('tok-blurb').textContent = x.blurb
+  const chip = (f, to) => `<span class="chipsrc ${parseFloat(f[0]) !== to ? 'moved' : ''}">${f[0].replace('px', '')} ×${f[1]}</span>`
+  document.getElementById('tokens').innerHTML = `<thead><tr><th>Token</th><th>Size</th><th>Role</th><th>Today's sizes that land here</th></tr></thead><tbody>` +
+    x.type.map((s) => `<tr><td><code>${s.token}</code></td><td class="n">${s.px}</td><td>${s.use}</td><td>${s.from.sort((a, b) => parseFloat(a[0]) - parseFloat(b[0])).map((f) => chip(f, s.px)).join('')}</td></tr>`).join('') +
+    `<tr><td colspan="4" style="color:#b9bec4">Corners: ${x.radius.map((r) => `<code>${r.token}</code> ${r.px === 'full' ? 'full' : r.px + ' px'} (${r.use.replace(/^(?!Fluent)./, (c) => c.toLowerCase())})`).join('; ')}. Today's 50%, 999 px and halo circles stay full; 0 and <code>inherit</code> stay as they are.</td></tr></tbody>`
+  document.getElementById('spec').innerHTML = x.type.slice().reverse().map((s) => `<div><code>${s.token}</code><span class="px">${s.px} px</span><span class="s" style="font-size:${s.px}px">Ready when you are. Run the typecheck</span></div>`).join('')
+  document.getElementById('radii').innerHTML = x.radius.map((r) => `<div><span style="border-radius:${r.px === 'full' ? '999px' : r.px + 'px'}"></span><code style="font:12px var(--mono)">${r.role}</code>${r.px === 'full' ? 'full' : r.px + ' px'}</div>`).join('')
+  const br = Object.entries(DATA.variants[tv].typeMoves.byRoom).map(([room, m]) => [room, m.more, DATA.variants[tv].radiusMoves.byRoom[room]?.more ?? 0]).sort((a, b) => (b[1] + b[2]) - (a[1] + a[2])).slice(0, 7)
+  document.getElementById('rooms').innerHTML = `<thead><tr><th>Room (${NAMES[tv]})</th><th>Sizes, 1 px+</th><th>Corners, 2 px+</th></tr></thead><tbody>${br.map((r) => `<tr><td>${r[0]}</td><td class="n">${r[1]}</td><td class="n">${r[2]}</td></tr>`).join('')}</tbody>`
+}
+function counts() {
+  const t = DATA.today, max = t.type.values[0].count
+  document.getElementById('counts-why').innerHTML = `Measured in <code>src/renderer/src/**/*.css</code> at <code>${DATA.checkout}</code> on ${DATA.measuredAt}: ${t.type.declarations} <code>font-size</code> declarations (shorthand <code>font</code> included) with ${t.type.distinct} distinct values, ${t.type.distinctPx} of them fixed pixel sizes; ${t.radius.declarations} <code>border-radius</code> declarations with ${t.radius.distinct} distinct values as written, ${t.radius.tokenised} of them through <code>--tt-radius-sm</code>, <code>md</code> or <code>lg</code>; ${t.shadow.declarations} <code>box-shadow</code> declarations with ${t.shadow.distinct} distinct values. The issue counted 34, 731, 126 and 62 a little earlier; the tree has grown since.`
+  const top = (rooms) => rooms.slice(0, 3).map(([r, n]) => `${r} ${n}`).join(', ') + (rooms.length > 3 ? `, +${rooms.length - 3} more` : '')
+  document.getElementById('c-type').innerHTML = `<thead><tr><th>Size</th><th>Uses</th><th></th><th>Rooms (most first)</th></tr></thead><tbody>${t.type.values.slice().sort((a, b) => (parseFloat(a.value) || 99) - (parseFloat(b.value) || 99)).map((v) => `<tr><td>${v.value}</td><td class="n">${v.count}</td><td><span class="barcell" style="width:${Math.max(2, Math.round(v.count / max * 120))}px"></span></td><td>${top(v.rooms)}</td></tr>`).join('')}</tbody>`
+  const rmax = t.radius.values[0].count
+  document.getElementById('c-radius').innerHTML = `<thead><tr><th>Radius</th><th>Uses</th><th></th><th>Rooms (most first)</th></tr></thead><tbody>${t.radius.values.slice(0, 18).map((v) => `<tr><td><code>${v.value}</code></td><td class="n">${v.count}</td><td><span class="barcell" style="width:${Math.max(2, Math.round(v.count / rmax * 120))}px"></span></td><td>${top(v.rooms)}</td></tr>`).join('')}<tr><td colspan="4" style="color:#b9bec4">${t.radius.values.length - 18} more values, each used once or twice: open the list below.</td></tr></tbody>`
+  document.getElementById('c-radius-all').innerHTML = `<tbody>${t.radius.values.slice(18).map((v) => `<tr><td><code>${v.value}</code></td><td class="n">${v.count}</td><td>${top(v.rooms)}</td></tr>`).join('')}</tbody>`
+  document.getElementById('c-shadow').innerHTML = `<thead><tr><th>Room</th><th>Declarations</th><th>Distinct</th></tr></thead><tbody>${t.shadow.rooms.map((r) => `<tr><td>${r.room}</td><td class="n">${r.count}</td><td class="n">${r.distinct}</td></tr>`).join('')}<tr><td><b>All rooms</b></td><td class="n"><b>${t.shadow.declarations}</b></td><td class="n"><b>${t.shadow.distinct}</b></td></tr><tr><td colspan="3" style="color:#b9bec4">${t.shadow.none} of them are <code>none</code>.</td></tr></tbody>`
+  document.getElementById('inline-note').innerHTML = `Outside the stylesheets, ${t.type.inline.length + t.radius.inline.length} inline values: ${t.type.inline.map((i) => `<code>${i.file.split('/').pop()}</code> fontSize ${i.value}`).join(', ')}; ${t.radius.inline.map((i) => `<code>${i.file.split('/').pop()}</code> borderRadius`).join(', ')}. The diagram's 15 maps like any 15; the terminal's size is a setting, and the phone frame and theme inspector compute their corners from what they draw, so neither belongs on the scale.`
+}
+function render() {
+  const id = effective()
+  for (const st of document.querySelectorAll('.stage')) st.dataset.mode = S.mode
+  document.body.classList.toggle('marking', S.mark)
+  for (const img of document.querySelectorAll('img[data-cap]')) img.src = `type-radius-scale/now-${img.dataset.cap}-${S.mode}.png`
+  layout(); measureHeights(); applyScale(id); markMoved(id); fitAll(); labels(id); tables(id)
+  for (const b of document.querySelectorAll('.switcher [data-v]')) b.setAttribute('aria-pressed', String(b.dataset.v === S.v))
+  document.getElementById('mode').textContent = S.mode === 'dark' ? 'Dark' : 'Light'
+  document.getElementById('width').textContent = S.w
+  document.getElementById('flip').setAttribute('aria-pressed', String(S.flip))
+  document.getElementById('mark').setAttribute('aria-pressed', String(S.mark))
+  document.getElementById('state').textContent = `Showing ${NAMES[id]}`
+  const q = new URLSearchParams({ v: S.v, mode: S.mode, w: S.w }); if (S.flip) q.set('flip', '1'); if (S.mark) q.set('mark', '1'); if (S.zoom) q.set('zoom', '100')
+  history.replaceState(null, '', '?' + q)
+}
+function setV(v) { S.v = v; if (v !== 'T') S.last = v; S.flip = false; render() }
+document.getElementById('prev').onclick = () => setV(ORDER[(ORDER.indexOf(S.v) + ORDER.length - 1) % ORDER.length])
+document.getElementById('next').onclick = () => setV(ORDER[(ORDER.indexOf(S.v) + 1) % ORDER.length])
+for (const b of document.querySelectorAll('.switcher [data-v]')) b.onclick = () => setV(b.dataset.v)
+document.getElementById('mode').onclick = () => { S.mode = S.mode === 'dark' ? 'light' : 'dark'; render() }
+document.getElementById('width').onclick = () => { S.w = S.w === 1080 ? 1600 : S.w === 1600 ? 820 : 1080; render() }
+document.getElementById('flip').onclick = () => { S.flip = !S.flip; render() }
+document.getElementById('mark').onclick = () => { S.mark = !S.mark; render() }
+addEventListener('keydown', (e) => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return
+  const k = e.key.toLowerCase()
+  if (e.key === 'ArrowLeft') document.getElementById('prev').click()
+  else if (e.key === 'ArrowRight') document.getElementById('next').click()
+  else if (k === 'f') document.getElementById('flip').click()
+  else if (k === 'l') document.getElementById('mode').click()
+  else if (k === 'w') document.getElementById('width').click()
+  else if (k === 'm') document.getElementById('mark').click()
+  else if (k === 'z') { S.zoom = !S.zoom; render() }
+})
+addEventListener('resize', () => { fitAll(); labels(effective()) })
+for (const f of document.querySelectorAll('.frame')) f.classList.add('stage')
+counts()
+render()
+Promise.all([document.fonts.load('500 15px Figtree'), document.fonts.load('600 15px Figtree'), document.fonts.load('13px "Spline Sans Mono"')]).then(render)
+document.fonts.addEventListener('loadingdone', () => render())
+</script>
+</body>
+</html>
