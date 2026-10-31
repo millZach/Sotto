@@ -20,12 +20,12 @@ beforeEach(() => { owl.shrink = true })
 afterEach(cleanup)
 
 describe('when the composer is slim (ADR-0125)', () => {
-  const reading: SlimFacts = { enabled: true, readingBack: true, focused: false, draft: false, questionWaits: false }
+  const reading: SlimFacts = { enabled: true, readingBack: true, held: false, draft: false, questionWaits: false }
 
-  it('slims only while the user reads back with the composer empty, unfocused and floating', () => {
+  it('slims only while the user reads back with the composer empty, not held by focus and floating', () => {
     expect(composerSlim(reading)).toBe(true)
     expect(composerSlim({ ...reading, readingBack: false })).toBe(false)
-    expect(composerSlim({ ...reading, focused: true })).toBe(false)
+    expect(composerSlim({ ...reading, held: true })).toBe(false)
     // A draft keeps it full (the user's pick).
     expect(composerSlim({ ...reading, draft: true })).toBe(false)
     // A waiting question stacks the composer instead of floating it.
@@ -33,8 +33,8 @@ describe('when the composer is slim (ADR-0125)', () => {
   })
 
   it('never slims with the Owl feature off', () => {
-    for (const readingBack of [true, false]) for (const focused of [true, false]) for (const draft of [true, false]) {
-      expect(composerSlim({ enabled: false, readingBack, focused, draft, questionWaits: false })).toBe(false)
+    for (const readingBack of [true, false]) for (const held of [true, false]) for (const draft of [true, false]) {
+      expect(composerSlim({ enabled: false, readingBack, held, draft, questionWaits: false })).toBe(false)
     }
   })
 
@@ -43,6 +43,8 @@ describe('when the composer is slim (ADR-0125)', () => {
     expect(at(0)).toBe(false)
     expect(at(READING_BACK_PX)).toBe(false)
     expect(at(READING_BACK_PX + 1)).toBe(true)
+    // A single wheel notch from the end is reading back.
+    expect(at(100)).toBe(true)
   })
 
   it('takes a printable key typed on the transcript’s words as the start of a message, and nothing else', () => {
@@ -88,7 +90,7 @@ describe('the slim composer in a thread pane', () => {
     expect(view.compose).not.toHaveAttribute('data-slim')
     view.readBack(400)
     expect(view.compose).toHaveAttribute('data-slim', 'true')
-    view.readBack(60)
+    view.readBack(20)
     expect(view.compose).not.toHaveAttribute('data-slim')
 
     view.readBack(400)
@@ -105,6 +107,54 @@ describe('the slim composer in a thread pane', () => {
     expect(view.compose).toHaveAttribute('data-slim', 'true')
     // The textbox keeps its name while slim.
     expect(view.textbox()).toBeInTheDocument()
+  })
+
+  it('slims while reading back with the caret resting in the empty prompt, and a press on the card brings it back full', () => {
+    const view = mount()
+    // After a send, or on opening a thread, the caret rests in the prompt at the end.
+    act(() => { view.textbox().focus() })
+    expect(view.compose).not.toHaveAttribute('data-slim')
+    view.readBack(400)
+    expect(view.compose).toHaveAttribute('data-slim', 'true')
+    expect(view.textbox()).toHaveFocus()
+    // Focus is already there, so the press itself brings it back full.
+    fireEvent.mouseDown(view.textbox())
+    expect(view.compose).not.toHaveAttribute('data-slim')
+    // Reading back across the line again slims it again; a draft keeps it full.
+    view.readBack(20)
+    view.readBack(400)
+    expect(view.compose).toHaveAttribute('data-slim', 'true')
+    setPromptText(view.textbox(), 'and the narrow pane')
+    expect(view.compose).not.toHaveAttribute('data-slim')
+  })
+
+  it('slims at every scroll away from the end while the composer is empty, however it came back full', () => {
+    const view = mount()
+    // Back to the end and away again, five times over, by a wheel notch or more: it slims every time.
+    for (const fromEnd of [60, 100, 160, 400, 900]) {
+      view.readBack(0)
+      expect(view.compose, `full at the end before ${fromEnd}`).not.toHaveAttribute('data-slim')
+      view.readBack(fromEnd)
+      expect(view.compose, `slim ${fromEnd} pixels from the end`).toHaveAttribute('data-slim', 'true')
+    }
+    // Brought back full while reading back, by a press on the card or by Tab, the next scroll slims it again without the
+    // reader going back to the end first.
+    for (const fromEnd of [500, 600, 700]) {
+      fireEvent.mouseDown(view.textbox())
+      act(() => { view.textbox().focus() })
+      expect(view.compose).not.toHaveAttribute('data-slim')
+      view.readBack(fromEnd)
+      expect(view.compose, `slim again at ${fromEnd}`).toHaveAttribute('data-slim', 'true')
+    }
+  })
+
+  it('stays full while focus is on another of its controls as the reader scrolls back', () => {
+    const view = mount()
+    // The fixture's own controls are disabled until the thread connects, so a control of the composer stands in for them.
+    const control = view.compose.appendChild(document.createElement('button'))
+    act(() => { control.focus() })
+    view.readBack(400)
+    expect(view.compose).not.toHaveAttribute('data-slim')
   })
 
   it('learns what shows of the slim composer while the effort border’s own transition runs', () => {

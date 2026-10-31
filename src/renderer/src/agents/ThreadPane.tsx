@@ -266,8 +266,15 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const watcherOn = useWatcherEnabled()
   const slimOn = useOwlFeature('composer-shrink') && (watcherOn || !ownPane)
   const [readingBack, setReadingBack] = useState(false)
-  const [composeFocused, setComposeFocused] = useState(false)
-  const slim = composerSlim({ enabled: slimOn, readingBack, focused: composeFocused, draft: paneHasDraft,
+  const [composeHeld, setComposeHeld] = useState(false)
+  // Every scroll the reader makes away from the end slims an empty composer, even one that came back full with the caret
+  // resting in its prompt, as it is after a send, on opening a thread or after a click on the slim card. Focus on any
+  // other of its controls, such as an open picker, keeps it full.
+  const readBack = useCallback((reading: boolean): void => {
+    setReadingBack(reading)
+    if (reading && document.activeElement?.id === promptId) setComposeHeld(false)
+  }, [promptId])
+  const slim = composerSlim({ enabled: slimOn, readingBack, held: composeHeld, draft: paneHasDraft,
     questionWaits: !isThreadClosed(thread) && thread.requests.some(request => request.kind === 'question') })
   // The pane wears the slim composer as a mark, for the Jump button above it.
   useMark('slim', slim)
@@ -408,7 +415,10 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   const pressSlim = (event: React.MouseEvent): void => {
     const target = event.target as Element
     if (target.closest('.thread-prompt__actions button') !== null) { event.preventDefault(); return }
-    if (target.closest('.thread-prompt') === null || target.closest('button, a, [contenteditable]') !== null) return
+    if (target.closest('.thread-prompt') === null) return
+    // The caret may already rest in the prompt, so focus alone would not bring the composer back full.
+    setComposeHeld(true)
+    if (target.closest('button, a, [contenteditable]') !== null) return
     event.preventDefault()
     focusAnswerComposer()
   }
@@ -455,7 +465,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {thread.requestNotice ? <p className="agent-error thread-workspace__error" role="alert">{thread.requestNotice}</p> : null}
     {error && error !== thread.requestNotice && !deliveryExplains && !answerExplains && !settingsExplains && !turnExplains && error !== toolbarExplained && error !== gitExplained ? <p className="agent-error thread-workspace__error" role="alert">{error}</p> : null}
     <ThreadWebLinks threadId={thread.id} threadTitle={thread.title} focused={focused}>{/* A reply's commands run only in a pane with its own Terminal drawer, never a paired host's thread (ADR-0139; Owl only). */}<RunCommands threadId={thread.id} offered={drawer != null && !thread.remoteHost}><ThreadTranscript row={row} state={state} command={command} store={store} followSignal={followSignal} watcher={ownPane} greetingSlot={greetingSlot} emptyNote={ownPane ? watcherEmpty : undefined}
-      onReadingBack={slimOn ? setReadingBack : undefined} onTypeAhead={typeAhead} onQuoted={focusAnswerComposer}>
+      onReadingBack={slimOn ? readBack : undefined} onTypeAhead={typeAhead} onQuoted={focusAnswerComposer}>
       <ThreadRequests kind="permission" row={row} state={state} command={command} onAnswer={focusAnswerComposer} />
       {/* A turn stopped at its limit offers the other providers to continue on (ADR-0089; Owl only). */}
       {ownPane ? null : <ContinueNow thread={thread} state={state} onStart={focusAnswerComposer} />}
@@ -469,7 +479,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     <div className="thread-greeting-slot" data-room-backdrop="" ref={setGreetingSlot} />
     {/* F6's stop after the transcript (ADR-0164), entered at the prompt. */}
     <div className="thread-workspace__compose" data-room-backdrop="" data-region="composer" ref={compose} data-slim={slim || undefined} onMouseDown={slim ? pressSlim : undefined}
-      onFocus={() => setComposeFocused(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setComposeFocused(false) }}>
+      onFocus={() => setComposeHeld(true)} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setComposeHeld(false) }}>
       {/* What a Watch or Stop watching press did, just above the focused pane's composer (Owl only). */}
       {focused ? <WatchToast /> : null}
       {notice}
