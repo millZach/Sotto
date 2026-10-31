@@ -34,4 +34,4 @@ The computer already took everything this needs. `configure-thread`, with `model
 
 ## October 31, 2026: the shield beside the bolt
 
-Zach, testing build 45 on the unfolded iPhone Duo, asked for the shield to sit next to the bolt: at the line's end it stood far from the other three on a wide screen. The four now sit together in the desktop's order, the shield right after the bolt (or after the effort, where the model offers no speeds), and the room left over is after them. This replaces "at the line's end" in decision 1. Watcher's box takes the same line (point 1 of the same request).
+Zach, testing build 45 on the unfolded iPhone Duo, asked for the shield to sit next to the bolt: at the line's end it stood far from the other three on a wide screen. The four now sit together in the desktop's order, the shield right after the bolt (or after the effort, where the model offers no speeds), and the room left over is after them. This replaces "at the line's end" in decision 1. Watcher's box is to take the same line, in this order, in a later change (point 1 of the same request); until then its permissions stay in Watcher's hero.
