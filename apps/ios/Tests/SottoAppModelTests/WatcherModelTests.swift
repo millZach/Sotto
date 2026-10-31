@@ -332,7 +332,7 @@ final class WatcherModelTests: XCTestCase {
 
     @MainActor func testAWatchedThreadCarriesTheOwlUntilItIsTakenOver() async throws {
         let model = try await fixture()
-        XCTAssertTrue(model.watchedByWatcher(worker), "Its reply box carries the takeover line and its rows the owl")
+        XCTAssertTrue(model.watchedByWatcher(worker), "Its Watch is lit and its rows carry the owl")
         XCTAssertEqual(model.watchedThreadIDs, [worker.id])
         XCTAssertEqual(WatchedWords.takeover, "Watched by Watcher. If you send here, Watcher stops sending to it.")
         XCTAssertEqual(WatchedWords.label, "Watched by Watcher")
@@ -1361,10 +1361,11 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertFalse(model.canChangeWatch(worker))
         await model.setWatched(worker, true)
         XCTAssertTrue(try connection.watcherCalls.isEmpty, "Nothing was asked of the computer")
-        // Its watched threads keep the takeover line it has always had.
+        // Its watched threads carry the owl after their logo. The reply box has no line (ADR-0073, October 31 amendment),
+        // and with no Watch here nothing reads out that a send takes it over.
         try push(Spec(observedAt: "2026-10-11T09:01:00.000Z"))
         await until { model.watchedByWatcher(worker) }
-        XCTAssertEqual(model.watchedLine(worker), WatchedWords.takeover)
+        XCTAssertEqual(model.watchFact(worker), WatchedWords.takeover)
         model.phase(.background)
     }
 
@@ -1389,8 +1390,7 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(watch.count, 1)
         XCTAssertEqual(watch.first?.operation["request"], .object(["target": .object(["hostId": .string(laptop), "threadId": .string("t")])]))
         XCTAssertTrue(model.watchedByWatcher(worker), "The owl follows its logo now")
-        XCTAssertEqual(model.watchedLine(worker), WatchedWords.standing)
-        XCTAssertEqual(model.watchedLine(worker), "Watched by Watcher. It keeps this thread going and brings you its questions and permissions.")
+        XCTAssertNil(model.watchFact(worker), "A standing watch at rest is the lit owl's to say, with nothing over the reply box")
         let notice = try XCTUnwrap(model.watchNotice, "What the press did is said, with Undo")
         XCTAssertEqual(notice.words, "Watcher is watching Fix login test.")
         XCTAssertEqual(notice.undo, "Undo: stop watching Fix login test")
@@ -1402,7 +1402,7 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(try calls("watcher-phone-unwatch").first?.operation["request"],
                        .object(["target": .object(["hostId": .string(laptop), "threadId": .string("t")])]))
         XCTAssertFalse(model.watchedByWatcher(worker))
-        XCTAssertNil(model.watchedLine(worker))
+        XCTAssertNil(model.watchFact(worker))
         XCTAssertEqual(model.watchNotice?.words, "Watcher stopped watching Fix login test.")
         XCTAssertEqual(model.watchNotice?.undo, "Undo: watch Fix login test again")
         XCTAssertEqual(try calls("watcher-phone-watch").count, 1, "Nothing went twice")
@@ -1468,12 +1468,12 @@ final class WatcherModelTests: XCTestCase {
         // The computer keeps standing watches, but `t` is watched only because it takes part in Watcher's request.
         let model = try await fixture(features: Self.manageFeatures, spec: Spec(standing: false))
         XCTAssertTrue(model.watchedByWatcher(worker))
-        XCTAssertEqual(model.watchedLine(worker), WatchedWords.takeover)
-        XCTAssertEqual(model.watchedLine(worker), "Watched by Watcher. If you send here, Watcher stops sending to it.")
-        // Under a standing watch it is kept going until the user stops it.
+        XCTAssertEqual(model.watchFact(worker), WatchedWords.takeover, "Watch's hint says a send here takes it over")
+        XCTAssertEqual(model.watchFact(worker), "Watched by Watcher. If you send here, Watcher stops sending to it.")
+        // Under a standing watch it is kept going until the user stops it, which the lit owl says.
         try push(Spec(observedAt: "2026-10-11T09:01:00.000Z", standing: true))
-        await until { model.watchedLine(worker) == WatchedWords.standing }
-        XCTAssertEqual(model.watchedLine(worker), WatchedWords.standing)
+        await until { model.watchFact(worker) == nil }
+        XCTAssertTrue(model.watchedByWatcher(worker))
         XCTAssertEqual(WatcherWords.watchedLead(1, standing: 0),
                        "Watcher keeps this thread going on its own and brings you its questions and permissions. It is watched for a request: if you send to it yourself, Watcher stops sending to it.")
         XCTAssertEqual(WatcherWords.watchedLead(3, standing: 1),
@@ -1481,15 +1481,15 @@ final class WatcherModelTests: XCTestCase {
         model.phase(.background)
     }
 
-    @MainActor func testAWatchedThreadsReplyBoxSaysWatcherWaitsWhileTheUsersTurnRuns() async throws {
+    @MainActor func testAWatchedThreadsWatchSaysWatcherOnlySteersWhileTheUsersTurnRuns() async throws {
         let model = try await fixture(features: Self.manageFeatures, spec: Spec(standing: true, paused: true))
         XCTAssertTrue(model.watchedByWatcher(worker))
-        XCTAssertEqual(model.watchedLine(worker), WatchedWords.paused)
-        XCTAssertEqual(model.watchedLine(worker), "Watched by Watcher. While your own turn here runs, it can only steer that turn.")
+        XCTAssertEqual(model.watchFact(worker), WatchedWords.paused, "Watch's hint says Watcher only steers")
+        XCTAssertEqual(model.watchFact(worker), "Watched by Watcher. While your own turn here runs, it can only steer that turn.")
         XCTAssertEqual(model.watchHost(for: worker), laptop, "Stop watching goes to the computer that watches it")
         try push(Spec(observedAt: "2026-10-11T09:01:00.000Z", standing: true))
-        await until { model.watchedLine(worker) == WatchedWords.standing }
-        XCTAssertEqual(model.watchedLine(worker), WatchedWords.standing, "Once the turn ends, Watcher keeps it going")
+        await until { model.watchFact(worker) == nil }
+        XCTAssertTrue(model.watchedByWatcher(worker), "Once the turn ends, Watcher keeps it going, which the lit owl says")
         model.phase(.background)
     }
 

@@ -671,15 +671,13 @@ struct WatcherWatch: Sendable {
     }
 }
 
-/// The words a watched thread carries, shared by its rows, cards and reply box.
+/// The words a watched thread carries, shared by its rows, cards and its Watch.
 enum WatchedWords {
     static let label = String(localized: "Watched by Watcher")
-    /// What a watched thread's reply box says on a computer whose watching a send takes over: one that keeps no
-    /// standing watches.
+    /// What Watch's hint says first where watching is not the standing kind the lit owl already shows (ADR-0073, October
+    /// 31 amendment): on a computer whose watching a send takes over, one that keeps no standing watches, or for a
+    /// thread watched only for a Watcher request; and while the user's own turn runs under a standing watch.
     static let takeover = String(localized: "Watched by Watcher. If you send here, Watcher stops sending to it.")
-    /// What it says where Watcher keeps the thread watched until the user stops it, word for word as on the desktop, and
-    /// while the user's own turn there runs.
-    static let standing = String(localized: "Watched by Watcher. It keeps this thread going and brings you its questions and permissions.")
     static let paused = String(localized: "Watched by Watcher. While your own turn here runs, it can only steer that turn.")
     /// The words a row or card adds for VoiceOver after where the thread runs.
     static func spoken(_ watched: Bool) -> String {
