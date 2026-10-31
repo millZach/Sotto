@@ -497,7 +497,7 @@ it.skipIf(!BENCH || process.env.SOTTO_AUDIT_SOCKET !== '1')('measures what the h
     peer.frames.send({ v: 1, id, session: peer === desktop ? sessions[0] : sessions[1], ...operation })
     for (let waited = 0; !peer.messages.some(message => message.id === id); waited++) { if (waited > 4_000) throw new Error(`no answer to ${id}`); await step(); await io(2) }
   }
-  const desktopAccepts = ['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'provider-opencode', 'provider-cursor', 'watcher-reads']
+  const desktopAccepts = ['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', 'provider-opencode', 'provider-cursor', 'watcher-reads']
   await ask(desktop, 'hello', { op: 'hello', afterSeq: 9_007_199_254_740_991, accepts: desktopAccepts })
   await ask(phone, 'hello', { op: 'hello', afterSeq: 9_007_199_254_740_991, accepts: ['detail-delta', 'client-liveness', 'activity-summaries', 'model-catalog-revision', 'provider-opencode', 'provider-cursor'] })
   const helloBytes = { desktop: Buffer.byteLength(nativeStringify(desktop.messages.find(message => message.id === 'hello'))), phone: Buffer.byteLength(nativeStringify(phone.messages.find(message => message.id === 'hello'))) }
