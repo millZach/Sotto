@@ -12,6 +12,9 @@ const root = await mkdtemp(join(tmpdir(), 'sotto-usage-stream-'))
 try {
   await copyFile(seed, join(root, 'claude-usage.json'))
   const usage = new NativeUsage(root, 'claude'); await usage.load(); await usage.flushed()
+  // A write made at load, as moving an earlier build's one file across makes one, holds the next back for an interval;
+  // the reply starts after it, in both versions.
+  await delay(1000)
   const recorder = recordDurableWrites()
   const message = { id: 'streamed', model: 'claude-sonnet-4-6', usage: { input_tokens: 1000, output_tokens: 0, cache_read_input_tokens: 2000, cache_creation_input_tokens: 0 } }
   const cpuBefore = process.cpuUsage()
@@ -27,7 +30,8 @@ try {
   const streamedMs = performance.now() - started
   await usage.flushed()
   const cpu = process.cpuUsage(cpuBefore)
-  const writes = recorder.writes.filter(write => write.file === 'claude-usage.json')
+  // The one ledger file of earlier builds, or a thread's own ledger file (#555).
+  const writes = recorder.writes.filter(write => write.file === 'claude-usage.json' || /^[0-9a-f]{40}\.json$/u.test(write.file))
   recorder.restore()
   console.log(JSON.stringify({ writes: writes.length, bytesWritten: writes.reduce((sum, write) => sum + write.bytes, 0),
     archiveBytes: writes.at(-1)?.bytes ?? 0, streamedMs, cpuMs: (cpu.user + cpu.system) / 1000, output: usage.get('thread-0')?.latest?.output }))
