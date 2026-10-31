@@ -4225,6 +4225,198 @@
         }
       }
     },
+    "%@ no longer offers %@, so this thread now uses %@." : {
+      "comment" : "A note in a thread: its model was retired by the provider (first), and Sotto moved it to another (third).",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يعد %@ يقدّم %@، لذا تستخدم هذه المحادثة الآن %@."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ আর %@ দেয় না, তাই এই থ্রেড এখন %@ ব্যবহার করে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ už nenabízí %@, takže toto vlákno teď používá %@."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ tilbyder ikke længere %@, så denne tråd bruger nu %@."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ bietet %@ nicht mehr an, daher nutzt dieser Thread jetzt %@."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το %@ δεν προσφέρει πλέον το %@, οπότε αυτό το νήμα χρησιμοποιεί τώρα το %@."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no longer offers %@, so this thread now uses %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ya no ofrece %@, así que este hilo ahora usa %@."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ya no ofrece %@, así que este hilo ahora usa %@."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ya no ofrece %@, así que este hilo ahora usa %@."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ei enää tarjoa mallia %@, joten tämä ketju käyttää nyt mallia %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ne propose plus %@, ce fil utilise donc désormais %@."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ अब %@ नहीं देता, इसलिए यह थ्रेड अब %@ का उपयोग करता है।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A(z) %@ már nem kínálja ezt: %@, ezért ez a szál mostantól ezt használja: %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non offre più %@, quindi questo thread ora usa %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は %@ の提供を終了したため、このスレッドは今後 %@ を使います。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ आता %@ देत नाही, म्हणून हा थ्रेड आता %@ वापरतो."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ tilbyr ikke lenger %@, så denne tråden bruker nå %@."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ biedt %@ niet meer aan, dus deze thread gebruikt nu %@."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ nie oferuje już modelu %@, więc ten wątek używa teraz modelu %@."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não oferece mais %@, então esta conversa agora usa %@."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ já não oferece %@, por isso esta conversa passa a usar %@."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ nu mai oferă %@, așa că acest fir folosește acum %@."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ erbjuder inte längre %@, så den här tråden använder nu %@."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ இனி %@ ஐ வழங்குவதில்லை, எனவே இந்தத் திரி இப்போது %@ ஐப் பயன்படுத்துகிறது."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ఇకపై %@ ను అందించదు, కాబట్టి ఈ థ్రెడ్ ఇప్పుడు %@ ను ఉపయోగిస్తుంది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ artık %@ sunmuyor, bu yüzden bu sohbet artık %@ kullanıyor."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ більше не пропонує %@, тож цей тред тепер використовує %@."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ اب %@ پیش نہیں کرتا، اس لیے یہ تھریڈ اب %@ استعمال کرتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 已不再提供 %@，因此此会话现在使用 %@。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 已不再提供 %@，因此此對話現在使用 %@。"
+          }
+        }
+      }
+    },
     "%@ so far" : {
       "comment" : "How long a check that is still running has taken, such as 6m 10s so far",
       "extractionState" : "manual",
