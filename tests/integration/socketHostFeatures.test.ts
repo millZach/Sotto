@@ -217,8 +217,8 @@ describe('the iPhone’s pull request sheet (#1281)', () => {
 
 describe('host version and features', () => {
   /** What a host lists whatever its Owl answers say, in health and its listener file, and in the hello to a paired client. */
-  const LISTED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'watcher-cursor', 'client-update-not-listed', 'thread-prompts', 'pull-request-confirmation', 'watcher-new-owner']
-  const GREETED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'client-update-not-listed', 'thread-prompts', 'pull-request-confirmation']
+  const LISTED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'watcher-cursor', 'client-update-not-listed', 'thread-prompts', 'pull-request-confirmation', 'watcher-new-owner', 'changed-thread-records']
+  const GREETED: readonly HostFeature[] = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'host-facts', 'provider-opencode', 'activity-bodies', 'failure-seen', 'client-update-outcomes', 'provider-cursor', 'client-update-not-listed', 'thread-prompts', 'pull-request-confirmation', 'changed-thread-records']
   /**
    * Features a host offers only where its own version's Owl answer is on (ADR-0072), and the answer each reads. Its OpenCode
    * sign-in also needs OpenCode's own adapter, which this host's fake is not; `hostOpenCode.test.ts` has that one.
@@ -321,8 +321,9 @@ describe('host version and features', () => {
     let emitShell: (state: ReturnType<HostService['shell']>) => void = () => undefined
     let unreadableShell = false
     const service: HostService = {
-      // What a later host might send: a shell this client cannot read.
-      shell: () => unreadableShell ? { ...fixture.host.service.shell(), host: 'a later shape' } as unknown as ReturnType<HostService['shell']> : fixture.host.service.shell(),
+      // What a later host might send: a shell this client cannot read. Its threads are still a list, which the host
+      // measures changed records from.
+      shell: () => { const shell = fixture.host.service.shell(); return unreadableShell ? { ...shell, host: { ...shell.host, connected: 'a later shape' } } as unknown as ReturnType<HostService['shell']> : shell },
       state: () => fixture.host.service.state(),
       threadDetail: id => id === 'streaming' ? structuredClone(current) : fixture.host.service.threadDetail(id),
       command: (command, identity) => fixture.host.service.command(command, identity),

@@ -305,7 +305,7 @@ async function roomContrast(page: Page): Promise<Array<{ name: string; ratio: nu
     const selectors = ['.watcher-head h1', '.watcher-head__list', '.watcher-head__count', '.watcher-glance__lead', '.watcher-glance__name', '.watcher-glance__why',
       '.watcher-pane .thread-chip', '.thread-options__caption', '.thread-chip-menu__options small', '.thread-chip-menu__foot', '.watched-note', '.watch-toggle', '.watch-toast > span',
       '.watcher-head__rooms button', '.watcher-group__label', '.watcher-group__count', '.watcher-row__title', '.watcher-row__status',
-      '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro h2', '.watcher-first__intro p',
+      '.watcher-row__where', '.watcher-row__asks > span', '.watcher-answer', '.watcher-list__foot', '.watcher-list .thread-nav__time', '.watcher-first__intro p', '.watcher-first__how',
       '.watcher-beside .thread-workspace__head h2', '.watcher-own__words > strong', '.watcher-own__said', '.watcher-own__none', '.watcher-own__toggle', '.watcher-own__files code',
       '.watcher-handover__lead > p', '.watcher-handover__ledger', '.watcher-handover__read', '.watcher-handover__text', '.thread-prompt__send[data-wide]',
       '.watcher-handover-message__lead', '.watcher-handover-message__ledger', '.watcher-handover__disclose',
@@ -448,14 +448,15 @@ test.describe("Watcher's room on the built app", () => {
       await expect(page.locator('.watcher-glance')).toContainText('2 need you')
       const choice = page.getByRole('group', { name: 'Watcher’s model' })
       await expect(choice.getByRole('combobox', { name: 'Thread model' })).toHaveText(/Sonnet 4\.5/)
-      await expect(choice.getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveText('Ask for approval')
+      // On Owl the quiet composer draws the shield at the pill's start, outside the model's group (ADR-0161).
+      await expect(page.locator('.thread-prompt').getByRole('combobox', { name: 'Watcher’s permissions' })).toHaveText('Ask for approval')
       // Devin is not offered for Watcher.
       await choice.getByRole('combobox', { name: 'Thread model' }).click()
       await expect(page.getByRole('dialog', { name: 'Choose model' }).getByRole('option', { name: /Devin/ })).toHaveCount(0)
       await page.keyboard.press('Escape')
       const send = page.getByRole('button', { name: 'Start Watcher and send' })
       await expect(send).toBeDisabled()
-      await expect(page.getByText('Your first message starts Watcher on Sonnet 4.5, with your own Claude Code account.')).toBeVisible()
+      await expect(page.getByText('On Sonnet 4.5, with your own Claude Code account.')).toBeVisible()
       for (const [width, height] of SIZES) {
         await resizeContentWindow(launched, width, height)
         await settle(page)
@@ -1768,11 +1769,131 @@ test.describe("Watcher's room on the built app", () => {
         await page.keyboard.press('Tab')
         await expect(card.getByRole('button', { name: 'Move 1 thread' })).toBeFocused()
         await page.keyboard.press('Enter')
-        await expect(page.getByText('You asked to move 1 thread to forge. Sotto reports its move here.')).toBeVisible()
+        await expect(card.getByText('You chose 1 of the threads Watcher proposed moving to forge.')).toBeVisible()
+        await expect(page.getByText('You asked to move 1 thread to forge. Sotto reports its move here.')).toHaveCount(1)
         await expect(card.getByRole('checkbox')).toHaveCount(0)
         await expect(page.locator('.move-card')).toHaveCount(1)
         await settle(page)
         await captureInto(movesEvidence, launched, `moves-proposal-moved-${appearance}-1280x800.png`)
+      })
+    })
+  })
+
+  test('a machine short on memory gets a move suggestion under the machines line, from the reading Watcher’s placement took (#1309)', async () => {
+    const FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10'
+    const now = new Date().toISOString()
+    const GIB = 1024 ** 3
+    const load = (cpu: number, available: number) => ({ observedAt: now, windowMs: 2_000, cpuBusyPercent: cpu, loadAverage: null, availableMemoryBytes: available * GIB,
+      windowStartAvailableMemoryBytes: available * GIB, memoryPressurePercent: null })
+    const facts = (name: string, family: 'windows' | 'linux', cpus: number, total: number) => ({ observedAt: now, os: { family, name, version: null }, architecture: 'x64',
+      totalMemoryBytes: total * GIB, freeMemoryBytes: null, logicalCpuCount: cpus })
+    // This computer reads short on memory; forge has headroom for three more workers.
+    const machines = (hostId: string): NonNullable<WatcherStandInSeed['machines']> => ({ status: 'ok', observedAt: now, newWorkersStart: { choice: 'watcher' }, machines: [
+      { hostId, name: 'This computer', thisComputer: true, connected: true, factsState: 'reported', facts: facts('Windows 11', 'windows', 16, 32), runningThreads: 1, load: load(30, 1.5),
+        placedNotStarted: 0, memoryState: 'short', cpuState: 'not-busy', headroom: 0 },
+      { hostId: FORGE, name: 'forge', thisComputer: false, connected: true, factsState: 'reported', facts: facts('Omarchy', 'linux', 24, 64), runningThreads: 1, load: load(20, 40),
+        placedNotStarted: 0, memoryState: 'enough', cpuState: 'not-busy', headroom: 3 }] })
+    // Watcher placed a start on forge, so the line read the machines once.
+    const more = (hostId: string, requestId: string): Partial<WatcherRoomState> => {
+      const receipt = { id: randomUUID(), requestId, retryKey: randomUUID(), digest: '0'.repeat(64), action: 'start' as const, target: { hostId: FORGE, threadId: 'there' },
+        generation: 0, deliveryState: 'accepted' as const, createdAt: now, updatedAt: now, receiptId: randomUUID(), cardId: randomUUID() }
+      void hostId
+      return { receipts: [receipt], receiptReplies: [{ operationId: receipt.id, messageId: 'watcher-reply' }],
+        receiptPlacements: [{ operationId: receipt.id, placement: { hostId: FORGE, name: 'forge', awayFromDefault: false } }] }
+    }
+    const moves = (hostId: string): NonNullable<WatcherStandInSeed['moves']> => ({
+      machines: [{ hostId: FORGE, name: 'forge', connected: true }], localHostId: hostId, cards: [],
+      preview: { status: 'ok', confirmationId: randomUUID(), expiresAt: now, machine: 'forge', threads: [
+        { threadId: hostEntityKey(hostId, 'grok-previews'), outcome: 'moves', model: { name: 'Claude Sonnet 4.6' } }] },
+      started: [{ id: randomUUID(), state: 'thread-started', source: { hostId, threadId: 'grok-previews' }, hostId: FORGE, machine: 'forge', model: { name: 'Claude Sonnet 4.6' }, at: now, updatedAt: now }],
+    })
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance, 'reduced'), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, more, machines, moves })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        await expect(page.getByRole('group', { name: 'Machines and what works on each' }).locator('.watcher-machines__wide')).toContainText('short on memory')
+        const line = page.locator('.watcher-move-suggestion')
+        await expect(line).toContainText('This computer is short on memory, and forge has room. Move Grok voice previews there?')
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `The move suggestion at ${width}x${height}` }).toEqual([])
+          await captureInto(movesEvidence, launched, `moves-suggestion-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `moves-suggestion-${appearance}-${width}x${height}`)
+        }
+        await resizeContentWindow(launched, 1280, 800)
+        // From the keyboard: Move, Choose threads… and Not now follow the sentence in order.
+        const moveButton = line.getByRole('button', { name: 'Move to forge', exact: true })
+        await moveButton.focus()
+        await page.keyboard.press('Tab')
+        await expect(line.getByRole('button', { name: 'Choose threads to move to forge' })).toBeFocused()
+        await page.keyboard.press('Tab')
+        await expect(line.getByRole('button', { name: 'Not now, until This computer reads fine again' })).toBeFocused()
+        await page.keyboard.press('Shift+Tab')
+        await page.keyboard.press('Shift+Tab')
+        await page.keyboard.press('Enter')
+        // The move starts, its card reports it in Watcher's conversation, and the line is gone until the next reading.
+        await expect(line).toHaveCount(0)
+        await expect(page.locator('.move-card')).toHaveCount(1)
+        await expect(page.getByRole('group', { name: 'Machines and what works on each' }).getByRole('button', { name: /^This computer/u })).toBeFocused()
+        await settle(page)
+        await captureInto(movesEvidence, launched, `moves-suggestion-moved-${appearance}-1280x800.png`)
+      })
+    })
+  })
+
+  test('Keep it here on a move waiting on its machine asks first on the card, then waits to call the move off (#1178 part 4)', async () => {
+    const FORGE = '0b7f4c1e-2a9d-4f61-8c3e-5d2b9a7e4f10'
+    const now = new Date().toISOString()
+    const moves = (hostId: string): NonNullable<WatcherStandInSeed['moves']> => ({
+      machines: [{ hostId: FORGE, name: 'forge', connected: false }],
+      cards: [{ id: randomUUID(), state: 'thread-started', source: { hostId, threadId: 'grok-previews' }, moved: { hostId: FORGE, threadId: 'previews-there' }, hostId: FORGE,
+        machine: 'forge', model: { name: 'Claude Sonnet 4.6' }, waiting: true, waitingOn: 'forge', keepable: true, at: now, updatedAt: now }],
+    })
+    await onReleaseTrack('owl', async () => {
+      for (const appearance of ['dark', 'light'] as const) await withSotto(launchOptions('t3-code', appearance, 'reduced'), async (launched) => {
+        const { page } = launched
+        await openThreads(page)
+        await seedRoom(page, { current: true, moves })
+        await resizeContentWindow(launched, 1280, 800)
+        await openRoom(page)
+        const card = page.locator('.move-card')
+        await expect(card).toContainText('Waiting for forge')
+        await expect(card).toContainText('This thread is waiting for forge to answer about its move. Nothing was lost.')
+        // Forge made the new thread, so Keep it here asks first, on the card; Cancel takes focus and gives it back.
+        const keep = card.getByRole('button', { name: 'Keep it here' })
+        await keep.focus()
+        await page.keyboard.press('Enter')
+        const question = card.getByRole('group', { name: /Stop the new thread on forge and keep this one here\?/u })
+        await expect(question.getByRole('button', { name: 'Cancel' })).toBeFocused()
+        for (const [width, height] of SIZES) {
+          await resizeContentWindow(launched, width, height)
+          await settle(page)
+          await card.scrollIntoViewIfNeeded()
+          await settle(page)
+          await expect.poll(() => pageBoundProblems(page), { message: `Keep it here's question at ${width}x${height}` }).toEqual([])
+          await captureInto(movesEvidence, launched, `moves-keep-question-${appearance}-${width}x${height}.png`)
+          await contrastHolds(page, `moves-keep-question-${appearance}-${width}x${height}`)
+        }
+        await resizeContentWindow(launched, 1280, 800)
+        await question.getByRole('button', { name: 'Cancel' }).focus()
+        await page.keyboard.press('Escape')
+        await expect(question).toHaveCount(0)
+        await expect(keep).toBeFocused()
+        await page.keyboard.press('Enter')
+        await page.keyboard.press('Shift+Tab')
+        await expect(question.getByRole('button', { name: 'Stop it there and keep this one' })).toBeFocused()
+        await page.keyboard.press('Enter')
+        // Pressed while forge can't be reached: remembered, and the thread waits, fenced, for forge to call the move off.
+        await expect(card).toContainText('Keeping it here')
+        await expect(card).toContainText('You chose to keep this thread here. Sotto asks forge to call the move off')
+        await expect(card.getByRole('button')).toHaveCount(1)
+        await settle(page)
+        await captureInto(movesEvidence, launched, `moves-keeping-${appearance}-1280x800.png`)
+        await contrastHolds(page, `moves-keeping-${appearance}-1280x800`)
       })
     })
   })
@@ -2038,13 +2159,18 @@ test.describe("Watcher's room on the built app", () => {
         await expect(rowOwl).toHaveAttribute('aria-pressed', 'false')
         await holdOwlSky(page)
         await captureWindow(launched.app, resolve(permissionEvidence, `threads-row-owl-${appearance}-1280x800.png`))
-        // From the keyboard: Tab from the row goes through its actions, Rename and Regenerate title, to the owl.
+        // From the keyboard: the row's actions are its menu's (ADR-0164). Shift+F10 opens it, and Watch is a row of it,
+        // ticked while Watcher watches; Enter presses it and the focus goes back to the row.
         await threads.getByRole('button', { name: 'Weekly note', exact: true }).focus()
-        for (const name of ['Rename Weekly note', 'Regenerate title for Weekly note', 'Watch Weekly note']) {
-          await page.keyboard.press('Tab')
-          expect(await focusedName(page)).toBe(name)
-        }
+        await page.keyboard.press('Shift+F10')
+        const rowMenu = threads.getByRole('menu', { name: 'Actions for Weekly note' })
+        await expect(rowMenu).toBeVisible()
+        const watchRow = rowMenu.getByRole('menuitemcheckbox', { name: 'Watch' })
+        await expect(watchRow).toHaveAttribute('aria-checked', 'false')
+        while (await page.evaluate(() => document.activeElement?.textContent?.trim()) !== 'Watch') await page.keyboard.press('ArrowDown')
         await page.keyboard.press('Enter')
+        await expect(rowMenu).toHaveCount(0)
+        expect(await focusedName(page)).toBe('Weekly note')
         await expect(watch).toHaveAttribute('aria-pressed', 'true')
         await watch.click()
         await expect(watch).toHaveAttribute('aria-pressed', 'false')

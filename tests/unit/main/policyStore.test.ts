@@ -169,17 +169,45 @@ describe('PolicyStore', () => {
       expect(policies.authorizes(record)).toEqual({ allowed: false, reason: 'always-confirm', policyId: record.id })
     }
   })
-  it('sets one paired client’s answers from the owner’s switch: one record while on, none active once off', () => {
+  it('sets one paired client’s answers: one record while allowed, none active once denied', () => {
+    const desk = { clientId: 'desk', user: '', transport: 'socket' } as const
+    expect(policies.mayGrant(desk)).toMatchObject({ allowed: false, reason: 'no-policy' })
+    policies.setRemoteAnswers('desk', true, 'The user allowed this desktop to answer.')
+    policies.setRemoteAnswers('desk', true, 'The user allowed this desktop to answer.')
+    expect(policies.list({ scope: 'client:desk' }).filter(record => record.action === 'remote-answer')).toHaveLength(1)
+    expect(policies.mayGrant(desk)).toMatchObject({ allowed: true, reason: 'paired-client' })
+    expect(policies.mayGrant({ ...desk, clientId: 'other' }).allowed).toBe(false)
+    policies.setRemoteAnswers('desk', false, 'The user turned off answers.')
+    expect(policies.list({ scope: 'client:desk' }).filter(record => record.action === 'remote-answer')).toEqual([])
+    expect(policies.mayGrant(desk)).toMatchObject({ allowed: false, reason: 'unpaired' })
+  })
+  it('gives a paired phone its answers where nothing grants or holds them, and writes nothing where something does', () => {
     const phone = { clientId: 'phone', user: '', transport: 'socket' } as const
-    expect(policies.mayGrant(phone)).toMatchObject({ allowed: false, reason: 'no-policy' })
-    policies.setRemoteAnswers('phone', true, 'The user turned on Can answer.')
-    policies.setRemoteAnswers('phone', true, 'The user turned on Can answer.')
-    expect(policies.list({ scope: 'client:phone' }).filter(record => record.action === 'remote-answer')).toHaveLength(1)
+    const records = (clientId: string) => policies.list({ scope: `client:${clientId}`, includeInactive: true }).filter(record => record.action === 'remote-answer')
+    // Never written, as for a phone paired before pairing granted answers: written once.
+    expect(policies.ensureRemoteAnswers('phone', 'Paired by code.')).toBe(true)
+    expect(policies.ensureRemoteAnswers('phone', 'Paired by code.')).toBe(false)
+    expect(records('phone')).toHaveLength(1)
     expect(policies.mayGrant(phone)).toMatchObject({ allowed: true, reason: 'paired-client' })
-    expect(policies.mayGrant({ ...phone, clientId: 'other' }).allowed).toBe(false)
-    policies.setRemoteAnswers('phone', false, 'The user turned off Can answer.')
-    expect(policies.list({ scope: 'client:phone' }).filter(record => record.action === 'remote-answer')).toEqual([])
-    expect(policies.mayGrant(phone)).toMatchObject({ allowed: false, reason: 'unpaired' })
+    // Revoked, as Can answer turned off left a phone: written again.
+    policies.grantRemoteAnswers('off', 'Was on.'); policies.setRemoteAnswers('off', false, 'The user turned off Can answer.')
+    expect(policies.ensureRemoteAnswers('off', 'Paired by code.')).toBe(true)
+    expect(policies.mayGrant({ ...phone, clientId: 'off' }).allowed).toBe(true)
+    // Expired: written again.
+    policies.grantRemoteAnswers('lapsed', 'Answers for a while.', '2026-09-10T11:00:00.000Z')
+    expect(policies.ensureRemoteAnswers('lapsed', 'Paired by code.')).toBe(true)
+    expect(policies.mayGrant({ ...phone, clientId: 'lapsed' }).allowed).toBe(true)
+    // A grant that will run out is not enough, since only Remove takes a paired phone's answers away: a lasting one is written.
+    policies.grantRemoteAnswers('temporary', 'Answers for a while.', '2999-01-01T00:00:00.000Z')
+    expect(policies.ensureRemoteAnswers('temporary', 'Paired by code.')).toBe(true)
+    expect(records('temporary').filter(record => record.expiresAt === null)).toHaveLength(1)
+    // Held behind an always-confirm boundary: the boundary is the owner's and stays, so nothing is written.
+    policies.grant({ action: 'remote-answer', resource: 'held', scope: 'client:held', effect: 'always-confirm', note: 'Always ask.' })
+    expect(policies.ensureRemoteAnswers('held', 'Paired by code.')).toBe(false)
+    expect(records('held')).toHaveLength(1)
+    // A record about another client, or a global one, says nothing about this one.
+    policies.grant({ action: 'remote-answer', note: 'Global.' })
+    expect(policies.ensureRemoteAnswers('fresh', 'Paired by code.')).toBe(true)
   })
   it('says a client\u2019s answers were revoked only when they were, not when they expired or a boundary holds them', () => {
     expect(policies.remoteAnswersRevoked('desk', at)).toBe(false)

@@ -220,10 +220,17 @@ test('the Git action commits and pushes from the header, asks before the default
     expect(await pane(page).locator('.git-action__label').evaluate(element => element.getBoundingClientRect().width)).toBeLessThanOrEqual(1)
     await resize(launched, 1280, 800)
 
-    // A folder without Git: Initialize Git, then Publish repository, since the new repository has no remote.
+    // A folder without Git: Initialize Git, a row of the pane's ··· menu rather than a button in its header (ADR-0163),
+    // then Publish repository, since the new repository has no remote.
     await createThread(page, 'Plain folder', 'Plain thread')
-    await expect(pane(page).getByRole('button', { name: 'Initialize Git' })).toBeVisible({ timeout: 20_000 })
-    await pane(page).getByRole('button', { name: 'Initialize Git' }).click()
+    await expect(pane(page).locator('.git-action')).toHaveCount(0)
+    await expect.poll(async () => {
+      await pane(page).getByRole('button', { name: 'More actions', exact: true }).click()
+      const offered = await pane(page).getByRole('menuitem', { name: 'Initialize Git', exact: true }).count()
+      if (offered === 0) await page.keyboard.press('Escape')
+      return offered
+    }, { timeout: 20_000 }).toBe(1)
+    await pane(page).getByRole('menuitem', { name: 'Initialize Git', exact: true }).click()
     await expect(notice(page)).toContainText('Git initialized.', { timeout: 30_000 })
     expect(existsSync(join(plain, '.git'))).toBe(true)
     // The new repository has an untracked file and no remote: Commit stands, and Publish repository waits in the menu.
@@ -312,9 +319,13 @@ node "${hold.replaceAll('\\', '/')}" "${directory.replaceAll('\\', '/')}"
     await expect(committing).resolves.toBeNull()
     await expect.poll(async () => page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === id)?.gitAction?.status, holder)).toBe('done')
     const previous = await page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === id)?.gitAction, holder)
-    const refusalCopy = 'Thread "Sibling sender" has queued follow-ups that did not send. Resume or remove them, then try again.'
-    const refused = await page.evaluate(async threadId => (await window.sotto!.agents!.command({ type: 'git-action', threadId, actionId: crypto.randomUUID(), action: 'commit' })).error, holder)
-    expect(refused).toBe(refusalCopy)
+    const refusalCopy = 'Thread "Sibling sender" has queued follow-ups that did not send. Nothing was changed. Resume or remove them, then try again.'
+    const refused = await page.evaluate(async threadId => {
+      const reply = await window.sotto!.agents!.command({ type: 'git-action', threadId, actionId: crypto.randomUUID(), action: 'commit' })
+      return { error: reply.error, hold: reply.checkoutHold ?? null }
+    }, holder)
+    // The reply names the thread holding the folder, as the window's own key, so the notice offers to open it (#1823).
+    expect(refused).toEqual({ error: refusalCopy, hold: { threadId: sibling } })
     expect(await page.evaluate(async id => (await window.sotto!.agents!.get()).host.threads.find(t => t.id === id)?.gitAction, holder)).toEqual(previous)
     for (const [width, height, appearance] of [[1600, 1000, 'dark'], [1600, 1000, 'light'], [1280, 800, 'dark'], [1280, 800, 'light'], [820, 560, 'dark'], [820, 560, 'light']] as const) {
       await page.evaluate(async appearance => { await window.sotto!.updateSettings({ appearance }) }, appearance)

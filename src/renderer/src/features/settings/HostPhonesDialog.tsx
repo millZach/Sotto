@@ -192,7 +192,7 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
           <p className="tt-paragraph"><Trans>Waiting for your approval in Tailscale. {name} uses Tailscale SSH, which asks you to approve this connection in your browser. The dialog fills in once you approve. Sotto waits up to 5 minutes.</Trans></p>
           <span className="host-phones-approval__actions">
             {host.tailscale?.url ? <Button aria-label={t`Open the Tailscale approval page for ${name}`} onClick={() => void bridge.command({ type: 'open-approval', id }).catch(() => undefined)}>{t`Open approval page`}</Button> : null}
-            <button type="button" className="host-setup__link tt-focusable" onClick={() => void window.sotto?.openExternalLink?.(TAILSCALE_GUIDE_URL)}>{t`Why Tailscale asks`}</button>
+            <button type="button" className="host-setup__link tt-focusable" data-outside-link="" onClick={() => void window.sotto?.openExternalLink?.(TAILSCALE_GUIDE_URL)}>{t`Why Tailscale asks`}</button>
           </span>
         </div>
       </div> : null}
@@ -253,8 +253,7 @@ export function HostPhonesDialog({ host, view, bridge, onClose }: {
         <h3>{connected || !view?.readAt ? t`Paired phones` : t`Paired phones, as of ${readAt}`}</h3>
         {state.phones.length ? <div className="hosts-list phones-list">
           {state.phones.map(phone => { const phoneName = phone.name; return <React.Fragment key={phone.clientId}>
-            <PhoneRow phone={phone} answersAvailable={state.answersAvailable} disabled={!live || busy}
-              onCanAnswer={allowed => void run({ type: 'set-can-answer', clientId: phone.clientId, allowed })} onRemove={() => setRemoveId(phone.clientId)} />
+            <PhoneRow phone={phone} disabled={!live || busy} onRemove={() => setRemoveId(phone.clientId)} />
             {removing?.clientId === phone.clientId ? <div className="hosts-notice host-phones-remove" role="group" aria-label={t`Remove ${phoneName}?`}
               onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setRemoveId(null) } }}>
               <p className="grow tt-paragraph"><Trans>Remove {phoneName}? It can no longer reach {name}, and its connection closes now. Threads stay on {name}. To use it again, pair it with a new code.</Trans></p>

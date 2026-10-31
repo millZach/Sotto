@@ -20,28 +20,16 @@
 .threads-view .thread-pane[data-under-controls] { --threads-pane-inset: var(--threads-winctl-inset, 0px); }
 .threads-view .thread-pane[data-under-controls] .thread-workspace__head { padding-right: calc(24px + var(--threads-pane-inset, 0px)); }
 
-/* In a split the header stops short of the layout controls: a margin, not padding. The header is the window's drag
-   handle and Chromium builds the drag region in tree order, so a no-drag box that comes earlier in the DOM (the controls
-   do, for the Tab order) is covered again by a drag box that comes later; a real click on them would move the window.
-   Leaving the header's box out from under them keeps the drag region off them. */
-.threads-view .thread-panes[data-split] .thread-workspace__head { position: relative; padding-right: 6px; margin-right: calc(90px + var(--threads-pane-inset, 0px)); }
-.threads-view .thread-panes[data-split] .thread-pane[data-controls='3'] > .thread-workspace__head { margin-right: calc(124px + var(--threads-pane-inset, 0px)); }
-.threads-view .thread-panes[data-split] .thread-pane[data-controls='4'] > .thread-workspace__head { margin-right: calc(158px + var(--threads-pane-inset, 0px)); }
-/* The focused pane carries a hairline of the accent at half strength along its whole top edge (the pane's, since its
-   header now stops short of the controls): one device pixel on a 2x screen, 1px below. The other panes' titles step back.
+/* In a split every control is the header's own, close last (ADR-0163), so a pane away from the window's corner keeps the
+   gap from the divider that its close always had. */
+.threads-view .thread-panes[data-split] .thread-pane:not([data-under-controls]) > .thread-workspace__head { padding-right: 12px; }
+/* The focused pane carries a hairline of the accent at half strength along its whole top edge: one device pixel on a 2x
+   screen, 1px below. The other panes' titles step back.
    Watcher's room marks its focused pane with the same edge. */
 .threads-view .thread-pane { --threads-pane-edge: inset 0 1px 0 color-mix(in oklab, var(--tt-accent) 50%, transparent); }
 @media (min-resolution: 2dppx) { .threads-view .thread-pane { --threads-pane-edge: inset 0 .5px 0 color-mix(in oklab, var(--tt-accent) 50%, transparent); } }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane[data-focused] { box-shadow: var(--threads-pane-edge); }
 .threads-view .thread-panes[data-split]:not([data-narrow]) .thread-pane:not([data-focused]) .thread-workspace__head h2 { color: var(--tt-text-2); }
-
-/* Layout controls sit at the header's end, beside the title they act on. They float over the header, which is the
-   window's drag handle, so they opt out of dragging themselves. */
-.threads-view .thread-pane__controls { position: absolute; top: 7px; right: calc(12px + var(--threads-pane-inset, 0px)); z-index: 1; display: flex; gap: 2px; -webkit-app-region: no-drag; }
-.threads-view .thread-pane__control { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
-.threads-view .thread-pane__control:hover, .threads-view .thread-pane__control[aria-pressed='true'] { background: var(--threads-hover); color: var(--tt-text); }
-.threads-view .thread-pane__grip { cursor: grab; }
-.threads-view .thread-pane__grip:active { cursor: grabbing; }
 
 .threads-view .thread-panes__divider { position: absolute; z-index: 2; touch-action: none; }
 .threads-view .thread-panes__divider[data-axis='columns'] { cursor: col-resize; }
@@ -62,7 +50,7 @@
    takes its own back. A docked tools panel takes the corner instead and reserves the room itself. */
 .threads-view:not([data-tools='docked']) .thread-panes[data-narrow] .thread-panes__tabs { padding-right: calc(12px + var(--threads-winctl-inset, 0px)); }
 .threads-view .thread-panes[data-narrow] .thread-pane[data-under-controls] { --threads-pane-inset: 0px; }
-.threads-view .thread-panes__tab { display: inline-flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: min(260px, 50%); min-height: 40px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; font-weight: 500; cursor: pointer; transition: color 120ms ease; }
+.threads-view .thread-panes__tab { display: inline-flex; flex: none; align-items: center; gap: 7px; min-width: 0; max-width: min(260px, 50%); min-height: 40px; padding: 0 12px; border: 0; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: 13px; font-weight: 500; transition: color 120ms ease; }
 .threads-view .thread-panes__tab > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .threads-view .thread-panes__tab:hover { color: var(--tt-text-2); }
 .threads-view .thread-panes__tab:focus-visible { outline-offset: -3px; }
@@ -85,21 +73,25 @@
 /* A thread on screen in another pane is outlined in the sidebar; the focused one keeps the filled row. */
 .threads-view .thread-nav__row[data-open] { border-color: var(--threads-selected-border); }
 
-/* A narrow pane recomposes its header like a narrow window does, and keeps the type sizes. Below 720px the header
-   actions no longer fit beside the title, so panes of an even split stack the same way and start their transcripts level.
-   A short pane stacks up to 1000px too: its title shares a row with the crumb, and the actions and layout controls would wrap beside it. */
+/* A narrow pane recomposes like a narrow window does, and keeps the type sizes: below 720px, and a short pane up to
+   1000px, its padding tightens, so panes of an even split start their transcripts level. */
 @container thread-pane (max-width: 720px) or ((max-height: 600px) and (max-width: 1000px)) {
   .threads-view .thread-pane .thread-workspace__head { padding-left: 14px; }
-  /* The project crumb is the first thing a narrow pane gives up; the thread's name is what identifies it. */
-  .threads-view .thread-pane .thread-workspace__crumb { display: none; }
-  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy] { display: flex; flex: 0 1 auto; min-width: 32px; }
-  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy]::before,
-  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy] > :not(.working-copy) { display: none; }
   .threads-view .thread-pane .working-copy__trigger { max-width: 160px; }
   .threads-view .thread-pane .thread-workspace__transcript { padding: 22px 18px calc(22px + var(--thread-compose-height, 0px)); }
   .threads-view .thread-pane .thread-workspace__compose { padding: 8px 16px 16px; }
   .threads-view .thread-pane .thread-workspace__error { margin-inline: 18px; }
   .threads-view .thread-pane .thread-message[data-role='user'] { margin-left: 24px; }
+}
+
+/* The project crumb is the first thing a narrow pane gives up; the thread's name is what identifies it. With the header's
+   controls down to the Git action, Watch, ··· and close (ADR-0163), a pane of a two-pane split at 1600 keeps the title,
+   project and folder whole, so the project goes only below 560px. */
+@container thread-pane (max-width: 560px) {
+  .threads-view .thread-pane .thread-workspace__crumb { display: none; }
+  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy] { display: flex; flex: 0 1 auto; min-width: 32px; }
+  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy]::before,
+  .threads-view .thread-pane .thread-workspace__crumb[data-has-working-copy] > :not(.working-copy) { display: none; }
 }
 
 /* A short pane (rows of panes on a laptop, or a short window) composes like a short window does, so the transcript keeps
@@ -109,8 +101,6 @@
   /* The composer keeps its actions whole; the transcript above gives way. */
   .threads-view .thread-pane .thread-workspace__compose { flex: none; padding-block: 4px 10px; }
   .threads-view .thread-pane > .thread-transcript { min-height: min(96px, 24%); }
-  /* The header is already one row at its smallest, so a short pane gives its height to the transcript and composer. */
-  .threads-view .thread-pane > header .thread-pane__controls, .threads-view .thread-pane .thread-pane__controls { top: 7px; }
   .threads-view .thread-pane .thread-workspace__compose .thread-prompt { padding: 10px 14px 8px; }
   .threads-view .thread-pane .thread-workspace__compose .thread-prompt :is(textarea, .prompt-editor) { min-height: 36px; max-height: 120px; }
   .threads-view .thread-pane .thread-workspace__compose .thread-prompt__footer { margin-top: 4px; }

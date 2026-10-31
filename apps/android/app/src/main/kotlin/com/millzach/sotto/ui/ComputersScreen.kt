@@ -78,14 +78,13 @@ fun ComputersScreen(model: AppModel, openComputer: (String) -> Unit) {
                         }
                     }
                 }
-                Text("Whether this phone can answer questions and permissions is set in Sotto on each computer.", style = figtree(13), color = p.muted)
             }
         }
     }
 }
 
-// One computer: whether it can be reached, its names, whether this phone may answer there and how to allow
-// it, this phone's client ID, Rename and Remove.
+// One computer: whether it can be reached, its names, this phone's client ID, Rename and Remove. Pairing let this
+// phone answer there, so the page says nothing about answering (ADR-0033, October 30 amendment).
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun ComputerDetailScreen(model: AppModel, hostID: String, close: () -> Unit) {
@@ -118,17 +117,9 @@ fun ComputerDetailScreen(model: AppModel, hostID: String, close: () -> Unit) {
                     Hairline()
                     DetailRow("Address", computer.endpoint?.address ?: computer.address, mono = true)
                     Hairline()
-                    DetailRow("Answers from this phone", answers(model, hostID, status), mono = false)
-                    Hairline()
                     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)) {
                         Text("Client ID", style = figtree(16), color = p.ink)
                         SelectionContainer { Text(computer.pairing.clientId, style = figtree(14).copy(fontFamily = FontFamily.Monospace), color = p.muted) }
-                    }
-                }
-                if (status == ComputerStatus.Online && !model.mayAnswer(hostID)) {
-                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Text("To answer questions and permissions from this phone, open Sotto on ${computer.name}, go to Settings › Hosts & phones and turn on Can answer for this phone.", style = figtree(15), color = p.muted)
-                        Text("For a computer without a screen, turn it on in Sotto on your main computer: Settings › Hosts & phones, then Phones on its row. Or run its --allow-answers command with this phone’s client ID.", style = figtree(15), color = p.muted)
                     }
                 }
                 Column(Modifier.fillMaxWidth().background(p.surface, RoundedCornerShape(16.dp))) {
@@ -173,12 +164,6 @@ fun ComputerDetailScreen(model: AppModel, hostID: String, close: () -> Unit) {
             containerColor = p.surface,
         )
     }
-}
-
-private fun answers(model: AppModel, hostID: String, status: ComputerStatus) = when (status) {
-    ComputerStatus.Online -> if (model.mayAnswer(hostID)) "Allowed" else "Not allowed yet"
-    ComputerStatus.Connecting -> "Checking…"
-    ComputerStatus.Unreachable -> "Shown once it’s back"
 }
 
 // Online, connecting, or can't be reached with what to do about it.

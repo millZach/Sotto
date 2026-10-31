@@ -795,7 +795,7 @@ msgid "A merged thread stays put until you settle it."
 msgstr ""
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
-msgid "A paired phone reads threads and replies. It answers questions and permissions only after you turn on Can answer for it."
+msgid "A paired phone reads threads, replies, and answers questions and permissions. Remove a phone to take that away."
 msgstr ""
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
@@ -1271,14 +1271,6 @@ msgstr ""
 #. After a step that is done, as in "Signed in by the agent".
 #: src/renderer/src/features/settings/HostSetupChecklist.tsx
 msgid "by the agent"
-msgstr ""
-
-#: src/renderer/src/features/settings/phoneParts.tsx
-msgid "Can answer"
-msgstr ""
-
-#: src/renderer/src/features/settings/phoneParts.tsx
-msgid "Can answer: let {name} answer questions and permissions"
 msgstr ""
 
 #: src/renderer/src/features/settings/DevicePicker.tsx
@@ -2476,10 +2468,6 @@ msgstr ""
 msgid "For settled threads on this computer. A cleared thread can’t be brought back."
 msgstr ""
 
-#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
-msgid "Force reload the window"
-msgstr ""
-
 #. An example SSH host: forge and server are machine names, user an account name.
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "forge or user@server"
@@ -3232,6 +3220,14 @@ msgid "Motion"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Move between sidebar, pane and composer"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Move in the thread list"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Move to the next thread in the sidebar’s order."
 msgstr ""
 
@@ -3586,6 +3582,14 @@ msgstr ""
 msgid "On"
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "On a row in the thread list: Open, Open beside, Rename, Regenerate title, Watch and Settle. The menu key and a right-click open it too."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "On a row in the thread list."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "On for {who}, so the host starts before anyone signs in to {name} and keeps running after they sign out."
 msgstr ""
@@ -3624,6 +3628,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "Only this computer is connected, so new workers start here. Add a machine in <0>Hosts & phones</0>."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Open a thread’s menu"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -3745,6 +3753,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/CloudSpeechModelList.tsx
 msgid "OpenRouter’s speech models could not be read. Nothing was changed."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Opens Settings from any page."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -4297,6 +4309,10 @@ msgstr ""
 msgid "Rename {current}"
 msgstr ""
 
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Rename the thread"
+msgstr ""
+
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
 msgid "Replace key"
 msgstr ""
@@ -4429,10 +4445,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "Room the preview shows"
-msgstr ""
-
-#: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Run a quick input-level test."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -4652,6 +4664,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
 msgid "Shell sandbox"
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "Shift+F6 goes back. In a split it goes round every pane. A terminal keeps F6; Ctrl+Tab leaves it."
 msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
@@ -5887,6 +5903,10 @@ msgstr ""
 #. {project} is the name of a project in the thread list.
 #: src/renderer/src/features/settings/HostProviderAgent.tsx
 msgid "The thread <0>{title}</0> goes in the <1>{project}</1> project."
+msgstr ""
+
+#: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
+msgid "The thread list is one Tab stop. Up and Down move through it, Home and End go to its ends, Right and Left open and close a folder, and Enter opens the thread."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostProviderAgent.tsx

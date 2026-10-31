@@ -30,10 +30,12 @@ export function StepMark({ step }: { readonly step: Step }): ReactNode {
   </span>
 }
 
-/** A paired phone: when it paired, whether it is connected, what it may do, its Can answer switch and Remove. */
-export function PhoneRow({ phone, answersAvailable, onCanAnswer, onRemove, disabled = false }: {
-  readonly phone: PairedPhone; readonly answersAvailable: boolean
-  readonly onCanAnswer: (allowed: boolean) => void; readonly onRemove: () => void
+/**
+ * A paired phone: when it paired, whether it is connected, what it may do, and Remove. Pairing let it answer, so Remove is
+ * the only control: there is no switch for answers (ADR-0033).
+ */
+export function PhoneRow({ phone, onRemove, disabled = false }: {
+  readonly phone: PairedPhone; readonly onRemove: () => void
   /** Shown as it was last read, from a host that cannot be reached now. */
   readonly disabled?: boolean
 }): ReactNode {
@@ -47,13 +49,6 @@ export function PhoneRow({ phone, answersAvailable, onCanAnswer, onRemove, disab
       <p className="phones-grant tt-paragraph">{phone.canAnswer ? t`Reads and replies. Can answer questions and permissions.` : t`Reads and replies. Can’t answer questions or permissions.`}</p>
     </div>
     <div className="hosts-row__actions">
-      <span className="phones-answer">
-        <span aria-hidden="true">{t`Can answer`}</span>
-        <button type="button" role="switch" aria-checked={phone.canAnswer} aria-label={t`Can answer: let ${name} answer questions and permissions`} disabled={disabled || !answersAvailable}
-          className="tt-toggle tt-focusable hosts-switch__control" onClick={() => onCanAnswer(!phone.canAnswer)}>
-          <span className="tt-toggle__track" aria-hidden="true"><span className="tt-toggle__thumb" /></span>
-        </button>
-      </span>
       <Button variant="danger" aria-label={t`Remove ${name}`} disabled={disabled} onClick={onRemove}>{t({ message: 'Remove', comment: 'Removes a paired phone.' })}</Button>
     </div>
   </section>

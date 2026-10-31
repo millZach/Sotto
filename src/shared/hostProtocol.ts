@@ -20,7 +20,7 @@ import { PASTED_CODE_MAX } from './hostProviders'
 import { opencodeHostCallSchema } from './opencodeSignIn'
 import type { HeldProviders } from './heldProviders'
 import { agentActivitySchema, type AgentActivity } from './agentActivity'
-import { providerIdSchema, type ProviderClientUpdate, type ProviderId } from './agents'
+import { agentChangedThreadRecordsSchema, providerIdSchema, type AgentChangedThreadRecords, type ProviderClientUpdate, type ProviderId } from './agents'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema } from './usageDashboard'
 import { HOST_UPDATE_STEPS, type HostUpdateStep } from './hostUpdates'
 import { hostBranchMoveRequestSchema } from './branchMoves'
@@ -333,15 +333,21 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * move: the same move again answers the same thread. Its permission is held to what the host lets that desktop give.
  * Only where the host's Owl answer turns on Work across machines, to a client the launch script recorded as a desktop.
  * `thread-move-source`: the host also lets one of its own threads be a move's source (#1178 part 3): `thread-move` takes
- * `hold`, `handover`, `settle` and `release` for it, on the same terms as `thread-move`.
+ * `hold`, `handover`, `settle` and `release` for it, on the same terms as `thread-move`. `thread-move-keep`: the host takes
+ * `keep`, which calls off a move it was asked to start, fencing its ID and stopping and settling any thread it made for it
+ * (#1178 part 4), on the same terms.
+ * `changed-thread-records`: to a client that accepts it, each shell push carries `threads`, the thread records that changed
+ * since the last shell push written to that connection, with the state's own `host.threads` empty (#996, ADR-0028's
+ * October 30 amendment). Hello, a `shell` read and a command's answer still carry every record; a `shell` read makes the
+ * next push list every record. Every listener lists it, to desktops and phones alike.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'thread-move-source'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'thread-move-source', 'thread-move-keep', 'changed-thread-records'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'thread-move-source']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'thread-move-source', 'thread-move-keep']
 /**
  * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
  * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
@@ -464,8 +470,13 @@ const id = z.string().min(1).max(512)
 export const hostAnswerTargetSchema = z.object({ threadId: id, providerId: providerIdSchema, requestId: id,
   questionsDigest: z.string().regex(/^[a-f0-9]{64}$/u) }).strict()
 export type HostAnswerTarget = z.infer<typeof hostAnswerTargetSchema>
-/** Feature names are read leniently, so a name this build does not know is ignored rather than refused. */
-const featureList = z.array(z.string().min(1).max(64)).max(64)
+/**
+ * Feature names are read leniently, so a name this build does not know is ignored rather than refused. The list holds
+ * many more than any build lists: a host whose list went past an older cap of 64 was read as another version of Sotto
+ * (October 30, 2026), and a later host lists names this build has never heard of.
+ */
+export const HOST_FEATURE_LIST_MAX = 512
+const featureList = z.array(z.string().min(1).max(64)).max(HOST_FEATURE_LIST_MAX)
 const sottoVersion = z.string().min(1).max(64)
 const base = { v: z.literal(1), id, session: z.string().min(1).max(2048) }
 /** An image as it crosses the socket: base64 inside one frame, at most 10 MiB of bytes. */
@@ -625,7 +636,12 @@ export type HostClientShell = AgentState & { watcher?: WatcherPhoneState | undef
 export type HostWireShell = Omit<HostClientShell, 'host'> & {
   host: Omit<AgentState['host'], 'models'> & { models?: AgentModel[] | undefined; modelsRevision?: number | undefined }
 }
-export type HostPush = { v: 1; event: 'shell'; state: HostWireShell; eventPage?: HostEventPage | undefined } | { v: 1; event: 'detail'; detail: AgentThreadDetail | null; threadId: string }
+/**
+ * `threads` is on a shell push only to a client whose hello accepted `changed-thread-records` (#996): the thread records
+ * that changed since the last shell push to that connection, in the shape the window's broadcast has (ADR-0028), with the
+ * state's own `host.threads` left empty. A null base names every record.
+ */
+export type HostPush = { v: 1; event: 'shell'; state: HostWireShell; eventPage?: HostEventPage | undefined; threads?: AgentChangedThreadRecords | undefined } | { v: 1; event: 'detail'; detail: AgentThreadDetail | null; threadId: string }
   | { v: 1; event: 'watcher-state'; projection: z.infer<typeof watcherHostProjectionSchema> }
   | { v: 1; event: 'detail-delta'; threadId: string; delta: AgentThreadDetailDelta }
   | { v: 1; event: 'answer-receipt'; acceptedAnswer: HostAnswerTarget & { decisionId: string } }
@@ -717,7 +733,7 @@ export const hostResponseSchema = z.discriminatedUnion('ok', [
 ])
 export const hostPushSchema = z.discriminatedUnion('event', [
   z.object({ v: z.literal(1), event: z.literal('watcher-state'), projection: watcherHostProjectionSchema }),
-  z.object({ v: z.literal(1), event: z.literal('shell'), state: protocolAgentStateSchema, eventPage: hostEventPageSchema.optional() }),
+  z.object({ v: z.literal(1), event: z.literal('shell'), state: protocolAgentStateSchema, eventPage: hostEventPageSchema.optional(), threads: agentChangedThreadRecordsSchema.optional() }),
   z.object({ v: z.literal(1), event: z.literal('detail'), threadId: id, detail: agentThreadDetailResultSchema }),
   z.object({ v: z.literal(1), event: z.literal('detail-delta'), threadId: id, delta: agentThreadDetailDeltaSchema }),
   z.object({ v: z.literal(1), event: z.literal('answer-receipt'), acceptedAnswer: hostAnswerTargetSchema.extend({ decisionId: id }) }),

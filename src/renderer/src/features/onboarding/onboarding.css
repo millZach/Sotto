@@ -1,6 +1,8 @@
 /* First-run setup's steps after the welcome: look, coding agents, first project,
    other computers and the iPhone. The shell, the card, the progress and the
-   dictation steps are in global.css. Colour comes only from theme roles. */
+   dictation steps are in global.css. Colour comes only from theme roles.
+   Everything on the card is a fill of the inset with no outline, rows on it divided by a 2px line of the card
+   (ADR-0110, #1831). */
 
 .onboarding-welcome__mark {
   display: block;
@@ -24,27 +26,25 @@
   display: inline-flex;
   justify-self: start;
   gap: 2px;
-  border: 1px solid var(--tt-hairline);
-  border-radius: var(--tt-radius-md);
-  background: var(--tt-surface-sunken);
+  border-radius: var(--tt-radius-sm);
+  background: var(--tt-card-inset);
   padding: 3px;
 }
 
 .onboarding-card .onboarding-look__mode {
   min-height: 32px;
   border: 0;
-  border-radius: 7px;
+  border-radius: 4px;
   background: transparent;
   padding: 0 14px;
   color: var(--tt-text-muted);
-  cursor: pointer;
   font-size: 13px;
   font-weight: 600;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 .onboarding-look__mode[aria-checked='true'] {
-  background: var(--tt-surface);
+  background: var(--tt-segment-on);
   box-shadow: var(--tt-shadow-sm);
   color: var(--tt-text);
 }
@@ -58,23 +58,23 @@
 .onboarding-card .onboarding-look__theme {
   display: grid;
   gap: 7px;
-  border: 1px solid var(--tt-hairline);
+  border: 0;
   border-radius: 12px;
-  background: transparent;
+  background: var(--tt-card-inset);
   padding: 7px;
   color: var(--tt-text);
-  cursor: pointer;
   text-align: left;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 
 .onboarding-look__theme:hover {
-  border-color: var(--tt-border);
+  background: var(--tt-hover);
 }
 
+/* The chosen theme wears the selected card and the accent inside its edge, as Settings › Appearance's tiles do. */
 .onboarding-look__theme[aria-checked='true'] {
-  border-color: var(--tt-accent);
-  box-shadow: 0 0 0 1px var(--tt-accent);
+  background: var(--tt-card-selected);
+  box-shadow: inset 0 0 0 2px var(--tt-accent);
 }
 
 /* A theme's own colours paint its preview, set inline from its palette. */
@@ -138,9 +138,8 @@
   display: grid;
   margin: 0;
   overflow: hidden;
-  border: 1px solid var(--tt-hairline);
   border-radius: 12px;
-  background: var(--tt-surface-sunken);
+  background: var(--tt-card-inset);
   padding: 0;
   list-style: none;
 }
@@ -150,7 +149,7 @@
   grid-template-columns: 32px minmax(0, 1fr) auto auto;
   gap: 8px 12px;
   align-items: center;
-  border-top: 1px solid var(--tt-hairline);
+  border-top: 2px solid var(--tt-card);
   padding: 8px 14px;
 }
 
@@ -164,7 +163,7 @@
   height: 32px;
   place-items: center;
   border-radius: 9px;
-  background: var(--tt-surface);
+  background: var(--tt-card);
   color: var(--tt-text);
 }
 
@@ -241,9 +240,8 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  border: 1px solid var(--tt-hairline);
   border-radius: 12px;
-  background: var(--tt-surface-sunken);
+  background: var(--tt-card-inset);
   padding: 12px 14px;
 }
 
@@ -282,9 +280,8 @@
   display: flex;
   align-items: flex-start;
   gap: 12px;
-  border: 1px dashed var(--tt-border);
   border-radius: 12px;
-  background: var(--tt-surface-sunken);
+  background: var(--tt-card-inset);
   padding: 14px 16px;
   color: var(--tt-text-muted);
   font-size: 13px;
@@ -314,9 +311,8 @@
   grid-template-columns: 28px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: start;
-  border: 1px solid var(--tt-hairline);
   border-radius: 12px;
-  background: var(--tt-surface-sunken);
+  background: var(--tt-card-inset);
   padding: 12px 16px;
 }
 
@@ -346,7 +342,7 @@
   height: 26px;
   place-items: center;
   border-radius: 4px;
-  background: var(--tt-surface);
+  background: var(--tt-card);
   font-size: 12.5px;
   font-weight: 700;
 }
@@ -357,9 +353,8 @@
   align-items: center;
   gap: 14px;
   margin-top: 4px;
-  border: 1px solid var(--tt-hairline);
   border-radius: 10px;
-  background: var(--tt-canvas);
+  background: var(--tt-card);
   padding: 8px 8px 8px 12px;
   color: var(--tt-text-muted);
   font-size: 12.5px;
@@ -466,13 +461,13 @@
   align-items: center;
   gap: 12px;
   padding: 8px 14px;
-  border: 1px solid var(--tt-hairline);
   border-radius: var(--tt-radius-md);
-  background: var(--tt-surface);
+  background: var(--tt-card-inset);
 }
 
+/* The chosen model wears the selected card (ADR-0110); its pressed button and its words say it is the one. */
 .onboarding-speech-model[data-chosen] {
-  border-color: var(--tt-accent);
+  background: var(--tt-card-selected);
 }
 
 .onboarding-speech-model .tt-field__description {

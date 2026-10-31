@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import React, { useEffect, useId, useImperativeHandle, useRef, useState, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { msg, ph, plural } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -21,6 +21,7 @@ import type { AgentConnection } from './AgentContext'
 import { PaneMenu, type PaneMenuItem } from './PaneMenu'
 import { commitLabel, commits, defaultBranchQuestion, fileCount, lineCounts, menuEntries, needsDefaultBranchConfirmation, noticeFor, quickAction, stackedFor, STATUS_LETTER, type GitNotice, type GitQuickKind } from './gitActionButton.logic'
 import { leftToRight, shownWords, type LaterWords } from './interfaceWords'
+import { holdingThread, openHolderWords } from './checkoutHold'
 import { shownCount } from '../state/interfaceNumbers'
 import './gitActionButton.css'
 
@@ -54,13 +55,19 @@ interface ActionRequest {
 }
 type Dialog = { readonly kind: 'commit'; readonly action: GitStackedAction } | { readonly kind: 'confirm'; readonly request: ActionRequest } | { readonly kind: 'publish' }
 
+/** What the pane's ··· menu presses on the Git action: Initialize Git, which is the menu's row rather than the button's (ADR-0163). */
+export interface GitActionHandle {
+  readonly initialize: () => void
+}
+
 /**
  * T3's Git action in the pane header (ADR-0027): one button whose label follows the folder's status and
  * does what it says, a chevron menu with every action, the commit dialog, the default-branch question,
  * and one notice above the composer for the action as it runs and once it is over. Every action goes to
- * the host as a command; the record the host publishes is what the notice shows.
+ * the host as a command; the record the host publishes is what the notice shows. A folder without Git shows no
+ * button: Initialize Git is a row of the pane's ··· menu, which presses it here, so its notice is this one.
  */
-export function GitActionButton({ thread, command, noticeSlot, onExplainedError, threads: givenThreads, state: windowState }: {
+export function GitActionButton({ thread, command, noticeSlot, onExplainedError, threads: givenThreads, state: windowState, ref }: {
   readonly thread: AgentThread
   readonly command: Command
   /** Every thread the window shows, for the thread this one began from (#1030); the window state's own list when absent. */
@@ -71,6 +78,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
   readonly noticeSlot: HTMLElement | null
   /** The refusal the notice is showing, so the pane's own error line does not say it twice; null when none. */
   readonly onExplainedError?: ((error: string | null) => void) | undefined
+  readonly ref?: React.Ref<GitActionHandle> | undefined
 }): ReactNode {
   const { t } = useLingui()
   const status = thread.worktree?.git
@@ -85,7 +93,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
   explained.current = onExplainedError
   const progress = thread.gitAction
   const shown: GitNotice | null = local ? shownNotice(local) : progress && progress.actionId !== dismissed ? noticeFor(progress) : null
-  const explainedError = shown?.tone === 'error' ? shown.detail ?? shown.title : null
+  const explainedError = shown?.tone === 'error' || shown?.tone === 'held' ? shown.detail ?? shown.title : null
   useEffect(() => { explained.current?.(explainedError) }, [explainedError])
   useEffect(() => () => explained.current?.(null), [])
   const running = progress?.status === 'running' || inFlight
@@ -113,7 +121,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
     try {
       const result = await command(request)
       if (!result) setLocal({ tone: 'error', title: ACTION_FAILED, detail: UNCONFIRMED_GIT_COMMAND })
-      else if (result.error) { if (!onRefused?.(result)) setLocal({ tone: 'error', title: ACTION_FAILED, detail: result.error }) }
+      else if (result.error) { if (!onRefused?.(result)) setLocal(refusalNotice(result.error, result.checkoutHold)) }
       else onDone(result)
     } catch { setLocal({ tone: 'error', title: ACTION_FAILED, detail: UNCONFIRMED_GIT_COMMAND }) }
     finally { flight.current = false; setInFlight(false) }
@@ -152,6 +160,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
       }
     }
   }
+  useImperativeHandle(ref, () => ({ initialize: () => press('init') }))
   const menu: PaneMenuItem[] = menuEntries(status).map(entry => {
     const EntryIcon = ICONS[entry.id]
     return { id: entry.id, label: entry.label, disabled: running || entry.hint !== undefined, ...(entry.hint ? { hint: entry.hint } : {}), icon: <EntryIcon size={15} aria-hidden="true" />, run: () => press(entry.id) }
@@ -164,7 +173,10 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
     disabled: running || uncommitted !== undefined, ...(uncommitted ? { hint: uncommitted } : {}), run: () => bring() }] : []
   const menuGroups = [bringMenu, menu].filter(group => group.length > 0)
 
+  // The thread holding the folder, when another thread does: its notice offers to open it (#1823).
+  const holder = holdingThread(allThreads, local?.holder, thread.id)
   const notice = shown ? <GitActionNotice notice={shown} running={running}
+    holder={holder ? { title: holder.title, open: () => { void command({ type: 'select-thread', threadId: holder.id }) } } : undefined}
     onDismiss={() => { if (local) setLocal(null); else if (progress) setDismissed(progress.actionId) }}
     onRun={action => runAction({ action })} /> : null
   const record = bringView?.kind === 'asks' || bringView?.kind === 'outcome' ? bringView.record : undefined
@@ -181,7 +193,7 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
   const disabled = running || quick?.hint !== undefined
   return <>
     {/* The button waits for the host's read of the folder; a notice or a dialog already open does not. */}
-    {status && quick && Icon ? <div className="git-action" data-running={running || undefined}>
+    {status && quick && Icon && quick.kind !== 'init' ? <div className="git-action" data-running={running || undefined}>
       <button type="button" className="git-action__quick tt-focusable" title={quick.hint ?? quick.label} aria-disabled={disabled || undefined} disabled={running}
         onClick={() => { if (!disabled) press(quick.kind) }}>
         <Icon size={15} aria-hidden="true" />
@@ -202,14 +214,25 @@ export function GitActionButton({ thread, command, noticeSlot, onExplainedError,
 }
 
 /** A notice this pane keeps itself, for a command's answer or refusal, until it is shown. */
-interface LocalNotice { readonly tone: 'success' | 'error'; readonly title: LaterWords; readonly detail?: LaterWords }
+interface LocalNotice { readonly tone: 'success' | 'error' | 'held'; readonly title: LaterWords; readonly detail?: LaterWords; readonly holder?: string }
 const ACTION_FAILED = msg`Action failed`
+const ON_HOLD = msg({ message: 'On hold', comment: 'Leads a Git action refused because another thread or Sotto holds the folder. Nothing failed and nothing was changed.' })
+/** A refusal in the host's words: a hold when the folder's guard is held, with the thread holding it when one does (#1823). */
+function refusalNotice(error: string, hold: AgentState['checkoutHold']): LocalNotice {
+  if (hold === undefined) return { tone: 'error', title: ACTION_FAILED, detail: error }
+  return { tone: 'held', title: ON_HOLD, detail: error, ...(hold.threadId !== undefined ? { holder: hold.threadId } : {}) }
+}
 const UNCONFIRMED_GIT_COMMAND = msg`Sotto could not confirm this Git command.`
 const shownNotice = (notice: LocalNotice): GitNotice =>
   ({ tone: notice.tone, title: shownWords(notice.title), ...(notice.detail !== undefined ? { detail: shownWords(notice.detail) } : {}) })
 
 /** The notice above the composer: the stage as it runs, then T3's toast with its next step, or the failure in the host's words. */
-function GitActionNotice({ notice, running, onDismiss, onRun }: { readonly notice: GitNotice; readonly running: boolean; readonly onDismiss: () => void; readonly onRun: (action: GitStackedAction) => void }): ReactNode {
+function GitActionNotice({ notice, running, holder, onDismiss, onRun }: {
+  readonly notice: GitNotice; readonly running: boolean
+  /** The thread holding the folder, and how to open it, for a hold another thread caused. */
+  readonly holder?: { readonly title: string; readonly open: () => void } | undefined
+  readonly onDismiss: () => void; readonly onRun: (action: GitStackedAction) => void
+}): ReactNode {
   const { t } = useLingui()
   const cta = notice.cta
   return <div className="git-action-notice" data-tone={notice.tone} role={notice.tone === 'error' ? 'alert' : 'status'}
@@ -218,6 +241,7 @@ function GitActionNotice({ notice, running, onDismiss, onRun }: { readonly notic
     <p className="tt-paragraph"><strong>{notice.title}</strong>{notice.detail ? <> {notice.detail}</> : null}</p>
     {cta?.kind === 'open_pr' ? <Button variant="secondary" onClick={() => void window.sotto?.openExternalLink?.(cta.url)}>{cta.label}</Button> : null}
     {cta?.kind === 'run_action' ? <Button variant="secondary" disabled={running} onClick={() => onRun(cta.action)}>{cta.label}</Button> : null}
+    {holder ? <Button variant="secondary" className="git-action-notice__open" onClick={holder.open}><Isolated text={shownWords(openHolderWords(holder.title))} /></Button> : null}
     {notice.tone !== 'progress' ? <button type="button" className="git-action-notice__dismiss tt-focusable" aria-label={t`Dismiss the Git notice`} title={t`Dismiss the Git notice`} onClick={onDismiss}><X size={14} aria-hidden="true" /></button> : null}
   </div>
 }

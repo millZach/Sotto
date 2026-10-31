@@ -12,9 +12,9 @@
 [data-platform='linux'] .threads-view[data-host-update] { --threads-winctl-inset: calc(var(--host-update-room) + var(--main-freeze-room, 0px)); }
 /* A pane's header is the window's drag handle, and Chromium builds the drag region in tree order: the header comes after the
    pill (which comes first for the Tab order), so a header reaching under the pill would cover its opt-out and a click on it
-   would move the window. With the pill there, a lone pane's header stops short of it with a margin, as a split's headers
-   stop short of their layout controls. */
-.threads-view[data-host-update] .thread-panes:not([data-split]) .thread-pane[data-under-controls] .thread-workspace__head {
+   would move the window. With the pill there, the header of the pane under it, alone or in a split, stops short of it with
+   a margin. */
+.threads-view[data-host-update] .thread-pane[data-under-controls] .thread-workspace__head {
   padding-right: 24px;
   margin-right: var(--threads-pane-inset, 0px);
 }
@@ -41,7 +41,6 @@
   font-size: 12.5px;
   font-weight: 500;
   white-space: nowrap;
-  cursor: pointer;
   -webkit-app-region: no-drag;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }

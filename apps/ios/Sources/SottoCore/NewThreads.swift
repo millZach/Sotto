@@ -47,7 +47,7 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
                                              grants: id != "approval-required", providerOwned: false) }
         }
     }
-    /// Prefer an asking mode. A grant is never selected just because Can answer is on.
+    /// Prefer an asking mode. A grant is never selected just because this iPhone may answer.
     public var startingPermission: String { permissions.first { !$0.grants }?.id ?? "" }
 }
 public struct ThreadPermission: Identifiable, Sendable {

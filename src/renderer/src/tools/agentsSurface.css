@@ -5,7 +5,7 @@
 .subagent-item { margin-left: calc(var(--subagent-depth, 0) * 18px); }
 .subagent-item + .subagent-item { border-top: 1px solid var(--tt-hairline); }
 .subagent-item[data-nested] { border-top: 0; border-left: 1px solid var(--tt-hairline); padding-left: 8px; }
-.subagent-head { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: start; column-gap: 10px; width: 100%; min-height: 94px; padding: 16px 6px 16px 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; text-align: left; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.subagent-head { display: grid; grid-template-columns: 8px minmax(0, 1fr) auto; align-items: start; column-gap: 10px; width: 100%; min-height: 94px; padding: 16px 6px 16px 4px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .subagent-head:hover { background: var(--tt-hover); }
 .subagent-head:active:not(:disabled) { background: var(--tt-hover-strong); }
 .subagent-dot { width: 6px; height: 6px; margin-top: 7px; border-radius: 50%; background: var(--tt-text-muted); }
@@ -27,7 +27,7 @@
 .subagent-details p { margin: 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
 .subagent-result { border-left: 2px solid var(--tt-hairline); padding-left: 12px; }
 .subagent-previous { margin-top: 17px; border-top: 1px solid var(--tt-hairline); padding-top: 12px; }
-.subagent-previous summary { color: var(--tt-text-muted); font-size: 13px; cursor: pointer; overflow-wrap: anywhere; }
+.subagent-previous summary { color: var(--tt-text-muted); font-size: 13px; overflow-wrap: anywhere; }
 .subagents-older { margin-top: 18px; }
 .subagents-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; min-height: 190px; padding: 30px; color: var(--tt-text-muted); text-align: center; }
 .subagents-empty p { margin: 0; font-size: 14px; }
@@ -87,7 +87,7 @@
 .delegated-row__status[data-outcome='finished'] { color: var(--tt-text-2); }
 .delegated-row__status .delegation-ring[data-outcome='finished'] { border: 1.5px solid var(--tt-success); background: radial-gradient(circle, var(--tt-success) 0 28%, transparent 30%); }
 .delegated-row__open { position: absolute; right: 6px; bottom: 16px; display: inline-flex; align-items: center; gap: 5px; height: 26px; padding: 0 9px; border: 1px solid var(--tt-border);
-  border-radius: 6px; background: var(--tt-surface); color: var(--tt-text-2); font: inherit; font-size: 12.5px; white-space: nowrap; cursor: pointer;
+  border-radius: 6px; background: var(--tt-surface); color: var(--tt-text-2); font: inherit; font-size: 12.5px; white-space: nowrap;
   transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .delegated-row__open:hover { background: var(--tt-hover-strong); color: var(--tt-text); }
@@ -118,9 +118,6 @@
 .delegated-row__held { grid-area: held; display: flex; gap: 6px; min-width: 0; margin-top: 6px; color: var(--tt-text-2); font-size: 12px; line-height: 18px; }
 .delegated-row__held > svg { flex: none; margin-top: 2px; color: var(--tt-warning-text); }
 .subagent-details p.delegated-row__source { margin-bottom: 4px; color: var(--tt-text-muted); font-size: 12.5px; }
-.tools-toggle { position: relative; }
-.tools-toggle__agents-dot { position: absolute; top: 3px; left: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-activity); box-shadow: 0 0 0 2px var(--tt-canvas); pointer-events: none; }
-.tools-toggle__agents-dot[data-needs] { background: var(--tt-attention); }
 @media (prefers-reduced-motion: no-preference) {
   :root:not([data-reduced-motion='on']) .subagent-details:not(.subagent-workflow__details) { animation: subagent-reveal .14s ease-out; }
   :root:not([data-reduced-motion='on']) .subagent-strip > i[data-status='running'] { animation: subagent-breathe 1.6s ease-in-out infinite alternate; }

@@ -64,8 +64,7 @@ struct WatcherView: View {
         .onChange(of: section) { _, _ in barAway = false }
         .onChange(of: voiceOver) { _, on in if on { barAway = false } }
         .sheet(item: $reviewing) { card in
-            RequestSheet(place: card.place, request: card.request)
-                .presentationDetents([.medium, .large]).presentationDragIndicator(.visible)
+            RequestSheet(place: card.place, request: card.request).requestSheetDetents()
         }
         // Stop all asks in the middle of the screen, with Cancel beside Stop, as the design draws it. iOS 26 draws a
         // confirmation dialog as a menu from the page and leaves its Cancel out, so this is an alert.
@@ -720,7 +719,7 @@ private struct WatcherConversationPane: View {
                     // A fast send can begin and end before SwiftUI renders its sending state. The press itself
                     // resumes following, before the keyboard and the conversation change their layout.
                     resumeFollowing()
-                }).readingWidth().background(dockReader(proxy, newest: newest))
+                }).readingWidth().dockFade().background(dockReader(proxy, newest: newest))
             }
             // New words, the user's own or Watcher's, are scrolled to just above the box, for a reader who sees the newest
             // words or the page's end. Cards waiting on the user sit after the whole conversation, where the page opens,
@@ -1284,7 +1283,7 @@ private struct WatcherOwnChangeLine: View {
 // MARK: - Cards that wait on the user (4B)
 
 /// A question or permission in Watcher's page: a worker's own card, or Watcher's own. One-tap answers are made here and go
-/// to the thread that asked, as the user's own answer under this iPhone's Can answer: through the computer that runs
+/// to the thread that asked, as the user's own answer under this iPhone's answers grant: through the computer that runs
 /// Watcher for its own threads, or, for a thread on another computer this iPhone is paired with, to that computer, as
 /// the thread's own page would send it. Anything more opens the request sheet. Watcher answers nothing.
 private struct WatcherRequestCard: View {
@@ -1729,7 +1728,7 @@ private struct WatcherPermissionChip: View {
 }
 
 /// The four modes, each with what Watcher does under it, the chosen one ticked; then what stays true in every mode. An
-/// iPhone without Can answer on that computer can choose only to keep Watcher asking first, and the sheet says so.
+/// iPhone that can't answer on that computer can choose only to keep Watcher asking first, and the sheet says so.
 private struct WatcherPermissionSheet: View {
     @EnvironmentObject var model: AppModel
     /// Watched for Watcher's page, which publishes on its own store, not on the model.

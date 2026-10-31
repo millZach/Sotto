@@ -101,6 +101,8 @@ export class ConfiguredProviderHost implements AgentHost {
   private registrationLoad: Promise<void> | undefined
   /** Undefined until something says what it is looking at; a connection never invents a watched set. */
   private observed: readonly string[] | undefined
+  /** The settled threads the caller last named, handed to each provider as it connects. */
+  private settled: readonly string[] | undefined
   private readonly slots = new Map<ProviderId, Slot>()
   /** Each provider's models as last named, and the catalog last published from them. */
   private readonly namedModels = new Map<ProviderId, { source: AgentModel[]; connected: boolean; models: AgentModel[] }>()
@@ -483,6 +485,7 @@ export class ConfiguredProviderHost implements AgentHost {
     }) : undefined
     this.publish()
     if (this.observed) this.options.hosts[id].observeThreads?.(this.observed)
+    if (this.settled) this.options.hosts[id].useSettledThreads?.(this.settled)
     const pending = (async () => {
       try {
         const snapshot = await this.options.hosts[id].connect()
@@ -764,6 +767,10 @@ export class ConfiguredProviderHost implements AgentHost {
     const model = resolveModel(this.aggregate(false).models, this.resolveModelId(draft.modelId))
     if (!model?.providerId || !model.ready || this.slots.get(model.providerId)!.status.connection !== 'connected') return
     return this.options.hosts[model.providerId].startThreadSession?.(threadId, { ...draft, modelId: nativeEntityId(model.providerId, 'model', model.id) })
+  }
+  useSettledThreads(ids: readonly string[]): void {
+    this.settled = [...ids]
+    for (const [id, slot] of this.slots) if (slot.wanted) this.options.hosts[id].useSettledThreads?.(ids)
   }
   observeThreads(ids: readonly string[]): void {
     this.observed = [...ids]

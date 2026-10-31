@@ -27,7 +27,7 @@ import { HostUpdateControl } from './HostUpdates'
 import { THREAD_PROMPT_ID } from './ThreadComposer'
 import { hasDraftContent } from './threadDraftStore'
 import { ThreadPane } from './ThreadPane'
-import { ThreadPanes, focusInPane, type PaneLabel } from './ThreadPanes'
+import { ThreadPanes, focusInPane, type PaneChrome, type PaneLabel } from './ThreadPanes'
 import { paneGridActions, useClock } from './paneGrid'
 import { ThreadSidebar } from './ThreadSidebar'
 import { SidebarChromeProvider } from './SidebarFrame'
@@ -66,10 +66,10 @@ export interface ThreadsViewProps {
   readonly updateControl?: ReactNode
   /** One shared tools panel, rendered beside the thread panes. */
   readonly tools?: ThreadToolsSlot | undefined
-  /** Once, in the focused pane's header actions, before the every-pane actions (the tools panel's toggle). */
-  readonly focusedPaneActions?: ReactNode
-  /** In every pane's header actions, focused or not (the pane terminal drawer's own toggle). */
-  readonly paneActions?: ThreadPaneSlot | undefined
+  /** The focused pane's ··· menu lists Tools, the shared panel beside the panes (ADR-0163). */
+  readonly paneTools?: boolean | undefined
+  /** Whether a pane's ··· menu lists its own Terminal drawer, focused or not. */
+  readonly paneTerminal?: ((props: ThreadPaneSlotProps) => boolean) | undefined
   /** The working-copy control in each pane's header, after the project title. */
   readonly paneWorkingCopy?: ThreadPaneSlot | undefined
   /** In each pane, directly above its composer. */
@@ -86,7 +86,7 @@ export interface ThreadsViewProps {
   readonly paneAreaWidth?: number | undefined
   readonly paneAreaHeight?: number | undefined
 }
-export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneActions, paneActions, paneWorkingCopy, paneNotice, paneDrawer, onPaneThreadsChange, layoutStore = splitLayoutStore, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
+export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = false, paneTerminal, paneWorkingCopy, paneNotice, paneDrawer, onPaneThreadsChange, layoutStore = splitLayoutStore, paneAreaWidth, paneAreaHeight }: ThreadsViewProps): ReactNode {
   const { t } = useLingui()
   const words = useWordsRevision()
   const agents = useAgents()
@@ -298,7 +298,7 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
     {agents.error && app ? <Button variant="ghost" onClick={() => app.actions.navigate('settings', 'settings-providers')}><Trans>Open Settings</Trans></Button> : null}
     <PageWindowControls />
   </div>
-  const grid = paneGridActions({ layout, focusedId, paneIds, layoutStore, exists: id => rowsById.has(id), open: openThread, focus: focusPane })
+  const grid = paneGridActions({ layout, focusedId, layoutStore, exists: id => rowsById.has(id), open: openThread, focus: focusPane })
   gridRef.current = grid
 
   const localDraftPresent = focusedId !== null && hasDraftContent(store.draft(focusedId))
@@ -309,22 +309,19 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
   const recoveredDraft = isRecoveredDraft(state)
   const error = state.error ?? agents.error
   const split = paneIds.length >= 2
-  const renderPane = (threadId: string): ReactNode => {
+  const renderPane = (threadId: string, chrome: PaneChrome): ReactNode => {
     const row: ThreadRow | undefined = rowsById.get(threadId)
     if (row === undefined) return null
     const focused = threadId === focusedId
     const slot: ThreadPaneSlotProps = { row, state, command, focused, focusPrompt: () => focusInPane(threadId) }
-    // The focused pane's own actions come first: the header's actions sit at its right edge, so one that appears
-    // only on focus must not push the every-pane actions sideways under a pointer that is focusing the pane.
-    const focusedActions = focused ? focusedPaneActions : undefined
-    const everyPaneActions = paneActions?.(slot)
-    const actions = focusedActions || everyPaneActions ? <>{focusedActions}{everyPaneActions}</> : undefined
+    // Tools and the drawer are rows of the pane's ··· menu now, so nothing in the header comes or goes with focus.
     return <ThreadPane row={row} state={state} command={command} store={store} focused={focused}
       promptId={split ? threadPromptId(threadId) : THREAD_PROMPT_ID} error={focused ? error : null} onOpenBeside={() => openBeside(threadId)} now={fixedNow}
-      workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} actions={actions} drawer={paneDrawer?.(slot)} />
+      workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} drawer={paneDrawer?.(slot)}
+      chrome={chrome} tools={paneTools && focused} terminal={paneTerminal?.(slot) ?? false} />
   }
 
-  return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} data-room-backdrop="" onKeyDown={grid.onKeyDown} {...marks}>
+  return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} data-room-backdrop="" {...marks}>
     {chooser !== null && <NewThreadDialog state={state} command={command}
       onClose={() => setChooser(null)}
       onCreating={start => { setChooser(null); handleCreationStart(start, chooser.carried) }}
@@ -333,7 +330,8 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, focusedPaneAc
       currentThreadId={focusedId} listedThreadId={listedThreadId} openThreadIds={paneIds} onOpenBeside={openBeside} onDragThread={setDragging}
       newThreadError={shownWords(newThreadError)} onDismissNewThreadError={dismissNewThreadError} newThreadShortcut={newThreadShortcutLabel} shortcutsLive
       restartThreads={published?.host.threads} />
-    <section className="thread-workspace" data-room-backdrop="" aria-label={t`Thread workspace`}>
+    {/* A region for F6 only while it holds no pane: the empty page's New thread (ADR-0164). */}
+    <section className="thread-workspace" data-room-backdrop="" data-region="room" aria-label={t`Thread workspace`}>
       {/* Before the panes, so it comes first in keyboard order; it sits in the top strip beside the window controls. */}
       {updateAll ? null : <HostUpdateControl />}
       {recoveredDraft ? <ProviderUpgradeNotice state={state} command={recoverCommand} threadId={focusedId ?? undefined} localDraftPresent={localDraftPresent} /> : null}

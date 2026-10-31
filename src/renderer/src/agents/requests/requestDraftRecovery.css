@@ -1,7 +1,4 @@
-/* A saved answer whose question is no longer on screen: the request card's ruled block, quieter, read rather than filled in. */
-.request-recovery { border-left-color: var(--tt-hairline); }
-.request-recovery[data-held] { border-left-color: var(--tt-warning); }
-.request-recovery--error { border-left-color: var(--tt-error); }
+/* A saved answer whose question is no longer on screen: the request card, read rather than filled in. */
 .request-recovery__why { margin: -4px 0 0; color: var(--tt-text-2); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .request-recovery__answers { display: grid; gap: 10px; margin: 0; user-select: text; }
 .request-recovery__answers > div { display: grid; gap: 2px; min-width: 0; }

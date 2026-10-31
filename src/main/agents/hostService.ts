@@ -144,6 +144,7 @@ export interface HostService {
   /** The host lists `thread-move`: it makes a thread moved there from another machine (#1178). */
   readonly supportsThreadMove?: boolean
   readonly supportsThreadMoveSource?: boolean
+  readonly supportsThreadMoveKeep?: boolean
   threadMove?(request: HostThreadMoveRequest): Promise<unknown>
   /**
    * The host runs delegation for its own threads and keeps the desktop defaults a desktop sends it (#1310), present only

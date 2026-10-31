@@ -184,7 +184,7 @@ export function BesidePane({ row, state, command, store, focused, underControls,
   }), [onOpenInThreads, t])
   const pages = useMemo<BrowserPageRoute>(() => page => { toolsPanelStore.showBrowserPageOf(page); onOpenInThreads(); return { ok: true } }, [onOpenInThreads])
   const landFork = useCallback((forkId: string): void => landForkBeside(threadId, forkId), [threadId])
-  return <PullRequestOpenerContext.Provider value={pullRequests}><BrowserPageRouteContext.Provider value={pages}><ForkLandingContext.Provider value={landFork}><Marked>{marks => <section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" {...marks} data-thread-id={threadId} data-focused={focused || undefined}
+  return <PullRequestOpenerContext.Provider value={pullRequests}><BrowserPageRouteContext.Provider value={pages}><ForkLandingContext.Provider value={landFork}><Marked>{marks => <section id={BESIDE_PANE_ID} className="thread-pane watcher-beside" data-region="pane" {...marks} data-thread-id={threadId} data-focused={focused || undefined}
     data-under-controls={underControls || undefined} role="region" aria-label={row.thread.title}
     onFocusCapture={onFocus} onPointerDownCapture={onFocus}
     onKeyDown={event => {

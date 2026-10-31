@@ -195,6 +195,25 @@ describe('desktop host routing', () => {
     router.dispose()
   })
 
+  it('names the thread holding a refused Git command\'s folder by this window\'s key, on that reply alone (#1823)', async () => {
+    const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
+    router.add(local.connection); router.add(remote.connection)
+    const words = 'Thread "Task" is waiting for your answer. Nothing was changed. Answer it, then try again.'
+    for (const [entry, hostId] of [[local, LOCAL], [remote, REMOTE]] as const) {
+      entry.command.mockResolvedValueOnce({ ...entry.state, error: words, checkoutHold: { threadId: 'holder' } })
+      const refused = await router.command({ type: 'git-action', threadId: hostEntityKey(hostId, 'thread'), actionId: randomUUID(), action: 'commit' }, desktopWindowClient())
+      expect(refused.checkoutHold).toEqual({ threadId: hostEntityKey(hostId, 'holder') })
+      expect(refused.error).toContain('Nothing was changed.')
+      expect(agentStateSchema.parse(refused).checkoutHold).toEqual({ threadId: hostEntityKey(hostId, 'holder') })
+    }
+    // Held by Sotto itself, the hold names no thread; a refusal that is no hold names none either.
+    local.command.mockResolvedValueOnce({ ...local.state, error: 'Sotto is pulling this folder. Nothing was changed. Try again in a moment.', checkoutHold: {} })
+    expect((await router.command({ type: 'git-action', threadId: hostEntityKey(LOCAL, 'thread'), actionId: randomUUID(), action: 'commit' }, desktopWindowClient())).checkoutHold).toEqual({})
+    local.command.mockResolvedValueOnce({ ...local.state, error: 'Push failed.' })
+    expect((await router.command({ type: 'git-action', threadId: hostEntityKey(LOCAL, 'thread'), actionId: randomUUID(), action: 'commit' }, desktopWindowClient())).checkoutHold).toBeUndefined()
+    router.dispose()
+  })
+
   it('names the host in its no-provider refusal by the name this computer saved it under (#459)', async () => {
     const router = new DesktopHostRouter(emptyDesktopState), local = fixture(LOCAL, 'local'), remote = fixture(REMOTE, 'remote')
     router.add(local.connection); router.add({ ...remote.connection, name: 'forge' })

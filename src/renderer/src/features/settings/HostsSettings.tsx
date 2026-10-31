@@ -373,7 +373,10 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     else setForgetId(host.id)
   }
   const closeDialog = useRef(() => setDialog(null)).current
+  // Each group of rows is a card, as on every other Settings page (ADR-0110, #1831): this computer and Tailscale on one,
+  // the remote hosts on another.
   return <div className="hosts-settings">
+    <div className="hosts-card">
     <div className="hosts-local">
       <span className="hosts-row__icon hosts-row__icon--local" aria-hidden="true"><Laptop size={18} /></span>
       <div className="hosts-local__copy"><h3>{t`This computer`}</h3><p className="tt-paragraph"><Trans>Runs threads here as well as on remote hosts. Changes apply after a restart, and saved data stays.</Trans></p></div>
@@ -384,7 +387,8 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     </div>
     {bridge ? <TailscaleRow control={tailscale} /> : null}
     {state && state.localHostRunning !== localHostEnabled && <div className="hosts-restart"><p className="tt-paragraph"><Trans>Restart Sotto to apply the local host setting.</Trans></p><Button variant="secondary" onClick={() => void run({ type: 'restart' })}>{t`Restart Sotto`}</Button></div>}
-    <p className="tt-paragraph"><Trans>Dictation and paste always happen on this computer, never on a remote host.</Trans></p>
+    </div>
+    <p className="hosts-card__note tt-paragraph"><Trans>Dictation and paste always happen on this computer, never on a remote host.</Trans></p>
     <div className="hosts-heading"><h3>{t`Remote hosts`}</h3><Button ref={addButton} variant="secondary" data-setting="remote-hosts" disabled={!bridge} onClick={() => setDialog({ kind: 'add' })}><Plus size={16} aria-hidden="true" />{t`Add host`}</Button></div>
     <p className="tt-paragraph"><Trans>Run threads on other machines over your tailnet or SSH. Sotto sets each one up with your SSH access, and a host it starts keeps running until you stop it.</Trans></p>
     {/* A setup the dialog was closed on carries on in its thread, and one that ended stays until put away: this is the way back to it. */}
@@ -392,7 +396,7 @@ export function HostsSettings({ localHostEnabled, onLocalHostChange, bridge = wi
     {state?.forgotten?.map(forgotten => <ForgottenNotice key={forgotten.id} forgotten={forgotten}
       // The notice and its focused button go away, so focus goes to the control above the list.
       onDismiss={() => { addButton.current?.focus(); void run({ type: 'dismiss-forgotten', id: forgotten.id }) }} />)}
-    <div className="hosts-list">
+    <div className="hosts-list hosts-card">
       {state?.hosts.map(host => <HostRow key={host.id} host={host} onCommand={run} onAction={act} bridge={bridge} job={state.providerJob} choice={state.setupChoice}
         phones={state.phones?.find(item => item.id === host.id)} onOpenPhones={() => setPhonesId(host.id)} boot={state.boot?.find(item => item.id === host.id)}
         bootShownElsewhere={bootId === host.id || dialog?.kind === 'add'}

@@ -225,3 +225,75 @@ reads a few fields of it and builds what it publishes from its own read.
 On the owner-scale benchmark (`tests/perf/dataTransfer.perf.test.ts`, a host thread streaming), the client's time per
 push fell from 10.2 ms to 5.2 ms and the window broadcast's catalog comparison from 29.2 ms to 0.9 ms over 60 pushes
 (`docs/perf/2026-10-29-data-transfer.md`).
+
+## October 30, 2026: a command's reply carries only the thread records that changed
+
+The October 22 section left command receipts carrying every thread whole. Every command the window sends answers with
+one: a draft save at each pause in typing, Refresh on every pane at every window focus, selecting a pane, telling main
+which panes are open. At the owner's scale (293 threads) a draft save's reply was 272,706 bytes. The window spent about
+6.5 ms on each: 1.4 ms receiving it, 3.1 to 3.3 ms in the preload checking every record against the thread schema, and
+1.9 to 2.1 ms in state sharing walking every record, all fresh objects, before contextBridge copied them once more.
+
+**The main window's page asks for a reply's threads as the changed thread records since its last broadcast.** The preload gives the
+page a second command method, `commandWithChangedThreadRecords`, which sends `{ changedThreadRecords: true }` beside the command.
+Main answers it with `encodeChangedThreadRecordsReceipt`. That is `encodeReceipt`'s receipt with `host.threads` in a
+broadcast's shape (`AgentThreadsBroadcast`), measured by the same `ThreadRecordsBroadcast` from the last broadcast the
+window was delivered, and recording nothing as sent. The next broadcast is measured from the same base and carries the
+same changes. A reply before any broadcast, or after the window read the whole state, lists every record with a null
+base. Only the main window may send a command, and only it is broadcast to, so the base is always its own.
+
+**The preload still checks what crosses.** The changed records are parsed against the thread schema, as every record of
+a whole reply was, and the base, revision, removals and order structurally (`agentCommandChangedThreadRecordsReceiptSchema`).
+
+**The page puts the threads back from the broadcast it holds, and moves nothing it holds.** The subscription's
+reassembly (`createThreadReassembly`) reads the reply's changed records against its held records with `peek` and keeps them
+held, so a reply never changes what the next broadcast is applied to. A thread the reply did not change is the record the
+broadcast gave, so state sharing meets it by identity. A reply measured from a broadcast the window does not hold, as when
+it overtakes one, reads the whole state through `AGENT_GET`. That read is begun for the reply alone, after it arrived, so
+it holds the reply's own command; a catalog's recovery may be shared, since its revision only advances. The next
+broadcast then lists every record. When that read fails twice, the reply carries the whole list the window was last
+broadcast, never its changed records alone, and the next broadcast carries the change. In a real window the command
+receipt journey (`tests/e2e/command-receipt.spec.ts`) types into a composer and counts no whole-state read while the
+draft saves. A page with no subscription yet asks for the whole reply. Every other caller of the preload's `command`,
+the e2e specs included, still gets every thread whole.
+
+Measured with the data-transfer benchmark at the owner's scale, a draft save's reply, three runs each: 272,706 bytes to
+11,462. The window's work fell from 1.38-1.39 ms receiving it, 3.12-3.25 ms checking it and 1.86-2.11 ms sharing it to
+0.10-0.11 ms, 0.31-0.33 ms and 0.19-0.20 ms, with 0.08-0.10 ms more to put the threads back: about 6.5 ms to 0.7 ms per
+reply (`docs/perf/2026-10-30-command-reply-threads.md`).
+
+## October 30, 2026: a paired host's shell pushes carry only the thread records that changed (#996)
+
+The October 22 section left the socket protocol untouched, so a paired host still pushed every thread record whole in
+every shell push. While a thread on the host streams, it pushes the shell up to twenty times a second to each connected
+client. On the owner-scale benchmark (`tests/perf/dataTransfer.perf.test.ts`, about 290 threads on the host) each push to
+a desktop was 232,942 bytes, about 11 KB deflated, for a change to one thread's record. The desktop's host client then
+parsed every record against the thread schema, and the router compared every one, all fresh objects, before the window's
+broadcast found the one that changed.
+
+**A host lists a new feature, `changed-thread-records`, and the protocol stays v1** (ADR-0025). Every listener lists it,
+to desktops and phones alike. A client that accepts it in hello is sent each shell push with `threads`, the changed
+thread records since the last shell push written to that connection, in the window's broadcast shape
+(`AgentChangedThreadRecords`), and with `state.host.threads` empty. The host keeps one `ThreadRecordsBroadcast` per such
+connection and encodes each push's thread list with it. A push becomes the base only once it is written. A push that
+repeats the last one, is held for Watcher's writing window or goes as a `too_large` error moves nothing. A push whose only
+news is a thread record is written, though the rest of its state repeats the last. Hello, a `shell` read and a command's
+answer still carry every record and move nothing. A `shell` read drops the base, so the push after it lists every
+record.
+
+**The desktop's host client accepts the feature wherever the host lists it, and puts each push's list back before
+anything reads it.** It keeps the records the last push carried with the page's reassembly, moved from the renderer to
+`src/shared/threadReassembly.ts` so main and the page share one. A thread that did not change is the record the client
+already holds, so the router and the window's broadcast meet it by identity. A push measured from records it does not
+hold, which should not happen on one ordered connection, is not shown. The client reads the shell whole instead, and
+the host's next push lists every record. A new connection starts with nothing held on either side.
+
+The iPhone does not accept the feature yet, and is sent every record in every push, as is any client that does not
+accept it. Its SottoCore client is a later change.
+
+On the benchmark, three runs before and after on forge, with one host thread streaming for 60 pushes: a desktop push
+fell from 232,942 bytes to 11,929-11,950 (about 11,100 to about 1,970 deflated). The first push of a connection, and
+the first after a `shell` read, lists every record (205 KB). The desktop client's work on its pushes fell from
+295-303 ms to 67-73 ms, about 5 ms to 1.2 ms a push. The host's shell sends to its three clients fell from 287-293 ms to
+236-248 ms. The whole process, host, clients, router and window together, used 889-945 ms of CPU against 1,490-1,532 ms.
+The window was broadcast the same thread records as before (`docs/perf/2026-10-30-host-shell-thread-records.md`).

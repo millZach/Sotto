@@ -57,8 +57,9 @@ export function paneTerminalTarget(event: Pick<KeyboardEvent, 'key' | 'ctrlKey' 
   if (document.querySelector('dialog[open], [role="dialog"][aria-modal="true"]') !== null) return null
   const target = event.target instanceof Element ? event.target : null
   if (target?.closest('.xterm') && !target.closest('.pane-terminal')) return null
-  // A pane with no drawer button is not the drawer's: a thread on a paired host.
-  const shown = (pane: Element | null | undefined): string | null => pane instanceof HTMLElement && !pane.hasAttribute('data-hidden') && pane.querySelector('[data-pane-terminal-toggle]') !== null ? pane.dataset.threadId ?? null : null
+  // A pane whose header says it has no drawer is not the drawer's: a thread on a paired host. The drawer is a row of the
+  // pane's ··· menu (ADR-0163), drawn only while the menu is open, so the header carries the mark.
+  const shown = (pane: Element | null | undefined): string | null => pane instanceof HTMLElement && !pane.hasAttribute('data-hidden') && pane.querySelector('[data-terminal-drawer]') !== null ? pane.dataset.threadId ?? null : null
   const focused = shown(target?.closest('.thread-pane'))
   if (focused !== null) return focused
   if (!selectedThreadId) return null

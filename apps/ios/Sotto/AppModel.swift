@@ -434,8 +434,8 @@ extension AppModel {
             return .answer(place, request)
         }
     }
-    /// Whether a card in Watcher's page can take an answer through Watcher's computer now. The computer checks Can answer
-    /// again. A card for a thread on another computer is answered there, through that computer's own pairing.
+    /// Whether a card in Watcher's page can take an answer through Watcher's computer now. The computer checks this
+    /// iPhone's answers grant again. A card for a thread on another computer is answered there, through that computer's own pairing.
     func canAnswerWatcherCard(_ card: WatcherPage.RequestCard, on hostID: String) -> Bool {
         guard online(hostID), mayAnswer(hostID), card.mayAnswer, card.connected, card.request.supported, !answering(hostID),
               card.target.hostId == hostID, watcherPage(hostID)?.card(card.target.ref, requestID: card.request.id) != nil else { return false }
@@ -446,7 +446,7 @@ extension AppModel {
         scoped(hostID).first { $0.kind == "watcher-answer" && $0.threadID == card.target.threadId && $0.requestID == card.request.id }
     }
     /// Answers a card in Watcher's page as the user's own answer to the thread that asked, through the computer that runs
-    /// Watcher, which checks Can answer before it acts. Answering keeps the thread watched; Watcher answers nothing.
+    /// Watcher, which checks this iPhone's answers grant before it acts. Answering keeps the thread watched; Watcher answers nothing.
     func answerWatcherCard(_ card: WatcherPage.RequestCard, on hostID: String, choice: String? = nil, text: String = "",
                            answers: [String: QuestionAnswer] = [:]) async {
         guard canAnswerWatcherCard(card, on: hostID), let computer = computer(hostID), let page = watcherPage(hostID) else { return }
@@ -596,8 +596,8 @@ extension AppModel {
 
 // What Watcher may do without asking, and the threads it watches (ADR-0073, amended October 13, 2026; Zach's picks:
 // control A, mark B, watch B). A computer that offers `watcher-phone-manage` takes these from this iPhone and checks each
-// one again: a mode that lets Watcher act without asking needs this iPhone's Can answer there, and watching needs only
-// the pairing. None of it answers anything. Each change has its own request ID, so a lost acknowledgement reads what the
+// one again: a mode that lets Watcher act without asking needs this iPhone's answers grant there, which its pairing
+// wrote (ADR-0033, October 30 amendment), and watching needs only the pairing. None of it answers anything. Each change has its own request ID, so a lost acknowledgement reads what the
 // computer did under it; nothing is sent again on its own.
 extension AppModel {
     static let watcherManageFeature = WatcherWire.manageFeature
@@ -644,7 +644,7 @@ extension AppModel {
         return page.current?.status == "running" || page.needsYou.contains { page.isOwn($0) }
     }
     /// Whether this iPhone may choose `mode` there: asking first always, and a mode that lets Watcher act without asking
-    /// only under this iPhone's Can answer on that computer, which the computer checks again.
+    /// only under this iPhone's answers grant on that computer, which the computer checks again.
     func mayChooseWatcherPermission(_ mode: String, on hostID: String) -> Bool {
         !WatcherPermissions.grants(mode) || mayAnswer(hostID)
     }
@@ -3423,7 +3423,8 @@ struct HeldDetail {
         live[hostID]?.shell.map { NewThreads.startingEffort(model, shell: $0, defaults: newThreadDefaults) } ?? model.startingEffort
     }
     /// The permission New thread starts on. A default that would let the thread act without asking waits for
-    /// Can answer on that computer (ADR-0033); until then the thread starts by asking.
+    /// this iPhone's answers grant on that computer, which pairing writes (ADR-0033); a computer from before that may not
+    /// have it, and there the thread starts by asking.
     func initialCreationPermission(_ hostID: String, model: ThreadModel) -> StartingPermission {
         NewThreads.startingPermission(model, defaults: newThreadDefaults, mayAnswer: mayAnswer(hostID))
     }

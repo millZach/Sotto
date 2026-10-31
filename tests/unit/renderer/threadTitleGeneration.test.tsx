@@ -35,7 +35,9 @@ describe('asking Sotto to name a thread again', () => {
   it('offers the action in the pane header’s menu beside Rename', () => {
     const live = mount()
     const menu = openPaneMenu(header())
-    expect(paneMenuItems(menu).slice(0, 2)).toEqual(['Rename', 'Regenerate title'])
+    // After the layout rows (ADR-0163), the thread's naming: Rename, then Regenerate title.
+    const rows = paneMenuItems(menu)
+    expect(rows.slice(rows.indexOf('Rename'), rows.indexOf('Rename') + 2)).toEqual(['Rename', 'Regenerate title'])
     fireEvent.click(within(menu).getByRole('menuitem', { name: 'Regenerate title' }))
     expect(regenerations(live)).toEqual([{ type: 'regenerate-thread-title', threadId: 'visual-gate' }])
   })

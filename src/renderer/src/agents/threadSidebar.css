@@ -42,7 +42,7 @@
 .threads-search .tt-input { width: 100%; height: 100%; min-height: 0; padding: 0 28px 0 32px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: var(--threads-field); font-size: 13.5px; font-weight: 400; }
 .threads-search .tt-input::-webkit-search-cancel-button { display: none; }
 /* The sidebar's own controls ease their hover as the shared buttons do; reduced motion clamps it in global.css. */
-.threads-search__clear { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; translate: 0 -50%; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.threads-search__clear { position: absolute; top: 50%; right: 4px; display: grid; place-items: center; width: 24px; height: 24px; min-height: 24px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); translate: 0 -50%; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .threads-search__clear:hover { background: var(--threads-hover); color: var(--tt-text); }
 .threads-search__clear:active { background: var(--threads-selected); color: var(--tt-text); }
 /* Needs attention: how many failed turns no client has shown, under the search, with Dismiss all beside it (ADR-0092).
@@ -50,7 +50,7 @@
 .thread-nav__attention { display: flex; flex: none; align-items: center; gap: 8px; min-height: 32px; margin: 0 8px 8px; padding: 2px 3px 2px 10px; border-radius: 8px; background: var(--tt-warning-surface); color: var(--tt-warning-text); font-size: 12.5px; font-weight: 600; line-height: 1.3; }
 .thread-nav__attention > i { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--tt-attention); }
 .thread-nav__attention-count { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.thread-nav__attention-dismiss { flex: none; min-height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; font-weight: 500; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+.thread-nav__attention-dismiss { flex: none; min-height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--tt-text); font: inherit; font-size: 12.5px; font-weight: 500; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .thread-nav__attention-dismiss:hover:not([aria-disabled='true']) { background: var(--tt-hover); }
 .thread-nav__attention-dismiss:active:not([aria-disabled='true']) { background: var(--tt-hover-strong); }
 .thread-nav__attention-dismiss[aria-disabled='true'] { cursor: default; opacity: .6; }
@@ -65,7 +65,7 @@
 .needs-you__entry { padding: 7px 0 5px; border-top: 2px solid var(--tt-card-inset); }
 @media (prefers-reduced-motion: no-preference) { :root:not([data-reduced-motion='on']) .needs-you__entry { animation: tt-band-arrive 160ms cubic-bezier(.2, .8, .2, 1); } }
 .needs-you__top { display: flex; align-items: center; gap: 7px; min-width: 0; }
-.needs-you__title { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.needs-you__title { flex: 1 1 auto; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; font-size: 13px; font-weight: 600; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .needs-you__wait { flex: none; color: var(--tt-text-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 .needs-you__status { color: var(--threads-warning-text); font-weight: 600; }
 .needs-you__tag { padding: 0 5px; border-radius: 4px; background: var(--tt-card-inset); color: var(--tt-text-2); font-weight: 600; }
@@ -84,19 +84,23 @@
 .needs-you-card:focus-visible { outline: 2px solid var(--tt-focus); outline-offset: 1px; }
 .needs-you-card__head { display: flex; align-items: flex-start; gap: 8px; }
 .needs-you-card__title { flex: 1; min-width: 0; margin: 0; font-size: 13.5px; font-weight: 600; line-height: 1.35; overflow-wrap: anywhere; }
-.needs-you-card__close { display: grid; place-items: center; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); cursor: pointer; }
+.needs-you-card__close { display: grid; place-items: center; flex: none; width: 24px; height: 24px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); }
 .needs-you-card__close:hover { background: var(--tt-hover); color: var(--tt-text); }
 .needs-you-card__kind { margin: 2px 0 0; color: var(--threads-warning-text); font-size: 12px; font-weight: 600; }
 .needs-you-card__reason { margin: 8px 0 0; color: var(--tt-text-2); font-size: 13px; line-height: 1.45; overflow-wrap: anywhere; }
 /* The request card inside keeps its controls and drops its own frame: the popped card is the frame. */
 .needs-you-card .agent-request { margin-top: 8px; padding: 0; border: 0; background: transparent; }
 .needs-you-card__foot { display: flex; flex-wrap: wrap; gap: 6px; justify-content: space-between; align-items: center; margin-top: 8px; padding-top: 6px; border-top: 2px solid var(--tt-card-inset); }
+/* The thread list (ADR-0164) is a box only for its keys: its folders and the Settled shelf lay out as they always have. */
+.thread-nav__list { display: contents; }
+/* A row's or a folder's menu: the pane menu's look, shown in the top layer at the row or at the pointer. */
+.pane-menu__list.thread-row-menu { position: fixed; inset: auto; z-index: 60; box-sizing: border-box; margin: 0; max-height: calc(100vh - 16px); overflow-y: auto; color: var(--tt-text); }
 .thread-nav__scroll { overflow-y: auto; min-height: 0; padding-bottom: 12px; scrollbar-width: thin; scrollbar-color: var(--threads-scrollbar) transparent; }
 .thread-nav[data-mode] .thread-nav__scroll { flex: 1 1 auto; padding: 4px 4px 12px; }
 .thread-nav__label, .thread-nav__settled { display: flex; align-items: center; gap: 6px; margin: 0; padding: 10px 8px 6px; color: var(--tt-text-muted); font-size: 12px; font-weight: 500; letter-spacing: .02em; }
 .thread-nav__label span { color: var(--tt-text-muted); font-size: 12px; font-weight: 400; font-variant-numeric: tabular-nums; }
 /* The shelf: a chevron and one word. How many threads are behind it is in the button's own name. */
-.thread-nav__settled { width: calc(100% - 8px); min-height: 30px; margin: 8px 4px 2px; padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: transparent; font-size: 13.5px; text-align: left; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.thread-nav__settled { width: calc(100% - 8px); min-height: 30px; margin: 8px 4px 2px; padding: 0 8px 0 10px; border: 0; border-radius: 7px; background: transparent; font-size: 13.5px; text-align: left; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-nav__settled:hover { background: var(--threads-hover); color: var(--tt-text); }
 .thread-nav__settled > span { color: var(--tt-text-2); }
 .thread-folder__chevron { flex: none; transition: transform .16s ease; }
@@ -112,7 +116,7 @@
 .thread-folder { margin: 0 0 12px; }
 .thread-folder__head { position: relative; display: flex; align-items: center; border-radius: 7px; }
 .thread-folder__head:hover, .thread-folder__head[data-peeking] { background: var(--threads-hover); }
-.thread-folder__toggle { display: flex; flex: 1; align-items: center; gap: 5px; min-width: 0; min-height: 28px; padding: 0 8px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; cursor: pointer; }
+.thread-folder__toggle { display: flex; flex: 1; align-items: center; gap: 5px; min-width: 0; min-height: 28px; padding: 0 8px 0 6px; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 12.5px; font-weight: 600; text-align: left; }
 .thread-folder__toggle > svg { flex: none; color: var(--tt-text-muted); }
 /* Expanded, the rows themselves say the group is open; collapsed, the chevron is the only sign left. */
 .thread-folder__toggle[aria-expanded='true'] > .thread-folder__chevron { display: none; }
@@ -120,7 +124,7 @@
 .thread-folder[data-active] .thread-folder__toggle { color: var(--tt-text); }
 .thread-folder__actions, .thread-nav__row-actions { display: flex; gap: 2px; padding-right: 2px; }
 .thread-folder__rows { margin: 0; padding: 0; list-style: none; }
-.thread-nav__action { display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
+.thread-nav__action { display: grid; place-items: center; width: 28px; height: 28px; min-height: 28px; padding: 0; border: 0; border-radius: 7px; background: transparent; color: var(--tt-text-muted); transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease, opacity 120ms ease; }
 .thread-nav__action:hover:not(:disabled) { background: var(--threads-hover); color: var(--tt-text); }
 .thread-nav__action:active:not(:disabled) { background: var(--threads-selected); color: var(--tt-text); }
 .thread-nav__action:disabled { opacity: .5; cursor: not-allowed; }
@@ -143,7 +147,7 @@
 .thread-nav__row-actions { position: absolute; top: 1px; right: 0; pointer-events: none; }
 .thread-nav__row:hover .thread-nav__row-actions, .thread-nav__row:focus-within .thread-nav__row-actions, .thread-nav__row[data-current] .thread-nav__row-actions { position: static; flex: none; pointer-events: auto; }
 @media (hover: none) { .thread-nav__row-actions { position: static; flex: none; pointer-events: auto; } }
-.thread-nav__item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; flex: 1; min-width: 0; padding: 8px 10px 8px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); text-align: left; cursor: pointer; font: inherit; }
+.thread-nav__item { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; column-gap: 8px; row-gap: 2px; align-items: center; flex: 1; min-width: 0; padding: 8px 10px 8px 8px; border: 0; border-radius: 8px; background: transparent; color: var(--tt-text-2); text-align: left; font: inherit; }
 .thread-nav[data-mode] .thread-nav__item { grid-template-columns: 10px minmax(0, 1fr) auto; column-gap: 9px; row-gap: 0; min-height: 34px; padding: 0 8px 0 10px; border-radius: 7px; }
 .thread-nav__mark { display: grid; place-items: center; width: 18px; height: 18px; color: var(--tt-text-muted); }
 /* Provider tokens are badge fills; as glyph colour they read at 10:1 or more on the dark sidebar. The light
@@ -240,7 +244,7 @@
    surface so it never reads as opened. Its foot says Preview and offers the real opening. */
 .thread-folder__preview { margin: 2px 0 4px 17px; padding: 2px 2px 4px 8px; border-left: 2px solid var(--tt-border); background: var(--tt-surface-sunken); }
 .thread-folder__preview-foot { display: flex; align-items: center; gap: 8px; padding: 5px 8px 6px; color: var(--tt-text-muted); font-size: 11.5px; list-style: none; }
-.thread-folder__preview-action { padding: 2px 8px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 11.5px; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.thread-folder__preview-action { padding: 2px 8px; border: 1px solid var(--tt-hairline); border-radius: 6px; background: transparent; color: var(--tt-text-2); font: inherit; font-size: 11.5px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-folder__preview-action:hover { background: var(--threads-hover); color: var(--tt-text); }
 @keyframes thread-folder-preview { from { opacity: 0; transform: translateX(-4px); } }
 @media (prefers-reduced-motion: no-preference) {
@@ -276,7 +280,7 @@
 .thread-nav--mac .thread-nav__rail { padding-top: 44px; }
 .thread-nav__rail-list { flex: 1; min-height: 0; width: 100%; overflow-y: auto; scrollbar-width: thin; }
 .thread-nav__rail-list nav { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 4px 0; }
-.thread-nav__rail-thread { position: relative; flex: none; width: 32px; height: 34px; border: 1px solid var(--tt-hairline); border-radius: 7px; color: var(--tt-text); background: transparent; cursor: pointer; font: inherit; font-size: 14px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.thread-nav__rail-thread { position: relative; flex: none; width: 32px; height: 34px; border: 1px solid var(--tt-hairline); border-radius: 7px; color: var(--tt-text); background: transparent; font: inherit; font-size: 14px; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-nav__rail-thread:hover { background: var(--tt-hover); }
 .thread-nav__rail-thread:active:not(:disabled):not([aria-current]) { background: var(--tt-hover-strong); }
 .thread-nav__rail-thread[aria-current] { background: var(--tt-selected); border-color: var(--tt-focus); }
@@ -325,8 +329,8 @@
 .thread-folder__main-line { margin: 0; overflow-wrap: anywhere; }
 .thread-folder__main-behind { color: var(--tt-warning-text); }
 .thread-folder__main-updated { color: var(--tt-success); }
-.thread-folder__main-press { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
-.thread-folder__main-dismiss { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 4px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); vertical-align: middle; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
+.thread-folder__main-press { padding: 0; border: 0; border-radius: 3px; background: transparent; color: var(--tt-link); font: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.thread-folder__main-dismiss { display: inline-grid; place-items: center; width: 20px; height: 20px; margin-left: 4px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--tt-text-muted); vertical-align: middle; transition: background-color 120ms ease, border-color 120ms ease, color 120ms ease; }
 .thread-folder__main-dismiss:hover { background: var(--tt-hover); color: var(--tt-text); }
 .thread-folder__main-dismiss:active:not(:disabled) { background: var(--tt-hover-strong); color: var(--tt-text); }
 .thread-folder__main-list { margin-top: 5px; }

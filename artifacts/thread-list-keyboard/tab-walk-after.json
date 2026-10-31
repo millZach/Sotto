@@ -1,0 +1,256 @@
+[
+  {
+    "track": "stable",
+    "1600x1000": {
+      "presses": 13,
+      "reached": true,
+      "stops": [
+        {
+          "name": "Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Threads",
+          "sidebar": true
+        },
+        {
+          "name": "Usage (Ctrl+4)",
+          "sidebar": true
+        },
+        {
+          "name": "Settings (Ctrl+5)",
+          "sidebar": true
+        },
+        {
+          "name": "Help",
+          "sidebar": true
+        },
+        {
+          "name": "Resize sidebar",
+          "sidebar": true
+        },
+        {
+          "name": "Working copy: Project folder",
+          "sidebar": false
+        },
+        {
+          "name": "Watch Streaming WAV stall",
+          "sidebar": false
+        },
+        {
+          "name": "More actions",
+          "sidebar": false
+        },
+        {
+          "name": "Thread transcript",
+          "sidebar": false
+        },
+        {
+          "name": "Copy message as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Copy reply as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Prompt",
+          "sidebar": false
+        }
+      ]
+    },
+    "820x560": {
+      "presses": 13,
+      "reached": true,
+      "stops": [
+        {
+          "name": "Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Threads",
+          "sidebar": true
+        },
+        {
+          "name": "Usage (Ctrl+4)",
+          "sidebar": true
+        },
+        {
+          "name": "Settings (Ctrl+5)",
+          "sidebar": true
+        },
+        {
+          "name": "Help",
+          "sidebar": true
+        },
+        {
+          "name": "Resize sidebar",
+          "sidebar": true
+        },
+        {
+          "name": "Working copy: Project folder",
+          "sidebar": false
+        },
+        {
+          "name": "Watch Streaming WAV stall",
+          "sidebar": false
+        },
+        {
+          "name": "More actions",
+          "sidebar": false
+        },
+        {
+          "name": "Thread transcript",
+          "sidebar": false
+        },
+        {
+          "name": "Copy message as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Copy reply as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Prompt",
+          "sidebar": false
+        }
+      ]
+    }
+  },
+  {
+    "track": "owl",
+    "1600x1000": {
+      "presses": 15,
+      "reached": true,
+      "stops": [
+        {
+          "name": "Open Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Open to answer the approval in Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Threads",
+          "sidebar": true
+        },
+        {
+          "name": "Usage (Ctrl+4)",
+          "sidebar": true
+        },
+        {
+          "name": "Settings (Ctrl+5)",
+          "sidebar": true
+        },
+        {
+          "name": "Help",
+          "sidebar": true
+        },
+        {
+          "name": "Resize sidebar",
+          "sidebar": true
+        },
+        {
+          "name": "Working copy: Project folder",
+          "sidebar": false
+        },
+        {
+          "name": "Watch Streaming WAV stall",
+          "sidebar": false
+        },
+        {
+          "name": "More actions",
+          "sidebar": false
+        },
+        {
+          "name": "Thread transcript",
+          "sidebar": false
+        },
+        {
+          "name": "Copy message as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Copy reply as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Prompt",
+          "sidebar": false
+        }
+      ]
+    },
+    "820x560": {
+      "presses": 15,
+      "reached": true,
+      "stops": [
+        {
+          "name": "Open Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Open to answer the approval in Visual gate flake",
+          "sidebar": true
+        },
+        {
+          "name": "Streaming WAV stall",
+          "sidebar": true
+        },
+        {
+          "name": "Threads",
+          "sidebar": true
+        },
+        {
+          "name": "Usage (Ctrl+4)",
+          "sidebar": true
+        },
+        {
+          "name": "Settings (Ctrl+5)",
+          "sidebar": true
+        },
+        {
+          "name": "Help",
+          "sidebar": true
+        },
+        {
+          "name": "Resize sidebar",
+          "sidebar": true
+        },
+        {
+          "name": "Working copy: Project folder",
+          "sidebar": false
+        },
+        {
+          "name": "Watch Streaming WAV stall",
+          "sidebar": false
+        },
+        {
+          "name": "More actions",
+          "sidebar": false
+        },
+        {
+          "name": "Thread transcript",
+          "sidebar": false
+        },
+        {
+          "name": "Copy message as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Copy reply as Markdown",
+          "sidebar": false
+        },
+        {
+          "name": "Prompt",
+          "sidebar": false
+        }
+      ]
+    }
+  }
+]

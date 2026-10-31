@@ -8,7 +8,7 @@ import { expect, test, type Locator, type Page } from '@playwright/test'
 import { DEFAULT_SETTINGS } from '../../src/shared/settings'
 import { defaultAgentConfiguration } from '../../src/shared/agents'
 import { hostKeys } from './support/hostKeys'
-import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
+import { closeSotto, launchSotto, openThreads, paneMenuAction, toggleTools, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
 // Three, four and five thread panes across projects on the real app: snapping, row arrangement, dividers by pointer
@@ -103,16 +103,19 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await expectPromptText(prompt('footer-links'), 'Footer draft stays with its pane.')
     await expectPromptText(prompt('weekly-note'), 'Weekly draft stays with its pane.')
 
-    // A single row from the focused pane's controls, and back to the grid with its sizes.
-    const rowToggle = pane('weekly-note').getByRole('button', { name: 'Single row' })
-    await rowToggle.click()
-    await expect(rowToggle).toHaveAttribute('aria-pressed', 'true')
+    // A single row from a pane's ··· menu (ADR-0163), and back to the grid with its sizes.
+    await paneMenuAction(pane('weekly-note'), 'Arrange in a single row')
+    await expect(panes.locator('.thread-panes__divider[data-axis="rows"]')).toHaveCount(0)
     placed = await boxes(page)
     expect(new Set(placed.map(box => box.y)).size).toBe(1)
     expect(Math.max(...placed.map(box => box.width)) - Math.min(...placed.map(box => box.width))).toBeLessThanOrEqual(1)
     await capture(page, 'three-row-1600')
-    await rowToggle.press('Enter')
-    await expect(rowToggle).toHaveAttribute('aria-pressed', 'false')
+    // From the keyboard: the ··· button, Enter, then the row by name.
+    await pane('weekly-note').getByRole('button', { name: 'More actions', exact: true }).focus()
+    await page.keyboard.press('Enter')
+    await pane('weekly-note').getByRole('menuitem', { name: 'Arrange in a grid', exact: true }).focus()
+    await page.keyboard.press('Enter')
+    await expect(pane('weekly-note').getByRole('button', { name: 'More actions', exact: true })).toBeFocused()
 
     // A fourth pane makes a 2-by-2 grid.
     await openBeside(page, 'Visual gate flake')
@@ -149,7 +152,8 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     // A fifth pane dragged from the sidebar onto the slot it will take: three across and two below.
     const sidebar = page.getByRole('complementary', { name: 'Thread sidebar' })
     const wavRow = sidebar.getByRole('button', { name: 'Streaming WAV stall', exact: true })
-    await wavRow.hover()
+    // Held by its name, left of the row's actions, which take the middle of a hovered row.
+    await wavRow.hover({ position: { x: 16, y: 12 } })
     await page.mouse.down()
     await page.mouse.move(area.x + area.width * 0.5, area.y + area.height * 0.5, { steps: 4 })
     const addHere = page.locator('.thread-panes__drop', { hasText: 'Add here' })
@@ -170,7 +174,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await capture(page, 'five-1600')
 
     // Five in one row cannot fit here, so one shows at a time with tabs until there is room.
-    await pane('wav-stall').getByRole('button', { name: 'Single row' }).click()
+    await paneMenuAction(pane('wav-stall'), 'Arrange in a single row')
     const tabs = page.getByRole('tablist', { name: 'Open panes' })
     await expect(tabs).toBeVisible()
     await expect(tabs.getByRole('tab')).toHaveCount(5)
@@ -190,26 +194,25 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     expect((await agents(page)).host.threads.find(thread => thread.id === key('visual-gate'))!.status).toBe('running')
     await expect(sidebar.getByRole('button', { name: 'Visual gate flake', exact: true })).toBeVisible()
     await pane('weekly-note').click({ position: { x: 200, y: 200 } })
-    await pane('weekly-note').getByRole('button', { name: 'Single row' }).click()
+    await paneMenuAction(pane('weekly-note'), 'Arrange in a grid')
     await openBeside(page, 'Visual gate flake')
     await expect(panes.locator('section.thread-pane[role="region"]:not([data-hidden])')).toHaveCount(4)
     // The grid kept its sizes through the row arrangement and back.
     await expect(rowsDivider).toHaveAttribute('aria-valuenow', '60')
     await expect(pane('visual-gate')).toContainText('npm test -- --run tests/unit/agents')
 
-    // Move a pane from the keyboard, then by dragging its grip; drafts and focus travel with the pane.
-    const grokGrip = pane('grok-previews').getByRole('button', { name: 'Move Grok voice previews pane' })
-    await grokGrip.focus()
-    await page.keyboard.press('ArrowRight')
+    // Move a pane from its ··· menu, then by dragging its title; drafts and focus travel with the pane.
+    const grokMore = pane('grok-previews').getByRole('button', { name: 'More actions', exact: true })
+    await paneMenuAction(pane('grok-previews'), 'Move pane right')
     await expect.poll(async () => (await boxes(page)).map(box => box.id)).toEqual(['footer-links', 'grok-previews', 'weekly-note', 'visual-gate'].map(key))
-    await expect(grokGrip).toBeFocused()
-    await page.keyboard.press('ArrowDown')
+    await expect(grokMore).toBeFocused()
+    await paneMenuAction(pane('grok-previews'), 'Move pane down')
     await expect.poll(async () => (await boxes(page)).map(box => box.id)).toEqual(['footer-links', 'visual-gate', 'weekly-note', 'grok-previews'].map(key))
-    await expect(grokGrip).toBeFocused()
+    await expect(grokMore).toBeFocused()
     await expectPromptText(prompt('grok-previews'), 'Grok draft stays with its pane.')
-    const footerGrip = pane('footer-links').getByRole('button', { name: 'Move Footer links pane' })
+    const footerTitle = pane('footer-links').locator('.thread-workspace__title h2')
     const weeklyBox = (await pane('weekly-note').boundingBox())!
-    await footerGrip.hover()
+    await footerTitle.hover()
     await page.mouse.down()
     await page.mouse.move(weeklyBox.x + weeklyBox.width / 2, weeklyBox.y + 40, { steps: 4 })
     await page.mouse.move(weeklyBox.x + weeklyBox.width / 2, weeklyBox.y + weeklyBox.height / 2, { steps: 8 })
@@ -227,7 +230,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await expect(prompt('footer-links')).toBeFocused()
     await expectPromptText(prompt('footer-links'), 'Footer draft stays with its pane.')
     await capture(page, 'four-zoomed-1600')
-    await pane('footer-links').getByRole('button', { name: 'Show all panes' }).click()
+    await paneMenuAction(pane('footer-links'), 'Show all panes')
     await expect(panes).not.toHaveAttribute('data-zoomed')
     expect((await boxes(page)).map(box => box.id)).toEqual(['weekly-note', 'visual-gate', 'footer-links', 'grok-previews'].map(key))
     await expect(rowsDivider).toHaveAttribute('aria-valuenow', '60')
@@ -237,8 +240,7 @@ test('three, four and five panes snap, resize, move, zoom and come back after a 
     await expect(tabs).toHaveCount(0)
     await expect.poll(async () => (await boxes(page)).every(box => box.width >= 400 && box.height >= 300)).toBe(true)
     await capture(page, 'four-1280x800')
-    const filesToggle = pane('footer-links').locator('[aria-controls="sotto-tools-panel"]')
-    await filesToggle.click()
+    await toggleTools(pane('footer-links'))
     await expect(page.locator('#sotto-tools-panel')).toBeVisible()
     await expect(tabs).toBeVisible()
     await expect(tabs.getByRole('tab', { name: 'Footer links' })).toHaveAttribute('aria-selected', 'true')
