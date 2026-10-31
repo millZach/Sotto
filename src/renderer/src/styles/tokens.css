@@ -571,6 +571,10 @@
   --tt-sidebar-row-active: var(--theme-glass-row-active);
   --tt-sidebar-row-selected: var(--theme-glass-row-selected);
   --tt-selected: var(--theme-glass-row-selected);
+  /* Glass's muted text stands close to its body text by night (oklch 0.86 against 0.985), so the prompt's hint mixes it
+     with the room's solid colour too, 86% muted, which keeps it 2:1 from typed words and 4.5:1 on the glass card over
+     pure white or black behind the window, at every Contrast (Zach's pick on October 31, 2026). */
+  --tt-text-hint: color-mix(in oklab, color-mix(in oklab, color-mix(in oklab, var(--theme-text-muted) 86%, var(--theme-canvas)) var(--theme-contrast-base), var(--theme-canvas)), var(--theme-contrast-target) var(--theme-contrast-boost));
 }
 /* By day the room can go as dark as its tint over black, so the status green deepens to keep 4.5:1 there. */
 :root[data-glass][data-theme='light'] {
