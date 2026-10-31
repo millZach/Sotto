@@ -18,6 +18,7 @@ import { codexFixture } from '../fixtures/codexFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import { devinFixture } from '../fixtures/devinFixture'
 import { museFixture } from '../fixtures/museFixture'
+import { savedAgentsState, withoutWatcherFile } from '../fixtures/savedWatcher'
 
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
@@ -45,6 +46,7 @@ async function savedWatcher(watcherEnabled = false) {
   record.current = identity
   record.history = [{ ...identity, target: { ...identity.target, threadId: ids[1]! } }]
   await writeFile(join(root, 'agents.json'), JSON.stringify({ watcher: record }))
+  await withoutWatcherFile(root)
   f = await workspaceFixture(root, { watcherEnabled })
   cleanups.push(() => f.stop())
   return { ...f, record, ids, saved, file, model, project }
@@ -104,6 +106,7 @@ it('stable never attaches sotto_threads or grants any current, creation or histo
   const identityOnly = randomUUID()
   f.record.creation = { phase: 'intent', identity: { ...f.record.current!, target: { ...f.record.current!.target, threadId: identityOnly } }, replaces: f.record.current!.target }
   await writeFile(join(f.root, 'agents.json'), JSON.stringify({ watcher: f.record }))
+  await withoutWatcherFile(f.root)
   const source = new WatcherLaunchProfiles(f.root, () => f.record.current!.target.hostId,
     id => f.saved.snapshot.threads.find((thread: AgentThread) => thread.id === id))
   source.useTools(tools)
@@ -141,6 +144,7 @@ it.each(['claude', 'codex', 'grok', 'devin', 'muse'] as const)('refuses disabled
   const record = emptyWatcherRecord()
   record.current = { target: { hostId, threadId }, provider: provider === 'devin' ? 'codex' : provider, projectId: f.projectId, creationOperationId: randomUUID(), createdAt: new Date().toISOString() }
   await writeFile(join(f.root, 'agents.json'), JSON.stringify({ watcher: record }))
+  await withoutWatcherFile(f.root)
   f.host.useLaunchProfiles!(new WatcherLaunchProfiles(f.root, () => hostId, id => ({ id, hostId, kind: 'watcher',
     providerId: provider, projectId: f.projectId, title: 'Synthetic', modelId: f.modelId, status: 'idle', messages: [], requests: [] })))
   await expect(f.host.startThreadSession!(threadId, { modelId: f.modelId, workingDirectory: f.root })).rejects.toThrow('Sotto Owl')
@@ -167,6 +171,7 @@ it.each([true, false])('keeps a restored Watcher selection, drafts, deliveries, 
     deliveries: [{ threadId, draftId, status: 'submitting', createdAt: at, updatedAt: at }],
     outbox: [{ id: randomUUID(), threadId, type: 'send', messageId: randomUUID() }] })
   await writeFile(file, JSON.stringify(saved))
+  await withoutWatcherFile(fixture.directory)
   const followupFile = join(fixture.directory, 'followups.json')
   const queue = { items: ['queued', 'dispatching'].map(status => ({ id: randomUUID(), threadId, draftId: randomUUID(), status,
     text: 'Synthetic retained wake-up', attachments: [attachment], createdAt: at, updatedAt: at, wakeUp: true })), receipts: [] }
@@ -193,7 +198,7 @@ it.each([true, false])('keeps a restored Watcher selection, drafts, deliveries, 
   await control.privacyChanged()
   control.dispose()
   await control.closed()
-  const after = JSON.parse(await readFile(file, 'utf8'))
+  const after = await savedAgentsState(fixture.directory)
   for (const key of ['watcher', 'activeThreadId', 'activeProjectId', 'draft', 'draftThreadId', 'draftRequestId', 'draftAttachments',
     'manualDraftId', 'composing', 'threadDrafts', 'deliveries', 'outbox']) expect(after[key]).toEqual(saved[key])
   expect(JSON.parse(await readFile(followupFile, 'utf8'))).toEqual(queue)

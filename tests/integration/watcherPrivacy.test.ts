@@ -18,6 +18,7 @@ import type { AgentAttachment, AgentThread } from '../../src/shared/agents'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { PIXEL_DATA_URL, PIXEL_PNG, pngOfSize } from '../fixtures/stagedImages'
+import { savedWatcherRecord, withoutWatcherFile } from '../fixtures/savedWatcher'
 
 vi.mock('node:fs/promises', async importOriginal => ({ ...await importOriginal<typeof import('node:fs/promises')>() }))
 
@@ -67,6 +68,7 @@ async function profile() {
   const agents = JSON.parse(await readFile(agentsFile, 'utf8'))
   agents.watcher = watcher
   await writeFile(agentsFile, JSON.stringify(agents))
+  await withoutWatcherFile(owl.root)
   const threads = new ThreadStore(join(owl.root, 'threads.sqlite'))
   const subagents = new SubagentStore(join(owl.root, 'subagents.sqlite'))
   threads.open(); subagents.open()
@@ -109,7 +111,7 @@ it.each(['startup', 'privacy-change'] as const)('keeps dormant Watcher SQLite da
   const ordinarySubagents = databaseRows(f.root, 'subagents.sqlite', subagentTables, [f.ordinary])[f.ordinary]!
   expect(ordinarySubagents.subagent_assignments).toEqual([])
   expect(ordinarySubagents.subagent_classifications).toEqual([])
-  expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).watcher).toEqual(f.watcher)
+  expect(await savedWatcherRecord(f.root)).toEqual(f.watcher)
 })
 
 it.each(['startup', 'privacy-change'] as const)('keeps Watcher submitted previews and bytes through history-off %s while ordinary previews are removed', async scenario => {

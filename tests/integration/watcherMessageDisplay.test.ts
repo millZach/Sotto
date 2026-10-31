@@ -1,6 +1,5 @@
 // @vitest-environment node
 import { createHash, randomUUID } from 'node:crypto'
-import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { DatabaseSync } from 'node:sqlite'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -12,6 +11,7 @@ import { applyAgentThreadDetailDelta, isAgentThreadDetailDelta } from '../../src
 import type { AgentThreadDetail, AgentThreadDetailUpdate } from '../../src/shared/agents'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
+import { savedWatcherRecord } from '../fixtures/savedWatcher'
 
 vi.mock('node:crypto', async importActual => {
   const actual = await importActual<typeof import('node:crypto')>()
@@ -68,8 +68,8 @@ describe('real Watcher user message display', () => {
     const execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
     vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
       if (command.type === 'send') {
-        const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8'))
-        beforeWriter.push(saved.watcher.requests.find((request: { rootUserMessageId: string }) => request.rootUserMessageId === command.messageId)?.displayPrompt)
+        const saved = (await savedWatcherRecord<{ requests: { rootUserMessageId: string; displayPrompt?: unknown }[] }>(f.root))!
+        beforeWriter.push(saved.requests.find(request => request.rootUserMessageId === command.messageId)?.displayPrompt)
       }
       return execute(command)
     })

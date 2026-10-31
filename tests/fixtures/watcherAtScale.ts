@@ -14,6 +14,7 @@ import type { WatcherRecord } from '../../src/shared/watcher'
 import { agentControlFixture } from './agentControlFixture'
 import { centerHostId, centerTime, watcherRecordFixture } from './watcher'
 import { workspaceFixture } from './workspaceFixture'
+import { WATCHER_RECORD_FILE } from '../../src/main/agents/watcherRecordFile'
 
 const uuid = (n: number) => `00000000-0000-4000-8000-${n.toString(16).padStart(12, '0')}`
 
@@ -145,7 +146,7 @@ export async function watcherAtScale(shape: ScaleShape, options: ScaleOptions = 
       await control.updateWatcher(() => undefined)
       await attached.detach()
       control.dispose()
-      const path = join(workspace.root, 'agents.json'), saved = JSON.parse(await readFile(path, 'utf8')) as { watcher: WatcherRecord }
+      const path = join(workspace.root, WATCHER_RECORD_FILE), saved = JSON.parse(await readFile(path, 'utf8')) as { watcher: WatcherRecord }
       // Older turns nothing reads any more, before the ones Watcher's operations still count against.
       saved.watcher.promptTurns = [...Array.from({ length: options.savedPromptTurns }, (_, index) => ({ id: uuid(90_000 + index), watcher, createdAt: centerTime,
         rootUserMessageId: `turn-root-${index}` })), ...saved.watcher.promptTurns ?? []]

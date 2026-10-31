@@ -18,6 +18,7 @@ import { appearancePreview, glassPaints, resolveAppearance, useAppearancePreview
 import { messageIn, useInterfaceLanguageState } from '../../state/interfaceLanguage'
 import { useOwlFeature } from '../../state/owlFeature'
 import { creatureShown, useLardoOffered } from '../../state/creature'
+import { ComposerStyleChoice } from './themes/ComposerStyleChoice'
 import { LanguagePicker } from './LanguagePicker'
 import { shownWords, type LaterWords } from './laterWords'
 import { MenuBarOwlSettings } from './MenuBarOwlSettings'
@@ -174,6 +175,7 @@ export function AppearanceSettings({ settings, platform, onSave, getSettings, on
         <div className="settings-rows">
           <EffortColorChoice value={shown.effortColor} onChoose={effortColor => void choose({ effortColor }, msg`Effort color saved.`)} />
           <CreatureChoice value={creature} shown={!creatureToggle || settings.showCreature} onShow={creatureToggle ? showCreature => void onSave({ showCreature }, showCreature ? msg`Creature shown.` : msg`Creature hidden.`).catch(() => false) : undefined} onChoose={creature => void onSave({ creature }, msg`Creature saved.`).catch(() => false)} />
+          <ComposerStyleChoice value={settings.composerStyle} onChoose={composerStyle => onSave({ composerStyle }, msg`Composer saved.`).catch(() => false)} />
           <WatcherSceneChoice value={settings.watcherScene} onChoose={watcherScene => onSave({ watcherScene }, msg`Watcher scene saved.`).catch(() => false)} />
           <AppearanceSlider
             label={t`Contrast`}

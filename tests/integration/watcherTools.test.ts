@@ -19,6 +19,7 @@ import { countWorkingThreads } from '../../src/shared/workingThreads'
 import { workspaceFixture } from '../fixtures/workspaceFixture'
 import { agentControlFixture } from '../fixtures/agentControlFixture'
 import { deferred } from '../fixtures/deferred'
+import { savedWatcherRecord } from '../fixtures/savedWatcher'
 import { PIXEL_PNG } from '../fixtures/stagedImages'
 import { initializeGitRepository } from '../fixtures/gitRepository'
 import { followupStoreOf, storedFollowups } from '../fixtures/followupQueue'
@@ -198,10 +199,9 @@ it('saves at most eight reservations, so a build from before #1183 still reads t
   expect(f.control.watcherRecordView().reservations).toHaveLength(11)
   f.service.close(); f.control.dispose(); await f.control.closed()
   // The Watcher record schema before #1183 is this one with at most eight reservations. A record it could not read would
-  // cost that build all of agents.json.
+  // cost that build all of agents.json, and the saved record is the same in Watcher's own file.
   const older = watcherRecordSchema.refine(record => record.reservations.length <= 8)
-  const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { watcher: unknown }
-  expect(older.safeParse(saved.watcher).success).toBe(true)
+  expect(older.safeParse(await savedWatcherRecord(f.root)).success).toBe(true)
   // This build puts back what the file left off, for the threads still working.
   const restored = f.create(), service = new WatcherService({ directory: f.root, control: restored, host: f.workspace.host, historyEnabled: () => true })
   cleanups.push(async () => { service.close(); restored.dispose(); await restored.closed() })
@@ -213,7 +213,7 @@ it('rebuilds the reservations the file left off even when a saved one is pruned 
   const f = await fixture()
   for (let started = 1; started <= 11; started++) expect(await f.call('start_thread', f.start())).toMatchObject({ status: 'ok' })
   f.service.close(); f.control.dispose(); await f.control.closed()
-  const saved = JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')) as { watcher: { reservations: { target: { threadId: string } }[] } }
+  const saved = { watcher: (await savedWatcherRecord<{ reservations: { target: { threadId: string } }[] }>(f.root))! }
   expect(saved.watcher.reservations).toHaveLength(8)
   // While Sotto is closed, one thread the file kept finishes: the threads observed at start prune its reservation before
   // Watcher recovers, leaving seven in the record.
@@ -308,7 +308,7 @@ it('writes no Watcher drafts, machine queues or worker message words with histor
     }
   }
   await inspect(f.root)
-  expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).watcher.operations.length).toBe(2)
+  expect((await savedWatcherRecord<{ operations: unknown[] }>(f.root))!.operations.length).toBe(2)
 })
 
 it('requires a main preview for Stop all, stops only started participants and refuses stale confirmations', async () => {
@@ -423,7 +423,7 @@ it('keeps an existing-thread acknowledgement uncertain without consuming start c
   const result = await f.call('send_to_thread', input)
   expect(result).toMatchObject({ status: 'ok', receipt: { deliveryState: 'uncertain' } })
   expect(f.service.startsInFlight()).toBe(0)
-  expect(JSON.parse(await readFile(join(f.root, 'agents.json'), 'utf8')).watcher.operations.at(-1).deliveryState).toBe('uncertain')
+  expect((await savedWatcherRecord<{ operations: { deliveryState: string }[] }>(f.root))!.operations.at(-1)!.deliveryState).toBe('uncertain')
   const count = spy.mock.calls.length
   expect(await f.call('send_to_thread', input)).toEqual(result)
   expect(spy.mock.calls).toHaveLength(count)
@@ -1188,8 +1188,7 @@ it('records the request its news says waits on the user with the wake-up, and pl
 
 /** The wake-up IDs the coordinator's saved state remembers as told, read from disk as a restart would read them. */
 async function savedTold(root: string): Promise<string[]> {
-  const saved = JSON.parse(await readFile(join(root, 'agents.json'), 'utf8')) as { watcher?: { wakeEventIds?: string[] } }
-  return saved.watcher?.wakeEventIds ?? []
+  return (await savedWatcherRecord<{ wakeEventIds?: string[] }>(root))?.wakeEventIds ?? []
 }
 
 it('saves a refused wake-up’s news as untold before the wake-up leaves the queue, so a crash between loses nothing (review P1)', async () => {
@@ -1211,10 +1210,10 @@ it('settles a hidden wake-up once when two settles overlap, so a crash while the
   const f = await fixture(), { hidden } = await heldQuestion(f)
   const item = hidden()[0]!, events = item.news!.flatMap(news => 'events' in news ? news.events.map(event => event.id) : [])
   await vi.waitFor(async () => expect(await savedTold(f.root)).toEqual(expect.arrayContaining(events)))
-  // The save of agents.json that forgets the wake-up's news is held open, as a slow disk holds it.
-  const inner = (f.control as unknown as { store: { write: (...args: unknown[]) => Promise<void> } }).store, write = inner.write.bind(inner)
+  // The save of Watcher's record that forgets the wake-up's news is held open, as a slow disk holds it.
+  const inner = (f.control as unknown as { watcherStore: { writeSerialized: (...args: unknown[]) => Promise<void> } }).watcherStore, write = inner.writeSerialized.bind(inner)
   const entered = deferred<void>(), release = deferred<void>()
-  vi.spyOn(inner, 'write').mockImplementation(async (...args) => { entered.resolve(); await release.promise; return write(...args) })
+  vi.spyOn(inner, 'writeSerialized').mockImplementation(async (...args) => { entered.resolve(); await release.promise; return write(...args) })
   const settle = (f.control as unknown as { settleWatcherWakeUp: (item: unknown, outcome: string) => Promise<void> }).settleWatcherWakeUp.bind(f.control)
   try {
     // The pump withdraws the wake-up, and advisory pruning settles it again while the first save is on its way.
@@ -1236,10 +1235,10 @@ it('saves the news of a hidden wake-up as untold again on the next settle when t
   const f = await fixture(), { hidden } = await heldQuestion(f)
   const item = hidden()[0]!, events = item.news!.flatMap(news => 'events' in news ? news.events.map(event => event.id) : [])
   await vi.waitFor(async () => expect(await savedTold(f.root)).toEqual(expect.arrayContaining(events)))
-  // The save of agents.json that forgets the wake-up's news fails once; memory has forgotten it, the disk has not.
-  const inner = (f.control as unknown as { store: { write: (...args: unknown[]) => Promise<void> } }).store, write = inner.write.bind(inner)
+  // The save of Watcher's record that forgets the wake-up's news fails once; memory has forgotten it, the disk has not.
+  const inner = (f.control as unknown as { watcherStore: { writeSerialized: (...args: unknown[]) => Promise<void> } }).watcherStore, write = inner.writeSerialized.bind(inner)
   let failNext = true
-  vi.spyOn(inner, 'write').mockImplementation(async (...args) => { if (failNext) { failNext = false; throw new Error('Synthetic disk failure') } return write(...args) })
+  vi.spyOn(inner, 'writeSerialized').mockImplementation(async (...args) => { if (failNext) { failNext = false; throw new Error('Synthetic disk failure') } return write(...args) })
   const settle = (f.control as unknown as { settleWatcherWakeUp: (item: unknown, outcome: string) => Promise<void> }).settleWatcherWakeUp.bind(f.control)
   await expect(settle(item, 'withdrawn')).rejects.toThrow('Synthetic disk failure')
   expect(hidden().map(entry => entry.id)).toEqual([item.id])
