@@ -18,7 +18,7 @@ import { sameSnapshot } from './sameSnapshot'
 import { isUsageProviderId, reportsUsageLimits, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { mappedSink, type UsageHistorySink } from './usageHistory/sink'
 import { unavailableProviderQuota } from './providerQuota'
-import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles, type ThreadForkRequest, type WorkerRoleSource } from './host'
+import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentHost, type AgentHostCommand, type AgentHostResult, type AgentSkillScope, type RestoredThreadHistory, type ShortTextPrompt, type ShortTextTarget, type ThreadHistorySource, type ThreadHostEvent, type ThreadReadPurpose, type ThreadSessionDraft, type ThreadLaunchProfiles, type ThreadForkRequest, type WorkerRoleSource } from './host'
 
 /** Public IDs are opaque to callers and reversible only at the provider boundary. */
 export function providerEntityId(provider: ProviderId, kind: 'model' | 'project', value: string): string {
@@ -655,6 +655,12 @@ export class ConfiguredProviderHost implements AgentHost {
     const id = this.providerForThread(threadId)
     if (!id || this.slots.get(id)!.status.connection !== 'connected') return null
     return await this.options.hosts[id].writeShortText?.(threadId, prompt, signal) ?? null
+  }
+  /** The chosen model's own provider writes or nothing does (ADR-0026, ADR-0173), and only while it is connected. */
+  async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    const model = resolveModel(this.aggregate(false).models, this.resolveModelId(target.modelId))
+    if (!model?.providerId || !model.ready || this.slots.get(model.providerId)!.status.connection !== 'connected') return null
+    return await this.options.hosts[model.providerId].writeShortTextOn?.({ ...target, modelId: nativeEntityId(model.providerId, 'model', model.id) }, prompt, signal) ?? null
   }
   providerForThread(threadId: string): ProviderId | undefined {
     try { return this.owner(threadId) } catch { return undefined }

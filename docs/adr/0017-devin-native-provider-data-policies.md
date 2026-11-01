@@ -50,6 +50,23 @@ This makes delivery evidence weaker in one respect, which is accepted. A prompt 
 
 The replay's size limit (ADR-0016) is met only where a replay is read. A send to a held thread with every dispatch confirmed reads none, so a thread whose history has grown past the limit is found at the next replay read instead. A poll that fails on it says so as a provider notice; the read that confirms the next turn fails the same way, which leaves that dispatch unconfirmed, so the send after it reads the replay first and is refused. The limit can therefore stop a thread a prompt or two later than it did; nothing is resent either way.
 
+## Amendment: an idle thread Sotto holds is not read again (November 1, 2026, #992)
+
+The October 6 amendment stopped a send reading the replay of a held session with every dispatch confirmed. The poll kept
+reading it: every thread on screen whose own process held its session was read every 15 seconds, each read starting a
+`devin acp` of its own that loaded the session and replayed all of it, to be refused the session at the end. Five idle
+Devin threads on screen started twenty processes a minute.
+
+The poll now reads a held thread only while one of its dispatches is unconfirmed, which is the one thing a replay can
+add while the thread's own process holds the session: no other client can write to it, and its stream carries every
+turn once Devin has shown it took the prompt. A thread Sotto does not hold is read as before, on opening it and on any
+read of it. A message typed into Devin while Sotto did not hold the session is read when Sotto next opens the thread.
+
+The replay's size limit is then met at the read that confirms a thread's next turn, or the next time the thread is
+opened, rather than at the next poll. The adapter contract's check that a message typed into a held session is noticed
+unasked does not apply to Devin, since Devin refuses that session to the typist; the fixture says so
+(`devinFixtureSkips.takeoverWhileHeld`), and `devinAdapter.test.ts` covers the message typed while Sotto does not hold it.
+
 ## Amendment: Devin's telemetry export is pinned off, and a newer Devin says so (October 14, 2026, #1045)
 
 Devin CLI 3000.11.1 added OpenTelemetry export, and `_cognition.ai/config/read` began returning a top-level `otel` block. The readback refuses any block it does not know, so updating Devin stopped every Devin thread. The refusal also reached the provider tile only as "Devin sent an invalid response.", because the process treated a readback that throws as a garbled reply. Nothing was lost, but nothing could run.

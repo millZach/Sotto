@@ -5,6 +5,7 @@ import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { defaultThreadModelId, enabledThreadProviders, PROVIDER_LABELS, providerIdSchema, type ProviderClientUpdate, type ProviderId } from '../../../shared/agents'
 import { catalogEntry } from '../../../shared/modelCatalog'
+import { modelInForce } from '../../../shared/modelLineup'
 import { DEFAULT_ULTRACODE_EFFORT, ULTRACODE_EFFORTS, type UltracodeEffort } from '../../../shared/ultracode'
 import { Button } from '../components/Button'
 import { Toggle } from '../components/Toggle'
@@ -236,7 +237,7 @@ export function ProvidersSettings({ compactIdle }: { readonly compactIdle?: Comp
     } catch { setErrors(previous => ({ ...previous, claude: failed })) }
   }
   // The selected host's agent setting is not this computer's, so a joined window reads this computer's from its entry.
-  const inheritedModelId = local ? local.agentModelId ?? '' : defaultThreadModelId(state.configuration, hostModels, state.reasoningAccounts)
+  const inheritedModelId = local ? local.agentModelId ?? '' : modelInForce(hostModels, defaultThreadModelId(state.configuration, hostModels, state.reasoningAccounts))
   const triggerOf = (provider: ProviderId) => document.getElementById(`${rowId}-${provider}-trigger`)
   // Cursor's row signs in from its connection column, which says what to do while Cursor is not signed in and where a
   // sign-in stands while one waits; neither main's sentence about it nor a Connect press's own error is repeated there.

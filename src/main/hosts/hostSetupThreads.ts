@@ -6,6 +6,7 @@ import { defaultNewThreadModelId, type AgentCommand, type AgentModel, type Agent
 import { hostEntityKey } from '../../shared/clientIdentity'
 import type { HostSetupChoice } from '../../shared/hosts'
 import { resolveModel } from '../../shared/modelCatalog'
+import { modelInForce } from '../../shared/modelLineup'
 import { isThreadArchived } from '../../shared/threadActivity'
 import type { HostSetupThreads } from './hostSetup'
 
@@ -53,8 +54,8 @@ export function coordinatorSetupThreads(options: { coordinator: HostSetupCoordin
         if (model) counts.set(model.id, (counts.get(model.id) ?? 0) + 1)
       }
       const most = [...counts].sort((left, right) => right[1] - left[1])[0]?.[0]
-      const fallback = resolveModel(models, defaultNewThreadModelId(current.configuration, models, current.reasoningAccounts))?.id ?? models[0]!.id
-      return { models: models.map(model => ({ id: model.id, name: model.name, provider: model.provider })), modelId: most ?? fallback }
+      const fallback = resolveModel(models, modelInForce(models, defaultNewThreadModelId(current.configuration, models, current.reasoningAccounts)))?.id ?? models[0]!.id
+      return { models: models.map(model => ({ id: model.id, name: model.name, provider: model.provider, ...(model.legacy ? { legacy: true as const } : {}) })), modelId: most ?? fallback }
     },
     async start({ title, modelId, brief, created }) {
       await mkdir(folder, { recursive: true })

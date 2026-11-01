@@ -20,7 +20,7 @@ import { immutableActivities, immutableModels, immutableUpdates, isImmutableActi
 import { readdir, stat, unlink } from 'node:fs/promises'
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { z } from 'zod'
-import { agentHostSnapshotSchema, dropLiveThreadState, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, THREAD_CONTINUED_IN_MAX, WAKE_UP_MESSAGE_IDS_MAX, type ThreadContinuedFrom, type ThreadContinuedIn, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentMessage, type AgentThread, type AgentThreadStart, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
+import { agentHostSnapshotSchema, dropLiveThreadState, threadProviderOf, EMPTY_AGENT_HOST, NO_LIVE_THREAD_STATE, isThreadProviderConnected, threadTakesSottoTools, PROVIDER_LABELS, isVisualMessage, RESTORE_BRANCH_NEEDS_CONFIRMATION, summarizeThread, THREAD_CONTINUED_IN_MAX, WAKE_UP_MESSAGE_IDS_MAX, type ThreadContinuedFrom, type ThreadContinuedIn, type WorktreeReclaimPreview, type AgentWorkingCopyOptions, type AgentWorkingCopySelection, type AgentHostSnapshot, type AgentModel, type AgentProject, type AgentMessage, type AgentThread, type AgentThreadStart, type AgentThreadSummary, type AgentWorktree, type ProviderId } from '../../shared/agents'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import { isUsageProviderId, type UsageQuotaRead, type UsageTokenObservation } from '../../shared/usageDashboard'
 import { isUsageHistoryThreadId, mappedSink, type UsageHistorySink, type UsageRecordedUserMessage } from './usageHistory/sink'
@@ -28,7 +28,7 @@ import type { UserMessageInstantSource } from './usageHistory/sottoPrompts'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { samePlainData } from './agentStateBroadcast'
-import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentContinuation, type AgentHost, type ReplyFork, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StartHandoverSent, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
+import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentContinuation, type AgentHost, type ReplyFork, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type ShortTextTarget, type StartHandoverSent, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
 import { agentHandover, type AgentHandover } from './agentHandover'
 import { AGENT_HANDOVER_UNAVAILABLE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING, FORK_REPLY_GONE, FORK_TURN_RUNNING, NATIVE_FORKS } from '../../shared/threadStarts'
 import { EMPTY_WINDOW, FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, replacementEvents, summaryOf, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual, type ThreadMessageWindow } from './threadStore'
@@ -45,9 +45,10 @@ import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type Age
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
 import { observedSubagentStatus, EMPTY_SUBAGENT_SUMMARY, type SubagentChange, type SubagentRow, type SubagentSummary, type SubagentPageRequest, type SubagentAssignmentsRequest } from '../../shared/subagents'
 import { validateThreadOptions } from './threadOptions'
-import { resolveModel } from '../../shared/modelCatalog'
+import { resolveModel, servedModelName } from '../../shared/modelCatalog'
+import { LINEUP_PROVIDERS, namesOwnModel, retiredModelSuccessor } from '../../shared/modelLineup'
 import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
-import { isThreadArchived, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
+import { isThreadArchived, isThreadClosed, isThreadSettled, isWorkspaceThreadSettled } from '../../shared/threadActivity'
 import { delegatedThreadsBelow } from '../../shared/delegation'
 import { npmCi, preparePackages, type PackageInstaller } from './checkWorktree'
 import { checkoutIdentity, existingWorkingDirectory, movedBranchRef, runWorktreeGit, ThreadWorktrees } from './threadWorktrees'
@@ -248,6 +249,9 @@ const modelProviderKey = (model: AgentModel): string => model.providerId ?? mode
  * the first model that carries them, and read back onto the rest. A model whose modes differ from
  * its provider's first keeps its own.
  */
+/** Settled, by the provider or in Sotto (a project's settling reaches its threads' own record), or archived. */
+const closedHere = (thread: AgentThread): boolean => isThreadClosed(thread) || Boolean(thread.workspaceSettledAt)
+
 function catalogModelsForSave(models: readonly AgentModel[]): AgentModel[] {
   const first = new Map<string, string>()
   return models.map(model => {
@@ -4401,9 +4405,37 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     if (held && held.incoming === incoming && held.output === previous && isImmutableModels(incoming)) return previous
     const models = new Map(previous.map(model => [model.id, model.ready ? { ...model, ready: false } : model]))
     for (const model of incoming) models.set(model.id, model)
+    const retired = this.dropRetiredModels(models, incoming)
     const output = isImmutableModels(incoming) ? immutableModels([...models.values()]) : [...models.values()]
     this.modelInputs = { incoming, output }
+    // A thread opened before its provider sent this catalog moves now, once the accept that brought it is done.
+    if (retired && this.watched.size) queueMicrotask(() => { if (!this.stopping) this.moveOffRetiredModels([...this.watched.keys()]) })
     return output
+  }
+  /**
+   * Retired models leave the catalog (ADR-0171). A Claude Code or Codex model kept from an earlier catalog is retired once
+   * that provider sends a catalog with ready models that does not name it. It stays, not ready and shown nowhere, only while
+   * an open thread is still on it, so the thread can say what it moved from when it is next opened (`moveOffRetiredModels`).
+   * A settled or archived thread keeps nothing: restored and opened, it moves by its model's ID.
+   * Another provider's kept models, and a provider not connected now, are left as they are. Answers whether any retired
+   * model is still kept for a thread.
+   */
+  private dropRetiredModels(models: Map<string, AgentModel>, incoming: readonly AgentModel[]): boolean {
+    let fresh: Set<ProviderId> | undefined
+    for (const model of incoming) if (model.ready && model.providerId && LINEUP_PROVIDERS.has(model.providerId)) (fresh ??= new Set()).add(model.providerId)
+    if (!fresh) return false
+    let named: Set<string> | undefined
+    let used: Set<string> | undefined
+    let kept = false
+    for (const [id, model] of models) {
+      if (model.ready || !model.providerId || !fresh.has(model.providerId)) continue
+      named ??= new Set(incoming.map(item => item.id))
+      if (named.has(id)) continue
+      used ??= new Set(this.state.snapshot.threads.filter(thread => !closedHere(thread)).map(thread => thread.modelId))
+      if (used.has(id)) kept = true
+      else models.delete(id)
+    }
+    return kept
   }
   /**
    * One publication of the inner host's activity, as thread changes already applied to `incoming` (#925). The threads it
@@ -4485,6 +4517,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       ...(old?.continuedFrom ? { continuedFrom: old.continuedFrom } : {}),
       ...(old?.continuedIn ? { continuedIn: old.continuedIn } : {}),
       ...(old?.startedFrom ? { startedFrom: old.startedFrom } : {}),
+      ...(old?.modelMoved ? { modelMoved: old.modelMoved } : {}),
       ...(old?.babysitting ? { babysitting: old.babysitting } : {}),
       ...(old?.babysitEnded ? { babysitEnded: old.babysitEnded } : {}),
       ...(old?.wakeUpMessageIds ? { wakeUpMessageIds: old.wakeUpMessageIds } : {}),
@@ -5632,13 +5665,26 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   resolveModelId(id: string): string { return this.inner.resolveModelId?.(id) ?? id }
   providerForThread(id: string): ProviderId | undefined { return this.threadById(id)?.providerId ?? this.inner.providerForThread?.(id) }
   /**
-   * A side call on the thread's own client (ADR-0026). A thread whose native session has not started has
-   * no client, model or folder to ask yet, so it gets nothing rather than a session started for it.
+   * A side call on the thread's own client (ADR-0026). A thread whose native session has not started gets nothing
+   * rather than a session started for it, except its next prompt (ADR-0173), which its provider writes on the model and
+   * in the folder the thread will use, with no session.
    */
   async writeShortText(threadId: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     const thread = this.threadById(threadId)
-    if (!thread || !this.visible(thread) || thread.nativeSessionStarted === false || !this.inner.writeShortText) return null
+    if (!thread || !this.visible(thread)) return null
+    if (thread.nativeSessionStarted === false) {
+      if (prompt.purpose !== 'next-prompt' || !this.inner.writeShortTextOn) return null
+      // In its own folder, or its project's while a new worktree waits for the first send to be made.
+      let cwd: string | undefined
+      try { cwd = this.threadFolder(thread) } catch { cwd = this.state.snapshot.projects.find(project => project.id === thread.projectId)?.path }
+      return this.inner.writeShortTextOn({ modelId: thread.modelId, cwd }, prompt, signal)
+    }
+    if (!this.inner.writeShortText) return null
     return this.withProfileRefusal(threadId, () => this.inner.writeShortText!(threadId, prompt, signal))
+  }
+  /** A side call with no thread behind it (ADR-0173): Watcher's first message, on the model the user picked. */
+  async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    return await this.inner.writeShortTextOn?.(target, prompt, signal) ?? null
   }
   /**
    * The threads a window says it is looking at. Only those hold their messages in memory: one leaving the
@@ -5692,7 +5738,46 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (this.gitStatus && !this.threadById(id)?.worktree?.git) void this.onLane(id, () => this.readGitStatus(id, false)).catch(() => undefined)
       changed = true
     }
+    this.moveOffRetiredModels(wanted)
     if (changed) this.publish()
+  }
+  /** Threads moving off a retired model now, so a second look while the first change runs sends no second one. */
+  private readonly retiredMoves = new Set<string>()
+  /**
+   * A thread in view on a retired Claude Code or Codex model moves to its successor (ADR-0171), by the same settings change
+   * a press in its composer makes. It happens when the thread is opened, which starts its client anyway, so a thread nobody
+   * opens starts nothing. A thread that is closed, working or waiting on the user is left until it is next opened as it may
+   * be. Where the two models' names differ, the thread keeps a note of the move (`modelMoved`).
+   */
+  private moveOffRetiredModels(ids: Iterable<string>): void {
+    const models = this.state.snapshot.models
+    for (const id of ids) {
+      const thread = this.threadById(id)
+      if (!thread || this.retiredMoves.has(id) || thread.status === 'running' || thread.requests.length || closedHere(thread)) continue
+      // The catalog's own entry, not its base's: a long-context variant the catalog never listed runs as its base does (#346).
+      // A thread whose retired model has left the catalog, having been settled meanwhile, moves by the model's ID.
+      const kept = models.find(model => model.id === thread.modelId)
+      const provider = threadProviderOf(thread)
+      if (kept?.ready || !provider || !LINEUP_PROVIDERS.has(provider) || !kept && (resolveModel(models, thread.modelId) || !namesOwnModel(thread.modelId))) continue
+      const entry = kept ?? { id: thread.modelId, name: servedModelName(provider, thread.modelId).replace(/^Claude /u, '') }
+      const successor = retiredModelSuccessor(models, entry.id, entry.name)
+      if (!successor) continue
+      this.retiredMoves.add(id)
+      void this.execute({ type: 'configure-thread', commandId: randomUUID(), threadId: id, modelId: successor.id }).then(result => {
+        const moved = this.threadById(id)
+        if (!result.accepted || !moved) return
+        if (successor.name !== entry.name) this.touched(moved).modelMoved = { from: entry.name, to: successor.name, at: new Date().toISOString() }
+        // The last thread on the retired model has left it, so it leaves the catalog now rather than at the provider's next.
+        const snapshot = this.state.snapshot
+        if (!snapshot.threads.some(thread => thread.modelId === entry.id)) {
+          snapshot.models = snapshot.models.filter(model => model.id !== entry.id)
+          this.restTouched = true
+        }
+        this.dirty = true
+        this.writeSoon()
+        this.publish()
+      }).catch(() => undefined).finally(() => this.retiredMoves.delete(id))
+    }
   }
   /**
    * The observed threads whose provider session stays running (CONTEXT.md, live-session set). The coordinator names it

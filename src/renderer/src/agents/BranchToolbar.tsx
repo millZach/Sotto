@@ -1,4 +1,5 @@
-import React, { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import React, { createContext, memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
+import { samePaneWorld, sameWhileStreaming } from './paneWorld'
 import { createPortal } from 'react-dom'
 import { i18n } from '@lingui/core'
 import { msg, ph } from '@lingui/core/macro'
@@ -55,7 +56,7 @@ export const PullRequestOpenerContext = createContext<PullRequestOpener>(IN_TOOL
  * text once the thread has a message or a session; the picker keeps working for as long as the folder does.
  * Every change goes to the host as a command and the record it publishes is what the toolbar shows next.
  */
-export function BranchToolbar({ row, state, command, focused = true, onExplainedError, header = false, noticeSlot }: {
+function BranchToolbarView({ row, state, command, focused = true, onExplainedError, header = false, noticeSlot }: {
   readonly row: ThreadRow
   readonly state: AgentState
   readonly command: Command
@@ -189,6 +190,17 @@ export function BranchToolbar({ row, state, command, focused = true, onExplained
       onClose={() => { setCheckout(null); branchTrigger.current?.focus() }} onDone={text => { setCheckout(null); setNotice({ text, tone: 'status' }); branchTrigger.current?.focus() }} /> : null}
   </div>
 }
+
+/**
+ * The toolbar, behind a memo boundary of its own (#993): it reads nothing of its thread's streaming but whether it has a
+ * message yet, so a word streaming into its own pane leaves it as it was, where it was drawn again for every word and
+ * ordered the project's threads again each time. Of the row it reads only the thread; of the state, what `samePaneWorld`
+ * covers with its own thread streaming.
+ */
+export const BranchToolbar = memo(BranchToolbarView, (previous, next) => {
+  for (const key of new Set([...Object.keys(previous), ...Object.keys(next)]) as Set<keyof typeof next>) if (key !== 'row' && key !== 'state' && !Object.is(previous[key], next[key])) return false
+  return sameWhileStreaming(previous.row.thread, next.row.thread) && samePaneWorld(previous.state, next.state, next.row.thread.id, { ownStreaming: true })
+})
 
 /** The words a ref's badges show; `data-badge` keeps the key. */
 const REF_BADGE_WORDS = wordsOf({

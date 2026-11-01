@@ -202,6 +202,11 @@ export interface ShortTextPrompt {
   /** Internal routing purpose, never part of the model's prompt. */
   readonly purpose?: ShortTextPurpose
 }
+/** A model a side call runs on when there is no session to run it in (ADR-0173): the model chosen, and the folder it would work in. */
+export interface ShortTextTarget {
+  readonly modelId: string
+  readonly cwd?: string | undefined
+}
 export interface AgentSkillScope { readonly providerId: ProviderId; readonly workingDirectory: string }
 /** One thread's messages as the workspace still holds them, handed back before a connection reads history. */
 export interface RestoredThreadHistory {
@@ -381,6 +386,11 @@ export interface AgentHost {
    * `signal` stops the client the call started, which is how a host shutdown leaves no child behind.
    */
   writeShortText?(threadId: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null>
+  /**
+   * The same side call on a provider's own client for what has no session yet (ADR-0173): a new thread before its first
+   * send, or Watcher's first message. Run on the model chosen, at its least effort, in the folder given or the home folder.
+   */
+  writeShortTextOn?(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null>
   /**
    * Record that a request was answered and which client answered it. Absent on hosts that keep no
    * history. The event carries no answer text; attribution is evidence, never authority (ADR-0004).

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted October 24, 2026, as an Owl feature (`next-prompt`). Drake picked variant 6, **Picker**, of `docs/prototypes/next-prompt-prototype.html` on October 24, 2026. A port of Drake's Claude Code mod `next-prompt`. Builds on [ADR-0026](0026-short-writing-runs-on-the-threads-own-provider.md) (short writing as a side call), [ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md) (Owl features) and [ADR-0113](0113-the-composer-controls-are-text-buttons.md) (text buttons). **Number provisional until merge** (docs/agents/domain.md). Amended October 26, 2026, at Drake's ask: Watcher's conversation gets the next prompt too, from the same side call, gated by the same setting; a Watcher turn that answered Sotto's own news, a past Watcher conversation and a Watcher composer offering a handover get none.
+Accepted October 24, 2026, as an Owl feature (`next-prompt`). Drake picked variant 6, **Picker**, of `docs/prototypes/next-prompt-prototype.html` on October 24, 2026. A port of Drake's Claude Code mod `next-prompt`. Builds on [ADR-0026](0026-short-writing-runs-on-the-threads-own-provider.md) (short writing as a side call), [ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md) (Owl features) and [ADR-0113](0113-the-composer-controls-are-text-buttons.md) (text buttons). **Number provisional until merge** (docs/agents/domain.md). Amended October 26, 2026, at Drake's ask: Watcher's conversation gets the next prompt too, from the same side call, gated by the same setting; a Watcher turn that answered Sotto's own news, a past Watcher conversation and a Watcher composer offering a handover get none. Amended October 31, 2026, by [ADR-0173](0173-the-next-prompt-reaches-new-threads-and-remote-hosts.md): a new thread is asked for its first prompt from its project, a thread at rest after a restart is asked again when first shown, and a headless host builds its own and pushes them to the desktops that want them.
 
 ## Context
 
@@ -29,6 +29,6 @@ When an agent finishes, the user's next message is often predictable: "open the 
 ## Consequences
 
 - `CONTEXT.md` names the **next prompt** and the **Next list**. The design captures do not change: no fixture finishes a turn on this computer, and the design fixture host has no side call.
-- Remote hosts are left out. A headless host builds no next prompts, since its threads' suggestions would need a host protocol message to reach this window; that is a later change if it is wanted.
+- Remote hosts were left out until ADR-0173, which gives the host protocol a desktop-only `next-prompts` feature.
 - Each finished turn costs one short request on the thread's provider, counted against the same subscription limits as the thread's own work. The setting says so.
 - Sending the feature to stable flips its entry's `sentToStable`.

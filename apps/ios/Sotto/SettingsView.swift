@@ -424,12 +424,21 @@ private struct DefaultsPanel: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(spacing: 0) {
                 DefaultRow(label: String(localized: "Model", comment: "A new-thread default: the model a thread starts on."), spoken: String(localized: "New thread model"), value: modelValue(models), identifier: "setting-default-model") {
+                    let lineup = ModelLineup.split(models)
                     Picker("Model", selection: saving($modelID)) {
                         Text(Self.computersChoice).tag("")
                         if !modelID.isEmpty && !models.contains(where: { $0.id == modelID }) {
                             Text("A model no connected computer offers").tag(modelID)
                         }
-                        ForEach(models) { value in Text(Self.modelName(value)).tag(value.id) }
+                        ForEach(lineup.latest) { value in Text(Self.modelName(value)).tag(value.id) }
+                    }
+                    // Older models of each line wait in a closed submenu (ADR-0171).
+                    if !lineup.legacy.isEmpty {
+                        Menu("Legacy") {
+                            Picker("Legacy", selection: saving($modelID)) {
+                                ForEach(lineup.legacy) { value in Text(Self.modelName(value)).tag(value.id) }
+                            }
+                        }
                     }
                 }
                 RowDivider()

@@ -81,7 +81,11 @@ export class FakeProviderHost implements AgentHost {
       } else if (command.type === 'answer') {
         thread.requests = thread.requests.filter(request => request.id !== command.requestId)
         thread.status = 'running'
-      } else thread.status = 'idle'
+      } else {
+        // A settings change moves the session to the model it names, as an adapter's does.
+        if (command.type === 'configure-thread' && command.modelId) thread.modelId = command.modelId
+        thread.status = 'idle'
+      }
     }
     this.emit()
     return { accepted: true }

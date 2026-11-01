@@ -13,6 +13,7 @@ import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { AdapterThreadChanges, restOf, ThreadMarkingMap } from './adapterThreadChanges'
+import type { MediaCapture } from './threadMedia'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { SessionReaper } from './sessionReaper'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -198,6 +199,8 @@ export interface DevinAcpOptions {
   acceptanceGraceMs?: number
   reaperSweepMs?: number
   sessionIdleMs?: number
+  /** The thread media store's capture (ADR-0170), given only with the Owl feature `inline-media` on: a tool's pictures become handles on its step. */
+  captureMedia?: MediaCapture
 }
 
 /** Devin owns its account and tools. Sotto saves only session/dispatch identities in this adapter. */
@@ -260,6 +263,11 @@ export class DevinAcpHost implements AgentHost {
   private readonly reading = new Map<string, Promise<void>>()
   private readonly stopping = new Map<string, Promise<void>>()
   private readonly lastReadAt = new Map<string, number>()
+  /**
+   * The threads with a dispatch no replay has confirmed yet: the one thing a held thread is read for (#992). Kept as
+   * dispatches are added, confirmed and taken back, so the poll asks a set rather than walk every thread's dispatches.
+   */
+  private readonly unconfirmed = new Set<string>()
   private readonly active = new Map<string, ActiveTurn>()
   private readonly pending = new Map<string, { decision: DevinPending; connection: Connection; fingerprint: string }>()
   private readonly dispatching = new Set<string>()
@@ -341,7 +349,7 @@ export class DevinAcpHost implements AgentHost {
     this.reading.delete(id)
     this.log.forget(id)
     this.threads.delete(id)
-    delete this.aliases[id]
+    delete this.aliases[id]; this.unconfirmed.delete(id)
     await this.persist()
     if (this.state.connected) this.emit()
   }
@@ -575,6 +583,8 @@ export class DevinAcpHost implements AgentHost {
     // rather than publishing empty ones over a history Sotto already had.
     for (const forgottenId of this.forgottenAliasIds) delete aliases[forgottenId]
     this.aliases = aliases; this.aliasesLoaded = true; this.state.projects = projects
+    this.unconfirmed.clear()
+    for (const [id, alias] of Object.entries(aliases)) this.countUnconfirmed(id, alias)
     this.threads.clear(); this.threadChanges.markAll(); this.log.forgetAll()
     for (const id of Object.keys(this.aliases)) {
       this.thread(id); this.log.seed(id, this.history?.messageIdentities(id) ?? [])
@@ -724,6 +734,10 @@ export class DevinAcpHost implements AgentHost {
     })
   }
   async snapshot(): Promise<AgentHostSnapshot> { if (this.state.connected) await this.poll(); return this.current() }
+  /** Whether `id` has a dispatch no replay has confirmed: asked when one is confirmed or taken back, never on a poll tick. */
+  private countUnconfirmed(id: string, alias: { readonly origins: readonly { readonly confirmed?: boolean }[] }): void {
+    if (alias.origins.some(origin => !origin.confirmed)) this.unconfirmed.add(id); else this.unconfirmed.delete(id)
+  }
   private poll(): Promise<void> {
     if (this.polling) return this.polling
     const now = Date.now()
@@ -732,8 +746,12 @@ export class DevinAcpHost implements AgentHost {
       if (this.loading.has(id)) return false
       const active = this.active.get(id)
       const busy = active !== undefined || this.thread(id).requests.length > 0
-      // Every thread polled here is held by its own process, whose stream carries its turn once Devin has shown it
-      // took the prompt. Until then only a replay can confirm it, so that is the one wait read at the busy pace.
+      // Every thread polled here is held by its own process. While it holds the session Devin refuses it to every other
+      // client (-32015), so nothing changes the thread unseen and its stream carries every turn once Devin has shown it
+      // took the prompt. A replay then adds only the confirmation of a dispatch nothing has confirmed yet, so only a thread
+      // with one is read (#992); each read started a `devin acp` of its own and replayed the whole conversation, every
+      // 15 s for every idle thread on screen.
+      if (!this.unconfirmed.has(id)) return false
       const interval = devinReadInterval(active !== undefined && !promptTaken(active), this.options.pollIntervalMs)
       return (this.observed.has(id) || busy) && now - (this.lastReadAt.get(id) ?? 0) >= interval
     })
@@ -835,7 +853,7 @@ export class DevinAcpHost implements AgentHost {
       if (message.role === 'assistant' && previous?.text.startsWith(message.text)) continue
       this.log.add(id, message)
     }
-    if (changed) await this.persist()
+    if (changed) { this.countUnconfirmed(id, alias); await this.persist() }
     this.publishActive(id); this.emit()
   }
   /** The thread's own stream showed Devin working on this turn's prompt: mark it taken, show it, and wake the send. */
@@ -888,7 +906,7 @@ export class DevinAcpHost implements AgentHost {
         const thread = this.thread(id)
         thread.activities = mergeAgentActivities(thread.activities ?? [], devinActivities(update, {
           turnId: active.origin.messageId, afterMessageId: active.origin.messageId, cwd: alias.cwd,
-        }, thread.activities, true))
+        }, thread.activities, true, this.options.captureMedia))
       }
       this.emit(true); return
     }
@@ -1107,9 +1125,9 @@ export class DevinAcpHost implements AgentHost {
     const origin: Origin = { nativeMessageId: randomUUID(), messageId: command.messageId, commandId: command.commandId,
       digest: digest(command.text), createdAt: new Date().toISOString(), confirmed: false,
       ...(command.attachments?.length ? { attachments: attachmentReferences(command.attachments) } : {}) }
-    alias.origins.push(origin); alias.ephemeral = false; await this.persist()
+    alias.origins.push(origin); alias.ephemeral = false; this.unconfirmed.add(id); await this.persist()
     checkConnection()
-    try { watcherGuard?.() } catch (error) { alias.origins = alias.origins.filter(item => item !== origin); await this.persist(); throw error }
+    try { watcherGuard?.() } catch (error) { alias.origins = alias.origins.filter(item => item !== origin); this.countUnconfirmed(id, alias); await this.persist(); throw error }
     const turn: ActiveTurn = { origin, text: command.text, assistant: '', streamed: false, ended: false, wake: undefined }
     this.active.set(id, turn)
     this.thread(id).status = 'running'

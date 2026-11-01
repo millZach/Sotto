@@ -196,7 +196,9 @@ function run(command) {
   if (command.type === 'tool') {
     const toolCallId = `call_${randomUUID()}`
     update(sessionId, { sessionUpdate: 'tool_call', toolCallId, title: 'bash', kind: 'other', status: 'pending', rawInput: { command: command.command, description: 'Fixture command' } })
-    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: command.output ?? '' } }] })
+    // A tool that hands back a picture, as an MCP screenshot does: ACP image content after its words.
+    const picture = command.image ? [{ type: 'content', content: { type: 'image', data: command.image, mimeType: command.mimeType ?? 'image/png' } }] : []
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', content: [{ type: 'content', content: { type: 'text', text: command.output ?? '' } }, ...picture] })
   }
   if (command.type === 'permission') {
     // An escalation as the harness sends it: the denied call, its retry naming the boundary it asks to cross, then

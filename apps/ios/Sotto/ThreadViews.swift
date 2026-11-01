@@ -23,9 +23,15 @@ struct ThreadView: View {
     @State private var agentsOpen = false
     @State private var agentsCovered = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.duoLayout) private var duo
+    @Environment(\.dismiss) private var dismiss
     private var thread: ThreadSummary? { model.thread(ref) }
+    /// The folded Duo's cover screen, where the thread has no bar: its controls stand in the strip (`FoldedThreadRail`)
+    /// and its title only in the page (Zach, TestFlight build 45, reversing #1724).
+    private var folded: Bool { if case .folded = duo { return true } else { return false } }
 
     var body: some View {
+        let _ = BenchProbe.body("ThreadView")
         Conversation(ref: ref, stuck: $stuck, titled: $titled) { request in
             shown = request.id
             open = request
@@ -50,8 +56,19 @@ struct ThreadView: View {
         }
         .toolbarBackground(.ultraThinMaterial, for: .navigationBar)
         .toolbarBackground(stuck ? .visible : .hidden, for: .navigationBar)
+        .toolbar(folded ? .hidden : .automatic, for: .navigationBar)
+        // With no bar, iOS's own swipe back is kept, so a swipe in from the left edge goes back to the list.
+        .background { InteractivePop(enabled: folded).frame(width: 0, height: 0).accessibilityHidden(true) }
         .toolbar(.hidden, for: .tabBar)
         .coversTabs()
+        .onChange(of: model.railAsked) { _, asked in
+            guard let asked, asked.ref == ref else { return }
+            model.railAsked = nil
+            switch asked.action {
+            case .back: dismiss()
+            case .agents: agentsOpen = true
+            }
+        }
         // While a request sheet is up its keyboard never squeezes the page behind it, so the conversation keeps its
         // size and its place.
         .ignoresSafeArea(open != nil ? SafeAreaRegions.keyboard : [], edges: .bottom)
@@ -89,6 +106,72 @@ struct ThreadView: View {
     }
 }
 
+/// A thread's controls in the folded Duo's strip, in place of its bar (Zach's pick A on the build 45 prototype): Back
+/// where New thread stands on the other pages, under the clock and battery, then the thread's state, Agents, Watch and
+/// its actions, centred in the height under it. The tabs come back with the list, and a swipe in from the left edge goes
+/// back too.
+struct FoldedThreadRail: View, Equatable {
+    @EnvironmentObject var model: AppModel
+    /// The thread showing, once its page has read it.
+    let ref: ThreadRef?
+    let clear: CGFloat
+    let back: () -> Void
+    var body: some View {
+        VStack(spacing: 0) {
+            Button(action: back) { Image(systemName: "chevron.backward") }
+                .buttonStyle(GlassCircleStyle())
+                .accessibilityLabel(String(localized: "Back"))
+                .accessibilityIdentifier("duo-rail-back")
+                .padding(.top, clear)
+            VStack(spacing: Space.s3) {
+                if let ref {
+                    let thread = model.thread(ref)
+                    ThreadStatePill(state: thread.map { ThreadState($0) } ?? .done, since: Words.date(thread?.summary?.runningTurnStartedAt),
+                                    reachable: model.status(ref.hostID) != .unreachable, vertical: true)
+                    if let agents = model.agentsCount(ref) { AgentsButton(count: agents) { model.railAsked = RailAsk(ref: ref, action: .agents) } }
+                    if model.watchHost(for: ref) != nil { WatchToggle(ref: ref, title: thread?.title) }
+                    if model.compactionOffered(ref) || model.shelfAction(ref) != nil { ThreadMenu(ref: ref) }
+                }
+            }
+            .frame(maxHeight: .infinity)
+        }
+        .ignoresSafeArea(.keyboard)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("duo-thread-rail")
+    }
+    /// It draws from the model it watches, the thread and its place under the clock; Back never changes what it draws.
+    static func == (lhs: FoldedThreadRail, rhs: FoldedThreadRail) -> Bool { lhs.ref == rhs.ref && lhs.clear == rhs.clear }
+}
+
+/// Keeps iOS's swipe back on a page whose navigation bar is hidden, which otherwise loses it, while `enabled`. It answers
+/// the stack's swipe only while there is a page to go back to, and gives the swipe back to iOS when the page goes.
+struct InteractivePop: UIViewControllerRepresentable {
+    let enabled: Bool
+    func makeUIViewController(context: Context) -> Controller { Controller() }
+    func updateUIViewController(_ controller: Controller, context: Context) { controller.enabled = enabled; controller.apply() }
+    final class Controller: UIViewController, UIGestureRecognizerDelegate {
+        var enabled = false
+        private weak var kept: UIGestureRecognizerDelegate?
+        private var holding = false
+        override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); apply() }
+        override func viewWillDisappear(_ animated: Bool) { super.viewWillDisappear(animated); release() }
+        func apply() {
+            guard let pop = navigationController?.interactivePopGestureRecognizer else { return }
+            guard enabled else { release(); return }
+            if !holding { kept = pop.delegate; pop.delegate = self; holding = true }
+            pop.isEnabled = true
+        }
+        private func release() {
+            guard holding, let pop = navigationController?.interactivePopGestureRecognizer else { return }
+            pop.delegate = kept
+            holding = false
+        }
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            (navigationController?.viewControllers.count ?? 0) > 1
+        }
+    }
+}
+
 extension ToolbarContent {
     /// Keeps an item in the bar over the page. Where iOS 27.1 stands a vertical bar beside the page, as in the iPhone
     /// Duo cover screen's strip, it would otherwise move the item there, where only an icon fits (ADR-0151, amended).
@@ -104,27 +187,46 @@ extension ToolbarContent {
 
 /// The thread's state in the bar, in a word: a light, the word and, while it works, how long it has been at it, except at
 /// compact width, where the bar's room goes to the thread's title.
-private struct ThreadStatePill: View {
+struct ThreadStatePill: View {
     let state: ThreadState
     let since: Date?
     let reachable: Bool
+    /// Stacked, the light over the word, for the folded Duo's strip.
+    var vertical = false
     @Environment(\.horizontalSizeClass) private var sizeClass
     var body: some View {
-        HStack(spacing: 6) {
-            if reachable { StatusDot(state: state, size: 7) } else { Light(tone: .off, size: 7) }
-            Text(word)
-            if reachable, state.workInProgress, sizeClass == .regular, let since { ElapsedText(since: since) }
+        Group {
+            if vertical {
+                VStack(spacing: 4) {
+                    light
+                    Text(word).lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
+                }
+                .padding(.vertical, 7)
+                .frame(width: 66)
+                .foregroundStyle(foreground)
+                .background(background, in: RoundedRectangle(cornerRadius: Radius.md, style: .continuous))
+            } else {
+                HStack(spacing: 6) {
+                    light
+                    Text(word)
+                    if reachable, state.workInProgress, sizeClass == .regular, let since { ElapsedText(since: since) }
+                }
+                .lineLimit(1)
+                .padding(.leading, Space.s3)
+                .padding(.trailing, 10)
+                .frame(minHeight: 28)
+                .foregroundStyle(foreground)
+                .background(background, in: Capsule())
+                .fixedSize()
+            }
         }
         .font(.sotto(.caption, .semibold).monospacedDigit())
-        .lineLimit(1)
-        .padding(.leading, Space.s3)
-        .padding(.trailing, 10)
-        .frame(minHeight: 28)
-        .foregroundStyle(foreground)
-        .background(background, in: Capsule())
-        .fixedSize()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(reachable ? state.words : String(localized: "Can’t reach this computer"))
+        .accessibilityIdentifier("thread-state")
+    }
+    @ViewBuilder private var light: some View {
+        if reachable { StatusDot(state: state, size: 7) } else { Light(tone: .off, size: 7) }
     }
     private var word: String {
         guard reachable else { return String(localized: "Can’t reach it", comment: "A thread's state in its bar: its computer can't be reached") }
@@ -158,7 +260,7 @@ private struct ThreadStatePill: View {
 /// says what the lit owl can't, where a send here takes the thread over or Watcher only steers. Only where
 /// a computer that runs Watcher takes it from this iPhone; at compact width, where the bar's room goes to the thread's
 /// title, and at the largest text sizes it is the owl alone.
-private struct WatchToggle: View {
+struct WatchToggle: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let title: String?
@@ -199,7 +301,7 @@ private struct WatchToggle: View {
 /// The thread's actions behind ••• beside its state: Compact context, while the thread's provider offers it, and Settle
 /// or Restore, as on the desktop. A press asks the thread's computer; one that can't go now says why under its name.
 /// Compacting shows its progress in the bar, and a confirmed Settle or Restore says so in the banner.
-private struct ThreadMenu: View {
+struct ThreadMenu: View {
     @EnvironmentObject var model: AppModel
     /// Watched so whether there is history to compact follows the thread as it is read.
     @EnvironmentObject var detailStore: DetailStore
@@ -264,6 +366,21 @@ private final class FollowBox {
 }
 
 /// A message, or a run of steps, as the conversation draws it.
+/// A rule across the conversation naming the model a thread moved from and to (ADR-0171), as quiet as a step's line.
+private struct ModelMovedLine: View {
+    let words: String
+    var body: some View {
+        HStack(spacing: Space.s2) {
+            Rectangle().fill(Palette.hairline).frame(height: 1)
+            Text(verbatim: words).font(.sotto(.caption)).foregroundStyle(Palette.muted).multilineTextAlignment(.center)
+                .layoutPriority(1)
+            Rectangle().fill(Palette.hairline).frame(height: 1)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("thread-model-moved")
+    }
+}
+
 private struct ConversationRow: Identifiable {
     let item: TimelineItem
     /// The provider's name heads an answer that doesn't follow another answer.
@@ -304,9 +421,11 @@ private final class TimelineCache {
         if next == key { return cached }
         key = next
         if dates.count > 10_000 { dates = [:] }
-        let items = ThreadTimeline.items(messages: detail.messages, activities: detail.activities ?? [],
-                                         earlierAvailable: detail.earlierAvailable == true, date: { self.date($0) })
-        cached = ConversationRow.make(items, date: { self.date($0) })
+        cached = BenchProbe.time("timeline.rows") {
+            let items = ThreadTimeline.items(messages: detail.messages, activities: detail.activities ?? [],
+                                             earlierAvailable: detail.earlierAvailable == true, date: { self.date($0) })
+            return ConversationRow.make(items, date: { self.date($0) })
+        }
         return cached
     }
     private func date(_ stamp: String) -> Date? {
@@ -351,6 +470,7 @@ private struct Conversation: View {
     private static let end = "thread-end"
 
     var body: some View {
+        let _ = BenchProbe.body("Conversation")
         let detail = model.shown(for: ref)
         let rows = timeline.rows(for: detail, held: detail != nil && model.detail(for: ref) == nil)
         let pending = model.pending(for: ref)
@@ -447,8 +567,13 @@ private struct Conversation: View {
                         .padding(.vertical, Space.s7)
                         .paragraphDirection()
                 }
+                // Where Sotto moved the thread off a model its provider stopped offering (ADR-0171).
+                let moved = thread?.modelMoved
+                let movedAfter = moved.flatMap { $0.anchor(in: detail?.messages ?? []) }.map { "message-" + $0 }
+                if let moved, movedAfter == nil, !rows.isEmpty { ModelMovedLine(words: moved.words(provider: provider)) }
                 ForEach(rows) { row in
                     rowView(row, provider: provider, working: row.id == working, last: row.id == last, scroll: scroll)
+                    if let moved, row.id == movedAfter { ModelMovedLine(words: moved.words(provider: provider)) }
                 }
             } else if model.detailProblem == nil || !online {
                 (model.status(ref.hostID) == .unreachable ? Text("Reconnect to read this thread.") : Text("Reading this thread…"))
@@ -608,6 +733,7 @@ private struct ThreadHero: View, Equatable {
         a.ref == b.ref && a.thread == b.thread && a.watched == b.watched && a.pullRequest == b.pullRequest
     }
     var body: some View {
+        let _ = BenchProbe.body("ThreadHero")
         let chips = GitChips(thread?.worktree)
         VStack(alignment: .leading, spacing: 0) {
             Text(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
@@ -856,6 +982,7 @@ private struct MessageView: View, Equatable {
         a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref && a.opensFiles == b.opensFiles
     }
     var body: some View {
+        let _ = BenchProbe.body("MessageView")
         if message.role == "user" {
             userMessage
         } else if message.role == "assistant" {
@@ -937,6 +1064,7 @@ struct MarkdownText: View, Equatable {
     @Environment(\.sottoDensity) private var density
     static func == (a: Self, b: Self) -> Bool { a.text == b.text && a.quotable == b.quotable }
     var body: some View {
+        let _ = BenchProbe.body("MarkdownText")
         let blocks = SottoCore.Markdown.cachedBlocks(text)
         VStack(alignment: .leading, spacing: Space.dense(Space.s3, density)) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
@@ -955,6 +1083,7 @@ private struct MarkdownBlockView: View, Equatable {
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoDensity) private var density
     var body: some View {
+        let _ = BenchProbe.body("MarkdownBlockView")
         switch block {
         case .heading(let level, let text):
             Text(InlineStyle.render(text, theme: theme))
@@ -1366,6 +1495,7 @@ private struct ReplyText: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(box: box) }
 
     func makeUIView(context: Context) -> UITextView {
+        BenchProbe.count("textview.make")
         let view = Words()
         view.isEditable = false
         view.isScrollEnabled = false
@@ -1379,10 +1509,11 @@ private struct ReplyText: UIViewRepresentable {
     }
 
     func updateUIView(_ view: UITextView, context: Context) {
+        BenchProbe.count("textview.update")
         context.coordinator.box = box
         // Set only when the words or their look change, so a selection survives the page drawing again.
         let words = InlineStyle.attributed(inline, ink: ink, theme: theme, traits: view.traitCollection)
-        if view.attributedText != words { view.attributedText = words }
+        if view.attributedText != words { BenchProbe.count("textview.set"); view.attributedText = words }
         view.linkTextAttributes = [.foregroundColor: UIColor(theme.color(.accentText))]
         view.tintColor = UIColor(theme.color(.accent))
     }
@@ -1444,6 +1575,7 @@ private struct FoldedRun: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let _ = BenchProbe.body("FoldedRun")
         VStack(alignment: .leading, spacing: 0) {
             Button(action: toggle) {
                 if working {
@@ -1506,6 +1638,7 @@ private struct WorkingLine: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        let _ = BenchProbe.body("WorkingLine")
         HStack(spacing: Space.s2) {
             if still {
                 Light(tone: .accent, size: 7, breathing: false)
@@ -1741,6 +1874,7 @@ private struct StepLine: View {
     let record: Activity
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
+        let _ = BenchProbe.body("StepLine")
         HStack(spacing: 7) {
             mark.frame(width: 16, height: 16)
             Text(verbatim: record.title)
@@ -1966,6 +2100,7 @@ private struct ReplyDock: View, Equatable {
     @State private var stopped = 0
 
     var body: some View {
+        let _ = BenchProbe.body("ReplyDock")
         VStack(spacing: Space.s2) {
             ComputerBanner(ref: ref)
             if let problem = model.detailProblem, model.online(ref.hostID) {
@@ -2177,25 +2312,24 @@ private struct ThreadSettingsRow: View {
         return opens
     }
 
-    /// One choice in a chip's menu. A toggle, so iOS marks the one in force by its state, which it keeps at the
-    /// accessibility text sizes where it drops a menu item's images; the line is the item's second text, its subtitle.
-    @ViewBuilder private func option(_ name: String, line: String? = nil, chosen: Bool, action: @escaping () -> Void) -> some View {
-        let isOn = Binding(get: { chosen }, set: { if $0 { action() } })
-        if let line {
-            Toggle(isOn: isOn) {
-                Text(verbatim: name)
-                Text(verbatim: line)
-            }
-        } else {
-            Toggle(isOn: isOn) { Text(verbatim: name) }
-        }
+    private func option(_ name: String, line: String? = nil, chosen: Bool, action: @escaping () -> Void) -> some View {
+        SettingOption(name: name, line: line, chosen: chosen, action: action)
     }
 
     private var modelMenu: some View {
         Menu {
+            let lineup = ModelLineup.split(panel.models)
             Section(panel.provider) {
-                ForEach(panel.models) { item in
+                ForEach(lineup.latest) { item in
                     option(item.name, chosen: item.id == panel.model?.id) { choose(.model, item.id) }
+                }
+                // Older models of each line wait in a closed submenu (ADR-0171).
+                if !lineup.legacy.isEmpty {
+                    Menu("Legacy") {
+                        ForEach(lineup.legacy) { item in
+                            option(item.name, chosen: item.id == panel.model?.id) { choose(.model, item.id) }
+                        }
+                    }
                 }
             }
         } label: {
@@ -2297,9 +2431,30 @@ private struct ThreadSettingsRow: View {
     }
 }
 
+/// One choice in a setting chip's menu, in a thread's box and in Watcher's. A toggle, so iOS marks the one in force by its
+/// state, which it keeps at the accessibility text sizes where it drops a menu item's images; the line is the item's
+/// second text, its subtitle.
+struct SettingOption: View {
+    let name: String
+    var line: String? = nil
+    let chosen: Bool
+    let action: () -> Void
+    var body: some View {
+        let isOn = Binding(get: { chosen }, set: { if $0 { action() } })
+        if let line {
+            Toggle(isOn: isOn) {
+                Text(verbatim: name)
+                Text(verbatim: line)
+            }
+        } else {
+            Toggle(isOn: isOn) { Text(verbatim: name) }
+        }
+    }
+}
+
 /// A text button in the reply box's second line: its value and a small chevron, no fill at rest (ADR-0113). Drawn 32
 /// points tall and pressed across 44. A change the agent hasn't confirmed draws a dashed edge and a dot, both still.
-private struct SettingChip<Content: View>: View {
+struct SettingChip<Content: View>: View {
     var pending = false
     @ViewBuilder let content: Content
     var body: some View {
@@ -2365,6 +2520,7 @@ private struct FollowupStack: View {
     let ref: ThreadRef
     @State private var all = false
     var body: some View {
+        let _ = BenchProbe.body("FollowupStack")
         let items = model.followups(ref)
         if !items.isEmpty {
             let hidden = items.count - FollowupQueue.shownCards

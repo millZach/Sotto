@@ -4,7 +4,6 @@ import { ArrowUp, ArrowUpRight, Laptop, ListPlus, MessageSquare, Quote, Server, 
 import { msg, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import type { NextPrompt } from '../../../shared/nextPrompt'
-import { DEFAULT_COMPOSER_STYLE } from '../../../shared/composerStyle'
 import { useOptionalApp } from '../state/AppContext'
 import { chordClaimed, chordMatches } from './branchToolbar.logic'
 import { claimedThreadChord, threadChordCap, threadChordLabel, threadChordPressed } from './threadShortcuts'
@@ -29,7 +28,7 @@ import { composeReviewMessage, reviewCommentStore, reviewLabel, useReviewComment
 import { composeQuotedMessage, replyQuoteLabel, replyQuoteStore, useReplyQuotes, type ReplyQuote, type ReplyQuoteStore } from './replyQuotes'
 import { useOwlFeature } from '../state/owlFeature'
 import { ScreenshotInput } from './ScreenshotInput'
-import { draftEffortScore } from './effortSuggestion'
+import { draftBroadWork, draftEffortScore } from './effortSuggestion'
 import { attachmentRefusal } from './attachmentWords'
 import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
 import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useScreenshotReadPort, useScreenshotReads, useSubmissions, useThreadComposer, type ComposerDraft, type ThreadComposerSnapshot, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
@@ -57,7 +56,6 @@ import { EffortTrace } from './EffortTrace'
 import { continueChoiceFor, continueModels, continueStore, unavailableProviders, useContinueChoice, useContinueEnabled, type ContinueChoice } from './continuations'
 import { shownWords, type LaterWords } from './interfaceWords'
 import './composer.css'
-import './rowsComposer.css'
 import './reviewComments.css'
 
 type Command = AgentConnection['command']
@@ -184,9 +182,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const watcherOn = useWatcherEnabled()
   const watchActions = useWatchActions()
   const quietComposer = useOwlFeature('quiet-composer')
-  // Which of the composer's two styles Settings › Appearance chose (ADR-0168); Zach's two rows unless Drake's pill is.
-  const composerStyle = app?.settings?.composerStyle ?? DEFAULT_COMPOSER_STYLE
-  const { draft, save, saveError, answerState, hasContent, effortScore } = useComposerControls(store, threadId, quietComposer)
+  const { draft, save, saveError, answerState, hasContent, effortScore, broadWork } = useComposerControls(store, threadId, quietComposer)
   const comments = useReviewComments(reviewComments, threadId)
   // Reply quotes are an Owl feature: stable shows no chip and sends none (ADR-0129).
   const quoting = useOwlFeature('reply-quote')
@@ -198,7 +194,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   // The row under the footer where the option chips say what happened to a refused or unconfirmed change.
   const [settingsNotices, setSettingsNotices] = useState<HTMLDivElement | null>(null)
   const [toolbarNotices, setToolbarNotices] = useState<HTMLDivElement | null>(null)
-  // The quiet pill draws the permissions shield at its start, after attach (ADR-0161).
+  // Zach's composer draws the permissions first at the footer's end, before the model (ADR-0168).
   const [shieldSlot, setShieldSlot] = useState<HTMLDivElement | null>(null)
   const field = useRef<PromptEditorElement>(null)
   const caretAfterInsert = useRef<number | null>(null)
@@ -396,6 +392,9 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         // queueing and a working agent get no caption, and how a sent prompt went is told where it is shown.
         : reason !== null ? reason === placeholder ? null : <span className="thread-prompt__status">{reason}</span> : null
   const primaryLabel = answering ? t`Send answer` : queueing ? t`Queue prompt` : t`Send prompt`
+  // The disc's name, where a continuation or Watcher's handover gives it an action of its own.
+  const discLabel = continuing !== undefined ? t`Continue on ${continueTarget}` : handover !== null && !working ? handover.label : primaryLabel
+  const discTitle = continuing !== undefined ? t`Start a new ${continueTarget} thread with a handover of this one and your message` : discLabel
   // "Continue in a new thread on" in the model chip, for a started thread on this computer (ADR-0089; Owl only).
   const continueOffer = continueEnabled && !watcher && continuing === undefined && row.thread.nativeSessionStarted !== false && row.thread.remoteHost !== true
     && !isThreadArchived(row.thread) && row.thread.kind !== 'watcher' && row.thread.kind !== 'watcher-history' ? {
@@ -439,13 +438,11 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     .every(accelerator => chordClaimed('mod+enter', accelerator, platform)) ? 'mod+enter' : null
   const enterCap = threadChordCap('enter', platform)
   const stopKeys = !watcher && stopChord ? stopChord : null
-  // The quiet composer (ADR-0161, Owl): one pill. Answers, continuations and Watcher's handover keep the full footer,
-  // since each has a primary action of its own that the pill's disc does not draw.
-  const quiet = quietComposer && !answering && continuing === undefined && handover === null
-  // Zach's composer (ADR-0168) shares the pill's parts and lays them out in two rows: the prompt, then a footer whose
-  // permissions sit before the model, and whose disc is Stop while a turn runs with nothing typed.
-  const rows = quiet && composerStyle === 'rows'
-  /** In the quiet pill, the permissions shield goes to the pill's start; elsewhere it stays where it is drawn. */
+  // Zach's composer (ADR-0168, ADR-0172): the prompt, then a footer whose permissions sit before the model, and one disc
+  // that is Stop while a turn runs with nothing typed. Answers, continuations and Watcher's handover draw it too; the
+  // disc takes their primary action's name.
+  const quiet = quietComposer
+  /** In Zach's composer, the permissions go to their slot before the model; elsewhere they stay where they are drawn. */
   const inSlot = (node: ReactNode): ReactNode => quiet && shieldSlot ? createPortal(node, shieldSlot) : node
   // The pill's disc turns into Steer while Steer's modifier is held, so it always shows what the key pressed will do.
   const [steerHeld, setSteerHeld] = useState(false)
@@ -520,7 +517,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
     {/* When Sotto restarts what a limit stopped (ADR-0144; Owl only), before the prompt; a begun continuation takes its place, and Watcher's own pane has the band. */}
     {continuing === undefined && !watcher ? <RestartStrip thread={row.thread} command={command} composerId={composerId} /> : null}
     {continuing !== undefined ? <ContinueStrip thread={row.thread} state={state} choice={continuing} composerId={composerId} /> : null}
-    <form className="thread-prompt" data-quiet={quiet || undefined} data-style={quiet ? composerStyle : undefined} data-ornament={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
+    <form className="thread-prompt" data-quiet={quiet || undefined} data-ornament={Boolean(ornament) || undefined} data-thread-id={threadId} data-answering={answering || undefined} data-running={working || undefined} data-picker={menuOpen || undefined}
       onSubmit={event => { event.preventDefault(); send(performance.now()) }}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node | null)) { leavePickers.current(); setNextList(null) } }}>
       <EffortTrace />
@@ -529,8 +526,6 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         onHighlight={index => setNextList({ ...nextList, index })} onChoose={chooseNext} /> : null}
       {staleAnswer ? <div className="thread-prompt__notice" role="status"><span><Trans>This answer was for a question that is no longer pending.</Trans></span>
         <Button variant="secondary" onClick={() => store.edit(threadId, { text: '', attachments: [], skills: [], files: [], requestId: null })}><Trans>Discard answer</Trans></Button></div> : null}
-      {/* Before the prompt in the Tab order, as the shield is before it on the line. */}
-      {quiet && !rows ? <div ref={setShieldSlot} className="thread-prompt__lead" /> : null}
       <ThreadComposerEditor key={threadId} row={row} state={state} command={command} store={store} composerId={composerId}
         editable={editable} answering={answering} placeholder={placeholder} supported={row.model?.supportsImages === true && !answering} attachable={!answering} watcher={watcher}
         field={field} caretAfterInsert={caretAfterInsert} leavePickers={leavePickers} onMenuChange={setMenuOpen}
@@ -566,16 +561,16 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
       <div className="thread-prompt__footer">
         <div className="thread-prompt__meta" id={statusId}>
           {/* Zach's composer draws the permissions first at the footer's end, before the model, in the order Tab takes them. */}
-          {rows ? <div ref={setShieldSlot} className="thread-prompt__shield" /> : null}
+          {quiet ? <div ref={setShieldSlot} className="thread-prompt__shield" /> : null}
           {/* Every composer belongs to a thread that already exists on its host, so the host is shown here, not chosen.
               Watcher's full composer has New Watcher in that place; the quiet pill keeps it beside Send. */}
           {watcher && !quiet ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} />
             : !quiet && threadHost ? <span className="thread-host-chip" title={hostTitle}>
             {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}{hostLabel}</span> : null}
-          {continuing !== undefined ? <ContinueOptions thread={row.thread} state={state} choice={continuing} />
+          {continuing !== undefined ? <ContinueOptions thread={row.thread} state={state} choice={continuing} quiet={quiet ? { effortScore, broadWork, shieldSlot } : undefined} />
             : row.thread.nativeSessionStarted === false || capabilities.configureThread || continueOffer !== undefined
             ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher} continueOffer={continueOffer}
-              quiet={quiet ? { effortScore, shieldSlot } : undefined}
+              quiet={quiet ? { effortScore, broadWork, shieldSlot } : undefined}
               {...(editable && !answering ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? t`Answer this question` : t`Manual prompt`}</small></span>
               {watcher ? inSlot(<WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
@@ -585,18 +580,19 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
         <div ref={actionsRow} className="thread-prompt__actions">
           {quiet ? <>
             {watcher ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} /> : null}
-            {working && !(rows && !content) ? <Button variant="ghost" className="thread-prompt__stop" data-beside aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
+            {working && content ? <Button variant="ghost" className="thread-prompt__stop" data-beside aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
               title={stopTitle} disabled={!canStop} onClick={interrupt}><Square size={10} fill="currentColor" aria-hidden="true" /></Button> : null}
-            {/* One disc: Send, Queue while a turn runs, Steer while Steer's modifier is held. Its glyph says which. In
-                Zach's composer it is Stop while a turn runs with nothing typed, so Stop is never drawn twice. */}
-            {rows && working && !content
+            {/* One disc: Send, Queue while a turn runs, Steer while Steer's modifier is held, and Stop while a turn runs with
+                nothing typed, so Stop is never drawn twice. Its glyph says which. An answer, a continuation and Watcher's
+                handover keep the Send glyph and give the disc their own name. */}
+            {working && !content
               ? <Button className="thread-prompt__send thread-prompt__disc" data-face="stop" aria-label={stopName} aria-keyshortcuts={stopKeys ? threadChordLabel(stopKeys, platform).keys : undefined}
                 title={stopTitle} disabled={!canStop} onClick={interrupt}><Square size={11} fill="currentColor" aria-hidden="true" /></Button>
               : discFace === 'steer'
               ? <Button className="thread-prompt__send thread-prompt__disc" data-face="steer" aria-label={t`Steer now`} aria-keyshortcuts={steerChord ? threadChordLabel(steerChord, platform).keys : undefined}
                 title={t`Send this now, without waiting for the turn to end` + (steerChord ? ` ${threadChordLabel(steerChord, platform).suffix}` : '')} onClick={() => send(performance.now(), 'steer')}>
                 <ArrowUpRight size={16} strokeWidth={2.4} aria-hidden="true" /></Button>
-              : <Button className="thread-prompt__send thread-prompt__disc" data-face={discFace} aria-label={primaryLabel} aria-keyshortcuts="Enter" title={reason ?? primaryLabel} disabled={!canSend} type="submit">
+              : <Button className="thread-prompt__send thread-prompt__disc" data-face={discFace} aria-label={discLabel} aria-keyshortcuts="Enter" title={reason ?? discTitle} disabled={!canSend} type="submit">
                 {discFace === 'queue' ? <ListPlus size={16} strokeWidth={2.4} aria-hidden="true" /> : <ArrowUp size={16} strokeWidth={2.4} aria-hidden="true" />}</Button>}
           </> : <>
           {running && capabilities.steer === true && content
@@ -644,6 +640,8 @@ interface ComposerControls {
   readonly hasUltrathink: boolean
   /** How much thought the draft seems to ask for (`effortSuggestion.ts`), read only by the quiet composer. */
   readonly effortScore: number
+  /** Whether the draft reads like work that splits across agents (`effortSuggestion.ts`), which may suggest Ultracode. */
+  readonly broadWork: boolean
 }
 
 /** Text edits repaint the editor; the surrounding controls observe only the facts they display. */
@@ -656,12 +654,13 @@ function useComposerControls(store: ThreadDraftStore, threadId: string, scoreEff
       const hasUltrathink = /\bultrathink\b/iu.test(draft.text)
       // Read only where the quiet composer is on, so no other composer repaints as the score moves.
       const effortScore = scoreEffort ? draftEffortScore(draft.text) : 0
+      const broadWork = scoreEffort && draftBroadWork(draft.text)
       if (previous && previous.save === save && previous.saveError === saveError
         && previous.answerState === answerState
-        && previous.hasContent === hasContent && previous.hasUltrathink === hasUltrathink && previous.effortScore === effortScore
+        && previous.hasContent === hasContent && previous.hasUltrathink === hasUltrathink && previous.effortScore === effortScore && previous.broadWork === broadWork
         && previous.draft.attachments === draft.attachments && previous.draft.skills === draft.skills
         && previous.draft.files === draft.files && previous.draft.requestId === draft.requestId) return previous
-      return previous = { draft, save, saveError, answerState, hasContent, hasUltrathink, effortScore }
+      return previous = { draft, save, saveError, answerState, hasContent, hasUltrathink, effortScore, broadWork }
     }
   }, [store, threadId, scoreEffort])
   return useSyncExternalStore(store.subscribe, read)

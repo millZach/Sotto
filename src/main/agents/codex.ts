@@ -22,13 +22,14 @@ import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, agentSpeedSchema, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentHostSnapshot, type AgentMessage, type AgentThread, type ProviderId } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
+import { markLegacyModels } from '../../shared/modelLineup'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
 import { codexSkillInput, parseCodexSkillCatalog } from './codexSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
 import { verifyFileMentions } from './promptFiles'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, PromptImage, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, PromptImage, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft } from './host'
 import { SIDE_WRITING_TIMEOUT_MS, sideWritingEffort } from './sideWriting'
 import { ThreadMessageLog } from './threadMessageLog'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
@@ -703,7 +704,8 @@ export class CodexAppServerHost implements AgentHost {
           cursors.add(cursor)
         }
       } while (cursor)
-      return { version, models }
+      // Older models of a line go under Legacy in every menu (ADR-0171).
+      return { version, models: markLegacyModels(models) }
     } catch { return { version, models: undefined } }
   }
   /**
@@ -1181,11 +1183,16 @@ export class CodexAppServerHost implements AgentHost {
     if (this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
     if (!this.state.connected || !alias) return null
+    return this.writeShortTextOn({ modelId: alias.modelId, cwd: alias.cwd }, prompt, signal)
+  }
+  /** The same on the model chosen, for what has no session yet (ADR-0173). */
+  async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    if (!this.state.connected) return null
     const executable = this.options.executable ?? await findExecutable()
     if (!executable) return null
-    const effort = sideWritingEffort(this.state.models, alias.modelId)
+    const effort = sideWritingEffort(this.state.models, target.modelId)
     return writeWithCodexExec({ ...prompt, executable, prefixArgs: this.options.args ?? [], codexHome: this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex'),
-      model: alias.modelId, ...(effort ? { effort } : {}), workingDirectory: await existingWorkingDirectory(alias.cwd), timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
+      model: target.modelId, ...(effort ? { effort } : {}), workingDirectory: await existingWorkingDirectory(target.cwd ?? homedir()), timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
   }
   /**
    * Read the thread back from Codex. The read before a send first asks only for the newest turn

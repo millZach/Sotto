@@ -855,9 +855,10 @@ export class AgentControl {
   }
   /**
    * Authenticated phone user input; its origin stays private to this command and the main-owned request. A steer, a
-   * follow-up and its removal reach only Watcher's own thread, which a phone's ordinary commands never reach (#1229).
+   * follow-up and its removal reach only Watcher's own thread, which a phone's ordinary commands never reach (#1229), and
+   * so does Stop on Watcher's own turn from its box (October 31, 2026).
    */
-  commandFromWatcherPhone(command: Extract<AgentCommand, { type: 'send' | 'steer' | 'queue-followup' | 'remove-followup' }>, origin: WatcherCommandOrigin, client: ClientIdentity): Promise<AgentState> {
+  commandFromWatcherPhone(command: Extract<AgentCommand, { type: 'send' | 'steer' | 'queue-followup' | 'remove-followup' | 'interrupt' }>, origin: WatcherCommandOrigin, client: ClientIdentity): Promise<AgentState> {
     if (!this.watcherHooks || !origin.phoneOrigin || client.transport !== 'socket'
       || client.clientId !== origin.phoneOrigin.clientId || this.hostId() !== origin.phoneOrigin.hostId) throw new Error('Watcher phone input is unavailable.')
     if (command.type !== 'send' && this.state.host.threads.find(thread => thread.id === command.threadId)?.kind !== 'watcher') throw new Error('Watcher phone input is unavailable.')
@@ -4038,8 +4039,10 @@ export class AgentControl {
     void pending.finally(() => this.titleWrites.delete(pending)).catch(() => undefined)
     return pending
   }
-  /** The thread as this coordinator holds it now, read in place; for a side call's material, never per update. */
-  liveThread(threadId: string): AgentThread | undefined { return this.state.host.threads.find(thread => thread.id === threadId) }
+  /** The threads and projects as this coordinator holds them now, read in place; for a side call's material, never per update. */
+  liveHost(): Pick<AgentHostSnapshot, 'threads' | 'projects'> { return this.state.host }
+  /** The thread as this coordinator holds it now, read in place through the thread index; for a side call's material, never per update. */
+  liveThread(threadId: string): AgentThread | undefined { return this.threadById(threadId) }
   /** A thread's whole history: what the pane holds when that is all of it, else the store's own copy. */
   threadHistory(thread: AgentThread): readonly AgentMessage[] {
     if (thread.messages.length > 0 && thread.earlierAvailable !== true) return thread.messages
