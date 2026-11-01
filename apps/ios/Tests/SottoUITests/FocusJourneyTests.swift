@@ -2274,8 +2274,11 @@ import UIKit
         thread.tap()
         XCTAssertTrue(app.staticTexts["Run npm test -- terminalDrawer?"].waitForExistence(timeout: 5),
                       "A Needs you row for a delegated thread opens that thread on its question")
-        reveal(app.buttons["Not now"])
-        app.buttons["Not now"].tap()
+        let notNow = app.buttons["Not now"]
+        reveal(notNow)
+        // The journey runs first on a freshly booted simulator, where a synthesized tap is now and then dropped (#1984).
+        XCTAssertEqual(press(notNow, until: NSPredicate { _, _ in !notNow.exists }, untouched: { notNow.exists }), .completed,
+                       "Not now closes the delegated thread's question")
         back()
         let agents = app.buttons["thread-agents"]
         XCTAssertTrue(agents.waitForExistence(timeout: 5), "A thread with delegated threads and agents has Agents in its top bar")
@@ -2287,8 +2290,9 @@ import UIKit
         XCTAssertTrue(app.buttons["agents-answer-thread:review-fix"].exists, "A delegated thread that waits on you opens to answer")
         // The outcome and the order come with the computer's reads, a moment after the sheet opens.
         let answered = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label BEGINSWITH %@", "Check the drawer docs, delegated thread on Codex, Answered"), object: docs)
-        XCTAssertEqual(XCTWaiter.wait(for: [answered], timeout: 5), .completed, "A delegated thread's row says its outcome")
-        XCTAssertTrue(app.buttons["agents-row-agent:waits"].waitForExistence(timeout: 5))
+        // A deadline that is never reached costs nothing; on a cold simulator those reads can take longer than 5 s (#1984).
+        XCTAssertEqual(XCTWaiter.wait(for: [answered], timeout: 30), .completed, "A delegated thread's row says its outcome")
+        XCTAssertTrue(app.buttons["agents-row-agent:waits"].waitForExistence(timeout: 30))
         // Newest start first: the running agent, the review, the docs, then the finished agent.
         let order = ["agents-row-agent:suite", "agents-row-thread:review-fix", "agents-row-thread:drawer-docs", "agents-row-agent:waits"]
             .map { app.buttons[$0].frame.minY }
