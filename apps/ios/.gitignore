@@ -7,3 +7,4 @@ DerivedData/
 xcuserdata/
 ExportOptions.local.plist
 .build-ui/
+.build-bench/

@@ -31,6 +31,7 @@ struct ThreadView: View {
     private var folded: Bool { if case .folded = duo { return true } else { return false } }
 
     var body: some View {
+        let _ = BenchProbe.body("ThreadView")
         Conversation(ref: ref, stuck: $stuck, titled: $titled) { request in
             shown = request.id
             open = request
@@ -420,9 +421,11 @@ private final class TimelineCache {
         if next == key { return cached }
         key = next
         if dates.count > 10_000 { dates = [:] }
-        let items = ThreadTimeline.items(messages: detail.messages, activities: detail.activities ?? [],
-                                         earlierAvailable: detail.earlierAvailable == true, date: { self.date($0) })
-        cached = ConversationRow.make(items, date: { self.date($0) })
+        cached = BenchProbe.time("timeline.rows") {
+            let items = ThreadTimeline.items(messages: detail.messages, activities: detail.activities ?? [],
+                                             earlierAvailable: detail.earlierAvailable == true, date: { self.date($0) })
+            return ConversationRow.make(items, date: { self.date($0) })
+        }
         return cached
     }
     private func date(_ stamp: String) -> Date? {
@@ -467,6 +470,7 @@ private struct Conversation: View {
     private static let end = "thread-end"
 
     var body: some View {
+        let _ = BenchProbe.body("Conversation")
         let detail = model.shown(for: ref)
         let rows = timeline.rows(for: detail, held: detail != nil && model.detail(for: ref) == nil)
         let pending = model.pending(for: ref)
@@ -729,6 +733,7 @@ private struct ThreadHero: View, Equatable {
         a.ref == b.ref && a.thread == b.thread && a.watched == b.watched && a.pullRequest == b.pullRequest
     }
     var body: some View {
+        let _ = BenchProbe.body("ThreadHero")
         let chips = GitChips(thread?.worktree)
         VStack(alignment: .leading, spacing: 0) {
             Text(thread?.title ?? String(localized: "Thread", comment: "Title for a thread that has no title yet"))
@@ -977,6 +982,7 @@ private struct MessageView: View, Equatable {
         a.message == b.message && a.provider == b.provider && a.showsWho == b.showsWho && a.ref == b.ref && a.opensFiles == b.opensFiles
     }
     var body: some View {
+        let _ = BenchProbe.body("MessageView")
         if message.role == "user" {
             userMessage
         } else if message.role == "assistant" {
@@ -1058,6 +1064,7 @@ struct MarkdownText: View, Equatable {
     @Environment(\.sottoDensity) private var density
     static func == (a: Self, b: Self) -> Bool { a.text == b.text && a.quotable == b.quotable }
     var body: some View {
+        let _ = BenchProbe.body("MarkdownText")
         let blocks = SottoCore.Markdown.cachedBlocks(text)
         VStack(alignment: .leading, spacing: Space.dense(Space.s3, density)) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
@@ -1076,6 +1083,7 @@ private struct MarkdownBlockView: View, Equatable {
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoDensity) private var density
     var body: some View {
+        let _ = BenchProbe.body("MarkdownBlockView")
         switch block {
         case .heading(let level, let text):
             Text(InlineStyle.render(text, theme: theme))
@@ -1487,6 +1495,7 @@ private struct ReplyText: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(box: box) }
 
     func makeUIView(context: Context) -> UITextView {
+        BenchProbe.count("textview.make")
         let view = Words()
         view.isEditable = false
         view.isScrollEnabled = false
@@ -1500,10 +1509,11 @@ private struct ReplyText: UIViewRepresentable {
     }
 
     func updateUIView(_ view: UITextView, context: Context) {
+        BenchProbe.count("textview.update")
         context.coordinator.box = box
         // Set only when the words or their look change, so a selection survives the page drawing again.
         let words = InlineStyle.attributed(inline, ink: ink, theme: theme, traits: view.traitCollection)
-        if view.attributedText != words { view.attributedText = words }
+        if view.attributedText != words { BenchProbe.count("textview.set"); view.attributedText = words }
         view.linkTextAttributes = [.foregroundColor: UIColor(theme.color(.accentText))]
         view.tintColor = UIColor(theme.color(.accent))
     }
@@ -1565,6 +1575,7 @@ private struct FoldedRun: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
+        let _ = BenchProbe.body("FoldedRun")
         VStack(alignment: .leading, spacing: 0) {
             Button(action: toggle) {
                 if working {
@@ -1627,6 +1638,7 @@ private struct WorkingLine: View {
     @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
+        let _ = BenchProbe.body("WorkingLine")
         HStack(spacing: Space.s2) {
             if still {
                 Light(tone: .accent, size: 7, breathing: false)
@@ -1862,6 +1874,7 @@ private struct StepLine: View {
     let record: Activity
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     var body: some View {
+        let _ = BenchProbe.body("StepLine")
         HStack(spacing: 7) {
             mark.frame(width: 16, height: 16)
             Text(verbatim: record.title)
@@ -2087,6 +2100,7 @@ private struct ReplyDock: View, Equatable {
     @State private var stopped = 0
 
     var body: some View {
+        let _ = BenchProbe.body("ReplyDock")
         VStack(spacing: Space.s2) {
             ComputerBanner(ref: ref)
             if let problem = model.detailProblem, model.online(ref.hostID) {
@@ -2506,6 +2520,7 @@ private struct FollowupStack: View {
     let ref: ThreadRef
     @State private var all = false
     var body: some View {
+        let _ = BenchProbe.body("FollowupStack")
         let items = model.followups(ref)
         if !items.isEmpty {
             let hidden = items.count - FollowupQueue.shownCards

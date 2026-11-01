@@ -60,6 +60,7 @@ struct ThreadsView: View {
     private var inColumns: Bool { unfolded && !typeSize.isAccessibilitySize }
 
     var body: some View {
+        let _ = BenchProbe.body("ThreadsView")
         let groups = model.focusThreads(show: model.show, query: query, opened: model.selected)
         let unsearched = query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected)
         SheetPage(warm: unsearched.requestCount > 0) {
@@ -836,6 +837,7 @@ private struct ThreadRowList: View {
     let unread: Set<String>
     var watched: Set<String> = []
     var body: some View {
+        let _ = BenchProbe.body("ThreadRowList")
         VStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.element.id) { index, row in
                 if index > 0 {
@@ -862,6 +864,7 @@ private struct ThreadRow: View {
     /// Settled is quiet: a settled thread whose last turn failed doesn't say so here.
     private var failed: Bool { row.failed }
     var body: some View {
+        let _ = BenchProbe.body("ThreadRow")
         Group {
             if model.canChangeWatch(row.ref) {
                 link.contextMenu {
