@@ -95,6 +95,24 @@ final class ThreadPageTests: XCTestCase {
         XCTAssertEqual(run.map(\.id), ["read", "edit"])
     }
 
+    func testTheLatestTurnsBeginAtTheirFirstMessageFromTheUser() throws {
+        var messages: [Message] = []
+        var steps: [Activity] = []
+        for turn in 0..<4 {
+            messages.append(try message("ask-\(turn)", "user", at: "0\(turn):00"))
+            steps.append(try step("read-\(turn)", turn + 1, at: "0\(turn):10"))
+            messages.append(try message("reply-\(turn)", "assistant", at: "0\(turn):20"))
+        }
+        let items = ThreadTimeline.items(messages: messages, activities: steps)
+        XCTAssertEqual(items[ThreadTimeline.latestTurnsStart(items, turns: 2)].id, "message-ask-2")
+        XCTAssertEqual(ThreadTimeline.latestTurnsStart(items, turns: 4), 0, "Exactly as many turns as asked: all of them")
+        XCTAssertEqual(ThreadTimeline.latestTurnsStart(items, turns: 9), 0, "Fewer turns than asked: all of them")
+        XCTAssertEqual(ThreadTimeline.latestTurnsStart(items, turns: 0), items.count)
+        XCTAssertEqual(ThreadTimeline.latestTurnsStart([]), 0)
+        let answersOnly = ThreadTimeline.items(messages: [try message("a", "assistant"), try message("b", "assistant")], activities: [])
+        XCTAssertEqual(ThreadTimeline.latestTurnsStart(answersOnly, turns: 1), 0, "No message from the user: all of it")
+    }
+
     func testMessagesCarryTheirTimeThroughAStreamedAppend() throws {
         let detail = try decode(ThreadDetail.self, #"{"threadId":"t","revision":1,"messages":[{"id":"m","role":"assistant","text":"Hel","createdAt":"2026-10-04T10:00:00.000Z"}]}"#)
         XCTAssertEqual(detail.messages.first?.createdAt, "2026-10-04T10:00:00.000Z")

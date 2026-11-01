@@ -118,6 +118,23 @@ public enum ThreadTimeline {
         return entries
     }
 
+    /// The turns a computer sends when a thread opens (`FIRST_WINDOW_TURNS` in the desktop's `threadStore.ts`): the
+    /// thread page lays out this many of the latest turns whole.
+    public static let openingTurns = 10
+
+    /// Where the latest `turns` turns begin: the index of the `turns`-th message from the user, counted from the end.
+    /// Zero when the items hold no more turns than that.
+    public static func latestTurnsStart(_ items: [TimelineItem], turns: Int = openingTurns) -> Int {
+        guard turns > 0 else { return items.count }
+        var seen = 0
+        for index in items.indices.reversed() {
+            guard case .message(let message) = items[index], message.role == "user" else { continue }
+            seen += 1
+            if seen == turns { return index }
+        }
+        return 0
+    }
+
     /// Consecutive steps as one run.
     public static func grouped(_ entries: [TimelineEntry]) -> [TimelineItem] {
         var items: [TimelineItem] = []
