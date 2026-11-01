@@ -164,7 +164,7 @@ describe("Watcher's room", () => {
       expect(effort).toHaveTextContent(/^Medium$/u)
       fireEvent.keyDown(effort, { key: 'End' })
       expect(effort).toHaveTextContent(/^High$/u)
-      expect(screen.getByRole('combobox', { name: 'Watcher’s permissions' }).closest('.thread-prompt__lead')).not.toBeNull()
+      expect(screen.getByRole('combobox', { name: 'Watcher’s permissions' }).closest('.thread-prompt__meta > .thread-prompt__shield')).not.toBeNull()
     } else {
       expect(document.querySelector('.split-chip-effort')).toBeNull()
       fireEvent.click(screen.getByRole('combobox', { name: 'Thread reasoning' }))

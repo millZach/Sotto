@@ -22,39 +22,33 @@ export interface ChipSpeed {
 }
 
 /**
- * The quiet composer's effort and speed (ADR-0161): the level in words beside the model, in the same filled chip, and a
- * bolt for speed where the model offers more than Standard: an outline at Standard, one bolt at Fast, two at Ultra fast.
- * A press opens a short list of the levels the model offers and, below it, its speeds; each choice goes through the same
- * save as the effort card. With the chip focused, the arrow keys step the level and Option with Up or Down (Alt on
- * Windows and Linux) steps the speed, as the dots did. Levels the draft seems to want above the one set are marked in the
- * list, and a short note says so for a moment, until a press or a change of draft. Nothing moves at rest.
+ * The composer's effort and speed (ADR-0161, ADR-0168): the level in words beside the model, and a bolt for speed where
+ * the model offers more than Standard: an outline at Standard, one bolt at Fast, two at Ultra fast. A press opens a short
+ * list of the levels the model offers and, below it, its speeds; each choice goes through the same save as the effort
+ * card. With the chip focused, the arrow keys step the level and Option with Up or Down (Alt on Windows and Linux) steps
+ * the speed, as the dots did. While the draft seems to want a level above the one set, an arrow and that level stand
+ * after the word, one press that sets it, and the level is marked in the list (ADR-0172). They stay until a press or a
+ * change of draft takes the reason away. Nothing moves at rest.
  */
-export function SplitChipEffort({ levels, value, disabled, pending = false, describedBy, suggestion, onChange, speed }: {
+export function SplitChipEffort({ levels, value, disabled, pending = false, describedBy, suggestion: wanted, onChange, speed }: {
   readonly levels: readonly string[]
   readonly value: string
   readonly disabled: boolean
   readonly pending?: boolean
   readonly describedBy?: string | undefined
-  /** An index into `levels` above the one set, or null. */
+  /** An index into `levels` above the one set (`suggestedEffortIndex`), or null. Never offered while the setting cannot change. */
   readonly suggestion: number | null
   readonly onChange: (level: string) => void
   /** Absent where the model offers no speed but Standard, so no bolt is drawn. */
   readonly speed?: ChipSpeed | undefined
 }): ReactNode {
   const current = levels.indexOf(value)
+  const suggestion = disabled ? null : wanted
   const [open, setOpen] = useState(false)
-  const [noted, setNoted] = useState<number | null>(null)
   const trigger = useRef<HTMLButtonElement>(null)
   const panel = useRef<HTMLDivElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const listId = useId()
-  // The note shows for a moment each time a new suggestion arrives; the marks in the list stay while it stands.
-  useEffect(() => {
-    if (suggestion === null) { setNoted(null); return }
-    setNoted(suggestion)
-    const timer = window.setTimeout(() => setNoted(null), 2400)
-    return () => window.clearTimeout(timer)
-  }, [suggestion])
   useEffect(() => {
     if (!open) return
     const dismiss = (event: PointerEvent): void => {
@@ -122,14 +116,23 @@ export function SplitChipEffort({ levels, value, disabled, pending = false, desc
       {speed ? <span className="split-chip-effort__bolts" aria-hidden="true">{bolts}</span> : null}
       {speed ? <span className="tt-visually-hidden">, {speed.name}</span> : null}
     </button>
+    {/* The offer goes once taken. A pointer goes back to the prompt it was writing; a key stays on the word it set. */}
+    {suggested === null ? null : <button key={suggested} type="button" className="split-chip-effort__suggest tt-focusable"
+      aria-label={t({ message: `Set effort to ${suggested}, suggested for this draft`, comment: '{suggested} is a reasoning effort level, such as High.' })}
+      title={t({ message: `${suggested} effort may suit this draft`, comment: '{suggested} is a reasoning effort level, such as High.' })}
+      onClick={event => {
+        set(suggestion!)
+        const prompt = event.detail === 0 ? null : trigger.current?.closest('form')?.querySelector<HTMLElement>('.prompt-editor')
+        ;(prompt ?? trigger.current)?.focus()
+      }}><span className="split-chip-effort__arrow" aria-hidden="true">→</span><span className="split-chip-effort__suggested">{suggested}</span></button>}
     {open ? <div ref={panel} id={listId} className="thread-chip-menu__list thread-chip-menu__list--foot split-chip-effort__menu" role="dialog" aria-label={label}>
       <div ref={list} role="listbox" aria-label={t`Reasoning effort`} className="thread-chip-menu__options" onKeyDown={event => { if (!speedKey(event)) moveListboxFocus(event, list.current) }}>
         {levels.map((level, index) => {
-          const marked = suggestion !== null && index > current && index <= suggestion
+          const marked = index === suggestion
           // The mark is said as the row's description, so the row's name stays the level's.
           return <button type="button" role="option" key={level} aria-selected={index === current} aria-describedby={marked ? `${listId}-suggested` : undefined}
             onClick={() => { set(index); close() }}>
-          <span>{effortLabel(level)}{marked ? <small id={index === suggestion ? `${listId}-suggested` : undefined}>{t({ message: 'Suggested for this draft', comment: 'Beside a reasoning effort level the draft seems to want.' })}</small> : null}</span>
+          <span>{effortLabel(level)}{marked ? <small id={`${listId}-suggested`}>{t({ message: 'Suggested for this draft', comment: 'Beside a reasoning effort level the draft seems to want.' })}</small> : null}</span>
           {index === current && <Check size={14} aria-hidden="true" />}</button>
         })}
       </div>
@@ -140,8 +143,8 @@ export function SplitChipEffort({ levels, value, disabled, pending = false, desc
       </div> : null}
     </div> : null}
     {/* Always present, so assistive technology hears a suggestion when it arrives. */}
-    <span className="split-chip-effort__note" role="status" data-shown={noted !== null || undefined}>
-      {suggested === null ? '' : t({ message: `Suggests ${suggested}. Choose it from the effort list.`, comment: '{suggested} is a reasoning effort level, such as High.' })}
+    <span className="tt-visually-hidden" role="status">
+      {suggested === null ? '' : t({ message: `${suggested} effort suggested for this draft.`, comment: '{suggested} is a reasoning effort level, such as High.' })}
     </span>
   </span>
 }

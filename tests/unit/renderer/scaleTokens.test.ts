@@ -23,7 +23,6 @@ const EXCEPTIONS: readonly { readonly sheet: string; readonly declaration: strin
   { sheet: 'features/usage/usage.css', declaration: 'font-size: clamp(17px, .6cqi + 12px, 20px)', reason: 'An index figure written in words grows with the room the same way, from a smaller start.' },
   { sheet: 'features/usage/usage.css', declaration: 'border-radius: var(--usage-radius) var(--usage-radius) 0 0', reason: 'The chart works a bar\'s top corners out from the bar\'s width (UsageCharts.tsx), so a thin bar is never rounder than it is wide.' },
   { sheet: 'agents/skillPill.css', declaration: 'border-radius: .42em', reason: 'A skill sits in the composer\'s line of text and rounds with the text around it.' },
-  { sheet: 'agents/quietComposer.css', declaration: 'border-radius: 24px', reason: 'Drake\'s composer is one pill (ADR-0161): on one line it is 46px tall (6 + 32 + 6 inside its 1px transparent border), so 24px rounds its ends whole; the overlay step would leave a flat stretch at each end.' },
   { sheet: 'agents/effortTrace.css', declaration: 'border-radius: 47px', reason: 'The effort trace\'s halo rounds concentrically with the composer\'s corner, out past it by the halo\'s reach (ADR-0019).' },
   { sheet: 'agents/effortTrace.css', declaration: 'border-radius: 25px', reason: 'The halo\'s glow, concentric with the halo inside it.' },
   // The floating widget keeps its look: its shape is Zach's to decide (ADR-0110), and these have no step at their size.

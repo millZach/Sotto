@@ -1,30 +1,39 @@
-/* The quiet composer (ADR-0161, Owl): one pill holding attach, the permissions shield, the prompt, one filled chip of
-   the model and its effort in words with a bolt for speed, and one disc. Answers and continuations keep the footer of
-   ADR-0113. Colour comes only from theme roles. */
-.thread-prompt[data-quiet] { grid-template-columns: auto auto minmax(0, 1fr) auto; align-items: center; column-gap: 2px; padding: 6px 7px 6px 8px; border-radius: 24px; }
-.thread-prompt[data-quiet] .screenshot-input > :has(.prompt-editor) { grid-column: 3; grid-row: 2; min-width: 0; }
-.thread-prompt[data-quiet] > .thread-prompt__lead { grid-column: 2; grid-row: 2; display: flex; align-items: center; }
-.thread-prompt[data-quiet] > .thread-prompt__lead:empty { display: none; }
-.thread-prompt[data-quiet] .prompt-editor { min-height: 22.5px; max-height: 160px; padding: 4px 6px; resize: none; }
-.thread-prompt[data-quiet] .screenshot-input__tools > .tt-button { grid-column: 1; grid-row: 2; margin: 0; }
-.thread-prompt[data-quiet] > .thread-prompt__footer { grid-column: 4; grid-row: 2; align-self: center; margin: 0; }
-/* What the user put in the prompt sits above the line; what Sotto says about it, below. */
+/* Zach's composer (ADR-0168, ADR-0172), after T3 Code: the prompt has the card's whole width; under it, attach on the
+   left and, on the right, the permissions, the model and its effort as words with the speed's bolt, then one disc. It is
+   the composer everywhere one is drawn: threads, Watcher, answers, continuations and Watcher's handover. No edge in any
+   state; colour comes only from theme roles. */
+.thread-prompt[data-quiet] { grid-template-columns: auto minmax(0, 1fr); align-items: start; column-gap: 0; padding: 14px 10px 8px 16px; border-radius: var(--tt-radius-overlay); }
+.thread-prompt[data-quiet] .screenshot-input > :has(.prompt-editor) { grid-column: 1 / -1; grid-row: 2; min-width: 0; }
+.thread-prompt[data-quiet] .prompt-editor { min-height: 45px; max-height: 220px; padding: 0 6px 0 0; resize: none; }
+/* The footer: attach in the first column, everything else at the far end of the second. */
+.thread-prompt[data-quiet] .screenshot-input__tools > .tt-button { grid-column: 1; grid-row: 4; align-self: center; margin: 6px 0 0 -8px; }
+.thread-prompt[data-quiet] > .thread-prompt__footer { grid-column: 2; grid-row: 4; align-self: center; justify-content: flex-end; gap: 4px; margin: 6px 0 0; }
+/* What the user put in the prompt sits above it; what Sotto says about it, below. */
 .thread-prompt[data-quiet] :is(.review-chips, .thread-prompt__notice) { grid-row: 1; }
 .thread-prompt[data-quiet] :is(.screenshot-previews, .attached-files, .screenshot-input__tools > small, .review-chips__note) { grid-row: 3; }
-.thread-prompt[data-quiet] > .thread-options-notices { grid-column: 1 / -1; grid-row: 4; }
+.thread-prompt[data-quiet] > .thread-options-notices { grid-column: 1 / -1; grid-row: 5; }
 .thread-prompt[data-quiet] :is(.thread-prompt__meta, .thread-options-bar, .thread-options--chips) { flex: none; flex-wrap: nowrap; gap: 0 2px; }
+.thread-prompt[data-quiet] > .thread-prompt__footer > .thread-prompt__meta { flex: 1 1 auto; justify-content: flex-end; min-width: 0; }
 .thread-prompt[data-quiet] .thread-prompt__actions { gap: 2px; }
 
-/* The model and its effort are one filled chip on the pill's line: the model's half, a hairline, then effort's half. */
-.thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort) { gap: 0; height: 28px; border-radius: var(--tt-radius-row); background: color-mix(in oklab, var(--tt-text) 6%, var(--tt-card)); }
-.thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort) .model-picker__trigger { height: 28px; min-height: 28px; border-radius: var(--tt-radius-row) 0 0 var(--tt-radius-row); }
+/* The model and its effort read as words, not a chip: no fill and no hairline between them. */
+.thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort) { gap: 0; height: 28px; }
+.thread-prompt[data-quiet] .thread-options--chips:has(> .split-chip-effort) .model-picker__trigger { height: 28px; min-height: 28px; border-radius: var(--tt-radius-row); padding-inline-end: 4px; color: var(--tt-text); }
 
-/* The model keeps its mark and name and loses its chevron; permissions show only their shield, the words kept for
-   assistive technology as ADR-0113 decision 2 keeps them in a narrow pane. */
+/* The model keeps its mark and name and loses its chevron. Permissions come first at the footer's end, in a slot of
+   their own before the model, as their shield and the mode's name in the mode's colour. A narrow pane keeps the shield
+   alone; the name stays for assistive technology and in the tooltip. Other chips with an icon show only the icon. */
 .thread-prompt[data-quiet] .thread-chip > svg.lucide-chevron-down { display: none; }
 .thread-prompt[data-quiet] :is(.watcher-new__label, .watcher-new__separator) { display: none; }
 .thread-prompt[data-quiet] .thread-chip > .thread-chip__icon { display: inline-flex; }
 .thread-prompt[data-quiet] .thread-chip:has(> .thread-chip__icon) > .thread-chip__value { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.thread-prompt[data-quiet] .thread-prompt__shield { display: flex; flex: none; align-items: center; margin-inline-end: 2px; }
+.thread-prompt[data-quiet] .thread-prompt__shield:empty { display: none; }
+.thread-prompt[data-quiet] .thread-chip[data-permission]:has(> .thread-chip__icon) { gap: 6px; }
+.thread-prompt[data-quiet] .thread-chip[data-permission]:has(> .thread-chip__icon) > .thread-chip__value { position: static; width: auto; height: auto; overflow: visible; clip-path: none; font-size: var(--tt-type-small); }
+@container thread-pane (max-width: 560px) {
+  .thread-prompt[data-quiet] .thread-chip[data-permission]:has(> .thread-chip__icon) > .thread-chip__value { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+}
 /* The shield says the mode even before it opens. Full access takes the theme's gold, with a slow sheen. */
 .thread-prompt[data-quiet] .thread-chip[data-permission] { color: var(--tt-text-muted); }
 .thread-prompt[data-quiet] .thread-chip:is([data-permission='auto'], [data-permission='auto-accept-edits']) { color: var(--tt-accent); }
@@ -38,20 +47,17 @@
 :root[data-window-hidden] .thread-prompt[data-quiet] .thread-chip[data-permission='full-access'] .thread-chip__icon::after { animation-play-state: paused; }
 @keyframes permission-gold-sheen { 0%, 30% { background-position: 180% 0; } 75%, 100% { background-position: -80% 0; } }
 
-/* One disc. Steer, while its modifier is held, is the accent with the ink made for it. */
+/* One disc. Steer, while its modifier is held, is the accent with the ink made for it. While a turn runs with nothing
+   typed the disc is Stop, in the disc's own ink. */
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc { width: 32px; min-width: 32px; height: 32px; min-height: 32px; padding: 0; border-radius: 50%; }
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc[data-face='steer'],
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc[data-face='steer']:hover { background: var(--tt-accent); color: var(--tt-on-accent); }
+.thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__disc[data-face='stop'] { background: var(--tt-pill); color: var(--tt-pill-ink); }
 .thread-prompt[data-quiet] .thread-prompt__actions > .thread-prompt__stop { width: 22px; min-width: 22px; padding: 0; }
-/* A slim composer with nothing to send keeps Stop and lets the disabled Send step aside (ADR-0125). */
-.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt[data-quiet][data-running] .thread-prompt__actions > .thread-prompt__disc[data-face='send']:disabled { display: none; }
-/* The slim line hides attach and the options, so it hides the shield that stands beside attach too. */
-.threads-view .thread-pane > .thread-workspace__compose[data-slim] .thread-prompt[data-quiet] > .thread-prompt__lead { display: none; }
 
 /* The effort chip: the level in words, then the speed's bolt. Its menu opens above it, like the shield's. */
 .split-chip-effort { position: relative; display: inline-flex; align-items: center; height: 28px; flex: none; }
-.split-chip-effort::before { content: ''; width: 1px; height: 14px; background: var(--tt-hairline); }
-.split-chip-effort__trigger { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px; border: 0; border-radius: 0 var(--tt-radius-row) var(--tt-radius-row) 0; background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); white-space: nowrap; }
+.split-chip-effort__trigger { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 8px 0 4px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-2); font: inherit; font-size: var(--tt-type-small); white-space: nowrap; }
 .split-chip-effort__trigger:hover:not([aria-disabled='true']), .split-chip-effort__trigger[aria-expanded='true'] { background: var(--tt-hover); color: var(--tt-text); }
 .split-chip-effort__trigger[aria-disabled='true'] { cursor: default; }
 .split-chip-effort[data-pending] .split-chip-effort__trigger { opacity: .7; }
@@ -63,10 +69,20 @@
 .split-chip-effort__speeds > button { height: 26px; padding: 0 8px; border: 0; border-radius: var(--tt-radius-control); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-caption); white-space: nowrap; }
 .split-chip-effort__speeds > button:hover { color: var(--tt-text); }
 .split-chip-effort__speeds > button[aria-checked='true'] { background: var(--tt-surface-elevated); color: var(--tt-text); font-weight: 600; box-shadow: 0 0 0 1px var(--tt-hairline); }
-/* The note a new suggestion brings for a moment. */
-.split-chip-effort__note { position: absolute; right: 0; bottom: calc(100% + 14px); z-index: 2; padding: 3px 8px; border-radius: var(--tt-radius-control); background: var(--tt-card); box-shadow: 0 0 0 1px var(--tt-hairline); color: var(--tt-text-muted); font-size: var(--tt-type-caption); white-space: nowrap; opacity: 0; transform: translateY(4px); pointer-events: none; transition: opacity 160ms ease-out, transform 200ms cubic-bezier(.2, .8, .2, 1); }
-.split-chip-effort__note[data-shown] { opacity: 1; transform: none; }
-.split-chip-effort__note:empty { display: none; }
+/* A level the draft seems to want (ADR-0172, Drake's pick A of docs/prototypes/effort-suggestion-prototype.html): after
+   the word, a muted arrow and the level in the accent on its wash, one press that sets it. It rises in once, and stands
+   still while the draft still asks for it. */
+.split-chip-effort__suggest { display: inline-flex; align-items: center; gap: 5px; height: 28px; margin-inline-start: -4px; padding: 0 4px 0 2px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); white-space: nowrap; cursor: pointer; }
+/* A thinner wash than --tt-accent-wash, so the accent's text holds 4.5:1 on it in every theme (paintedTextPairs.ts). */
+.split-chip-effort__suggested { --effort-offer-wash: color-mix(in srgb, var(--tt-accent) 10%, transparent); display: inline-flex; align-items: center; height: 22px; padding: 0 7px; border-radius: var(--tt-radius-control); background: var(--effort-offer-wash); color: var(--tt-accent-text); font-weight: 600; }
+/* The arrow points from the word to the level in a right-to-left interface too. */
+.split-chip-effort__arrow { display: inline-block; }
+.split-chip-effort__arrow:dir(rtl) { transform: scaleX(-1); }
+.split-chip-effort__suggest:hover > .split-chip-effort__suggested { box-shadow: inset 0 0 0 1px var(--tt-accent-border); }
+@media (prefers-reduced-motion: no-preference) {
+  :root:not([data-reduced-motion='on']) .split-chip-effort__suggest { animation: effort-suggest-in 180ms cubic-bezier(.2, .8, .2, 1) both; }
+}
+@keyframes effort-suggest-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
 
 /* A thread whose settings cannot change shows its model's name; the line saying so stays for assistive technology. */
 .thread-prompt[data-quiet] .thread-prompt__model small { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

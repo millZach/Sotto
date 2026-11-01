@@ -37,7 +37,6 @@ const customSettings = {
   menuBarOwlBody: 'ink',
   menuBarOwlEyes: 'amber',
   watcherScene: 'harbour',
-  composerStyle: 'pill',
   creature: 'claude',
   showCreature: false,
   interfaceLanguage: 'ja',
@@ -399,12 +398,10 @@ describe('settings', () => {
     expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, watcherScene: 'moon-base' }).success).toBe(false)
   })
 
-  it('starts on Zach\'s composer, keeps Drake\'s once chosen, and recovers an unknown style as Zach\'s', () => {
-    expect(DEFAULT_SETTINGS.composerStyle).toBe('rows')
-    expect(parseSettings({ composerStyle: 'pill' }).composerStyle).toBe('pill')
-    expect(parseSettings({}).composerStyle).toBe('rows')
-    expect(parseSettings({ composerStyle: 'dots' }).composerStyle).toBe('rows')
-    expect(settingsSchema.safeParse({ ...DEFAULT_SETTINGS, composerStyle: 'dots' }).success).toBe(false)
+  it('drops the composer style a settings file saved before there was one composer, and keeps everything else', () => {
+    const saved = parseSettings({ composerStyle: 'pill', creature: 'claude' })
+    expect(saved).not.toHaveProperty('composerStyle')
+    expect(saved.creature).toBe('claude')
   })
 
   it('keeps every creature and recovers an unknown one as Sotto\'s own', () => {
@@ -466,7 +463,6 @@ describe('settings', () => {
       menuBarOwlBody: 'slate',
       menuBarOwlEyes: 'teal',
       watcherScene: 'night-wood',
-      composerStyle: 'rows',
       creature: 'sotto',
       showCreature: true,
       interfaceLanguage: 'system',
