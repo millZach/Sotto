@@ -412,6 +412,7 @@ describe('Devin dispatch and decision boundaries', () => {
     await writeFile(join(f.root, 'release-reply'), '')
     expect(await reopening).toBe('reopened')
     expect(await thread()).toMatchObject({ status: 'idle', providerMode: 'bypass' })
+    await reading
   })
 
   it('reads no history of an idle thread its own process holds, and reads a message typed in Devin when it next opens the thread (#992)', async () => {
