@@ -192,6 +192,390 @@
           }
         }
       }
+    },
+    "NSMicrophoneUsageDescription" : {
+      "comment" : "The iPhone asks for microphone access with this sentence.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يستمع Sotto إلا أثناء إملائك ردًا، من لحظة الضغط على الميكروفون حتى تتوقف. يتحول صوتك إلى كلمات على هذا الـ iPhone ولا يُسجَّل أو يُرسل إلى أي مكان أبدًا."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "আপনি কোনো রিপ্লাইতে বলে লেখার সময়ই শুধু Sotto শোনে, মাইক চাপা থেকে থামানো পর্যন্ত। আপনার কণ্ঠ এই iPhone-এই লেখায় বদলায় এবং কখনো রেকর্ড বা কোথাও পাঠানো হয় না।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto poslouchá jen ve chvíli, kdy diktujete odpověď, od klepnutí na mikrofon do zastavení. Váš hlas se na tomto iPhonu převede na text a nikdy se nenahrává ani nikam neodesílá."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto lytter kun, mens du dikterer et svar, fra du trykker på mikrofonen, til du stopper. Din stemme bliver til tekst på denne iPhone og bliver aldrig optaget eller sendt nogen steder hen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto hört nur zu, während du in eine Antwort diktierst, vom Tippen auf das Mikrofon bis du aufhörst. Deine Stimme wird auf diesem iPhone zu Text und wird nie aufgenommen oder irgendwohin gesendet."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το Sotto ακούει μόνο όσο υπαγορεύετε μια απάντηση, από τη στιγμή που πατάτε το μικρόφωνο μέχρι να σταματήσετε. Η φωνή σας γίνεται κείμενο σε αυτό το iPhone και δεν ηχογραφείται ούτε στέλνεται πουθενά."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto listens only while you dictate into a reply, from when you press the mic until you stop. Your voice is turned into words on this iPhone and is never recorded or sent anywhere."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto solo escucha mientras dictas en una respuesta, desde que pulsas el micrófono hasta que paras. Tu voz se convierte en texto en este iPhone y nunca se graba ni se envía a ningún sitio."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto solo escucha mientras dictas en una respuesta, desde que tocas el micrófono hasta que te detienes. Tu voz se convierte en texto en este iPhone y nunca se graba ni se envía a ningún lado."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto solo escucha mientras dictas en una respuesta, desde que tocas el micrófono hasta que te detienes. Tu voz se convierte en texto en este iPhone y nunca se graba ni se envía a ningún lado."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto kuuntelee vain, kun sanelet vastausta, mikrofonin napautuksesta siihen asti, kun lopetat. Äänesi muutetaan tekstiksi tällä iPhonella, eikä sitä koskaan tallenneta tai lähetetä minnekään."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto n’écoute que pendant que vous dictez une réponse, de l’appui sur le micro jusqu’à l’arrêt. Votre voix est transformée en texte sur cet iPhone et n’est jamais enregistrée ni envoyée nulle part."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto केवल तब सुनता है जब आप किसी रिप्लाई में बोलकर लिखते हैं, माइक दबाने से लेकर रोकने तक। आपकी आवाज़ इसी iPhone पर शब्दों में बदलती है और कभी रिकॉर्ड या कहीं भेजी नहीं जाती।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Sotto csak akkor figyel, amikor választ diktálsz, a mikrofon megérintésétől addig, amíg abba nem hagyod. A hangod ezen az iPhone-on alakul szöveggé, és soha nem kerül rögzítésre vagy elküldésre."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto ascolta solo mentre detti una risposta, da quando tocchi il microfono finché non ti fermi. La tua voce diventa testo su questo iPhone e non viene mai registrata né inviata da nessuna parte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto が聞き取るのは、マイクを押してから止めるまで、返信に音声入力している間だけです。声はこの iPhone 上で文字になり、録音されることもどこかに送られることもありません。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "तुम्ही रिप्लायमध्ये बोलून लिहिता तेव्हाच Sotto ऐकते, माइक दाबल्यापासून थांबेपर्यंत. तुमचा आवाज याच iPhone वर शब्दांत बदलतो आणि तो कधीही रेकॉर्ड किंवा कुठेही पाठवला जात नाही."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto lytter bare mens du dikterer et svar, fra du trykker på mikrofonen til du stopper. Stemmen din blir gjort om til tekst på denne iPhonen og blir aldri tatt opp eller sendt noe sted."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto luistert alleen terwijl je een antwoord dicteert, vanaf het tikken op de microfoon tot je stopt. Je stem wordt op deze iPhone omgezet in tekst en wordt nooit opgenomen of ergens naartoe gestuurd."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto słucha tylko wtedy, gdy dyktujesz odpowiedź, od dotknięcia mikrofonu do zakończenia. Twój głos jest zamieniany na tekst na tym iPhonie i nigdy nie jest nagrywany ani nigdzie wysyłany."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Sotto só escuta enquanto você dita uma resposta, de quando toca no microfone até parar. Sua voz vira texto neste iPhone e nunca é gravada nem enviada para lugar nenhum."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Sotto só ouve enquanto dita uma resposta, desde que toca no microfone até parar. A sua voz é transformada em texto neste iPhone e nunca é gravada nem enviada para lado nenhum."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto ascultă doar cât dictezi un răspuns, de când atingi microfonul până te oprești. Vocea ta devine text pe acest iPhone și nu este niciodată înregistrată sau trimisă undeva."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto lyssnar bara medan du dikterar ett svar, från att du trycker på mikrofonen tills du slutar. Din röst blir text på den här iPhonen och spelas aldrig in eller skickas någonstans."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "நீங்கள் மறுமொழியில் பேசி எழுதும்போது மட்டுமே, மைக்கை அழுத்தியதிலிருந்து நிறுத்தும் வரை, Sotto கேட்கும். உங்கள் குரல் இந்த iPhone இலேயே சொற்களாக மாறும்; அது ஒருபோதும் பதிவு செய்யப்படாது, எங்கும் அனுப்பப்படாது."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "మీరు ప్రత్యుత్తరంలో మాట్లాడి రాస్తున్నప్పుడు మాత్రమే, మైక్ నొక్కినప్పటి నుండి ఆపే వరకు, Sotto వింటుంది. మీ గొంతు ఈ iPhone లోనే పదాలుగా మారుతుంది, ఎప్పుడూ రికార్డ్ కాదు, ఎక్కడికీ పంపబడదు."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto yalnızca bir yanıtı dikte ederken, mikrofona dokunduğunuz andan durana kadar dinler. Sesiniz bu iPhone’da yazıya dönüştürülür; asla kaydedilmez ve hiçbir yere gönderilmez."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto слухає лише тоді, коли ви диктуєте відповідь, від натискання мікрофона до зупинки. Ваш голос перетворюється на текст на цьому iPhone і ніколи не записується й нікуди не надсилається."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto صرف تب سنتا ہے جب آپ کسی ریپلائی میں بول کر لکھتے ہیں، مائیک دبانے سے روکنے تک۔ آپ کی آواز اسی iPhone پر الفاظ میں بدلتی ہے اور کبھی ریکارڈ یا کہیں بھیجی نہیں جاتی۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 只在你向回复中听写时聆听，从你按下麦克风到你停止为止。你的声音在这部 iPhone 上转成文字，绝不会被录下或发送到任何地方。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 只在你向回覆中聽寫時聆聽，從你按下麥克風到你停止為止。你的聲音在這部 iPhone 上轉成文字，絕不會被錄下或傳送到任何地方。"
+          }
+        }
+      }
+    },
+    "NSSpeechRecognitionUsageDescription" : {
+      "comment" : "The iPhone asks for speech recognition access with this sentence.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحوّل Sotto ما تمليه إلى كلمات باستخدام التعرّف على الكلام من Apple على هذا الـ iPhone. لا يغادر ما تقوله الـ iPhone."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto এই iPhone-এ Apple-এর কথা শনাক্তকরণ দিয়ে আপনার বলা কথা লেখায় বদলায়। আপনি যা বলেন তা iPhone ছেড়ে যায় না।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto převádí, co diktujete, na text pomocí rozpoznávání řeči od Applu na tomto iPhonu. Co říkáte, iPhone neopustí."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto gør det, du dikterer, til tekst med Apples talegenkendelse på denne iPhone. Det, du siger, forlader ikke iPhonen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto macht mit der Spracherkennung von Apple auf diesem iPhone aus dem, was du diktierst, Text. Was du sagst, verlässt das iPhone nicht."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το Sotto μετατρέπει όσα υπαγορεύετε σε κείμενο με την αναγνώριση ομιλίας της Apple σε αυτό το iPhone. Όσα λέτε δεν φεύγουν από το iPhone."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto turns what you dictate into words with Apple’s speech recognition on this iPhone. What you say doesn’t leave the iPhone."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto convierte lo que dictas en texto con el reconocimiento de voz de Apple en este iPhone. Lo que dices no sale del iPhone."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto convierte lo que dictas en texto con el reconocimiento de voz de Apple en este iPhone. Lo que dices no sale del iPhone."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto convierte lo que dictas en texto con el reconocimiento de voz de Apple en este iPhone. Lo que dices no sale del iPhone."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto muuttaa sanelusi tekstiksi Applen puheentunnistuksella tällä iPhonella. Sanomasi ei poistu iPhonesta."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto transforme ce que vous dictez en texte grâce à la reconnaissance vocale d’Apple sur cet iPhone. Ce que vous dites ne quitte pas l’iPhone."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto इसी iPhone पर Apple की वाक् पहचान से आपके बोले हुए को शब्दों में बदलता है। आप जो कहते हैं, वह iPhone से बाहर नहीं जाता।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Sotto az Apple beszédfelismerésével ezen az iPhone-on alakítja szöveggé, amit diktálsz. Amit mondasz, nem hagyja el az iPhone-t."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto trasforma ciò che detti in testo con il riconoscimento vocale di Apple su questo iPhone. Ciò che dici non lascia l’iPhone."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto は、この iPhone 上の Apple の音声認識で、音声入力した内容を文字にします。話した内容が iPhone の外に出ることはありません。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto याच iPhone वर Apple च्या उच्चार ओळखीने तुम्ही बोललेले शब्दांत बदलते. तुम्ही जे बोलता ते iPhone बाहेर जात नाही."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto gjør det du dikterer om til tekst med Apples talegjenkjenning på denne iPhonen. Det du sier, forlater ikke iPhonen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto zet wat je dicteert om in tekst met de spraakherkenning van Apple op deze iPhone. Wat je zegt, verlaat de iPhone niet."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto zamienia to, co dyktujesz, na tekst za pomocą rozpoznawania mowy Apple na tym iPhonie. To, co mówisz, nie opuszcza iPhone’a."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Sotto transforma o que você dita em texto com o reconhecimento de fala da Apple neste iPhone. O que você diz não sai do iPhone."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Sotto transforma o que dita em texto com o reconhecimento de voz da Apple neste iPhone. O que diz não sai do iPhone."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto transformă ce dictezi în text cu recunoașterea vorbirii de la Apple pe acest iPhone. Ce spui nu părăsește iPhone-ul."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto gör om det du dikterar till text med Apples taligenkänning på den här iPhonen. Det du säger lämnar inte iPhonen."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto இந்த iPhone இலேயே Apple இன் பேச்சு அறிதல் மூலம் நீங்கள் சொல்வதைச் சொற்களாக மாற்றுகிறது. நீங்கள் சொல்வது iPhone ஐ விட்டு வெளியே போகாது."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto ఈ iPhone లోనే Apple మాట గుర్తింపుతో మీరు చెప్పినదాన్ని పదాలుగా మారుస్తుంది. మీరు చెప్పేది iPhone ను దాటి వెళ్లదు."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto, dikte ettiklerinizi bu iPhone’da Apple’ın konuşma tanıma özelliğiyle yazıya çevirir. Söyledikleriniz iPhone’dan çıkmaz."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto перетворює продиктоване на текст за допомогою розпізнавання мовлення Apple на цьому iPhone. Сказане не залишає iPhone."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto اسی iPhone پر Apple کی آواز کی شناخت سے آپ کے بولے ہوئے کو الفاظ میں بدلتا ہے۔ آپ جو کہتے ہیں وہ iPhone سے باہر نہیں جاتا۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 在这部 iPhone 上用 Apple 的语音识别把你听写的内容转成文字。你说的话不会离开这部 iPhone。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 在這部 iPhone 上用 Apple 的語音辨識把你聽寫的內容轉成文字。你說的話不會離開這部 iPhone。"
+          }
+        }
+      }
     }
   },
   "version" : "1.0"
