@@ -80,6 +80,9 @@ jobs:
             fi
             if [ -f "$RUNNER_TEMP/bench/after/trace.md" ]; then echo; cat "$RUNNER_TEMP/bench/after/trace.md"; fi
           } | tee "$RUNNER_TEMP/bench/comparison.md" >> "$GITHUB_STEP_SUMMARY"
+      - name: Hold the work counts to their budgets
+        # The change's text views made, message bodies and measures; counts, unlike times, are the same on any runner.
+        run: python3 apps/ios/Scripts/bench-summary.py budget "$RUNNER_TEMP/bench/after"
       - name: Keep the reports
         if: always()
         uses: actions/upload-artifact@v4

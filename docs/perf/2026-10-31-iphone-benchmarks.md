@@ -97,6 +97,10 @@ finished. A journey that ends on `failed-<why>` (the list or the thread never dr
 | `stream.bytes/decode/apply_per_push.<kind>` | The stream's pushes: bytes, reading time, applying time. |
 | `core.*` | SottoCore's timings on the runner's Mac, from `PhoneBenchTests`. |
 
+Some counts have a budget, the most a change may leave them at (`BUDGETS` in `Scripts/bench-summary.py`); the workflow
+fails when the change's side is over one. Counts are the same on any runner, so a budget sits just above what the
+change that set it measured, and only tightens.
+
 A decode is timed from the call to its return on the main actor, so a busy main actor lengthens it; the `core.*.read`
 lines time reading alone.
 
@@ -180,5 +184,7 @@ Scrolling up through the earlier turns makes each as it arrives, so the longest 
 frames' samples are SwiftUI sizing one tall turn (about half) and making its text views (about a fifth). The page laid
 out whole was late on nearly every frame of the same scroll, about 20 frames a second, so its longest frame was short
 because none were quick. Zach chose to ship the change with the longer frame named; making a turn cheaper is the
-next item.
+next item. While words in a reply are selected, a new turn leaves the split where it was, so moving the oldest whole
+turn into the lazy stack never drops the selection. The open's text views, message bodies and measures, and the
+measures per streamed word, now have budgets.
 
