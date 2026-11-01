@@ -72,7 +72,7 @@
 /* A level the draft seems to want (ADR-0172, Drake's pick A of docs/prototypes/effort-suggestion-prototype.html): after
    the word, a muted arrow and the level in the accent on its wash, one press that sets it. It rises in once, and stands
    still while the draft still asks for it. */
-.split-chip-effort__suggest { display: inline-flex; align-items: center; gap: 5px; height: 28px; margin-inline-start: -4px; padding: 0 4px 0 2px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); white-space: nowrap; cursor: pointer; }
+.split-chip-effort__suggest { display: inline-flex; align-items: center; gap: 5px; height: 28px; margin-inline-start: -4px; padding: 0 4px 0 2px; border: 0; border-radius: var(--tt-radius-row); background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); white-space: nowrap; }
 /* A thinner wash than --tt-accent-wash, so the accent's text holds 4.5:1 on it in every theme (paintedTextPairs.ts). */
 .split-chip-effort__suggested { --effort-offer-wash: color-mix(in srgb, var(--tt-accent) 10%, transparent); display: inline-flex; align-items: center; height: 22px; padding: 0 7px; border-radius: var(--tt-radius-control); background: var(--effort-offer-wash); color: var(--tt-accent-text); font-weight: 600; }
 /* The arrow points from the word to the level in a right-to-left interface too. */
