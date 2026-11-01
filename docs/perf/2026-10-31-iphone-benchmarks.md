@@ -95,48 +95,49 @@ nothing absolute about a phone. A phone is slower than the runner, so a cost tha
 
 ## Baseline
 
-Two runs of the same harness on `main` as of `bde56ebfe` plus the benchmarks, on two `macos-26` runners with Xcode 26.6
-and iOS 26 on an iPhone 16 Pro Max simulator: [run 41262437881](https://github.com/millZach/Sotto/actions/runs/41262437881)
-and [run 41260169131](https://github.com/millZach/Sotto/actions/runs/41260169131). The second runner was two to four
-times slower on the same code (compare the `core.*` lines), which is why a change is always measured beside its base on
-one runner. In the earlier run, the open's and the launch's frame counts started at the phase's first frame and missed
-the block that starts it; they are left out.
+`main` as of `bde56ebfe` with these benchmarks, on a `macos-26` runner with Xcode 26.6 and iOS 26 on an iPhone 16 Pro
+Max simulator: [run 41265243831](https://github.com/millZach/Sotto/actions/runs/41265243831). Runners differ: an earlier
+run of the same code ([41262437881](https://github.com/millZach/Sotto/actions/runs/41262437881)) timed SottoCore's
+steps two to three times slower, which is why a change is always measured beside its base on one runner.
 
-| Metric | Run 41262437881 | Run 41260169131 | Unit |
-| --- | ---: | ---: | --- |
-| `launch.xctest.duration_applicationfirstframepresentationresponsive` | 6.19 | 6.66 | s |
-| `launch.app.first_list` | 5,078 | 4,714 | ms |
-| `launch.app.footprint` | 103 | 102 | MB |
-| `list-scroll.app.hitch_time_ratio` | 13.6 | 11.4 | ms/s |
-| `list-scroll.app.longest_frame` | 86 | 82 | ms |
-| `open.app.tap_to_drawn` | 16,918 | 12,734 | ms |
-| `open.app.longest_frame` | 16,918 | – | ms |
-| `open.app.cpu` | 19,696 | 15,527 | ms |
-| `open.app.textview.make` | 500 | 500 | count |
-| `open.app.footprint` | 472 | 481 | MB |
-| `thread-scroll.app.hitch_time_ratio` | 540 | 452 | ms/s |
-| `thread-scroll.app.hitches` | 171 | 168 | count |
-| `stream.cpu_per_chunk` | 367 | 296 | ms |
-| `stream.wall_per_chunk` | 361 | 289 | ms |
-| `stream.app.hitch_time_ratio` | 942 | 935 | ms/s |
-| `stream.app.hitches` (200 words) | 197 | 197 | count |
-| `stream.per_chunk.body.MessageView` | 1.00 | 1.00 | count |
-| `stream.per_chunk.textview.update` | 1.00 | 1.00 | count |
-| `stream.bytes_per_push.delta` | 229 | 229 | B |
-| `stream.bytes_per_push.shell` | 2,075 | 2,075 | B |
-| `journey.app.peak_footprint` | 494 | 503 | MB |
-| `core.timeline-200.items` | 162 | 44 | ms |
-| `core.delta.timeline-200` | 88 | 42 | ms |
-| `core.detail-200.read` | 20.3 | 5.0 | ms |
-| `core.shell-full.read` | 9.9 | 4.9 | ms |
+| Metric | Baseline | Unit |
+| --- | ---: | --- |
+| `launch.xctest.duration_applicationfirstframepresentationresponsive` | 5.50 | s |
+| `launch.app.first_list` | 4,155 | ms |
+| `launch.app.footprint` | 103 | MB |
+| `launch.decode.shell_full` (287 KB) | 32.6 | ms |
+| `list-scroll.app.hitch_time_ratio` | 11.7 | ms/s |
+| `list-scroll.app.longest_frame` | 88 | ms |
+| `open.app.tap_to_drawn` | 17,481 | ms |
+| `open.app.longest_frame` | 17,475 | ms |
+| `open.app.cpu` | 19,317 | ms |
+| `open.app.textview.make` | 500 | count |
+| `open.app.body.MessageView` | 402 | count |
+| `open.app.footprint` | 484 | MB |
+| `thread-scroll.app.hitch_time_ratio` | 512 | ms/s |
+| `thread-scroll.app.hitches` (8.7 s) | 170 | count |
+| `stream.cpu_per_chunk` | 368 | ms |
+| `stream.wall_per_chunk` | 355 | ms |
+| `stream.app.hitch_time_ratio` | 947 | ms/s |
+| `stream.app.hitches` (200 words) | 194 | count |
+| `stream.per_chunk.body.MessageView` | 1.00 | count |
+| `stream.per_chunk.textview.update` | 1.00 | count |
+| `stream.bytes_per_push.delta` | 229 | B |
+| `stream.bytes_per_push.shell` | 2,075 | B |
+| `journey.app.peak_footprint` | 615 | MB |
+| `core.timeline-200.items` | 48.5 | ms |
+| `core.delta.timeline-200` | 49.8 | ms |
+| `core.detail-200.read` | 5.6 | ms |
+| `core.shell-full.read` | 4.9 | ms |
 
 What they say:
 
-- **Opening the long thread blocks the main thread for the whole open**, 13 to 17 seconds: its longest frame is its
+- **Opening the long thread blocks the main thread for the whole open**, about 17 seconds: its longest frame is its
   open-to-drawn time. It builds a body for each of the 402 messages and a text view for each of 500 paragraphs, and
-  costs 370 MB more than the list.
-- **Each streamed word costs 300 to 370 ms of CPU** and leaves the screen stuck for 94% of the stream, though only the
+  costs 380 MB more than the list.
+- **Each streamed word costs about 370 ms of CPU** and leaves the screen stuck for 95% of the stream, though only the
   growing message's body runs again for it. The likely cost is layout: every paragraph's text view measures its words
-  again on each layout pass, with nothing cached, in a stack that lays out every row when one grows.
+  again on each layout pass, with nothing cached, in a stack that lays out every row when one grows. Rebuilding the
+  timeline for each word (`core.delta.timeline-200`) adds about 50 ms on the runner's Mac, outside the simulator.
 - **Scrolling the long thread** is late for half of every second.
-- **The thread list** draws in about 5 seconds from launch and scrolls smoothly. The pushes are small since #1910.
+- **The thread list** draws about 4 seconds after launch and scrolls smoothly. The pushes are small since #1910.
