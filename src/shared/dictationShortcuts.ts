@@ -208,11 +208,13 @@ export function validateChord(
   )
   const duplicate = others.find(({ other }) => sameTokens(tokens, normalTokens(other, platform)))
   if (duplicate) return refuse('duplicate', `${rowNames[duplicate.role]} already uses ${keys}.`)
-  for (const { other } of others) {
+  // Only a hold of modifiers alone starts on the way down; a press of modifiers alone waits for its release and lets
+  // a longer chord through, so Fn and Fn+Space can both start and stop dictation.
+  for (const { role, other } of others) {
     const otherTokens = normalTokens(other, platform)
-    const [held, pressed] = modifierOnly(tokens) && properSubset(tokens, otherTokens)
+    const [held, pressed] = target.role === 'hold' && modifierOnly(tokens) && properSubset(tokens, otherTokens)
       ? [chord, other]
-      : modifierOnly(otherTokens) && properSubset(otherTokens, tokens) ? [other, chord] : []
+      : role === 'hold' && modifierOnly(otherTokens) && properSubset(otherTokens, tokens) ? [other, chord] : []
     if (held !== undefined && pressed !== undefined) {
       return refuse('overlap', `Holding ${chordInline(held, platform)} would start dictation every time you press ${chordInline(pressed, platform)}. Pick keys that don’t overlap.`)
     }

@@ -195,7 +195,8 @@ export class WatcherPhoneService {
     // status under Watched: counted here, a few long-running workers kept the phone saying Working while Watcher was idle.
     working: room.currentOptions?.status === 'running', recoveryNotice: room.recoveryNotice, observedAt: room.observedAt,
     // Watcher's box (October 31, 2026): words and flags the room already holds, nothing read afresh.
-    ...(room.newWatcher ? { newWatcher: room.newWatcher } : {}), handoverOffered: Boolean(room.handover), replaced: room.history.length > 0 })
+    ...(room.newWatcher ? { newWatcher: room.newWatcher } : {}), handoverOffered: Boolean(room.handover), replaced: room.history.length > 0,
+    ...(room.nextTurnOptions ? { nextTurnOptions: room.nextTurnOptions } : {}) })
   }
   /** The newest takeover lines, as many as the page carries receipts, each titled from one index of the threads. */
   private takeovers(room: ReturnType<WatcherService['state']>, snapshot: ReturnType<WatcherService['phoneSnapshot']>): NonNullable<WatcherPhoneState['takeovers']> {

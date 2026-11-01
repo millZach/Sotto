@@ -1,5 +1,6 @@
 # Builds the Apple silicon Mac half of a Sotto Owl (ADR-0072, ADR-0093) from the same source commit and Owl version as the
-# Windows Owl the release lead packaged by hand. Runs only when started by hand; never on a push or a pull request.
+# Windows Owl. Runs when started by hand beside a Windows Owl packaged by hand, or when the Sotto Owl nightly calls it
+# (owl-nightly.yml); never on a push or a pull request.
 # It publishes nothing: it attests the disk image and zip and keeps them as a workflow artifact, which release:owl
 # verifies and attaches to the Owl prerelease. It also builds the matching Mac host archive and keeps it, with its
 # checksum sidecar, as a second artifact for release:owl's --host-archive. The app is signed with Sotto's Developer ID, notarized and stapled,
@@ -16,6 +17,17 @@ on:
         type: string
       source:
         description: The full source commit the Windows Owl was built from
+        required: true
+        type: string
+  # The Sotto Owl nightly calls this workflow with the same two inputs (owl-nightly.yml).
+  workflow_call:
+    inputs:
+      version:
+        description: The nightly Owl's version, such as 0.1.38-owl.20261019.1
+        required: true
+        type: string
+      source:
+        description: The full source commit the nightly builds
         required: true
         type: string
 

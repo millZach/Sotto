@@ -292,7 +292,7 @@ private struct DraftPhotoView: View {
 
 // MARK: Choosing photos
 
-/// The reply box's + button: Photo library, Camera and Files (ADR-0131). When the box can't take photos, or files, those
+/// The reply box's + button, the first in its row: Photo library, Camera and Files (ADR-0131). When the box can't take photos, or files, those
 /// choices stay in the menu, unavailable, with the reason beneath them. A thread's box and Watcher's work the same way.
 /// Whatever goes into the box, from here, a paste or the share sheet, answers with the same tap.
 struct AttachPhotosButton: View {
@@ -318,12 +318,10 @@ struct AttachPhotosButton: View {
                 if let fileReason { Text(fileReason) }
             }
         } label: {
-            // A circle of its own beside the box, as in Messages, the box's height when it holds one line; it takes a
-            // press across 44 points.
-            Image(systemName: "plus").fontWeight(.semibold).frame(width: ComposerMetrics.height, height: ComposerMetrics.height)
+            // The first of the row's round buttons, inside the box; it takes a press across 44 points.
+            Image(systemName: "plus").fontWeight(.semibold)
                 .foregroundStyle(reason == nil || fileReason == nil ? Palette.ink : Palette.muted)
-                .composerSurface(in: Circle(), interactive: true)
-                .pressArea(drawn: ComposerMetrics.height)
+                .composerDisc(Palette.fillSoft)
         }
         .accessibilityLabel(String(localized: "Attach photos or files"))
         .accessibilityHint([reason, fileReason].compactMap { $0 }.first ?? String(localized: "Choose photos from the library, take one with the camera, or choose files."))

@@ -33979,6 +33979,198 @@
         }
       }
     },
+    "Can’t dictate on this iPhone" : {
+      "comment" : "An alert's title when this iPhone can't recognize speech on the device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يمكن الإملاء على هذا الـ iPhone"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই iPhone-এ বলে লেখা যাচ্ছে না"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Na tomto iPhonu nelze diktovat"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan ikke diktere på denne iPhone"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktieren geht auf diesem iPhone nicht"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Δεν είναι δυνατή η υπαγόρευση σε αυτό το iPhone"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can’t dictate on this iPhone"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede dictar en este iPhone"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede dictar en este iPhone"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se puede dictar en este iPhone"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tällä iPhonella ei voi sanella"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de dicter sur cet iPhone"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "इस iPhone पर बोलकर नहीं लिख सकते"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ezen az iPhone-on nem lehet diktálni"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossibile dettare su questo iPhone"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この iPhone では音声入力できません"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "या iPhone वर बोलून लिहिता येत नाही"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan ikke diktere på denne iPhonen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dicteren kan niet op deze iPhone"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nie można dyktować na tym iPhonie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não é possível ditar neste iPhone"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não é possível ditar neste iPhone"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nu se poate dicta pe acest iPhone"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Det går inte att diktera på den här iPhonen"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்த iPhone இல் பேசி எழுத முடியாது"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ iPhone లో మాట్లాడి రాయలేరు"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu iPhone’da dikte edilemiyor"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "На цьому iPhone не можна диктувати"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اس iPhone پر بول کر نہیں لکھ سکتے"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法在这部 iPhone 上听写"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法在這部 iPhone 上聽寫"
+          }
+        }
+      }
+    },
     "Can’t reach %@" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -35890,390 +36082,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已變更"
-          }
-        }
-      }
-    },
-    "Changes to %@." : {
-      "comment" : "%@ is a speed, such as Standard.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "يغيّر إلى %@."
-          }
-        },
-        "bn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@-এ বদলায়।"
-          }
-        },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Změní na %@."
-          }
-        },
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Skifter til %@."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wechselt zu %@."
-          }
-        },
-        "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Αλλάζει σε %@."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Changes to %@."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cambia a %@."
-          }
-        },
-        "es-419" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cambia a %@."
-          }
-        },
-        "es-MX" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cambia a %@."
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vaihtaa nopeuteen %@."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Passe à %@."
-          }
-        },
-        "hi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ पर बदलता है।"
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Átvált erre: %@."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Passa a %@."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ に切り替えます。"
-          }
-        },
-        "mr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ वर बदलते."
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bytter til %@."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wijzigt naar %@."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zmienia na %@."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Muda para %@."
-          }
-        },
-        "pt-PT" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Muda para %@."
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Trece la %@."
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Byter till %@."
-          }
-        },
-        "ta" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ஆக மாற்றும்."
-          }
-        },
-        "te" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@కి మారుస్తుంది."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ hızına geçer."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Перемикає на %@."
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ پر بدلتا ہے۔"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切换为 %@。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切換為 %@。"
-          }
-        }
-      }
-    },
-    "Changes to %@. %@" : {
-      "comment" : "The first %@ is a speed, such as Fast; the second says what it costs.",
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "يغيّر إلى %@. %@"
-          }
-        },
-        "bn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@-এ বদলায়। %@"
-          }
-        },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Změní na %@. %@"
-          }
-        },
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Skifter til %@. %@"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wechselt zu %@. %@"
-          }
-        },
-        "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Αλλάζει σε %@. %@"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Changes to %@. %@"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cambia a %@. %@"
-          }
-        },
-        "es-419" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cambia a %@. %@"
-          }
-        },
-        "es-MX" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Cambia a %@. %@"
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vaihtaa nopeuteen %@. %@"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Passe à %@. %@"
-          }
-        },
-        "hi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ पर बदलता है। %@"
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Átvált erre: %@. %@"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Passa a %@. %@"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ に切り替えます。%@"
-          }
-        },
-        "mr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ वर बदलते. %@"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bytter til %@. %@"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Wijzigt naar %@. %@"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zmienia na %@. %@"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Muda para %@. %@"
-          }
-        },
-        "pt-PT" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Muda para %@. %@"
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Trece la %@. %@"
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Byter till %@. %@"
-          }
-        },
-        "ta" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ ஆக மாற்றும். %@"
-          }
-        },
-        "te" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@కి మారుస్తుంది. %@"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ hızına geçer. %@"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Перемикає на %@. %@"
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "%@ پر بدلتا ہے۔ %@"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切换为 %@。%@"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "切換為 %@。%@"
           }
         }
       }
@@ -46414,6 +46222,581 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "詳細資訊"
+          }
+        }
+      }
+    },
+    "Dictate" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إملاء"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "বলে লিখুন"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktovat"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktér"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktieren"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Υπαγόρευση"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictate"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictar"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictar"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictar"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sanele"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dicter"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "बोलकर लिखें"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktálás"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声入力"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "बोलून लिहा"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktér"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dicteren"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dyktuj"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ditar"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ditar"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictează"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktera"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பேசி எழுது"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "మాట్లాడి రాయండి"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dikte et"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Диктувати"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بول کر لکھیں"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "听写"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聽寫"
+          }
+        }
+      }
+    },
+    "Dictation is off for Sotto" : {
+      "comment" : "An alert's title when iOS hasn't let Sotto use the microphone or speech recognition.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإملاء متوقف لـ Sotto"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto-র জন্য বলে লেখা বন্ধ আছে"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktování je pro Sotto vypnuté"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktering er slået fra for Sotto"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktieren ist für Sotto aus"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Η υπαγόρευση είναι απενεργοποιημένη για το Sotto"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictation is off for Sotto"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El dictado está desactivado para Sotto"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El dictado está desactivado para Sotto"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El dictado está desactivado para Sotto"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sanelu on pois päältä Sottolta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dictée est désactivée pour Sotto"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto के लिए बोलकर लिखना बंद है"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A diktálás ki van kapcsolva a Sottóban"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dettatura è disattivata per Sotto"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto の音声入力はオフです"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto साठी बोलून लिहिणे बंद आहे"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktering er slått av for Sotto"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dicteren staat uit voor Sotto"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dyktowanie jest wyłączone dla Sotto"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O ditado está desativado para o Sotto"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O ditado está desativado para o Sotto"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictarea este dezactivată pentru Sotto"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktering är av för Sotto"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto க்கு பேசி எழுதுதல் அணைக்கப்பட்டுள்ளது"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto కోసం మాట్లాడి రాయడం ఆఫ్‌లో ఉంది"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto için dikte kapalı"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Диктування для Sotto вимкнено"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto کے لیے بول کر لکھنا بند ہے"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 的听写已关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 的聽寫已關閉"
+          }
+        }
+      }
+    },
+    "Dictation stopped" : {
+      "comment" : "An alert's title when dictation ended on its own after hearing something.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "توقف الإملاء"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "বলে লেখা থেমে গেছে"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktování se zastavilo"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dikteringen stoppede"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Diktat wurde beendet"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Η υπαγόρευση σταμάτησε"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictation stopped"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El dictado se ha detenido"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El dictado se detuvo"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El dictado se detuvo"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sanelu pysähtyi"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dictée s’est arrêtée"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "बोलकर लिखना रुक गया"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A diktálás leállt"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dettatura si è interrotta"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声入力が止まりました"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "बोलून लिहिणे थांबले"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dikteringen stoppet"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Het dicteren is gestopt"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dyktowanie zostało przerwane"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O ditado parou"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O ditado parou"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dictarea s-a oprit"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dikteringen stoppade"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பேசி எழுதுதல் நின்றுவிட்டது"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "మాట్లాడి రాయడం ఆగిపోయింది"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dikte durdu"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Диктування зупинилося"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بول کر لکھنا رک گیا"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "听写已停止"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聽寫已停止"
           }
         }
       }
@@ -62574,6 +62957,198 @@
         }
       }
     },
+    "Listening on this iPhone" : {
+      "comment" : "Where the + and settings were, while the mic listens.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يستمع على هذا الـ iPhone"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই iPhone-এ শুনছে"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poslouchá na tomto iPhonu"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lytter på denne iPhone"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hört auf diesem iPhone zu"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ακρόαση σε αυτό το iPhone"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Listening on this iPhone"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escuchando en este iPhone"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escuchando en este iPhone"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Escuchando en este iPhone"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuuntelee tällä iPhonella"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Écoute sur cet iPhone"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "इस iPhone पर सुन रहा है"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Figyel ezen az iPhone-on"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "In ascolto su questo iPhone"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この iPhone で聞き取り中"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "या iPhone वर ऐकत आहे"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lytter på denne iPhonen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Luistert op deze iPhone"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Słucham na tym iPhonie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvindo neste iPhone"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A ouvir neste iPhone"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ascultă pe acest iPhone"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lyssnar på den här iPhonen"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்த iPhone இல் கேட்கிறது"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ iPhone లో వింటోంది"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu iPhone’da dinliyor"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Слухає на цьому iPhone"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اس iPhone پر سن رہا ہے"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在这部 iPhone 上聆听"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在這部 iPhone 上聆聽"
+          }
+        }
+      }
+    },
     "Loading agents…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -70613,6 +71188,198 @@
         }
       }
     },
+    "Nothing was heard, and your words are as they were. Try the mic again." : {
+      "comment" : "Under the alert that the microphone didn't start.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يُسمع شيء، وبقي نصّك كما كان. جرّب الميكروفون مرة أخرى."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "কিছুই শোনা যায়নি, আর আপনার লেখা আগের মতোই আছে। আবার মাইক চেষ্টা করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nic nebylo slyšet a váš text zůstal beze změny. Zkuste mikrofon znovu."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Der blev ikke hørt noget, og din tekst er uændret. Prøv mikrofonen igen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Es wurde nichts gehört, und dein Text ist unverändert. Versuche es noch einmal mit dem Mikrofon."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Δεν ακούστηκε τίποτα και το κείμενό σας έμεινε ίδιο. Δοκιμάστε ξανά το μικρόφωνο."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nothing was heard, and your words are as they were. Try the mic again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha oído nada y tu texto sigue igual. Vuelve a probar el micrófono."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se escuchó nada y tu texto sigue igual. Prueba el micrófono otra vez."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se escuchó nada y tu texto sigue igual. Prueba el micrófono otra vez."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mitään ei kuultu, ja tekstisi on ennallaan. Kokeile mikrofonia uudelleen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien n’a été entendu et votre texte est inchangé. Réessayez le micro."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "कुछ नहीं सुना गया, और आपके शब्द पहले जैसे हैं। माइक फिर से आज़माएँ।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Semmi sem hallatszott, és a szöveged változatlan. Próbáld újra a mikrofont."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Non è stato sentito nulla e il tuo testo è rimasto com’era. Riprova con il microfono."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "何も聞き取られず、入力内容はそのままです。もう一度マイクを試してください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "काहीही ऐकले गेले नाही आणि तुमचे शब्द आहेत तसेच आहेत. माइक पुन्हा वापरून पहा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ingenting ble hørt, og teksten din er som før. Prøv mikrofonen igjen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Er is niets gehoord en je tekst is ongewijzigd. Probeer de microfoon opnieuw."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nic nie zostało usłyszane, a Twój tekst się nie zmienił. Spróbuj mikrofonu jeszcze raz."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nada foi ouvido, e seu texto continua como estava. Tente o microfone de novo."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nada foi ouvido e o seu texto ficou como estava. Experimente o microfone outra vez."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nu s-a auzit nimic, iar textul tău a rămas la fel. Încearcă din nou microfonul."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Inget hördes, och din text är som den var. Försök med mikrofonen igen."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "எதுவும் கேட்கவில்லை, உங்கள் சொற்கள் அப்படியே உள்ளன. மைக்கை மீண்டும் முயலவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఏమీ వినబడలేదు, మీ పదాలు అలాగే ఉన్నాయి. మైక్‌ని మళ్లీ ప్రయత్నించండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Hiçbir şey duyulmadı ve metniniz olduğu gibi duruyor. Mikrofonu yeniden deneyin."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Нічого не почуто, і ваш текст не змінився. Спробуйте мікрофон ще раз."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "کچھ سنائی نہیں دیا، اور آپ کے الفاظ ویسے ہی ہیں۔ مائیک دوبارہ آزمائیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有听到任何内容，你的文字保持原样。请再试一次麦克风。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有聽到任何內容，你的文字保持原樣。請再試一次麥克風。"
+          }
+        }
+      }
+    },
     "Nothing was resent. Check this computer before trying again." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -75204,193 +75971,194 @@
         }
       }
     },
-    "Opens Watcher’s models" : {
+    "Opens Watcher’s model, effort, speed and permissions, and New Watcher" : {
+      "comment" : "The VoiceOver hint of Watcher's settings pill.",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يفتح نماذج Watcher"
+            "value" : "يفتح نموذج Watcher وجهده وسرعته وأذوناته، وWatcher جديد"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Watcher-এর মডেলগুলো খোলে"
+            "value" : "Watcher-এর মডেল, প্রচেষ্টা, গতি ও অনুমতি, আর নতুন Watcher খোলে"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Otevře modely Watchera"
+            "value" : "Otevře model, úsilí, rychlost a oprávnění Watchera a Nový Watcher"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Åbner Watchers modeller"
+            "value" : "Åbner Watchers model, indsats, hastighed og tilladelser samt Ny Watcher"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Öffnet die Modelle von Watcher"
+            "value" : "Öffnet Modell, Aufwand, Geschwindigkeit und Berechtigungen von Watcher sowie Neuer Watcher"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ανοίγει τα μοντέλα του Watcher"
+            "value" : "Ανοίγει το μοντέλο, την προσπάθεια, την ταχύτητα και τις άδειες του Watcher, και Νέος Watcher"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opens Watcher’s models"
+            "value" : "Opens Watcher’s model, effort, speed and permissions, and New Watcher"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre los modelos de Watcher"
+            "value" : "Abre el modelo, el esfuerzo, la velocidad y los permisos de Watcher, y Watcher nuevo"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre los modelos de Watcher"
+            "value" : "Abre el modelo, el esfuerzo, la velocidad y los permisos de Watcher, y Watcher nuevo"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre los modelos de Watcher"
+            "value" : "Abre el modelo, el esfuerzo, la velocidad y los permisos de Watcher, y Watcher nuevo"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avaa Watcherin mallit"
+            "value" : "Avaa Watcherin mallin, päättelytason, nopeuden ja luvat sekä Uusi Watcher"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvre les modèles de Watcher"
+            "value" : "Ouvre le modèle, l’effort, la vitesse et les autorisations de Watcher, et Nouveau Watcher"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Watcher के मॉडल खोलता है"
+            "value" : "Watcher का मॉडल, प्रयास, गति और अनुमतियाँ, और नया Watcher खोलता है"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Megnyitja a Watcher modelljeit"
+            "value" : "Megnyitja a Watcher modelljét, erőfeszítését, sebességét és engedélyeit, valamint az Új Watchert"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apre i modelli di Watcher"
+            "value" : "Apre modello, impegno, velocità e autorizzazioni di Watcher, e Nuovo Watcher"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Watcher のモデルを開きます"
+            "value" : "Watcher のモデル、推論レベル、速度、許可と、新しい Watcher を開きます"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Watcher ची मॉडेल्स उघडते"
+            "value" : "Watcher चे मॉडेल, प्रयत्न, वेग आणि परवानग्या, आणि नवीन Watcher उघडते"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Åpner Watchers modeller"
+            "value" : "Åpner Watchers modell, innsats, hastighet og tillatelser, og Ny Watcher"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opent de modellen van Watcher"
+            "value" : "Opent het model, de inspanning, de snelheid en de toestemmingen van Watcher, en Nieuwe Watcher"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Otwiera modele Watchera"
+            "value" : "Otwiera model, wysiłek, szybkość i uprawnienia Watchera oraz Nowy Watcher"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre os modelos do Watcher"
+            "value" : "Abre o modelo, o esforço, a velocidade e as permissões do Watcher, e Novo Watcher"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre os modelos do Watcher"
+            "value" : "Abre o modelo, o esforço, a velocidade e as permissões do Watcher, e Novo Watcher"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deschide modelele lui Watcher"
+            "value" : "Deschide modelul, efortul, viteza și permisiunile lui Watcher, și Watcher nou"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Öppnar Watchers modeller"
+            "value" : "Öppnar Watchers modell, ansträngning, hastighet och behörigheter, och Ny Watcher"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Watcher இன் மாடல்களைத் திறக்கும்"
+            "value" : "Watcher இன் மாடல், முயற்சி நிலை, வேகம், அனுமதிகள், புதிய Watcher ஆகியவற்றைத் திறக்கும்"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Watcher మోడల్‌లను తెరుస్తుంది"
+            "value" : "Watcher మోడల్, ప్రయత్నం, వేగం, అనుమతులు, కొత్త Watcher ను తెరుస్తుంది"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Watcher’ın modellerini açar"
+            "value" : "Watcher’ın modelini, çabasını, hızını ve izinlerini, ayrıca Yeni Watcher’ı açar"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Відкриває моделі Watcher"
+            "value" : "Відкриває модель, зусилля, швидкість і дозволи Watcher, а також Новий Watcher"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Watcher کے ماڈل کھولتا ہے"
+            "value" : "Watcher کا ماڈل، محنت، رفتار اور اجازتیں، اور نیا Watcher کھولتا ہے"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开 Watcher 的模型"
+            "value" : "打开 Watcher 的模型、推理强度、速度和权限，以及新的 Watcher"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "開啟 Watcher 的模型"
+            "value" : "開啟 Watcher 的模型、推理強度、速度和權限，以及新的 Watcher"
           }
         }
       }
@@ -75773,198 +76541,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 GitHub 上打開此檢查。"
-          }
-        }
-      }
-    },
-    "Opens the effort levels this model offers" : {
-      "comment" : "What a press on the reply box's effort menu does",
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "يفتح مستويات الجهد التي يتيحها هذا النموذج"
-          }
-        },
-        "bn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "এই মডেলের দেওয়া প্রচেষ্টার স্তরগুলো খোলে"
-          }
-        },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Otevře úrovně úsilí, které tento model nabízí"
-          }
-        },
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Åbner de indsatsniveauer, modellen tilbyder"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Öffnet die Aufwandsstufen, die dieses Modell bietet"
-          }
-        },
-        "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ανοίγει τα επίπεδα προσπάθειας που προσφέρει αυτό το μοντέλο"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opens the effort levels this model offers"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre los niveles de esfuerzo que ofrece este modelo"
-          }
-        },
-        "es-419" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre los niveles de esfuerzo que ofrece este modelo"
-          }
-        },
-        "es-MX" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre los niveles de esfuerzo que ofrece este modelo"
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Avaa tämän mallin tarjoamat päättelytasot"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvre les niveaux d’effort proposés par ce modèle"
-          }
-        },
-        "hi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "इस मॉडल में उपलब्ध प्रयास के स्तर खोलता है"
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Megnyitja a modell által kínált erőfeszítési szinteket"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apre i livelli di impegno offerti da questo modello"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このモデルで選べる推論レベルを開きます"
-          }
-        },
-        "mr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "हे मॉडेल देत असलेले प्रयत्नाचे स्तर उघडते"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Åpner innsatsnivåene denne modellen tilbyr"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opent de inspanningsniveaus die dit model biedt"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Otwiera poziomy wysiłku, które oferuje ten model"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre os níveis de esforço que este modelo oferece"
-          }
-        },
-        "pt-PT" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre os níveis de esforço que este modelo oferece"
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deschide nivelurile de efort oferite de acest model"
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Öppnar ansträngningsnivåerna som den här modellen erbjuder"
-          }
-        },
-        "ta" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "இந்த மாடல் வழங்கும் முயற்சி நிலைகளைத் திறக்கும்"
-          }
-        },
-        "te" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ఈ మోడల్ అందించే ప్రయత్న స్థాయిలను తెరుస్తుంది"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bu modelin sunduğu çaba düzeylerini açar"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Відкриває рівні зусилля, які пропонує ця модель"
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "اس ماڈل کی پیش کردہ محنت کی سطحیں کھولتا ہے"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开此模型提供的推理强度"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打開此模型提供的推理強度"
           }
         }
       }
@@ -76733,194 +77309,194 @@
         }
       }
     },
-    "Opens this thread’s models" : {
-      "comment" : "What a press on the reply box's model menu does",
+    "Opens this thread’s model, effort, speed and permissions" : {
+      "comment" : "The VoiceOver hint of the reply box's settings pill.",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "يفتح نماذج هذه المحادثة"
+            "value" : "يفتح نموذج هذه المحادثة وجهدها وسرعتها وأذوناتها"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "এই থ্রেডের মডেলগুলো খোলে"
+            "value" : "এই থ্রেডের মডেল, প্রচেষ্টা, গতি ও অনুমতি খোলে"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Otevře modely tohoto vlákna"
+            "value" : "Otevře model, úsilí, rychlost a oprávnění tohoto vlákna"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Åbner trådens modeller"
+            "value" : "Åbner trådens model, indsats, hastighed og tilladelser"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Öffnet die Modelle dieses Threads"
+            "value" : "Öffnet Modell, Aufwand, Geschwindigkeit und Berechtigungen dieses Threads"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ανοίγει τα μοντέλα αυτού του νήματος"
+            "value" : "Ανοίγει το μοντέλο, την προσπάθεια, την ταχύτητα και τις άδειες αυτού του νήματος"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opens this thread’s models"
+            "value" : "Opens this thread’s model, effort, speed and permissions"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre los modelos de este hilo"
+            "value" : "Abre el modelo, el esfuerzo, la velocidad y los permisos de este hilo"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre los modelos de este hilo"
+            "value" : "Abre el modelo, el esfuerzo, la velocidad y los permisos de este hilo"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre los modelos de este hilo"
+            "value" : "Abre el modelo, el esfuerzo, la velocidad y los permisos de este hilo"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Avaa tämän ketjun mallit"
+            "value" : "Avaa tämän ketjun mallin, päättelytason, nopeuden ja luvat"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ouvre les modèles de ce fil"
+            "value" : "Ouvre le modèle, l’effort, la vitesse et les autorisations de ce fil"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "इस थ्रेड के मॉडल खोलता है"
+            "value" : "इस थ्रेड का मॉडल, प्रयास, गति और अनुमतियाँ खोलता है"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Megnyitja a szál modelljeit"
+            "value" : "Megnyitja a szál modelljét, erőfeszítését, sebességét és engedélyeit"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Apre i modelli di questo thread"
+            "value" : "Apre modello, impegno, velocità e autorizzazioni di questo thread"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "このスレッドのモデルを開きます"
+            "value" : "このスレッドのモデル、推論レベル、速度、許可を開きます"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "या थ्रेडची मॉडेल्स उघडते"
+            "value" : "या थ्रेडचे मॉडेल, प्रयत्न, वेग आणि परवानग्या उघडते"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Åpner trådens modeller"
+            "value" : "Åpner trådens modell, innsats, hastighet og tillatelser"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Opent de modellen van deze thread"
+            "value" : "Opent het model, de inspanning, de snelheid en de toestemmingen van deze thread"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Otwiera modele tego wątku"
+            "value" : "Otwiera model, wysiłek, szybkość i uprawnienia tego wątku"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre os modelos desta conversa"
+            "value" : "Abre o modelo, o esforço, a velocidade e as permissões desta conversa"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Abre os modelos desta conversa"
+            "value" : "Abre o modelo, o esforço, a velocidade e as permissões desta conversa"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Deschide modelele acestui fir"
+            "value" : "Deschide modelul, efortul, viteza și permisiunile acestui fir"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Öppnar trådens modeller"
+            "value" : "Öppnar trådens modell, ansträngning, hastighet och behörigheter"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "இந்த த்ரெட்டின் மாடல்களைத் திறக்கும்"
+            "value" : "இந்த த்ரெட்டின் மாடல், முயற்சி நிலை, வேகம், அனுமதிகளைத் திறக்கும்"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ఈ థ్రెడ్ మోడల్‌లను తెరుస్తుంది"
+            "value" : "ఈ థ్రెడ్ మోడల్, ప్రయత్నం, వేగం, అనుమతులను తెరుస్తుంది"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Bu sohbetin modellerini açar"
+            "value" : "Bu sohbetin modelini, çabasını, hızını ve izinlerini açar"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Відкриває моделі цього треду"
+            "value" : "Відкриває модель, зусилля, швидкість і дозволи цього треду"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اس تھریڈ کے ماڈلز کھولتا ہے"
+            "value" : "اس تھریڈ کا ماڈل، محنت، رفتار اور اجازتیں کھولتا ہے"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打开此会话的模型"
+            "value" : "打开此会话的模型、推理强度、速度和权限"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "打開此對話的模型"
+            "value" : "打開此對話的模型、推理強度、速度和權限"
           }
         }
       }
@@ -77112,198 +77688,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "打開 Watcher 不必詢問即可執行的動作"
-          }
-        }
-      }
-    },
-    "Opens what this thread may do without asking" : {
-      "comment" : "What a press on the reply box's permissions menu does",
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "يفتح ما يمكن لهذه المحادثة فعله دون سؤال"
-          }
-        },
-        "bn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "এই থ্রেড জিজ্ঞাসা না করে যা করতে পারে তা খোলে"
-          }
-        },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Otevře, co toto vlákno smí dělat bez ptaní"
-          }
-        },
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Åbner, hvad tråden må gøre uden at spørge"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Öffnet, was dieser Thread ohne Nachfrage tun darf"
-          }
-        },
-        "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ανοίγει τι μπορεί να κάνει αυτό το νήμα χωρίς να ρωτήσει"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opens what this thread may do without asking"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre lo que este hilo puede hacer sin preguntar"
-          }
-        },
-        "es-419" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre lo que este hilo puede hacer sin preguntar"
-          }
-        },
-        "es-MX" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre lo que este hilo puede hacer sin preguntar"
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Avaa sen, mitä tämä ketju saa tehdä kysymättä"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Ouvre ce que ce fil peut faire sans demander"
-          }
-        },
-        "hi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "खोलता है कि यह थ्रेड बिना पूछे क्या कर सकता है"
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Megnyitja, mit tehet ez a szál kérdezés nélkül"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Apre cosa può fare questo thread senza chiedere"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "このスレッドが確認なしでできることを開きます"
-          }
-        },
-        "mr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "हा थ्रेड न विचारता काय करू शकतो ते उघडते"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Åpner hva tråden kan gjøre uten å spørre"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Opent wat deze thread mag doen zonder te vragen"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Otwiera to, co ten wątek może robić bez pytania"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre o que esta conversa pode fazer sem perguntar"
-          }
-        },
-        "pt-PT" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Abre o que esta conversa pode fazer sem perguntar"
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Deschide ce poate face acest fir fără să întrebe"
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Öppnar vad tråden får göra utan att fråga"
-          }
-        },
-        "ta" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "இந்த த்ரெட் கேட்காமல் என்ன செய்யலாம் என்பதைத் திறக்கும்"
-          }
-        },
-        "te" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ఈ థ్రెడ్ అడగకుండా ఏమి చేయవచ్చో తెరుస్తుంది"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bu sohbetin sormadan yapabileceklerini açar"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Відкриває, що цей тред може робити без запиту"
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "کھولتا ہے کہ یہ تھریڈ بغیر پوچھے کیا کر سکتا ہے"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打开此会话无需询问即可执行的操作"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "打開此對話不必詢問即可執行的動作"
           }
         }
       }
@@ -104416,6 +104800,198 @@
         }
       }
     },
+    "Sotto can’t use the microphone or speech recognition. Turn them on in Settings › Sotto." : {
+      "comment" : "Under the alert that dictation is off: where to turn it on.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يستطيع Sotto استخدام الميكروفون أو التعرّف على الكلام. فعّلهما من الإعدادات › Sotto."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto মাইক্রোফোন বা কথা শনাক্তকরণ ব্যবহার করতে পারছে না। সেটিংস › Sotto-তে এগুলো চালু করুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto nemůže používat mikrofon ani rozpoznávání řeči. Zapněte je v Nastavení › Sotto."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto kan ikke bruge mikrofonen eller talegenkendelse. Slå dem til i Indstillinger › Sotto."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto kann weder das Mikrofon noch die Spracherkennung verwenden. Aktiviere beides unter Einstellungen › Sotto."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το Sotto δεν μπορεί να χρησιμοποιήσει το μικρόφωνο ή την αναγνώριση ομιλίας. Ενεργοποιήστε τα στις Ρυθμίσεις › Sotto."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto can’t use the microphone or speech recognition. Turn them on in Settings › Sotto."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto no puede usar el micrófono ni el reconocimiento de voz. Actívalos en Ajustes › Sotto."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto no puede usar el micrófono ni el reconocimiento de voz. Actívalos en Configuración › Sotto."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto no puede usar el micrófono ni el reconocimiento de voz. Actívalos en Configuración › Sotto."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto ei voi käyttää mikrofonia tai puheentunnistusta. Ota ne käyttöön kohdassa Asetukset › Sotto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto ne peut pas utiliser le micro ni la reconnaissance vocale. Activez-les dans Réglages › Sotto."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto माइक्रोफ़ोन या वाक् पहचान इस्तेमाल नहीं कर सकता। इन्हें सेटिंग्ज़ › Sotto में चालू करें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Sotto nem használhatja a mikrofont és a beszédfelismerést. Kapcsold be őket itt: Beállítások › Sotto."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto non può usare il microfono né il riconoscimento vocale. Attivali in Impostazioni › Sotto."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto はマイクまたは音声認識を使用できません。「設定 › Sotto」でオンにしてください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto मायक्रोफोन किंवा उच्चार ओळख वापरू शकत नाही. ते सेटिंग्ज › Sotto मध्ये चालू करा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto kan ikke bruke mikrofonen eller talegjenkjenning. Slå dem på i Innstillinger › Sotto."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto kan de microfoon en spraakherkenning niet gebruiken. Zet ze aan in Instellingen › Sotto."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto nie może używać mikrofonu ani rozpoznawania mowy. Włącz je w Ustawienia › Sotto."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Sotto não pode usar o microfone nem o reconhecimento de fala. Ative-os em Ajustes › Sotto."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Sotto não pode usar o microfone nem o reconhecimento de voz. Ative-os em Definições › Sotto."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto nu poate folosi microfonul sau recunoașterea vorbirii. Activează-le în Configurări › Sotto."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto kan inte använda mikrofonen eller taligenkänningen. Slå på dem i Inställningar › Sotto."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto ஆல் மைக்ரோஃபோனையோ பேச்சு அறிதலையோ பயன்படுத்த முடியாது. அமைப்புகள் › Sotto என்பதில் அவற்றை இயக்கவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto మైక్రోఫోన్‌ను లేదా మాట గుర్తింపును ఉపయోగించలేదు. సెట్టింగ్‌లు › Sotto లో వాటిని ఆన్ చేయండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto mikrofonu veya konuşma tanımayı kullanamıyor. Ayarlar › Sotto’dan açın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto не може використовувати мікрофон або розпізнавання мовлення. Увімкніть їх у «Параметри › Sotto»."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto مائیکروفون یا آواز کی شناخت استعمال نہیں کر سکتا۔ انہیں سیٹنگز › Sotto میں آن کریں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 无法使用麦克风或语音识别。请在“设置 › Sotto”中打开。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sotto 無法使用麥克風或語音辨識。請在「設定 › Sotto」中開啟。"
+          }
+        }
+      }
+    },
     "Sotto could not access secure storage. Unlock this iPhone and return to Sotto." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -104795,197 +105371,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "速度"
-          }
-        }
-      }
-    },
-    "Start a new Watcher with a handover of this one" : {
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "بدء Watcher جديد مع تسليم من هذا"
-          }
-        },
-        "bn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "এটির হস্তান্তর নিয়ে একটি নতুন Watcher শুরু করুন"
-          }
-        },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Spustit nový Watcher s předáním od tohoto"
-          }
-        },
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start en ny Watcher med en overdragelse fra denne"
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Neuen Watcher mit einer Übergabe von diesem starten"
-          }
-        },
-        "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Έναρξη νέου Watcher με παράδοση από αυτόν"
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start a new Watcher with a handover of this one"
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Iniciar un Watcher nuevo con un traspaso de este"
-          }
-        },
-        "es-419" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Iniciar un Watcher nuevo con un traspaso de este"
-          }
-        },
-        "es-MX" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Iniciar un Watcher nuevo con un traspaso de este"
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Aloita uusi Watcher tämän luovutuksella"
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Démarrer un nouveau Watcher avec une transmission de celui-ci"
-          }
-        },
-        "hi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "इसके हैंडओवर के साथ नया Watcher शुरू करें"
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Új Watcher indítása ennek átadásával"
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Avvia un nuovo Watcher con un passaggio di consegne da questo"
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "この Watcher からの引き継ぎで新しい Watcher を開始"
-          }
-        },
-        "mr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "याच्या हस्तांतरासह नवीन Watcher सुरू करा"
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Start en ny Watcher med en overlevering fra denne"
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Een nieuwe Watcher starten met een overdracht van deze"
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Uruchom nowego Watchera z przekazaniem od tego"
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Iniciar um novo Watcher com uma passagem deste"
-          }
-        },
-        "pt-PT" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Iniciar um novo Watcher com uma passagem deste"
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Pornește un Watcher nou cu o predare de la acesta"
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Starta en ny Watcher med en överlämning från den här"
-          }
-        },
-        "ta" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "இதன் ஒப்படைப்புடன் புதிய Watcher ஐத் தொடங்கு"
-          }
-        },
-        "te" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "దీని అప్పగింతతో కొత్త Watcher ను ప్రారంభించండి"
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bunun devriyle yeni bir Watcher başlat"
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Запустити новий Watcher із передаванням від цього"
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "اس کی حوالگی کے ساتھ نیا Watcher شروع کریں"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "带着这个 Watcher 的交接启动新的 Watcher"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "帶著這個 Watcher 的交接啟動新的 Watcher"
           }
         }
       }
@@ -110044,6 +110429,197 @@
         }
       }
     },
+    "Stop dictating" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إيقاف الإملاء"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "বলে লেখা থামান"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ukončit diktování"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop diktering"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktat beenden"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Διακοπή υπαγόρευσης"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop dictating"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar de dictar"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar de dictar"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dejar de dictar"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lopeta sanelu"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrêter la dictée"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "बोलकर लिखना रोकें"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Diktálás leállítása"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Interrompi la dettatura"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "音声入力を停止"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "बोलून लिहिणे थांबवा"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopp diktering"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stoppen met dicteren"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zakończ dyktowanie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parar de ditar"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parar de ditar"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oprește dictarea"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sluta diktera"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பேசி எழுதுவதை நிறுத்து"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "మాట్లాడి రాయడం ఆపండి"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dikteyi durdur"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зупинити диктування"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بول کر لکھنا روکیں"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止听写"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止聽寫"
+          }
+        }
+      }
+    },
     "Stop isn’t confirmed. Check whether the thread is still working." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -114029,6 +114605,198 @@
         }
       }
     },
+    "Stops listening. What you said stays in the box." : {
+      "comment" : "The mic's VoiceOver hint while it listens.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يتوقف عن الاستماع. يبقى ما قلته في المربع."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "শোনা বন্ধ করে। আপনি যা বলেছেন তা বাক্সেই থাকে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Přestane poslouchat. Co jste řekli, zůstane v poli."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Holder op med at lytte. Det, du sagde, bliver i feltet."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beendet das Zuhören. Was du gesagt hast, bleibt im Feld."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Σταματά την ακρόαση. Όσα είπατε μένουν στο πλαίσιο."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stops listening. What you said stays in the box."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deja de escuchar. Lo que has dicho se queda en el cuadro."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deja de escuchar. Lo que dijiste se queda en el cuadro."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deja de escuchar. Lo que dijiste se queda en el cuadro."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lopettaa kuuntelun. Sanomasi jää kenttään."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrête l’écoute. Ce que vous avez dit reste dans le champ."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "सुनना बंद करता है। आपने जो कहा, वह बॉक्स में रहता है।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abbahagyja a figyelést. Amit mondtál, a mezőben marad."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Smette di ascoltare. Ciò che hai detto resta nel campo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聞き取りを止めます。話した内容は入力欄に残ります。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ऐकणे थांबवते. तुम्ही जे बोललात ते बॉक्समध्ये राहते."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slutter å lytte. Det du sa, blir stående i feltet."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopt met luisteren. Wat je zei blijft in het vak staan."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Przestaje słuchać. To, co powiedziałeś, zostaje w polu."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Para de ouvir. O que você disse fica na caixa."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deixa de ouvir. O que disse fica na caixa."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nu mai ascultă. Ce ai spus rămâne în casetă."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Slutar lyssna. Det du sa stannar kvar i rutan."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "கேட்பதை நிறுத்துகிறது. நீங்கள் சொன்னது பெட்டியிலேயே இருக்கும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "వినడం ఆపుతుంది. మీరు చెప్పింది బాక్స్‌లోనే ఉంటుంది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dinlemeyi durdurur. Söyledikleriniz kutuda kalır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Припиняє слухати. Сказане залишається в полі."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "سننا بند کر دیتا ہے۔ آپ نے جو کہا وہ خانے میں رہتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止聆听。你说的话会留在框中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止聆聽。你說的話會留在框中。"
+          }
+        }
+      }
+    },
     "Summarize earlier messages to free room" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -116129,6 +116897,198 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上一段對話在 %@ 上的 Watcher 歷史記錄中。"
+          }
+        }
+      }
+    },
+    "The microphone didn’t start" : {
+      "comment" : "An alert's title when the microphone couldn't start for dictation.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يبدأ الميكروفون"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "মাইক্রোফোন চালু হয়নি"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mikrofon se nespustil"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mikrofonen startede ikke"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Das Mikrofon ist nicht gestartet"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Το μικρόφωνο δεν ξεκίνησε"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The microphone didn’t start"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El micrófono no se inició"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El micrófono no se inició"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El micrófono no se inició"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mikrofoni ei käynnistynyt"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le micro n’a pas démarré"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "माइक्रोफ़ोन शुरू नहीं हुआ"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A mikrofon nem indult el"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il microfono non si è avviato"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクが起動しませんでした"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "मायक्रोफोन सुरू झाला नाही"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mikrofonen startet ikke"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De microfoon startte niet"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mikrofon się nie uruchomił"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O microfone não iniciou"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O microfone não arrancou"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Microfonul nu a pornit"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mikrofonen startade inte"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "மைக்ரோஃபோன் தொடங்கவில்லை"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "మైక్రోఫోన్ ప్రారంభం కాలేదు"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mikrofon başlamadı"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Мікрофон не запустився"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "مائیکروفون شروع نہیں ہوا"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风没有启动"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麥克風沒有啟動"
           }
         }
       }
@@ -121302,6 +122262,198 @@
         }
       }
     },
+    "This iPhone can’t recognize speech in its language without sending it to Apple, so Sotto doesn’t dictate here. The keyboard’s own mic key still works." : {
+      "comment" : "Under the alert that this iPhone can't dictate on the device.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لا يستطيع هذا الـ iPhone التعرّف على الكلام بلغته دون إرساله إلى Apple، لذا لا يُملي Sotto هنا. ما زال مفتاح الميكروفون في لوحة المفاتيح يعمل."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই iPhone Apple-এ না পাঠিয়ে তার ভাষায় কথা চিনতে পারে না, তাই Sotto এখানে বলে লেখে না। কীবোর্ডের নিজস্ব মাইক কী এখনও কাজ করে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tento iPhone neumí rozpoznat řeč ve svém jazyce bez odeslání do Applu, a proto zde Sotto nediktuje. Klávesa mikrofonu na klávesnici dál funguje."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denne iPhone kan ikke genkende tale på sit sprog uden at sende den til Apple, så Sotto dikterer ikke her. Tastaturets egen mikrofontast virker stadig."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieses iPhone kann Sprache in seiner Sprache nicht erkennen, ohne sie an Apple zu senden, darum diktiert Sotto hier nicht. Die Mikrofontaste der Tastatur funktioniert weiterhin."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αυτό το iPhone δεν μπορεί να αναγνωρίσει ομιλία στη γλώσσα του χωρίς να τη στείλει στην Apple, οπότε το Sotto δεν κάνει υπαγόρευση εδώ. Το πλήκτρο μικροφώνου του πληκτρολογίου λειτουργεί ακόμα."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This iPhone can’t recognize speech in its language without sending it to Apple, so Sotto doesn’t dictate here. The keyboard’s own mic key still works."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este iPhone no puede reconocer la voz en su idioma sin enviarla a Apple, así que Sotto no dicta aquí. La tecla de micrófono del teclado sigue funcionando."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este iPhone no puede reconocer la voz en su idioma sin enviarla a Apple, así que Sotto no dicta aquí. La tecla de micrófono del teclado sigue funcionando."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este iPhone no puede reconocer la voz en su idioma sin enviarla a Apple, así que Sotto no dicta aquí. La tecla de micrófono del teclado sigue funcionando."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tämä iPhone ei tunnista puhetta kielellään lähettämättä sitä Applelle, joten Sotto ei sanele täällä. Näppäimistön oma mikrofonipainike toimii yhä."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cet iPhone ne peut pas reconnaître la parole dans sa langue sans l’envoyer à Apple, donc Sotto ne fait pas de dictée ici. La touche micro du clavier fonctionne toujours."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "यह iPhone अपनी भाषा में बोली को Apple को भेजे बिना नहीं पहचान सकता, इसलिए Sotto यहाँ बोलकर नहीं लिखता। कीबोर्ड की अपनी माइक कुंजी अब भी काम करती है।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ez az iPhone nem tudja felismerni a beszédet a nyelvén anélkül, hogy elküldené az Apple-nek, ezért a Sotto itt nem diktál. A billentyűzet saját mikrofongombja továbbra is működik."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo iPhone non può riconoscere il parlato nella sua lingua senza inviarlo ad Apple, quindi Sotto qui non detta. Il tasto microfono della tastiera funziona ancora."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この iPhone は、音声を Apple に送らずにその言語の音声を認識できないため、Sotto はここでは音声入力しません。キーボードのマイクキーは引き続き使えます。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "हा iPhone Apple ला पाठवल्याशिवाय त्याच्या भाषेतील बोलणे ओळखू शकत नाही, म्हणून Sotto इथे बोलून लिहीत नाही. कीबोर्डची स्वतःची माइक की अजूनही चालते."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denne iPhonen kan ikke gjenkjenne tale på sitt språk uten å sende den til Apple, så Sotto dikterer ikke her. Tastaturets egen mikrofontast virker fortsatt."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze iPhone kan spraak in zijn taal niet herkennen zonder die naar Apple te sturen, dus Sotto dicteert hier niet. De microfoontoets van het toetsenbord werkt nog wel."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ten iPhone nie rozpoznaje mowy w swoim języku bez wysyłania jej do Apple, więc Sotto tu nie dyktuje. Klawisz mikrofonu na klawiaturze nadal działa."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este iPhone não consegue reconhecer a fala no idioma dele sem enviá-la à Apple, então o Sotto não faz ditado aqui. A tecla de microfone do teclado continua funcionando."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este iPhone não consegue reconhecer a fala no seu idioma sem a enviar para a Apple, por isso o Sotto não faz ditado aqui. A tecla de microfone do teclado continua a funcionar."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acest iPhone nu poate recunoaște vorbirea în limba sa fără s-o trimită la Apple, așa că Sotto nu dictează aici. Tasta de microfon a tastaturii funcționează în continuare."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Den här iPhonen kan inte känna igen tal på sitt språk utan att skicka det till Apple, så Sotto dikterar inte här. Tangentbordets egen mikrofonknapp fungerar fortfarande."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்த iPhone ஆல் அதன் மொழியில் பேச்சை Apple க்கு அனுப்பாமல் அறிய முடியாது, எனவே Sotto இங்கே பேசி எழுதாது. விசைப்பலகையின் சொந்த மைக் விசை இன்னும் வேலை செய்கிறது."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ iPhone దాని భాషలోని మాటను Apple కు పంపకుండా గుర్తించలేదు, కాబట్టి Sotto ఇక్కడ మాట్లాడి రాయదు. కీబోర్డ్ స్వంత మైక్ కీ ఇంకా పనిచేస్తుంది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu iPhone, konuşmayı Apple’a göndermeden kendi dilinde tanıyamıyor; bu yüzden Sotto burada dikte etmiyor. Klavyenin kendi mikrofon tuşu hâlâ çalışır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей iPhone не може розпізнавати мовлення своєю мовою, не надсилаючи його Apple, тож Sotto тут не диктує. Клавіша мікрофона на клавіатурі й далі працює."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "یہ iPhone اپنی زبان میں بولی کو Apple کو بھیجے بغیر نہیں پہچان سکتا، اس لیے Sotto یہاں بول کر نہیں لکھتا۔ کی بورڈ کی اپنی مائیک کی اب بھی کام کرتی ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这部 iPhone 无法在不发送给 Apple 的情况下识别其语言的语音，所以 Sotto 不在这里听写。键盘自带的麦克风键仍可使用。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這部 iPhone 無法在不傳送給 Apple 的情況下辨識其語言的語音，所以 Sotto 不在這裡聽寫。鍵盤本身的麥克風鍵仍可使用。"
+          }
+        }
+      }
+    },
     "This iPhone is already paired with %@. To pair it again, remove it in Computers first." : {
       "comment" : "%@ is the computer's name. Computers is the name of a tab",
       "extractionState" : "manual",
@@ -125512,194 +126664,194 @@
         }
       }
     },
-    "Thread permissions" : {
-      "comment" : "The reply box's permissions menu, as VoiceOver names it",
+    "Thread settings" : {
+      "comment" : "The VoiceOver name of the reply box's pill holding the thread's model, effort, speed and permissions.",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "أذونات المحادثة"
+            "value" : "إعدادات المحادثة"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "থ্রেডের অনুমতি"
+            "value" : "থ্রেডের সেটিংস"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Oprávnění vlákna"
+            "value" : "Nastavení vlákna"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trådens tilladelser"
+            "value" : "Trådens indstillinger"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Thread-Berechtigungen"
+            "value" : "Thread-Einstellungen"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Άδειες νήματος"
+            "value" : "Ρυθμίσεις νήματος"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Thread permissions"
+            "value" : "Thread settings"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Permisos del hilo"
+            "value" : "Ajustes del hilo"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Permisos del hilo"
+            "value" : "Configuración del hilo"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Permisos del hilo"
+            "value" : "Configuración del hilo"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ketjun luvat"
+            "value" : "Ketjun asetukset"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Autorisations du fil"
+            "value" : "Réglages du fil"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "थ्रेड की अनुमतियाँ"
+            "value" : "थ्रेड की सेटिंग्ज़"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "A szál engedélyei"
+            "value" : "A szál beállításai"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Autorizzazioni del thread"
+            "value" : "Impostazioni del thread"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "スレッドの許可"
+            "value" : "スレッドの設定"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "थ्रेडच्या परवानग्या"
+            "value" : "थ्रेडची सेटिंग्ज"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trådens tillatelser"
+            "value" : "Trådens innstillinger"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Toestemmingen van de thread"
+            "value" : "Instellingen van de thread"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Uprawnienia wątku"
+            "value" : "Ustawienia wątku"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Permissões da conversa"
+            "value" : "Ajustes da conversa"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Permissões da conversa"
+            "value" : "Definições da conversa"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Permisiunile firului"
+            "value" : "Setările firului"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Trådens behörigheter"
+            "value" : "Trådens inställningar"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "த்ரெட் அனுமதிகள்"
+            "value" : "த்ரெட் அமைப்புகள்"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "థ్రెడ్ అనుమతులు"
+            "value" : "థ్రెడ్ సెట్టింగ్‌లు"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sohbet izinleri"
+            "value" : "Sohbet ayarları"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Дозволи треду"
+            "value" : "Налаштування треду"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "تھریڈ کی اجازتیں"
+            "value" : "تھریڈ کی سیٹنگز"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "会话权限"
+            "value" : "会话设置"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "對話權限"
+            "value" : "對話設定"
           }
         }
       }
@@ -127806,6 +128958,198 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "請先開啟上方的一項提醒。"
+          }
+        }
+      }
+    },
+    "Turns what you say into words in this box, on this iPhone" : {
+      "comment" : "The mic's VoiceOver hint in a reply box.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يحوّل ما تقوله إلى كلمات في هذا المربع، على هذا الـ iPhone"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "আপনি যা বলেন, এই iPhone-এই তা এই বাক্সে লেখায় বদলে দেয়"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Převádí, co říkáte, na text v tomto poli, na tomto iPhonu"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gør det, du siger, til tekst i dette felt på denne iPhone"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Macht aus dem, was du sagst, Text in diesem Feld, auf diesem iPhone"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Μετατρέπει όσα λέτε σε κείμενο σε αυτό το πλαίσιο, σε αυτό το iPhone"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Turns what you say into words in this box, on this iPhone"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Convierte lo que dices en texto en este cuadro, en este iPhone"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Convierte lo que dices en texto en este cuadro, en este iPhone"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Convierte lo que dices en texto en este cuadro, en este iPhone"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Muuttaa puheesi tekstiksi tähän kenttään tällä iPhonella"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transforme ce que vous dites en texte dans ce champ, sur cet iPhone"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "आप जो कहते हैं, उसे इसी iPhone पर इस बॉक्स में शब्दों में बदलता है"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Szöveggé alakítja, amit mondasz, ebben a mezőben, ezen az iPhone-on"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trasforma ciò che dici in testo in questo campo, su questo iPhone"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "話した言葉をこの iPhone 上で文字にして、この入力欄に入れます"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "तुम्ही जे बोलता ते याच iPhone वर या बॉक्समध्ये शब्दांत बदलते"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gjør det du sier om til tekst i dette feltet, på denne iPhonen"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zet wat je zegt om in tekst in dit vak, op deze iPhone"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zamienia to, co mówisz, na tekst w tym polu, na tym iPhonie"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transforma o que você diz em texto nesta caixa, neste iPhone"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transforma o que diz em texto nesta caixa, neste iPhone"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Transformă ce spui în text în această casetă, pe acest iPhone"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Gör om det du säger till text i den här rutan, på den här iPhonen"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "நீங்கள் பேசுவதை இந்த iPhone இலேயே இந்தப் பெட்டியில் சொற்களாக மாற்றுகிறது"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "మీరు చెప్పేదాన్ని ఈ iPhone లోనే ఈ బాక్స్‌లో పదాలుగా మారుస్తుంది"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Söylediklerinizi bu iPhone’da, bu kutuda yazıya çevirir"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Перетворює сказане на текст у цьому полі, на цьому iPhone"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "آپ جو کہتے ہیں اسے اسی iPhone پر اس خانے میں الفاظ میں بدل دیتا ہے"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在这部 iPhone 上，把你说的话转成文字填入此框"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在這部 iPhone 上，把你說的話轉成文字填入此框"
           }
         }
       }
@@ -139258,6 +140602,197 @@
         }
       }
     },
+    "Watcher starts its next turn on this choice." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يبدأ Watcher دوره التالي بهذا الاختيار."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher এর পরের পালা এই পছন্দে শুরু হবে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher začne další tah s touto volbou."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher starter sin næste tur med dette valg."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher beginnt seinen nächsten Zug mit dieser Auswahl."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ο Watcher ξεκινά τον επόμενο γύρο του με αυτή την επιλογή."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher starts its next turn on this choice."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher empieza su próximo turno con esta elección."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher empieza su próximo turno con esta elección."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher empieza su próximo turno con esta elección."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher aloittaa seuraavan vuoronsa tällä valinnalla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher commence son prochain tour avec ce choix."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher अपनी अगली बारी इसी चुनाव पर शुरू करेगा।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Watcher a következő körét ezzel a választással kezdi."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher inizia il prossimo turno con questa scelta."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher は次のターンからこの選択で動きます。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher आपली पुढची पाळी या निवडीवर सुरू करेल."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher starter neste tur med dette valget."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher begint zijn volgende beurt met deze keuze."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher zacznie następną turę z tym wyborem."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Watcher começa o próximo turno com esta escolha."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Watcher começa o próximo turno com esta escolha."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher își începe următoarea tură cu această alegere."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher börjar sin nästa tur med det här valet."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher தனது அடுத்த முறையை இந்தத் தேர்வில் தொடங்கும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher తన తదుపరి వంతును ఈ ఎంపికతో మొదలుపెడుతుంది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher bir sonraki turuna bu seçimle başlar."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher почне наступний хід із цим вибором."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher اپنی اگلی باری اسی انتخاب پر شروع کرے گا۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 的下一轮将使用此选择。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 的下一輪將使用此選擇。"
+          }
+        }
+      }
+    },
     "Watcher starts nothing new until one of these finishes or stops. A thread waiting on you still counts." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -141747,6 +143282,198 @@
         }
       }
     },
+    "Watcher’s settings" : {
+      "comment" : "The VoiceOver name of Watcher's box's pill holding its model, effort, speed and permissions.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إعدادات Watcher"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher-এর সেটিংস"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nastavení Watchera"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchers indstillinger"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Einstellungen von Watcher"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ρυθμίσεις του Watcher"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher’s settings"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes de Watcher"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuración de Watcher"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Configuración de Watcher"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcherin asetukset"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réglages de Watcher"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher की सेटिंग्ज़"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Watcher beállításai"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impostazioni di Watcher"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher の設定"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher ची सेटिंग्ज"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchers innstillinger"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Instellingen van Watcher"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ustawienia Watchera"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustes do Watcher"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Definições do Watcher"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Setările lui Watcher"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watchers inställningar"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher இன் அமைப்புகள்"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher సెట్టింగ్‌లు"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher’ın ayarları"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Налаштування Watcher"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher کی سیٹنگز"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 的设置"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 的設定"
+          }
+        }
+      }
+    },
     "Watching since %@." : {
       "comment" : "%@ is a time of day",
       "extractionState" : "manual",
@@ -142509,6 +144236,198 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Watcher 不必詢問即可執行的動作"
+          }
+        }
+      }
+    },
+    "What was heard is in the box. Press the mic to go on." : {
+      "comment" : "Under the alert that dictation stopped on its own.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ما سُمع موجود في المربع. اضغط على الميكروفون للمتابعة."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "যা শোনা গেছে তা বাক্সে আছে। চালিয়ে যেতে মাইক চাপুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Co bylo slyšet, je v poli. Pokračujte klepnutím na mikrofon."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Det, der blev hørt, står i feltet. Tryk på mikrofonen for at fortsætte."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Was gehört wurde, steht im Feld. Tippe auf das Mikrofon, um weiterzumachen."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Όσα ακούστηκαν είναι στο πλαίσιο. Πατήστε το μικρόφωνο για να συνεχίσετε."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "What was heard is in the box. Press the mic to go on."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que se ha oído está en el cuadro. Pulsa el micrófono para seguir."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que se escuchó está en el cuadro. Toca el micrófono para seguir."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lo que se escuchó está en el cuadro. Toca el micrófono para seguir."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kuultu on kentässä. Jatka napauttamalla mikrofonia."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce qui a été entendu est dans le champ. Appuyez sur le micro pour continuer."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "जो सुना गया, वह बॉक्स में है। आगे बढ़ने के लिए माइक दबाएँ।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ami elhangzott, a mezőben van. A folytatáshoz koppints a mikrofonra."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ciò che è stato sentito è nel campo. Tocca il microfono per continuare."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聞き取った内容は入力欄にあります。続けるにはマイクを押してください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "जे ऐकले ते बॉक्समध्ये आहे. पुढे जाण्यासाठी माइक दाबा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Det som ble hørt, står i feltet. Trykk på mikrofonen for å fortsette."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wat gehoord is, staat in het vak. Tik op de microfoon om verder te gaan."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "To, co usłyszano, jest w polu. Dotknij mikrofonu, aby kontynuować."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O que foi ouvido está na caixa. Toque no microfone para continuar."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O que foi ouvido está na caixa. Toque no microfone para continuar."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce s-a auzit este în casetă. Atinge microfonul ca să continui."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Det som hördes finns i rutan. Tryck på mikrofonen för att fortsätta."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "கேட்டது பெட்டியில் உள்ளது. தொடர மைக்கை அழுத்தவும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "విన్నది బాక్స్‌లో ఉంది. కొనసాగించడానికి మైక్ నొక్కండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Duyulanlar kutuda. Devam etmek için mikrofona dokunun."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Почуте вже в полі. Натисніть мікрофон, щоб продовжити."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جو سنا گیا وہ خانے میں ہے۔ جاری رکھنے کے لیے مائیک دبائیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "听到的内容已在框中。按麦克风继续。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聽到的內容已在框中。按麥克風繼續。"
           }
         }
       }

@@ -4,6 +4,8 @@
 
 Accepted by Zach on October 19, 2026. **Number provisional until merge:** 0092 is free on `origin/main` at the time of writing, where 0091 is worker roles; recheck before merging (docs/agents/domain.md). It amends [ADR-0072](0072-sotto-owl-is-a-windows-preview-release-track.md), whose track was Windows only, and [ADR-0001](0001-macos-unsigned-arm64-distribution.md), whose Mac build had no CI, no zip, no update feed and no signing identity. Stable on the Mac keeps every part of ADR-0001.
 
+Amended November 1, 2026 by [ADR-0072's nightly Owl](0072-sotto-owl-is-a-windows-preview-release-track.md#november-1-2026-a-nightly-owl-cut-in-github-actions): the **Sotto Owl nightly** workflow calls `owl-mac.yml` with its own version and source, and builds the Windows half in GitHub Actions too. Starting it by hand is unchanged.
+
 Amended October 20, 2026: [ADR-0096](0096-stable-mac-builds-in-github-actions.md) builds stable Mac in GitHub Actions too. Below, "built by hand on a Mac" now describes only the fallback; stable Mac is otherwise unchanged.
 
 Amended October 21, 2026: [ADR-0099](0099-sotto-owl-also-ships-for-linux.md) adds a Linux half to each Owl, built in GitHub Actions the same way. "Linux on neither" below still holds: Linux has no in-app updater.

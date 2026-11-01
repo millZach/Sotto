@@ -2188,6 +2188,20 @@ msgstr ""
 msgid "Change project, now {projectTitle}"
 msgstr ""
 
+#. {computerName} is the name of a saved host.
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Change the default projects directory on {computerName}"
+msgstr ""
+
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Change the default projects directory on this computer"
+msgstr ""
+
+#. Opens the folder browser to choose another default projects directory.
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Change…"
+msgstr ""
+
 #. A lockfile the update changed
 #: src/renderer/src/agents/MainCheckoutLine.tsx
 msgid "changed"
@@ -2376,6 +2390,15 @@ msgstr ""
 msgid "Choose or create a thread to review this draft."
 msgstr ""
 
+#. {computerName} is the name of a saved host.
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Choose the default projects directory on {computerName}"
+msgstr ""
+
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Choose the default projects directory on this computer"
+msgstr ""
+
 #: src/renderer/src/agents/ProviderModelList.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Choose what new threads start with in Settings > Threads."
@@ -2385,9 +2408,19 @@ msgstr ""
 msgid "Choose workspace"
 msgstr ""
 
+#. Opens the folder browser to choose the default projects directory.
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Choose…"
+msgstr ""
+
 #. A tip under a working Claude thread.
 #: src/renderer/src/agents/tips.tsx
 msgid "Claude reads <0>CLAUDE.md</0> at the start of every session. Ask it to add a rule there instead of repeating yourself."
+msgstr ""
+
+#. Empties the default projects directory.
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Clear"
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -2404,6 +2437,15 @@ msgstr ""
 
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Clear search"
+msgstr ""
+
+#. {computerName} is the name of a saved host.
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Clear the default projects directory on {computerName}"
+msgstr ""
+
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Clear the default projects directory on this computer"
 msgstr ""
 
 #. A step in the browser line; starts lowercase.
@@ -3139,8 +3181,8 @@ msgstr ""
 msgid "Could not record the starting branch. Your choice is retained."
 msgstr ""
 
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "Could not save. Check the value and try again."
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Could not save the folder. Nothing was changed. Try again."
 msgstr ""
 
 #. A step in the browser line; starts lowercase.
@@ -3413,11 +3455,11 @@ msgid "Default projects directory"
 msgstr ""
 
 #. {computerName} is the name of a saved host.
-#: src/renderer/src/agents/AgentAccountSettings.tsx
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
 msgid "Default projects directory on {computerName}"
 msgstr ""
 
-#: src/renderer/src/agents/AgentAccountSettings.tsx
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
 msgid "Default projects directory on this computer"
 msgstr ""
 
@@ -5248,6 +5290,10 @@ msgstr ""
 msgid "No files match “{filter}”."
 msgstr ""
 
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "No folder chosen"
+msgstr ""
+
 #: src/renderer/src/agents/bringChangesBack.logic.ts
 msgid "No folder has {target} checked out, so only the branch moved."
 msgstr ""
@@ -6896,6 +6942,8 @@ msgstr ""
 msgid "Saved model servers"
 msgstr ""
 
+#. The Use this folder button while the chosen folder is saved.
+#: src/renderer/src/agents/FolderBrowserDialog.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Saving…"
 msgstr ""
@@ -7438,6 +7486,10 @@ msgstr ""
 
 #: src/renderer/src/agents/DeleteThread.tsx
 msgid "Sotto could not confirm the delete. If the thread is still listed, nothing was deleted."
+msgstr ""
+
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Sotto could not confirm the folder was saved. Check the folder shown in Settings, then try again if it has not changed."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadFollowups.tsx
@@ -8539,6 +8591,11 @@ msgstr ""
 msgid "This folder has uncommitted changes. They move with the switch to {sent}, and Git refuses the switch if they would conflict."
 msgstr ""
 
+#. {place} is "this computer" or a saved host's name.
+#: src/renderer/src/agents/FolderBrowserDialog.tsx
+msgid "This folder is new. Sotto makes it on {place} when a new project first goes in it."
+msgstr ""
+
 #. {place} is "this computer" or a saved host's name. "Use this folder" is the button's name.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "This folder is new. Sotto makes it on {place} when you press Use this folder."
@@ -9441,6 +9498,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Watcher message"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Watcher starts its next turn on this choice."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadOptions.tsx
