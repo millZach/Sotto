@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import type { AgentCommand, AgentState } from '../../../src/shared/agents'
 import { E2E_THREADS_NOW } from '../../../src/shared/e2e'
-import { DEFAULT_SETTINGS } from '../../../src/shared/settings'
 import { useAgents } from '../../../src/renderer/src/agents/AgentContext'
 import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { describeThreads } from '../../../src/renderer/src/agents/threadFacts'
@@ -162,7 +161,7 @@ describe('the manual composer', () => {
     expect(view.requests()).toContainEqual({ type: 'configure-thread-working-copy', threadId: THREAD, workingCopy: 'shared' })
   })
 
-  it('keeps the full toolbar under an answer even when the quiet pill is enabled', () => {
+  it('draws Zach\'s composer under an answer too, with the branch controls in the pane header', () => {
     vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
     const state = threadsStateFixture()
     const thread = state.host.threads.find(item => item.id === THREAD)!
@@ -172,34 +171,11 @@ describe('the manual composer', () => {
     thread.status = 'running'
     const view = mount({ state })
     const toolbar = screen.getByRole('group', { name: 'Branch toolbar' })
-    expect(document.querySelector('.thread-prompt')).not.toHaveAttribute('data-quiet')
-    expect(view.head()).not.toContainElement(toolbar)
-    expect(document.querySelector('.thread-workspace__compose')).toContainElement(toolbar)
+    expect(document.querySelector('.thread-prompt')).toHaveAttribute('data-quiet')
+    expect(view.head()).toContainElement(toolbar)
   })
 
-  it('keeps quiet Stop after the split chip and before the round Send, with the shield at the start of the pill', () => {
-    vi.mocked(useOptionalApp).mockReturnValue({ settings: { ...DEFAULT_SETTINGS, composerStyle: 'pill' }, update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
-    const state = threadsStateFixture()
-    state.host.capabilities.configureThread = true
-    const thread = state.host.threads.find(item => item.id === THREAD)!
-    thread.status = 'running'
-    thread.requests = []
-    state.host.models.find(model => model.id === thread.modelId)!.runtimeModes = ['approval-required', 'full-access']
-    mount({ state })
-    const shield = screen.getByRole('combobox', { name: 'Thread permissions' })
-    const stop = screen.getByRole('button', { name: 'Stop agent' })
-    const send = screen.getByRole('button', { name: 'Queue prompt' })
-    expect(shield.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(stop.compareDocumentPosition(send) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
-    expect(stop.parentElement).toHaveClass('thread-prompt__actions')
-    expect(send).toHaveClass('thread-prompt__disc')
-    // Queue is the list-plus the full composer's Queue key draws, not an arrow into a tray, which reads as Download.
-    expect(send.querySelector('svg.lucide-list-plus')).not.toBeNull()
-    // The shield stands at the pill's start, after attach (ADR-0161).
-    expect(shield.closest('.thread-prompt__lead')).not.toBeNull()
-  })
-
-  it('draws Zach\'s composer by default: the prompt above, permissions before the model, and the disc as Stop while a turn runs with nothing typed', () => {
+  it('draws Zach\'s composer: the prompt above, permissions before the model, and the disc as Stop while a turn runs with nothing typed', () => {
     vi.mocked(useOptionalApp).mockReturnValue({ update: { owlFeatures: { 'quiet-composer': true } } } as unknown as ReturnType<typeof useOptionalApp>)
     const state = threadsStateFixture()
     state.host.capabilities.configureThread = true
@@ -209,7 +185,6 @@ describe('the manual composer', () => {
     state.host.models.find(model => model.id === thread.modelId)!.runtimeModes = ['approval-required', 'full-access']
     mount({ state })
     const form = document.querySelector('form.thread-prompt')!
-    expect(form).toHaveAttribute('data-style', 'rows')
     expect(form.querySelector('.thread-prompt__lead')).toBeNull()
     const shield = screen.getByRole('combobox', { name: 'Thread permissions' })
     const model = form.querySelector('.model-picker__trigger')!

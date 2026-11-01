@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import type { AgentHostSnapshot, AgentThread, ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles, ThreadForkRequest, WorkerRoleSource } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, RestoredThreadHistory, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadReadPurpose, ThreadSessionDraft, ThreadLaunchProfiles, ThreadForkRequest, WorkerRoleSource } from './host'
 import { asActivityPublication, ownBuiltRecord, subscribeActivitySnapshots } from './activitySnapshots'
 import { ThreadChangesPublisher, ThreadMap, threadChangesBetween, type ActivityChangesListener, type ActivityChangesSubscription, type AgentHostChanges,
   type ThreadChangeSet } from './threadChanges'
@@ -315,6 +315,11 @@ export class SottoThreadHost implements AgentHost {
     const binding = this.registry.byThread(threadId)
     if (!binding || binding.provider !== this.provider) return null
     return this.inner.writeShortText(binding.sessionId, prompt, signal)
+  }
+
+  /** A side call with no thread behind it (ADR-0173) is this adapter's own: nothing to look up. */
+  async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    return await this.inner.writeShortTextOn?.(target, prompt, signal) ?? null
   }
 
   /** Bindings for newly discovered threads reach disk before the coordinator can persist a reference to them. */

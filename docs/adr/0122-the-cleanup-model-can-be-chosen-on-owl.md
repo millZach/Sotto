@@ -35,3 +35,11 @@ Changing Default is still a change to `CLEANUP_MODELS`, a benchmark run and an a
 ## Amended October 25, 2026: your own servers in the list
 
 [ADR-0136](0136-ai-cleanup-can-run-on-your-own-model-server.md) adds a Your own servers section to the Cleanup model list, as its own Owl feature: the models of the user's own model servers added without a key, which main asks directly with the setting Measure found fastest. Mode does not apply to them, and Mercury 2 stays the backup, as decision 5 says.
+
+## Amended October 31, 2026: OpenRouter presets
+
+The cleanup list also offers the account's active OpenRouter presets, before the public models. On opening or refreshing the list, main asks `openrouter.ai/api/v1/presets` with the existing OpenRouter key. The public catalog still gets no key. The authenticated read follows no redirects and only the names and IDs reach the renderer. If the key cannot list presets or that read fails, the public catalog still works.
+
+Cleanup model also accepts a pasted `@preset/<slug>` reference, chosen from the matching row or with Enter. A preset missing from the list is not called gone: some keys can use presets without listing them. Settings validates and preserves these IDs.
+
+For presets, decisions 3 and 4 change: Sotto sends the reference unchanged and omits reasoning and provider overrides, leaving the saved preset in control of those settings. Mode is hidden while a preset is selected. The last ordinary model's mode stays saved for switching back. Sotto still supplies its cleanup prompt and output limit. Decision 5's Mercury 2 backup is unchanged, including when a preset pins its own provider.

@@ -32,19 +32,44 @@ export interface ThreadReassembly {
   peek(wire: unknown): AgentThread[] | undefined
   /** The whole array last put back from a broadcast, or undefined before the first. */
   current(): AgentThread[] | undefined
+  /**
+   * `peek`, for a reply that may have overtaken the broadcast it was measured from. Main measures a reply from the last
+   * broadcast it sent the window, and sends the two separately, so on a busy computer the reply can arrive first (#1939).
+   * When the reply names a newer base than the one held, this waits for that broadcast, up to `waitMs`, and puts the
+   * reply back from it as soon as it is held, before any later broadcast replaces it. Undefined when the reply names a
+   * base this will not hold: an older one, one a later broadcast passed, or one that did not arrive in time.
+   */
+  peekOnArrival(wire: unknown, waitMs: number): Promise<AgentThread[] | undefined>
 }
 
 export function createThreadReassembly(): ThreadReassembly {
   let held: HeldThreads | null = null
+  /** Replies waiting for the broadcast they were measured from, each answered when a broadcast is held. */
+  const waiting = new Set<() => void>()
+  const peek = (wire: unknown): AgentThread[] | undefined => { const next = resolve(held, wire); return next === undefined ? undefined : [...next.list] }
   const apply = (wire: unknown): AgentThread[] | undefined => {
     const next = resolve(held, wire)
     if (next === undefined) return undefined
     held = next
+    for (const answer of [...waiting]) answer()
     return [...next.list]
   }
+  const peekOnArrival = (wire: unknown, waitMs: number): Promise<AgentThread[] | undefined> => {
+    const now = peek(wire)
+    const base = typeof wire === 'object' && wire !== null ? (wire as { base?: unknown }).base : undefined
+    if (now !== undefined || typeof base !== 'number' || (held !== null && held.revision >= base)) return Promise.resolve(now)
+    return new Promise(settle => {
+      const done = (threads: AgentThread[] | undefined): void => { waiting.delete(answer); clearTimeout(timer); settle(threads) }
+      // Called as each broadcast is held: the one the reply was measured from answers it, and one past it gives up.
+      const answer = (): void => { if (held !== null && held.revision >= base) done(held.revision === base ? peek(wire) : undefined) }
+      const timer = setTimeout(() => done(undefined), waitMs)
+      waiting.add(answer)
+    })
+  }
   return Object.assign(apply, {
-    peek: (wire: unknown): AgentThread[] | undefined => { const next = resolve(held, wire); return next === undefined ? undefined : [...next.list] },
+    peek,
     current: (): AgentThread[] | undefined => held === null ? undefined : [...held.list],
+    peekOnArrival,
   })
 }
 

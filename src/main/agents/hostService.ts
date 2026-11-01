@@ -7,7 +7,7 @@ import { watcherResultForHostV1, type WatcherIdentity } from '../../shared/watch
 import type { WatcherService } from './watcher'
 import type { WatcherPhoneService } from './watcherPhone'
 
-import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentProject } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentAttachmentPreviewResult, type AgentProject } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -23,6 +23,7 @@ import type { HostThreadToolReads } from './threadToolReads'
 import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
+import type { NextPromptEntry } from '../../shared/nextPrompt'
 import type { ProjectOrigins, ProjectSetupRequest, ProjectSetupResult } from '../../shared/workerMachine'
 import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { HostThreadMoveRequest } from '../../shared/threadMoves'
@@ -173,6 +174,15 @@ export interface HostService {
   checkQueue?(): readonly CheckQueueEntry[] | undefined
   subscribeCheckQueue?(listener: () => void): () => void
   /**
+   * The next prompts the host holds for its threads (`next-prompts`, ADR-0132, ADR-0173), by its own thread IDs, and each
+   * change, a let-go one with `prompt` null. On a desktop's connection to a host, what the host last pushed, and
+   * `setNextPromptsWanted` tells the host whether this desktop wants them now.
+   */
+  readonly supportsNextPrompts?: boolean
+  nextPrompts?(): readonly NextPromptEntry[]
+  subscribeNextPrompts?(listener: (entry: NextPromptEntry) => void): () => void
+  setNextPromptsWanted?(wanted: boolean): void
+  /**
    * The host's threads delegate to other machines through this desktop (`delegation-relay`, #1316), on a desktop's
    * connection to a host whose hello it accepted: `subscribeDelegationRelay` hears each ask the host pushes,
    * `answerDelegationRelay` answers it, and `delegationRelayNews` tells the host a relayed delegation's outcome moved.
@@ -259,6 +269,8 @@ export interface HostService {
   /** A page was opened by its token, which clears the prototype-ready mark it belongs to (ADR-0108). */
   questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  /** One picture an activity record names (ADR-0170); null when the host keeps no such picture for that record. */
+  threadMedia?(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult>
   /** One part of a sent attached file a message carries, for the iPhone's Quick Look (ADR-0131); null for anything else. */
   attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */
@@ -289,6 +301,8 @@ export interface HostService {
   readonly supportsAgentsView?: boolean
   /** The host keeps attached files that are not images (`file-staging`, ADR-0131): its Owl answer turns it on. */
   readonly supportsFileStaging?: boolean
+  /** The host keeps its agents' pictures and answers `thread-media` (ADR-0170): its Owl answer turns it on. */
+  readonly supportsThreadMedia?: boolean
   /** What delegation's record knows of each thread delegated below one thread, for the iPhone's Agents view (ADR-0103). */
   threadDelegations?(threadId: string): Promise<HostThreadDelegations>
 }
@@ -349,6 +363,7 @@ export interface LocalHostControl {
   questionPage?(token: string): QuestionPageTarget | undefined
   questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
+  threadMedia?(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult>
   attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   attachmentContent?(digest: string): Promise<AgentAttachmentContent | null>
@@ -409,6 +424,8 @@ export class LocalHostService implements HostService {
     threadDelete?: boolean
     /** Attached files that are not images (ADR-0131), true only when the host's Owl answer turns it on. */
     fileStaging?: boolean
+    /** The `inline-media` Owl answer (ADR-0170): this host keeps its agents' pictures and answers for them. */
+    threadMedia?: boolean
     /**
      * The iPhone's Agents view (ADR-0103), present only when the host's Owl answer turns it on. `delegations` is there only
      * where delegation runs (ADR-0081); without it a thread has no delegated threads to read.
@@ -425,6 +442,8 @@ export class LocalHostService implements HostService {
     delegationViews?: DelegationViews
     /** The host's own check queue (#1312), present only where a headless host keeps one: what its desktops' windows show of it. */
     checks?: CheckQueue
+    /** The next prompts this host builds for its threads (ADR-0173), present only while its `next-prompt` Owl answer is on. */
+    nextPrompts?: { list(): readonly NextPromptEntry[]; subscribe(listener: (entry: NextPromptEntry) => void): () => void }
     /** Bringing changes back (#1030), true only when the host's Owl answer turns it on and it runs Git. */
     bringBack?: boolean }) {
     this.control = options.control
@@ -470,6 +489,9 @@ export class LocalHostService implements HostService {
   /** The queue's own view, taken only after it changed, so a read copies nothing. */
   checkQueue(): readonly CheckQueueEntry[] | undefined { return this.options.checks?.view() }
   subscribeCheckQueue(listener: () => void): () => void { return this.options.checks?.subscribe(listener) ?? (() => undefined) }
+  get supportsNextPrompts(): boolean { return this.options.nextPrompts !== undefined }
+  nextPrompts(): readonly NextPromptEntry[] { return this.options.nextPrompts?.list() ?? [] }
+  subscribeNextPrompts(listener: (entry: NextPromptEntry) => void): () => void { return this.options.nextPrompts?.subscribe(listener) ?? (() => undefined) }
   /** Read from the projects as the host last published them, without copying them. */
   projectOrigins(): Promise<ProjectOrigins> {
     if (!this.options.projectOrigins) return Promise.reject(new Error('This host does not report the repositories of its projects.'))
@@ -564,6 +586,8 @@ export class LocalHostService implements HostService {
   questionPage(token: string): QuestionPageTarget | undefined { return this.control.questionPage?.(token) }
   questionPageOpened(token: string): void { this.control.questionPageOpened?.(token) }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> { return await this.control.attachmentPreview?.(request) ?? null }
+  async threadMedia(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult> { return this.options.threadMedia === true ? await this.control.threadMedia?.(request) ?? null : null }
+  get supportsThreadMedia(): boolean { return this.options.threadMedia === true }
   async attachmentFile(request: HostAttachmentFileRequest): Promise<HostAttachmentFile> { return await this.control.attachmentFile?.(request) ?? null }
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {
     if (!this.control.stageAttachment) return Promise.reject(new Error(HOST_CANNOT_STAGE_SCREENSHOTS))

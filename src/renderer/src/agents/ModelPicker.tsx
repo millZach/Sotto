@@ -5,6 +5,7 @@ import { useLingui } from '@lingui/react/macro'
 import { OPENCODE_ZEN_SOURCE, type AgentModel, type ProviderId } from '../../../shared/agents'
 import type { OwnServersBridge } from '../../../shared/ownModelServers'
 import { catalogEntry, resolveModel } from '../../../shared/modelCatalog'
+import { compareVersions, inLineup, LINEUP_PROVIDERS, modelVersion } from '../../../shared/modelLineup'
 import { useOwlFeature } from '../state/owlFeature'
 import { useAnchoredMenu } from './anchoredMenu'
 import { moveListboxFocus } from './listboxKeys'
@@ -34,17 +35,34 @@ const noUnavailable: readonly UnavailablePickerProvider[] = []
  * version number: "Default (recommended)" carries no version and would otherwise sort below everything.
  */
 export function newestModelsFirst(models: readonly AgentModel[]): AgentModel[] {
-  const version = (model: AgentModel): number[] => (model.name.match(/\d+(?:\.\d+)*/)?.[0] ?? model.id.match(/\d+(?:\.\d+)*/)?.[0] ?? '').split('.').map(Number)
   return [...models].sort((left, right) => {
     if (Boolean(left.recommended) !== Boolean(right.recommended)) return left.recommended ? -1 : 1
-    const leftVersion = version(left)
-    const rightVersion = version(right)
-    for (let index = 0; index < Math.max(leftVersion.length, rightVersion.length); index += 1) {
-      const difference = (rightVersion[index] ?? 0) - (leftVersion[index] ?? 0)
-      if (difference) return difference
-    }
-    return 0
+    return compareVersions(modelVersion(right), modelVersion(left))
   })
+}
+
+/**
+ * A Claude Code or Codex menu's models (ADR-0171): only the ready ones, the newest of each line first and the legacy ones
+ * apart, each newest first. A starred legacy model stays with the newest. Undefined for any other provider's models.
+ */
+export function lineupModels(models: readonly AgentModel[], starred: (model: AgentModel) => boolean): { readonly latest: AgentModel[]; readonly legacy: AgentModel[] } | undefined {
+  if (!models[0] || !inLineup(models[0])) return undefined
+  const latest: AgentModel[] = [], legacy: AgentModel[] = []
+  for (const model of models) if (model.ready) (model.legacy && !starred(model) ? legacy : latest).push(model)
+  return { latest: newestModelsFirst(latest), legacy: newestModelsFirst(legacy) }
+}
+
+/** "Legacy", the name of the section that holds a Claude Code or Codex provider's older models (ADR-0171). */
+export function useLegacyName(): string {
+  const { t } = useLingui()
+  return t({ message: 'Legacy', comment: 'In the model menu: the older models of a provider, kept apart from its newest.' })
+}
+
+/** The closed row under a Claude Code or Codex list that opens its legacy models in place, with how many there are. */
+export function LegacyRow({ open, count, onToggle }: { readonly open: boolean; readonly count: number; readonly onToggle: () => void }): ReactNode {
+  return <button type="button" className="model-picker__legacy" aria-expanded={open} onClick={onToggle}>
+    {open ? <ChevronDown size={13} aria-hidden="true" /> : <ChevronRight size={13} aria-hidden="true" />}{useLegacyName()}<span>{countModels(count)}</span>
+  </button>
 }
 
 /** Models under the name `by` gives each, in the order each name first appears and each group in the order given. */
@@ -171,20 +189,32 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const dialogId = useId()
   /** Whether the press now ending began on the backdrop, outside every part of the menu. */
   const pressedBackdrop = useRef(false)
+  const favoriteKeys = useMemo(() => new Set(favorites.map(favoriteKey)), [favorites])
   const groups = useMemo(() => {
     if (!open) return []
     const result = groupModels(models, model => model.provider)
-    return [...[...result].map(([name, items]) => ({ name, providerId: items[0]?.providerId, models: newestModelsFirst(items), sources: modelSources(items, name), reason: undefined as string | undefined })),
-      ...unavailable.filter(item => !result.has(item.name)).map(item => ({ name: item.name, providerId: item.providerId, models: [] as AgentModel[], sources: undefined, reason: item.reason as string | undefined }))]
-  }, [models, open, unavailable])
+    const none: AgentModel[] = []
+    return [...[...result].map(([name, items]) => {
+      const lineup = lineupModels(items, model => favoriteKeys.has(favoriteKey(model)))
+      // A provider whose menu leads with its newest models lists none it cannot run now, and says why instead (ADR-0171).
+      if (lineup) return { name, providerId: items[0]?.providerId, models: lineup.latest, legacy: lineup.legacy, sources: undefined,
+        reason: lineup.latest.length ? undefined : t({ message: `${name} is not connected. Connect it in Settings › Providers to choose a model.`, comment: '{name} is a provider, such as Claude Code or Codex.' }) as string | undefined }
+      return { name, providerId: items[0]?.providerId, models: newestModelsFirst(items), legacy: none, sources: modelSources(items, name), reason: undefined as string | undefined }
+    }), ...unavailable.filter(item => !result.has(item.name)).map(item => ({ name: item.name, providerId: item.providerId, models: none, legacy: none, sources: undefined, reason: item.reason as string | undefined }))]
+  }, [models, open, unavailable, favoriteKeys, t])
   const favoritesTile = favoritesOn && groups.length > 1
   const favoritesPane = favoritesTile && onFavorites
   const selectedProvider = favoritesPane ? undefined : groups.find(group => group.name === provider) ?? groups.find(group => group.name === current?.provider) ?? groups[0]
   /** The rail's tiles by name, Favorites first where it has one. */
   const tiles = useMemo(() => [...(favoritesTile ? [FAVORITES] : []), ...groups.map(group => group.name)], [favoritesTile, groups])
-  const favoriteKeys = useMemo(() => new Set(favorites.map(favoriteKey)), [favorites])
   const liveModels = useMemo(() => new Map(models.map(model => [favoriteKey(model), model])), [models])
-  const filtered = selectedProvider?.models.filter(model => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())) ?? []
+  const matchesQuery = (model: AgentModel): boolean => `${model.name} ${model.id}`.toLowerCase().includes(query.toLowerCase())
+  const filtered = selectedProvider?.models.filter(matchesQuery) ?? []
+  // Legacy models are found by a search; otherwise they wait under the Legacy row until it is opened.
+  const legacy = selectedProvider?.legacy ?? []
+  const legacyFound = query ? legacy.filter(matchesQuery) : legacy
+  const [legacyOpen, setLegacyOpen] = useState(false)
+  const legacyName = useLegacyName()
   const sources = selectedProvider?.sources
   const makers = sources !== undefined && selectedProvider?.providerId === 'cursor'
   // The words a menu of Cursor's model makers uses where a menu of model sources uses its own (ADR-0128).
@@ -204,7 +234,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const showProvider = (name: string): void => { setProvider(name); setOnFavorites(false); if (name !== selectedProvider?.name) setStep(null) }
   const showFavorites = (): void => { setOnFavorites(true); setStep(null) }
   // Typing on Favorites searches every provider's models, under each provider's name.
-  const everywhere = favoritesPane && sourceWords.length ? groups.map(group => ({ name: group.name, models: group.models.filter(model => matchesWords(`${model.name} ${model.id} ${model.source ?? ''} ${group.name}`, sourceWords)) }))
+  const everywhere = favoritesPane && sourceWords.length ? groups.map(group => ({ name: group.name, models: [...group.models, ...group.legacy].filter(model => matchesWords(`${model.name} ${model.id} ${model.source ?? ''} ${group.name}`, sourceWords)) }))
     .filter(group => group.models.length) : undefined
   const favoritesContinue = favoritesPane && !everywhere && continueOn !== undefined && favorites.some(favorite => continueOn.providers.has(favorite.provider))
   const leaveSource = (): void => { if (openSource) pendingFocus.current = { to: 'source', name: openSource.name }; setStep(null) }
@@ -305,7 +335,7 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
   const providerModels = t({ message: `${providerName} models`, comment: '{providerName} is a provider\'s name.' })
   return <div className="model-picker">
     <button ref={trigger} type="button" className="model-picker__trigger thread-chip tt-focusable" role="combobox" aria-label={label} aria-haspopup="dialog" aria-expanded={open} aria-controls={open ? dialogId : undefined}
-      title={spoken} data-source={current?.source} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setOnFavorites(favorites.length > 0); setQuery(''); setStep(null); setSourceStop(undefined); wheelTurn.current = restingWheel(); setOpen(true) }}>
+      title={spoken} data-source={current?.source} aria-describedby={pending ? describedBy : undefined} data-pending={pending ? 'true' : undefined} disabled={disabled} onClick={() => { setProvider(current?.provider ?? groups[0]?.name ?? ''); setOnFavorites(favorites.length > 0); setQuery(''); setStep(null); setSourceStop(undefined); setLegacyOpen(current?.legacy === true); wheelTurn.current = restingWheel(); setOpen(true) }}>
       {pending ? <i className="thread-chip__pending" aria-hidden="true" /> : null}
       {current ? <ProviderMark provider={current.providerId} name={current.provider} size={13} /> : null}
       {current?.source ? <span className="model-picker__path"><span className="model-picker__source" data-long={current.source.length > LONG_SOURCE || undefined}>{current.source}</span><span className="model-picker__separator" aria-hidden="true">/</span><span className="model-picker__name">{name}</span></span> : <span>{name}</span>}
@@ -349,13 +379,21 @@ export function ModelPicker({ models, modelId, disabled, onChange, note, unavail
           {!everywhere.length && <p className="model-picker__empty tt-paragraph">{t`No matching models.`}</p>}
         </div>
         : favoritesPane ? <div ref={list} role="listbox" aria-label={t`Favorites`} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
-          {favorites.map(favorite => option(liveModels.get(favoriteKey(favorite)) ?? { ...favorite, ready: false }, true))}
+          {favorites.map(favorite => {
+            const live = liveModels.get(favoriteKey(favorite))
+            // A Claude Code or Codex favourite that cannot be chosen now is left out rather than marked (ADR-0171).
+            if (favorite.providerId && LINEUP_PROVIDERS.has(favorite.providerId) && !live?.ready) return null
+            return option(live ?? { ...favorite, ready: false }, true)
+          })}
           {!favorites.length && <p className="model-picker__empty tt-paragraph">{t`Star a model to keep it here.`}</p>}
         </div>
         : !sources ? <div ref={list} role="listbox" aria-label={providerModels} className="model-picker__models" onKeyDown={event => moveListboxFocus(event, list.current)}>
           {filtered.map(model => option(model))}
+          {legacyFound.length > 0 && !query ? <LegacyRow open={legacyOpen} count={legacyFound.length} onToggle={() => setLegacyOpen(shown => !shown)} /> : null}
+          {legacyFound.length > 0 && query ? <p className="model-picker__group" aria-hidden="true">{legacyName}<span>{legacyFound.length}</span></p> : null}
+          {legacyFound.length > 0 && (query || legacyOpen) ? <div role="group" aria-label={legacyName}>{legacyFound.map(model => option(model))}</div> : null}
           {selectedProvider?.reason !== undefined ? <p className="model-picker__empty tt-paragraph" role="note">{selectedProvider.reason}</p>
-            : !filtered.length && <p className="model-picker__empty tt-paragraph">{t`No matching models.`}</p>}
+            : !filtered.length && !legacyFound.length && <p className="model-picker__empty tt-paragraph">{t`No matching models.`}</p>}
         </div>
           : found ? <div ref={list} role="listbox" aria-label={providerModels} className="model-picker__models model-picker__models--grouped" onKeyDown={event => moveListboxFocus(event, list.current)}>
             {found.map(source => <div key={source.name} role="group" aria-label={source.name}>

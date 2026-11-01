@@ -244,3 +244,7 @@
   .rich-code__copy.attachment-viewer__copy { width: 36px; padding: 0; justify-content: center; }
   .attachment-viewer__details { display: none; }
 }
+
+/* An agent's pictures (ADR-0170): its turn's tiles, the size of a sent image's. Waiting, or let go off screen, a tile shows a quiet mark. */
+.thread-media-tiles { margin: 8px 0 14px; }
+.thread-media__placeholder { color: var(--tt-text-muted); opacity: .6; }

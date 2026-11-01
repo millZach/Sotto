@@ -1,3 +1,4 @@
+import { picturesIn, type MediaCapture } from './threadMedia'
 import { createHash } from 'node:crypto'
 import { z } from 'zod'
 import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, REASONING_SUMMARY_TITLE, compactAgentIdentity, wordlessReasoningSummary, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type ObservedAgent } from '../../shared/agentActivity'
@@ -141,7 +142,11 @@ export class CodexActivityProjection {
   private readonly turnAnchors = new WeakMap<ActivityConversation, Map<string, string>>()
   /** The array `put` last installed on each thread. While the thread still holds it, it is in sequence order with one record per ID. */
   private readonly installed = new WeakMap<ActivityConversation, readonly AgentActivity[]>()
-  constructor(private readonly now: () => number = Date.now) {}
+  /**
+   * `capture` keeps a tool result's pictures in the thread media store and answers their handles (ADR-0170); absent while
+   * the `inline-media` Owl feature is off, when a row carries none.
+   */
+  constructor(private readonly now: () => number = Date.now, private readonly capture?: MediaCapture) {}
 
   anchor(thread: ActivityConversation, turnId: string, messageId: string): void {
     const anchors = this.turnAnchors.get(thread) ?? new Map<string, string>()
@@ -265,6 +270,11 @@ export class CodexActivityProjection {
     if (item.type === 'webSearch') activity.text = item.query
     const output = contentText(item.result?.content ?? item.contentItems)
     if (output !== undefined) activity.output = output
+    // A finished tool's pictures (ADR-0170). A row that already holds them keeps them, so a replay hashes nothing again.
+    if (this.capture && (item.type === 'mcpToolCall' || item.type === 'dynamicToolCall') && status !== 'running') {
+      const media = previous?.media ?? this.capture(picturesIn(item.result?.content ?? item.contentItems), 'tool')
+      if (media.length) activity.media = media
+    }
     // A Computer Use call that failed for a known reason says what to do, above Codex's own words.
     const needs = item.computerUse ? computerUseNeeds([item.error?.message, output].filter(Boolean).join('\n'), thread.runtimeMode !== 'full-access') : undefined
     if (needs) activity.error = [needs, item.error?.message].filter(Boolean).join('\n')

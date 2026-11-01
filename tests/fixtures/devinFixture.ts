@@ -11,6 +11,9 @@ export const devinFixtureSkips: AdapterContractSkips = {
   liveSettings: 'The fixture must apply settings to a live provider session.',
   settingsConfirmation: 'The fixture cannot lose a settings-change confirmation.',
   clientUpdate: 'The fixture must install a client update and the adapter must accept it.',
+  takeoverWhileHeld: 'In the adapter and host service contracts: Devin refuses a session its thread\'s own process holds to every other client (-32015), so nothing is typed into it unseen; '
+    + 'the fake writes into the history file under the held session. A message typed while Sotto does not hold the session is read when it next opens it '
+    + '(devinAdapter.test.ts).',
 }
 
 /** What a test of the send path changes about how the adapter waits. */
@@ -38,11 +41,11 @@ const LOST_PROMPT_DEADLINE_MS = 2000
  * test that needs a prompt lost scripts it with `driver.delayNextAck` instead of shortening this.
  */
 export async function devinFixture(root?: string, requestTimeoutMs = 15_000, pollIntervalMs = 20, session: AdapterSessionOptions = {}, knownSessions = new Map<string, Set<string>>(),
-  pace: DevinPaceOptions = {}) {
+  pace: DevinPaceOptions = {}, extra: Pick<DevinAcpOptions, 'captureMedia'> = {}) {
   root ??= await mkdtemp(join(tmpdir(), 'sotto-devin-thread-'))
   const options: DevinAcpOptions = { executable: process.execPath,
     nativeConfigDirectory: join(root, 'native-config'), args: [resolve('tests/fixtures/fakeDevinAgent.mjs'), root], requestTimeoutMs, ...(pace.productionPace ? {} : { pollIntervalMs }),
-    acceptanceGraceMs: pace.acceptanceGraceMs ?? 0, ...session }
+    acceptanceGraceMs: pace.acceptanceGraceMs ?? 0, ...session, ...extra }
   const adapter = new DevinAcpHost(root, options)
   const checkViolations = async (): Promise<void> => {
     const text = await readFile(join(root, 'violations.jsonl'), 'utf8').catch(() => '')
@@ -114,7 +117,7 @@ export async function devinFixture(root?: string, requestTimeoutMs = 15_000, pol
           options.requestTimeoutMs = requestTimeoutMs
         })()
       }, requests,
-      restart: async () => { live = false; adapter.disconnect(); await adapter.closed(); return devinFixture(root, requestTimeoutMs, pollIntervalMs, session, knownSessions, pace) },
+      restart: async () => { live = false; adapter.disconnect(); await adapter.closed(); return devinFixture(root, requestTimeoutMs, pollIntervalMs, session, knownSessions, pace, extra) },
     },
     cleanup: async (): Promise<void> => {
       live = false; adapter.disconnect(); await adapter.closed()

@@ -6,6 +6,8 @@ Accepted October 30, 2026, by Zach's pick A of `prototype/composer-zach` (`docs/
 
 Amends ADR-0161: the quiet composer is now one of two styles of the same parts, and no longer an Owl-only feature.
 
+Amended October 31, 2026, by [ADR-0172](0172-zachs-composer-is-the-only-composer-and-its-effort-word-offers-a-level.md): at Drake's request, Drake's composer and the Appearance choice are gone, and Zach's composer is drawn wherever a composer is, answers, continuations and Watcher's handover included. Decisions 2 to 6 stand.
+
 ## Context
 
 Drake redesigned the thread composer as one quiet pill over six rounds of prototypes (ADR-0161). On October 30, 2026, Zach said he did not like it for himself: too much shares its one row (attach, the shield, the prompt, the split chip, Stop and the disc), and he did not like its look. Drake made that composer, so Zach asked for it to stay as an option.

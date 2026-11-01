@@ -19,12 +19,16 @@ export function SetupModelSelect({ choice, value, onChange, label, disabled, des
   const { t } = useLingui()
   const id = useId()
   const providers = [...new Set(choice.models.map(model => model.provider))]
+  // A select cannot close a section, so Claude Code's and Codex's legacy models follow their newest under their own heading (ADR-0171).
+  const legacyHeading = (provider: string): string => t({ message: `${provider} · Legacy`, comment: '{provider} is a provider, such as Claude Code. Heads its older models in a model list.' })
+  const options = (provider?: string, legacy = false): ReactNode => choice.models.filter(model => (provider === undefined || model.provider === provider) && Boolean(model.legacy) === legacy)
+    .map(model => <option key={model.id} value={model.id}>{model.name}</option>)
+  const groups = providers.flatMap(provider => [<optgroup key={provider} label={provider}>{options(provider)}</optgroup>,
+    ...choice.models.some(model => model.provider === provider && model.legacy) ? [<optgroup key={`${provider}-legacy`} label={legacyHeading(provider)}>{options(provider, true)}</optgroup>] : []])
   return <span className="host-setup__model">
     <label htmlFor={id}>{label ?? t({ message: 'Model', comment: 'The AI model an agent runs on.' })}</label>
     <select id={id} className="tt-select tt-focusable" value={value} disabled={disabled} aria-describedby={describedBy} onChange={event => onChange(event.target.value)}>
-      {providers.length > 1
-        ? providers.map(provider => <optgroup key={provider} label={provider}>{choice.models.filter(model => model.provider === provider).map(model => <option key={model.id} value={model.id}>{model.name}</option>)}</optgroup>)
-        : choice.models.map(model => <option key={model.id} value={model.id}>{model.name}</option>)}
+      {providers.length > 1 || groups.length > 1 ? groups : options()}
     </select>
   </span>
 }

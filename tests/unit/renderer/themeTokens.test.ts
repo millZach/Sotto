@@ -311,8 +311,6 @@ describe('main-window theme tokens', () => {
       'src/renderer/src/agents/effortPicker.css',
       'src/renderer/src/agents/effortTrace.css',
       'src/renderer/src/agents/quietComposer.css',
-      'src/renderer/src/agents/rowsComposer.css',
-      'src/renderer/src/features/settings/themes/composerStyleChoice.css',
       'src/renderer/src/agents/skillPill.css',
       'src/renderer/src/agents/threadMonitor.css',
       'src/renderer/src/agents/lardo.css',

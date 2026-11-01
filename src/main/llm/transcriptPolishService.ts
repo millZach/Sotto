@@ -1,5 +1,6 @@
 import type { TranscriptPolishAsrContext, TranscriptPolishResult } from '../../shared/contracts'
 import type { OwnCleanupChoice } from '../../shared/ownServerCleanup'
+import { isOpenRouterPreset } from '../../shared/openRouterModel'
 import type { AppSettings } from '../../shared/settings'
 import { collapseRepeatedPhrases, countWords } from '../../shared/textRepair'
 import { assessOutput, readCleanupChoice } from './cleanupOutput'
@@ -188,9 +189,11 @@ export class TranscriptPolishService {
    * The user's model, when they chose one, at low effort: OpenRouter ignores the effort on a model that does not
    * reason, and a model that must reason accepts it where turning reasoning off would be refused. The mode is a
    * suffix OpenRouter reads off the slug (`:nitro` the fastest host, `:floor` the cheapest); the backup keeps its own.
+   * Presets own their reasoning and provider routing, so the request leaves those fields and the ID untouched.
    */
   private primaryModel(settings: AppSettings): ModelSpec {
     if (this.dependencies.chosenModel !== true) return CLEANUP_MODELS.primary
+    if (isOpenRouterPreset(settings.llmModel)) return { id: settings.llmModel }
     const model: ModelSpec = settings.llmModel === null
       ? CLEANUP_MODELS.primary
       : { id: settings.llmModel, reasoning: 'low' }

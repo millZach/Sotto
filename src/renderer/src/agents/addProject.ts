@@ -7,6 +7,7 @@ import type { AgentConnection } from './AgentContext'
 import { FolderBrowserDialog, type FolderChoice } from './FolderBrowserDialog'
 import { projectAtFolder } from './projectFolders'
 import type { LaterWords } from './interfaceWords'
+import { modelInForce } from '../../../shared/modelLineup'
 
 /**
  * Add project: choose the computer the project lives on when more than one is paired, then a folder there, and open
@@ -67,7 +68,7 @@ export function useAddProject(state: AgentState, command: AgentConnection['comma
         setOpen(false); setAdded({ projectId: existing.id, before: latest.current }); return
       }
       const host = hostForThread(current.host, { hostId: choice.hostId })
-      const defaultModelId = defaultThreadModelId(current.configuration, host.models, current.reasoningAccounts)
+      const defaultModelId = modelInForce(host.models, defaultThreadModelId(current.configuration, host.models, current.reasoningAccounts))
       const provider = isSubscriptionReasoning(current.configuration.reasoning) ? current.configuration.reasoning
         : resolveModel(host.models, defaultModelId)?.providerId
       const send = (asNew: boolean): Promise<AgentState | null> =>

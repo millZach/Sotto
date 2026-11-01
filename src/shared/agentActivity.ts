@@ -28,6 +28,23 @@ export const ownServerTurnSchema = z.object({
   failure: z.enum(ownServerTurnFailures).optional(),
 })
 export type OwnServerTurn = z.infer<typeof ownServerTurnSchema>
+/**
+ * A picture an agent made or looked at, as a record carries it (ADR-0170): a handle to bytes in the thread media store,
+ * never the bytes. `id` is the handle's place in its record, which a preview names with the thread and the record.
+ */
+export const MAX_ACTIVITY_MEDIA = 8
+export const agentActivityMediaSchema = z.object({
+  id: z.string().regex(/^m[0-7]$/u),
+  digest: z.string().regex(/^[a-f0-9]{64}$/u),
+  kind: z.enum(['image', 'video']),
+  mimeType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
+  sizeBytes: z.number().int().min(1),
+  width: z.number().int().min(1).max(100_000).optional(), height: z.number().int().min(1).max(100_000).optional(),
+  name: z.string().min(1).max(200),
+  /** Where it came from: a tool's result, an image the agent generated, or a file it wrote. */
+  source: z.enum(['tool', 'generated', 'file']),
+})
+export type AgentActivityMedia = z.infer<typeof agentActivityMediaSchema>
 export const agentActivitySchema = z.object({
   id: z.string(), turnId: z.string(), sequence: z.number().int().nonnegative(),
   afterMessageId: z.string().optional(),
@@ -65,6 +82,8 @@ export const agentActivitySchema = z.object({
   steered: z.boolean().optional(),
   /** A turn record's own server (ADR-0124): set only on a turn whose model is one of the user's own model servers. */
   ownServer: ownServerTurnSchema.optional(),
+  /** Pictures the step made or looked at (ADR-0170): handles only, behind the `inline-media` Owl feature. */
+  media: z.array(agentActivityMediaSchema).max(MAX_ACTIVITY_MEDIA).optional(),
   truncated: z.boolean().optional(),
   /**
    * Bodies the host sent cut, whose whole is still on the host (ADR-0025, October 18 amendment): each one's whole size in

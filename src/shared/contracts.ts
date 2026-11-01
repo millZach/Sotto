@@ -6,7 +6,7 @@ import type { DictationRecord } from './dictationRecord'
 import type { FinishedDictation, HistoryEntry } from './history'
 import type { AppSettings, SettingsPatch } from './settings'
 import type { SottoE2EBridge } from './e2e'
-import type { RecoveryNotice } from './recoveryNotice'
+import type { PastePermissionNoticeCode, RecoveryNotice, RecoveryNoticeEvent } from './recoveryNotice'
 import type { SpeechModelOption, SpeechModelStatus } from './speechModel'
 import type { SottoPlatform } from './platform'
 import { widgetPaletteSchema } from './themeBranding'
@@ -263,7 +263,7 @@ export const openRouterKeyCheckSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(false), reason: z.enum(['unconfigured', 'unauthorized', 'http', 'network', 'timeout']) }).strict(),
 ])
 
-/** OpenRouter's text models, for the cleanup model picker in Settings → Cleanup (ADR-0122). */
+/** OpenRouter's text models and active presets, for the cleanup model picker in Settings → Cleanup (ADR-0122). */
 export const openRouterModelListSchema = z.discriminatedUnion('ok', [
   /** `complete` is false when the read stopped before OpenRouter's last page. */
   z.object({ ok: z.literal(true), complete: z.boolean(), models: z.array(z.object({ id: z.string().min(1).max(128), name: z.string().max(200) }).strict()).max(5_000) }).strict(),
@@ -444,7 +444,8 @@ export interface SottoBridge {
   readonly platform: SottoPlatform
 
   listRecoveryNotices(): Promise<readonly RecoveryNotice[]>
-  onRecoveryNotice(listener: (notice: RecoveryNotice) => void): Unsubscribe
+  onRecoveryNotice(listener: (notice: RecoveryNoticeEvent) => void): Unsubscribe
+  dismissPastePermissionNotice(code: PastePermissionNoticeCode): Promise<CommandResult>
 
   getSettings(): Promise<AppSettings>
   updateSettings(patch: SettingsPatch): Promise<AppSettings>

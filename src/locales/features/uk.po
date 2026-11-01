@@ -1882,6 +1882,7 @@ msgid "Disconnected"
 msgstr ""
 
 #: src/renderer/src/App.tsx
+#: src/renderer/src/components/ToastRegion.tsx
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 #: src/renderer/src/watcher/WatchControls.tsx
@@ -3948,6 +3949,10 @@ msgstr ""
 msgid "Provider"
 msgstr ""
 
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Provider and reasoning settings come from this preset."
+msgstr ""
+
 #: src/renderer/src/features/usage/UsageModels.tsx
 msgid "Provider sessions"
 msgstr ""
@@ -4405,7 +4410,7 @@ msgid "Scope"
 msgstr ""
 
 #: src/renderer/src/components/CleanupModelFields.tsx
-msgid "Search models"
+msgid "Search models or paste @preset/…"
 msgstr ""
 
 #: src/renderer/src/features/dictate/Journal.tsx
@@ -5309,6 +5314,11 @@ msgstr ""
 #: src/renderer/src/features/usage/UsageOverview.tsx
 #: src/renderer/src/features/usage/UsageView.tsx
 msgid "Subscriptions"
+msgstr ""
+
+#. {ghostText} is the suggested message to Watcher.
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Suggested first message: {ghostText}. Press Tab to take it."
 msgstr ""
 
 #: src/renderer/src/features/memory/MemoryInspector.tsx

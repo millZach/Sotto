@@ -1,4 +1,5 @@
 import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { ChevronDown, CornerDownRight, CornerUpLeft, Laptop, X } from 'lucide-react'
 import { msg, ph, t } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
@@ -9,6 +10,8 @@ import { handoverLedger } from '../../../shared/handover'
 import { resolveModel } from '../../../shared/modelCatalog'
 import type { AgentConnection } from './AgentContext'
 import { EffortPicker } from './EffortPicker'
+import { suggestedEffortIndex } from './effortSuggestion'
+import { SplitChipEffort } from './SplitChipEffort'
 import { ModelPicker } from './ModelPicker'
 import { usesProviderModes } from './pendingSettings'
 import { ProviderMark } from './ProviderMark'
@@ -188,8 +191,13 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
   </section>
 }
 
-/** The composer's chips while a continuation is begun: the model it starts on, that model's effort, and its permissions. */
-export function ContinueOptions({ thread, state, choice }: { readonly thread: AgentThread; readonly state: AgentState; readonly choice: ContinueChoice }): ReactNode {
+/**
+ * The composer's chips while a continuation is begun: the model it starts on, that model's effort, and its permissions.
+ * In Zach's composer (`quiet`), effort is the word that may offer a level the draft seems to want (ADR-0172), and the
+ * permissions go to their slot before the model.
+ */
+export function ContinueOptions({ thread, state, choice, quiet }: { readonly thread: AgentThread; readonly state: AgentState; readonly choice: ContinueChoice
+  readonly quiet?: { readonly effortScore: number; readonly broadWork?: boolean; readonly shieldSlot?: HTMLElement | null | undefined } | undefined }): ReactNode {
   const { t } = useLingui()
   const models = continueModels(state, thread)
   const unavailable = unavailableProviders(state, thread)
@@ -200,17 +208,22 @@ export function ContinueOptions({ thread, state, choice }: { readonly thread: Ag
   const own = usesProviderModes(model)
   // The menu opened from the error's More once; it is not asked to open again.
   useEffect(() => { if (choice.pick) continueStore.update(thread.id, { pick: undefined }) }, [choice.pick, thread.id])
+  const levels = efforts.filter(option => !option.disabled).map(option => option.id)
+  const permissions = modes.length > 0 ? <ChoiceChip label={t`Permissions the new thread starts on`} placeholder={t`Provider default`} value={(own ? startingProviderMode(model, choice.providerMode) : choice.runtimeMode) ?? ''}
+    options={modes} disabled={choice.sending} pending={false} icon={PERMISSIONS_ICON}
+    onChange={mode => continueStore.update(thread.id, own ? { providerMode: mode, narrowed: undefined } : { runtimeMode: mode as AgentRuntimeMode, narrowed: undefined })} /> : null
   return <div className="thread-options-bar">
     <div className="thread-options thread-options--chips">
       <ModelPicker models={models} modelId={choice.modelId} disabled={choice.sending} unavailable={unavailable} label={t`Model the new thread starts on`}
         openOnMount={choice.pick === true} note={t`Your first message starts a new thread on the model you pick, with a handover of this one.`}
         onChange={id => continueStore.set(thread.id, continueChoiceFor(state, thread, id, choice))} />
-      {efforts.length > 0 ? <EffortPicker key={choice.modelId} value={effort} options={efforts} disabled={choice.sending}
+      {quiet ? levels.length > 0 && <SplitChipEffort key={choice.modelId} levels={levels} value={effort} disabled={choice.sending}
+        suggestion={suggestedEffortIndex(quiet.effortScore, levels, effort, model?.defaultReasoningEffort, quiet.broadWork)}
+        onChange={reasoningEffort => continueStore.update(thread.id, { reasoningEffort })} />
+        : efforts.length > 0 ? <EffortPicker key={choice.modelId} value={effort} options={efforts} disabled={choice.sending}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name} ultracodeEffort={ultracodeLevel(state, thread, model)}
         onChange={reasoningEffort => continueStore.update(thread.id, { reasoningEffort })} /> : null}
-      {modes.length > 0 ? <ChoiceChip label={t`Permissions the new thread starts on`} placeholder={t`Provider default`} value={(own ? startingProviderMode(model, choice.providerMode) : choice.runtimeMode) ?? ''}
-        options={modes} disabled={choice.sending} pending={false} icon={PERMISSIONS_ICON}
-        onChange={mode => continueStore.update(thread.id, own ? { providerMode: mode, narrowed: undefined } : { runtimeMode: mode as AgentRuntimeMode, narrowed: undefined })} /> : null}
+      {quiet?.shieldSlot && permissions ? createPortal(permissions, quiet.shieldSlot) : permissions}
     </div>
   </div>
 }

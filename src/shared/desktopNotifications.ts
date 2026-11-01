@@ -8,8 +8,11 @@ import type { ProviderId } from './agents'
 export const DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT = '--sotto-desktop-notifications-enabled'
 /** Settings' Send a test notification: the window asks, main shows one and says whether the system showed it. */
 export const NOTIFICATION_TEST = 'sotto:notification:test'
-/** A notification was pressed: main brought the window forward and selected its thread, so the window shows Threads. */
+/** A notification was pressed: main brought the window forward and chose its thread or a useful fallback. */
 export const NOTIFICATION_OPENED = 'sotto:notification:opened'
+
+export const notificationOpeningSchema = z.object({ page: z.enum(['threads', 'watcher']), notice: z.string().optional() })
+export type NotificationOpening = z.infer<typeof notificationOpeningSchema>
 
 /** The system showed the test notification, refused it (unsigned build, notifications not allowed), or cannot show any. */
 export const notificationTestResultSchema = z.enum(['shown', 'failed', 'unsupported'])
@@ -17,7 +20,7 @@ export type NotificationTestResult = z.infer<typeof notificationTestResultSchema
 
 export interface NotificationsBridge {
   test(): Promise<NotificationTestResult>
-  onOpened(listener: () => void): () => void
+  onOpened(listener: (opening: NotificationOpening) => void): () => void
 }
 
 /** A notification says a thread needs the user, or has finished everything (CONTEXT.md, Alert and Wrapped up). */

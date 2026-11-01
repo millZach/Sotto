@@ -1,6 +1,7 @@
 import type { AgentAttachmentPreviewResult, AgentCommand, AgentThread } from '../../shared/agents'
 import { WATCHER_PHONE_FOLLOWUPS_MAX, WATCHER_PHONE_LEGACY_LIMIT, WATCHER_PHONE_TAKEOVERS_MAX, watcherPhoneStateSchema, type WatcherPhoneState, type WatcherPhoneSend, type WatcherPhoneResult,
-  type WatcherPhoneSendResult, type WatcherPhonePrepareStopResult, type WatcherPhoneStopResult, type WatcherPhoneRemoveFollowup, type WatcherPhonePreview } from '../../shared/watcherPhone'
+  type WatcherPhoneSendResult, type WatcherPhonePrepareStopResult, type WatcherPhoneStopResult, type WatcherPhoneRemoveFollowup, type WatcherPhonePreview,
+  type WatcherPhoneOpen, type WatcherPhoneCurrent } from '../../shared/watcherPhone'
 import type { WatcherRefusal } from '../../shared/watcher'
 import { WATCHER_PHONE_MACHINE_THREADS_MAX, watcherPhoneMachinesSchema, type WatcherPhoneMachines } from '../../shared/watcherPhone'
 import { machineEntries, systemWords, unknownWhy } from '../../shared/machineLine'
@@ -175,7 +176,7 @@ export class WatcherPhoneService {
     return watcherPhoneStateSchema.parse({ hostId: this.control.hostId()!, current: room.current && room.currentOptions ? {
       target: room.current.target, provider: room.current.provider, modelId: room.currentOptions.modelId,
       reasoningEffort: room.currentOptions.reasoningEffort, runtimeMode: room.currentOptions.runtimeMode,
-      status: room.currentOptions.status, connected: room.currentOptions.connected,
+      status: room.currentOptions.status, connected: room.currentOptions.connected, speed: room.currentOptions.speed ?? null,
       ...(steer ? { steers: current ? this.control.watcherPhoneTurn(current.id).steers : false } : {}) } : null,
     conversation: { messages, revision: detail?.revision ?? 0, earlierAvailable: Boolean(detail?.earlierAvailable || (detail?.messages.length ?? 0) > messages.length) },
     // The deliveries alone, read without copying every thread: this runs for each phone on every update.
@@ -192,7 +193,9 @@ export class WatcherPhoneService {
       .map(item => ({ itemId: item.id, draftId: item.draftId, text: item.text, status: item.status })) } : {}),
     // Watcher working is its own turn, a news turn included, as the desktop shows it. A thread it started says its own
     // status under Watched: counted here, a few long-running workers kept the phone saying Working while Watcher was idle.
-    working: room.currentOptions?.status === 'running', recoveryNotice: room.recoveryNotice, observedAt: room.observedAt })
+    working: room.currentOptions?.status === 'running', recoveryNotice: room.recoveryNotice, observedAt: room.observedAt,
+    // Watcher's box (October 31, 2026): words and flags the room already holds, nothing read afresh.
+    ...(room.newWatcher ? { newWatcher: room.newWatcher } : {}), handoverOffered: Boolean(room.handover), replaced: room.history.length > 0 })
   }
   /** The newest takeover lines, as many as the page carries receipts, each titled from one index of the threads. */
   private takeovers(room: ReturnType<WatcherService['state']>, snapshot: ReturnType<WatcherService['phoneSnapshot']>): NonNullable<WatcherPhoneState['takeovers']> {
@@ -230,6 +233,12 @@ export class WatcherPhoneService {
     const waitingOnCard = () => Boolean(this.control.watcherSnapshot().threads.find(row => row.id === threadId)?.requests.length)
     try {
       check()
+      // The send the user made with the handover strip standing carries the handover; one it can no longer carry is
+      // refused, with nothing sent, rather than going without it.
+      if (request.handover) {
+        const taken = this.watcher.continueWithHandover({ draftId: request.draftId })
+        if (taken.status === 'refused') return taken
+      }
       if (waitingOnCard() || (steers && this.control.watcherPhoneTurn(threadId).running)) return await this.whileWorking(request, origin, phone, sent)
       const result = await this.control.commandFromWatcherPhone({ type: 'send', draft: { threadId,
         draftId: request.draftId, text: request.text, attachments: request.images ?? [], binding: { requestId: null, questionsDigest: null } } }, origin, phone)
@@ -329,6 +338,52 @@ export class WatcherPhoneService {
     return result.status === 'refused' ? result : { status: 'ok', state: this.state(mayAnswer(), standing, steer), results: result.results }
   }
   currentThreadId(): string | undefined { return this.watcher.state().current?.target.threadId }
+  /**
+   * Watcher's box from the phone (Zach, October 31, 2026), as the desktop's composer does each: its model, effort or speed
+   * through the room's own open, another provider's model starting a new Watcher; New Watcher; Stop on Watcher's own turn;
+   * and putting the handover offer away. Each names the current Watcher, and a change meant for one that has since been
+   * replaced changes nothing. A new Watcher keeps the saved permission mode, but the same mode lets another provider do
+   * more (Cursor edits without asking where Codex only reads), so moving Watcher to another provider needs this phone's
+   * answers grant, as a mode that acts without asking does.
+   */
+  async compose(action: 'open' | 'new' | 'stop-turn' | 'dismiss-handover', request: WatcherPhoneOpen | WatcherPhoneCurrent,
+    client: ClientIdentity, guard: () => void, mayAnswer: () => boolean, steer = false): Promise<WatcherPhoneResult> {
+    const hostId = this.control.hostId()
+    if (client.transport !== 'socket' || !hostId) return watcherRefusal('INVALID_INPUT', 'Watcher phone controls need a paired phone connection.')
+    const threadId = request.target.threadId
+    const moves = action === 'open' && (request as WatcherPhoneOpen).provider !== this.watcher.state().current?.provider
+    if (moves && !mayAnswer()) {
+      return watcherRefusal('PERMISSION_TOO_WIDE', 'This phone can’t answer on this computer, so it can’t move Watcher to another provider, whose permissions differ. Nothing changed. Change Watcher’s provider in Sotto on this computer.')
+    }
+    const check = () => {
+      guard()
+      const current = this.watcher.state().current
+      if (!current || current.target.hostId !== request.target.hostId || current.target.threadId !== threadId
+        || !this.watcher.isCurrent(threadId)) throw new Error('Watcher changed.')
+      if (moves && !mayAnswer()) throw new Error('This phone no longer has permission to move Watcher to another provider.')
+    }
+    try { check() } catch { return watcherRefusal('TARGET_CHANGED', 'Watcher changed, so nothing was changed. Check Watcher’s page and try again.', true) }
+    const refusal = await this.composeOne(action, request, client, hostId, check)
+    guard()
+    return refusal ?? this.get(mayAnswer(), true, steer)
+  }
+  /** The change itself, answered with main's refusal, or null once it took. */
+  private async composeOne(action: 'open' | 'new' | 'stop-turn' | 'dismiss-handover', request: WatcherPhoneOpen | WatcherPhoneCurrent,
+    client: ClientIdentity, hostId: string, check: () => void): Promise<WatcherRefusal | null> {
+    const refused = (result: { status: string }): WatcherRefusal | null => result.status === 'refused' ? result as WatcherRefusal : null
+    if (action === 'open') {
+      const { target: _target, ...choice } = request as WatcherPhoneOpen; void _target
+      return refused(await this.watcher.open(choice, check))
+    }
+    if (action === 'new') return refused(await this.watcher.startNew(check))
+    if (action === 'dismiss-handover') return refused(this.watcher.dismissHandover())
+    const threadId = request.target.threadId
+    const stopped = await this.control.commandFromWatcherPhone({ type: 'interrupt', threadId },
+      { phoneOrigin: { kind: 'phone', hostId, clientId: client.clientId }, guard: check }, { ...client, selectedThreadId: threadId })
+    // A turn that ended on its own before the stop reached it is stopped all the same.
+    return stopped.error && this.control.watcherPhoneTurn(threadId).running
+      ? watcherRefusal('PROVIDER_UNAVAILABLE', 'Watcher’s turn didn’t stop. It’s still working. Try again.', true) : null
+  }
   /** `steer`: whether this phone negotiated steering, so its page carries what only such a phone reads (#1229). */
   async manage(action: 'permission' | 'watch' | 'unwatch', request: WatcherSetPermissionRequest | WatcherWatchThreadRequest,
     client: ClientIdentity, guard: () => void, mayAnswer: () => boolean, steer = false): Promise<WatcherPhoneResult> {

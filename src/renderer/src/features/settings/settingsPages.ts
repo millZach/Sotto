@@ -149,7 +149,7 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'project-defaults', label: msg`Project defaults`, section: 'settings-agents', words: 'working copy worktree' },
     { id: 'reply-streaming', label: msg`Replies in threads`, section: 'settings-agents', words: 'streaming as written' },
     { id: 'thread-titles', label: msg`Generated thread titles`, section: 'settings-agents', words: 'names branch' },
-    { id: 'next-prompt', label: msg`Suggest a next prompt after each turn`, section: 'settings-agents', words: 'suggestions ghost tab next', gate: 'next-prompt' },
+    { id: 'next-prompt', label: msg`Suggest a next prompt`, section: 'settings-agents', words: 'suggestions ghost tab next', gate: 'next-prompt' },
     { id: 'thread-tips', label: msg`Show tips`, section: 'settings-agents', words: 'tips hints shortcuts skills hidden again', gate: 'thread-tips' },
     { id: 'resume-after-restart', label: msg`Resume threads after a restart`, section: 'settings-agents', gate: 'resume-after-restart' },
     { id: 'restart-stopped-threads', label: msg`Restart stopped threads`, section: 'settings-agents', words: 'usage limit resets resume continue carry on after a restart', gate: 'restart-stopped-threads' },
@@ -231,7 +231,6 @@ export function settingsIndex(platform: SottoPlatform): readonly SettingEntry[] 
     { id: 'effort-color', label: msg`Effort color`, section: 'settings-appearance' },
     { id: 'show-creature', label: msg`Show the creature`, section: 'settings-appearance', words: 'hide off composer', gate: 'creature-toggle' },
     { id: 'creature', label: msg`Creature`, section: 'settings-appearance', words: 'claude bot sotto composer' },
-    { id: 'composer-style', label: msg`Composer`, section: 'settings-appearance', words: 'composer style prompt box pill rows zach drake layout' },
     { id: 'watcher-scene', label: msg`Watcher scene`, section: 'settings-appearance', words: 'night scene owls place harbour harbor snowfield snow desert wood theme', gate: 'watcher' },
     // The menu bar owl is a Mac's alone (ADR-0114).
     ...platform === 'darwin' ? [{ id: 'menu-bar-owl', label: msg`Menu bar owl`, section: 'settings-appearance', words: 'tray icon body eyes colour color', gate: 'menu-bar-owl' } as const] : [],

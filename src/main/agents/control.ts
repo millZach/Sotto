@@ -1,3 +1,4 @@
+import type { ThreadMediaStore } from './threadMedia'
 import { catalogWithoutHeld, heldProviderChosenBy } from './heldProviderGate'
 import { firstHeldProvider, heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { WatcherMessageDisplay } from './watcherMessageDisplay'
@@ -17,7 +18,7 @@ import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal, isVisualMessage,
-  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
+  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
 import { BABYSITTING_RETIRED, BABYSIT_REFUSALS, type Babysitter } from './babysitting'
@@ -846,9 +847,10 @@ export class AgentControl {
   }
   /**
    * Authenticated phone user input; its origin stays private to this command and the main-owned request. A steer, a
-   * follow-up and its removal reach only Watcher's own thread, which a phone's ordinary commands never reach (#1229).
+   * follow-up and its removal reach only Watcher's own thread, which a phone's ordinary commands never reach (#1229), and
+   * so does Stop on Watcher's own turn from its box (October 31, 2026).
    */
-  commandFromWatcherPhone(command: Extract<AgentCommand, { type: 'send' | 'steer' | 'queue-followup' | 'remove-followup' }>, origin: WatcherCommandOrigin, client: ClientIdentity): Promise<AgentState> {
+  commandFromWatcherPhone(command: Extract<AgentCommand, { type: 'send' | 'steer' | 'queue-followup' | 'remove-followup' | 'interrupt' }>, origin: WatcherCommandOrigin, client: ClientIdentity): Promise<AgentState> {
     if (!this.watcherHooks || !origin.phoneOrigin || client.transport !== 'socket'
       || client.clientId !== origin.phoneOrigin.clientId || this.hostId() !== origin.phoneOrigin.hostId) throw new Error('Watcher phone input is unavailable.')
     if (command.type !== 'send' && this.state.host.threads.find(thread => thread.id === command.threadId)?.kind !== 'watcher') throw new Error('Watcher phone input is unavailable.')
@@ -1289,6 +1291,8 @@ export class AgentControl {
     missingAttachment?: string
     /** The Owl answer for attaching any file (ADR-0131), read once at start: the store keeps files that are not images. */
     attachAnyFile?: boolean
+    /** The pictures this host's agents made or looked at (ADR-0170), present only while `inline-media` is on. */
+    threadMedia?: ThreadMediaStore
     /**
      * Which process this coordinator runs in. The headless host (`src/host/index.ts`) connects every provider
      * that is installed and signed in when it starts, except the ones the user turned off, and its refusals point
@@ -1476,6 +1480,7 @@ export class AgentControl {
     // Watcher's news is untold on disk now, so its hidden wake-up may go. Unsaved, it stays, and is read as news waiting.
     if (written && untold.size) { await this.followupStore.dropWatcherNews(news => queuedWakeUpText(news, { tool: false })); this.syncFollowups() }
     await this.attachments.sweep(() => this.ownedAttachments())
+    await this.dependencies.threadMedia?.load().catch(() => undefined)
     this.maintenanceTimer = setInterval(() => {
       const pendingPrivacy = this.privacyCleanupPending
       void (pendingPrivacy ? this.privacyChanged() : this.maintainAttachments()).catch(() => {
@@ -2437,6 +2442,16 @@ export class AgentControl {
     if (!this.dependencies.host.readThreadPullRequest) throw new Error('Pull requests are unavailable on this host.')
     return this.dependencies.host.readThreadPullRequest(request)
   }
+  /**
+   * One picture a thread's record names (ADR-0170), fetched when its tile comes into view rather than pushed with any
+   * state. Read from the record this host holds, so only a picture its own capture kept for that record is answered.
+   */
+  async threadMedia(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult> {
+    const store = this.dependencies.threadMedia
+    if (!store) return null
+    const dataUrl = await store.read(this.threadActivity(request.threadId, request.activityId), request.mediaId)
+    return dataUrl === null ? null : { dataUrl }
+  }
   /** One submitted image, fetched by the window when it draws the tile rather than pushed with every state. */
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
     const dataUrl = await this.attachmentPreviews.preview(this.state.host, request.threadId, request.messageId, request.attachmentId)
@@ -2536,6 +2551,8 @@ export class AgentControl {
     await this.attachmentPreviews.maintain()
     if (this.attachmentPreviews.contentCleanupBlocked()) return
     await this.attachments.sweep(() => this.ownedAttachments(), undefined, previewed)
+    // The pictures agents made go with history (ADR-0170): all at once when it is turned off, oldest first past their limit.
+    await (historyOff ? this.dependencies.threadMedia?.clear() : this.dependencies.threadMedia?.sweep())
   }
   /**
    * A staged image as the adapter receives it: the handle, and its bytes read from the store only when asked. Point at
@@ -3959,7 +3976,7 @@ export class AgentControl {
       const messageCount = threadSummaryOf(thread).messageCount
       if (messageCount < 2 || this.titleChecked.get(thread.id) === messageCount) continue
       this.titleChecked.set(thread.id, messageCount)
-      const exchange = firstExchange(thread, 'automatic', this.threadHistory(thread))
+      const exchange = firstExchange(thread, 'automatic', watcherWakeUpsAsShown(this.threadHistory(thread)))
       if (!exchange) continue
       this.titled.add(thread.id)
       this.trackTitleWrite(this.writeThreadTitle(thread.id, exchange))
@@ -3975,7 +3992,7 @@ export class AgentControl {
     if (threadSummaryOf(thread).messageCount === 0) { this.awaitingFirstMessage.add(thread.id); return }
     if (!this.awaitingFirstMessage.has(thread.id)) return
     // The first message, even when a steer is already beside it on the frame that brings it.
-    const first = this.threadHistory(thread).find(message => message.role === 'user' && message.text.trim().length > 0)
+    const first = watcherWakeUpsAsShown(this.threadHistory(thread)).find(message => message.role === 'user' && message.text.trim().length > 0)
     if (!first) return
     this.awaitingFirstMessage.delete(thread.id)
     this.trackTitleWrite(this.offerTitle(thread.id, () => this.dependencies.writeFirstMessageTitle!(first.text), 'first-message'))
@@ -3986,8 +4003,10 @@ export class AgentControl {
     void pending.finally(() => this.titleWrites.delete(pending)).catch(() => undefined)
     return pending
   }
-  /** The thread as this coordinator holds it now, read in place; for a side call's material, never per update. */
-  liveThread(threadId: string): AgentThread | undefined { return this.state.host.threads.find(thread => thread.id === threadId) }
+  /** The threads and projects as this coordinator holds them now, read in place; for a side call's material, never per update. */
+  liveHost(): Pick<AgentHostSnapshot, 'threads' | 'projects'> { return this.state.host }
+  /** The thread as this coordinator holds it now, read in place through the thread index; for a side call's material, never per update. */
+  liveThread(threadId: string): AgentThread | undefined { return this.threadById(threadId) }
   /** A thread's whole history: what the pane holds when that is all of it, else the store's own copy. */
   threadHistory(thread: AgentThread): readonly AgentMessage[] {
     if (thread.messages.length > 0 && thread.earlierAvailable !== true) return thread.messages
@@ -4022,7 +4041,7 @@ export class AgentControl {
   private async regenerateThreadTitle(threadId: string): Promise<AgentState> {
     const thread = this.state.host.threads.find(item => item.id === threadId)
     // The same rule as automatic naming: with local history off, no thread content is sent to name it.
-    const exchange = thread && this.dependencies.historyEnabled?.() !== false ? firstExchange(thread, 'requested', this.threadHistory(thread)) : null
+    const exchange = thread && this.dependencies.historyEnabled?.() !== false ? firstExchange(thread, 'requested', watcherWakeUpsAsShown(this.threadHistory(thread))) : null
     if (thread && exchange) {
       this.titled.add(thread.id)
       await this.trackTitleWrite(this.writeThreadTitle(threadId, exchange))
@@ -4940,7 +4959,7 @@ export class AgentControl {
     await this.dispatch({ type: 'steer', threadId: command.threadId, commandId: randomUUID(), messageId: this.watcher.operations.find(item => item.draftId === command.draftId)?.messageId ?? randomUUID(), text: command.text.trim(),
       ...(command.attachments ? { attachments: command.attachments } : {}), ...(command.skills ? { skills: command.skills } : {}), ...(command.files ? { files: command.files } : {}),
       expectedLastUserMessageId: lastUserMessageIdOf(this.thread(command.threadId)) }, turn, validate, command.draftId, this.localClient, undefined, origin)
-    this.say(`Steered ${this.thread(command.threadId).title}.`)
+    if (!origin || origin.phoneOrigin) this.say(`Steered ${this.thread(command.threadId).title}.`)
   }
   private async providerCommand(command: Extract<AgentCommand, { type: 'connect' | 'disconnect' | 'refresh' | 'update-client' | 'queue-client-updates' | 'cancel-client-updates' | 'check-client-updates' | 'dismiss-client-updates' }>): Promise<AgentState> {
     const turn = this.beginTurn({ source: 'command', commandType: command.type, text: '' })
@@ -6086,7 +6105,7 @@ export class AgentControl {
       this.observe(threadId)
       this.acceptSnapshot(await this.readThread(threadId))
       if (this.outbox.some(item => item.id === pendingId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
-      this.say(`Reconciled the earlier action on ${this.thread(threadId).title}. No new prompt was sent.`)
+      if (!origin) this.say(`Reconciled the earlier action on ${this.thread(threadId).title}. No new prompt was sent.`)
       this.observe()
       return
     }
@@ -6128,7 +6147,7 @@ export class AgentControl {
     let thread = this.thread(threadId)
     if (this.settledForWork(thread)) { await this.reopenForWork(threadId); thread = this.thread(threadId) }
     await this.dispatch({ type: 'send', commandId: randomUUID(), threadId, messageId, text: text.trim(), ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, validate, draftId, this.localClient, undefined, origin)
-    this.say(`Sent to ${thread.title}.`)
+    if (!origin) this.say(`Sent to ${thread.title}.`)
     this.observe()
   }
   private async sendDraft(turn?: ActiveTurn, retryId?: string, selectionRevision = this.selectionRevision, client = this.localClient, selectedThreadId?: string,

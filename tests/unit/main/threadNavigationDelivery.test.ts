@@ -72,6 +72,35 @@ async function fixture(receiptIds: string[] = []) {
 }
 
 describe('navigation independent of action latency', () => {
+  it('selects the thread and its project without answering its pending question', async () => {
+    const f = await fixture()
+    const snapshot = await f.host.snapshot()
+    snapshot.projects.push({ id: 'other-project', title: 'Other project', path: f.root })
+    snapshot.threads.find(thread => thread.id === 'docs')!.projectId = 'other-project'
+    snapshot.threads.find(thread => thread.id === 'docs')!.requests = [{ id: 'question', kind: 'question', text: 'Continue?', options: [] }]
+    vi.spyOn(f.host, 'snapshot').mockResolvedValue(snapshot)
+    await f.control.command({ type: 'refresh' })
+    const result = await f.control.command({ type: 'select-thread', threadId: 'docs' })
+    expect(result).toMatchObject({ activeThreadId: 'docs', activeProjectId: 'other-project', error: null })
+    expect(result.host.threads.find(thread => thread.id === 'docs')!.requests).toHaveLength(1)
+    expect(f.host.attempts).toEqual([])
+  })
+
+  it.each(['watcher', 'move'] as const)('keeps %s sends out of the user notice while still acknowledging the user\'s own send', async source => {
+    const f = await fixture()
+    f.control.useWatcher({ userCommand: () => undefined, beforeDispatch: command => command, observe: () => undefined,
+      guardOperation: () => undefined, preserveUserQueue: () => false })
+    const notice = f.control.get().notice
+    const command = { type: 'manual-send' as const, threadId: 'docs', text: 'Sotto briefing', draftId: randomUUID() }
+    const sent = await (source === 'watcher' ? f.control.commandFromWatcher(command, { guard: () => undefined }) : f.control.commandFromMove(command, () => undefined))
+    expect(sent.error).toBeNull()
+    expect(sent.notice).toBe(notice)
+    expect(f.host.attempts).toContainEqual(expect.objectContaining({ type: 'send', threadId: 'docs', text: 'Sotto briefing' }))
+    const own = await f.control.command({ type: 'manual-send', threadId: 'workshop', text: 'My prompt', draftId: randomUUID() })
+    expect(own.error).toBeNull()
+    expect(own.notice).toBe('Sent to Workshop.')
+  })
+
   it.each(['prompt', 'image', 'answer'] as const)('creates a manual thread without consuming a saved coordinator %s', async kind => {
     const f = await fixture()
     if (kind === 'answer') f.host.event({ type: 'question', threadId: 'workshop', requestId: 'question-a', text: 'Which color?' })

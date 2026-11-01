@@ -267,6 +267,15 @@ export const agentAttachmentPreviewRequestSchema = z.object({ threadId: id, mess
 export type AgentAttachmentPreviewRequest = z.infer<typeof agentAttachmentPreviewRequestSchema>
 export const agentAttachmentPreviewResultSchema = agentAttachmentPreviewDataSchema.nullable()
 export type AgentAttachmentPreviewResult = z.infer<typeof agentAttachmentPreviewResultSchema>
+/** One picture a thread's activity record names (ADR-0170), asked for when its tile comes into view. */
+export const AGENT_THREAD_MEDIA = 'sotto:agents:thread-media'
+export const agentThreadMediaRequestSchema = z.object({ threadId: id, activityId: id, mediaId: z.string().regex(/^m[0-7]$/u) }).strict()
+export type AgentThreadMediaRequest = z.infer<typeof agentThreadMediaRequestSchema>
+/** What a window asks for: the picture whole for the viewer, or a thumbnail at tile size, which main makes. */
+export const agentThreadMediaWindowRequestSchema = agentThreadMediaRequestSchema.extend({ size: z.enum(['tile', 'full']) }).strict()
+export type AgentThreadMediaWindowRequest = z.infer<typeof agentThreadMediaWindowRequestSchema>
+export const agentThreadMediaResultSchema = z.object({ dataUrl: z.string().max(14_000_000).regex(/^data:image\/(png|jpeg|gif|webp);base64,/u) }).strict().nullable()
+export type AgentThreadMediaResult = z.infer<typeof agentThreadMediaResultSchema>
 export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(),
   /** Supplied by Sotto for submitted images; never a filesystem path or a provider URL. */
   preview: agentAttachmentPreviewSchema.optional(),
@@ -334,6 +343,11 @@ export const agentModelSchema = z.object({ id: providerEntityId, provider: id, p
    * thread provider's own label, so a model from Anthropic on OpenCode never reads as Claude Code.
    */
   source: id.optional(),
+  /**
+   * A Claude Code or Codex model with a newer model of its line in the same catalog (ADR-0171). Menus list it under a closed
+   * Legacy section rather than with the newest. Set by the adapter from `markLegacyModels`; other providers never set it.
+   */
+  legacy: z.boolean().optional(),
 })
 /** The model source OpenCode's free models come from (ADR-0087); the model menu says so on its row. */
 export const OPENCODE_ZEN_SOURCE = 'OpenCode Zen'
@@ -403,6 +417,9 @@ export const threadHandoverProofSchema = z.object({ prefixLength: z.number().int
   /** The first message's Sotto message ID, once its send said it: the only message a copy without the words may split. */
   messageId: id.optional() }).strict()
 export type ThreadHandoverProof = z.infer<typeof threadHandoverProofSchema>
+/** A thread Sotto moved off a model its provider stopped offering (ADR-0171): from and to by name, and when. */
+export const threadModelMovedSchema = z.object({ from: z.string().min(1).max(300), to: z.string().min(1).max(300), at: z.string().datetime() })
+export type ThreadModelMoved = z.infer<typeof threadModelMovedSchema>
 /**
  * The thread a **continued thread** continues (ADR-0089): its Sotto thread ID, its provider, when, and the proof of the
  * handover its first message carried, once that message was sent.
@@ -588,6 +605,11 @@ export const agentThreadSchema = z.object({
    * from older hosts. A value this build cannot read drops the link rather than the thread.
    */
   continuedFrom: threadContinuedFromSchema.optional().catch(undefined),
+  /**
+   * Sotto moved this thread off a model its provider stopped offering (ADR-0171): the two models' names and when. The
+   * thread's note follows the last message written before then. Present only when the names differ. Sotto's record.
+   */
+  modelMoved: threadModelMovedSchema.optional().catch(undefined),
   continuedIn: z.array(threadContinuedInSchema).max(THREAD_CONTINUED_IN_MAX).optional().catch(undefined),
   /**
    * The thread this one began from, when it was an agent continued as its own thread or a fork at a reply (#1028). Sotto's
@@ -1538,6 +1560,8 @@ export interface AgentBridge {
   get(): Promise<AgentState>
   /** The bytes behind one published `preview: { available: true }` marker, or null when nothing is eligible. */
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
+  /** One picture a thread's activity record names, whole or at tile size; null when its host keeps no such picture (ADR-0170). */
+  threadMedia?(request: AgentThreadMediaWindowRequest): Promise<AgentThreadMediaResult>
   /** Stages an image once on the host that runs `threadId` (the selected host when null) and answers with its handle (ADR-0031). */
   stageAttachment?(request: AgentAttachmentStageRequest): Promise<AgentAttachmentHandle>
   /** A staged image's bytes, for a chip this window holds no copy of; null once its host no longer keeps it. */

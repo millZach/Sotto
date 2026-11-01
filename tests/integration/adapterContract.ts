@@ -131,7 +131,7 @@ export function describeAdapterContract(name: string, factory: (session?: Adapte
       expect((await thread()).runtimeMode).toBe(before.runtimeMode)
       await expect.poll(async () => (await f.driver.requests()).some(record => permissionDecision(record) === true)).toBe(true)
     })
-    it('observes provider takeover and rejects a reply based on stale user input', async () => {
+    it('observes provider takeover and rejects a reply based on stale user input', withFixtureSkip(skips.takeoverWhileHeld), async () => {
       await send()
       await f.driver.typeInProvider(sessionId, 'Typed in the provider')
       await expect.poll(async () => (await thread()).messages.some(m => m.role === 'user' && m.text === 'Typed in the provider' && m.commandId === undefined)).toBe(true)

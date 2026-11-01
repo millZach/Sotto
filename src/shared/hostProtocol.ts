@@ -1,9 +1,10 @@
 import { agentThreadPromptsSchema } from './threadPrompts'
+import { nextPromptEntriesSchema, nextPromptEntrySchema, type NextPromptEntry } from './nextPrompt'
 import { delegationRelayAskSchema, delegationRelayNewsSchema, delegationRemoteAskSchema, DELEGATION_REMOTE_CALLER_MAX, relayedRepliesSchema, type DelegationRelayAsk } from './delegationRelay'
 import { z } from 'zod'
-import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhonePreviewSchema, watcherPhoneRemoveFollowupSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
+import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhonePreviewSchema, watcherPhoneRemoveFollowupSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, watcherPhoneOpenSchema, watcherPhoneCurrentSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema } from './watcherHost'
-import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_FILE_BYTES, agentMimeTypeSchema, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
+import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_FILE_BYTES, agentMimeTypeSchema, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, agentThreadMediaRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
 import { gitRefsRequestSchema } from './gitRefs'
 import { gitChangedFilesRequestSchema } from './gitChangedFiles'
@@ -255,6 +256,12 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * placed but not started and its load as last read, and may send `watcher-phone-read` with `machines: true`, which reads
  * the machines afresh before answering: when the user opens a machine's numbers or Watcher has placed work, never on a
  * timer.
+ * `watcher-phone-composer`: offered with `watcher-phone-manage` on the Owl desktop's phone listener (Zach, October 31,
+ * 2026). A phone that accepts it, with management, may send `watcher-phone-open` (Watcher's model, effort or speed; another
+ * provider's model starts a new Watcher, as the desktop's chip does), `watcher-phone-new` (New Watcher), `watcher-phone-stop-turn`
+ * (stops Watcher's own turn) and `watcher-phone-dismiss-handover`, each naming the current Watcher and each keeping its
+ * outcome under its request ID as a management change does, and `watcher-phone-send` with `handover: true` while a handover
+ * is offered. Every phone's page carries `current.speed`, `newWatcher`, `handoverOffered` and `replaced`; older phones ignore them.
  * `file-staging`: the host keeps an attached file that is not an image (ADR-0131), sent in parts with `stage-file-part`,
  * since a file in base64 can be larger than a frame. It keeps one upload per client in memory, drops it after two
  * minutes without a part or when the client leaves, checks the size and digest once the last part arrives, then answers
@@ -340,14 +347,20 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * since the last shell push written to that connection, with the state's own `host.threads` empty (#996, ADR-0028's
  * October 30 amendment). Hello, a `shell` read and a command's answer still carry every record; a `shell` read makes the
  * next push list every record. Every listener lists it, to desktops and phones alike.
+ * `thread-media`: the host keeps the pictures its agents made or looked at and answers `thread-media` for a handle an
+ * activity record carries (ADR-0170). Listed only while its `inline-media` Owl feature is on.
+ * `next-prompts`: the host builds its threads' next prompts (ADR-0132, ADR-0173) and pushes them to a desktop whose hello
+ * accepted it, once that desktop says with `next-prompts-wanted` that it wants them: every one held then as `next-prompts`,
+ * and each change after as `next-prompt`. It asks its providers only while a desktop wants them. Listed only while its
+ * `next-prompt` Owl feature is on, and only to desktops.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'thread-move-source', 'thread-move-keep', 'changed-thread-records'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'next-prompts', 'watcher-phone-composer'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
  * (ADR-0053). Its health lists them; a phone's hello does not, and their requests are refused for a phone.
  */
-export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'thread-move-source', 'thread-move-keep']
+export const HOST_DESKTOP_FEATURES: readonly HostFeature[] = ['provider-sign-in', 'client-updates', 'client-update-outcomes', 'client-update-not-listed', 'watcher-control', 'watcher-reads', 'watcher-standing-watch', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'watcher-cursor', 'host-update', 'opencode-sign-in', 'activity-bodies', 'thread-prompts', 'project-origins', 'host-delegation', 'delegation-views', 'branch-moves', 'delegation-relay', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'thread-move-source', 'thread-move-keep', 'next-prompts']
 /**
  * The providers a host sends only to a client whose hello accepts their feature (#1107, ADR-0087). A desktop or phone from
  * before a provider joined Sotto reads provider IDs against a list without it, and refuses a whole shell that names one, so
@@ -391,6 +404,8 @@ export function activitySummary(record: AgentActivity): AgentActivity {
     ...(record.durationMs !== undefined ? { durationMs: record.durationMs } : {}),
     ...(record.startedAt !== undefined ? { startedAt: record.startedAt } : {}),
     ...(record.changes !== undefined ? { changes: record.changes.map(change => ({ path: change.path, kind: change.kind })) } : {}),
+    // A picture's handle is small and says nothing of its content; the bytes are read with `thread-media` (ADR-0170).
+    ...(record.media !== undefined ? { media: record.media } : {}),
   }
 }
 /** A message without the visual Sotto drew for it (ADR-0056): its text, the visual's words, stands in. */
@@ -519,6 +534,10 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('watcher-phone-set-permission'), request: watcherPhoneSetPermissionSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-watch'), request: watcherPhoneWatchSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-unwatch'), request: watcherPhoneWatchSchema }).strict(),
+  z.object({ ...base, op: z.literal('watcher-phone-open'), request: watcherPhoneOpenSchema }).strict(),
+  z.object({ ...base, op: z.literal('watcher-phone-new'), request: watcherPhoneCurrentSchema }).strict(),
+  z.object({ ...base, op: z.literal('watcher-phone-stop-turn'), request: watcherPhoneCurrentSchema }).strict(),
+  z.object({ ...base, op: z.literal('watcher-phone-dismiss-handover'), request: watcherPhoneCurrentSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-send'), request: watcherPhoneSendSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-remove-followup'), request: watcherPhoneRemoveFollowupSchema }).strict(),
   z.object({ ...base, op: z.literal('watcher-phone-preview'), request: watcherPhonePreviewSchema }).strict(),
@@ -537,6 +556,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100), shown: z.literal(false).optional() }).strict(),
   z.object({ ...base, op: z.literal('command'), command: protocolAgentCommandSchema }).strict(),
   z.object({ ...base, op: z.literal('preview'), request: agentAttachmentPreviewRequestSchema }).strict(),
+  /** One picture an activity record names, for a client that accepts `thread-media` (ADR-0170): its bytes as a data URL. */
+  z.object({ ...base, op: z.literal('thread-media'), request: agentThreadMediaRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('receipt'), commandId: id, answer: hostAnswerTargetSchema.optional() }).strict(),
   z.object({ ...base, op: z.literal('check-answer'), answer: hostAnswerTargetSchema }).strict(),
   /** The branches a thread's folder offers, for the picker; read on request, never pushed (ADR-0027). */
@@ -616,6 +637,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('delegation-relay-news'), threadId: id, news: delegationRelayNewsSchema, replies: relayedRepliesSchema.optional() }).strict(),
   /** A delegation on this host for a thread on another machine (`delegation-remote`, #1316 part 2): a `delegate`, read or cancel, answered with its result. */
   z.object({ ...base, op: z.literal('delegation-remote-ask'), ask: delegationRemoteAskSchema }).strict(),
+  /** Whether this desktop wants the host's next prompts now (`next-prompts`): its own switch, told on connecting and on each change. */
+  z.object({ ...base, op: z.literal('next-prompts-wanted'), wanted: z.boolean() }).strict(),
 ])
 export type HostRequest = z.infer<typeof hostRequestSchema>
 export type HostOperation = HostRequest extends infer R ? R extends HostRequest ? Omit<R, 'v' | 'id' | 'session'> : never : never
@@ -654,6 +677,10 @@ export type HostPush = { v: 1; event: 'shell'; state: HostWireShell; eventPage?:
   | { v: 1; event: 'delegation-relay-ask'; askId: string; ask: DelegationRelayAsk }
   /** The host's own check queue, the running check first (#1312); only to a desktop whose hello accepted `check-queue-views`. */
   | { v: 1; event: 'check-queue'; checks: CheckQueueEntry[] }
+  /** Every next prompt the host holds (ADR-0173); only to a desktop that accepted `next-prompts` and wants them, when it says so. */
+  | { v: 1; event: 'next-prompts'; entries: NextPromptEntry[] }
+  /** One thread's next prompt changed, or was let go (`prompt` null); to the same desktops. */
+  | { v: 1; event: 'next-prompt'; entry: NextPromptEntry }
   /** A delegation this host holds for a thread on another machine changed (#1316 part 2); only to the desktop that asked, whose hello accepted `delegation-remote`. */
   | { v: 1; event: 'delegation-remote-news'; caller: string; news: z.infer<typeof delegationRelayNewsSchema>; replies?: z.infer<typeof relayedRepliesSchema> | undefined }
 export interface HostEventPage { events: StoredThreadEvent[]; latestSeq: number; hasMore: boolean }
@@ -745,6 +772,9 @@ export const hostPushSchema = z.discriminatedUnion('event', [
   z.object({ v: z.literal(1), event: z.literal('delegation-relay-ask'), askId: z.uuid(), ask: delegationRelayAskSchema }),
   /** The host's own check queue (`check-queue-views`), only to a desktop whose hello accepted it. */
   z.object({ v: z.literal(1), event: z.literal('check-queue'), checks: checkQueueSchema }),
+  /** The host's next prompts (`next-prompts`), only to a desktop that accepted it and wants them. */
+  z.object({ v: z.literal(1), event: z.literal('next-prompts'), entries: nextPromptEntriesSchema }),
+  z.object({ v: z.literal(1), event: z.literal('next-prompt'), entry: nextPromptEntrySchema }),
   /** News of a delegation this host holds for a thread on another machine (`delegation-remote`), only to the desktop that asked. */
   z.object({ v: z.literal(1), event: z.literal('delegation-remote-news'), caller: z.string().min(1).max(DELEGATION_REMOTE_CALLER_MAX), news: delegationRelayNewsSchema, replies: relayedRepliesSchema.optional() }),
 ])

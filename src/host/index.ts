@@ -156,6 +156,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const policy = memory ? new PolicyStore(memory) : undefined
     // A paired client with an open socket is the host's window in front: while none is connected, no remote is fetched.
     let peersConnected = (): boolean => false
+    /** Whether a desktop on either listener wants next prompts (ADR-0173); none before the listeners start. */
+    let nextPromptsWanted = (): boolean => false
     const pairing = new PairedClients(directory)
     const desktops = new DesktopClients(directory, options.log)
     // Saved capacity limits apply before recovery can resume any queued starts, even before a desktop reconnects.
@@ -181,7 +183,9 @@ async function startHostRuntime(options: HeadlessHostOptions) {
     const keptWhileOff = crossMachineEnabled ? undefined : await heldMoveWorktrees(directory)
     const runtime = await createAgentRuntime({
       keepsWorktree: keptWhileOff ?? ((threadId: string) => heldMoves === undefined || heldMoves !== null && heldMoves.keepsWorktree(threadId)),
-      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, clearThreadsEnabled,
+      observeActiveThread: false, directory, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart, restartStoppedThreads, streamingPublishCost, threadStartsEnabled, pullRequestViewEnabled, agentsViewEnabled, crossMachineEnabled, workerSwarmsEnabled, attachAnyFile, clearThreadsEnabled, inlineMedia: owlFeatures['inline-media'],
+      // Next prompts for this host's threads (ADR-0173), asked for only while a connected desktop wants them.
+      nextPromptEnabled: owlFeatures['next-prompt'], nextPromptsWanted: () => nextPromptsWanted(),
       clearLog: (event, detail) => options.log?.(`${event} ${detail}`), settings: () => startup, writingSettings: () => settings.get(),
       // This host's own threads delegate on this machine (#1310) where its Owl answer turns on Work across machines, held to
       // the desktop defaults the last desktop still paired here with an answers grant sent, read at every start, so a desktop
@@ -307,6 +311,8 @@ async function startHostRuntime(options: HeadlessHostOptions) {
         const { peers } = listener
         // A desktop or phone on the tailnet listener is a window in front as much as one through SSH is.
         peersConnected = () => peers() > 0 || tailnet.peers() > 0
+        const loopback = listener
+        nextPromptsWanted = () => loopback.nextPromptsWanted() || tailnet.nextPromptsWanted()
         describing = true
         await writeDescriptor()
         // Serve comes up seconds after the host does, and may move: the descriptor follows its address.

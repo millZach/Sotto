@@ -13,11 +13,12 @@ import { watcherRoomInputs } from '../agents/watcherRoomInput'
 import { BABYSITTING_RETIRED } from '../agents/babysitting'
 import { visibleWatcherState, watcherThreadVisible, withoutThreads } from '../../shared/watcherVisibility'
 import { parsePublicProviderEntityId, providerIdSchema } from '../../shared/agents'
+import { modelInForce } from '../../shared/modelLineup'
 import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts, WatcherRoomThreadInput } from '../../shared/watcherHost'
 import { BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
 import { randomUUID } from 'node:crypto'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
-import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentHostSnapshot, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentHostSnapshot, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaWindowRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { noteThreadsReplaced, threadsReplacedSince } from '../../shared/threadListPatches'
 import { clientThreadId, hostEntityKey, mapHostReferences, parseHostEntityKey, projectClientAgentState, type ClientAgentStateProjection } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
@@ -36,6 +37,7 @@ import type { SubagentAssignmentsPage, SubagentAssignmentsRequest, SubagentPage,
 import type { ToolListRequest, ToolsResult } from '../../shared/tools'
 import type { HostThreadToolReads } from '../agents/threadToolReads'
 import type { DelegationBrief, DelegationsRead } from '../../shared/delegation'
+import type { NextPromptEntry } from '../../shared/nextPrompt'
 import type { CheckQueueEntry, MachineChecks } from '../../shared/checkQueue'
 import { RemoteDelegationReads } from './remoteDelegations'
 import { HostConnectionError, HostRequestUnanswered, REMOTE_COMPOSE_UNSAVED } from '../agents/socketHostService'
@@ -46,10 +48,12 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   hostId: string
   name: string
   kind: 'local' | 'remote'
-  service: Pick<HostService, 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
+  service: Pick<HostService, 'shell' | 'activeSelection' | 'replyView' | 'threadKind' | 'command' | 'subscribe' | 'requestAnswerRecovery' | 'checkRequestAnswer' | 'supportsAtomicSend' | 'supportsDraftRevisions' | 'supportsUsage' | 'usageRead' | 'usageRefresh' | 'usageClear' | 'supportsWatcherControl' | 'supportsWatcherReads' | 'supportsWatcherStandingWatch' | 'supportsWatcherWorkSettled' | 'supportsWatcherOutcomes' | 'supportsWatcherCheckQueue' | 'supportsWatcherMuse' | 'supportsWatcherCursor' | 'supportsHostFacts' | 'supportsWorkerSwarms' | 'hostFacts' | 'supportsProjectOrigins' | 'projectOrigins' | 'supportsHostDelegation' | 'desktopDefaults' | 'supportsBranchMoves' | 'branchMove' | 'supportsThreadMove' | 'supportsThreadMoveSource' | 'supportsThreadMoveKeep' | 'threadMove' | 'supportsThreadStarts' | 'supportsFailureSeen' | 'startHandover' | 'supportsThreadDelete' | 'supportsBringBack' | 'threadPrompts' | 'watcherControl' | 'subscribeWatcher' | 'cachedWatcherProjection' | 'watcherRead' | 'watcherRoomThreads' | 'supportsDelegationViews' | 'delegationViews' | 'delegationBrief' | 'subscribeDelegationViews' | 'supportsCheckQueueViews' | 'checkQueue' | 'subscribeCheckQueue' | 'supportsNextPrompts' | 'nextPrompts' | 'subscribeNextPrompts' | 'setNextPromptsWanted' | 'supportsDelegationRelay' | 'subscribeDelegationRelay' | 'answerDelegationRelay' | 'delegationRelayNews' | 'delegationRelayName' | 'supportsWatcherCheckStop' | 'supportsWatcherNewOwner' | 'supportsProjectSetup' | 'setUpProject' | 'supportsDelegationRemote' | 'delegationRemoteAsk' | 'subscribeDelegationRemoteNews' | 'supportsDelegationBranchStarts'>
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  /** One picture an activity record names, read whole from the host that keeps it (ADR-0170). */
+  media?(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult>
   /** Stages on this host, the one that runs the thread (ADR-0031). */
   stage?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   content?(digest: string): Promise<AgentAttachmentContent | null>
@@ -334,6 +338,9 @@ export class DesktopHostRouter {
   private readonly connectedListeners = new Set<(connection: DesktopHostConnection) => void>()
   private readonly detailListeners = new Set<(detail: AgentThreadDetailUpdate) => void>()
   private readonly checkListeners = new Set<() => void>()
+  private readonly nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
+  /** What each remote host's suggestions were told to the window as, by window key, so a connection that goes lets them go. */
+  private readonly toldNextPrompts = new Map<string, Map<string, string>>()
   /** The window's reads of each remote host's own threads' delegations, and what Sotto last read there (#1310). */
   private readonly delegations = new RemoteDelegationReads({
     connection: hostId => { const connection = this.hosts.get(hostId)?.connection; return connection?.kind === 'remote' ? connection : undefined },
@@ -397,6 +404,11 @@ export class DesktopHostRouter {
     threadsDeleted?: (threadIds: readonly string[]) => void
     /** This desktop's Owl answer for attaching any file (ADR-0131), read once at start: with it off, no host is asked to keep a file. */
     attachAnyFile?: boolean
+    /**
+     * This desktop's thumbnail maker for pictures in threads (ADR-0170): a data URL in, the picture at tile size out, or
+     * null when it cannot read it. Present only while `inline-media` is on; without it no picture is read.
+     */
+    mediaThumbnail?: (dataUrl: string) => string | null
     /**
      * This desktop's Owl answer for Restart stopped threads (ADR-0144), read once at start: with it, the window offers
      * Babysit pull request on no host's threads, and refuses a press that reaches it anyway.
@@ -603,6 +615,9 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote' && connection.service.subscribeCheckQueue) off.push(connection.service.subscribeCheckQueue(() => {
       if (this.hosts.get(connection.hostId)?.connection === connection) this.checksChanged()
     }))
+    if (connection.kind === 'remote' && connection.service.subscribeNextPrompts) off.push(connection.service.subscribeNextPrompts(entry => {
+      if (this.hosts.get(connection.hostId)?.connection === connection) this.nextPromptChanged(connection.hostId, { ...entry, threadId: hostEntityKey(connection.hostId, entry.threadId) })
+    }))
     if (connection.subscribeDetail) off.push(connection.subscribeDetail(detail => {
       if (!this.watcherAvailable(connection, detail.threadId)) return
       const scoped = this.toWindowRevisions(connection, this.hosts.get(connection.hostId)?.run, mapHostReferences(detail, id => hostEntityKey(connection.hostId, id)))
@@ -621,6 +636,8 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
     // The host pushed its check queue after the hello, before this connection was taken, so the queue it holds is told now.
     if (connection.kind === 'remote' && connection.service.checkQueue?.() !== undefined) this.checksChanged()
+    // So are the next prompts it pushed (ADR-0173).
+    if (connection.kind === 'remote') this.retellNextPrompts(connection)
   }
   /**
    * Hears each host connection as the router takes it, new or in place of one it had (a reconnect), so what a host must
@@ -654,6 +671,8 @@ export class DesktopHostRouter {
     if (connection.kind === 'remote') this.delegations.taken(connection.hostId)
     // In place of the old connection's queue, the one this connection's hello brought, or none.
     if (connection.kind === 'remote') this.checksChanged()
+    // And in place of its next prompts, the ones this connection holds: what only the old one held is let go.
+    if (connection.kind === 'remote') this.retellNextPrompts(connection)
   }
   /** Marks a connected host's threads as reconnecting, or no longer: while it is set they read Reconnecting, not Disconnected. */
   setReconnecting(hostId: string, value: boolean): void {
@@ -677,6 +696,7 @@ export class DesktopHostRouter {
     this.emit()
     this.delegations.removed(hostId)
     this.checksChanged()
+    this.letGoNextPrompts(hostId)
   }
   /**
    * Every connected host's own check queue as it last pushed it (#1312, fourth part), each thread by the window's key for
@@ -702,6 +722,39 @@ export class DesktopHostRouter {
   }
   private checksChanged(): void {
     for (const listener of [...this.checkListeners]) { try { listener() } catch { /* A listener's failure is its own. */ } }
+  }
+  /** The next prompts the connected remote hosts pushed (ADR-0173), by the window's keys for their threads. Read when the window asks. */
+  hostNextPrompts(): NextPromptEntry[] {
+    const entries: NextPromptEntry[] = []
+    for (const [hostId, { connection }] of this.hosts) {
+      if (connection.kind === 'remote') for (const entry of connection.service.nextPrompts?.() ?? []) entries.push({ ...entry, threadId: hostEntityKey(hostId, entry.threadId) })
+    }
+    return entries
+  }
+  /** Hears each next prompt a connected remote host pushes or lets go, by the window's key. Returns the way to stop. */
+  subscribeNextPrompts(listener: (entry: NextPromptEntry) => void): () => void {
+    this.nextPromptListeners.add(listener)
+    return () => { this.nextPromptListeners.delete(listener) }
+  }
+  /** Tells every connected remote host whether this desktop wants next prompts now: the user's switch, as it changes. */
+  setNextPromptsWanted(wanted: boolean): void {
+    for (const { connection } of this.hosts.values()) if (connection.kind === 'remote') connection.service.setNextPromptsWanted?.(wanted)
+  }
+  private nextPromptChanged(hostId: string, entry: NextPromptEntry): void {
+    const told = this.toldNextPrompts.get(hostId) ?? new Map<string, string>()
+    if (entry.prompt === null) told.delete(entry.threadId); else told.set(entry.threadId, entry.afterUserMessageId)
+    if (told.size) this.toldNextPrompts.set(hostId, told); else this.toldNextPrompts.delete(hostId)
+    for (const listener of [...this.nextPromptListeners]) { try { listener(entry) } catch { /* A listener's failure is its own. */ } }
+  }
+  /** Tells the window what a host's connection holds now, and lets go of what an earlier connection told that this one does not. */
+  private retellNextPrompts(connection: DesktopHostConnection): void {
+    const now = new Map((connection.service.nextPrompts?.() ?? []).map(entry => [hostEntityKey(connection.hostId, entry.threadId), entry] as const))
+    for (const [threadId, afterUserMessageId] of this.toldNextPrompts.get(connection.hostId) ?? []) if (!now.has(threadId)) this.nextPromptChanged(connection.hostId, { threadId, afterUserMessageId, prompt: null })
+    for (const [threadId, entry] of now) this.nextPromptChanged(connection.hostId, { ...entry, threadId })
+  }
+  /** A host's connection went: what it suggested is let go, and a new connection pushes what it holds now. */
+  private letGoNextPrompts(hostId: string): void {
+    for (const [threadId, afterUserMessageId] of this.toldNextPrompts.get(hostId) ?? []) this.nextPromptChanged(hostId, { threadId, afterUserMessageId, prompt: null })
   }
   /**
    * Main reports the window's focus as it moves. Each remote host that keeps what is shown hears it with the threads the
@@ -754,6 +807,8 @@ export class DesktopHostRouter {
   }
   /** Every host's shell read afresh and copied, for a caller that must see the state as it is now and may change it. */
   shell(): AgentState { return this.build(connection => connection.service.shell()) }
+  /** Current state for a read-only caller, using the same live views as a command reply. */
+  view(): AgentState { return this.reply() }
   /**
    * A command's answer: every host's state as it is now, the command's own effect included, read in place as a publication
    * is rather than copied (#1760). It may share records with the last publication, and is read, never written into below
@@ -879,7 +934,7 @@ export class DesktopHostRouter {
           // Settings > Providers is this computer's own page, whichever host is selected for new work.
           ...(connection.kind === 'local' ? { enabledProviders: enabledThreadProviders(original.configuration), checkClientUpdates: original.configuration.checkClientUpdates,
             museDisableSandbox: original.configuration.museDisableSandbox, claudeUltracodeEffort: original.configuration.claudeUltracodeEffort,
-            agentModelId: defaultThreadModelId(original.configuration, original.host.models, original.reasoningAccounts) } : {}),
+            agentModelId: modelInForce(original.host.models, defaultThreadModelId(original.configuration, original.host.models, original.reasoningAccounts)) } : {}),
         })),
       },
       threadDrafts: entries.flatMap(item => item.state.threadDrafts ?? []),
@@ -1187,6 +1242,30 @@ export class DesktopHostRouter {
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
     const { connection, id } = this.target(request.threadId)
     return connection.preview({ ...request, threadId: id! })
+  }
+  /** The thumbnails this window asked for most recently, so a tile scrolled back into view is not read again (ADR-0170). */
+  private readonly mediaTiles = new Map<string, string>()
+  /**
+   * One picture a thread's record names (ADR-0170), from the host that runs the thread: whole for the viewer, or at tile
+   * size for a tile. The thumbnail is made here, so the window never decodes a whole picture to draw a tile, and a headless
+   * host needs no image library. The newest 120 are kept; a picture is only ever read when a tile or the viewer asks.
+   */
+  async threadMedia(request: AgentThreadMediaWindowRequest): Promise<AgentThreadMediaResult> {
+    const thumbnail = this.options.mediaThumbnail
+    if (!thumbnail) return null
+    const key = JSON.stringify([request.threadId, request.activityId, request.mediaId])
+    if (request.size === 'tile') {
+      const kept = this.mediaTiles.get(key)
+      if (kept !== undefined) { this.mediaTiles.delete(key); this.mediaTiles.set(key, kept); return { dataUrl: kept } }
+    }
+    const { connection, id } = this.target(request.threadId)
+    const whole = await connection.media?.({ threadId: id!, activityId: request.activityId, mediaId: request.mediaId }) ?? null
+    if (!whole || request.size === 'full') return whole
+    const tile = thumbnail(whole.dataUrl)
+    if (tile === null) return null
+    this.mediaTiles.set(key, tile)
+    if (this.mediaTiles.size > 120) this.mediaTiles.delete(this.mediaTiles.keys().next().value!)
+    return { dataUrl: tile }
   }
   /** An image goes to the host that runs the thread it is for, or the selected host for the coordinator's composer. */
   async stageAttachment(request: AgentAttachmentStageRequest): Promise<AgentAttachmentHandle> {
@@ -1736,7 +1815,7 @@ export class DesktopHostRouter {
     const { newThreadRuntimeMode: _mode, ...configuration } = state.configuration
     void _mode
     const own = local.configuration
-    return { ...state, configuration: { ...configuration, newThreadModelId: defaultNewThreadModelId(own, local.host.models, local.reasoningAccounts),
+    return { ...state, configuration: { ...configuration, newThreadModelId: modelInForce(local.host.models, defaultNewThreadModelId(own, local.host.models, local.reasoningAccounts)),
       newThreadReasoningEffort: own.newThreadReasoningEffort, ...(own.newThreadRuntimeMode !== undefined ? { newThreadRuntimeMode: own.newThreadRuntimeMode } : {}) } }
   }
   /**

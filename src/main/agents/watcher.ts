@@ -2597,10 +2597,11 @@ export class WatcherService implements WatcherControlHooks {
     if (!this.options.workerHost) this.wakes.start()
     this.publish()
   }
-  open(input: WatcherOpenRequest): Promise<WatcherRoomResult> {
+  /** `guard`: a phone's connection check, run again just before anything changes (ADR-0073, October 31, 2026). */
+  open(input: WatcherOpenRequest, guard?: () => void): Promise<WatcherRoomResult> {
     // An open joins an open under way. One during New Watcher would answer with New Watcher's result and drop its choice.
     if (this.opening && this.openingKind === 'new') return Promise.resolve(watcherRefusal('THREAD_BUSY', 'Wait for the new Watcher to start before changing its model.', true))
-    return this.begin('open', () => this.openOne(input))
+    return this.begin('open', () => this.openOne(input, guard))
   }
   /**
    * The one open or New Watcher under way, which a second of the same kind joins. Published once it settles, so the room
@@ -2612,7 +2613,7 @@ export class WatcherService implements WatcherControlHooks {
     this.opening = run().finally(() => { this.opening = undefined; this.openingKind = undefined; this.publish() })
     return this.opening
   }
-  private async openOne(input: WatcherOpenRequest): Promise<WatcherRoomResult> {
+  private async openOne(input: WatcherOpenRequest, guard?: () => void): Promise<WatcherRoomResult> {
     try {
       if (this.options.workerHost) refuse('HOST_FEATURE_UNAVAILABLE', 'Open Watcher on the desktop that coordinates this host.')
       const parsed = watcherOpenRequestSchema.safeParse(input)
@@ -2631,6 +2632,7 @@ export class WatcherService implements WatcherControlHooks {
       if (record.creation) {
         if (record.creation.identity.provider !== input.provider || record.creation.modelId !== input.modelId
           || record.creation.reasoningEffort !== input.reasoningEffort || (record.creation.speed ?? null) !== (input.speed ?? null)) refuse('TARGET_CHANGED', 'Watcher creation is pending with another choice. Reopen that choice before changing it.')
+        guard?.()
         return await this.finishPending(record, input)
       }
       if (!previous || previous.provider !== input.provider) this.creationPermission(model)
@@ -2641,6 +2643,7 @@ export class WatcherService implements WatcherControlHooks {
           && (input.speed === undefined || (thread.speed !== undefined ? thread.speed : thread.fastMode ? 'fast' : null) === input.speed)) return this.get()
         const held = this.changeHeld(record, thread, previous.provider === input.provider ? 'model' : 'provider')
         if (held) refuse('THREAD_BUSY', held, true)
+        guard?.()
         this.changing = true
         if (previous.provider === input.provider) {
           if (thread.modelId !== input.modelId || input.reasoningEffort && thread.reasoningEffort !== input.reasoningEffort
@@ -2654,6 +2657,7 @@ export class WatcherService implements WatcherControlHooks {
         }
         return await this.replace(previous, input, await this.prepareReplacement(thread))
       }
+      guard?.()
       return await this.replace(previous, input)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'Watcher could not be opened. Nothing was sent. Check its provider and reopen Watcher.', true) }
     finally { this.changing = false }
@@ -2664,12 +2668,13 @@ export class WatcherService implements WatcherControlHooks {
    * to Watcher history with its tools revoked, workers, receipts and standing watches carry on, and its handover is
    * offered. Refused, nothing is sent and nothing changes. A creation left pending is finished, as open finishes it.
    */
-  startNew(): Promise<WatcherRoomResult> {
+  /** `guard`: a phone's connection check, run again just before anything changes (ADR-0073, October 31, 2026). */
+  startNew(guard?: () => void): Promise<WatcherRoomResult> {
     // A second press joins the first. During an open it would answer with that open's result and start nothing.
     if (this.opening && this.openingKind === 'open') return Promise.resolve(watcherRefusal('THREAD_BUSY', 'Wait for Watcher to finish changing before starting a new one.', true))
-    return this.begin('new', () => this.startNewOne())
+    return this.begin('new', () => this.startNewOne(guard))
   }
-  private async startNewOne(): Promise<WatcherRoomResult> {
+  private async startNewOne(guard?: () => void): Promise<WatcherRoomResult> {
     try {
       if (this.options.workerHost) refuse('HOST_FEATURE_UNAVAILABLE', 'Open Watcher on the desktop that coordinates this host.')
       if (this.closed) refuse('NOT_CURRENT_WATCHER', this.recoveryNotice ?? 'Watcher is stopping. Reopen Sotto.')
@@ -2677,6 +2682,7 @@ export class WatcherService implements WatcherControlHooks {
       if (record.creation) {
         const { identity, modelId, reasoningEffort, speed } = record.creation
         if (modelId === undefined) refuse('PROVIDER_UNAVAILABLE', 'Watcher creation stopped before its model was saved. Reopen Watcher with the same choice.')
+        guard?.()
         return await this.finishPending(record, { provider: identity.provider, modelId, speed: speed ?? null, ...(reasoningEffort ? { reasoningEffort } : {}) })
       }
       if (!previous) refuse('NOT_CURRENT_WATCHER', 'There is no Watcher yet. Send Watcher your first message to start it.')
@@ -2693,6 +2699,7 @@ export class WatcherService implements WatcherControlHooks {
         refuse('PERMISSION_NOT_COMPARABLE', 'Watcher’s saved permission mode is not the one in force, so nothing was started. Choose its permission mode again, then start a new Watcher.')
       }
       const reasoningEffort = thread.reasoningEffort && model.reasoningEfforts?.includes(thread.reasoningEffort) ? thread.reasoningEffort : undefined
+      guard?.()
       this.changing = true
       const prepared = await this.prepareReplacement(thread)
       return await this.replace(previous, { provider: previous.provider, modelId: model.id, speed: thread.speed !== undefined ? thread.speed : thread.fastMode ? 'fast' : null, ...(reasoningEffort ? { reasoningEffort } : {}) }, prepared)
