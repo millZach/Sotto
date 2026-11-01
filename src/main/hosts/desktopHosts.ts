@@ -1579,7 +1579,7 @@ export class DesktopHosts {
     if (from && this.updates?.busy(host.id)) throw new MoveWaits()
     const connection: DesktopHostConnection = { hostId: hello.hostId, name: host.name, kind: 'remote', service: socket,
       refreshRequestAnswer: (decisionId, target) => socket.refreshRequestAnswer(decisionId, target),
-      detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request), media: request => socket.threadMedia(request),
+      detail: id => socket.windowDetail(id), preview: request => socket.attachmentPreview(request), media: request => socket.threadMedia(request),
       mediaPart: async request => { const part = await socket.threadMediaPart(request); return part && { mimeType: part.mimeType, sizeBytes: part.sizeBytes, bytes: Buffer.from(part.data, 'base64') } }, observe: (ids, shown) => socket.observe(ids, shown),
       activityBody: (threadId, activityId) => socket.activityBody(threadId, activityId),
       stage: image => socket.stageAttachment(image), content: digest => socket.attachmentContent(digest),

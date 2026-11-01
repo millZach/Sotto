@@ -54,15 +54,18 @@ export function draftBroadWork(text: string): boolean {
 
 /**
  * The level a score suggests, as an index into `levels`, or null when it suggests nothing above `value`, the level set
- * ('' on the provider's default). It is measured from the model's own default: one level above it for a draft that
+ * ('' on the provider's default). It is measured from the default (the user's new-thread effort, else the model's own): one level above it for a draft that
  * names hard work, runs to several lines or runs long, and two for one that does three of those. It suggests up only, so
- * it suggests nothing on the provider's default when the model names no default. Ultracode, a way of working rather
+ * a model that names no default is measured from Medium when it offers one, and otherwise from the level set. Ultracode, a way of working rather
  * than more thought, is suggested only for `broad` work (`draftBroadWork`) on a model that offers it, in place of a level.
  */
 export function suggestedEffortIndex(score: number, levels: readonly string[], value: string, defaultLevel: string | undefined, broad = false): number | null {
   if (broad && value !== ULTRACODE && levels.includes(ULTRACODE)) return levels.indexOf(ULTRACODE)
   const steps = score >= 3 ? 2 : score >= 1 ? 1 : 0
-  const base = defaultLevel !== undefined && levels.includes(defaultLevel) ? levels.indexOf(defaultLevel) : -1
+  // Callers pass the user's new-thread effort from Settings, else the model's own. With neither (Claude without that setting),
+  // measure from Medium: measuring from the level set would raise the offer again after every press.
+  const anchor = defaultLevel !== undefined && levels.includes(defaultLevel) ? defaultLevel : 'medium'
+  const base = levels.indexOf(anchor)
   const current = levels.includes(value) ? levels.indexOf(value) : base
   if (steps === 0 || current < 0 && base < 0) return null
   const top = levels.filter(level => level !== ULTRACODE).length - 1

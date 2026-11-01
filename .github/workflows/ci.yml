@@ -207,10 +207,12 @@ jobs:
 
   # Six shards keep the Linux suite near the Windows shards' duration without changing those jobs.
   # This uses the full-suite decision, not the host filter that skips renderer and preload changes.
+  # Pull requests skip them: twelve test shards per run made jobs wait for runners, and a Tests shard on Windows
+  # queued over two minutes in 54 of the last 98 runs (November 1, 2026). Pushes to main and the weekly run keep them.
   linux-tests:
     name: Tests (Linux, ${{ matrix.shard }}/6)
     needs: changes
-    if: needs.changes.outputs.tests == 'full'
+    if: needs.changes.outputs.tests == 'full' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     strategy:
@@ -244,8 +246,9 @@ jobs:
   # Not a required check, by Drake's decision on October 28, 2026: Linux shards flaked often (coordinatorThreadChanges
   # failed 22 times in two days before its fix, and a workspaceThreadChanges 15 s timeout is still open), so requiring
   # it would put every Linux flake in every merge's path. The cost is that a pull request can merge before Linux ends:
-  # #1709 merged two minutes before Tests (Linux, 6/6) went red. Read Linux result before merging when it has ended.
-  # A skipped or failed Changed areas job must not make skipped Linux shards look green.
+  # #1709 merged two minutes before Tests (Linux, 6/6) went red.
+  # Pull requests skip the shards, so Linux breakage shows on the push to main. A skipped or failed Changed areas job
+  # must not make skipped Linux shards look green.
   linux-result:
     name: Linux result
     needs: [changes, linux-tests]
@@ -259,8 +262,10 @@ jobs:
           CHANGES: ${{ needs.changes.result }}
           MODE: ${{ needs.changes.outputs.tests }}
           TESTS: ${{ needs.linux-tests.result }}
+          EVENT: ${{ github.event_name }}
         run: |
           if [ "$CHANGES" != "success" ]; then echo "Changed areas ended $CHANGES, so nobody decided which Linux tests to run."; exit 1; fi
+          if [ "$EVENT" = "pull_request" ] && [ "$TESTS" = "skipped" ]; then echo "Pull request: the Linux shards run on the push to main."; exit 0; fi
           if [ "$MODE" = "docs" ] && [ "$TESTS" = "skipped" ]; then echo "Documents only: the Linux shards were skipped."; exit 0; fi
           if [ "$MODE" != "full" ] || [ "$TESTS" != "success" ]; then echo "Linux tests mode: $MODE. Shards ended $TESTS."; exit 1; fi
           echo "Linux typecheck and all six test shards passed."
