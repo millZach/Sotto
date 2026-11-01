@@ -694,8 +694,9 @@ jobs:
 
   # Publishing starts Deploy site on millZach/Sotto-releases, which can report success and leave saysotto.com on the
   # previous builds (#1894). This waits for that run, checks the page links tonight's Owl for every platform, and if
-  # it does not after the page's ten-minute cache, deploys once more from main and checks again. A page still stale
-  # after that is a warning in the run's summary, never a failed night: the release itself is out.
+  # it does not after the page's ten-minute cache, gives Sotto-releases' main a fresh empty commit, deploys once more
+  # from main and checks again: on November 1 a deploy from a new commit was what took. A page still stale after that
+  # is a warning in the run's summary, never a failed night: the release itself is out.
   site:
     name: Check saysotto.com links the new Owl
     needs: [decide, publish]
@@ -742,8 +743,15 @@ jobs:
           if wait_for_site; then
             echo "saysotto.com links Owl $VERSION." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
           fi
-          echo "saysotto.com still links an earlier Owl. Deploying the site once more from main (#1894)."
+          echo "saysotto.com still links an earlier Owl. Deploying the site once more from a fresh commit on main (#1894)."
           dispatched_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          # An empty commit: main's own tree with main as its parent, moved onto main without forcing.
+          head="$(gh api "repos/$RELEASES/git/ref/heads/main" --jq .object.sha)"
+          tree="$(gh api "repos/$RELEASES/git/commits/$head" --jq .tree.sha)"
+          fresh="$(gh api "repos/$RELEASES/git/commits" -f message="Give the site deploy a fresh source commit for Sotto Owl $VERSION (#1894)" \
+            -f tree="$tree" -f "parents[]=$head" --jq .sha)"
+          gh api -X PATCH "repos/$RELEASES/git/refs/heads/main" -f sha="$fresh" -F force=false > /dev/null \
+            || echo "Could not move main onto a fresh commit; deploying from main as it is."
           gh workflow run deploy-site.yml --repo "$RELEASES" --ref main
           follow_deploy workflow_dispatch "$dispatched_at" || true
           if wait_for_site; then

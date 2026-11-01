@@ -113,6 +113,9 @@ describe('Sotto Owl nightly workflow (ADR-0072, November 1, 2026)', () => {
     for (const key of ['windows-owl', 'mac-owl', 'linux-owl', 'linux-owl-tar']) expect(site).toContain(key)
     expect(site.match(/gh workflow run deploy-site\.yml/gu)).toHaveLength(1)
     expect(site).toContain('--ref main')
+    // The second deploy starts from a fresh, empty commit on the release repository's main, moved on without force.
+    expect(site).toContain('-F force=false')
+    expect(site.indexOf('git/refs/heads/main')).toBeLessThan(site.indexOf('gh workflow run deploy-site.yml'))
     // A stale page is reported, never a failed night: the release is already out.
     expect(site).toContain('::warning title=saysotto.com is stale::')
     expect(site).not.toMatch(/exit 1\s*$/u)
