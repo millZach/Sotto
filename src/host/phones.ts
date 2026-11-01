@@ -48,6 +48,8 @@ export interface HostPhoneAccess {
   summary(): HostPhoneAccessSummary
   /** How many paired clients hold an open socket on the tailnet listener. */
   peers(): number
+  /** Whether a desktop on the tailnet listener wants the host's next prompts now (ADR-0173). */
+  nextPromptsWanted(): boolean
   /** Told the tailnet address whenever phone access or the listener changed, so the host can record a new one. */
   subscribe(listener: (address: string | undefined) => void): () => void
   /** Told after a client was revoked on either listener: a desktop leaves the record, and the last one turns `tailnetConnections` off. */
@@ -145,6 +147,7 @@ export function startHostPhoneAccess(options: HostPhoneAccessOptions): HostPhone
     address: () => tailnetAddress(access.brief()),
     summary: () => phoneAccessSummary(access.brief()),
     peers: () => access.peers(),
+    nextPromptsWanted: () => access.nextPromptsWanted(),
     subscribe: listener => access.watch(brief => listener(tailnetAddress(brief))),
     revoked,
     isPhone: clientId => access.isPhone(clientId),

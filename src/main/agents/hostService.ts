@@ -23,6 +23,7 @@ import type { HostThreadToolReads } from './threadToolReads'
 import type { HostAnswerTarget, HostAttachmentFile, HostAttachmentFileRequest, HostErrorCode } from '../../shared/hostProtocol'
 import { mayGrantLocally, REMOTE_PERMISSION_DENIED } from './authority'
 import type { HostMachineReport } from '../../shared/hostFacts'
+import type { NextPromptEntry } from '../../shared/nextPrompt'
 import type { ProjectOrigins, ProjectSetupRequest, ProjectSetupResult } from '../../shared/workerMachine'
 import type { HostBranchMoveRequest } from '../../shared/branchMoves'
 import type { HostThreadMoveRequest } from '../../shared/threadMoves'
@@ -172,6 +173,15 @@ export interface HostService {
   readonly supportsCheckQueueViews?: boolean
   checkQueue?(): readonly CheckQueueEntry[] | undefined
   subscribeCheckQueue?(listener: () => void): () => void
+  /**
+   * The next prompts the host holds for its threads (`next-prompts`, ADR-0132, ADR-0173), by its own thread IDs, and each
+   * change, a let-go one with `prompt` null. On a desktop's connection to a host, what the host last pushed, and
+   * `setNextPromptsWanted` tells the host whether this desktop wants them now.
+   */
+  readonly supportsNextPrompts?: boolean
+  nextPrompts?(): readonly NextPromptEntry[]
+  subscribeNextPrompts?(listener: (entry: NextPromptEntry) => void): () => void
+  setNextPromptsWanted?(wanted: boolean): void
   /**
    * The host's threads delegate to other machines through this desktop (`delegation-relay`, #1316), on a desktop's
    * connection to a host whose hello it accepted: `subscribeDelegationRelay` hears each ask the host pushes,
@@ -432,6 +442,8 @@ export class LocalHostService implements HostService {
     delegationViews?: DelegationViews
     /** The host's own check queue (#1312), present only where a headless host keeps one: what its desktops' windows show of it. */
     checks?: CheckQueue
+    /** The next prompts this host builds for its threads (ADR-0173), present only while its `next-prompt` Owl answer is on. */
+    nextPrompts?: { list(): readonly NextPromptEntry[]; subscribe(listener: (entry: NextPromptEntry) => void): () => void }
     /** Bringing changes back (#1030), true only when the host's Owl answer turns it on and it runs Git. */
     bringBack?: boolean }) {
     this.control = options.control
@@ -477,6 +489,9 @@ export class LocalHostService implements HostService {
   /** The queue's own view, taken only after it changed, so a read copies nothing. */
   checkQueue(): readonly CheckQueueEntry[] | undefined { return this.options.checks?.view() }
   subscribeCheckQueue(listener: () => void): () => void { return this.options.checks?.subscribe(listener) ?? (() => undefined) }
+  get supportsNextPrompts(): boolean { return this.options.nextPrompts !== undefined }
+  nextPrompts(): readonly NextPromptEntry[] { return this.options.nextPrompts?.list() ?? [] }
+  subscribeNextPrompts(listener: (entry: NextPromptEntry) => void): () => void { return this.options.nextPrompts?.subscribe(listener) ?? (() => undefined) }
   /** Read from the projects as the host last published them, without copying them. */
   projectOrigins(): Promise<ProjectOrigins> {
     if (!this.options.projectOrigins) return Promise.reject(new Error('This host does not report the repositories of its projects.'))

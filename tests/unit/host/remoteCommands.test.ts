@@ -179,7 +179,10 @@ describe('remote command allow-list', () => {
       'delegation-remote-ask',
       // A confirmation receipt for the merge, close or auto-merge the client sends next (#1691): evidence of a second step,
       // never a grant, given only for a pull request the host read for that client.
-      'pull-request-confirmation']
+      'pull-request-confirmation',
+      // Whether a desktop that accepted next-prompts wants them now (ADR-0173): the user's switch, which only decides whether
+      // the host asks its providers for suggestions. It answers nothing and grants nothing.
+      'next-prompts-wanted']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })
