@@ -14,7 +14,7 @@ export interface AdapterSessionOptions { reaperSweepMs?: number; sessionIdleMs?:
  */
 export type AdapterContractSkips = Readonly<Partial<Record<'uncertain' | 'restart' | 'lazy' | 'sendStages'
   | 'activitySnapshots' | 'refreshThread' | 'threadEvents' | 'backgroundWork' | 'liveSettings'
-  | 'settingsConfirmation' | 'clientUpdate' | 'sendAnswerRunning' | 'attachedFiles' | 'questions', string>>>
+  | 'settingsConfirmation' | 'clientUpdate' | 'sendAnswerRunning' | 'attachedFiles' | 'questions' | 'takeoverWhileHeld', string>>>
 
 export interface AdapterFixture {
   host: AgentHost; projectId: string; modelId: string; root: string

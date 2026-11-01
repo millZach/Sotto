@@ -732,8 +732,12 @@ export class DevinAcpHost implements AgentHost {
       if (this.loading.has(id)) return false
       const active = this.active.get(id)
       const busy = active !== undefined || this.thread(id).requests.length > 0
-      // Every thread polled here is held by its own process, whose stream carries its turn once Devin has shown it
-      // took the prompt. Until then only a replay can confirm it, so that is the one wait read at the busy pace.
+      // Every thread polled here is held by its own process. While it holds the session Devin refuses it to every other
+      // client (-32015), so nothing changes the thread unseen and its stream carries every turn once Devin has shown it
+      // took the prompt. A replay then adds only the confirmation of a dispatch nothing has confirmed yet, so only a thread
+      // with one is read (#992); each read started a `devin acp` of its own and replayed the whole conversation, every
+      // 15 s for every idle thread on screen.
+      if (this.aliases[id]?.origins.some(origin => !origin.confirmed) !== true) return false
       const interval = devinReadInterval(active !== undefined && !promptTaken(active), this.options.pollIntervalMs)
       return (this.observed.has(id) || busy) && now - (this.lastReadAt.get(id) ?? 0) >= interval
     })
