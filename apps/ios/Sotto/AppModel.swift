@@ -1147,7 +1147,10 @@ struct HeldDetail {
     /// The computer being removed, while its pairing is revoked.
     @Published private(set) var removing: String?
     /// What just happened on the tabs. A problem stays until the user dismisses it; a confirmation passes (`confirm`).
-    @Published var feedback: String? { didSet { feedbackOperations = []; passing = nil; feedbackExpiry?.cancel() } }
+    @Published var feedback: String? { didSet { feedbackOperations = []; passing = nil; feedbackExpiry?.cancel(); shelfUndo = nil } }
+    /// The Settle or Restore the computer just confirmed, offered back as Undo beside its words until they go (#1859).
+    @Published private(set) var shelfUndo: ShelfUndo?
+    struct ShelfUndo: Equatable { let ref: ThreadRef; let action: ShelfAction }
     /// Set while `feedback` only says a thing worked, so it leaves by itself and with the page; new for each confirmation.
     @Published private(set) var passing: UUID?
     private var passingShown: UUID?
@@ -2121,6 +2124,13 @@ struct HeldDetail {
         return ThreadGroups.isSettled(thread, project: project) ? nil : .settle
     }
     enum ShelfAction { case settle, restore }
+    /// Undo beside a confirmed Settle or Restore: the other one, as a press of its own. Settling is reversible, so it acts
+    /// at once and offers this rather than asking first.
+    func undoShelf() async {
+        guard let undo = shelfUndo else { return }
+        feedback = nil
+        await shelve(undo.ref, undo.action)
+    }
     func canAnswer(_ request: AgentRequest, in ref: ThreadRef) -> Bool {
         guard canAct(on: ref), mayAnswer(ref.hostID), request.supported else { return false }
         let allowed = capabilities(for: ref)
@@ -3368,6 +3378,7 @@ struct HeldDetail {
             if feedback == nil || feedbackOperations.contains(item.id) {
                 feedback = item.kind == "settle" ? String(localized: "Moved to Settled.", comment: "Said once the computer confirms the user settled a thread")
                     : String(localized: "Restored.", comment: "Said once the computer confirms the user took a thread off the Settled shelf")
+                shelfUndo = ShelfUndo(ref: ThreadRef(hostID: item.hostID, threadID: item.threadID), action: item.kind == "settle" ? .restore : .settle)
             }
             return
         }

@@ -742,6 +742,20 @@ struct CardPermissionButtons: View {
 
 // MARK: - Working now
 
+/// Settle or Restore in a row's long-press menu, as in a thread's •••. It acts at once, and the banner that confirms it
+/// offers Undo (#1859).
+@MainActor @ViewBuilder private func shelfMenuButton(_ model: AppModel, _ ref: ThreadRef) -> some View {
+    if let action = model.shelfAction(ref) {
+        Button { Task { await model.shelve(ref, action) } } label: {
+            Label(action == .settle ? String(localized: "Settle", comment: "Settle the thread: put it away on the Settled shelf.")
+                  : String(localized: "Restore", comment: "Restore a settled thread to open work."),
+                  systemImage: action == .settle ? "archivebox" : "tray.and.arrow.up")
+        }
+        .disabled(model.actionHeld(ref) != nil)
+        .accessibilityIdentifier(action == .settle ? "row-settle" : "row-restore")
+    }
+}
+
 /// A thread at work: a breathing accent halo, how long it has been at it, and what it is doing.
 private struct WorkingCard: View {
     @EnvironmentObject var model: AppModel
@@ -751,12 +765,15 @@ private struct WorkingCard: View {
     private var state: ThreadState { ThreadState(row.thread) }
     var body: some View {
         Group {
-            if model.canChangeWatch(row.ref) {
+            if model.canChangeWatch(row.ref) || model.shelfAction(row.ref) != nil {
                 link.contextMenu {
-                    let watched = model.watchedByWatcher(row.ref)
-                    Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
-                        Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                    if model.canChangeWatch(row.ref) {
+                        let watched = model.watchedByWatcher(row.ref)
+                        Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
+                            Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                        }
                     }
+                    shelfMenuButton(model, row.ref)
                 }
             } else {
                 link
@@ -861,11 +878,14 @@ private struct ThreadRow: View {
     private var failed: Bool { row.failed }
     var body: some View {
         Group {
-            if model.canChangeWatch(row.ref) {
+            if model.canChangeWatch(row.ref) || model.shelfAction(row.ref) != nil {
                 link.contextMenu {
-                    Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
-                        Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                    if model.canChangeWatch(row.ref) {
+                        Button { Task { await model.setWatched(row.ref, !watched, title: row.thread.title) } } label: {
+                            Label(watched ? String(localized: "Stop watching", comment: "Context menu: Watcher stops watching this thread") : String(localized: "Watch", comment: "Context menu: Watcher keeps this thread going"), systemImage: watched ? "eye.slash" : "eye")
+                        }
                     }
+                    shelfMenuButton(model, row.ref)
                 }
             } else {
                 link

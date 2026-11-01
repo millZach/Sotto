@@ -513,6 +513,16 @@ import UIKit
         capture("thread-long-open")
     }
 
+    /// A row's long press offers Settle, as a thread's ••• does; it acts at once, and its confirmation offers Undo (#1859).
+    func testARowsLongPressOffersSettle() {
+        launch(Self.fixture)
+        let recent = row("shortcuts")
+        reveal(recent)
+        recent.press(forDuration: 1.0)
+        XCTAssertTrue(app.buttons["Settle"].waitForExistence(timeout: 5), "A Recent row's long press offers Settle")
+        capture("row-menu-settle")
+    }
+
     /// A paste into the reply box attaches a copied file as a pill, as if chosen in Files, and copied words still paste as words.
     func testPastingACopiedFileAttachesItAndWordsStayWords() {
         launch(Self.fixture + ["--ui-files"])
