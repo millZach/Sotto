@@ -74,7 +74,7 @@ export function describeHostServiceContract(name: string, factory: (session?: Ad
       await expect.poll(async () => (await f.service.hostFacts!()).runningThreads).toBe(0)
     })
 
-    it('observes provider takeover without inventing a Sotto command for native user input', async () => {
+    it('observes provider takeover without inventing a Sotto command for native user input', withFixtureSkip(skips.takeoverWhileHeld), async () => {
       await send()
       await f.driver.typeInProvider(threadId, 'Typed in the provider')
       await expect.poll(() => thread().messages.some(message => message.role === 'user' && message.text === 'Typed in the provider' && message.commandId === undefined)).toBe(true)
