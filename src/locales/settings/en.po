@@ -1748,15 +1748,6 @@ msgstr "Compact Watcher at"
 msgid "Compaction"
 msgstr "Compaction"
 
-#: src/renderer/src/features/settings/settingsPages.ts
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "Composer"
-msgstr "Composer"
-
-#: src/renderer/src/features/settings/AppearanceSettings.tsx
-msgid "Composer saved."
-msgstr "Composer saved."
-
 #. Connects a provider on a host.
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Connect"
@@ -2199,11 +2190,6 @@ msgstr "Drafted pull requests follow the repository's template when Sotto finds 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Drafted pull requests use Sotto's own sections."
 msgstr "Drafted pull requests use Sotto's own sections."
-
-#. A style of the thread composer, named for the person who made it
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "Drake’s composer"
-msgstr "Drake’s composer"
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
 msgid "Drop T3 Code or VS Code .json files"
@@ -2699,10 +2685,6 @@ msgstr "How Sotto connects"
 msgid "How Sotto connects to {name} could not be changed. Nothing was changed. Try again."
 msgstr "How Sotto connects to {name} could not be changed. Nothing was changed. Try again."
 
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "How the box you write to threads and Watcher in is laid out."
-msgstr "How the box you write to threads and Watcher in is laid out."
-
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "How this computer appears on phones. Leave it empty to use {defaultName}."
 msgstr "How this computer appears on phones. Leave it empty to use {defaultName}."
@@ -2772,7 +2754,6 @@ msgstr "In the focused thread’s project, or the chooser when none is focused."
 msgid "In the thread <0>{workingThread}</0> on this computer."
 msgstr "In the thread <0>{workingThread}</0> on this computer."
 
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
 #: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "In use"
@@ -3632,10 +3613,6 @@ msgstr "On your iPhone, tap <0>Add computer</0>, enter <1>{machine}</1>, then th
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "One client updates at a time. Your threads keep working, and move to the new version when they are idle."
 msgstr "One client updates at a time. Your threads keep working, and move to the new version when they are idle."
-
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "One pill: the shield, the prompt and a chip of the model and effort on one line."
-msgstr "One pill: the shield, the prompt and a chip of the model and effort on one line."
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
 msgid "One restart, now"
@@ -5815,10 +5792,6 @@ msgstr "The owl's eyes in the dark side of a crescent moon, in your menu bar. Ow
 msgid "The pasted text was cut to fit the 4,000-character limit."
 msgstr "The pasted text was cut to fit the 4,000-character limit."
 
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "The prompt on its own row, with the model, effort and permissions in words under it."
-msgstr "The prompt on its own row, with the model, effort and permissions in words under it."
-
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "The provider"
 msgstr "The provider"
@@ -6477,14 +6450,6 @@ msgstr "Use {label} as the owl's eye color"
 msgid "Use {label} as the owl's eye color, currently active"
 msgstr "Use {label} as the owl's eye color, currently active"
 
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "Use {name}"
-msgstr "Use {name}"
-
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "Use {name}, in use"
-msgstr "Use {name}, in use"
-
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Use advanced theme colors"
 msgstr "Use advanced theme colors"
@@ -6991,11 +6956,6 @@ msgstr "Your themes ({count})"
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "Your threads on {host} keep working."
 msgstr "Your threads on {host} keep working."
-
-#. A style of the thread composer, named for the person who chose it
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "Zach’s composer"
-msgstr "Zach’s composer"
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Zoom pane"

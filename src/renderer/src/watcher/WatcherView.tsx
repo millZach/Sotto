@@ -208,8 +208,6 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
       {error ? <p className="agent-error watcher-first__error tt-paragraph" role="alert">{error}</p> : null}
       <form className="thread-prompt" data-quiet={quiet || undefined} onSubmit={event => { event.preventDefault(); void start() }}>
         <EffortTrace />
-        {/* The quiet pill draws the shield at its start, before the prompt (ADR-0161). */}
-        {quiet ? <div className="thread-prompt__lead">{permissions}</div> : null}
         <div className="screenshot-input"><div>
         <PromptEditor fieldRef={field} id={WATCHER_PROMPT_ID} text={text} skills={[]} sigils={[]} label={t`Watcher message`} editable={!starting}
           placeholder={t`Say what to start or check.`}
@@ -223,6 +221,8 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
         <label className="tt-visually-hidden" htmlFor={WATCHER_PROMPT_ID} onClick={() => field.current?.focus()}>{t`Watcher message`}</label>
         <div className="thread-prompt__footer">
           <div className="thread-prompt__meta">
+            {/* Zach's composer draws the permissions first at the footer's end, before the model (ADR-0168). */}
+            {quiet ? <div className="thread-prompt__shield">{permissions}</div> : null}
             <div className="thread-options-bar" data-permission={quiet ? room.state?.runtimeMode ?? 'approval-required' : undefined}>
               <div className="thread-options thread-options--chips" role="group" aria-label={t`Watcher’s model`}>
                 <ModelPicker models={models} modelId={model.id} disabled={starting} onChange={id => {
@@ -233,7 +233,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
                 }} />
                 {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={provider ?? undefined} value={speedValue} disabled={starting} pending={false} onChange={changeSpeed} />}
                 {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={starting}
-                  suggestion={starting ? null : suggestedEffortIndex(draftEffortScore(text), levels.length, levels.indexOf(reasoning))}
+                  suggestion={suggestedEffortIndex(draftEffortScore(text), levels, reasoning, model.defaultReasoningEffort)}
                   speed={speeds.length === 0 ? undefined : { value: speedValue, name: speedName(speedValue, speeds),
                     options: speedOptions(speeds, provider ?? undefined), onChange: changeSpeed,
                     onStep: direction => changeSpeed(nextSpeed(speeds, speedValue, direction)) }}

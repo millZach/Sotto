@@ -194,7 +194,7 @@ Watcher's thread tools can start, read, brief, queue, steer, stop and settle wor
 
 Watcher receives batched news when its watched threads finish, need your answer, fail or go quiet, and when their pull requests change. Quiet includes a finished parent whose sub-agents are still confirmed working: twenty connected minutes without observed progress produces news. A turn that finished with background work still running is done only when Watcher hears that work has ended. A thread's working-copy changes come with the news that its turn finished, or that its work ended. News uses the existing queue after your prompts, grants no permission and is never shown as a message or used for a thread name or preview; you read Watcher's reply. Pull request, checkpoint, working-copy and failure facts name their source; worker replies remain separate. Watcher adds no GitHub poll.
 
-The composer comes in two styles: **Zach's composer**, the default, with your prompt on its own row and the model, effort and permissions in words under it, and **Drake's composer**, one quiet pill. Choose under **Composer** in Settings → Appearance.
+The composer puts your prompt on its own row, with the permissions, model and effort in words under it. When a prompt looks like hard work, the effort word offers a higher level, such as "Medium → High"; press it to use that level.
 
 Watcher's room has a night scene drawn in text characters beside the conversation, with an owl for each thread it watches. Settings → Appearance → **Watcher scene** sets it in the Night wood, a Harbour, a Snowfield or the Desert; its colours come from your theme.
 
