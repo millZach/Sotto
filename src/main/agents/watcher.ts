@@ -30,6 +30,7 @@ import { WATCHER_PARTICIPATION_HISTORY_MAX, WATCHER_PROMPTS_PER_THREAD, WATCHER_
   MACHINE_FACTS_OLDER, MACHINE_FACTS_UNREAD, MACHINE_NOT_CONNECTED, type WatcherEvidence, type WatcherMergeQueueItem, type WatcherPullRequestSummary, type WatcherStaleNote, type WatcherStateThread,
   type WatcherWaitingOnUser } from '../../shared/watcher'
 import { MACHINE_START_SETTLES_MS, machineHeadroom, machineLoadStates, placedNotStartedWith, type HostMachineReport } from '../../shared/hostFacts'
+import type { WatcherNextTurnOptions } from '../../shared/watcherRoom'
 import { takesPartInActiveRequest, watcherContinueHandoverRequestSchema, watcherOpenRequestSchema, watcherSetPermissionRequestSchema, watcherWatchThreadRequestSchema, WATCHER_STOP_ALL_PREVIEW_LIMIT, type WatcherOpenRequest, type WatcherRoomResult, type WatcherRoomState,
   
   type WatcherContinueHandoverRequest, type WatcherHandoverRead, type WatcherSetPermissionRequest, type WatcherWatchThreadRequest,
@@ -330,6 +331,19 @@ const LATE: unique symbol = Symbol('late')
  */
 const requestTimedOut = (error: unknown): boolean => error instanceof Error && (error as { readonly timedOut?: unknown }).timedOut === true
 function refuse(code: WatcherRefusal['code'], message: string, retryable = false): never { throw new Refusal({ ...watcherRefusal(code, message, retryable), ...(code === 'CURSOR_EXPIRED' ? { restartCursor: 'restart' } : {}) }) }
+/**
+ * What the room says when the choice kept for Watcher's next turn was refused or its result is unknown: either way the
+ * chips now show what Watcher's thread reports.
+ */
+const NEXT_TURN_REFUSED = 'Sotto could not confirm Watcher’s change of model, effort or speed. Its chips show what it runs on now. If that is not your choice, choose again.'
+/**
+ * Whether Watcher's thread already runs on a choice: its model, and the effort and speed where the choice names them. A
+ * null effort is the model's default, which any effort the thread reports counts as, as an open naming none does.
+ */
+function optionsInForce(thread: Pick<AgentThread, 'modelId' | 'reasoningEffort' | 'speed' | 'fastMode'>, options: WatcherNextTurnOptions): boolean {
+  return thread.modelId === options.modelId && (options.reasoningEffort === null || thread.reasoningEffort === options.reasoningEffort)
+    && (options.speed === undefined || (thread.speed !== undefined ? thread.speed : thread.fastMode ? 'fast' : null) === options.speed)
+}
 
 /** One main-owned admission transaction; provider work always runs after this lane is released. */
 /** A message the user queued, now steered in, leaves whichever request it joined when it was queued, other than `keep`. */
@@ -477,6 +491,15 @@ export class WatcherService implements WatcherControlHooks {
   private compactTried: number | undefined
   private compactingNow = false
   private changing = false
+  /**
+   * Watcher's model, effort or speed chosen while it worked, on its own provider, for the thread it was chosen for: taken
+   * the moment Watcher rests, before anything else goes to it, so its next turn starts on it (November 1, 2026). Watcher is
+   * busy nearly all the time, since news starts a turn every minute or two, so a change that had to find it resting
+   * nearly never went. Kept in memory: a restart drops it, and the chips show what Watcher runs on again.
+   */
+  private nextTurn: { readonly threadId: string; readonly options: WatcherNextTurnOptions; readonly sent?: true } | null = null
+  /** The kept choice on its way to Watcher's provider, while it is; Watcher's queue waits for it, and a chip's press joins it. */
+  private applyingNextTurn: WatcherNextTurnOptions | null = null
   private readonly dispatchRefusals = new Map<string, Refusal>()
   private readonly nativeHeads = new Map<string, string | null>()
   /** Every host's threads as Watcher reads them, looked up rather than walked (#925 step 5). */
@@ -721,7 +744,7 @@ export class WatcherService implements WatcherControlHooks {
     // ID, as while Sotto starts, none of its threads can be named, and the publish that brings the ID runs every step here.
     const unhook = options.control.useWatcher(this), unsubscribe = options.control.subscribe(() => {
       if (!options.control.hostId()) return
-      this.releaseWorkerStarts(); this.endFinishedPauses(); this.closeAnsweredRequests(); this.compactWhenDue(); this.publish()
+      this.releaseWorkerStarts(); this.endFinishedPauses(); this.closeAnsweredRequests(); this.applyNextTurn(); this.compactWhenDue(); this.publish()
     })
     this.unsubscribe = () => { unhook(); unsubscribe() }
   }
@@ -737,12 +760,12 @@ export class WatcherService implements WatcherControlHooks {
     const seen = this.lookAtState()
     if (!seen) return
     const { snapshot, thread, tokens } = seen
-    if (tokens === null || tokens <= this.compactAt() || this.compactingNow || this.changing || !this.canCompact(snapshot, thread)) return
+    if (tokens === null || tokens <= this.compactAt() || this.compactingNow || this.changing || this.nextTurn || !this.canCompact(snapshot, thread)) return
     if (thread.status === 'running' || thread.requests.length || compactionPending(thread.compaction) || thread.nativeSessionStarted === false
       || this.options.control.watcherWakeUpQueued() || this.options.control.hasPendingThreadWork(thread.id)) return
     if (this.compactTried === this.sendsToWatcher) return
     this.compactTried = this.sendsToWatcher; this.compactingNow = true
-    void this.options.control.command({ type: 'compact-thread', threadId: thread.id }).catch(() => undefined).finally(() => { this.compactingNow = false })
+    void this.options.control.command({ type: 'compact-thread', threadId: thread.id }).catch(() => undefined).finally(() => { this.compactingNow = false; this.applyNextTurn() })
   }
   /**
    * Brings stateOwed up to date with Watcher's thread as it is now, so a send or a wake-up before the next snapshot tick
@@ -781,7 +804,7 @@ export class WatcherService implements WatcherControlHooks {
    */
   restsForIdleCompaction(threadId: string): boolean {
     return !this.closed && this.view().current?.target.threadId === threadId && !this.compactingNow && !this.changing
-      && !this.options.control.watcherWakeUpQueued()
+      && !this.nextTurn && !this.options.control.watcherWakeUpQueued()
   }
   /** Watcher's context in tokens as its provider last reported it for its current model, or null. */
   private contextTokens(thread: AgentThread): number | null {
@@ -1847,6 +1870,7 @@ export class WatcherService implements WatcherControlHooks {
     room.state = { watching: watched.watching, waitingOnUser: watched.waiting, kept: this.kept.read(),
       ...this.kept.readable() ? {} : { unread: true as const } }
     if (current && !live.creation) room.newWatcher = this.newWatcherAnswer(live, current)
+    if (current && this.nextTurn?.threadId === current.id) room.nextTurnOptions = this.nextTurn.options
     const carried = this.currentCarried() && this.carried!.room
     if (carried) room.carried = carried
     return room
@@ -2611,7 +2635,7 @@ export class WatcherService implements WatcherControlHooks {
   private begin(kind: 'open' | 'new', run: () => Promise<WatcherRoomResult>): Promise<WatcherRoomResult> {
     if (this.opening) return this.opening
     this.openingKind = kind
-    this.opening = run().finally(() => { this.opening = undefined; this.openingKind = undefined; this.publish() })
+    this.opening = run().finally(() => { this.opening = undefined; this.openingKind = undefined; this.applyNextTurn(); this.publish() })
     return this.opening
   }
   private async openOne(input: WatcherOpenRequest, guard?: () => void): Promise<WatcherRoomResult> {
@@ -2639,9 +2663,14 @@ export class WatcherService implements WatcherControlHooks {
       if (!previous || previous.provider !== input.provider) this.creationPermission(model)
       if (previous) {
         const thread = this.currentThread(previous)
-        if (previous.provider === input.provider && thread.modelId === input.modelId
-          && (!input.reasoningEffort || thread.reasoningEffort === input.reasoningEffort)
-          && (input.speed === undefined || (thread.speed !== undefined ? thread.speed : thread.fastMode ? 'fast' : null) === input.speed)) return this.get()
+        const wanted: WatcherNextTurnOptions = { modelId: input.modelId, reasoningEffort: input.reasoningEffort ?? null, ...input.speed !== undefined ? { speed: input.speed } : {} }
+        // On Watcher's own provider, a change while Watcher works waits for its next turn instead of being refused, and so
+        // does one made while an earlier kept choice waits, so the two go in order (November 1, 2026).
+        if (previous.provider === input.provider && (optionsInForce(thread, wanted) || this.nextTurn || this.applyingNextTurn || this.changeHeld(record, thread, 'model'))) {
+          guard?.()
+          this.chooseForNextTurn(thread, wanted)
+          return this.get()
+        }
         const held = this.changeHeld(record, thread, previous.provider === input.provider ? 'model' : 'provider')
         if (held) refuse('THREAD_BUSY', held, true)
         guard?.()
@@ -2706,6 +2735,91 @@ export class WatcherService implements WatcherControlHooks {
       return await this.replace(previous, { provider: previous.provider, modelId: model.id, speed: thread.speed !== undefined ? thread.speed : thread.fastMode ? 'fast' : null, ...(reasoningEffort ? { reasoningEffort } : {}) }, prepared)
     } catch (error) { return error instanceof Refusal ? error.result : watcherRefusal('PROVIDER_UNAVAILABLE', 'Sotto could not start a new Watcher. Nothing was sent. Check its provider and try again.', true) }
     finally { this.changing = false }
+  }
+  /**
+   * A desktop chip's change to Watcher's model, effort or speed (`configure-thread` on Watcher's thread), kept for Watcher's
+   * next turn while Watcher works or an earlier kept choice waits. A press names one setting, so it is merged with what
+   * already waits: a new model takes its own default effort, and a speed stays chosen until another. `validate` checks the
+   * merged choice before it is kept, and throws its refusal. False when the change may go now, as for any thread.
+   */
+  keepForNextTurnFromChip(command: { readonly threadId: string; readonly modelId?: string | undefined; readonly reasoningEffort?: string | undefined
+    readonly speed?: AgentSpeed | null | undefined; readonly fastMode?: boolean | undefined }, validate: (wanted: WatcherNextTurnOptions) => void): boolean {
+    if (this.closed || this.options.workerHost || this.view().current?.target.threadId !== command.threadId) return false
+    const thread = this.localThread(command.threadId)
+    if (!thread || thread.kind !== 'watcher') return false
+    const waiting = this.nextTurn?.threadId === thread.id ? this.nextTurn.options : null
+    if (!waiting && !this.applyingNextTurn && this.restsForNextTurn(thread)) return false
+    const base: WatcherNextTurnOptions = waiting ?? this.applyingNextTurn ?? { modelId: thread.modelId, reasoningEffort: thread.reasoningEffort ?? null }
+    const modelChanged = command.modelId !== undefined && command.modelId !== base.modelId
+    const speed = command.speed !== undefined ? command.speed : command.fastMode !== undefined ? (command.fastMode ? 'fast' : null) : modelChanged ? undefined : base.speed
+    const wanted: WatcherNextTurnOptions = { modelId: command.modelId ?? base.modelId,
+      reasoningEffort: command.reasoningEffort ?? (modelChanged ? null : base.reasoningEffort), ...speed !== undefined ? { speed } : {} }
+    validate(wanted)
+    this.chooseForNextTurn(thread, wanted)
+    return true
+  }
+  /**
+   * The user's latest choice for Watcher's model, effort or speed while one is kept or Watcher is busy. What Watcher runs on
+   * puts a kept choice away, unless another is on its way to the provider, which it must then follow. Anything else is kept,
+   * replacing what waited, and taken at once if Watcher already rests.
+   */
+  private chooseForNextTurn(thread: AgentThread, options: WatcherNextTurnOptions): void {
+    if (optionsInForce(thread, options) && !this.applyingNextTurn) {
+      if (this.nextTurn) { this.nextTurn = null; this.publish() }
+      return
+    }
+    this.nextTurn = { threadId: thread.id, options }
+    this.applyNextTurn()
+    this.publish()
+  }
+  /**
+   * Whether Watcher rests as a change to its model needs: no turn, card, compaction or tool call of its own, and nothing on
+   * its way to it. What only waits in its queue does not hold the change; the queue waits for it (`holdsQueue`).
+   */
+  private restsForNextTurn(thread: AgentThread): boolean {
+    return !isThreadTurnRunning(thread) && thread.requests.length === 0 && !compactionPending(thread.compaction) && !this.compactingNow
+      && this.invocations === 0 && this.active.size === 0 && this.opening === undefined && this.options.control.threadSettingsCanGo(thread.id)
+  }
+  /**
+   * Takes the choice kept for Watcher's next turn once Watcher rests, before its queue sends it news or the user's next
+   * message. A Watcher replaced since leaves it behind. One whose result is unknown stays shown and is not sent again: main
+   * keeps it and asks the provider for it before Watcher's next turn, so it goes once Watcher reports it or main lets it go.
+   * Refused, the choice goes and the room says so, and the chips show what Watcher runs on.
+   */
+  private applyNextTurn(): void {
+    const kept = this.nextTurn
+    if (!kept || this.applyingNextTurn || this.closed) return
+    const thread = this.view().current?.target.threadId === kept.threadId ? this.localThread(kept.threadId) : undefined
+    if (!thread || thread.kind !== 'watcher' || optionsInForce(thread, kept.options)
+      || kept.sent && !this.options.control.settingsUnconfirmed(kept.threadId)) { this.nextTurn = null; this.publish(); return }
+    if (kept.sent || !this.restsForNextTurn(thread)) return
+    this.applyingNextTurn = kept.options
+    const { modelId, reasoningEffort, speed } = kept.options
+    void this.options.control.commandForWatcherRoom({ type: 'configure-thread', threadId: kept.threadId, modelId,
+      ...reasoningEffort ? { reasoningEffort } : {}, ...speed !== undefined ? { speed } : {} })
+      .then(result => result.error === null, () => false)
+      .then(taken => {
+        const unknown = !taken && this.options.control.settingsUnconfirmed(kept.threadId)
+        if (this.nextTurn === kept) this.nextTurn = unknown ? { ...kept, sent: true } : null
+        if (!taken && !unknown) this.recoveryNotice = NEXT_TURN_REFUSED
+        else if (this.recoveryNotice === NEXT_TURN_REFUSED) this.recoveryNotice = null
+      })
+      .finally(() => { this.applyingNextTurn = null; this.applyNextTurn(); this.publish(); this.options.control.resumeWatcherQueue() })
+  }
+  /**
+   * Whether Watcher's queue waits for its kept choice: while it is on its way, and once Watcher rests, so the next news or
+   * message goes on the new model. Asked by the queue for each thread it would send to; free when nothing is kept.
+   */
+  holdsQueue(threadId: string): boolean {
+    const kept = this.nextTurn
+    if (kept?.threadId !== threadId || kept.sent) return false
+    if (this.applyingNextTurn) return true
+    const thread = this.localThread(threadId)
+    if (!thread) return false
+    // A compaction of Watcher's conversation ends without a turn, and the choice goes as soon as it has.
+    if (!this.restsForNextTurn(thread)) return !isThreadTurnRunning(thread) && thread.requests.length === 0 && (this.compactingNow || compactionPending(thread.compaction))
+    queueMicrotask(() => { this.applyNextTurn() })
+    return true
   }
   /** The current Watcher's thread, refused when it no longer matches the saved identity. */
   private currentThread(current: WatcherIdentity): AgentThread {
