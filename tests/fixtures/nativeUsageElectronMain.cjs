@@ -51,11 +51,11 @@ childProcess.spawn = function (command, args, options) {
   return spawn.call(this, node, nativeArgs, { ...options, env: { ...options?.env, SOTTO_FAKE_CLAUDE_HOME: join(home, '.claude') }, windowsHide: true })
 }
 // Hold only the usage archive's atomic replacements, a thread's ledger file's (#555) or an earlier build's one file, after
-// their data was synced. The test releases them after quit has begun, proving production's before-quit drain rather than a
-// test-only flush call.
+// their data was synced: not the thread's view written beside its ledger after it (#1937). The test releases them after
+// quit has begun, proving production's before-quit drain rather than a test-only flush call.
 const rename = promises.rename
 promises.rename = async (from, to) => {
-  if (to === join(profile, 'claude-usage.json') || dirname(to) === join(profile, 'claude-usage')) {
+  if (to === join(profile, 'claude-usage.json') || (dirname(to) === join(profile, 'claude-usage') && /^[0-9a-f]{40}\.json$/.test(basename(to)))) {
     if (fs.existsSync(join(root, 'hold-usage-write'))) {
       fs.writeFileSync(join(root, 'usage-write-waiting'), '')
       while (fs.existsSync(join(root, 'hold-usage-write'))) await delay(10)

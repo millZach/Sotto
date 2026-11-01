@@ -20,6 +20,12 @@ const writtenLedgers = (calls: readonly (readonly unknown[])[]): Archive => Obje
   const file = JSON.parse(writtenText(written as string | readonly Uint8Array[])) as { id: string; ledger: Archive[string] }
   return [file.id, file.ledger]
 }))
+/**
+ * The writes among `calls` that went to a thread's ledger file. Each one that lands is followed by a write of the thread's
+ * view to the file beside it (#1937), which these tests do not count.
+ */
+const ledgerWrites = (write: { mock: { contexts: readonly unknown[] } }): number =>
+  write.mock.contexts.filter(store => /[0-9a-f]{40}\.json$/u.test((store as { filePath: string }).filePath)).length
 /** Every thread's saved ledger under `root`, as the next start reads them. */
 const savedLedgers = async (root: string, provider: 'claude' | 'codex' | 'grok' = 'claude'): Promise<Archive> => await savedUsageLedgers(root, provider) as Archive
 const roots: string[] = []
@@ -156,11 +162,11 @@ it.each(['claude', 'codex', 'grok'] as const)('keeps %s replay deduplication and
   }
   const write = vi.spyOn(AtomicJsonStore.prototype, 'writeSerialized').mockRejectedValueOnce(new Error('Disk unavailable'))
   observe(); await usage.flushed()
-  expect(write).toHaveBeenCalledTimes(1)
+  expect(ledgerWrites(write)).toBe(1)
   expect(usage.get('thread')!.persistenceError).toBe(true)
   const total = usage.get('thread')!.total
   observe(); await usage.flushed()
-  expect(write).toHaveBeenCalledTimes(2)
+  expect(ledgerWrites(write)).toBe(2)
   expect(usage.get('thread')!.persistenceError).toBeUndefined()
   expect(usage.get('thread')!.total).toEqual(total)
   const reopened = new NativeUsage(root, provider); await reopened.load(); await reopened.flushed()
@@ -223,7 +229,7 @@ it('reports a failed repricing migration and retries it through the same drain',
   const usage = new NativeUsage(root, 'claude'); await usage.load(); await usage.flushed()
   expect(usage.get('thread')).toMatchObject({ persistenceError: true, total: { output: 100 } })
   await usage.flushed()
-  expect(write).toHaveBeenCalledTimes(2)
+  expect(ledgerWrites(write)).toBe(2)
   expect(usage.get('thread')!.persistenceError).toBeUndefined()
 })
 

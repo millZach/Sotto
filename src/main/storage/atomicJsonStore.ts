@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { constants as fsConstants } from 'node:fs'
+import { constants as fsConstants, copyFileSync, readFileSync, unlinkSync } from 'node:fs'
 import { access, copyFile, mkdir, open, readFile, rename, unlink } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { retryWindowsFileOperation } from './windowsFileRetry'
@@ -98,6 +98,21 @@ export class AtomicJsonStore<T> {
     return queued
   }
 
+  /**
+   * Reads the file now, on the calling thread, as `read` does: a file that is not a `T` is set aside the same way and
+   * the default given. For a caller that cannot wait for a read, on a file nothing is queued on: it does not wait for
+   * an operation in flight, as `read` would.
+   */
+  readSync(): T {
+    const result = this.readValueSync()
+    if (result.status === 'valid') return result.value
+    if (result.status === 'invalid') {
+      this.backUpCorruptFileSync()
+      this.recovered()
+    }
+    return this.createDefault()
+  }
+
   exists(): Promise<boolean> {
     return this.enqueueOperation(() => this.pathExists(this.filePath))
   }
@@ -110,14 +125,18 @@ export class AtomicJsonStore<T> {
     }
     if (result.status === 'invalid' && recover) {
       await this.backUpCorruptFile()
-      try {
-        this.onRecovery?.({ kind: 'corrupt-json-recovered' })
-      } catch {
-        // A presentation-only notice cannot make durable recovery fail.
-      }
+      this.recovered()
     }
 
     return this.createDefault()
+  }
+
+  private recovered(): void {
+    try {
+      this.onRecovery?.({ kind: 'corrupt-json-recovered' })
+    } catch {
+      // A presentation-only notice cannot make durable recovery fail.
+    }
   }
 
   private async readValue(): Promise<ReadResult<T>> {
@@ -133,6 +152,26 @@ export class AtomicJsonStore<T> {
       throw error
     }
 
+    return this.parsed(contents)
+  }
+
+  private readValueSync(): ReadResult<T> {
+    let contents: string
+
+    try {
+      contents = readFileSync(this.filePath, 'utf8')
+    } catch (error) {
+      if (hasErrorCode(error, 'ENOENT')) {
+        return { status: 'missing' }
+      }
+
+      throw error
+    }
+
+    return this.parsed(contents)
+  }
+
+  private parsed(contents: string): ReadResult<T> {
     try {
       return { status: 'valid', value: this.parse(JSON.parse(contents) as unknown) }
     } catch {
@@ -213,7 +252,7 @@ export class AtomicJsonStore<T> {
     const timestamp = this.now()
 
     for (let attempt = 0; attempt < MAX_CORRUPT_BACKUP_ATTEMPTS; attempt += 1) {
-      const backupPath = `${this.filePath}.corrupt-${timestamp}-${this.createId()}`
+      const backupPath = this.corruptBackupPath(timestamp)
 
       try {
         await copyFile(this.filePath, backupPath, fsConstants.COPYFILE_EXCL)
@@ -253,6 +292,51 @@ export class AtomicJsonStore<T> {
     throw new Error(
       `Could not preserve corrupt JSON after ${MAX_CORRUPT_BACKUP_ATTEMPTS} backup attempts`,
     )
+  }
+
+  /** `backUpCorruptFile` on the calling thread, step for step, for `readSync`. */
+  private backUpCorruptFileSync(): void {
+    const timestamp = this.now()
+
+    for (let attempt = 0; attempt < MAX_CORRUPT_BACKUP_ATTEMPTS; attempt += 1) {
+      const backupPath = this.corruptBackupPath(timestamp)
+
+      try {
+        copyFileSync(this.filePath, backupPath, fsConstants.COPYFILE_EXCL)
+      } catch (error) {
+        if (hasErrorCode(error, 'EEXIST') || hasErrorCode(error, 'ENOENT')) {
+          if (this.readValueSync().status === 'invalid') {
+            continue
+          }
+          return
+        }
+
+        throw error
+      }
+
+      try {
+        unlinkSync(this.filePath)
+      } catch (error) {
+        if (hasErrorCode(error, 'ENOENT')) {
+          if (this.readValueSync().status === 'invalid') {
+            continue
+          }
+          return
+        }
+
+        throw error
+      }
+
+      return
+    }
+
+    throw new Error(
+      `Could not preserve corrupt JSON after ${MAX_CORRUPT_BACKUP_ATTEMPTS} backup attempts`,
+    )
+  }
+
+  private corruptBackupPath(timestamp: number): string {
+    return `${this.filePath}.corrupt-${timestamp}-${this.createId()}`
   }
 
   private async corruptSourceStillExists(): Promise<boolean> {

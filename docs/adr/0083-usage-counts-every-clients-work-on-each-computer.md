@@ -100,3 +100,34 @@ the whole file was still written.
 On `usageStreamWrites.perf.test.ts`, a reply streaming 150 usage frames over a 3.8 MB ledger of forty threads wrote
 19,004,865 bytes in five writes before and 473,680 in five after, in each of three rounds
 (`docs/perf/2026-10-30-usage-ledger-per-thread.md`).
+
+## Amended November 1, 2026: start reads what each thread shows, and its requests when they are needed (#1937)
+
+Every start read every thread's ledger whole, every request each thread ever made, and kept all of them for the whole run,
+although only the threads working that run touch their requests. For a folder the size of the owner's, 291 threads and
+9.8 MB of ledgers, that was 192 ms of main and 18.4 MB of its heap on forge.
+
+- **The view file.** Beside each thread's ledger file is `<hash>.view.json`, holding what the thread shows (its totals,
+  latest request, context and duration), the rate table it was priced with, and the size and modification time of the
+  ledger file it was written with. It is written each time the ledger is, from the same moment, with the same atomic
+  store. Nothing that reads ledger files takes it for one, so an earlier build passes over it.
+- **Start reads the view files alone.** A ledger is read whole, as before, and its view file written, when the view file is
+  missing, when it does not match the ledger file as it is now (an earlier build wrote the ledger, or a write failed between
+  the two), or when the thread may hold unpriced requests and its view was priced with another rate table. The first start
+  after this change reads every ledger once; the starts after it read the view files. A copied folder, such as a restored
+  backup, has new modification times, so its first start reads every ledger once too.
+- **A thread's requests are read the first time something needs them:** any usage report, or Usage visiting the thread. A
+  report reads its thread's ledger file on main before it counts anything, so a request counted in an earlier run is found
+  and not counted again, and totals and deduplication stay exact. A file that cannot be read at that moment counts nothing
+  for that report, and the next one tries again. One unreadable as a ledger is set aside as any store sets one aside, and
+  the thread starts afresh, as it would have at start. Usage's visit reads an unread thread's requests for the visit and
+  keeps none of them.
+- **What stays.** What a ledger holds, and when it is written, are as before; so is a reconnect keeping unsaved counts. A
+  new price reaches the threads that may hold unpriced requests through a new rate version (`USAGE_RATE_VERSION`), as the
+  rate table already requires; a price added without one reaches a thread's totals when its requests are next read.
+
+On `usageLedgerLoad.perf.test.ts`, a later start read 140,654 bytes of views rather than 9,818,789 bytes of ledgers, in
+13.2 ms rather than 192.3, and kept 0.6 MB of heap rather than 18.4. A thread's first report after start reads its ledger:
+30.1 ms for one of 10,000 requests. With Usage on, its visit of every thread still reads every ledger, now one file at a time
+on main: start and visit together took 228 ms against 328 and kept 0.8 MB against 18.4, but the visit, one task on main,
+took 214 ms where it took 129 (`docs/perf/2026-11-01-usage-ledger-lazy-load.md`).

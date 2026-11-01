@@ -14,6 +14,8 @@ import { NativeUsage } from '../../src/main/agents/nativeUsage'
 import { AtomicJsonStore } from '../../src/main/storage/atomicJsonStore'
 
 const roots: string[] = []
+/** A thread's ledger file, rather than the file beside it holding the thread's view (#1937). */
+const ledgerFile = (name: string): boolean => /^[0-9a-f]{40}\.json$/u.test(name)
 afterAll(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
 
 const frame = (thread: number, entry: number, output = 100) => ({ type: 'assistant', timestamp: new Date(Date.UTC(2026, 8, 1, 0, entry)).toISOString(), message: {
@@ -26,7 +28,7 @@ it('encodes only the streaming thread\'s ledger for each write, however many oth
   // Forty threads of six hundred requests each: a ledger of a few megabytes, most of it threads that are not streaming.
   for (let thread = 0; thread < 40; thread++) for (let entry = 0; entry < 600; entry++) usage.claude(`thread-${thread}`, frame(thread, entry))
   await usage.flushed()
-  const directory = join(root, 'claude-usage'), names = await readdir(directory)
+  const directory = join(root, 'claude-usage'), names = (await readdir(directory)).filter(ledgerFile)
   const ledgersBytes = (await Promise.all(names.map(async name => Buffer.byteLength(await readFile(join(directory, name), 'utf8'))))).reduce((sum, bytes) => sum + bytes, 0)
   // The store still writes; the spy only keeps what each write was handed.
   const spy = vi.spyOn(AtomicJsonStore.prototype, 'writeSerialized')
@@ -49,7 +51,7 @@ it('encodes only the streaming thread\'s ledger for each write, however many oth
     expect(Buffer.byteLength(written) * 20).toBeLessThan(ledgersBytes)
   }
   // Every thread's ledger is still saved, each in its file as a whole serialization of it.
-  expect(await readdir(directory)).toHaveLength(40)
+  expect((await readdir(directory)).filter(ledgerFile)).toHaveLength(40)
   for (const name of await readdir(directory)) {
     const text = await readFile(join(directory, name), 'utf8')
     expect(text.trimEnd()).toBe(JSON.stringify(JSON.parse(text)))

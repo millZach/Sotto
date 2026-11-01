@@ -535,4 +535,49 @@ describe('AtomicJsonStore', () => {
     await Promise.all([first, plain, last])
     await expect(store.read()).resolves.toEqual({ value: 'newest' })
   })
+
+  it('reads on the calling thread what read reads, and a fresh default for a missing file without creating it', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    const store = createStore(filePath)
+
+    expect(store.readSync()).toEqual({ value: 'default' })
+    expect(await readdir(root)).toEqual([])
+    await store.write({ value: 'saved' })
+    expect(store.readSync()).toEqual({ value: 'saved' })
+    expect(store.readSync()).toEqual(await store.read())
+  })
+
+  it.each([
+    ['syntax-corrupt', Buffer.from([0xff, 0xfe, 0x7b, 0x22, 0x76, 0x61, 0x6c, 0x75, 0x65])],
+    ['semantically invalid', Buffer.from('{\r\n  "value": 42\r\n}\r\n', 'utf8')],
+  ])('sets %s input aside on the calling thread as read does, with its exact bytes, and returns a default', async (_kind, corruptBytes) => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    await writeFile(filePath, corruptBytes)
+    const recoveries: string[] = []
+    const store = new AtomicJsonStore(filePath, (input) => exampleSchema.parse(input), () => ({ value: 'default' }),
+      () => 1_725_000_000_020, () => 'sync-id', (event) => recoveries.push(event.kind))
+
+    expect(store.readSync()).toEqual({ value: 'default' })
+
+    expect(await readdir(root)).toEqual(['store.json.corrupt-1725000000020-sync-id'])
+    expect(await readFile(join(root, 'store.json.corrupt-1725000000020-sync-id'))).toEqual(corruptBytes)
+    expect(recoveries).toEqual(['corrupt-json-recovered'])
+  })
+
+  it('names a set-aside file again when its first backup name is taken, as read does', async () => {
+    const root = await createRoot()
+    const filePath = join(root, 'store.json')
+    await writeFile(filePath, '{"value":')
+    await writeFile(`${filePath}.corrupt-1725000000021-taken`, 'an earlier backup')
+    const ids = ['taken', 'free']
+    const store = createStore(filePath, () => 1_725_000_000_021, () => ids.shift()!)
+
+    expect(store.readSync()).toEqual({ value: 'default' })
+
+    expect((await readdir(root)).sort()).toEqual(['store.json.corrupt-1725000000021-free', 'store.json.corrupt-1725000000021-taken'])
+    expect(await readFile(`${filePath}.corrupt-1725000000021-free`, 'utf8')).toBe('{"value":')
+    expect(await readFile(`${filePath}.corrupt-1725000000021-taken`, 'utf8')).toBe('an earlier backup')
+  })
 })
