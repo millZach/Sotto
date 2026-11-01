@@ -178,7 +178,8 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, start
   useEffect(() => {
     if (!host) return
     setListing(null); setNamedFolder(null); setDraftName(null); setQuery('')
-    if (!host.connected) { setError(notConnected(host)); return }
+    // A listing still on its way from a host that has dropped is dropped with it, so nothing can be chosen there.
+    if (!host.connected) { listingRequests.current++; setLoading(false); setError(notConnected(host)); return }
     void (startPath && host.hostId === givenHostId ? read(host, startPath, undefined, true) : read(host, undefined))
   }, [host?.hostId, host?.connected])
 
@@ -208,8 +209,9 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, start
   const shown = listing ? listing.folders.filter(folder => folder.name.toLowerCase().includes(query.trim().toLowerCase())) : []
   const crumbs: readonly HostFolderCrumb[] = namedFolder ? [...namedFolder.parent.crumbs, { name: namedFolder.name, path: namedFolder.path }] : listing?.crumbs ?? []
   const current = crumbs.at(-1) ?? null
-  // A project needs a folder of its own: never the list of drives, a drive's root or `/`.
-  const atTop = !namedFolder && (listing === null || listing.crumbs.length <= (listing.separator === '\\' ? 2 : 1))
+  // A project needs a folder of its own: never the list of drives, a drive's root or `/`. The folder projects go in
+  // may be a drive's root or `/`, but not the list of drives, which has no path.
+  const atTop = !namedFolder && (listing === null || (purpose === 'project' && listing.crumbs.length <= (listing.separator === '\\' ? 2 : 1)))
   const chosenPath = namedFolder?.path ?? (atTop ? null : listing?.path ?? null)
   const projectAt = (path: string): AgentProject | undefined => host ? projectAtFolder(state.host.projects, host.hostId, path) : undefined
   const existing = purpose !== 'project' || namedFolder || chosenPath === null ? undefined : projectAt(chosenPath)
@@ -226,7 +228,7 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, start
     if (parent) void read(host, parent.path, parent.name)
   }
   const use = (): void => {
-    if (!host || busy || loading || chosenPath === null || !current) return
+    if (!host?.connected || busy || loading || chosenPath === null || !current) return
     onUse({ hostId: host.hostId, path: chosenPath, name: current.name, ...(namedFolder ? { isNew: true as const } : {}) })
   }
   const nameFolder = (): void => {
@@ -355,7 +357,7 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, start
         <Button variant="ghost" disabled={busy || loading || !listing || listing.path === null || draftName !== null || namedFolder !== null} onClick={() => { setDraftName(''); setDraftNameError(null) }}><FolderPlus size={15} aria-hidden="true" />{t`New folder`}</Button>
         {host.kind === 'local' && window.sotto?.agents?.chooseProjectDirectory ? <Button variant="ghost" disabled={busy} onClick={() => void explorer()}><FolderOpen size={15} aria-hidden="true" />{explorerLabel}</Button> : null}
         <span className="folder-browser__target" title={chosenPath ?? undefined}><bdi>{existing ? t({ message: `Already the project ${existingTitle}`, comment: '{existingTitle} is a project\'s title.' }) : chosenPath ?? ''}</bdi></span>
-        <Button disabled={busy || loading || chosenPath === null} onClick={use}>{busy ? (purpose === 'project' ? t`Adding…` : t({ message: 'Saving…', comment: 'The Use this folder button while the chosen folder is saved.' })) : useLabel}</Button>
+        <Button disabled={busy || loading || chosenPath === null || !host.connected} onClick={use}>{busy ? (purpose === 'project' ? t`Adding…` : t({ message: 'Saving…', comment: 'The Use this folder button while the chosen folder is saved.' })) : useLabel}</Button>
       </footer>
       <footer className="new-thread-dialog__keys"><span><kbd>↑</kbd><kbd>↓</kbd> {t({ message: 'Navigate', comment: 'A keyboard hint: the arrow keys move through the list.' })}</span><span><kbd>Enter</kbd> {t({ message: 'Open folder', comment: 'A keyboard hint: Enter opens the highlighted folder.' })}</span><span><kbd>⌫</kbd> {t({ message: 'Up a folder', comment: 'A keyboard hint: Backspace goes to the parent folder.' })}</span>{useChord ? <span><kbd>{mac ? '⌘' : 'Ctrl'}</kbd><kbd>Enter</kbd> {useLabel}</span> : null}<span><kbd>Esc</kbd> {choosing ? t({ message: 'Back', comment: 'A keyboard hint: Escape goes back to the list of computers.' }) : t({ message: 'Close', comment: 'A keyboard hint: Escape closes the dialog.' })}</span></footer>
     </>}

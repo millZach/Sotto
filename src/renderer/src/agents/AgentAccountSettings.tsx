@@ -12,7 +12,7 @@ import { ChoiceChip, effortChoices, RUNTIME_LABELS } from './ThreadOptions'
 import { EffortPicker } from './EffortPicker'
 import { ModelPicker } from './ModelPicker'
 import { ProviderUpgradeNotice } from './ProviderUpgradeNotice'
-import { ProjectsDirectoryRow } from './ProjectsDirectoryRow'
+import { ProjectsDirectoryRow, type FolderSave } from './ProjectsDirectoryRow'
 import { SettingsGroup } from '../features/settings/SettingsGroup'
 import './agents.css'
 
@@ -80,8 +80,10 @@ export function AgentSetupFields(): ReactNode {
   const command = agents?.command
   if (!state || !command) return <p className="tt-paragraph">{t`Preparing agent configuration…`}</p>
   const configuration = state.configuration
-  const save = async (patch: Partial<AgentConfiguration>, hostId?: string): Promise<boolean> => {
-    const result = await command({ type: 'configure', patch, ...(hostId ? { hostId } : {}) }); return result !== null && result.error === null
+  // No answer is not a refusal: the change may have reached the host, so the row says it could not confirm it.
+  const save = async (patch: Partial<AgentConfiguration>, hostId?: string): Promise<FolderSave> => {
+    const result = await command({ type: 'configure', patch, ...(hostId ? { hostId } : {}) })
+    return result === null ? 'unconfirmed' : result.error === null ? 'saved' : 'refused'
   }
   // Each computer keeps its own projects folder, so with a host connected there is a row for each (ADR-0074).
   const computers = (state.connections?.length ?? 0) > 1 ? state.connections ?? [] : null

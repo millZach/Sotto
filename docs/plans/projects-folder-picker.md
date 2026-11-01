@@ -11,6 +11,7 @@ Recorded from the owner's answers on November 1, 2026.
 - **Layout B, path and button.** The folder is written out in full under the computer's name, wrapping when it is long, with **Choose…** (or **Change…**) beside it. Layout A, a field-shaped button that showed the end of a long path, stays on the prototype tag.
 - **Clear** empties the folder back to none, as an empty text box did.
 - **Start in the saved folder**, and in the home folder when none is saved or the saved one can't be listed.
+- A drive's root or `/` may be the projects folder, though a project can't be one (from the review).
 - **Keep New folder.** The path is saved as it is; the folder is made when a new project first goes in it, by the same recursive `mkdir` that already makes a project's folder under it.
 - A computer that is not connected keeps its folder shown and its button disabled, with the sentence that says how to connect it, as before.
 

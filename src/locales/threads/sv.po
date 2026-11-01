@@ -7474,6 +7474,10 @@ msgstr ""
 msgid "Sotto could not confirm the delete. If the thread is still listed, nothing was deleted."
 msgstr ""
 
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Sotto could not confirm the folder was saved. Check the folder shown in Settings, then try again if it has not changed."
+msgstr ""
+
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Sotto could not confirm the new order. Check the queue before changing it again."
 msgstr ""

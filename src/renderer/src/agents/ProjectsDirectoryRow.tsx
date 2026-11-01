@@ -7,6 +7,9 @@ import { Button } from '../components/Button'
 import { FolderBrowserDialog } from './FolderBrowserDialog'
 import { shownWords, type LaterWords } from './interfaceWords'
 
+/** How a save of the folder ended: saved, refused with nothing changed, or sent with no answer back. */
+export type FolderSave = 'saved' | 'refused' | 'unconfirmed'
+
 /**
  * Settings → Threads' Default projects directory for one computer: the folder written out, chosen in Add project's
  * folder browser on that computer (the owner's pick B from `prototype/projects-folder-picker`). There is no typing:
@@ -25,7 +28,7 @@ export function ProjectsDirectoryRow({ state, hostId, local, name, connected, va
   readonly value: string
   readonly heading: string
   readonly description?: string | undefined
-  readonly onSave: (path: string) => Promise<boolean>
+  readonly onSave: (path: string) => Promise<FolderSave>
 }): ReactNode {
   const { t } = useLingui()
   const [browsing, setBrowsing] = useState(false)
@@ -41,22 +44,27 @@ export function ProjectsDirectoryRow({ state, hostId, local, name, connected, va
       : t({ message: `Choose the default projects directory on ${computerName}`, comment: '{computerName} is the name of a saved host.' })
   const clearLabel = local ? t`Clear the default projects directory on this computer`
     : t({ message: `Clear the default projects directory on ${computerName}`, comment: '{computerName} is the name of a saved host.' })
-  const notSaved = msg`Could not save the folder. Nothing was changed. Try again.`
+  /** Why a save did not go through: refused, so nothing changed, or never answered, so it may have. */
+  const problem = (outcome: Exclude<FolderSave, 'saved'>): LaterWords => outcome === 'refused'
+    ? msg`Could not save the folder. Nothing was changed. Try again.`
+    : msg`Sotto could not confirm the folder was saved. Check the folder shown in Settings, then try again if it has not changed.`
 
-  const save = async (path: string): Promise<boolean> => {
+  const save = async (path: string): Promise<FolderSave> => {
     setSaving(true)
-    try { return await onSave(path) } catch { return false } finally { setSaving(false) }
+    try { return await onSave(path) } catch { return 'unconfirmed' } finally { setSaving(false) }
   }
   const use = async (path: string): Promise<void> => {
     if (saving) return
     setDialogError(null)
-    if (await save(path)) { setError(null); setBrowsing(false) } else setDialogError(notSaved)
+    const outcome = await save(path)
+    if (outcome === 'saved') { setError(null); setBrowsing(false) } else setDialogError(problem(outcome))
   }
   const clear = async (): Promise<void> => {
     if (saving) return
-    // The Clear button goes once the folder is cleared, so the keyboard stays on Choose.
+    // The Clear button goes once the folder is cleared, so the keyboard stays on Choose, which stays usable while it saves.
     choose.current?.focus()
-    setError(await save('') ? null : notSaved)
+    const outcome = await save('')
+    setError(outcome === 'saved' ? null : problem(outcome))
   }
 
   return <div className="account-row projects-directory">
@@ -65,8 +73,8 @@ export function ProjectsDirectoryRow({ state, hostId, local, name, connected, va
     </span>
     <div className="account-row__control">
       {value && connected ? <Button variant="ghost" aria-label={clearLabel} disabled={saving} onClick={() => void clear()}>{t({ message: 'Clear', comment: 'Empties the default projects directory.' })}</Button> : null}
-      <Button ref={choose} variant="secondary" data-setting="projects-directory" aria-label={chooseLabel} disabled={!connected || saving}
-        onClick={() => { setDialogError(null); setBrowsing(true) }}>
+      <Button ref={choose} variant="secondary" data-setting="projects-directory" aria-label={chooseLabel} disabled={!connected}
+        onClick={() => { if (saving) return; setDialogError(null); setBrowsing(true) }}>
         <FolderOpen size={15} aria-hidden="true" />{value ? t({ message: 'Change…', comment: 'Opens the folder browser to choose another default projects directory.' }) : t({ message: 'Choose…', comment: 'Opens the folder browser to choose the default projects directory.' })}
       </Button>
     </div>

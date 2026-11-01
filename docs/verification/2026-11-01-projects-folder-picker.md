@@ -26,7 +26,10 @@ The design baseline `artifacts/design/app-review/baseline/settings-agents.png` w
 - **Clear**;
 - a saved folder that has gone, which opens at home;
 - a new folder's path;
-- a save that fails, which keeps the browser open with an error;
+- a save that fails, which keeps the browser open with an error, and a save never answered, which says it could not be confirmed;
+- a listing that arrives after forge drops, which is dropped;
+- `/` chosen as forge's projects folder;
+- the keyboard staying on **Change…** while **Clear** saves;
 - the one-computer row.
 
 ## Not checked

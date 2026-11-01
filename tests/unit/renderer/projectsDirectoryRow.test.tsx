@@ -152,6 +152,35 @@ describe('Default projects directory, chosen in the folder browser', () => {
     expect(screen.getByRole('button', { name: 'Change the default projects directory on forge' })).toHaveFocus()
   })
 
+  it('drops a listing that arrives after forge has dropped', async () => {
+    let answer: (result: HostFoldersResult) => void = () => {}
+    vi.stubGlobal('sotto', { agents: { hostFolders: vi.fn(() => new Promise<HostFoldersResult>(resolve => { answer = resolve })) } })
+    const command = provide(twoComputers())
+    const { rerender } = render(<AgentSetupFields />)
+    fireEvent.click(screen.getByRole('button', { name: 'Change the default projects directory on forge' }))
+    provide(twoComputers({ forgeConnected: false }))
+    rerender(<AgentSetupFields />)
+    await within(folderDialog()).findByRole('alert')
+    answer(forgeListing('/home/zach/projects'))
+    await new Promise(resolve => setTimeout(resolve, 0))
+    expect(within(folderDialog()).queryByRole('button', { name: /^site/ })).toBeNull()
+    expect(use()).toBeDisabled()
+    expect(command).not.toHaveBeenCalled()
+  })
+
+  it('lets `/` be the folder new projects go in, though a project can’t be there', async () => {
+    stubFolders()
+    const command = provide(twoComputers())
+    render(<AgentSetupFields />)
+    fireEvent.click(screen.getByRole('button', { name: 'Change the default projects directory on forge' }))
+    await within(folderDialog()).findByRole('button', { name: /^site/ })
+    fireEvent.click(within(folderDialog()).getByRole('button', { name: '/' }))
+    await waitFor(() => expect(within(folderDialog()).getByRole('button', { name: '/' })).toHaveAttribute('aria-current', 'location'))
+    await waitFor(() => expect(use()).toBeEnabled())
+    fireEvent.click(use())
+    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { projectsDirectory: '/' }, hostId: FORGE }))
+  })
+
   it('opens at the home folder when the saved folder has gone', async () => {
     const hostFolders = stubFolders(['/home/zach/projects'])
     provide(twoComputers())
@@ -185,6 +214,30 @@ describe('Default projects directory, chosen in the folder browser', () => {
     fireEvent.click(use())
     await waitFor(() => expect(command).toHaveBeenCalled())
     expect(await within(folderDialog()).findByRole('alert')).toHaveTextContent('Could not save the folder. Nothing was changed. Try again.')
+  })
+
+  it('says a save it never heard back about may have gone through, rather than that nothing changed', async () => {
+    stubFolders()
+    const command = vi.fn(async (): Promise<AgentState | null> => null)
+    vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(twoComputers(), command))
+    render(<AgentSetupFields />)
+    fireEvent.click(screen.getByRole('button', { name: 'Change the default projects directory on forge' }))
+    await within(folderDialog()).findByRole('button', { name: /^site/ })
+    fireEvent.click(use())
+    expect(await within(folderDialog()).findByRole('alert')).toHaveTextContent('Sotto could not confirm the folder was saved.')
+  })
+
+  it('keeps the keyboard on Choose while Clear saves', async () => {
+    let answer: (state: AgentState) => void = () => {}
+    const state = twoComputers()
+    vi.mocked(useOptionalAgents).mockReturnValue(agentContextFixture(state, vi.fn(() => new Promise<AgentState>(resolve => { answer = resolve }))))
+    render(<AgentSetupFields />)
+    fireEvent.click(screen.getByRole('button', { name: 'Clear the default projects directory on forge' }))
+    const change = screen.getByRole('button', { name: 'Change the default projects directory on forge' })
+    expect(change).toBeEnabled()
+    expect(change).toHaveFocus()
+    answer(state)
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Clear the default projects directory on forge' })).toBeEnabled())
   })
 
   it('has one row, for this computer, when no host is paired', async () => {

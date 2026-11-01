@@ -7474,6 +7474,10 @@ msgstr "Sotto could not confirm that the prompt was set aside. Your next message
 msgid "Sotto could not confirm the delete. If the thread is still listed, nothing was deleted."
 msgstr "Sotto could not confirm the delete. If the thread is still listed, nothing was deleted."
 
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Sotto could not confirm the folder was saved. Check the folder shown in Settings, then try again if it has not changed."
+msgstr "Sotto could not confirm the folder was saved. Check the folder shown in Settings, then try again if it has not changed."
+
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Sotto could not confirm the new order. Check the queue before changing it again."
 msgstr "Sotto could not confirm the new order. Check the queue before changing it again."
