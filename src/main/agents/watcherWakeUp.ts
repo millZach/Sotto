@@ -11,9 +11,9 @@ import { pullRequestKey } from '../../shared/gitPullRequests'
 import { WatcherEvidenceStore, observationDigest, targetKey, type CheckpointObservation, type PullRequestObservation, type WatcherAttentionKind } from './watcherEvidence'
 import { eventSlot, foldWatcherEvents, foldWatcherNews, requestRevision, watcherPrototypeFields, watcherPrototypeSource } from './watcherNews'
 import type { HiddenWakeUpOutcome } from './hiddenWakeUp'
-import { isImmutableActivities, isImmutableActivity } from './activitySnapshots'
+import { isImmutableActivities, isImmutableActivity, isImmutableRecord } from './activitySnapshots'
 import { ThreadChangesDrift, verifyingThreadChanges } from './threadChanges'
-import { byPlace, type WatcherHostsIndex, type WatcherHostsReader } from './watcherHosts'
+import { byPlace, type WatcherHostsIndex, type WatcherHostsReader, type WatcherHostsTouched } from './watcherHosts'
 
 const RETRY_LIMIT = 8
 const RETRY_MAX_MS = 60_000
@@ -40,14 +40,39 @@ interface Progress { swarm?: string; fingerprint: string; connected: boolean; co
  * bodies count at their whole size, so output growing on its host is progress (ADR-0025, October 18 amendment).
  */
 export function watcherProgressFingerprint(thread: AgentThread): string {
+  // A thread whose every part read here is owned is frozen all the way down and only ever replaced, so the same parts make
+  // the same fingerprint: a watched thread an update left alone is not turned into JSON again on every pass (#1248).
+  const parts = ownedParts(thread)
+  const known = parts && threadFingerprints.get(thread)
+  if (known && known.parts.every((part, at) => part === parts![at])) return known.digest
+  const digest = progressDigest(thread)
+  if (parts) threadFingerprints.set(thread, { parts, digest })
+  return digest
+}
+/**
+ * What a fingerprint reads of a thread, when each part that is an object is owned (`isImmutableRecord`): copied and frozen
+ * all the way down, so nothing can write into it. Undefined when one is not, and the thread is read every time.
+ */
+function ownedParts(thread: AgentThread): readonly unknown[] | undefined {
+  const parts = [thread.status, thread.lastTurn, thread.messages, thread.activities, thread.subagentSummary, thread.backgroundWork, thread.monitoring,
+    thread.requests, thread.swarm]
+  for (const part of parts) if (part !== null && typeof part === 'object' && !isImmutableRecord(part)) return undefined
+  return parts
+}
+/** Each thread record's last fingerprint, with the owned parts it was worked out from. */
+const threadFingerprints = new WeakMap<AgentThread, { readonly parts: readonly unknown[]; readonly digest: string }>()
+function progressDigest(thread: AgentThread): string {
   // The digest of JSON of [status, lastTurn, messages, activities, subagentSummary, backgroundWork, monitoring, requests],
   // put together from each part's JSON so a long history's records are not turned into JSON again on every pass (#1331).
-  const head = `${json(thread.status)},${json(thread.lastTurn)},${json(thread.messages.map(message => [message.id, message.text.length]))}`
-  // Keep the existing digest and serialization cost for ordinary threads, including every thread on stable.
-  const tail = `${json(thread.subagentSummary)},${json(thread.backgroundWork?.map(work => [work.id, work.type]))},${json(thread.monitoring?.map(work => work.id))},${json(thread.requests.map(card => [card.id, card.kind]))}${thread.swarm === undefined ? '' : `,${json(thread.swarm)}`}`
+  // An owned part's JSON is kept by its identity, so a thread that streams turns only what changed into JSON (#1248).
+  const { status, lastTurn, messages, subagentSummary, backgroundWork, monitoring, requests, swarm } = thread
+  const head = `${statusJson(status)},${ownedJson(PARTS.lastTurn, lastTurn, () => json(lastTurn))},${messagesJson(messages)}`
+  const tail = `${ownedJson(PARTS.subagentSummary, subagentSummary, () => json(subagentSummary))},${ownedJson(PARTS.backgroundWork, backgroundWork,
+    () => json(backgroundWork?.map(work => [work.id, work.type])))},${ownedJson(PARTS.monitoring, monitoring, () => json(monitoring?.map(work => work.id)))},${
+    ownedJson(PARTS.requests, requests, () => json(requests.map(card => [card.id, card.kind])))}${swarm === undefined ? '' : `,${ownedJson(PARTS.swarm, swarm, () => json(swarm))}`}`
   const activities = thread.activities, rest = `[${head},${tail}]`
   // A certified array is frozen to its last record and only ever replaced, so the same array with the same other facts
-  // is the same fingerprint. Messages and the rest are read every time: they may change in place.
+  // is the same fingerprint. A part that is not owned is read every time: it may change in place.
   const certified = activities != null && isImmutableActivities(activities)
   const last = certified ? fingerprints.get(activities) : undefined
   if (last?.rest === rest) return last.digest
@@ -56,7 +81,48 @@ export function watcherProgressFingerprint(thread: AgentThread): string {
   return digest
 }
 /** What JSON.stringify writes for a value as an array element: `null` for undefined. */
-const json = (value: unknown): string => JSON.stringify(value) ?? 'null'
+const json = (value: unknown): string => value === undefined ? 'null' : JSON.stringify(value) ?? 'null'
+/** Each part of a fingerprint as JSON, by the owned record it was read from: one map for each part, so no two share a record. */
+const PARTS = { lastTurn: new WeakMap<object, string>(), messages: new WeakMap<object, string>(), message: new WeakMap<object, string>(),
+  subagentSummary: new WeakMap<object, string>(), backgroundWork: new WeakMap<object, string>(), monitoring: new WeakMap<object, string>(),
+  requests: new WeakMap<object, string>(), swarm: new WeakMap<object, string>() } as const
+/**
+ * A part as `write` writes it, kept by the identity of the owned record it is read from (`isImmutableRecord`): such a record
+ * is frozen all the way down and only ever replaced, so its JSON never changes. Any other value is written every time.
+ */
+function ownedJson(part: WeakMap<object, string>, value: unknown, write: () => string): string {
+  if (value === null || typeof value !== 'object' || !isImmutableRecord(value)) return write()
+  let written = part.get(value)
+  if (written === undefined) part.set(value, written = write())
+  return written
+}
+/** A thread's status as JSON, by the status: there are a few, and a thread that streams asks on every pass. */
+const statusJsons = new Map<string, string>()
+function statusJson(status: unknown): string {
+  if (typeof status !== 'string') return json(status)
+  let written = statusJsons.get(status)
+  if (written === undefined) { written = json(status); if (statusJsons.size < 64) statusJsons.set(status, written) }
+  return written
+}
+/**
+ * The messages' part, `[id, text length]` for each, as JSON.stringify writes the mapped list: an empty slot is `null`, as
+ * `map` keeps it. An owned list is put together from each message's part, kept by the message: everything in an owned
+ * list is frozen too, so a reply that grows adds one.
+ */
+function messagesJson(messages: AgentThread['messages']): string {
+  return ownedJson(PARTS.messages, messages, () => {
+    if (!isImmutableRecord(messages)) return json(messages.map(message => [message.id, message.text.length]))
+    const parts = new Array<string>(messages.length), kept = PARTS.message
+    for (let index = 0; index < messages.length; index++) {
+      if (!(index in messages)) { parts[index] = 'null'; continue }
+      const message = messages[index]!
+      let part = kept.get(message)
+      if (part === undefined) kept.set(message, part = json([message.id, message.text.length]))
+      parts[index] = part
+    }
+    return `[${parts.join(',')}]`
+  })
+}
 /** Each certified activity array's last fingerprint, and the thread's other facts it was worked out with. */
 const fingerprints = new WeakMap<readonly AgentActivity[], { rest: string; digest: string }>()
 /** Each certified record's part of a fingerprint, as JSON: such a record is frozen and only ever replaced, never edited. */
@@ -200,8 +266,20 @@ function threadCapabilities(snapshot: AgentHostSnapshot, thread: AgentThread): A
   if (!providers || !thread.providerId) return capabilities
   return providers.find(provider => provider.id === thread.providerId)?.capabilities ?? EMPTY_AGENT_HOST.capabilities
 }
+/**
+ * `watcherObservationKey`, from the target keys already built: a thread that names its host is keyed by the same JSON of
+ * that host and its ID, which `targetKey` keeps, so a pass builds none for a thread it has keyed before (#1248).
+ */
+const observationKey = (thread: AgentThread): string => thread.hostId === undefined ? watcherObservationKey(thread) : targetKey({ hostId: thread.hostId, threadId: thread.id })
 /** The target a thread key (`targetKey`) names. */
 const keyTarget = (key: string): WatcherThreadTarget => { const [hostId, threadId] = JSON.parse(key) as [string, string]; return { hostId, threadId } }
+/** A thread as a look-up through the hosts' look-ups finds it, with its place in the merged list; null when none is found. */
+type Row = { readonly thread: AgentThread; readonly place: readonly [number, number] } | null
+/** Whether the merged list counts a thread among those a pass looks at (`WatcherHostsIndex.holds`): any but Watcher's own. */
+const heldThread = (thread: AgentThread): boolean => thread.kind !== 'watcher' && thread.kind !== 'watcher-history'
+/** The threads under the watched threads (`watcherDelegationOwners`), as a pass worked them out, and from what. */
+interface Owners { readonly indexed: boolean; readonly watched: ReadonlySet<string>; readonly owners: Map<string, string>; readonly hostId?: string | undefined }
+const sameKeys = (left: ReadonlySet<string>, right: ReadonlySet<string>): boolean => left.size === right.size && [...right].every(key => left.has(key))
 /** One of the current Watcher's workers: a participation, or a standing watch as one, with its target's key. */
 type Worker = { request: WatcherRecord['requests'][number]; participant: WatcherRecord['requests'][number]['participants'][number]
   /** Every open worker's, and a closed request's only when it is a takeover: nothing else asks for it by target. */
@@ -222,7 +300,8 @@ export interface WatcherWakeOptions {
   hosts?: WatcherHostsReader
   /** The Watcher record, read only: the record is replaced on every change and never edited, so it is not copied. */
   record: () => Readonly<WatcherRecord>
-  progress?: (target: WatcherThreadTarget) => string | undefined
+  /** A thread's progress as its own host reports it, asked with the target's key (`targetKey`) so a pass builds none. */
+  progress?: (target: WatcherThreadTarget, key: string) => string | undefined
   swarmPending?: (target: WatcherThreadTarget) => boolean
   /**
    * Which hosts report their threads' background work counts, read once per pass: the answer it returns is asked for each
@@ -335,7 +414,16 @@ export class WatcherWakeUp {
   /** The reads the synchronous pass under way shares; see `withPassReads`. */
   private pass: { snapshot?: AgentHostSnapshot; record?: Readonly<WatcherRecord>; reportsWork?: (hostId: string) => boolean
     workers?: Workers; closedWorkers?: Workers; requests?: Map<string, WatcherRecord['requests'][number]>; threads?: Map<string, Map<string, AgentThread>>
-    index?: WatcherHostsIndex | null; owners?: { readonly indexed: boolean; readonly watched: ReadonlySet<string>; readonly owners: Map<string, string> } } | undefined
+    index?: WatcherHostsIndex | null; owners?: Owners; indexedOwners?: Owners
+    /** The pass's look-ups by thread key (`row`), and what the hosts' journal says changed since the last pass's (`touchedSince`). */
+    rows?: Map<string, Row>; touched?: WatcherHostsTouched | null } | undefined
+  /**
+   * What the last pass looked up through the hosts' look-ups, by thread key, and the threads under the watched threads it
+   * worked out, as they stood at its `takeChanges` (#1248). A look-up of a key the hosts' journal does not name since
+   * finds the same (`WatcherHostsReader.touchedSince`), so a pass looks up only the threads that changed, however many
+   * threads Watcher watches, and works the threads under them out again only when a thread's delegator changed.
+   */
+  private looked: { readonly rows: ReadonlyMap<string, Row>; readonly owners: Owners | undefined } | undefined
   /** How many wake-up passes read every thread and how many only what they act on, for a test that asks which ran. */
   observedWhole = 0
   observedChanges = 0
@@ -960,8 +1048,8 @@ export class WatcherWakeUp {
       const owners = this.ownersOf(snapshot, watched)
       const rows = new Map<string, { thread: AgentThread; place: readonly [number, number] }>()
       const add = (target: WatcherThreadTarget) => {
-        const thread = index.thread(target), place = thread && index.place(target)
-        if (thread && place) rows.set(targetKey(target), { thread, place })
+        const key = targetKey(target), row = this.row(snapshot, index, key, target)
+        if (row) rows.set(key, row)
       }
       for (const thread of index.watchers()) add({ hostId: thread.hostId ?? snapshot.hostId ?? '', threadId: thread.id })
       for (const target of targets) add(target)
@@ -990,10 +1078,46 @@ export class WatcherWakeUp {
   private ownersOf(snapshot: AgentHostSnapshot, watched: ReadonlySet<string>, indexed = true): Map<string, string> {
     const index = indexed ? this.hostsIndex(snapshot) : undefined
     const kept = this.pass?.snapshot === snapshot ? this.pass.owners : undefined
-    if (kept && kept.indexed === (index !== undefined) && kept.watched.size === watched.size && [...watched].every(key => kept.watched.has(key))) return kept.owners
+    if (kept && kept.indexed === (index !== undefined) && sameKeys(kept.watched, watched)) return kept.owners
+    // The last pass's, while the same threads are watched and no thread's delegator changed since (#1248).
+    const last = index ? this.looked?.owners : undefined, touched = last && this.touchedSince(snapshot)
+    if (last && touched && !touched.delegations && last.hostId === snapshot.hostId && sameKeys(last.watched, watched)) {
+      if (this.pass?.snapshot === snapshot) this.pass.owners = this.pass.indexedOwners = last
+      return last.owners
+    }
     const owners = index ? delegationOwnersUnder(snapshot.hostId, index, watched) : watcherDelegationOwners(snapshot, watched)
-    if (this.pass?.snapshot === snapshot) this.pass.owners = { indexed: index !== undefined, watched, owners }
+    if (this.pass?.snapshot === snapshot) {
+      this.pass.owners = { indexed: index !== undefined, watched, owners, hostId: snapshot.hostId }
+      if (index) this.pass.indexedOwners = this.pass.owners
+    }
     return owners
+  }
+  /**
+   * What the hosts' journal says may have changed since the last pass's look-ups, asked once a pass and before its
+   * `takeChanges`, which moves what the journal measures from. Undefined when every look-up may have.
+   */
+  private touchedSince(snapshot: AgentHostSnapshot): WatcherHostsTouched | undefined {
+    const pass = this.pass
+    if (!pass || pass.snapshot !== snapshot) return undefined
+    if (pass.touched === undefined) pass.touched = (this.looked && this.options.hosts?.touchedSince?.(snapshot)) || null
+    return pass.touched ?? undefined
+  }
+  /**
+   * A thread by its key and its place, by the hosts' look-ups into `snapshot`: once a pass, and kept from the last pass
+   * while the hosts' journal does not name it, which is the very record and place a look-up finds (#1248).
+   */
+  private row(snapshot: AgentHostSnapshot, index: WatcherHostsIndex, key: string, target: WatcherThreadTarget = keyTarget(key)): Row {
+    const pass = this.pass?.snapshot === snapshot ? this.pass : undefined
+    const read = pass?.rows?.get(key)
+    if (read !== undefined) return read
+    const touched = this.touchedSince(snapshot), kept = touched ? this.looked?.rows.get(key) : undefined
+    let row: Row
+    if (kept !== undefined && !touched!.keys.has(key)) row = kept
+    // A thread that changed in its place: no thread moved since, or the journal would name every look-up, so its place stands.
+    else if (kept) { const thread = index.thread(target); row = thread ? { thread, place: kept.place } : null }
+    else { const thread = index.thread(target), place = thread && index.place(target); row = thread && place ? { thread, place } : null }
+    if (pass) (pass.rows ??= new Map()).set(key, row)
+    return row
   }
   /** The hosts' look-ups into `snapshot`, read once per pass, or undefined when a pass must search its list. */
   private hostsIndex(snapshot: AgentHostSnapshot): WatcherHostsIndex | undefined {
@@ -1011,13 +1135,19 @@ export class WatcherWakeUp {
     if (!snapshot.hostId) return
     this.cancelObserve?.(); this.cancelObserve = undefined
     this.observedAt = this.now(); this.observedEdges = { record: this.record(), threads: this.threadEdges(snapshot) }
+    // Asked before the journal moves on, so every look-up this pass keeps from the last is measured from that pass.
+    this.touchedSince(snapshot)
     // Which threads the list gained and lost since the last pass, taken on every pass so the next compares with this one.
     const moved = this.options.hosts?.takeChanges(snapshot)
+    // What this pass looks up stands for the next, which the journal now measures from this pass.
+    const pass = this.pass
+    this.looked = moved && pass?.snapshot === snapshot && pass.index ? { rows: pass.rows ??= new Map(), owners: undefined } : undefined
     const index = moved && this.sawThreads && !this.everyThread ? this.hostsIndex(snapshot) : undefined
     const watched = new Set(this.watchedByKey().keys())
     // A thread a watched thread delegated to is that thread's responsibility (ADR-0081): Watcher watches only the
     // delegating thread, and hears of the delegated thread's request cards as its news (#1190).
     const muted = this.delegatedOwner = this.ownersOf(snapshot, watched, index !== undefined)
+    if (this.looked) this.looked = { rows: this.looked.rows, owners: pass?.indexedOwners }
     // News no longer due is let go first, so what is still true is told again in this pass, as under another request.
     if (this.pending.length) this.pending = this.stillDue(this.pending)
     const lookedAt = new Set<string>(), holders = new Set<string>()
@@ -1090,11 +1220,13 @@ export class WatcherWakeUp {
    */
   private observeChanged(snapshot: AgentHostSnapshot, index: WatcherHostsIndex, moved: ReadonlyMap<string, boolean>, stamp: string, watched: ReadonlySet<string>,
     muted: ReadonlyMap<string, string>, lookedAt: Set<string>, holders: Set<string>): (key: string) => boolean {
-    const held = new Map<string, boolean>()
-    const listed = (key: string): boolean => { let holds = held.get(key); if (holds === undefined) held.set(key, holds = index.holds(keyTarget(key))); return holds }
+    const held = new Map<string, boolean>(), rows = this.pass?.snapshot === snapshot ? this.pass.rows : undefined
+    // A thread this pass looked up is held as it was found: a look-up finds a thread exactly when the list holds its record.
+    const holds = (key: string): boolean => { const row = rows?.get(key); return row === undefined ? index.holds(keyTarget(key)) : row !== null && heldThread(row.thread) }
+    const listed = (key: string): boolean => { let holding = held.get(key); if (holding === undefined) held.set(key, holding = holds(key)); return holding }
     const read = (keys: Iterable<string>) => [...keys].flatMap(key => {
-      const target = keyTarget(key), thread = index.thread(target), place = thread && index.place(target)
-      return thread && place ? [{ key, target, thread, place }] : []
+      const target = keyTarget(key), row = this.row(snapshot, index, key, target)
+      return row ? [{ key, target, thread: row.thread, place: row.place }] : []
     }).sort((left, right) => byPlace(left.place, right.place))
     for (const { key, target, thread } of read(watched)) {
       if (thread.kind === 'watcher' || thread.kind === 'watcher-history') continue
@@ -1113,7 +1245,7 @@ export class WatcherWakeUp {
     // Looked at means its facts were read: one watched while disconnected starts from its facts once it connects.
     if (connected || this.lookedAt?.has(key)) lookedAt.add(key)
     const previous = this.progress.get(key)
-    const fingerprint = this.options.progress?.(target) ?? watcherProgressFingerprint(thread)
+    const fingerprint = this.options.progress?.(target, key) ?? watcherProgressFingerprint(thread)
     const changedProgress = !previous || previous.fingerprint !== fingerprint
     const progress: Progress = previous ?? { fingerprint, connected, connectedAt: this.now(), progressAt: this.now(), quiet: false }
     if (connected && !progress.connected) { progress.connectedAt = this.now(); progress.progressAt = this.now(); progress.quiet = false }
@@ -1187,7 +1319,7 @@ export class WatcherWakeUp {
         if (changedEvidence || settles || untold) this.evidenceChanged(target, before, added, this.attentionMoved(target, attention!))
       }
     }
-    this.observations.set(watcherObservationKey(thread), this.withLanding(observed, target, connected))
+    this.observations.set(observationKey(thread), this.withLanding(observed, target, connected))
     const eligible = watched.has(key) && !muted.has(key) && observed.fresh && this.active(thread) && !thread.requests.length && !isThreadClosed(thread)
       && !isWorkspaceThreadSettled(thread, this.project(snapshot, thread))
     if (!eligible || changedProgress) { progress.cancel?.(); delete progress.cancel }
@@ -1198,7 +1330,7 @@ export class WatcherWakeUp {
       if (!live || !this.connected(current, live) || !this.active(live) || live.requests.length || isThreadClosed(live)
         || isWorkspaceThreadSettled(live, this.project(current, live)) || !this.watchedTargets().some(item => targetKey(item) === key)) return
       // Progress in an update whose pass is still owed is progress all the same: that pass starts the deadline again.
-      if ((this.options.progress?.(target) ?? watcherProgressFingerprint(live)) !== progress.fingerprint) return
+      if ((this.options.progress?.(target, key) ?? watcherProgressFingerprint(live)) !== progress.fingerprint) return
       progress.quiet = true
       this.event('quiet', target, progress.progressAt, { ...(live.lastTurn ? { turnId: live.lastTurn.id } : {}) })
       this.options.changed?.()
@@ -1242,6 +1374,12 @@ export class WatcherWakeUp {
     for (const key of watched) {
       const thread = found.get(key), looked = this.lookUp(snapshot, keyTarget(key))
       if (thread !== undefined && looked !== thread) differences.push(`watched thread ${key} looks up as another record than the list holds`)
+    }
+    // Each thread the pass read, kept from the last pass or looked up in this one, is what a look-up finds now (#1248).
+    const index = this.options.hosts?.index(snapshot)
+    for (const [key, row] of this.pass?.snapshot === snapshot ? this.pass.rows ?? [] : []) {
+      const target = keyTarget(key), thread = index?.thread(target), place = thread && index!.place(target)
+      if (row?.thread !== (place ? thread : undefined) || row && (row.place[0] !== place![0] || row.place[1] !== place![1])) differences.push(`thread ${key} looks up as another record or place than the pass read`)
     }
     if (differences.length) throw new ThreadChangesDrift(differences)
   }
@@ -1312,7 +1450,7 @@ export class WatcherWakeUp {
     const connected = this.connected(snapshot, thread)
     if (connected) this.evidence.observeThread(thread, target, stamp)
     const activity = [thread.updatedAt, thread.messages.at(-1)?.createdAt].map(at => Date.parse(at ?? '')).filter(Number.isFinite)
-    this.observations.set(watcherObservationKey(thread), this.withLanding({ observedAt: stamp, fresh: connected && threadCapabilities(snapshot, thread).observe,
+    this.observations.set(observationKey(thread), this.withLanding({ observedAt: stamp, fresh: connected && threadCapabilities(snapshot, thread).observe,
       connectedAt: stamp, lastProgressAt: activity.length ? new Date(Math.max(...activity)).toISOString() : stamp }, target, connected))
   }
   private withLanding(observed: WatcherObservation, target: WatcherThreadTarget, connected: boolean): WatcherObservation {

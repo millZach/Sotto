@@ -3,6 +3,7 @@
 
   bench-summary.py summarize <folder>         reads what Scripts/bench.sh left there, writes summary.json and summary.md
   bench-summary.py compare <before> <after>   prints a Markdown table of both folders' summaries, and before over after
+  bench-summary.py budget <folder>            fails when a work count in the folder's summary is over its budget
 
 Every number is the median over the benchmark's iterations: five launches or journeys, or the rounds PhoneBenchTests
 times each core step. Lower is better for all of them but journey.completed, which counts only journeys that finished.
@@ -20,10 +21,23 @@ TESTS = {"testLaunchToThreadList": "launch"}
 PER_CHUNK = ["body.RootView", "body.MainTabs", "body.ThreadsView", "body.ThreadListSections", "body.ThreadListRow", "body.ThreadRowList",
              "body.ThreadRow", "body.ThreadView", "body.Conversation", "body.ThreadHero", "body.MessageView", "body.MarkdownText",
              "body.MarkdownBlockView", "body.FoldedRun", "body.StepLine", "body.WorkingLine", "body.ReplyDock", "body.FollowupStack",
-             "textview.make", "textview.update", "textview.set", "markdown.blocks", "markdown.bytes", "time.timeline.rows.n"]
+             "textview.make", "textview.update", "textview.set", "time.textview.measure.n",
+             "markdown.blocks", "markdown.bytes", "time.timeline.rows.n"]
 # What opening the long thread made and read once.
-ON_OPEN = ["body.MessageView", "body.MarkdownBlockView", "body.FoldedRun", "body.StepLine", "textview.make", "markdown.blocks", "markdown.bytes"]
+ON_OPEN = ["body.MessageView", "body.MarkdownBlockView", "body.FoldedRun", "body.StepLine", "textview.make", "time.textview.measure.n",
+           "markdown.blocks", "markdown.bytes"]
 PHASES = ["launch", "list-scroll", "open", "thread-scroll", "stream"]
+# Work counts the climb has brought down, held there (#1702). Counts do not vary with the runner as times do, so each
+# budget sits a little above what the change that set it measured. A budget only tightens; a raise needs its reason in
+# the pull request.
+BUDGETS = {
+    # Earlier turns are made as they scroll into view (22 text views, 44 message bodies, 28 measures on open).
+    "open.app.textview.make": 40,
+    "open.app.body.MessageView": 60,
+    "open.app.time.textview.measure.n": 60,
+    # Each paragraph is measured once for its words, text size and width (0.36 a streamed word).
+    "stream.per_chunk.time.textview.measure.n": 1.0,
+}
 
 
 def slug(text):
@@ -96,6 +110,9 @@ def app_metrics(folder):
         put(f"stream.bytes_per_push.{kind}", [c[f"bytes.{kind}"] / c[f"frames.{kind}"] if c.get(f"frames.{kind}") else None for c in counts["stream"]], "B")
         put(f"stream.decode_per_push.{kind}", [ns_ms(c, f"time.decode.{kind}.ns", f"time.decode.{kind}.n") for c in counts["stream"]], "ms")
         put(f"stream.apply_per_push.{kind}", [ns_ms(c, f"time.apply.{kind}.ns", f"time.apply.{kind}.n") for c in counts["stream"]], "ms")
+    for name in ["open", "thread-scroll"]:
+        put(f"{name}.app.textview_measure", [ns_ms(c, "time.textview.measure.ns") for c in counts[name]], "ms")
+    put("stream.textview_measure_per_chunk", [ns_ms(c, "time.textview.measure.ns") / chunks if "time.textview.measure.ns" in c else 0 for c in counts["stream"]], "ms")
     put("stream.timeline_rows_per_chunk", [ns_ms(c, "time.timeline.rows.ns") / chunks if "time.timeline.rows.ns" in c else 0 for c in counts["stream"]], "ms")
     return rows
 
@@ -156,10 +173,28 @@ def compare(before, after):
         print(f"| {name} | {fmt(a)} | {fmt(b)} | {unit} | {ratio} |")
 
 
+def budget(folder):
+    metrics = json.loads((Path(folder) / "summary.json").read_text())["metrics"]
+    over = []
+    for name, limit in BUDGETS.items():
+        value = metrics.get(name, {}).get("value")
+        if value is None:
+            over.append(f"{name}: not measured (budget {fmt(limit)})")
+        elif value > limit:
+            over.append(f"{name}: {fmt(value)}, over its budget of {fmt(limit)}")
+        else:
+            print(f"{name}: {fmt(value)} (budget {fmt(limit)})")
+    if over:
+        print("\n".join(over))
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "summarize":
         summarize(sys.argv[2])
     elif len(sys.argv) == 4 and sys.argv[1] == "compare":
         compare(sys.argv[2], sys.argv[3])
+    elif len(sys.argv) == 3 and sys.argv[1] == "budget":
+        budget(sys.argv[2])
     else:
         sys.exit(__doc__)

@@ -270,11 +270,11 @@ async function measure(track: OwnerScaleTrack, shape: OwnerScale): Promise<Measu
     Object.defineProperty(pipeline.watcher.wakes, 'observedAt', { get: () => -Infinity, set: () => undefined })
     // The pass asks `progress` for each thread it works through. It works through the threads Watcher watches and skips the
     // rest; working out news for every thread was #1062's cost.
-    const wakes = pipeline.watcher.wakes as unknown as { options?: { progress?: (target: WatcherThreadTarget) => string | undefined } }
+    const wakes = pipeline.watcher.wakes as unknown as { options?: { progress?: (target: WatcherThreadTarget, key: string) => string | undefined } }
     const progress = wakes.options?.progress
     if (!wakes.options || typeof progress !== 'function') throw new Error('Watcher\'s wake-up pass no longer asks options.progress for each thread it works through; count the threads it works through another way.')
     const watched = (target: WatcherThreadTarget): boolean => pipeline.control.watcherRecordView().watches?.some(watch => watch.target.hostId === target.hostId && watch.target.threadId === target.threadId) === true
-    wakes.options.progress = target => { if (counter.measuring && !watched(target)) bump('unwatchedThreadPasses'); return progress(target) }
+    wakes.options.progress = (target, key) => { if (counter.measuring && !watched(target)) bump('unwatchedThreadPasses'); return progress(target, key) }
   }
   try {
     await pass(SETTLE_MS)
@@ -375,7 +375,7 @@ const PER_THREAD: ReadonlySet<Kind> = new Set(['copies', 'copiedObjects', 'whole
 /**
  * Work that still grows with the history today (#1248), each with what it grows by along the history today, to a
  * thousandth. It may grow that far and no further, with none of the usual slack, and its budget is today's count
- * exactly, so one more fails and the failure names #1248. The pull request that fixes one removes its entry and lowers
+ * exactly, so one more fails and the failure names why. The pull request that fixes one removes its entry and lowers
  * its budget to the new count.
  *
  * October 22, 2026, with #1327 and #1326 together: Watcher's room no longer copies its records twice for each publish
@@ -440,12 +440,17 @@ const PER_THREAD: ReadonlySet<Kind> = new Set(['copies', 'copiedObjects', 'whole
  * it no longer lists the remote host's threads when an answer draft is saved. Owl's reads there grow by 30 along the
  * history, from 300 to 330, the answer-draft store asking the router which of the remote host's threads are Watcher's.
  * That is within the usual slack, and the entry goes.
+ *
+ * November 1, 2026 (#1248, Watcher's wake-up pass): a pass looks up only the watched threads that changed since the pass
+ * before, and builds no key or fingerprint again for one that did not, so both entries for the pass go. Its serializations
+ * no longer grow along the history anywhere, nor its look-ups but in the answer-draft save, from 4 to 8, which is not the
+ * pass reading threads that did not change. The save's count holds the working copies of two streamed threads read again
+ * 1.5 seconds after their turns ended (`WORKTREE_REFRESH_DELAY_MS`), past the fixture's one-second settle. With all of the
+ * history those threads are watched, and a pass reads each watched thread that changed, once. It is held at 2.
  */
 const KNOWN_HISTORY_GROWTH: readonly { readonly track: OwnerScaleTrack; readonly kind: Kind; readonly growth: Partial<Record<Scenario, number>>; readonly why: string }[] = [
-  { track: 'owl', kind: 'watcherHostLookups', growth: { '1 streaming': 3.4, '3 streaming': 3.4, saveAnswerDraft: 3.4, typeInComposer: 3.4, openThread: 3.4, send: 3.4, watcherToolCall: 3.4 },
-    why: "Watcher's wake-up pass reading each watched thread on every pass, as the clock and the queue move without them; the fixture's standing watches are history" },
-  { track: 'owl', kind: 'stringifies', growth: { '1 streaming': 2.262, '3 streaming': 2.02, typeInComposer: 1.425, openThread: 2.051, send: 1.172, watcherToolCall: 1.174 },
-    why: "Watcher's wake-up pass building each watched thread's keys afresh, about eleven times on every update" },
+  { track: 'owl', kind: 'watcherHostLookups', growth: { saveAnswerDraft: 2 },
+    why: "the streamed threads' working copies read again during the save, which with all of the history are watched, and Watcher's wake-up pass reads each watched thread that changed" },
 ]
 const known = (track: OwnerScaleTrack, scenario: Scenario, kind: Kind) => KNOWN_HISTORY_GROWTH.find(entry => entry.track === track && entry.kind === kind && entry.growth[scenario] !== undefined)
 
@@ -705,16 +710,28 @@ const known = (track: OwnerScaleTrack, scenario: Scenario, kind: Kind) => KNOWN_
  * 116 serializations as before, over a quarter-history count that fell from 50.77 to 35.31 and from 1,111 to 677. Three
  * budgets rise, stable's thread records the adapter's, the wrapper's and the switch's changes carry per three-thread
  * update, from 2.54 to 2.75: the same 33 records over 12 updates instead of 13.
+ *
+ * November 1, 2026 (#1248, Watcher's wake-up pass): a pass keeps what it looked up the pass before and looks up again only
+ * the threads the hosts' journal says changed since (`WatcherHosts.touchedSince`), a changed thread in its kept place, and
+ * keeps the threads under the watched threads while no thread's delegator changed. A thread's progress fingerprint is kept
+ * with the owned records it was made from, and each part's JSON with its record, so a thread an update left alone is not
+ * serialized again and one that streams serializes the message that grew; its observation and progress keys are the
+ * target keys already built. On Owl at the owner's scale, look-ups through Watcher's index fall from 34 to 2.92 per
+ * streamed update on one thread and from 34 to 4.62 on three, from 68 to 8 per answer-draft save, from 68 to 4 per
+ * debounced save and per thread opened, from 136 to 10 per send and from 87 to 6 per Watcher tool call. Serializations
+ * fall from 63.15 to 19, 71.31 to 28.69, 140 to 50, 114 to 24, 121 to 31, 793 to 613 and 433 to 11. Each of those budgets
+ * drops to the new count with the usual tenth, the save's look-ups to their count exactly (`KNOWN_HISTORY_GROWTH`).
+ * Nothing else moved, on Owl or on stable, and no budget rises.
  */
 const BUDGET: Record<OwnerScaleTrack, Record<Scenario, Counts>> = {
   owl: {
-    '1 streaming': { copies: 2.04, copiedObjects: 7.61, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 218.23, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 63.15, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 0.42, watcherRoomRecords: 0, threadRecordsTouched: 10.77, adapterChangeRecords: 0.85, wrapperChangeRecords: 0.85, switchChangeRecords: 0.85, workspaceChangeRecords: 0.92, creationReads: 2.69, watcherHostLookups: 34 },
-    '3 streaming': { copies: 2.2, copiedObjects: 22.25, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 225.08, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 71.31, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 0.51, watcherRoomRecords: 0, threadRecordsTouched: 73.23, adapterChangeRecords: 2.54, wrapperChangeRecords: 2.54, switchChangeRecords: 2.54, workspaceChangeRecords: 2.77, creationReads: 21.54, watcherHostLookups: 34 },
-    saveAnswerDraft: { copies: 9.9, copiedObjects: 57.2, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 330, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 5, stringifies: 154, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 4, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 4, creationReads: 0, watcherHostLookups: 68 },
-    typeInComposer: { copies: 5.5, copiedObjects: 17.6, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 3.3, coordinatorShellBuilds: 4.4, threadVisits: 9, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2, stringifies: 114, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 0, creationReads: 0, watcherHostLookups: 68 },
-    openThread: { copies: 9.9, copiedObjects: 25.3, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 5.5, coordinatorShellBuilds: 8.8, threadVisits: 817, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 121, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 0, creationReads: 0, watcherHostLookups: 68 },
-    send: { copies: 36.3, copiedObjects: 9357.7, wholeStateCopies: 3.3, wholeCopyThreads: 830.5, wholeCopyObjects: 8974.9, unsharedPublications: 0, routerShellBuilds: 5.5, coordinatorShellBuilds: 8.8, threadVisits: 4146, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 793, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 1029, adapterChangeRecords: 2, wrapperChangeRecords: 2, switchChangeRecords: 2, workspaceChangeRecords: 7, creationReads: 254, watcherHostLookups: 136 },
-    watcherToolCall: { copies: 4.4, copiedObjects: 19.8, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2.2, coordinatorShellBuilds: 2.2, threadVisits: 845.9, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2.2, stringifies: 433, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 0, creationReads: 0, watcherHostLookups: 87 },
+    '1 streaming': { copies: 2.04, copiedObjects: 7.61, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 218.23, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 20.9, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 0.42, watcherRoomRecords: 0, threadRecordsTouched: 10.77, adapterChangeRecords: 0.85, wrapperChangeRecords: 0.85, switchChangeRecords: 0.85, workspaceChangeRecords: 0.92, creationReads: 2.69, watcherHostLookups: 3.21 },
+    '3 streaming': { copies: 2.2, copiedObjects: 22.25, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 225.08, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 31.56, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 0.51, watcherRoomRecords: 0, threadRecordsTouched: 73.23, adapterChangeRecords: 2.54, wrapperChangeRecords: 2.54, switchChangeRecords: 2.54, workspaceChangeRecords: 2.77, creationReads: 21.54, watcherHostLookups: 5.08 },
+    saveAnswerDraft: { copies: 9.9, copiedObjects: 57.2, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 3, coordinatorShellBuilds: 3, threadVisits: 330, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 5, stringifies: 55, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 4, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 4, creationReads: 0, watcherHostLookups: 8 },
+    typeInComposer: { copies: 5.5, copiedObjects: 17.6, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 3.3, coordinatorShellBuilds: 4.4, threadVisits: 9, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2, stringifies: 26.4, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 0, creationReads: 0, watcherHostLookups: 4.4 },
+    openThread: { copies: 9.9, copiedObjects: 25.3, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 5.5, coordinatorShellBuilds: 8.8, threadVisits: 817, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 34.1, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 0, creationReads: 0, watcherHostLookups: 4.4 },
+    send: { copies: 36.3, copiedObjects: 9357.7, wholeStateCopies: 3.3, wholeCopyThreads: 830.5, wholeCopyObjects: 8974.9, unsharedPublications: 0, routerShellBuilds: 5.5, coordinatorShellBuilds: 8.8, threadVisits: 4146, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 3, stringifies: 674.3, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 1029, adapterChangeRecords: 2, wrapperChangeRecords: 2, switchChangeRecords: 2, workspaceChangeRecords: 7, creationReads: 254, watcherHostLookups: 11 },
+    watcherToolCall: { copies: 4.4, copiedObjects: 19.8, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2.2, coordinatorShellBuilds: 2.2, threadVisits: 845.9, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 2.2, stringifies: 12.1, providerIdParses: 0, schemaErrors: 0, watcherRoomBuilds: 2.2, watcherRoomRecords: 0, threadRecordsTouched: 0, adapterChangeRecords: 0, wrapperChangeRecords: 0, switchChangeRecords: 0, workspaceChangeRecords: 0, creationReads: 0, watcherHostLookups: 6.6 },
   },
   stable: {
     '1 streaming': { copies: 2.39, copiedObjects: 301.12, wholeStateCopies: 0, wholeCopyThreads: 0, wholeCopyObjects: 0, unsharedPublications: 0, routerShellBuilds: 2, coordinatorShellBuilds: 2, threadVisits: 1571.75, watcherRecordCopies: 0, watcherRecordObjects: 0, watcherRecordComparisons: 0, unwatchedThreadPasses: 0, ownerLookups: 0, stringifies: 13.02, providerIdParses: 5, schemaErrors: 0, watcherRoomBuilds: 0, watcherRoomRecords: 0, threadRecordsTouched: 11.58, adapterChangeRecords: 0.92, wrapperChangeRecords: 0.92, switchChangeRecords: 0.92, workspaceChangeRecords: 1, creationReads: 2.92 , watcherHostLookups: 0 },
@@ -905,7 +922,7 @@ describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track 
     const history = KINDS.flatMap(kind => {
       const held = known(track, scenario, kind), growth = held?.growth[scenario]
       if (all[kind] <= (growth === undefined ? few[kind] * SLACK.ratio + SLACK.plus : few[kind] * growth)) return []
-      return [`${NAMES[kind]} grew from ${few[kind]} to ${all[kind]}${held ? `, more than the ${growth} times #1248 holds it to for ${held.why}` : ''}${grewAt(kind, quarterHistory.sites[scenario], owner.sites[scenario])}`]
+      return [`${NAMES[kind]} grew from ${few[kind]} to ${all[kind]}${held ? `, more than the ${growth} times KNOWN_HISTORY_GROWTH holds it to for ${held.why}` : ''}${grewAt(kind, quarterHistory.sites[scenario], owner.sites[scenario])}`]
     })
     // All three checks report, so a failure names everything that grew, along either line and against the budget.
     expect.soft(history, `${what}, the work grew with the history (the owner's ${owner.threads} threads on this computer held, a quarter of their history ${show(few)}, all of it ${show(all)}): ${history.join('; ')}. Do work bounded by what changed, and read state without copying it.${WHERE}`).toEqual([])
@@ -919,7 +936,7 @@ describe.each(TRACKS)('main\'s work at the owner\'s scale on %s (#1232)', track 
     const budget = BUDGET[track]?.[scenario]
     const over = budget ? KINDS.filter(kind => all[kind] > budget[kind]).map(kind => {
       const held = known(track, scenario, kind)
-      return `${NAMES[kind]}: ${all[kind]}, budget ${budget[kind]}${held ? ` (today's count, held there until #1248 stops ${held.why})` : ''}`
+      return `${NAMES[kind]}: ${all[kind]}, budget ${budget[kind]}${held ? ` (today's count, held there for ${held.why})` : ''}`
     }) : ['no budget']
     expect.soft(over, `${what}, at the owner's scale the work is over its budget (${show(all)}): ${over.join('; ')}.`).toEqual([])
     for (const [shape, { sites }] of Object.entries(measured[track])) {

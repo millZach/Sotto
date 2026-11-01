@@ -720,7 +720,8 @@ export class WatcherService implements WatcherControlHooks {
     compactAt?: () => number }) {
     this.hosts = new WatcherHosts({ local: () => options.control.watcherSnapshot(), localThreads: snapshot => options.control.hostThreadsOf(snapshot), remote: () => this.remote })
     this.wakes = new WatcherWakeUp({ snapshot: () => this.snapshot(), hosts: this.hosts, record: () => this.view(), ...options.ordinaryBatch ? { ordinaryBatch: options.ordinaryBatch } : {},
-      progress: target => this.remoteProgress.get(key(target))?.fingerprint,
+      // The pass hands the target's key, the same JSON `key` makes, so it builds none for each watched thread (#1248).
+      progress: (_target, targetKey) => this.remoteProgress.get(targetKey)?.fingerprint,
       ...options.swarms ? { swarmPending: (target: WatcherThreadTarget) => {
         const service = options.swarms!.service(), row = service?.swarmForThread(target.threadId)
           ?? this.owningSnapshot(target.hostId)?.threads.find(thread => thread.id === target.threadId)?.swarm

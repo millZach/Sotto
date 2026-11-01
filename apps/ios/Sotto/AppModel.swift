@@ -1631,7 +1631,8 @@ struct RailAsk: Equatable {
         ]
         fixtureDetails[laptop + "/iphone"] = decode(ThreadDetail.self, ["threadId": "iphone", "revision": 2,
             "messages": conversation, "activities": steps])
-        // A long conversation of tall replies, for the journey that opens a thread and expects its end on screen at once.
+        // A long conversation of tall replies, for the journey that opens a thread and expects its end on screen at once,
+        // with the turns before the latest ten not yet made.
         if arguments.contains("--ui-long-thread") {
             let (longMessages, longSteps) = Self.fixtureLongThread(at)
             fixtureDetails[laptop + "/drives"] = decode(ThreadDetail.self, ["threadId": "drives", "revision": 1,
@@ -1829,13 +1830,14 @@ struct RailAsk: Equatable {
     private static func fixtureLongThread(_ at: (Double) -> String) -> ([[String: Any]], [[String: Any]]) {
         var messages: [[String: Any]] = []
         var steps: [[String: Any]] = []
-        for turn in 0..<12 {
-            let base = Double(12 - turn) * 600
+        let turns = 40
+        for turn in 0..<turns {
+            let base = Double(turns - turn) * 600
             messages.append(["id": "ask-\(turn)", "role": "user", "createdAt": at(base),
                              "text": "Compare drive option \(turn + 1) with the last one, and say what changes for the panel."])
             steps.append(["id": "check-\(turn)", "sequence": turn + 1, "kind": "command", "status": "completed", "title": "Ran",
                           "command": "python compare_drives.py --option \(turn + 1)", "exitCode": 0, "durationMs": 4_000, "startedAt": at(base - 60)])
-            let lead = turn == 11 ? "Final comparison: the second drive wins." : "Option \(turn + 1) against the last one."
+            let lead = turn == turns - 1 ? "Final comparison: the second drive wins." : "Option \(turn + 1) against the last one."
             let bullets: [String] = (0..<(3 + turn % 4)).map { point in
                 "- **Point \(point + 1):** the drive's rated current, its cooling and the cable run all change, so the breaker and the conduit fill need checking again before anything is ordered."
             }
@@ -1843,7 +1845,7 @@ struct RailAsk: Equatable {
                 + "\n\n1. Check the breaker.\n2. Check the conduit fill.\n\n```sh\npython compare_drives.py --option \(turn + 1) --report\n```"
             messages.append(["id": "reply-\(turn)", "role": "assistant", "createdAt": at(base - 120), "text": text])
         }
-        steps.append(["id": "long-final", "sequence": 13, "kind": "command", "status": "completed", "title": "Ran",
+        steps.append(["id": "long-final", "sequence": turns + 1, "kind": "command", "status": "completed", "title": "Ran",
                       "command": "python summarize_drives.py", "exitCode": 0, "durationMs": 2_000, "startedAt": at(30)])
         return (messages, steps)
     }
