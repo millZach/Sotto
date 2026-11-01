@@ -1,4 +1,4 @@
-import React, { useEffect, useState, type ReactNode } from 'react'
+import React, { type ReactNode } from 'react'
 import { FolderOpen, SlidersHorizontal } from 'lucide-react'
 import { i18n } from '@lingui/core'
 import { plural } from '@lingui/core/macro'
@@ -12,6 +12,7 @@ import { ChoiceChip, effortChoices, RUNTIME_LABELS } from './ThreadOptions'
 import { EffortPicker } from './EffortPicker'
 import { ModelPicker } from './ModelPicker'
 import { ProviderUpgradeNotice } from './ProviderUpgradeNotice'
+import { ProjectsDirectoryRow } from './ProjectsDirectoryRow'
 import { SettingsGroup } from '../features/settings/SettingsGroup'
 import './agents.css'
 
@@ -72,24 +73,6 @@ function NewThreadDefaultsRow({ state, command }: { readonly state: AgentState; 
   </div>
 }
 
-/** A text setting saved when it loses focus. `heading` and `description` show in place of the label, which stays its name. */
-function SavedField({ label, value, onSave, secret = false, placeholder, heading, description, disabled = false, setting }: {
-  readonly label: string; readonly value: string; readonly onSave: (value: string) => Promise<boolean>
-  readonly secret?: boolean; readonly placeholder?: string; readonly heading?: string; readonly description?: string; readonly disabled?: boolean
-  /** The setting it changes, for Find a setting (`data-setting`, settingsPages.ts). */
-  readonly setting?: string
-}): ReactNode {
-  const { t } = useLingui()
-  const [draft, setDraft] = useState(value)
-  const [error, setError] = useState(false)
-  useEffect(() => { setDraft(value) }, [value])
-  const shown = heading === undefined ? label : <span className="account-row__heading"><strong>{heading}</strong>{description ? <span>{description}</span> : null}</span>
-  return <label className="agent-saved-field">{shown}<input aria-label={label} data-setting={setting} value={draft} disabled={disabled} type={secret ? 'password' : 'text'} autoComplete="off" placeholder={placeholder ?? ''} onChange={event => { setDraft(event.target.value); setError(false) }} onBlur={() => {
-    if (draft === value) return
-    void onSave(draft).then(ok => { setError(!ok); if (ok && secret) setDraft('') }).catch(() => setError(true))
-  }} aria-invalid={error} />{error ? <span role="alert">{t`Could not save. Check the value and try again.`}</span> : null}</label>
-}
-
 export function AgentSetupFields(): ReactNode {
   const { t } = useLingui()
   const agents = useOptionalAgents()
@@ -116,12 +99,13 @@ export function AgentSetupFields(): ReactNode {
       <div className="settings-rows account-rows">
         {computers ? computers.map(computer => {
           const computerName = computer.name
-          return <SavedField key={computer.hostId} setting="projects-directory" heading={computer.name}
-            label={computer.kind === 'local' ? t`Default projects directory on this computer` : t({ message: `Default projects directory on ${computerName}`, comment: '{computerName} is the name of a saved host.' })}
-            description={computer.connected ? t`Default projects directory` : t({ message: `Connect ${computerName} to change its projects directory.`, comment: '{computerName} is the name of a saved host.' })} disabled={!computer.connected}
+          return <ProjectsDirectoryRow key={computer.hostId} state={state} hostId={computer.hostId} local={computer.kind === 'local'} name={computer.name}
+            connected={computer.connected} heading={computer.name}
+            description={computer.connected ? t`Default projects directory` : t({ message: `Connect ${computerName} to change its projects directory.`, comment: '{computerName} is the name of a saved host.' })}
             value={state.host.clientHosts?.find(host => host.hostId === computer.hostId)?.projectsDirectory ?? ''} onSave={projectsDirectory => save({ projectsDirectory }, computer.hostId)} />
         })
-          : <SavedField setting="projects-directory" label={t`Default projects directory`} value={configuration.projectsDirectory} onSave={projectsDirectory => save({ projectsDirectory })} />}
+          : <ProjectsDirectoryRow state={state} hostId={state.hostId ?? ''} local name="" connected heading={t`Default projects directory`}
+            value={configuration.projectsDirectory} onSave={projectsDirectory => save({ projectsDirectory })} />}
       </div>
     </SettingsGroup>
     {state.error ? <p className="agent-error tt-paragraph" role="alert">{state.error}</p> : null}

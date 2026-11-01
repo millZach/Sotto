@@ -77,12 +77,16 @@ test('one set of new-thread defaults applies on every host, and each computer ke
     await expect.poll(async () => (await agents(page)).configuration.newThreadRuntimeMode).toBe('auto')
     await expect(section.getByRole('alert')).toHaveCount(0)
 
-    // Each computer's own projects folder, forge's saved on forge.
-    await expect(section.getByRole('textbox', { name: 'Default projects directory on this computer' })).toBeVisible()
-    const forgeFolder = section.getByRole('textbox', { name: 'Default projects directory on forge' })
-    await forgeFolder.fill('/home/builder/projects')
-    await forgeFolder.press('Tab')
-    await expect.poll(async () => (await agents(page)).host.clientHosts?.find(host => host.hostId === forge)?.projectsDirectory).toBe('/home/builder/projects')
+    // Each computer's own projects folder, forge's chosen among forge's own folders and saved on forge.
+    await expect(section.getByRole('button', { name: /^(Choose|Change) the default projects directory on this computer$/ })).toBeVisible()
+    const forgeFolder = section.getByRole('button', { name: /^(Choose|Change) the default projects directory on forge$/ })
+    await forgeFolder.click()
+    const browser = page.getByRole('dialog', { name: /^Default projects directory on forge/ })
+    await browser.getByRole('button', { name: 'code', exact: true }).click()
+    await expect(browser.getByRole('button', { name: /^site/ })).toBeVisible()
+    await browser.getByRole('button', { name: 'Use this folder', exact: true }).click()
+    await expect(browser).toBeHidden()
+    await expect.poll(async () => (await agents(page)).host.clientHosts?.find(host => host.hostId === forge)?.projectsDirectory).toBe(join(root, '~', 'code'))
     await expect(section.getByRole('alert')).toHaveCount(0)
     for (const [width, height] of [[1600, 1000], [1280, 800], [820, 560]] as const) {
       await resizeWindow(launched, width, height)
@@ -90,6 +94,7 @@ test('one set of new-thread defaults applies on every host, and each computer ke
         await page.evaluate(async value => window.sotto!.updateSettings({ appearance: value }), appearance)
         await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
         await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+        await forgeFolder.scrollIntoViewIfNeeded()
         await expect(forgeFolder).toBeInViewport({ ratio: 0.5 })
         await page.screenshot({ path: join(evidence, `${appearance}-${width}.png`), animations: 'disabled' })
       }

@@ -84,13 +84,20 @@ function hostIcon(host: Pick<BrowsableHost, 'kind'>, size: number): ReactNode {
  * `prototype/host-folder-browser` prototype). The computer step appears only when more than one is paired, and none
  * is chosen for the user. Folders are listed by the host itself, starting in its home folder, so a path is always
  * in that host's own format. This computer also offers its own folder dialog. New thread opens the same browser with
- * its host already chosen.
+ * its host already chosen, and Settings opens it to choose a computer's default projects directory.
  */
-export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy = false, error: outsideError = null, onUse, onClose }: {
+export function FolderBrowserDialog({ state, hostId: givenHostId, heading, startPath, purpose = 'project', busy = false, error: outsideError = null, onUse, onClose }: {
   readonly state: AgentState
   /** The host to browse, when the caller has chosen it already; otherwise the user chooses. */
   readonly hostId?: string | undefined
   readonly heading: string
+  /** A folder to open first, in the host's own format; its home folder when that folder can't be listed. */
+  readonly startPath?: string | undefined
+  /**
+   * What the folder is for: a project, which may already be one Sotto knows, or the folder new projects go in, which
+   * is never opened as a project and is made only when a project first goes in it.
+   */
+  readonly purpose?: 'project' | 'projects-directory' | undefined
   /** The caller is adding the project: the dialog waits rather than taking another choice. */
   readonly busy?: boolean | undefined
   readonly error?: LaterWords | null | undefined
@@ -136,15 +143,22 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
   /** Counts listings asked for, so an answer to one the user has moved on from is dropped. */
   const listingRequests = useRef(0)
 
-  const read = useCallback(async (target: BrowsableHost, path: string | null | undefined, name?: string): Promise<void> => {
+  /** Lists a folder on the host. `orHome` reads the home folder instead when that one can't be listed, as a start folder that has gone. */
+  const read = useCallback(async (target: BrowsableHost, path: string | null | undefined, name?: string, orHome = false): Promise<void> => {
     const bridge = window.sotto?.agents?.hostFolders
     const request = ++listingRequests.current
     if (!bridge) { setError(msg`Folder browsing is unavailable. Reopen Sotto and try again.`); return }
     setLoading(true); setError(null)
     const place = where(target)
     try {
-      const result = await bridge({ hostId: target.hostId, ...(path === undefined ? {} : { path }) })
+      const ask = (folder: string | null | undefined): Promise<HostFoldersResult> => bridge({ hostId: target.hostId, ...(folder === undefined ? {} : { path: folder }) })
+      let result = orHome ? await ask(path).catch(() => null) : await ask(path)
       if (request !== listingRequests.current) return
+      if (result?.status !== 'listed' && orHome) {
+        result = await ask(undefined)
+        if (request !== listingRequests.current) return
+      }
+      if (result === null) return
       if (result.status === 'listed') {
         setListing(result); setQuery(''); setHighlight(result.folders.length ? 0 : -1); setNamedFolder(null); setDraftName(null)
       } else if (result.status === 'unreadable') {
@@ -160,12 +174,12 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
     } finally { if (request === listingRequests.current) setLoading(false) }
   }, [])
 
-  // The folder step starts in the chosen host's home folder, and starts again when that host reconnects.
+  // The folder step starts in the start folder or the chosen host's home folder, and starts again when that host reconnects.
   useEffect(() => {
     if (!host) return
     setListing(null); setNamedFolder(null); setDraftName(null); setQuery('')
     if (!host.connected) { setError(notConnected(host)); return }
-    void read(host, undefined)
+    void (startPath && host.hostId === givenHostId ? read(host, startPath, undefined, true) : read(host, undefined))
   }, [host?.hostId, host?.connected])
 
   useEffect(() => {
@@ -198,7 +212,7 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
   const atTop = !namedFolder && (listing === null || listing.crumbs.length <= (listing.separator === '\\' ? 2 : 1))
   const chosenPath = namedFolder?.path ?? (atTop ? null : listing?.path ?? null)
   const projectAt = (path: string): AgentProject | undefined => host ? projectAtFolder(state.host.projects, host.hostId, path) : undefined
-  const existing = namedFolder || chosenPath === null ? undefined : projectAt(chosenPath)
+  const existing = purpose !== 'project' || namedFolder || chosenPath === null ? undefined : projectAt(chosenPath)
   const existingTitle = existing?.title ?? ''
   const homeName = t({ message: 'Home', comment: 'The home folder of the user\'s account on a computer.' })
   const currentName = current && listing && current.path === listing.home ? homeName : current?.name ?? ''
@@ -322,7 +336,9 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
           {draftNameError ? <p className="folder-browser__naming-error tt-paragraph" role="alert">{shownWords(draftNameError)}</p> : null}
         </> : null}
         {loading ? <p className="new-thread-dialog__empty tt-paragraph" role="status">{t({ message: `Reading folders on ${place}…`, comment: '{place} is "this computer" or a saved host\'s name.' })}</p>
-          : namedFolder ? <p className="new-thread-dialog__empty tt-paragraph">{t({ message: `This folder is new. Sotto makes it on ${place} when you press Use this folder.`, comment: '{place} is "this computer" or a saved host\'s name. "Use this folder" is the button\'s name.' })}</p>
+          : namedFolder ? <p className="new-thread-dialog__empty tt-paragraph">{purpose === 'project'
+            ? t({ message: `This folder is new. Sotto makes it on ${place} when you press Use this folder.`, comment: '{place} is "this computer" or a saved host\'s name. "Use this folder" is the button\'s name.' })
+            : t({ message: `This folder is new. Sotto makes it on ${place} when a new project first goes in it.`, comment: '{place} is "this computer" or a saved host\'s name.' })}</p>
           : listing ? <>
             {shown.map((folder, index) => <button key={folder.path} type="button" className="new-thread-choice" data-highlighted={highlight === index || undefined} disabled={busy}
               onMouseEnter={() => setHighlight(index)} onClick={() => open(folder.path, folder.name)}>
@@ -339,7 +355,7 @@ export function FolderBrowserDialog({ state, hostId: givenHostId, heading, busy 
         <Button variant="ghost" disabled={busy || loading || !listing || listing.path === null || draftName !== null || namedFolder !== null} onClick={() => { setDraftName(''); setDraftNameError(null) }}><FolderPlus size={15} aria-hidden="true" />{t`New folder`}</Button>
         {host.kind === 'local' && window.sotto?.agents?.chooseProjectDirectory ? <Button variant="ghost" disabled={busy} onClick={() => void explorer()}><FolderOpen size={15} aria-hidden="true" />{explorerLabel}</Button> : null}
         <span className="folder-browser__target" title={chosenPath ?? undefined}><bdi>{existing ? t({ message: `Already the project ${existingTitle}`, comment: '{existingTitle} is a project\'s title.' }) : chosenPath ?? ''}</bdi></span>
-        <Button disabled={busy || loading || chosenPath === null} onClick={use}>{busy ? t`Adding…` : useLabel}</Button>
+        <Button disabled={busy || loading || chosenPath === null} onClick={use}>{busy ? (purpose === 'project' ? t`Adding…` : t({ message: 'Saving…', comment: 'The Use this folder button while the chosen folder is saved.' })) : useLabel}</Button>
       </footer>
       <footer className="new-thread-dialog__keys"><span><kbd>↑</kbd><kbd>↓</kbd> {t({ message: 'Navigate', comment: 'A keyboard hint: the arrow keys move through the list.' })}</span><span><kbd>Enter</kbd> {t({ message: 'Open folder', comment: 'A keyboard hint: Enter opens the highlighted folder.' })}</span><span><kbd>⌫</kbd> {t({ message: 'Up a folder', comment: 'A keyboard hint: Backspace goes to the parent folder.' })}</span>{useChord ? <span><kbd>{mac ? '⌘' : 'Ctrl'}</kbd><kbd>Enter</kbd> {useLabel}</span> : null}<span><kbd>Esc</kbd> {choosing ? t({ message: 'Back', comment: 'A keyboard hint: Escape goes back to the list of computers.' }) : t({ message: 'Close', comment: 'A keyboard hint: Escape closes the dialog.' })}</span></footer>
     </>}
