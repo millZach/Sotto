@@ -1893,6 +1893,29 @@ export class AgentControl {
     return null
   }
   /**
+   * Whether a model, effort or speed change could go to this thread now with nothing of its own ahead of it: no turn, no
+   * request, a connected provider, and no send on its way or unconfirmed. Unlike `pendingThreadWorkReason`, what only
+   * waits in the queue does not count, so Watcher's choice kept for its next turn goes ahead of it (watcher.ts). A prompt
+   * the user set aside holds nothing, as for a model change from the room (#1325).
+   */
+  threadSettingsCanGo(threadId: string): boolean {
+    const thread = this.threadById(threadId)
+    if (!thread || isThreadTurnRunning(thread) || this.waitsOnRequest(thread) || !isThreadProviderConnected(this.state.host, thread) || isThreadClosed(thread)) return false
+    if (this.pumping.has(threadId) || this.threadPrompts.has(threadId)) return false
+    if (this.outbox.some(item => item.threadId === threadId && !holdsNothingBack(item))) return false
+    if (this.followupStore.peek().items.some(item => item.threadId === threadId && (item.status === 'dispatching' || item.status === 'uncertain'))) return false
+    return !(this.state.deliveries ?? []).some(item => item.threadId === threadId && item.setAside !== true && ['queued', 'submitting', 'uncertain'].includes(item.status))
+  }
+  /**
+   * Whether a model, effort or speed change to this thread has no result yet: main keeps it, and asks the provider for it
+   * again before the thread's next turn (#1192).
+   */
+  settingsUnconfirmed(threadId: string): boolean {
+    return this.outbox.some(item => item.threadId === threadId && item.type === 'configure-thread' && holdsNothingBack(item) && !this.settingsDispatching.has(item.id))
+  }
+  /** Lets Watcher's queue go on once the choice it waited for has gone (watcher.ts). */
+  resumeWatcherQueue(): void { this.pumpFollowups() }
+  /**
    * Where one thread's files are, from the live state. Files, Git changes, the terminal and the browser
    * ask this several times per listing and every couple of seconds per watched workspace; answering from
    * `get()` copied every loaded history to read six fields. The binding is a new object of strings.
@@ -4645,6 +4668,8 @@ export class AgentControl {
       if (!this.threadAvailable(threadId) || this.moveFences.has(threadId)) continue
       // A queued follow-up waits on a prompt of its own thread, as before, not on the thread's other work.
       if (this.pumping.has(threadId) || this.threadPrompts.has(threadId)) continue
+      // Watcher's model, effort or speed kept for its next turn goes before anything queued for it (watcher.ts).
+      if (this.watcherHooks?.holdsQueue?.(threadId)) continue
       const thread = this.state.host.threads.find(t => t.id === threadId)
       // A delegation's news waits whole while delegation is off, as on a stable run after an Owl one (ADR-0072), and
       // holds nothing back: news folded with it is set apart from it first, and the queue goes on past it (ADR-0081).
@@ -5435,6 +5460,14 @@ export class AgentControl {
           validateThreadOptions(this.state.host, command, thread.modelId)
           this.guardThreadPermission(client, command, resolveModel(this.state.host.models, command.modelId ?? thread.modelId))
         }
+        // Watcher's model, effort or speed chosen from its chips while it works waits for its next turn instead of being
+        // refused (watcher.ts). Watcher's own setup, which takes that choice, has an origin and goes on as any change.
+        if (!origin && command.runtimeMode === undefined && command.providerMode === undefined && this.watcherHooks?.keepForNextTurnFromChip?.(command, wanted => {
+          const thread = this.thread(command.threadId)
+          if (thread.providerId && resolveModel(this.state.host.models, wanted.modelId)?.providerId !== thread.providerId) throw new Error('Choose a model from this thread provider. Existing sessions cannot move between providers.')
+          validateThreadOptions(this.state.host, { modelId: wanted.modelId, ...wanted.reasoningEffort ? { reasoningEffort: wanted.reasoningEffort } : {},
+            ...wanted.speed !== undefined ? { speed: wanted.speed } : {} }, thread.modelId)
+        })) return
         validate()
         // The thread interface exposes two distinct commands. Each has its own durable identity;
         // a partial or uncertain save cannot be mistaken for an atomic update.

@@ -50,6 +50,23 @@ public enum WatcherSettings {
                                    permissions: "", speed: current.speed ?? ThreadSettings.standard)
     }
 
+    /// What each chip shows while the computer keeps a choice for Watcher's next turn: that choice, its effort the model's
+    /// default where it names none, and its speed where it names one, else Watcher's own.
+    public static func values(_ current: WatcherPhoneState.Current, next: WatcherPhoneState.NextTurnOptions?, catalog: [ThreadModel]) -> ThreadSettingValues {
+        guard let next else { return values(current, catalog: catalog) }
+        let kept = CatalogEntry.model(catalog, id: next.modelId)
+        return ThreadSettingValues(model: next.modelId, effort: next.reasoningEffort ?? kept?.defaultReasoningEffort ?? "", permissions: "",
+                                   speed: (next.speedChosen ? next.speed : current.speed) ?? ThreadSettings.standard)
+    }
+
+    /// What holds the model, effort and speed chips while Watcher is busy. A computer that keeps a change for Watcher's next
+    /// turn (`WatcherWire.settingsLaterFeature`) holds them for none of it; an older one refuses a change while Watcher's
+    /// turn runs or a card of its own waits (`working`), or while a message to it is on its way.
+    public enum BusyHold: Equatable, Sendable { case working, messageOnItsWay }
+    public static func busyHold(keptForNextTurn: Bool, working: Bool, messageOnItsWay: Bool) -> BusyHold? {
+        if keptForNextTurn { return nil }
+        return working ? .working : messageOnItsWay ? .messageOnItsWay : nil
+    }
     /// The effort levels Watcher's chip offers on a model: the model's own, without Ultracode, which is a person's choice
     /// for a thread and never Watcher's (ADR-0148, decision 6).
     public static func efforts(_ model: ThreadModel?) -> [String] { (model?.reasoningEfforts ?? []).filter { $0 != "ultracode" } }
@@ -67,22 +84,25 @@ public enum WatcherSettings {
     }
 
     /// The operation a press sends, or nil where there is nothing to change: a model on its own (Watcher's provider picks
-    /// the new model's effort), or the effort or speed on the model Watcher is on. Never the permissions.
-    public static func press(_ kind: ThreadSettingKind, value: String, current: WatcherPhoneState.Current, catalog: [ThreadModel]) -> [String: JSONValue]? {
-        let shown = values(current, catalog: catalog)
+    /// the new model's effort), or the effort or speed on the model the chips show, which is the one kept for Watcher's next
+    /// turn while one waits. Never the permissions.
+    public static func press(_ kind: ThreadSettingKind, value: String, current: WatcherPhoneState.Current,
+                             next: WatcherPhoneState.NextTurnOptions? = nil, catalog: [ThreadModel]) -> [String: JSONValue]? {
+        let shown = values(current, next: next, catalog: catalog)
         guard kind != .permissions, shown[kind] != value else { return nil }
+        let shownModel = CatalogEntry.model(catalog, id: shown.model)
         switch kind {
         case .model:
             guard let chosen = CatalogEntry.model(catalog, id: value), let provider = chosen.providerId, providers.contains(provider) else { return nil }
-            // The model Watcher is on, listed under its base, leaves it where it is.
-            if chosen.id == model(current, catalog: catalog)?.id { return nil }
+            // The model the chips show, listed under its base, leaves it where it is.
+            if chosen.id == shownModel?.id { return nil }
             return WatcherWire.open(target: current.target, provider: provider, modelID: chosen.id)
         case .effort:
-            guard efforts(model(current, catalog: catalog)).contains(value) else { return nil }
-            return WatcherWire.open(target: current.target, provider: current.provider, modelID: current.modelId, effort: value)
+            guard efforts(shownModel).contains(value) else { return nil }
+            return WatcherWire.open(target: current.target, provider: current.provider, modelID: shown.model, effort: value)
         case .speed:
             // The model goes with the change, so the effort goes too: a model named alone takes its default effort.
-            return WatcherWire.open(target: current.target, provider: current.provider, modelID: current.modelId,
+            return WatcherWire.open(target: current.target, provider: current.provider, modelID: shown.model,
                                     effort: shown.effort, speed: value)
         case .permissions:
             return nil

@@ -1559,6 +1559,16 @@ private struct WatcherDock: View {
                     .padding(.horizontal, Space.s3)
                     .accessibilityIdentifier("watcher-permissions-in-force")
             }
+            // A model, effort or speed chosen while Watcher works, which its computer keeps for Watcher's next turn: the
+            // chips show it, and this says when it starts.
+            if model.offersWatcherComposer(hostID), model.watcherPage(hostID)?.nextTurnOptions != nil {
+                Text("Watcher starts its next turn on this choice.").font(.sotto(.caption)).foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .paragraphDirection()
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, Space.s3)
+                    .accessibilityIdentifier("watcher-next-turn")
+            }
             if model.watcherHandoverOffered(hostID) { WatcherHandoverStrip(hostID: hostID) }
             field
         }
