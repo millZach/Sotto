@@ -1,9 +1,9 @@
 /**
  * Session reaper: stops a provider session that has sat idle past a threshold, so a run holds only the
- * sessions it is using. A session in the watched set is never stopped, and neither is one running a turn
- * or holding a request the user has not answered. Stopping is meant to be invisible: the thread keeps its
- * place in the snapshot and its messages are answered for by the event store, and the next action starts
- * its session again.
+ * sessions it is using. A session its adapter keeps running is never stopped (the watched set, or for Claude
+ * Code the live-session set), and neither is one running a turn or holding a request the user has not
+ * answered. Stopping is meant to be invisible: the thread keeps its place in the snapshot and its messages
+ * are answered for by the event store, and the next action starts its session again.
  */
 export interface SessionReaperOptions {
   /** How often to look for idle sessions. */
@@ -14,7 +14,11 @@ export interface SessionReaperOptions {
   readonly now?: () => number
   /** A turn is running, a request is outstanding, or a command is mid-dispatch. */
   isBusy(id: string): boolean
-  /** The thread is in the watched set: on screen now, or assigned, queued or awaiting a follow-up. */
+  /**
+   * The adapter keeps this thread's session running whatever its idle age. For most adapters that is the watched set: on
+   * screen now, or assigned, queued or awaiting a follow-up. Claude Code's is the live-session set, which leaves out a
+   * thread that is only on screen (ADR-0038, November 1, 2026 amendment).
+   */
   isWatched(id: string): boolean
   /** An owned maintenance read defers closing this session, but does not renew its idle age. */
   isReading?(id: string): boolean

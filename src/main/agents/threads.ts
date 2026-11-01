@@ -142,6 +142,8 @@ export class SottoThreadHost implements AgentHost {
   }
   /** Undefined until something says what it is looking at; a connection never invents a watched set. */
   private observed: readonly string[] | undefined
+  /** Undefined until the coordinator names a live-session set; an adapter that never hears one keeps its old rule. */
+  private liveSessions: readonly string[] | undefined
   /** The settled threads the caller last named, handed on again when the adapter connects. */
   private settled: readonly string[] | undefined
   /** Per Sotto thread with no binding yet: the session ID an early start used, which its first send then reserves. */
@@ -230,6 +232,7 @@ export class SottoThreadHost implements AgentHost {
   useWorkerRoles(roles: WorkerRoleSource): void { this.inner.useWorkerRoles?.(roles) }
   async connect(): Promise<AgentHostSnapshot> {
     await this.registry.load()
+    if (this.liveSessions) this.keepSessionsLive(this.liveSessions)
     if (this.observed) this.observeThreads(this.observed)
     if (this.settled) this.useSettledThreads(this.settled)
     return this.read(() => this.inner.connect())
@@ -531,10 +534,18 @@ export class SottoThreadHost implements AgentHost {
   }
   observeThreads(threadIds: readonly string[]): void {
     this.observed = [...threadIds]
-    this.inner.observeThreads?.(threadIds.flatMap(threadId => {
+    this.inner.observeThreads?.(this.ownSessions(threadIds))
+  }
+  keepSessionsLive(threadIds: readonly string[]): void {
+    this.liveSessions = [...threadIds]
+    this.inner.keepSessionsLive?.(this.ownSessions(threadIds))
+  }
+  /** The native session IDs of those of these threads bound to this adapter's provider. */
+  private ownSessions(threadIds: readonly string[]): string[] {
+    return threadIds.flatMap(threadId => {
       const binding = this.registry.byThread(threadId)
       return binding?.provider === this.provider ? [binding.sessionId] : []
-    }))
+    })
   }
 
   disconnect(): void { this.unbound.clear(); this.inner.disconnect() }

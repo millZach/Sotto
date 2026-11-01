@@ -478,6 +478,16 @@ export interface AgentHost {
   useThreadHistory?(source: ThreadHistorySource): void
   observeThreads?(threadIds: readonly string[]): void
   /**
+   * The live-session set (CONTEXT.md), by the caller's IDs: the observed threads whose provider session must be running
+   * whether or not anyone types, because Sotto will send to them unasked or is waiting on them. The coordinator names it
+   * each time it calls `observeThreads`, just before: Watcher's watched threads, delegations, threads with a queued
+   * follow-up, threads with an outbox entry and a send's own thread. An adapter that takes it starts no session for a
+   * thread merely observed, starts one for each thread in it, and never reaps those. Until it first hears one, or when
+   * it does not take it, it starts a session for every observed thread, as before. Claude Code takes it (ADR-0016,
+   * November 1, 2026 amendment).
+   */
+  keepSessionsLive?(threadIds: readonly string[]): void
+  /**
    * The threads the user has settled (CONTEXT.md, Settled), as a run begins, by the caller's IDs. An adapter may leave
    * them out of work it does for every saved thread once, such as Codex catching a rollout up after an update, and do it
    * when the thread is opened instead (#992, Zach's call on October 30).

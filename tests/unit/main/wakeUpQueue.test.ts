@@ -32,11 +32,13 @@ class Host implements AgentHost {
   listeners = new Set<(s: AgentHostSnapshot) => void>()
   attempts: AgentHostCommand[] = []
   observed: string[][] = []
+  live: string[][] = []
   async connect() { this.state ??= await new E2EAgentHost().connect(); this.state.connected = true; return this.snapshot() }
   async snapshot() { return structuredClone(this.state) }
   subscribe(fn: (s: AgentHostSnapshot) => void) { this.listeners.add(fn); return () => this.listeners.delete(fn) }
   disconnect() { this.state.connected = false }
   observeThreads(ids: readonly string[]) { this.observed.push([...ids]) }
+  keepSessionsLive(ids: readonly string[]) { this.live.push([...ids]) }
   update(id: string, patch: Partial<AgentThread>) { Object.assign(this.state.threads.find(t => t.id === id)!, patch); this.emit() }
   emit() { for (const fn of this.listeners) fn(structuredClone(this.state)) }
   async execute(c: AgentHostCommand): Promise<AgentHostResult> {
@@ -240,9 +242,12 @@ describe('a wake-up', () => {
     await f.control.deliverWakeUp('workshop', news(1), { tool: true })
     await f.control.command({ type: 'select-thread', threadId: 'docs' })
     expect(f.host.observed.at(-1) ?? []).not.toContain('workshop')
+    expect(f.host.live.at(-1) ?? []).not.toContain('workshop')
     expect(f.control.hasPendingThreadWork('workshop')).toBe(false)
     await f.control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'mine' })
     expect(f.host.observed.at(-1)).toContain('workshop')
+    // The user's own follow-up keeps the thread's provider session live, so it can send without waiting for a start.
+    expect(f.host.live.at(-1)).toContain('workshop')
     expect(f.control.hasPendingThreadWork('workshop')).toBe(true)
   })
 

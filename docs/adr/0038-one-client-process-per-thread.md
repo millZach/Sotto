@@ -24,7 +24,7 @@ T3 Code had already solved this. Its maintenance runner installs the update with
 
 - stops every process that is not busy at once, the way the idle reaper stops one, so nothing is shown and the thread's next action starts the new client;
 - marks every busy process to stop the moment it is no longer busy, so a working thread finishes its turn, and a thread waiting on a request keeps waiting for the user, on the old client;
-- starts a watched thread again on the new client straight away, because a watched thread always has a process.
+- starts a watched thread again on the new client straight away, because a watched thread always has a process. (November 1, 2026: for Claude Code, a thread in the live-session set; see the amendment below.)
 
 It never disconnects the provider, cancels a turn or answers a request. A version reported later by a process started from the old client does not replace the newer one. Personal chats are told the same way and stay connected.
 
@@ -41,3 +41,22 @@ A process being created, or a send between its first read of the thread and the 
 **A Grok turn no longer outlives Sotto.** The shared leader used to keep a turn running after Sotto quit. Now it ends with its process, as Codex and Claude Code turns already did. Grok's history would show such a turn running forever and refuse every later send, so the adapter records how it ended in the thread's alias (interrupted when Sotto closed the process, failed when it died on its own) and the thread reads as idle or as an error. A Grok session another process holds, such as one taken over in the Grok CLI, has not yet been checked against a live `--no-leader` process.
 
 **The fakes are multi-process.** `fakeCodexAppServer.mjs` and `fakeGrokThreadAgent.mjs` share their state across processes under a file lock, and each records which process did what. Every adapter that takes client updates passes the client update case in `tests/integration/adapterContract.ts`: a working thread's turn completes across the update, the provider stays connected and the version is read again.
+
+## Amendment: the reaper spares Claude Code's live-session set, not the watched set (November 1, 2026, #992)
+
+ADR-0016's amendment of the same date stops a Claude thread on screen from starting its CLI. This ADR's reaper rule had
+the matching half: it never stopped a session in the watched set, so a CLI behind a pane that the user had typed or sent
+in stayed until the pane closed, however long it sat idle. With ten such panes that was ten CLIs of 104 to 308 MB each on
+forge (`docs/perf/2026-11-01-claude-start-on-demand.md`).
+
+For Claude Code the reaper now spares the **live-session set** (`CONTEXT.md`) instead: Watcher's watched threads, the
+threads a delegation follows, threads with a queued follow-up of the user's, threads with an outbox entry and a send's
+own thread. An idle CLI behind a pane alone is stopped after thirty minutes like any other idle session, and the
+thread's next action, or typing in it, starts it again. A busy CLI is still never stopped: a turn, a request waiting, a
+live watch, background work, a compaction or a command mid-dispatch keeps it, on screen or not. After a client update,
+a thread in the live-session set starts again on the new client straight away, and one only on screen starts on the new
+client when the user next types in it or acts on it. Connect starts the live-session set's CLIs four at a time, as it
+started the watched set's (ADR-0057).
+
+Codex, Grok Build, Devin and the other providers keep the rule above: their reaper spares the watched set, and their
+watched threads keep a process. A Claude adapter that has not been told a live-session set keeps it too.

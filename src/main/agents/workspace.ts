@@ -978,6 +978,11 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   /** The threads the window last said it looks at, which their provider is told once no read holds one back. */
   private observation: ReadonlySet<string> = new Set()
   /**
+   * The live-session set the coordinator last named (CONTEXT.md). The provider is told the threads of it it observes, less
+   * those whose records are still on their way, with the observation. Undefined until the coordinator names one.
+   */
+  private liveSessions: ReadonlySet<string> | undefined
+  /**
    * How many reads in `activityReads` are of threads in `observation`. The provider is told the observation once this
    * comes to nought, so a window opening many stored threads tells it once for them all, not once for each (`endRead`).
    */
@@ -3022,12 +3027,25 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     // A window opening many stored threads publishes their records as a burst does, not once for each.
     if (keeps && !this.stopping) this.publishSoon(wanted)
   }
-  /** The provider hears which threads the window looks at, less those whose records are still on their way. */
+  /** The provider hears which threads the window looks at, less those whose records are still on their way, and which keep a live session. */
   private tellObservation(): void {
-    // A thread cleared since the window last said what it shows is left out: a read let go with the clear tells the provider
-    // again before the window does. A thread the workspace does not hold yet still goes, as the window names it.
-    this.inner.observeThreads?.([...this.observation].filter(id => !this.activityReads.has(id) && !this.forgetting.has(id)
-      && !this.clearedIds.has(id) && this.threadById(id)?.nativeSessionStarted !== false))
+    this.inner.observeThreads?.([...this.observation].filter(id => this.tellable(id)))
+    this.tellLiveSessions()
+  }
+  /**
+   * The provider hears which of the threads it observes keep a live session. One not observed yet, or whose records are
+   * still on their way, is told with its observation, so a session it starts merges onto them.
+   */
+  private tellLiveSessions(): void {
+    if (this.liveSessions) this.inner.keepSessionsLive?.([...this.liveSessions].filter(id => this.observation.has(id) && this.tellable(id)))
+  }
+  /**
+   * Whether the provider may hear of this thread now. A thread cleared since the window last said what it shows is left
+   * out: a read let go with the clear tells the provider again before the window does. A thread the workspace does not
+   * hold yet still goes, as the window names it.
+   */
+  private tellable(id: string): boolean {
+    return !this.activityReads.has(id) && !this.forgetting.has(id) && !this.clearedIds.has(id) && this.threadById(id)?.nativeSessionStarted !== false
   }
   /**
    * A record read back may still carry subagent task words from before the roster held them, when the start that moved
@@ -5675,6 +5693,17 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       changed = true
     }
     if (changed) this.publish()
+  }
+  /**
+   * The observed threads whose provider session stays running (CONTEXT.md, live-session set). The coordinator names it
+   * just before the observation; a thread that is not observed yet, or whose stored records are on their way, is told
+   * with its observation once they arrive, so a session it starts merges onto them.
+   */
+  keepSessionsLive(ids: readonly string[]): void {
+    if (this.stopping) return
+    if ((!this.watcherEnabled || this.held.size) && !this.ready) { void this.initialize().then(() => this.keepSessionsLive(ids)).catch(() => undefined); return }
+    this.liveSessions = new Set(ids.filter(id => { const thread = this.threadById(id); return !thread || this.visible(thread) }))
+    this.tellLiveSessions()
   }
   /**
    * Early start (#769), on the thread's own lane so it orders with its sends. A started thread's provider session is

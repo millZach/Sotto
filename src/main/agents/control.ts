@@ -3309,12 +3309,22 @@ export class AgentControl {
       this.say(`${label} updated.`)
     } finally { this.updatingClient = null }
   }
+  /**
+   * Tell the host which threads keep a live provider session (CONTEXT.md, live-session set), then which it observes. A
+   * thread on screen is only observed: its transcript is read and its messages held, and its session starts when the user
+   * types, sends or acts on it (ADR-0016, November 1, 2026 amendment). Threads Sotto sends to unasked or waits on keep
+   * theirs: Watcher's, a delegation's, a queued follow-up's, an outbox entry's, and a send's own (`threadIds`). The set
+   * goes first, so an adapter never takes an observation for a start before it has heard which threads are live.
+   */
   private observe(...threadIds: string[]): void {
-    this.dependencies.host.observeThreads?.([...new Set([
+    const host = this.dependencies.host
+    const live = [...new Set([...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.delegationHooks?.observedThreadIds() ?? [], ...this.queuedThreadIds(),
+      ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])].filter(id => this.threadAvailable(id))
+    host.keepSessionsLive?.(live)
+    host.observeThreads?.([...new Set([
       ...(this.dependencies.observeActiveThread !== false && this.state.activeThreadId ? [this.state.activeThreadId] : []),
       ...(this.state.draftThreadId && this.hasDraft() ? [this.state.draftThreadId] : []),
-      ...this.viewedThreadIds.filter(id => this.threadById(id) !== undefined),
-      ...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.delegationHooks?.observedThreadIds() ?? [], ...this.queuedThreadIds(), ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])].filter(id => this.threadAvailable(id)))
+      ...this.viewedThreadIds.filter(id => this.threadById(id) !== undefined), ...live])].filter(id => this.threadAvailable(id)))
   }
   /**
    * The threads whose follow-up queue holds something of the user's, or a wake-up already sending. A queue holding only

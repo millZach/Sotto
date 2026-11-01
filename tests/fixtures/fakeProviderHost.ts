@@ -12,6 +12,8 @@ export class FakeProviderHost implements AgentHost {
   /** What a side call answers; absent, this provider writes nothing, the way Devin does. */
   sideWriter: ((sessionId: string, prompt: ShortTextPrompt) => Promise<string | null>) | undefined
   observed: readonly string[] = []
+  /** The live-session set as last named, by this provider's session IDs; undefined until one is. */
+  live: readonly string[] | undefined
   /** The provider's own copy of a conversation (#1028), when a test gives this provider one. */
   forkThread?: (request: ThreadForkRequest) => Promise<AgentHostResult>
   connectCalls = 0
@@ -44,6 +46,7 @@ export class FakeProviderHost implements AgentHost {
   }
   emit(): void { for (const listener of this.listeners) listener(structuredClone(this.state)) }
   observeThreads(threadIds: readonly string[]): void { this.observed = [...threadIds] }
+  keepSessionsLive(threadIds: readonly string[]): void { this.live = [...threadIds] }
   async writeShortText(sessionId: string, prompt: ShortTextPrompt): Promise<string | null> {
     this.sideWrites.push({ sessionId, prompt: structuredClone(prompt) })
     return this.sideWriter ? this.sideWriter(sessionId, prompt) : null

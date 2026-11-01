@@ -28,8 +28,11 @@ for (const kind of ['question', 'permission'] as const) it(`says a Claude thread
     await f.host.execute({ type: 'create-project', commandId: randomUUID(), projectId: f.projectId, title: 'Project', path: f.root })
     await f.host.execute({ type: 'create-thread', commandId: randomUUID(), threadId, projectId: f.projectId, title: 'Asks first', modelId: f.modelId })
     await control.start(); await control.command({ type: 'connect' })
-    // Opened, so Claude's process is running for it, as it is for a thread you just prompted.
+    // Opened and typed in, so Claude's process is running for it, as it is for a thread you just prompted. Opening alone
+    // starts none (ADR-0016, November 1 amendment); typing does (ADR-0057).
     await control.command({ type: 'select-thread', threadId })
+    await control.command({ type: 'start-thread-session', threadId })
+    await expect.poll(() => control.get().host.threads.find(thread => thread.id === threadId)?.providerSessionOpen).toBe(true)
     await (kind === 'question' ? f.driver.raiseQuestion(threadId, 'Which colour?') : f.driver.raisePermission(threadId, 'Build?'))
     await expect.poll(() => control.get().host.threads.find(thread => thread.id === threadId)?.requests.map(request => request.kind),
       { message: `the ${kind} never reached thread.requests, so the composer has nothing to show` }).toEqual([kind])

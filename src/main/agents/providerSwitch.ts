@@ -101,6 +101,8 @@ export class ConfiguredProviderHost implements AgentHost {
   private registrationLoad: Promise<void> | undefined
   /** Undefined until something says what it is looking at; a connection never invents a watched set. */
   private observed: readonly string[] | undefined
+  /** The live-session set the coordinator last named, handed to each provider as it connects; undefined until it names one. */
+  private liveSessions: readonly string[] | undefined
   /** The settled threads the caller last named, handed to each provider as it connects. */
   private settled: readonly string[] | undefined
   private readonly slots = new Map<ProviderId, Slot>()
@@ -484,6 +486,7 @@ export class ConfiguredProviderHost implements AgentHost {
       for (const listener of this.usageListeners) listener(projected)
     }) : undefined
     this.publish()
+    if (this.liveSessions) this.options.hosts[id].keepSessionsLive?.(this.liveSessions)
     if (this.observed) this.options.hosts[id].observeThreads?.(this.observed)
     if (this.settled) this.options.hosts[id].useSettledThreads?.(this.settled)
     const pending = (async () => {
@@ -776,6 +779,10 @@ export class ConfiguredProviderHost implements AgentHost {
     this.observed = [...ids]
     // SottoThreadHost independently maps only the bindings belonging to its adapter.
     for (const [id, slot] of this.slots) if (slot.wanted) this.options.hosts[id].observeThreads?.(ids)
+  }
+  keepSessionsLive(ids: readonly string[]): void {
+    this.liveSessions = [...ids]
+    for (const [id, slot] of this.slots) if (slot.wanted) this.options.hosts[id].keepSessionsLive?.(ids)
   }
   disconnect(provider?: ProviderId): void {
     for (const id of provider ? [provider] : providerIdSchema.options) {
