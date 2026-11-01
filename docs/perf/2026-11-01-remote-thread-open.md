@@ -55,16 +55,25 @@ coming on screen or a catch-up about 0.6 MB less again, each about 1.6 s at 370 
 ## What is left
 
 A click still sends the thread twice. The window asks for the history before the pane observes the thread, so the router
-reads it; the host counts a read as held only for a thread already observed, so the observe sends it again. Telling the
-host which revision the desktop holds would need the revision to name the same history across observations, and it does
-not: the coordinator drops a thread's revision record when nobody observes it, and without `streamingPublishCost` the
-count starts again. Waiting in the router for an observe that may never come would delay a history the window needs.
-This is left for a host feature that can name a history across observations.
+reads it, and the host counts a read as held only for a thread already observed, so the observe sends it again. A thread's
+revision does name one history within a host process (the coordinator keeps its revision record, or with
+`streamingPublishCost` its counter), so either route to one transfer is open: the router observing the selected thread
+with the selection, which touches ADR-0046's shown threads, or a host feature that counts a read as held once the thread
+is observed at that revision. Both are decisions of their own: #1990.
+
+## What stays as it was
+
+- A selection still reads a thread whole when the desktop holds it behind, after a missed delta and a failed read: a
+  pane already on screen sends no new observe, and the window's copy stops asking, so this is how it recovers.
+- A thread the host said was too large to send is read again, which reports it, rather than answered with an older copy.
 
 ## Guarded by
 
-- `tests/integration/remoteThreadOpen.test.ts`: the four counts above, and a thread nobody observes read once.
+- `tests/integration/remoteThreadOpen.test.ts`: the counts above, a thread the host said was too large read again, and a
+  thread nobody observes read once.
+- `tests/integration/desktopHosts.test.ts`: through the router and the desktop's own connection to a headless host, the
+  window's read of an observed remote thread reads nothing from the host. It fails if the connection reads directly.
 - `tests/unit/renderer/detailAskAfterCommand.test.tsx`: main hears `observe-threads` and `select-thread` before the
   window's ask. It fails on the old order.
-- `tests/unit/main/socketHostFeatures.test.ts`: a selection reads nothing; another command still reads a thread the
-  host's pushes do not keep current.
+- `tests/unit/main/socketHostFeatures.test.ts`: a selection reads nothing for a current thread and reads one held behind;
+  another command still reads a thread the host's pushes do not keep current.

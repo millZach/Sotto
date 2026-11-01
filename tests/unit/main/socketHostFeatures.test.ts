@@ -284,6 +284,14 @@ describe('a remote thread behind a backlog', () => {
     call.mockClear()
     await client.command({ type: 'interrupt', threadId: 'followed' })
     expect(call.mock.calls.map(([operation]) => operation.op)).toEqual(['command'])
+    // A selection reads a thread held behind again, and nothing for one current.
+    const behind = transport as unknown as { behind: Set<string> }
+    behind.behind.add('followed'); call.mockClear()
+    await client.command({ type: 'select-thread', threadId: 'followed' })
+    expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'followed' })
+    call.mockClear()
+    await client.command({ type: 'select-thread', threadId: 'followed' })
+    expect(call.mock.calls.map(([operation]) => operation.op)).toEqual(['command'])
   })
 
   it('keeps a thread read the host answers after the read timed out, so the deltas after it still apply', async () => {

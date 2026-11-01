@@ -882,7 +882,8 @@ export class SocketHostService implements HostService {
     const observing = this.observing
     if (observing?.threadIds.has(threadId)) await observing.done.catch(() => undefined)
     const held = this.details.get(threadId)
-    if (held && this.follows(threadId) && !this.resyncing.has(threadId) && this.threadAvailable(threadId)) return held
+    // A thread the host could not send is answered by a read, which reports it, never by an older copy.
+    if (held && this.follows(threadId) && !this.resyncing.has(threadId) && !this.tooLarge.has(threadId) && this.threadAvailable(threadId)) return held
     return this.readThreadDetail(threadId)
   }
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
@@ -1270,8 +1271,11 @@ export class SocketHostService implements HostService {
       // same socket. Reading it whole as well cost a whole-thread download for every prompt, answer and selection, and
       // each one waited behind whatever the socket was still delivering.
       // Selecting changes nothing in a thread's history: the window asks for the history it shows, and the observe that
-      // puts the thread on screen brings it (#996).
-      if ('threadId' in command && command.threadId && command.type !== 'select-thread' && !this.follows(command.threadId)) await this.readThreadDetail(command.threadId)
+      // puts the thread on screen brings it (#996). A thread held behind is still read again on a selection, since a pane
+      // already on screen sends no new observe and the window's copy stops asking (ADR-0025's recovery).
+      const threadId = 'threadId' in command ? command.threadId : undefined
+      const stale = threadId && (command.type === 'select-thread' ? this.behind.has(threadId) && !this.resyncing.has(threadId) : !this.follows(threadId))
+      if (threadId && stale) await this.readThreadDetail(threadId)
       if (this.catchesUp) { let page = await this.readEvents(this.latestSeq); while (page.hasMore) page = await this.readEvents(this.latestSeq) }
     } catch (error) {
       if (generation === this.generation) {

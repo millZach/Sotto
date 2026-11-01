@@ -48,6 +48,14 @@ describe('opening a thread on a remote host (#996)', () => {
     expect(transfers()).toBe(2)
   })
 
+  it('reads a thread the host said was too large again, rather than answer with an older copy', async () => {
+    const { client, threadId, transfers } = await opened()
+    await client.observe([threadId])
+    ;(client as unknown as { tooLarge: Set<string> }).tooLarge.add(threadId)
+    await client.windowDetail(threadId)
+    expect(transfers()).toBe(2)
+  })
+
   it('reads a thread nobody observes from the host', async () => {
     const { client, threadId, transfers } = await opened()
     expect((await client.windowDetail(threadId))?.threadId).toBe(threadId)
