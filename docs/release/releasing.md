@@ -1,6 +1,6 @@
 # Cutting a release
 
-Releases are cut by hand on the Windows PC and forge, with the Mac half, and an Owl's Linux half, built in GitHub Actions, and published to the public `millZach/Sotto-releases` repository, not to the source repository. First-time macOS setup is `macos-bringup.md`; the rationale for the unsigned Apple silicon build is ADR-0001, and ADR-0096 moved its stable build to GitHub Actions. ADR-0001's "no auto-updater on any platform" is superseded on Windows by the in-app updater (#103); macOS and Linux still have none.
+Stable releases are cut by hand on the Windows PC and forge, with the Mac half built in GitHub Actions. Each Sotto Owl is cut every night in GitHub Actions by the **Sotto Owl nightly** workflow, all three platforms, and can still be cut by hand. Both are published to the public `millZach/Sotto-releases` repository, not to the source repository. First-time macOS setup is `macos-bringup.md`; the rationale for the unsigned Apple silicon build is ADR-0001, and ADR-0096 moved its stable build to GitHub Actions. ADR-0001's "no auto-updater on any platform" is superseded on Windows by the in-app updater (#103); macOS and Linux still have none.
 
 ## Cutting stable from main
 
@@ -70,7 +70,41 @@ electron-builder's publish config and the Windows auto-update feed point at `mil
 
 ## Cutting a Sotto Owl build
 
-Sotto Owl is the preview track for Windows, Apple silicon Macs and Linux (Omarchy, x64), installed in place of Sotto (ADR-0072, ADR-0093, ADR-0099). The Windows build is cut by hand on the Windows PC; the Mac build is made by the **Sotto Owl for Mac** workflow and the Linux build by the **Sotto Owl for Linux** workflow, from the same commit and version. Owl carries every Owl feature Zach has not yet sent to stable; on October 23, 2026 he sent all nineteen, so none is held until he names a new one. Build from `main` once a day when something has merged since the last Owl build, rather than after every merge. Fetch `origin/main` and compare its full SHA with the newest published Owl release's source commit. If they match, skip today's build. If they differ, build the clean `origin/main` commit. The first Owl, `v0.1.35-owl.20261010.1`, predates source lines; its verified source is `dee763ec8320a19ce43f070f8897710553abf35a` for this initial daily comparison only.
+Sotto Owl is the preview track for Windows, Apple silicon Macs and Linux (Omarchy, x64), installed in place of Sotto (ADR-0072, ADR-0093, ADR-0099). Owl carries every Owl feature Zach has not yet sent to stable; on October 23, 2026 he sent all nineteen, so none is held until he names a new one. Owl is built from `main` once a night when something has merged and passed CI, rather than after every merge. The **Sotto Owl nightly** workflow does that at midnight UTC with no computer of Zach's switched on ([below](#the-nightly-owl)). A hand cut on the Windows PC ([after it](#cutting-an-owl-by-hand)) follows the same rules and stays available.
+
+### The nightly Owl
+
+`.github/workflows/owl-nightly.yml` runs at `0 0 * * *` (midnight UTC) on `main`, and when started by hand (ADR-0072, November 1, 2026). One night runs at a time; a second start waits for the first.
+
+**Whether it builds.** It reads `main`'s commit, the newest published Owl's `Source commit:` line and the required checks on `main`'s commit. It builds only when `main` has moved since that Owl and Gates (Windows), Package result and Desktop result all succeeded on `main`'s commit. A check that is missing, still running or failed skips the night, and so does an unchanged `main`; the run's summary says which. The next night tries again, so a commit whose CI finished after midnight is built then.
+
+**The version.** The next patch of `main`'s package version, then `-owl.<UTC date of the run>.<n>`, where `n` is one past the highest Owl of that day on `millZach/Sotto-releases`, whatever its base, counting tags as well as releases. A night after a hand cut on the same day takes the next number. If a hand cut publishes the version a running nightly chose, the nightly finds the tag taken and stops before publishing anything.
+
+**What it does,** all from that one commit and version:
+
+1. **Windows**, on `windows-latest`: `npm run package:owl -- --version <version> --source <sha>`, the hand cut's command and checks, pinned. The installer is unsigned, as every Owl has been so far; Windows code signing is a separate step that waits on its certificate. It keeps the installer, blockmap, `owl.yml`, the app's `app.asar` and `out/build-provenance.json` as `sotto-owl-windows-<version>`.
+2. **Mac and Linux**: it calls `owl-mac.yml` and `owl-linux.yml` with the same version and source, so each runs exactly as when started by hand and keeps the same artifacts. The Mac half signs in the `owl-mac` environment, which admits only `main`.
+3. **The Linux host archive**, on `ubuntu-24.04` rather than forge: `npm run test:socket`, then `npm run package:host:owl -- --version <version> --source <sha>`.
+4. **Launch checks**, each on a runner that did not build it: the Windows installer is installed silently (`/S`), Sotto.app is copied out of the disk image and Gatekeeper is asked about the copy, and the Linux tarball is extracted under a virtual display. `tools/verify-owl-package.mjs <version> --app <folder>` opens each on a throwaway profile, waits for the window's **Get started** and checks it reports this version on the Owl track. Screenshots are kept as `owl-launch-<platform>-<version>`.
+5. **Verify and gather**, on `windows-latest` against a clean checkout of the source: `release:owl`'s checks, the same as step 5 below, with both host archives and the default notes. Every asset, `owl-notes.md` and `SHA256SUMS.txt` are kept as `sotto-owl-nightly-<version>`.
+6. **Attest** every release file, then check each attestation.
+7. **Publish**, in the `owl-release` environment: check every file's checksum and attestation again, refuse a tag already on the release repository, create the prerelease with `--prerelease --latest=false` and the default notes, and upload `SHA256SUMS.txt` last. Then check the release carries exactly those files, Latest is still the newest stable, and every file downloaded again matches its checksum.
+8. **The site.** Publishing starts **Deploy site** on `millZach/Sotto-releases`, which can report success and leave saysotto.com on the previous builds (#1894). The job waits for that run, then checks for up to twelve minutes, the page's cache time, that saysotto.com links the new Owl for Windows, the Mac, the Linux package and the Linux tarball. If it does not, the job starts Deploy site from `main` once more and checks again. If the page is still stale, the job fails and says so. The release itself stands; run Deploy site by hand.
+
+**The token.** Publishing to another repository needs one credential the hand cut never stored: `SOTTO_RELEASES_TOKEN`, a fine-grained personal access token for `millZach/Sotto-releases` only, with **Contents: read and write** (create the release, upload its files) and **Actions: read and write** (start and follow Deploy site). It lives in the `owl-release` environment, which admits only `main`, and only the publish and site jobs read it. Without it, the publish job fails at its first step and nothing is published, after every build and check has passed.
+
+**A dry run.** Started by hand, the workflow publishes only when **publish** is ticked, and only from `main`. Otherwise it is a dry run: it builds, launches, verifies and attests whatever the skip rules say, reports what a publishing run would have done, and publishes nothing. From another branch it builds the newest `main` commit that branch holds. The Mac half needs the `owl-mac` environment, which admits only `main`, so a dry run from another branch needs that branch added to the environment for the run and removed afterwards.
+
+```powershell
+gh workflow run owl-nightly.yml --repo millZach/Sotto --ref main                 # dry run
+gh workflow run owl-nightly.yml --repo millZach/Sotto --ref main -f publish=true # publish now, skip rules apply
+```
+
+**When a night fails.** Nothing is published unless the Publish job ran. Re-run the failed jobs from the run's page; the run keeps its version. A run whose only failure is the site check needs only Deploy site.
+
+### Cutting an Owl by hand
+
+The steps below cut an Owl from the Windows PC, as before the nightly. Fetch `origin/main` and compare its full SHA with the newest published Owl release's source commit. If they match, skip today's build. If they differ, build the clean `origin/main` commit once its Gates (Windows), Package result and Desktop result have succeeded. The first Owl, `v0.1.35-owl.20261010.1`, predates source lines; its verified source is `dee763ec8320a19ce43f070f8897710553abf35a` for this initial daily comparison only.
 
 For example, inspect the public feed and current main without reading private release data:
 
@@ -81,7 +115,7 @@ git rev-parse origin/main
 
 Run the normal gates and manual Windows desktop check before publishing. Publish only a reviewed clean-commit build; rebuild after committing local verification changes.
 
-The version is the next patch of `main`'s stable package version followed by `-owl.<UTC YYYYMMDD>.<n>`. The lead chooses the next positive number for that date, checking existing Owl tags first. `0.1.36` becomes `0.1.37-owl.20261011.1`, then `.2` for another build that day. Never reuse a published version or replace its assets.
+The version is the next patch of `main`'s stable package version followed by `-owl.<UTC YYYYMMDD>.<n>`. The lead chooses the next positive number for that date, checking existing Owl tags first, including any the nightly published. `0.1.36` becomes `0.1.37-owl.20261011.1`, then `.2` for another build that day. Never reuse a published version or replace its assets.
 
 Owl uses the source manifest's stable version for remote hosts, so it can use the currently published stable host before the next stable release exists. A stable cut from manifest `0.1.37` ships desktop and host `0.1.38`, while an Owl built from that manifest still expects host `0.1.37`. After the host moves to `0.1.38`, that Owl can report that the host is newer. Publish the Release PR promptly, then build and install a new Owl from the updated main manifest before pairing it with that newer stable host. An already installed Owl keeps its compiled host-version choice; the Release PR alone does not update it. Keep each desktop and its hosts on matching versions during this window. This compatibility window predates the stable-from-main rule, and it applies only to an Owl built with Usage and every hosted provider held. Every Owl since Usage reached it asks for its own Owl host version, as the steps below build.
 
