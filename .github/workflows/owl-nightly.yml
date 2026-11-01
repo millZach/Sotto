@@ -694,7 +694,8 @@ jobs:
 
   # Publishing starts Deploy site on millZach/Sotto-releases, which can report success and leave saysotto.com on the
   # previous builds (#1894). This waits for that run, checks the page links tonight's Owl for every platform, and if
-  # it does not after the page's ten-minute cache, deploys once more from main and checks again.
+  # it does not after the page's ten-minute cache, deploys once more from main and checks again. A page still stale
+  # after that is a warning in the run's summary, never a failed night: the release itself is out.
   site:
     name: Check saysotto.com links the new Owl
     needs: [decide, publish]
@@ -748,8 +749,9 @@ jobs:
           if wait_for_site; then
             echo "saysotto.com links Owl $VERSION after one more deploy (#1894)." | tee -a "$GITHUB_STEP_SUMMARY"; exit 0
           fi
-          echo "The Owl is published, but saysotto.com still links an earlier Owl after two deploys. Run Deploy site on $RELEASES from main by hand (#1894)." | tee -a "$GITHUB_STEP_SUMMARY"
-          exit 1
+          message="The Owl is published, but saysotto.com still links an earlier Owl after two deploys. Run Deploy site on $RELEASES from main by hand (#1894)."
+          echo "::warning title=saysotto.com is stale::$message"
+          echo "$message" >> "$GITHUB_STEP_SUMMARY"
 
   report:
     name: Report

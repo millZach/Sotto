@@ -113,6 +113,9 @@ describe('Sotto Owl nightly workflow (ADR-0072, November 1, 2026)', () => {
     for (const key of ['windows-owl', 'mac-owl', 'linux-owl', 'linux-owl-tar']) expect(site).toContain(key)
     expect(site.match(/gh workflow run deploy-site\.yml/gu)).toHaveLength(1)
     expect(site).toContain('--ref main')
+    // A stale page is reported, never a failed night: the release is already out.
+    expect(site).toContain('::warning title=saysotto.com is stale::')
+    expect(site).not.toMatch(/exit 1\s*$/u)
   })
   it('reports every job\'s result, even when one fails', () => {
     expect(jobs.report.if).toBe('always()')

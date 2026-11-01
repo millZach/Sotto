@@ -89,7 +89,7 @@ Sotto Owl is the preview track for Windows, Apple silicon Macs and Linux (Omarch
 5. **Verify and gather**, on `windows-latest` against a clean checkout of the source: `release:owl`'s checks, the same as step 5 below, with both host archives and the default notes. Every asset, `owl-notes.md` and `SHA256SUMS.txt` are kept as `sotto-owl-nightly-<version>`.
 6. **Attest** every release file, then check each attestation.
 7. **Publish**, in the `owl-release` environment: check every file's checksum and attestation again, refuse a tag already on the release repository, create the prerelease with `--prerelease --latest=false` and the default notes, and upload `SHA256SUMS.txt` last. Then check the release carries exactly those files, Latest is still the newest stable, and every file downloaded again matches its checksum.
-8. **The site.** Publishing starts **Deploy site** on `millZach/Sotto-releases`, which can report success and leave saysotto.com on the previous builds (#1894). The job waits for that run, then checks for up to twelve minutes, the page's cache time, that saysotto.com links the new Owl for Windows, the Mac, the Linux package and the Linux tarball. If it does not, the job starts Deploy site from `main` once more and checks again. If the page is still stale, the job fails and says so. The release itself stands; run Deploy site by hand.
+8. **The site.** Publishing starts **Deploy site** on `millZach/Sotto-releases`, which can report success and leave saysotto.com on the previous builds (#1894). The job waits for that run, then checks for up to twelve minutes, the page's cache time, that saysotto.com links the new Owl for Windows, the Mac, the Linux package and the Linux tarball. If it does not, the job starts Deploy site from `main` once more and checks again. If the page is still stale, the run's summary warns, and the night still counts as published, since the release itself is out; run Deploy site by hand.
 
 **The token.** Publishing to another repository needs one credential the hand cut never stored: `SOTTO_RELEASES_TOKEN`, a fine-grained personal access token for `millZach/Sotto-releases` only, with **Contents: read and write** (create the release, upload its files) and **Actions: read and write** (start and follow Deploy site). It lives in the `owl-release` environment, which admits only `main`, and only the publish and site jobs read it. Without it, the publish job fails at its first step and nothing is published, after every build and check has passed.
 
@@ -100,7 +100,7 @@ gh workflow run owl-nightly.yml --repo millZach/Sotto --ref main                
 gh workflow run owl-nightly.yml --repo millZach/Sotto --ref main -f publish=true # publish now, skip rules apply
 ```
 
-**When a night fails.** Nothing is published unless the Publish job ran. Re-run the failed jobs from the run's page; the run keeps its version. A run whose only failure is the site check needs only Deploy site.
+**When a night fails.** Nothing is published unless the Publish job ran. Re-run the failed jobs from the run's page; the run keeps its version. A night whose summary warns that saysotto.com is stale needs only Deploy site, run by hand.
 
 ### Cutting an Owl by hand
 
