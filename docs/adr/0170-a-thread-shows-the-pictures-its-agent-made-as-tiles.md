@@ -36,6 +36,12 @@ The store does not track which thread captured a picture. Inside an adapter a th
 
 **9. The owl at the easel plays while an image is made.** A step that makes an image, runs, and holds no picture yet shows a tile of the same size with Zach's scene 2: the owl paints on an easel under the night sky, in text, on a 12-row grid with air between its lines, so its characters stay readable in a tile. No provider says how far an image has got, so the painting slows as it goes and the picture arriving ends it. It draws nothing until it first comes on screen, then writes at most twelve frames a second straight into the page, never through React, only while it is on screen and the window is shown; off screen, hidden or once the picture lands it draws nothing and holds no timer, and under reduced motion it draws one still frame when it first shows and holds it. The iPhone plays the same scene, ported to Swift, on the same terms. `inlineMediaTranscript.perf.test.tsx` holds it to that.
 
+## Pictures from the other tools (part 3), November 1, 2026
+
+**10. Every provider's tool pictures, by the same rules.** Grok Build, Devin, DeepSeek Harness and Cursor hand a tool's picture back as ACP image content, captured as decision 3 says. An update that holds no more pictures than its step has handles for hashes nothing, and Cursor's replay of a thread, which comes each time its provider session opens, takes the handles the thread's step already holds. Codex's Computer Use hands its screenshots back as MCP image content (`nodeRepl.emitImage`), so they are an MCP tool's pictures, on its Computer Use step.
+
+**11. A picture Codex viewed is read from the file it names.** Codex's `view_image` arrives as an `imageView` item that names a file and carries no bytes. With `inline-media` on it becomes a **View image** step naming the file, and once the step is done its file is read as decision 8 reads a saved image: once, a file that held no picture included, off the update path, only up to the image limit, its type from its own bytes, and only for a path Codex resolved, never one relative to Sotto's own folder. Without the feature the item stays dropped, as before.
+
 ## Consequences
 
 - A thread's pictures cost disk, at most 1 GiB, while history is kept. Deleting a thread does not let its pictures go at once; they go as newer ones take their place, or all at once when history is turned off.

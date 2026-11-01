@@ -10,7 +10,7 @@ import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
-import { cursorActivities, cursorImage, cursorTask, cursorTodos, CURSOR_THINKING_ID_PREFIX, type CursorPlace } from './cursorActivity'
+import { cursorActivities, cursorImage, cursorToolId, cursorTask, cursorTodos, CURSOR_THINKING_ID_PREFIX, type CursorPlace } from './cursorActivity'
 import { cursorCatalog, cursorModeArguments, cursorModelListSchema, cursorRuntimeMode, leastEffort, CURSOR_RUNTIME_MODES, type CursorModelFacts, type CursorRuntimeMode } from './cursorModels'
 import { cursorAnswer, cursorDecline, cursorPending, type CursorPending } from './cursorRequests'
 import { compareCursorVersions, cursorEnvironment, CursorRejected, CursorRpc, CursorUncertain, CURSOR_ACP_VERSION, CURSOR_CLI_VERSION, findCursorProgram,
@@ -30,7 +30,7 @@ import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { ThreadMessageLog } from './threadMessageLog'
 import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './attachedFiles'
-import type { MediaFileCapture } from './threadMedia'
+import type { MediaCapture, MediaFileCapture } from './threadMedia'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -247,6 +247,8 @@ export interface CursorAcpOptions {
   startTimeoutMs?: number
   reaperSweepMs?: number
   sessionIdleMs?: number
+  /** Keeps a tool result's pictures (ADR-0170); absent while `inline-media` is off, when a step carries none. */
+  captureMedia?: MediaCapture
   /** Reads an image Cursor generated from the file it saved it to (ADR-0170); absent while `inline-media` is off. */
   captureMediaFile?: MediaFileCapture
 }
@@ -882,7 +884,7 @@ export class CursorAcpHost implements AgentHost {
     }
     const key = kind === 'agent_thought_chunk' ? turn.places.thought()
       : typeof update.toolCallId === 'string' && (kind === 'tool_call' || kind === 'tool_call_update') ? turn.places.tool(update.toolCallId, kind === 'tool_call') : undefined
-    const rows = cursorActivities(update, { turnId: turn.places.key, afterMessageId: this.log.lastMessageId(id), cwd: alias.cwd, key }, thread.activities, true)
+    const rows = cursorActivities(update, { turnId: turn.places.key, afterMessageId: this.log.lastMessageId(id), cwd: alias.cwd, key }, thread.activities, true, this.options.captureMedia)
     if (rows.length) { thread.activities = mergeAgentActivities(thread.activities, rows); this.emit(kind === 'agent_thought_chunk') }
   }
   /** One update of a `session/load` replay: whole messages and finished work, in order, with no time or ID of Cursor's own. */
@@ -918,8 +920,21 @@ export class CursorAcpHost implements AgentHost {
     }
     const key = kind === 'agent_thought_chunk' ? turn.thought()
       : typeof update.toolCallId === 'string' && (kind === 'tool_call' || kind === 'tool_call_update') ? turn.tool(update.toolCallId, kind === 'tool_call') : undefined
-    const rows = cursorActivities(update, { turnId: turn.key, afterMessageId: replay.messages.at(-1)?.id, cwd: alias.cwd, key }, replay.activities, false)
+    const rows = cursorActivities(update, { turnId: turn.key, afterMessageId: replay.messages.at(-1)?.id, cwd: alias.cwd, key }, replay.activities, false, this.replayCapture(id, key))
     if (rows.length) replay.activities = mergeAgentActivities(replay.activities, rows)
+  }
+  /**
+   * A replay projects into rows of its own, so a step's pictures would be hashed again on every read of the history. The
+   * thread's saved row for the same step answers instead when it holds as many: it is looked up only for an update that
+   * carries pictures, never for one with words alone.
+   */
+  private replayCapture(id: string, key: string | undefined): MediaCapture | undefined {
+    const capture = this.options.captureMedia
+    if (!capture || !key) return capture
+    return (pictures, source) => {
+      const saved = this.threads.get(id)?.activities?.find(row => row.id === cursorToolId(key))?.media
+      return saved && saved.length >= pictures.length ? saved : capture(pictures, source)
+    }
   }
   /** A replay into the thread's log: what the store holds is recognised, and a reply streamed longer than its replay is kept. */
   private mergeReplay(id: string, replay: Replay): void {

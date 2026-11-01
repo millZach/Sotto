@@ -1,5 +1,6 @@
 import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
+import { acpToolMedia, type MediaCapture } from './threadMedia'
 import { acpThinkingActivities, type AcpThinking } from './thinkingActivity'
 
 /**
@@ -11,6 +12,8 @@ import { acpThinkingActivities, type AcpThinking } from './thinkingActivity'
 export interface CursorPlace { readonly turnId: string; readonly afterMessageId?: string | undefined; readonly cwd: string; readonly key?: string | undefined }
 
 export const CURSOR_THINKING_ID_PREFIX = 'cursor-thinking-'
+/** The row a tool call at this place in its turn becomes, live or replayed. */
+export const cursorToolId = (key: string): string => `cursor-tool-${key}`
 /** Updates that say the model has moved on from a thought: its reply, a new tool or a plan. The turn's end is `cursor.ts`'s. */
 const MOVES_ON = new Set(['agent_message_chunk', 'tool_call', 'plan'])
 const CURSOR_THINKING: AcpThinking = { idPrefix: CURSOR_THINKING_ID_PREFIX, settles: update => MOVES_ON.has(String(update.sessionUpdate)) ? 'completed' : undefined }
@@ -24,18 +27,19 @@ const where = (place: CursorPlace) => ({ turnId: place.turnId, ...(place.afterMe
 /**
  * The activity for one `session/update`, live or replayed. A thought (`agent_thought_chunk`) streams into a Thinking row
  * that runs until the model moves on; a tool call becomes a command, a file change with its diff, a read or a tool; and
- * the ACP `plan` update becomes the turn's one plan row.
+ * the ACP `plan` update becomes the turn's one plan row. With `capture`, the thread media store's, given only with the Owl
+ * feature `inline-media` on, a tool's pictures become handles (ADR-0170).
  */
-export function cursorActivities(update: Record<string, unknown>, place: CursorPlace, previous: readonly AgentActivity[] = [], live = false): AgentActivity[] {
+export function cursorActivities(update: Record<string, unknown>, place: CursorPlace, previous: readonly AgentActivity[] = [], live = false, capture?: MediaCapture): AgentActivity[] {
   return acpThinkingActivities(CURSOR_THINKING, update, { turnId: place.turnId, afterMessageId: place.afterMessageId, key: place.key }, previous, live,
-    () => cursorWork(update, place, previous, live))
+    () => cursorWork(update, place, previous, live, capture))
 }
 
-function cursorWork(update: Record<string, unknown>, place: CursorPlace, previous: readonly AgentActivity[], live: boolean): AgentActivity[] {
+function cursorWork(update: Record<string, unknown>, place: CursorPlace, previous: readonly AgentActivity[], live: boolean, capture: MediaCapture | undefined): AgentActivity[] {
   if (update.sessionUpdate === 'plan' && Array.isArray(update.entries)) return planRow(update.entries.map(entry => ({ text: object(entry)?.content, status: object(entry)?.status })), place, previous)
   if (!['tool_call', 'tool_call_update'].includes(String(update.sessionUpdate)) || typeof update.toolCallId !== 'string' || !place.key) return []
   const { bounded, truncated } = bounder()
-  const id = `cursor-tool-${place.key}`; const old = previous.find(row => row.id === id)
+  const id = cursorToolId(place.key); const old = previous.find(row => row.id === id)
   const input = object(update.rawInput); const output = object(update.rawOutput)
   const content = Array.isArray(update.content) ? update.content.map(object).filter(value => value !== undefined) : []
   const texts = content.flatMap(value => { const part = object(value.content); return part?.type === 'text' && typeof part.text === 'string' ? [part.text] : [] })
@@ -62,6 +66,7 @@ function cursorWork(update: Record<string, unknown>, place: CursorPlace, previou
     ...(texts.length ? { output: bounded(texts.join('\n')) } : printed ? { output: bounded(printed) } : read !== undefined ? { output: bounded(read) } : {}),
     ...(Number.isSafeInteger(exitCode) ? { exitCode: exitCode as number } : {}),
     ...(shownChanges.length ? { changes: shownChanges.slice(0, 200) } : {}),
+    ...acpToolMedia(capture, update.content, old),
     ...(truncated() || shownChanges.length > 200 ? { truncated: true } : {}),
   }]
 }

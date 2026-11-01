@@ -1067,7 +1067,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(),
       ...(!heldProviders.has('cursor') ? { cursor: new CursorAcpHost(userDataPath, {
         program: { executable: cursorFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeCursorAgent.mjs'), cursorFixtureRoot] },
-        ...threadMedia ? { captureMediaFile: threadMedia.captureFile } : {},
+        ...threadMedia ? { captureMedia: threadMedia.capture, captureMediaFile: threadMedia.captureFile } : {},
       }) } : {}),
     } } : {}),
     ...(nativeFixtureRoot ? { providers: {
