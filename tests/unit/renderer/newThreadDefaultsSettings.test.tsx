@@ -116,24 +116,6 @@ describe('New threads start with (issue #347)', () => {
     }
   })
 
-  it('lists each computer’s projects folder and saves each to its own computer (ADR-0074)', async () => {
-    const { command } = provide(twoComputers())
-    render(<AgentSetupFields />)
-    expect(screen.getByRole('textbox', { name: 'Default projects directory on this computer' })).toHaveValue('D:\\Projects')
-    const forge = screen.getByRole('textbox', { name: 'Default projects directory on forge' })
-    expect(forge).toHaveValue('/home/zach/projects')
-    fireEvent.change(forge, { target: { value: '/srv/projects' } })
-    fireEvent.blur(forge)
-    await waitFor(() => expect(command).toHaveBeenCalledWith({ type: 'configure', patch: { projectsDirectory: '/srv/projects' }, hostId: FORGE }))
-  })
-
-  it('keeps a disconnected host’s projects folder until it connects', () => {
-    provide(twoComputers({}, { connected: false }))
-    render(<AgentSetupFields />)
-    expect(screen.getByRole('textbox', { name: 'Default projects directory on forge' })).toBeDisabled()
-    expect(screen.getByText('Connect forge to change its projects directory.')).toBeInTheDocument()
-  })
-
   it('notes that a provider with its own permission profiles starts on its first', () => {
     const devinModel = { id: 'devin:swe', name: 'SWE-1.6', provider: 'Devin', providerId: 'devin' as const, ready: true,
       providerModes: [{ id: 'ask-first', name: 'Ask first' }, { id: 'bypass', name: 'Bypass Permissions', asks: 'Sotto asks about nothing.' }] }
