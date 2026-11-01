@@ -24,7 +24,7 @@ Zach: Sotto is "performing better than ever" and must not slow down. So:
 Each one ships desktop and iPhone together, behind `inline-media`.
 
 1. **Pictures from tool results.** The foundation: the thread media store, `media` handles on activity records, tiles in threads and Watcher, the viewer, lazy loading, the benchmark and its guard, and the iPhone's tiles and viewer. First source: image content in a tool result. That covers Sotto's browser and the cloud iPhone for every provider, Claude Code reading a picture, and any MCP picture, on Claude Code and Codex.
-2. **Generated images.** Codex's `imageGeneration` and Cursor's `generate_image`, with the owl at the easel while they run, on desktop and iPhone.
+2. **Generated images.** Codex's `imageGeneration` and Cursor's `generate_image`, with the owl at the easel while they run, on desktop and iPhone. The benchmark adds the scene: frames drawn off screen, in view and after the picture lands, and React commits while it plays.
 3. **Tool-result pictures on the other providers.** Grok Build, Devin and DeepSeek Harness (ACP image content), Codex `view_image` and Computer Use.
 4. **Image and video files an agent writes.** Found through the turn's changed files; videos and GIFs play inline, never autoplaying.
 5. **Mark up.** Arrow, circle, box, pen and note over any picture, desktop and iPhone, with the Duo's pen drawing and a finger moving the picture. Add to reply stages the marked copy as an attachment; the original stays.

@@ -56,11 +56,6 @@ msgstr "{0, plural, one {It also lists {names}, which is not added. To use it, r
 msgid "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
 msgstr "{0, plural, one {It no longer lists {names}, so threads on it will fail until the server loads it again.} other {It no longer lists {names}, so threads on them will fail until the server loads them again.}}"
 
-#. placeholder {0}: pictures.length
-#: src/renderer/src/agents/ThreadMediaTiles.tsx
-msgid "{0, plural, one {Picture} other {# pictures}}"
-msgstr "{0, plural, one {Picture} other {# pictures}}"
-
 #. placeholder {0}: models.length
 #: src/renderer/src/agents/ProviderModelList.tsx
 msgid "{0, plural, one {Show {label} models, # model} other {Show {label} models, # models}}"
@@ -228,6 +223,10 @@ msgstr "{count, plural, one {Dismiss Needs attention on {threads} thread} other 
 #: src/renderer/src/agents/restartWords.ts
 msgid "{count, plural, one {Don’t restart {name}’s {threads} thread} other {Don’t restart {name}’s {threads} threads}}"
 msgstr "{count, plural, one {Don’t restart {name}’s {threads} thread} other {Don’t restart {name}’s {threads} threads}}"
+
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "{count, plural, one {Picture} other {# pictures}}"
+msgstr "{count, plural, one {Picture} other {# pictures}}"
 
 #: src/renderer/src/agents/restartWords.ts
 msgid "{count, plural, one {so Sotto can’t restart its thread on its own. Send again once it resets.} other {so Sotto can’t restart its {threads} threads on its own. Send again once it resets.}}"
@@ -4438,6 +4437,10 @@ msgstr "It replied"
 msgid "It runs with OpenCode."
 msgstr "It runs with OpenCode."
 
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "It shows here when it is done"
+msgstr "It shows here when it is done"
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "It started at Ask for approval, because {machine} no longer lets this computer answer permission requests there, so a thread there cannot be given more."
 msgstr "It started at Ask for approval, because {machine} no longer lets this computer answer permission requests there, so a thread there cannot be given more."
@@ -4801,6 +4804,10 @@ msgstr "Make merge commit"
 #: src/renderer/src/agents/ModelPicker.tsx
 msgid "Makers"
 msgstr "Makers"
+
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Making the image"
+msgstr "Making the image"
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Manual prompt"

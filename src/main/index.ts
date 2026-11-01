@@ -1064,13 +1064,14 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       codex: new E2EAgentHost(), claude: new E2EAgentHost(), grok: new E2EAgentHost(), devin: new E2EAgentHost(), muse: new E2EAgentHost(), opencode: new E2EAgentHost(),
       ...(!heldProviders.has('cursor') ? { cursor: new CursorAcpHost(userDataPath, {
         program: { executable: cursorFixtureExecutable!, args: [join(__dirname, '../../tests/fixtures/fakeCursorAgent.mjs'), cursorFixtureRoot] },
+        ...threadMedia ? { captureMediaFile: threadMedia.captureFile } : {},
       }) } : {}),
     } } : {}),
     ...(nativeFixtureRoot ? { providers: {
       claude: new ClaudeStreamJsonHost({ userDataPath, executable: nativeFixtureExecutable!,
         args: [join(__dirname, '../../tests/fixtures/fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home'), limitStops: owlFeatures['restart-stopped-threads'], ...threadMedia ? { captureMedia: threadMedia.capture } : {} }),
       codex: new CodexAppServerHost({ userDataPath, executable: nativeFixtureExecutable!,
-        args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home'), limitStops: owlFeatures['restart-stopped-threads'], ...threadMedia ? { captureMedia: threadMedia.capture } : {} }),
+        args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home'), limitStops: owlFeatures['restart-stopped-threads'], ...threadMedia ? { captureMedia: threadMedia.capture, captureMediaFile: threadMedia.captureFile } : {} }),
       grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),

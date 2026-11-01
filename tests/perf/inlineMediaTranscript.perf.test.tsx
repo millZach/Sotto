@@ -5,7 +5,9 @@
  *
  *   - a streamed chunk commits as often with pictures as without, and reads no picture;
  *   - opening the thread reads only the tiles near the screen;
- *   - a scroll step reads only the tiles that came near, and the tiles that left let go of their pictures.
+ *   - a scroll step reads only the tiles that came near, and the tiles that left let go of their pictures;
+ *   - the owl at the easel, playing while an image is made, draws nothing off screen or once the picture lands, no more
+ *     than twelve frames a second in view, and never through React.
  *
  * The milliseconds print every run, for the before and after numbers each pull request in docs/plans/inline-media.md
  * shows; they are asserted only under SOTTO_PERF_ASSERT=1. jsdom has no layout, so "near the screen" is the observer
@@ -28,6 +30,7 @@ import { ThreadsView } from '../../src/renderer/src/agents/ThreadsView'
 import { ThreadDraftStore } from '../../src/renderer/src/agents/threadDraftStore'
 import { SplitLayoutStore } from '../../src/renderer/src/agents/splitLayout'
 import { threadMediaRequests } from '../../src/renderer/src/agents/threadMediaSources'
+import { owlEaselFramesDrawn } from '../../src/renderer/src/agents/OwlEasel'
 
 vi.mock('../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
 vi.mock('../../src/renderer/src/state/owlFeature', () => ({ useOwlFeature: (id: string) => id === 'inline-media' }))
@@ -62,7 +65,8 @@ class DrivenObserver {
   }
 }
 
-function thread(pictures: boolean): AgentThread {
+/** The last `making` turns' steps are images still being made: running, with no picture yet. */
+function thread(pictures: boolean, making = 0): AgentThread {
   const messages: AgentMessage[] = []
   const activities: AgentActivity[] = []
   for (let index = 0; index < TURNS; index += 1) {
@@ -73,6 +77,7 @@ function thread(pictures: boolean): AgentThread {
       title: 'sotto_browser / screenshot', output: 'Took a screenshot.', startedAt: at(1_000), completedAt: at(2_000),
       ...pictures ? { media: [{ id: 'm0', digest: index.toString(16).padStart(64, '0'), kind: 'image' as const, mimeType: 'image/png' as const,
         sizeBytes: 480_000, width: 1280, height: 800, name: 'picture-1.png', source: 'tool' as const }] } : {} })
+    if (index >= TURNS - making) activities[index] = { ...activities[index]!, title: 'Image', status: 'running', generates: 'image', media: undefined, output: undefined, completedAt: undefined }
   }
   return { id: 'media-thread', projectId: 'project', title: 'Check every page', modelId: 'claude:test', providerId: 'claude', status: 'running', requests: [], messages, activities }
 }
@@ -176,4 +181,73 @@ describe('inline media cost', () => {
       expect(withPictures.scrollStepMs).toBeLessThan(without.scrollStepMs + 5)
     }
   }, 300_000)
+
+  it('plays the owl at the easel only while in view and until the picture lands, outside React', async () => {
+    const MAKING = 2, SECONDS = 2, FRAME = 1000 / 12
+    // jsdom paints nothing, so the test is the display: it runs each frame the scene asked for, a sixtieth of a second apart.
+    let queued = new Map<number, FrameRequestCallback>(), serial = 0, clock = 0
+    const realFrame = globalThis.requestAnimationFrame, realCancel = globalThis.cancelAnimationFrame
+    globalThis.requestAnimationFrame = callback => { serial += 1; queued.set(serial, callback); return serial }
+    globalThis.cancelAnimationFrame = handle => { queued.delete(handle) }
+    const play = (seconds: number): void => {
+      for (let tick = 0; tick < seconds * 60; tick += 1) { clock += 1000 / 60; const now = queued; queued = new Map(); for (const run of now.values()) run(clock) }
+    }
+    try {
+      let open = thread(true, MAKING)
+      let state = stateAround(host(open), open.id)
+      const store = new ThreadDraftStore(vi.fn(async () => state))
+      vi.mocked(useAgents).mockImplementation(() => agentContextFixture(state, vi.fn(async () => state), { threadDrafts: store }))
+      let commits = 0
+      const view = (): ReactNode => <Profiler id="threads" onRender={() => { commits++ }}>
+        <ThreadsView now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={1200} paneAreaHeight={800} />
+      </Profiler>
+      const before = owlEaselFramesDrawn()
+      const rendered = render(view())
+      const scenes = (): Element[] => [...rendered.container.querySelectorAll('.owl-easel')]
+      expect(scenes()).toHaveLength(MAKING)
+      // Each scene draws one still frame as it mounts, so its tile is never blank.
+      const mountFrames = owlEaselFramesDrawn() - before
+
+      // Off screen: nothing runs.
+      await act(async () => { DrivenObserver.near(new Set()) })
+      let drawn = owlEaselFramesDrawn()
+      play(SECONDS)
+      const offScreenFrames = owlEaselFramesDrawn() - drawn
+      const offScreenQueued = queued.size
+
+      // In view: twelve frames a second each, written straight into the page.
+      await act(async () => { DrivenObserver.near(new Set(scenes())) })
+      drawn = owlEaselFramesDrawn(); commits = 0
+      const started = performance.now()
+      play(SECONDS)
+      const playMs = performance.now() - started
+      const inViewFrames = owlEaselFramesDrawn() - drawn
+      const playCommits = commits
+
+      // The pictures land: the scenes go, and with them every frame they asked for.
+      open = { ...open, activities: open.activities!.map(record => record.generates ? { ...record, status: 'completed', media: [{ id: 'm0', digest: 'f'.repeat(64), kind: 'image', mimeType: 'image/png', sizeBytes: 900_000, width: 1024, height: 1024, name: 'picture-1.png', source: 'generated' }] } : record) }
+      state = stateAround(host(open), open.id)
+      act(() => { rendered.rerender(view()) })
+      drawn = owlEaselFramesDrawn()
+      play(SECONDS)
+      const landedFrames = owlEaselFramesDrawn() - drawn
+      const result = { scenes: MAKING, mountFrames, offScreenFrames, offScreenQueued, inViewFrames, inViewFramesPerSceneSecond: round(inViewFrames / MAKING / SECONDS, 1),
+        playCommits, playFrameMs: round(playMs / Math.max(1, inViewFrames), 3), landedScenes: scenes().length, landedFrames, landedQueued: queued.size }
+      console.info(`owl at the easel: ${JSON.stringify(result)}`)
+      rendered.unmount()
+
+      expect(mountFrames).toBe(MAKING)
+      expect(offScreenFrames).toBe(0)
+      expect(offScreenQueued).toBe(0)
+      expect(inViewFrames).toBeGreaterThan(0)
+      expect(inViewFrames).toBeLessThanOrEqual(MAKING * Math.ceil(SECONDS * 1000 / FRAME))
+      expect(playCommits).toBe(0)
+      expect(result.landedScenes).toBe(0)
+      expect(landedFrames).toBe(0)
+      expect(result.landedQueued).toBe(0)
+      if (process.env.SOTTO_PERF_ASSERT === '1') expect(result.playFrameMs).toBeLessThan(1)
+    } finally {
+      globalThis.requestAnimationFrame = realFrame; globalThis.cancelAnimationFrame = realCancel
+    }
+  }, 120_000)
 })

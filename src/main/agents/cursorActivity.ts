@@ -122,6 +122,6 @@ export function cursorImage(params: unknown, place: CursorPlace, previous: reado
   const id = `cursor-image-${place.key}`; const old = previous.find(row => row.id === id)
   const description = typeof value.description === 'string' ? bounded(value.description) : ''
   const file = typeof value.filePath === 'string' ? bounded(value.filePath) : undefined
-  return [{ ...where(place), ...old, id, sequence: old?.sequence ?? 0, kind: 'tool', status: file ? 'completed' : old?.status ?? 'running',
+  return [{ ...where(place), ...old, id, sequence: old?.sequence ?? 0, kind: 'tool', status: file ? 'completed' : old?.status ?? 'running', generates: 'image',
     title: description ? `Image: ${description.split(/\r?\n/u)[0]}` : 'Image', ...(file ? { changes: [{ path: file, kind: 'image' }] } : {}), ...(truncated() ? { truncated: true } : {}) }]
 }

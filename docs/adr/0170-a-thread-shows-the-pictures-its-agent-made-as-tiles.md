@@ -28,9 +28,19 @@ The store does not track which thread captured a picture. Inside an adapter a th
 
 **6. Owl first.** All of it sits behind the Owl feature `inline-media`. With it off, Sotto captures nothing, shows no tile and offers no command, and a record saved with handles keeps them for a build that has it.
 
+## Generated images (part 2), October 31, 2026
+
+**7. An image an agent generates is a step that makes an image.** Codex's `imageGeneration` item and Cursor's `cursor/generate_image` each become a tool step marked `generates: 'image'`, titled by what the image shows when the provider says. Codex's step was dropped until now; Cursor's named only the file. The marker is on the record and in the summary the iPhone is sent, so both clients know a step is making an image before any picture exists.
+
+**8. A generated image is captured from its bytes, or from the file its provider saved.** Codex's finished item carries the image's base64 bytes, captured as a tool result's are, its type read from the bytes. When it carries only the file Codex saved it to, as Cursor's always does, the adapter reads that file once, off the update path, and adds the handle to the step when the read lands. The file is read only for the step the provider made, only up to the 10 MiB image limit, and is kept only if its own first bytes say it is one of the four image types, whatever its name. A Cursor path that is not absolute is read from the thread's folder.
+
+**9. The owl at the easel plays while an image is made.** A step that makes an image, runs, and holds no picture yet shows a tile of the same size with Zach's scene 2: the owl paints on an easel under the night sky, in text, on a 14-row grid so its characters stay readable in a tile. No provider says how far an image has got, so the painting slows as it goes and the picture arriving ends it. It writes twelve frames a second straight into the page, never through React, only while it is on screen and the window is shown; off screen, hidden or once the picture lands it draws nothing and holds no timer, and under reduced motion it holds one still frame. The iPhone plays the same scene, ported to Swift, on the same terms. `inlineMediaTranscript.perf.test.tsx` holds it to that.
+
 ## Consequences
 
 - A thread's pictures cost disk, at most 1 GiB, while history is kept. Deleting a thread does not let its pictures go at once; they go as newer ones take their place, or all at once when history is turned off.
 - On the iPhone this first part shows a thread's pictures; Watcher's page on the phone carries no steps yet, so Watcher's own pictures show on the desktop only.
 - Pictures an agent saw that were never in a tool result (a page it read as text, a picture only in its own reasoning) still do not show.
+- A generated image a provider saved outside the thread's folder is read from where the provider said it saved it, on the computer the thread runs on. Nothing else in that folder is read.
+- A generation that fails or is stopped shows no tile; its step says what happened.
 - Every later part of the plan (generated images, other providers, written files and video, mark up, callouts) adds sources and actions to these handles and tiles, not a new path for bytes.

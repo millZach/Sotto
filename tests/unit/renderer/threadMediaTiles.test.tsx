@@ -64,6 +64,28 @@ describe('an agent\'s pictures in a turn (ADR-0170)', () => {
     await waitFor(() => expect(document.querySelectorAll('.thread-media img[src]')).toHaveLength(1))
   })
 
+  it('plays the owl at the easel while an image is made, reading nothing, then shows the picture when it lands', async () => {
+    const makingRecord: AgentActivity = { id: 'codex-image', turnId: 'turn', sequence: 1, kind: 'tool', status: 'running', title: 'Image', generates: 'image' }
+    const making = [{ ...groups[0]!, records: [makingRecord] }] as unknown as ActivityGroup[]
+    const { rerender } = render(<ThreadMediaTiles groups={making} threadId="thread" />)
+    expect(screen.getByRole('img', { name: 'Making the image' })).toBeTruthy()
+    expect(screen.getByText('It shows here when it is done')).toBeTruthy()
+    // The scene's text is drawn, and the screen reader hears the tile's name, not the art.
+    expect(document.querySelector('.owl-easel')?.getAttribute('aria-hidden')).toBe('true')
+    expect(document.querySelector('.owl-easel__sketch')?.textContent).toContain('(OvO)')
+    expect(threadMedia).not.toHaveBeenCalled()
+    rerender(<ThreadMediaTiles groups={[{ ...making[0]!, records: [{ ...makingRecord, status: 'completed', media: [{ ...media(0), source: 'generated' }] }] }] as unknown as ActivityGroup[]} threadId="thread" />)
+    expect(document.querySelector('.owl-easel')).toBeNull()
+    await waitFor(() => expect(document.querySelectorAll('.thread-media img[src]')).toHaveLength(1))
+    expect(screen.getByRole('button', { name: 'Open picture 1 of 1, from Image' })).toBeTruthy()
+  })
+
+  it('shows no tile for an image step that ended without a picture', () => {
+    const failed: AgentActivity = { id: 'codex-image', turnId: 'turn', sequence: 1, kind: 'tool', status: 'failed', title: 'Image', generates: 'image' }
+    const { container } = render(<ThreadMediaTiles groups={[{ ...groups[0]!, records: [failed] }] as unknown as ActivityGroup[]} threadId="thread" />)
+    expect(container.innerHTML).toBe('')
+  })
+
   it('draws nothing while the Owl feature is off, and reads nothing', async () => {
     owl.on = false
     const { container } = render(<ThreadMediaTiles groups={groups} threadId="thread" />)

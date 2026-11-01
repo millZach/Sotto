@@ -1,4 +1,4 @@
-import type { MediaCapture } from './threadMedia'
+import type { MediaCapture, MediaFileCapture } from './threadMedia'
 import { preserveLegacyAliases } from './legacyAliases'
 import { sameMessageContent } from '../../shared/threadEvents'
 import { browserCodexConfig, type BrowserAgentTools } from './browserAgentServer'
@@ -258,6 +258,8 @@ export type CodexAdapterEvent = 'codex-role-malformed' | 'codex-notification-unr
 export interface CodexAppServerHostOptions {
   /** Keeps a tool result's pictures and answers their handles (ADR-0170); absent while `inline-media` is off. */
   captureMedia?: MediaCapture
+  /** Reads an image Codex generated and saved only to a file (ADR-0170); absent while `inline-media` is off. */
+  captureMediaFile?: MediaFileCapture
   /** Immutable startup Owl answer; stable never installs a collector or reads account limits. */
   usageEnabled?: boolean
   /**
@@ -504,7 +506,7 @@ export class CodexAppServerHost implements AgentHost {
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, steer: true, compact: true } }
 
   constructor(private readonly options: CodexAppServerHostOptions) {
-    this.activity = new CodexActivityProjection(undefined, options.captureMedia)
+    this.activity = new CodexActivityProjection(undefined, options.captureMedia, options.captureMediaFile, id => { this.changed(id); this.emit() })
     this.usageEnabled = options.usageEnabled === true
     this.roleFiles = new CodexRoleFiles(join(options.userDataPath, 'codex-roles'), runtimePolicy, event => options.logEvent?.(event))
     this.usage = new NativeUsage(options.userDataPath, 'codex', options.usageEnabled)
@@ -938,7 +940,7 @@ export class CodexAppServerHost implements AgentHost {
     this.providerSessionIds.clear()
     for (const [id, alias] of Object.entries(aliases)) if (alias.kind !== 'personal') this.providerSessionIds.set(alias.codexThreadId, id)
     this.threads.clear(); this.threadChanges.markAll(); this.histories.clear(); this.terminalTurns.clear(); this.runningTurns.clear(); this.turnDates.clear(); this.readsBeforeSend.clear(); this.turnsListSupported = true
-    this.activity = new CodexActivityProjection(undefined, this.options.captureMedia); this.completedMessages.clear(); this.fileSummaries.clear()
+    this.activity = new CodexActivityProjection(undefined, this.options.captureMedia, this.options.captureMediaFile, id => { this.changed(id); this.emit() }); this.completedMessages.clear(); this.fileSummaries.clear()
     const codexHome = this.options.codexHome ?? process.env.CODEX_HOME ?? join(homedir(), '.codex')
     this.watcher = new CodexSessionLogWatcher({ codexHome, pollIntervalMs: this.options.pollIntervalMs,
       // Each second reads only the rollouts of the threads in use; every other thread's is read from its saved position
