@@ -650,7 +650,7 @@ Settings › Dictation shows the shortcut in the **Press to start and stop** row
 Settings also offers more shortcuts:
 
 - **Hold to dictate**: hold the keys, speak, then let go. New installs hold **Fn** on a Mac and **Ctrl+Win** on Windows. Pressing another key while you hold only modifiers cancels the dictation. A hold starts a new dictation unless one is already starting, listening or transcribing; while the last one's message still shows, holding starts the next, unless that message offers **Try again** for a recording it kept. If the screen locks or the computer sleeps during a hold, the hold is cancelled.
-- **+ Add** after a row's shortcuts records another one, up to four per row. On a Mac it is a menu with **Record keys…** and **Fn on its own**. Extra shortcuts in the press row may use Fn or modifiers alone; the first one may not. A shortcut of modifiers alone must be Fn on its own or two modifiers together.
+- **+ Add** after a row's shortcuts records another one, up to four per row. Extra shortcuts in the press row may use Fn or modifiers alone; the first one may not. A press of Fn or modifiers alone starts and stops dictation when you let go, so Fn and Fn+Space can both be shortcuts. A shortcut of modifiers alone must be Fn on its own or two modifiers together.
 - The **×** after a shortcut removes it. The press row always keeps one shortcut that works on its own, so its last such shortcut has no ×.
 
 On a Mac, if Fn opens the emoji picker or Apple's dictation, set System Settings › Keyboard › **Press 🌐 key to** to **Do Nothing**.
