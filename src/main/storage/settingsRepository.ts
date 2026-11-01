@@ -111,7 +111,7 @@ export class SettingsRepository {
     if (this.workerRolesEnabled && this.workerSwarmsEnabled && this.dictationHoldShortcutsEnabled && this.interfaceLanguageEnabled) return settings
     const saved = await this.readSettings()
     return this.keepSwarms({ ...settings, ...(this.workerRolesEnabled ? {} : { workerRoles: saved.workerRoles }),
-      ...(this.dictationHoldShortcutsEnabled ? {} : { pressShortcuts: saved.pressShortcuts, holdShortcuts: saved.holdShortcuts }),
+      ...(this.dictationHoldShortcutsEnabled ? {} : { hotkeyStandby: saved.hotkeyStandby, pressShortcuts: saved.pressShortcuts, holdShortcuts: saved.holdShortcuts }),
       ...(this.interfaceLanguageEnabled ? {} : { interfaceLanguage: saved.interfaceLanguage }) }, saved)
   }
 
@@ -159,9 +159,12 @@ export class SettingsRepository {
   private parse(input: unknown): AppSettings { return parseSettings(input, this.defaults, this.omarchyTheme !== undefined) }
 
   private project(settings: AppSettings): AppSettings {
-    if (!this.omarchyTheme && !this.shellPillInUse) return settings
+    // Without the Owl feature only `hotkey` is registered, so it is never on standby.
+    const standby = !this.dictationHoldShortcutsEnabled && settings.hotkeyStandby
+    if (!this.omarchyTheme && !this.shellPillInUse && !standby) return settings
     return {
       ...settings,
+      ...(standby ? { hotkeyStandby: false } : {}),
       ...(this.omarchyTheme ? { omarchyTheme: this.omarchyTheme() } : {}),
       ...(this.shellPillInUse ? { shellPillInUse: this.shellPillInUse() } : {}),
     }

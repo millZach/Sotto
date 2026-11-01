@@ -280,6 +280,11 @@ export interface AppSettings {
   roomTransitionLook: RoomTransitionLook
   microphoneId: string | null
   hotkey: string
+  /**
+   * The user removed `hotkey` while a shortcut that needs the key listener remains (Owl, ADR-0097): it stays saved and
+   * registers only while that listener is not running, as when macOS has turned Input Monitoring off.
+   */
+  hotkeyStandby: boolean
   /** Further press shortcuts beyond `hotkey`; used only while the Owl feature `dictation-hold-shortcuts` is on. */
   pressShortcuts: string[]
   /** Shortcuts held to talk; used only while the Owl feature `dictation-hold-shortcuts` is on, and kept whole while it is off. */
@@ -417,7 +422,7 @@ export interface AppSettings {
 }
 
 export type SettingsPatch = Partial<
-  Omit<AppSettings, 'hotkey' | 'pressShortcuts' | 'holdShortcuts' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
+  Omit<AppSettings, 'hotkey' | 'hotkeyStandby' | 'pressShortcuts' | 'holdShortcuts' | 'launchAtStartup' | 'worktreeCleanup' | 'omarchyTheme' | 'shellPillInUse'>
 > & {
   /** Merge only the supplied cleanup rules with the latest saved settings. */
   worktreeCleanup?: Partial<WorktreeCleanupRules>
@@ -467,6 +472,7 @@ const fieldSchemas = {
   roomTransitionLook: z.enum(ROOM_TRANSITION_LOOKS),
   microphoneId: z.string().min(1).nullable(),
   hotkey: z.string().min(1),
+  hotkeyStandby: z.boolean(),
   pressShortcuts: z.array(z.string().min(1).max(64)).max(3),
   holdShortcuts: z.array(z.string().min(1).max(64)).max(4),
   threadShortcuts: threadShortcutChoicesSchema,
@@ -583,6 +589,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   roomTransitionLook: 'band',
   microphoneId: null,
   hotkey: DEFAULT_HOTKEY,
+  hotkeyStandby: false,
   pressShortcuts: [],
   holdShortcuts: [],
   // Nothing chosen: every thread shortcut follows its default until the user changes one in Settings › Keyboard.
@@ -767,6 +774,7 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     roomTransitionLook: parseField(persisted, 'roomTransitionLook', defaults),
     microphoneId: parseField(persisted, 'microphoneId', defaults),
     hotkey: linuxBeforeRecorder ? defaults.hotkey : parseField(persisted, 'hotkey', defaults),
+    hotkeyStandby: linuxBeforeRecorder ? false : parseField(persisted, 'hotkeyStandby', defaults),
     pressShortcuts: linuxBeforeRecorder ? [] : parseShortcutList(persisted.pressShortcuts, 3),
     // The hold default is for new installs only: an existing profile without the field, or with a damaged one, holds nothing.
     // Linux is the exception above: its existing profiles already held F9.

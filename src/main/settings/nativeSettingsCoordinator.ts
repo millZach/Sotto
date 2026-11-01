@@ -4,7 +4,7 @@ import type {
   HotkeyChangeResult,
   StartupState,
 } from '../../shared/contracts'
-import { chordNeedsListener, chordTokens, MAX_SHORTCUTS_PER_ROLE, type DictationShortcutSet } from '../../shared/dictationShortcuts'
+import { chordNeedsListener, chordTokens, MAX_SHORTCUTS_PER_ROLE, standbyAllowed, type DictationShortcutSet } from '../../shared/dictationShortcuts'
 import type { SottoPlatform } from '../../shared/platform'
 import {
   DEFAULT_SETTINGS,
@@ -232,6 +232,8 @@ export class NativeSettingsCoordinator {
         routerApplied = true
         const updated = await this.dependencies.repository.update({
           hotkey: primary,
+          // A set that no longer fits standby brings the main shortcut back.
+          hotkeyStandby: (change.standby ?? previous.hotkeyStandby) && standbyAllowed(press),
           pressShortcuts: press.slice(1),
           holdShortcuts: hold,
         })

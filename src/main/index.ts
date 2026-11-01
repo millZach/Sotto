@@ -5,6 +5,7 @@ import { cleanSettingsHistory } from './settings/privacyCleanup'
 import { RetiredChatHistory } from './settings/retiredChats'
 import { registerHostQuitDrain, type HostQuitHandles } from './app/hostQuitDrain'
 import { HOSTS_CHANGED } from '../shared/hosts'
+import { startShortcut } from '../shared/dictationShortcuts'
 import { hostEntityKey, parseHostEntityKey } from '../shared/clientIdentity'
 import { DesktopHostRouter } from './hosts/desktopHostRouter'
 import { CascadedSettles } from './hosts/crossMachineCascade'
@@ -1799,7 +1800,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         dispatch: dispatchDictation,
         showWidget,
         pushHeld: tokens => { windows.sendToMain(DICTATION_KEYS_HELD, tokens) },
-        pushPermission: permission => { windows.sendToMain(KEY_LISTENER_PERMISSION_CHANGED, permission) },
+        pushPermission: permission => {
+          windows.sendToMain(KEY_LISTENER_PERMISSION_CHANGED, permission)
+          syncHotkeyStandby()
+        },
         openInputMonitoring: () => e2eConfiguration === null
           ? createSystemSettingsOpener(platform, url => shell.openExternal(url))?.('input-monitoring')
           : undefined,
@@ -1807,6 +1811,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         platform,
       })
     : null
+  // A main shortcut on standby registers again whenever the listener stops, as when Input Monitoring is turned off.
+  function syncHotkeyStandby(): void {
+    hotkeys.standby(workingCopySettings.hotkeyStandby && dictationShortcuts?.listening() === true)
+  }
   if (dictationShortcuts !== null) interruptOnLockAndSleep(powerMonitor, () => dictationShortcuts.interrupt())
   // Linux: while Settings records keys, Sotto's own Hyprland bindings start nothing. Hyprland keeps a bound key from the
   // page, so the recording is told whose it was instead.
@@ -1897,6 +1905,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(workingCopySettings.workerRoles)
       const previous = workingCopySettings
       workingCopySettings = settings
+      syncHotkeyStandby()
       // Hosts ask their providers for next prompts only while this desktop wants them (ADR-0173).
       if (nextPromptEnabled && settings.nextPromptSuggestions !== previous.nextPromptSuggestions) hostRouter.setNextPromptsWanted(settings.nextPromptSuggestions)
       menuBarOwl?.applySettings(settings)
@@ -2050,7 +2059,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     await dictationLifecycle.publish({
       status: 'idle',
       ...widgetPresentationFor(current, glassThemeEnabled),
-      shortcut: current.hotkey,
+      shortcut: startShortcut(current),
       cancellable: false,
     })
   }

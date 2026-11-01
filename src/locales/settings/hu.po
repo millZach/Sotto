@@ -288,6 +288,10 @@ msgstr ""
 msgid "{low} to {high}"
 msgstr ""
 
+#: src/renderer/src/features/settings/DictationShortcuts.tsx
+msgid "{mainKeys} is off. It comes back on its own if your other shortcuts stop working."
+msgstr ""
+
 #: src/renderer/src/features/settings/themes/themeLibrary.ts
 msgid "{MAX_CUSTOM_THEMES, plural, other {Sotto keeps up to # saved themes. Remove one to add another.}}"
 msgstr ""
@@ -6192,6 +6196,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Trying…"
+msgstr ""
+
+#: src/renderer/src/features/settings/DictationShortcuts.tsx
+msgid "Turn {mainKeys} back on"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
