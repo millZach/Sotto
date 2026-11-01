@@ -104,6 +104,52 @@ export class RolloutPositionFiles implements RolloutPositions {
   }
 }
 
+/**
+ * The start of every rollout line Codex writes today: its time, maybe its ordinal, its kind and, for most kinds, its
+ * payload's kind. Anchored, so the kinds it finds are the line's own and not a nested object's.
+ */
+const ROLLOUT_HEAD = /\{"timestamp":"[^"\\]*",(?:"ordinal":\d+,)?"type":"([a-z_]+)"(?:,"payload":\{"type":"([A-Za-z_]+)")?/y
+/** The payload's keys with plain values, up to a key that matters: one value never holds another key's text. */
+const LEADING_KEYS = String.raw`(?:,"[A-Za-z_]+":(?:"(?:[^"\\]|\\.)*"|-?[\d.eE+-]+|true|false|null))*?`
+const PAYLOAD_ROLE = new RegExp(`${LEADING_KEYS},"role":"([a-z_]+)"`, 'y')
+const PAYLOAD_ITEM = new RegExp(`${LEADING_KEYS},"item":\\{"type":"([A-Za-z_]+)"`, 'y')
+/** How much of a line's start `mayBeRead` is shown before the line is kept: past the furthest word it decides by. */
+const LINE_HEAD_BYTES = 1024
+const READ_EVENTS = new Set(['task_started', 'task_complete', 'user_message', 'agent_message', 'item_completed'])
+/**
+ * Whether a rollout line may hold anything this reader takes: a turn's context, its start and end, a user's or the
+ * agent's message as an event, a completed user message, and the agent's message as a response item
+ * (`CodexRolloutIdentities.consume`, and the user messages read below). It is judged from the line's first few hundred
+ * characters, so a line's start alone answers for the whole line whenever the answer is no. Every other line, a tool
+ * call and its output, reasoning, a user's or the developer's message as a response item, a token count, is skipped
+ * before it is joined, decoded or parsed: across the development machine's 1,616 rollouts, 93% of lines and over 99% of
+ * bytes (#992). A line that does not start the way Codex writes them today is parsed and checked as before, so the check
+ * only spares work it can prove is not needed.
+ */
+export function mayBeRead(line: string): boolean {
+  ROLLOUT_HEAD.lastIndex = 0
+  const head = ROLLOUT_HEAD.exec(line)
+  if (!head) return true
+  const [, kind, payloadKind] = head
+  if (kind === 'turn_context') return true
+  if (kind !== 'event_msg' && kind !== 'response_item') return false
+  if (payloadKind === undefined) return true
+  if (kind === 'response_item') {
+    if (payloadKind !== 'message') return false
+    const role = leading(PAYLOAD_ROLE, line, head[0].length)
+    return role === undefined || role === 'assistant'
+  }
+  if (!READ_EVENTS.has(payloadKind)) return false
+  if (payloadKind !== 'item_completed') return true
+  const item = leading(PAYLOAD_ITEM, line, head[0].length)
+  return item === undefined || item === 'UserMessage' || item === 'user_message'
+}
+/** The value `pattern` finds among the payload's leading keys, from `at`; none when a nested value comes first. */
+function leading(pattern: RegExp, line: string, at: number): string | undefined {
+  pattern.lastIndex = at
+  return pattern.exec(line)?.[1]
+}
+
 /** Rollout event messages are authored input; response_item user messages can be injected instructions. */
 export class CodexSessionLogWatcher {
   private readonly tails = new Map<string, Tail>()
@@ -308,8 +354,11 @@ export class CodexSessionLogWatcher {
           while (start < bytesRead) {
             const newline = buffer.indexOf(10, start)
             const end = newline < 0 ? bytesRead : newline
+            const part = buffer.subarray(start, end)
+            // A line whose first characters show it holds nothing this reader takes is neither kept, joined nor decoded.
+            // Latin-1 keeps every ASCII character the check looks for where UTF-8 has it, and cannot split one (#992).
+            if (!tail.discarding && tail.bufferedBytes === 0 && !mayBeRead(part.toString('latin1', 0, Math.min(part.length, LINE_HEAD_BYTES)))) tail.discarding = true
             if (!tail.discarding) {
-              const part = buffer.subarray(start, end)
               tail.buffer.push(part); tail.bufferedBytes += part.length
               if (tail.bufferedBytes > MAX_ROLLOUT_LINE_BYTES) {
                 tail.buffer = []; tail.bufferedBytes = 0; tail.discarding = true
@@ -338,6 +387,7 @@ export class CodexSessionLogWatcher {
     }
   }
   private consume(threadId: string, tail: Tail, line: string): void {
+    if (!mayBeRead(line)) return
     try {
       const entry = entrySchema.parse(JSON.parse(line))
       tail.identities.consume(entry)
