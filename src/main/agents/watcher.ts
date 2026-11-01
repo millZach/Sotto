@@ -331,8 +331,11 @@ const LATE: unique symbol = Symbol('late')
  */
 const requestTimedOut = (error: unknown): boolean => error instanceof Error && (error as { readonly timedOut?: unknown }).timedOut === true
 function refuse(code: WatcherRefusal['code'], message: string, retryable = false): never { throw new Refusal({ ...watcherRefusal(code, message, retryable), ...(code === 'CURSOR_EXPIRED' ? { restartCursor: 'restart' } : {}) }) }
-/** What the room says when Watcher's provider would not take the choice kept for its next turn. */
-const NEXT_TURN_REFUSED = 'Watcher could not change its model, effort or speed, so it stays as it was. Choose again.'
+/**
+ * What the room says when the choice kept for Watcher's next turn was refused or its result is unknown: either way the
+ * chips now show what Watcher's thread reports.
+ */
+const NEXT_TURN_REFUSED = 'Sotto could not confirm Watcher’s change of model, effort or speed. Its chips show what it runs on now. If that is not your choice, choose again.'
 /**
  * Whether Watcher's thread already runs on a choice: its model, and the effort and speed where the choice names them. A
  * null effort is the model's default, which any effort the thread reports counts as, as an open naming none does.
@@ -494,9 +497,9 @@ export class WatcherService implements WatcherControlHooks {
    * busy nearly all the time, since news starts a turn every minute or two, so a change that had to find it resting
    * nearly never went. Kept in memory: a restart drops it, and the chips show what Watcher runs on again.
    */
-  private nextTurn: { readonly threadId: string; readonly options: WatcherNextTurnOptions } | null = null
-  /** The kept choice is on its way to Watcher's provider; Watcher's queue waits for it. */
-  private applyingNextTurn = false
+  private nextTurn: { readonly threadId: string; readonly options: WatcherNextTurnOptions; readonly sent?: true } | null = null
+  /** The kept choice on its way to Watcher's provider, while it is; Watcher's queue waits for it, and a chip's press joins it. */
+  private applyingNextTurn: WatcherNextTurnOptions | null = null
   private readonly dispatchRefusals = new Map<string, Refusal>()
   private readonly nativeHeads = new Map<string, string | null>()
   /** Every host's threads as Watcher reads them, looked up rather than walked (#925 step 5). */
@@ -761,7 +764,7 @@ export class WatcherService implements WatcherControlHooks {
       || this.options.control.watcherWakeUpQueued() || this.options.control.hasPendingThreadWork(thread.id)) return
     if (this.compactTried === this.sendsToWatcher) return
     this.compactTried = this.sendsToWatcher; this.compactingNow = true
-    void this.options.control.command({ type: 'compact-thread', threadId: thread.id }).catch(() => undefined).finally(() => { this.compactingNow = false })
+    void this.options.control.command({ type: 'compact-thread', threadId: thread.id }).catch(() => undefined).finally(() => { this.compactingNow = false; this.applyNextTurn() })
   }
   /**
    * Brings stateOwed up to date with Watcher's thread as it is now, so a send or a wake-up before the next snapshot tick
@@ -2660,16 +2663,11 @@ export class WatcherService implements WatcherControlHooks {
       if (previous) {
         const thread = this.currentThread(previous)
         const wanted: WatcherNextTurnOptions = { modelId: input.modelId, reasoningEffort: input.reasoningEffort ?? null, ...input.speed !== undefined ? { speed: input.speed } : {} }
-        if (previous.provider === input.provider && optionsInForce(thread, wanted)) {
-          // Back on what Watcher runs on: nothing waits for its next turn any more.
-          if (this.nextTurn && !this.applyingNextTurn) { this.nextTurn = null; this.publish() }
-          return this.get()
-        }
         // On Watcher's own provider, a change while Watcher works waits for its next turn instead of being refused, and so
         // does one made while an earlier kept choice waits, so the two go in order (November 1, 2026).
-        if (previous.provider === input.provider && (this.nextTurn || this.applyingNextTurn || this.changeHeld(record, thread, 'model'))) {
+        if (previous.provider === input.provider && (optionsInForce(thread, wanted) || this.nextTurn || this.applyingNextTurn || this.changeHeld(record, thread, 'model'))) {
           guard?.()
-          this.keepForNextTurn(thread.id, wanted)
+          this.chooseForNextTurn(thread, wanted)
           return this.get()
         }
         const held = this.changeHeld(record, thread, previous.provider === input.provider ? 'model' : 'provider')
@@ -2750,22 +2748,26 @@ export class WatcherService implements WatcherControlHooks {
     if (!thread || thread.kind !== 'watcher') return false
     const waiting = this.nextTurn?.threadId === thread.id ? this.nextTurn.options : null
     if (!waiting && !this.applyingNextTurn && this.restsForNextTurn(thread)) return false
-    const base: WatcherNextTurnOptions = waiting ?? { modelId: thread.modelId, reasoningEffort: thread.reasoningEffort ?? null }
+    const base: WatcherNextTurnOptions = waiting ?? this.applyingNextTurn ?? { modelId: thread.modelId, reasoningEffort: thread.reasoningEffort ?? null }
     const modelChanged = command.modelId !== undefined && command.modelId !== base.modelId
     const speed = command.speed !== undefined ? command.speed : command.fastMode !== undefined ? (command.fastMode ? 'fast' : null) : modelChanged ? undefined : base.speed
     const wanted: WatcherNextTurnOptions = { modelId: command.modelId ?? base.modelId,
       reasoningEffort: command.reasoningEffort ?? (modelChanged ? null : base.reasoningEffort), ...speed !== undefined ? { speed } : {} }
     validate(wanted)
-    if (optionsInForce(thread, wanted)) {
-      if (!this.applyingNextTurn) { this.nextTurn = null; this.publish() }
-      return true
-    }
-    this.keepForNextTurn(thread.id, wanted)
+    this.chooseForNextTurn(thread, wanted)
     return true
   }
-  /** Keeps a choice for Watcher's next turn, and takes it at once if Watcher already rests. */
-  private keepForNextTurn(threadId: string, options: WatcherNextTurnOptions): void {
-    this.nextTurn = { threadId, options }
+  /**
+   * The user's latest choice for Watcher's model, effort or speed while one is kept or Watcher is busy. What Watcher runs on
+   * puts a kept choice away, unless another is on its way to the provider, which it must then follow. Anything else is kept,
+   * replacing what waited, and taken at once if Watcher already rests.
+   */
+  private chooseForNextTurn(thread: AgentThread, options: WatcherNextTurnOptions): void {
+    if (optionsInForce(thread, options) && !this.applyingNextTurn) {
+      if (this.nextTurn) { this.nextTurn = null; this.publish() }
+      return
+    }
+    this.nextTurn = { threadId: thread.id, options }
     this.applyNextTurn()
     this.publish()
   }
@@ -2779,26 +2781,29 @@ export class WatcherService implements WatcherControlHooks {
   }
   /**
    * Takes the choice kept for Watcher's next turn once Watcher rests, before its queue sends it news or the user's next
-   * message. A Watcher replaced since leaves it behind. Refused, the choice goes and the room says so, and the chips show
-   * what Watcher runs on.
+   * message. A Watcher replaced since leaves it behind. One whose result is unknown stays shown and is not sent again: main
+   * keeps it and asks the provider for it before Watcher's next turn, so it goes once Watcher reports it or main lets it go.
+   * Refused, the choice goes and the room says so, and the chips show what Watcher runs on.
    */
   private applyNextTurn(): void {
     const kept = this.nextTurn
     if (!kept || this.applyingNextTurn || this.closed) return
     const thread = this.view().current?.target.threadId === kept.threadId ? this.localThread(kept.threadId) : undefined
-    if (!thread || thread.kind !== 'watcher' || optionsInForce(thread, kept.options)) { this.nextTurn = null; return }
-    if (!this.restsForNextTurn(thread)) return
-    this.applyingNextTurn = true
+    if (!thread || thread.kind !== 'watcher' || optionsInForce(thread, kept.options)
+      || kept.sent && !this.options.control.settingsUnconfirmed(kept.threadId)) { this.nextTurn = null; this.publish(); return }
+    if (kept.sent || !this.restsForNextTurn(thread)) return
+    this.applyingNextTurn = kept.options
     const { modelId, reasoningEffort, speed } = kept.options
     void this.options.control.commandForWatcherRoom({ type: 'configure-thread', threadId: kept.threadId, modelId,
       ...reasoningEffort ? { reasoningEffort } : {}, ...speed !== undefined ? { speed } : {} })
       .then(result => result.error === null, () => false)
       .then(taken => {
-        if (this.nextTurn === kept) this.nextTurn = null
-        if (!taken) this.recoveryNotice = NEXT_TURN_REFUSED
+        const unknown = !taken && this.options.control.settingsUnconfirmed(kept.threadId)
+        if (this.nextTurn === kept) this.nextTurn = unknown ? { ...kept, sent: true } : null
+        if (!taken && !unknown) this.recoveryNotice = NEXT_TURN_REFUSED
         else if (this.recoveryNotice === NEXT_TURN_REFUSED) this.recoveryNotice = null
       })
-      .finally(() => { this.applyingNextTurn = false; this.applyNextTurn(); this.publish(); this.options.control.resumeWatcherQueue() })
+      .finally(() => { this.applyingNextTurn = null; this.applyNextTurn(); this.publish(); this.options.control.resumeWatcherQueue() })
   }
   /**
    * Whether Watcher's queue waits for its kept choice: while it is on its way, and once Watcher rests, so the next news or
@@ -2806,10 +2811,12 @@ export class WatcherService implements WatcherControlHooks {
    */
   holdsQueue(threadId: string): boolean {
     const kept = this.nextTurn
-    if (kept?.threadId !== threadId) return false
+    if (kept?.threadId !== threadId || kept.sent) return false
     if (this.applyingNextTurn) return true
     const thread = this.localThread(threadId)
-    if (!thread || !this.restsForNextTurn(thread)) return false
+    if (!thread) return false
+    // A compaction of Watcher's conversation ends without a turn, and the choice goes as soon as it has.
+    if (!this.restsForNextTurn(thread)) return !isThreadTurnRunning(thread) && thread.requests.length === 0 && (this.compactingNow || compactionPending(thread.compaction))
     queueMicrotask(() => { this.applyNextTurn() })
     return true
   }

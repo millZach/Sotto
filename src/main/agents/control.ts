@@ -1906,6 +1906,13 @@ export class AgentControl {
     if (this.followupStore.peek().items.some(item => item.threadId === threadId && (item.status === 'dispatching' || item.status === 'uncertain'))) return false
     return !(this.state.deliveries ?? []).some(item => item.threadId === threadId && item.setAside !== true && ['queued', 'submitting', 'uncertain'].includes(item.status))
   }
+  /**
+   * Whether a model, effort or speed change to this thread has no result yet: main keeps it, and asks the provider for it
+   * again before the thread's next turn (#1192).
+   */
+  settingsUnconfirmed(threadId: string): boolean {
+    return this.outbox.some(item => item.threadId === threadId && item.type === 'configure-thread' && holdsNothingBack(item) && !this.settingsDispatching.has(item.id))
+  }
   /** Lets Watcher's queue go on once the choice it waited for has gone (watcher.ts). */
   resumeWatcherQueue(): void { this.pumpFollowups() }
   /**

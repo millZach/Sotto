@@ -932,6 +932,56 @@ it('keeps Watcher’s model and effort chosen while it works, from the phone’s
   expect(f.service.state().nextTurnOptions).toBeUndefined()
 })
 
+it('follows a kept change on its way to Watcher’s provider with the choice made meanwhile, even back to the model Watcher ran on', async () => {
+  const f = await fixture()
+  f.workspace.adapters.codex.state.models.push({ ...f.workspace.adapters.codex.state.models[0]!, id: 'fake:other', name: 'Other model' })
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const other = f.control.shell().host.models.find(item => item.providerId === 'codex' && item.id !== f.model.id)!
+  // The first change waits at the provider until released; each one is taken as a real provider takes it.
+  const held = deferred<void>()
+  let configures = 0
+  const execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+    const thread = f.workspace.adapters.codex.state.threads.find(item => 'threadId' in command && item.id === command.threadId)
+    if (thread && command.type === 'configure-thread') {
+      if (++configures === 1) await held.promise
+      Object.assign(thread, command.modelId ? { modelId: command.modelId } : {}, command.reasoningEffort ? { reasoningEffort: command.reasoningEffort } : {})
+    }
+    return execute(command)
+  })
+  const watcherThread = () => f.control.watcherSnapshot().threads.find(thread => thread.id === f.id)!
+  expect(await f.service.open({ provider: 'codex', modelId: other.id })).toMatchObject({ status: 'ok', state: { nextTurnOptions: { modelId: other.id } } })
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(configures).toBe(1))
+  // Back to what Watcher still reports, while the first change is on its way: kept, so it follows rather than being lost.
+  expect(await f.service.open({ provider: 'codex', modelId: f.model.id })).toMatchObject({ status: 'ok', state: { nextTurnOptions: { modelId: f.model.id } } })
+  held.resolve()
+  await vi.waitFor(() => expect(configures).toBe(2))
+  await vi.waitFor(() => expect(watcherThread().modelId).toBe(f.model.id))
+  await vi.waitFor(() => expect(f.service.state().nextTurnOptions).toBeUndefined())
+})
+
+it('keeps showing a kept change whose result the provider never gave, and sends it once', async () => {
+  const f = await fixture()
+  f.workspace.adapters.codex.state.models.push({ ...f.workspace.adapters.codex.state.models[0]!, id: 'fake:other', name: 'Other model' })
+  f.workspace.adapters.codex.emit(); await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  const other = f.control.shell().host.models.find(item => item.providerId === 'codex' && item.id !== f.model.id)!
+  let configures = 0
+  const execute = f.workspace.adapters.codex.execute.bind(f.workspace.adapters.codex)
+  vi.spyOn(f.workspace.adapters.codex, 'execute').mockImplementation(async command => {
+    if (command.type === 'configure-thread') { configures++; return { accepted: false, uncertain: true } }
+    return execute(command)
+  })
+  expect(await f.service.open({ provider: 'codex', modelId: other.id })).toMatchObject({ status: 'ok' })
+  await f.finish(f.id)
+  await vi.waitFor(() => expect(configures).toBe(1))
+  // Main keeps it and asks again before Watcher's next turn: the chips keep the choice, and nothing says it failed.
+  await vi.waitFor(() => expect(f.control.settingsUnconfirmed(f.id)).toBe(true))
+  await f.control.commandShell({ type: 'refresh', provider: 'codex' })
+  expect(f.service.state()).toMatchObject({ nextTurnOptions: { modelId: other.id }, recoveryNotice: null })
+  expect(configures).toBe(1)
+})
+
 it('changes Watcher’s provider at rest when its only queued send waits for the user’s review, not a working thread', async () => {
   const f = await fixture(), first = await f.call('start_thread', f.start())
   if (first.status !== 'ok' || !('target' in first)) throw new Error('start refused')
