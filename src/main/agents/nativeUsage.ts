@@ -31,14 +31,12 @@ type LedgerEntry = Ledger['entries'][string]
 const TOKEN_FIELDS = ['input', 'output', 'cached', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h'] as const
 
 /**
- * What `summarize` reduces over every request of a thread but the newest, in the ledger's own order, kept between calls
- * (#555). A thread reports usage on nearly every frame of a reply, and each report changes the newest request, so its
- * totals are the newest request added to these, in the very order a walk of every request adds them: the same numbers to
- * the last bit, without walking a long thread's thousands of requests each time.
+ * What `summarize` reduces over a thread's requests, kept between calls (#555): everything up to its tail, in the ledger's
+ * own order. The tail is the newest few requests, the one a streaming reply keeps reporting on among them. A thread reports
+ * usage on nearly every frame of a reply, so its totals are the tail's requests added to these, in the very order a walk of
+ * every request adds them: the same numbers to the last bit, without walking a long thread's thousands of requests.
  */
 interface RunningTotals {
-  /** The newest request's key, last in the ledger's order; undefined while it holds none. */
-  newest: string | undefined
   usd: number
   priced: number
   /** Requests with no price yet, or only a lower bound. */
@@ -46,12 +44,27 @@ interface RunningTotals {
   /** The rate versions of priced requests, each once, in the order they first appear. */
   readonly rates: string[]
   readonly fields: Record<typeof TOKEN_FIELDS[number], { sum: number; count: number }>
-  /** A change the newest request alone cannot account for, as an older request changing: walk every request next time. */
+  /** The newest requests' keys, in the ledger's order, last in it, and not in the sums above. */
+  readonly tail: string[]
+  /**
+   * The request last changed that was already in the ledger, a streaming reply's. The tail never lets it go into the sums,
+   * however many requests a replay adds after it, so its next report is still counted from the tail.
+   */
+  hot: string | undefined
+  /** A change the tail cannot account for, as a request older than it changing: walk every request next time. */
   stale: boolean
 }
 
-const noTotals = (): RunningTotals => ({ newest: undefined, usd: 0, priced: 0, partial: 0, rates: [],
-  fields: Object.fromEntries(TOKEN_FIELDS.map(field => [field, { sum: 0, count: 0 }])) as RunningTotals['fields'], stale: false })
+/** The tail's length past which its oldest requests go into the sums, and the most it holds behind a streaming reply. */
+const TAIL_KEPT = 32
+const TAIL_MOST = 1_024
+
+const noTotals = (): RunningTotals => ({ usd: 0, priced: 0, partial: 0, rates: [], tail: [], hot: undefined, stale: false,
+  fields: Object.fromEntries(TOKEN_FIELDS.map(field => [field, { sum: 0, count: 0 }])) as RunningTotals['fields'] })
+
+/** `totals`' sums alone, to add a tail to without changing them. */
+const sumsOf = (totals: RunningTotals): RunningTotals => ({ ...totals, rates: [...totals.rates], tail: [],
+  fields: Object.fromEntries(TOKEN_FIELDS.map(field => [field, { ...totals.fields[field] }])) as RunningTotals['fields'] })
 
 /** Adds one request to `totals` as `summarize`'s walk would at its place. */
 function addRequest(totals: RunningTotals, entry: LedgerEntry): void {
@@ -389,41 +402,50 @@ export class NativeUsage {
   }
   /**
    * The thread's view of its requests: what they cost, at which rate versions, whether any is unpriced, and their tokens
-   * added up. Every request's change goes through `record`, which keeps the running totals for the newest request; a
-   * ledger read from disk, or one an older request changed in, is walked whole (#555).
+   * added up. Every request's change goes through `record`, which keeps the running totals up to the tail; a ledger read
+   * from disk, or one a request older than the tail changed in, is walked whole (#555).
    */
   private summarize(ledger: Ledger): void {
     let totals = this.running.get(ledger)
     if (totals === undefined || totals.stale) {
+      // The tail starts at the request last changed when it is among the newest, so a streaming reply's next report needs no walk.
+      const hot = totals?.hot
       totals = noTotals()
       const keys = Object.keys(ledger.entries)
-      for (const key of keys.slice(0, -1)) addRequest(totals, ledger.entries[key]!)
-      totals.newest = keys.at(-1)
+      const at = hot === undefined ? -1 : keys.lastIndexOf(hot)
+      const split = at >= 0 && keys.length - at <= TAIL_MOST ? at : Math.max(0, keys.length - 1)
+      for (const key of keys.slice(0, split)) addRequest(totals, ledger.entries[key]!)
+      totals.tail.push(...keys.slice(split))
+      totals.hot = at >= 0 ? hot : undefined
       this.running.set(ledger, totals)
     }
-    const newest = totals.newest === undefined ? undefined : ledger.entries[totals.newest]
-    const priced = newest?.usd !== undefined
-    ledger.view.estimatedUsd = totals.priced || priced ? (priced ? totals.usd + newest.usd! : totals.usd) : undefined
-    ledger.view.rateVersions = priced && !totals.rates.includes(newest.rate) ? [...totals.rates, newest.rate] : [...totals.rates]
-    ledger.view.partial = ledger.incomplete || totals.partial > 0 || newest !== undefined && (newest.usd === undefined || newest.lowerBound === true)
+    const sums = sumsOf(totals)
+    for (const key of totals.tail) addRequest(sums, ledger.entries[key]!)
+    ledger.view.estimatedUsd = sums.priced ? sums.usd : undefined
+    ledger.view.rateVersions = sums.rates
+    ledger.view.partial = ledger.incomplete || sums.partial > 0
     // Every recorded request, so the thread's tokens add up rather than showing only the latest request.
     const total: UsageTokens = {}
-    for (const field of TOKEN_FIELDS) {
-      const running = totals.fields[field], value = newest?.tokens[field]
-      if (running.count || value !== undefined) total[field] = value === undefined ? running.sum : running.sum + value
-    }
+    for (const field of TOKEN_FIELDS) if (sums.fields[field].count) total[field] = sums.fields[field].sum
     ledger.view.total = Object.keys(total).length ? total : undefined
   }
   /**
-   * Tells the running totals `key` is about to be written: the newest request changing needs nothing, and a new key that
-   * the ledger orders last moves the newest one into the totals. Anything else is walked whole at the next `summarize`.
+   * Tells the running totals `key` is about to be written. A request in the tail changing needs nothing, and a new key the
+   * ledger orders last joins it; the tail's oldest requests go into the sums once it grows past `TAIL_KEPT`, never the one
+   * last changed. A request older than the tail changing, or a key JavaScript orders first, is walked whole next time.
    */
   private changingRequest(ledger: Ledger, key: string): void {
     const totals = this.running.get(ledger)
-    if (totals === undefined || totals.stale || key === totals.newest) return
-    if (Object.hasOwn(ledger.entries, key) || ordersFirst(key)) { totals.stale = true; return }
-    if (totals.newest !== undefined) addRequest(totals, ledger.entries[totals.newest]!)
-    totals.newest = key
+    if (totals === undefined) return
+    const known = Object.hasOwn(ledger.entries, key)
+    if (known) totals.hot = key
+    if (totals.stale) return
+    if (known) { if (!totals.tail.includes(key)) totals.stale = true; return }
+    if (ordersFirst(key)) { totals.stale = true; return }
+    totals.tail.push(key)
+    while (totals.tail.length > TAIL_KEPT && totals.tail[0] !== totals.hot) addRequest(totals, ledger.entries[totals.tail.shift()!]!)
+    // Behind a streaming reply a replay can add many: past the most the tail holds, the reply's next report walks once.
+    if (totals.tail.length > TAIL_MOST) totals.stale = true
   }
   private seen(ledger: Ledger): Set<string> {
     let keys = this.seenKeys.get(ledger)

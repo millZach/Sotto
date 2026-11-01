@@ -67,8 +67,8 @@ it('keeps a thread\'s totals exactly what a walk of every request makes of them,
         const id = next() < 0.05 ? String(1_000 + step) : `msg_${seed}_${step}`
         ids.push(id); usage.claude('thread', assistant(id, model, input, output, cached, write))
       } else if (roll < 0.85) {
-        // The newest request growing as its reply streams.
-        const id = ids.at(-1)!
+        // A request growing as its reply streams: mostly the newest, sometimes one a replay has added requests after.
+        const id = next() < 0.7 ? ids.at(-1)! : ids[Math.max(0, ids.length - 1 - Math.floor(next() * 40))]!
         usage.claude('thread', { type: 'stream_event', event: { type: 'message_start', message: assistant(id, model, input, output, cached, write).message } })
         usage.claude('thread', { type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: output + Math.floor(next() * 500) } } })
       } else {
@@ -100,4 +100,5 @@ it('counts a Codex or Grok report it already saw once, without scanning every ke
     usage.codex('thread', 'gpt-5.4', report)
   }
   expect(usage.get('thread')?.total).toMatchObject({ input: 300, output: 30 })
+  await usage.flushed()
 })
