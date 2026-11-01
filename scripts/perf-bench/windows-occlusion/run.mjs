@@ -9,7 +9,9 @@
 //
 // Alternate off and on, three runs each, so whatever else the computer is doing falls on both sides alike. `cpu` streams
 // two panes and samples renderer, main and GPU CPU in six window states; `capture` opens a probe page with the agent
-// browser tool and captures it in every window state, shown in the browser pane and hidden. Each run uses an e2e profile
+// browser tool in the browser player, hidden, in Tools > Browser, on the test iPhone and with the phone hidden, and in
+// every window state checks navigation, capture, and that a click or tap, a scroll or swipe and typing reach the page.
+// It exits non-zero on any failure but the one already known with detection off (#1999). Each run uses an e2e profile
 // of its own in the temporary folder, never the user's, and writes `results/<mode>-<side>-run<run>.json` beside this file.
 import { spawn } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
@@ -52,3 +54,6 @@ report.preRunSystemPercent = preRunSystemPercent
 writeFileSync(out, `${JSON.stringify(report, null, 2)}\n`)
 console.log(`Exit ${code} after ${Math.round((Date.now() - started) / 1000)} s, ok=${report.ok}${report.error ? ` ${report.error.split('\n')[0]}` : ''}`)
 for (const line of report.log) console.log(`  ${line.replace(/^\S+ /, '')}`)
+if (report.unexpected?.length) console.log(`Unexpected failures: ${report.unexpected.join('; ')}`)
+// A run that could not finish, or a capture or input that failed other than the known minimized one (#1999), fails.
+if (!report.ok) process.exit(1)
