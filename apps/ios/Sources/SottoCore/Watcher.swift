@@ -29,6 +29,12 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
     /// Each machine and what works on it, for the machines line (#1032). Nil from a computer without Work across machines,
     /// or for an iPhone that did not accept `watcher-phone-machines`.
     public let machines: WatcherMachines?
+    /// For Watcher's box, nil from an older computer (`watcher-phone-composer`): what New Watcher would answer now
+    /// (`available`, `busy` or `empty`), whether a handover of the last Watcher is offered to this one, and whether this
+    /// Watcher replaced an earlier conversation.
+    public let newWatcher: String?
+    public let handoverOffered: Bool?
+    public let replaced: Bool?
     public struct DraftDelivery: Decodable, Equatable, Sendable { public let draftId: String; public let status: String }
     /// One follow-up waiting for Watcher: its queue item, the draft it went with, its words, and `queued`, `dispatching`,
     /// `uncertain`, `failed` or `paused`.
@@ -51,6 +57,8 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
         public let runtimeMode: String?
         /// Whether Watcher's provider takes a steer into its running turn. Nil from a computer that doesn't say (#1229).
         public let steers: Bool?
+        /// Watcher's speed, `fast` or `ultrafast`; nil at Standard, and from a computer that doesn't say.
+        public let speed: String?
     }
     public struct Conversation: Decodable, Equatable, Sendable {
         public let messages: [Message]; public let earlierAvailable: Bool; public let revision: Int
@@ -186,21 +194,42 @@ public enum WatcherWire {
     public static let photosFeature = "watcher-phone-photos"
     /// A send's `images` may also name files this iPhone staged, on a computer that keeps files (ADR-0131, October 28 amendment).
     public static let filesFeature = "watcher-phone-files"
+    /// Watcher's box takes the thread box's line (October 31, 2026): its model, effort and speed, another provider's model
+    /// starting a new Watcher; New Watcher; Stop on Watcher's own turn; and the handover of the last Watcher.
+    public static let composerFeature = "watcher-phone-composer"
     /// Views opt in to management only when they can present the controls and recover mutation receipts. Steering rides
     /// with it: its Remove recovers its outcome from the same receipt. So does the machines line (#1032), which reads only.
     public static var managementHello: [String: JSONValue] {
         var result = hello
-        if case .array(let accepts)? = result["accepts"] { result["accepts"] = .array(accepts + [.string(manageFeature), .string(steerFeature), .string(machinesFeature)]) }
+        if case .array(let accepts)? = result["accepts"] { result["accepts"] = .array(accepts + [.string(manageFeature), .string(steerFeature), .string(machinesFeature), .string(composerFeature)]) }
         return result
     }
     public static func setPermission(runtimeMode: String) throws -> [String: JSONValue] {
         guard ["approval-required", "auto-accept-edits", "auto", "full-access"].contains(runtimeMode) else { throw ClientError.invalidRequest }
         return ["op": .string("watcher-phone-set-permission"), "request": .object(["runtimeMode": .string(runtimeMode)])]
     }
-    public static func watch(target: WatcherTarget) -> [String: JSONValue] { watchOperation("watcher-phone-watch", target) }
-    public static func unwatch(target: WatcherTarget) -> [String: JSONValue] { watchOperation("watcher-phone-unwatch", target) }
-    private static func watchOperation(_ operation: String, _ target: WatcherTarget) -> [String: JSONValue] {
-        ["op": .string(operation), "request": .object(["target": .object(["hostId": .string(target.hostId), "threadId": .string(target.threadId)])])]
+    public static func watch(target: WatcherTarget) -> [String: JSONValue] { targetOperation("watcher-phone-watch", target) }
+    public static func unwatch(target: WatcherTarget) -> [String: JSONValue] { targetOperation("watcher-phone-unwatch", target) }
+    /// Watcher's model, effort or speed, through the computer's own Watcher open: another provider's model starts a new
+    /// Watcher there. A speed of `standard` goes as null; nil leaves the speed as it is.
+    public static func open(target: WatcherTarget, provider: String, modelID: String, effort: String? = nil, speed: String? = nil) -> [String: JSONValue] {
+        var request: [String: JSONValue] = ["target": targetValue(target), "provider": .string(provider), "modelId": .string(modelID)]
+        if let effort, !effort.isEmpty { request["reasoningEffort"] = .string(effort) }
+        if let speed { request["speed"] = speed == ThreadSettings.standard ? .null : .string(speed) }
+        return ["op": .string("watcher-phone-open"), "request": .object(request)]
+    }
+    /// New Watcher, on the current one's provider, model, effort, speed and permissions, with a handover of this one offered.
+    public static func startNew(target: WatcherTarget) -> [String: JSONValue] { targetOperation("watcher-phone-new", target) }
+    /// Stops Watcher's own turn.
+    public static func stopTurn(target: WatcherTarget) -> [String: JSONValue] { targetOperation("watcher-phone-stop-turn", target) }
+    /// Puts the handover offer away: the new Watcher's first message goes without it.
+    public static func dismissHandover(target: WatcherTarget) -> [String: JSONValue] { targetOperation("watcher-phone-dismiss-handover", target) }
+    /// An operation whose request names one thread: a watched one, or the current Watcher.
+    private static func targetOperation(_ operation: String, _ target: WatcherTarget) -> [String: JSONValue] {
+        ["op": .string(operation), "request": .object(["target": targetValue(target)])]
+    }
+    private static func targetValue(_ target: WatcherTarget) -> JSONValue {
+        .object(["hostId": .string(target.hostId), "threadId": .string(target.threadId)])
     }
     /// Ticket 8b opts in when its UI can show the page; existing phones keep their unchanged hello.
     public static var hello: [String: JSONValue] {
@@ -213,14 +242,16 @@ public enum WatcherWire {
     /// With `steer`, only to a computer that offers `steerFeature`: while Watcher works the words steer into its turn, or
     /// go next as their own turn when they can't.
     /// `images` only to a computer that offers `photosFeature`, and `files` only to one that offers `filesFeature`; both go in
-    /// the request's `images`, with the words however the words go.
+    /// the request's `images`, with the words however the words go. `handover` only to a computer that offers
+    /// `composerFeature`, while its page offers one: the words go after the last Watcher's handover.
     public static func send(target: WatcherTarget, clientID: String, draftID: String, text: String, steer: Bool = false,
-                            images: [StagedImage] = [], files: [StagedFile] = []) -> [String: JSONValue] {
+                            images: [StagedImage] = [], files: [StagedFile] = [], handover: Bool = false) -> [String: JSONValue] {
         var request: [String: JSONValue] = [
             "origin": .object(["kind": .string("phone"), "hostId": .string(target.hostId), "clientId": .string(clientID)]),
             "target": .object(["hostId": .string(target.hostId), "threadId": .string(target.threadId)]),
             "draftId": .string(draftID), "text": .string(text)]
         if steer { request["delivery"] = .string("steer") }
+        if handover { request["handover"] = .bool(true) }
         if !images.isEmpty || !files.isEmpty { request["images"] = .array(images.map(\.wire) + files.map(\.wire)) }
         return ["op": .string("watcher-phone-send"), "request": .object(request)]
     }

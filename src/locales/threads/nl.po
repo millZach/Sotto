@@ -1182,6 +1182,16 @@ msgstr ""
 msgid "{steps}, {unfinished, plural, one {# did not finish} other {# did not finish}}"
 msgstr ""
 
+#. {suggested} is a reasoning effort level, such as High.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "{suggested} effort may suit this draft"
+msgstr ""
+
+#. {suggested} is a reasoning effort level, such as High.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "{suggested} effort suggested for this draft."
+msgstr ""
+
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{summaries, plural, one {{summaryCount} reasoning summary} other {{summaryCount} reasoning summaries}}"
 msgstr ""
@@ -7018,6 +7028,11 @@ msgstr ""
 msgid "Set aside · Unconfirmed"
 msgstr ""
 
+#. {suggested} is a reasoning effort level, such as High.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "Set effort to {suggested}, suggested for this draft"
+msgstr ""
+
 #. The Settings page.
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Settings"
@@ -7922,11 +7937,6 @@ msgstr ""
 #. {ghostText} is the suggested prompt.
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Suggested next prompt: {ghostText}. Press Tab to take it, or Up for more."
-msgstr ""
-
-#. {suggested} is a reasoning effort level, such as High.
-#: src/renderer/src/agents/SplitChipEffort.tsx
-msgid "Suggests {suggested}. Choose it from the effort list."
 msgstr ""
 
 #. A step in the browser line; starts lowercase.

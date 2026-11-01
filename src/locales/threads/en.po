@@ -1182,6 +1182,16 @@ msgstr "{spaced, plural, one {# entry has a space in its name and cannot be ment
 msgid "{steps}, {unfinished, plural, one {# did not finish} other {# did not finish}}"
 msgstr "{steps}, {unfinished, plural, one {# did not finish} other {# did not finish}}"
 
+#. {suggested} is a reasoning effort level, such as High.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "{suggested} effort may suit this draft"
+msgstr "{suggested} effort may suit this draft"
+
+#. {suggested} is a reasoning effort level, such as High.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "{suggested} effort suggested for this draft."
+msgstr "{suggested} effort suggested for this draft."
+
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{summaries, plural, one {{summaryCount} reasoning summary} other {{summaryCount} reasoning summaries}}"
 msgstr "{summaries, plural, one {{summaryCount} reasoning summary} other {{summaryCount} reasoning summaries}}"
@@ -7018,6 +7028,11 @@ msgstr "Sent"
 msgid "Set aside · Unconfirmed"
 msgstr "Set aside · Unconfirmed"
 
+#. {suggested} is a reasoning effort level, such as High.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "Set effort to {suggested}, suggested for this draft"
+msgstr "Set effort to {suggested}, suggested for this draft"
+
 #. The Settings page.
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Settings"
@@ -7923,11 +7938,6 @@ msgstr "Suggested for this draft"
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Suggested next prompt: {ghostText}. Press Tab to take it, or Up for more."
 msgstr "Suggested next prompt: {ghostText}. Press Tab to take it, or Up for more."
-
-#. {suggested} is a reasoning effort level, such as High.
-#: src/renderer/src/agents/SplitChipEffort.tsx
-msgid "Suggests {suggested}. Choose it from the effort list."
-msgstr "Suggests {suggested}. Choose it from the effort list."
 
 #. A step in the browser line; starts lowercase.
 #: src/renderer/src/agents/browserLine.ts

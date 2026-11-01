@@ -1,6 +1,6 @@
 import { z } from 'zod'
-import { agentAttachmentHandlesSchema, agentMessageSchema, agentRequestSchema, agentQuestionAnswersSchema, providerIdSchema, agentRuntimeModeSchema } from './agents'
-import { watcherRefusalSchema, watcherThreadTargetSchema, watcherPhoneOriginSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherOutcomeSchema, WATCHER_MACHINES_MAX } from './watcher'
+import { agentAttachmentHandlesSchema, agentMessageSchema, agentRequestSchema, agentQuestionAnswersSchema, providerIdSchema, agentRuntimeModeSchema, agentSpeedSchema } from './agents'
+import { watcherRefusalSchema, watcherThreadTargetSchema, watcherPhoneOriginSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherOutcomeSchema, watcherProviderSchema, WATCHER_MACHINES_MAX } from './watcher'
 export { watcherPhoneOriginSchema } from './watcher'
 import { watcherStopAllPreviewSchema } from './watcherRoom'
 
@@ -35,10 +35,23 @@ export const WATCHER_PHONE_MACHINE_THREADS_MAX = 6
 export const WATCHER_PHONE_PHOTOS_FEATURE = 'watcher-phone-photos' as const
 /** Files for Watcher from the phone (ADR-0131, October 28 amendment): a send's `images` may name staged files too. */
 export const WATCHER_PHONE_FILES_FEATURE = 'watcher-phone-files' as const
+/**
+ * Watcher's box on the phone takes the thread box's line (Zach, October 31, 2026): `watcher-phone-open` changes Watcher's
+ * model, effort or speed, another provider's model starting a new Watcher as the desktop's chip does; `watcher-phone-new`
+ * is New Watcher; `watcher-phone-stop-turn` stops Watcher's own turn; `watcher-phone-dismiss-handover` puts the handover
+ * offer away; and a send may say `handover: true`, so it carries the offered handover ahead of its words. Offered with
+ * `watcher-phone-manage`, whose receipts its changes keep.
+ */
+export const WATCHER_PHONE_COMPOSER_FEATURE = 'watcher-phone-composer' as const
 /** How many of the user's follow-ups waiting for Watcher a phone's page carries, the first in line. */
 export const WATCHER_PHONE_FOLLOWUPS_MAX = 50
 export const watcherPhoneSetPermissionSchema = z.object({ runtimeMode: agentRuntimeModeSchema }).strict()
 export const watcherPhoneWatchSchema = z.object({ target: watcherThreadTargetSchema }).strict()
+/** A change to the current Watcher itself, named by its target so a change meant for one Watcher never reaches the next. */
+export const watcherPhoneCurrentSchema = z.object({ target: watcherThreadTargetSchema }).strict()
+/** Watcher's model, effort or speed from the phone, as the desktop's chips choose them (`watcherOpenRequestSchema`). */
+export const watcherPhoneOpenSchema = z.object({ target: watcherThreadTargetSchema, provider: watcherProviderSchema,
+  modelId: z.string().min(1).max(512), reasoningEffort: z.string().min(1).max(64).optional(), speed: agentSpeedSchema.nullable().optional() }).strict()
 export const watcherPhoneSendSchema = z.object({ origin: watcherPhoneOriginSchema, target: watcherThreadTargetSchema,
   draftId: z.uuid(), text: z.string().max(20_000),
   // Only from a phone offered WATCHER_PHONE_PHOTOS_FEATURE: the photos it staged, which go with the words, and with
@@ -47,7 +60,9 @@ export const watcherPhoneSendSchema = z.object({ origin: watcherPhoneOriginSchem
   // Only from a phone that negotiated WATCHER_PHONE_STEER_FEATURE: while Watcher works the message steers into its turn,
   // or goes next as its own turn when it cannot. A pending user card queues either version; otherwise,
   // absent delivery, a send while Watcher works is refused, as before (#1229).
-  delivery: z.literal('steer').optional() }).strict()
+  delivery: z.literal('steer').optional(),
+  // Only from a phone offered WATCHER_PHONE_COMPOSER_FEATURE, while the page offers a handover: the send carries it.
+  handover: z.literal(true).optional() }).strict()
   .refine(send => send.text.trim().length > 0 || send.images !== undefined, 'Send words, photos or both.')
 /** One photo of a message in Watcher's conversation, for the phone to draw: Watcher's thread is never a phone's to read. */
 export const watcherPhonePreviewSchema = z.object({ target: watcherThreadTargetSchema, messageId: z.string().min(1).max(512),
@@ -83,6 +98,8 @@ export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
   current: z.object({ target: watcherThreadTargetSchema, provider: providerIdSchema, modelId: z.string(),
     runtimeMode: agentRuntimeModeSchema.optional(),
     reasoningEffort: z.string().nullable(), status: z.enum(['idle', 'running', 'error']), connected: z.boolean(),
+    // Watcher's speed, null at Standard; absent from older computers (WATCHER_PHONE_COMPOSER_FEATURE).
+    speed: agentSpeedSchema.nullable().optional(),
     // For a phone that negotiated steering: whether Watcher's provider takes a steer into its running turn (#1229).
     steers: z.boolean().optional() }).strict().nullable(),
   conversation: z.object({ messages: z.array(agentMessageSchema), earlierAvailable: z.boolean(), revision: z.number().int().nonnegative() }).strict(),
@@ -110,6 +127,14 @@ export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
     status: z.enum(['queued', 'dispatching', 'uncertain', 'failed', 'paused']) }).strict()).max(WATCHER_PHONE_FOLLOWUPS_MAX).optional(),
   /** Each machine and what works on it, for a phone that accepted WATCHER_PHONE_MACHINES_FEATURE (#1032). Older phones ignore it. */
   machines: watcherPhoneMachinesSchema.optional(),
+  /**
+   * For Watcher's box (WATCHER_PHONE_COMPOSER_FEATURE), absent from older computers: what New Watcher would answer now, as
+   * the room says it; whether a handover of the last Watcher is offered to this one; and whether this Watcher replaced
+   * an earlier conversation, for the note its empty conversation shows.
+   */
+  newWatcher: z.enum(['available', 'busy', 'empty']).optional(),
+  handoverOffered: z.boolean().optional(),
+  replaced: z.boolean().optional(),
 }).strict()
 export const watcherPhoneResultSchema = z.union([z.object({ status: z.literal('ok'), state: watcherPhoneStateSchema }).strict(), watcherRefusalSchema])
 export const watcherPhoneManageOutcomeSchema = z.union([z.object({ status: z.literal('ok') }).strict(), watcherRefusalSchema])
@@ -129,6 +154,8 @@ export type WatcherPhoneOrigin = z.infer<typeof watcherPhoneOriginSchema>
 export type WatcherPhoneSend = z.infer<typeof watcherPhoneSendSchema>
 export type WatcherPhonePreview = z.infer<typeof watcherPhonePreviewSchema>
 export type WatcherPhoneRemoveFollowup = z.infer<typeof watcherPhoneRemoveFollowupSchema>
+export type WatcherPhoneOpen = z.infer<typeof watcherPhoneOpenSchema>
+export type WatcherPhoneCurrent = z.infer<typeof watcherPhoneCurrentSchema>
 export type WatcherPhoneAnswer = z.infer<typeof watcherPhoneAnswerSchema>
 export type WatcherPhoneResult = z.infer<typeof watcherPhoneResultSchema>
 export type WatcherPhoneSendResult = z.infer<typeof watcherPhoneSendResultSchema>

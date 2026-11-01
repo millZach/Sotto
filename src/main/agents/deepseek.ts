@@ -5,6 +5,7 @@ import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
 import { agentProjectSchema, attachmentReferences, type AgentHostSnapshot, type AgentModel, type AgentRuntimeMode, type AgentThread } from '../../shared/agents'
 import { mergeAgentActivities, type OwnServerTurn } from '../../shared/agentActivity'
+import type { MediaCapture } from './threadMedia'
 import type { OwnServer } from '../../shared/ownModelServers'
 import { watcherProvidersInWords } from '../../shared/workerRoles'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
@@ -177,6 +178,8 @@ export interface DeepSeekAcpOptions {
   startTimeoutMs?: number
   reaperSweepMs?: number
   sessionIdleMs?: number
+  /** The thread media store's capture (ADR-0170), given only with the Owl feature `inline-media` on: a tool's pictures become handles on its step. */
+  captureMedia?: MediaCapture
 }
 
 export class DeepSeekAcpHost implements AgentHost {
@@ -762,7 +765,7 @@ export class DeepSeekAcpHost implements AgentHost {
     }
     const key = kind === 'agent_thought_chunk' ? turn.places.thought()
       : typeof update.toolCallId === 'string' && (kind === 'tool_call' || kind === 'tool_call_update') ? turn.places.tool(update.toolCallId, kind === 'tool_call') : undefined
-    const rows = deepseekActivities(update, { turnId: turn.places.key, afterMessageId: this.log.lastMessageId(id), cwd: alias.cwd, key }, thread.activities, true)
+    const rows = deepseekActivities(update, { turnId: turn.places.key, afterMessageId: this.log.lastMessageId(id), cwd: alias.cwd, key }, thread.activities, true, this.options.captureMedia)
     if (rows.length) { thread.activities = mergeAgentActivities(thread.activities, rows); this.emit(kind === 'agent_thought_chunk') }
   }
   /** The harness has shown it is working on the prompt Sotto sent: the send waiting on it is woken. */

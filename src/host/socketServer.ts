@@ -38,6 +38,8 @@ import { PAGE_REQUESTS_PER_MINUTE, QUESTION_PAGE_PATH, serveQuestionPage } from 
 import type { WatcherHostRead } from '../shared/watcherHost'
 import type { WatcherThreadTarget } from '../shared/watcher'
 import { visibleWatcherState } from '../shared/watcherVisibility'
+import type { WatcherPhoneCurrent, WatcherPhoneOpen } from '../shared/watcherPhone'
+import type { WatcherSetPermissionRequest, WatcherWatchThreadRequest } from '../shared/watcherRoom'
 import { deltaWithoutProviders, detailWithoutProviders, eventsWithoutProviders, namesHidden, readWithoutProviders, stateWithoutProviders, stopPreviewWithoutProviders, stopResultWithoutProviders, type ProviderScope } from './providerPeers'
 import type { HeldProviders } from '../shared/heldProviders'
 import { delegationBriefSchema, delegationsReadSchema, stateWithoutDelegation, DELEGATIONS_CHANGED_MAX } from '../shared/delegation'
@@ -47,6 +49,9 @@ import type { OpenCodeSignIn } from '../main/agents/opencodeSignIn'
 import type { HostBranchMoves } from './branchMoves'
 import type { HostThreadMoves } from '../main/agents/threadMovesHost'
 
+/** Watcher's box on a phone (October 31, 2026): each of its operations and the change it asks of the phone service. */
+const COMPOSER_OPS = { 'watcher-phone-open': 'open', 'watcher-phone-new': 'new', 'watcher-phone-stop-turn': 'stop-turn',
+  'watcher-phone-dismiss-handover': 'dismiss-handover' } as const
 /** The HTTP listener's request bodies, checked against schemas built once rather than on every request. */
 const adminPhonesRequest = z.object({}).strict()
 const adminPhonesCommandRequest = z.object({ command: hostAdminPhonesCommandSchema }).strict()
@@ -115,7 +120,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `unknownProviders` are the providers whose host feature its hello did not accept (`PROVIDER_HOST_FEATURES`, #1107): it is
  * sent nothing of theirs, and their threads are hidden from it. Until its hello, that is every such provider.
  */
-interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherPhoneComposer: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined }
 /**
@@ -1134,8 +1139,15 @@ export async function startSocketServer(options: SocketServerOptions) {
       const answer = await (async () => { switch (request.op) {
         case 'watcher-phone-set-permission':
         case 'watcher-phone-watch':
-        case 'watcher-phone-unwatch': {
+        case 'watcher-phone-unwatch':
+        case 'watcher-phone-open':
+        case 'watcher-phone-new':
+        case 'watcher-phone-stop-turn':
+        case 'watcher-phone-dismiss-handover': {
           if (!peer.watcherPhoneManage || !offers(peer, 'watcher-phone-manage')) throw new Refusal('invalid_request')
+          // Watcher's box (October 31, 2026), only from a phone that negotiated it.
+          const composing = request.op in COMPOSER_OPS ? COMPOSER_OPS[request.op as keyof typeof COMPOSER_OPS] : undefined
+          if (composing && (!peer.watcherPhoneComposer || !offers(peer, 'watcher-phone-composer'))) throw new Refusal('invalid_request')
           const digest = createHash('sha256').update(JSON.stringify([request.op, request.request])).digest('hex')
           const previous = receipts.get(peer.client.clientId, request.id)
           if (previous) {
@@ -1149,8 +1161,9 @@ export async function startSocketServer(options: SocketServerOptions) {
           }
           if (!receipts.makeRoom()) throw new Refusal('busy')
           const receipt: HostReceipt = { status: 'pending' }
-          const action = request.op === 'watcher-phone-set-permission' ? 'permission' : request.op === 'watcher-phone-watch' ? 'watch' : 'unwatch'
-          const task = phone.manage(action, request.request, peer.client, guard, mayAnswer, steer).then(result => {
+          const task = (composing ? phone.compose(composing, request.request as WatcherPhoneOpen | WatcherPhoneCurrent, peer.client, guard, mayAnswer, steer)
+            : phone.manage(request.op === 'watcher-phone-set-permission' ? 'permission' : request.op === 'watcher-phone-watch' ? 'watch' : 'unwatch',
+              request.request as WatcherSetPermissionRequest | WatcherWatchThreadRequest, peer.client, guard, mayAnswer, steer)).then(result => {
             receipt.watcherManage = result.status === 'refused' ? result : { status: 'ok' }
             receipt.status = 'completed'
             return result
@@ -1202,6 +1215,7 @@ export async function startSocketServer(options: SocketServerOptions) {
           // Only a phone that negotiated steering may ask for a steer; an older phone's send is unchanged (#1229).
           if (request.request.delivery !== undefined && (!steer || !offers(peer, 'watcher-phone-steer'))) throw new Refusal('invalid_request')
           if (request.request.images !== undefined && !offers(peer, 'watcher-phone-photos')) throw new Refusal('invalid_request')
+          if (request.request.handover !== undefined && (!peer.watcherPhoneComposer || !offers(peer, 'watcher-phone-composer'))) throw new Refusal('invalid_request')
           if (request.request.images?.some(handle => !isImageAttachment(handle.mimeType)) && !offers(peer, 'watcher-phone-files')) throw new Refusal('invalid_request')
           const digest = createHash('sha256').update(JSON.stringify([request.op, request.request])).digest('hex')
           const previous = receipts.get(peer.client.clientId, request.id)
@@ -1287,6 +1301,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.watcherPhoneManage = peer.watcherPhone && (request.accepts?.includes('watcher-phone-manage') ?? false) && offers(peer, 'watcher-phone-manage')
         peer.watcherPhoneSteer = peer.watcherPhone && (request.accepts?.includes('watcher-phone-steer') ?? false) && offers(peer, 'watcher-phone-steer')
         peer.watcherPhoneMachines = peer.watcherPhone && (request.accepts?.includes('watcher-phone-machines') ?? false) && offers(peer, 'watcher-phone-machines')
+        // Watcher's box keeps its changes' outcomes under management's receipts, so it rides with management.
+        peer.watcherPhoneComposer = peer.watcherPhoneManage && (request.accepts?.includes('watcher-phone-composer') ?? false) && offers(peer, 'watcher-phone-composer')
         peer.watcherReads = (request.accepts?.includes('watcher-reads') ?? false) && offers(peer, 'watcher-reads'); peer.answerReceipts = (request.accepts?.includes('answer-receipts') ?? false) && offers(peer, 'answer-receipts')
         peer.usageHistory = (request.accepts?.includes('usage-history') ?? false) && offers(peer, 'usage-history')
         peer.retiredTerminals = request.accepts?.includes('terminals') ?? false
@@ -1834,7 +1850,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     const deflate = offered && compresses(clientId)
     stream.write('HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ' + accept + '\r\n' + (deflate ? 'Sec-WebSocket-Extensions: ' + DEFLATE_RESPONSE + '\r\n' : '') + '\r\n')
     const frames = new SocketFrames(stream, false, text => onMessage(peer, text), { deflate })
-    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
+    const peer: Peer = { unknownProviders: providersUnknownTo(undefined), hostUpdate: false, delegationViews: false, retiredTerminals: false, gone: new AbortController(), usageHistory: false, usageMuseOpenCode: false, watcherPhone: false, watcherPhoneStop: false, watcherPhoneManage: false, watcherPhoneSteer: false, watcherPhoneMachines: false, watcherPhoneComposer: false, watcherReads: false, desktop: isDesktop(clientId), frames, client: identity(clientId), session, observed: new Set(), shown: true, held: new Map(), opening: new Set(), sentAhead: new WeakSet<AgentThreadDetail>(), inFlight: 0, window: Date.now(), count: 0, pageWindow: 0, pages: 0, preview: false, ready: false, afterSeq: Number.MAX_SAFE_INTEGER, selectedThreadId: null, selectedProjectId: null, editingThreadId: null, messageAliases: false, deltas: false, clientUpdates: false, clientUpdateNotListed: false, activitySummaries: false, activityBodies: false, catalogRevisions: false, catalogSent: null, shellSent: null, answerReceipts: false, answerWatches: new Map(), threadRecords: undefined }
     peers.add(peer)
     frames.startHeartbeat()
     frames.onClose(() => { peer.gone.abort(); peer.answerWatches.clear(); peers.delete(peer); writingHeld.delete(peer); if (peer.delegationRelay) options.delegationRelay?.desktopGone(peer.delegationRelay); if (peer.delegationRemote) options.delegationRemote?.desktopGone(peer.delegationRemote); if (!connected(peer.client.clientId)) uploads.drop(peer.client.clientId); if (!closing) { track(observe().catch(() => undefined)); options.onPeersChanged?.() } })

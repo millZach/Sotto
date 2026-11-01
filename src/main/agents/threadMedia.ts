@@ -52,6 +52,33 @@ export function picturesIn(content: unknown): CapturedPicture[] {
 }
 
 /**
+ * An ACP tool step's pictures (ADR-0170). An update's content replaces the step's, and a picture arrives whole, so an
+ * update that holds no more pictures than the step already has handles for keeps those handles and hashes nothing: a
+ * repeated update, a later update with words alone, and a replay into a row that has them. One that holds more, a tool
+ * that added a picture as it ran, captures them all; the store keeps each content once, so the earlier ones cost a hash.
+ */
+export function acpToolMedia(capture: MediaCapture | undefined, content: unknown, old: Pick<AgentActivity, 'media'> | undefined): { media?: AgentActivityMedia[] } {
+  if (!capture) return {}
+  const pictures = picturesIn(content)
+  if (pictures.length <= (old?.media?.length ?? 0)) return {}
+  const media = capture(pictures, 'tool')
+  return media.length ? { media } : {}
+}
+
+/**
+ * A tool's raw output as text for its step, with every picture's bytes left out: MCP's `{type: 'image', data}` and the
+ * Messages API's `{type: 'base64', data}` source keep their other fields and leave their base64 behind, so a step's words never carry a picture, whether or not the picture became a handle.
+ */
+export function rawOutputText(value: unknown): string {
+  if (typeof value === 'string') return value
+  return JSON.stringify(value, (key, item: unknown) => {
+    if (typeof item !== 'object' || item === null || Array.isArray(item)) return item
+    const part = item as Record<string, unknown>
+    return (part.type === 'image' || part.type === 'base64') && typeof part.data === 'string' ? { ...part, data: undefined } : item
+  }) ?? ''
+}
+
+/**
  * The thread media store (ADR-0170): every picture a thread's agent made or looked at, kept once by digest as staged images
  * are (ADR-0031), in its own folder, and in memory alone while Keep local history is off. It keeps the newest
  * `THREAD_MEDIA_KEEP_BYTES`; past that the pictures captured longest ago go first. Its index holds each picture's size and

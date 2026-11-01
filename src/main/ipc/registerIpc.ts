@@ -119,7 +119,6 @@ const settingKeys = [
   'menuBarOwlBody',
   'menuBarOwlEyes',
   'watcherScene',
-  'composerStyle',
   'creature',
   'showCreature',
   'interfaceLanguage',

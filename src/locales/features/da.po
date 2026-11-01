@@ -5316,6 +5316,11 @@ msgstr ""
 msgid "Subscriptions"
 msgstr ""
 
+#. {ghostText} is the suggested message to Watcher.
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Suggested first message: {ghostText}. Press Tab to take it."
+msgstr ""
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Supersede"
 msgstr ""
