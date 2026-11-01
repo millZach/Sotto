@@ -11,7 +11,7 @@ export const devinFixtureSkips: AdapterContractSkips = {
   liveSettings: 'The fixture must apply settings to a live provider session.',
   settingsConfirmation: 'The fixture cannot lose a settings-change confirmation.',
   clientUpdate: 'The fixture must install a client update and the adapter must accept it.',
-  takeoverWhileHeld: 'Devin refuses a session its thread\'s own process holds to every other client (-32015), so nothing is typed into it unseen; '
+  takeoverWhileHeld: 'In the adapter and host service contracts: Devin refuses a session its thread\'s own process holds to every other client (-32015), so nothing is typed into it unseen; '
     + 'the fake writes into the history file under the held session. A message typed while Sotto does not hold the session is read when it next opens it '
     + '(devinAdapter.test.ts).',
 }
