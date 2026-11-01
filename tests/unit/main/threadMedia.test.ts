@@ -8,7 +8,7 @@ import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agen
 import { deepseekActivities } from '../../../src/main/agents/deepseekActivity'
 import { devinActivities } from '../../../src/main/agents/devinActivity'
 import { grokActivities } from '../../../src/main/agents/grokActivity'
-import { picturesIn, ThreadMediaStore, type MediaCapture } from '../../../src/main/agents/threadMedia'
+import { picturesIn, rawOutputText, ThreadMediaStore, type MediaCapture } from '../../../src/main/agents/threadMedia'
 import { agentActivitySignature } from '../../../src/shared/agentThreadDetail'
 import { activitySummary } from '../../../src/shared/hostProtocol'
 import { imageDimensions } from '../../../src/shared/imageDimensions'
@@ -203,6 +203,32 @@ describe('capture in an ACP tool step', () => {
     // A later update with no pictures of its own keeps the step's.
     expect(project({ sessionUpdate: 'tool_call_update', toolCallId: 'shot', status: 'completed', title: 'Screenshot' }, again, capture)[0]?.media).toEqual(done[0]?.media)
     expect(project({ sessionUpdate: 'tool_call_update', toolCallId: 'shot', status: 'completed', content }, started)[0]?.media).toBeUndefined()
+  })
+
+  it.each(projections)('%s captures a picture the tool added as it ran, keeping the first one\'s handle', async (_name, project) => {
+    const store = new ThreadMediaStore(await folder())
+    await store.load()
+    const second = { type: 'content', content: { type: 'image', data: b64(png(4, 4, 1)), mimeType: 'image/png' } }
+    const first = project({ sessionUpdate: 'tool_call', toolCallId: 'shot', title: 'screenshot', kind: 'other', status: 'in_progress', content }, [], store.capture)
+    const both = project({ sessionUpdate: 'tool_call_update', toolCallId: 'shot', status: 'completed', content: [...content, second] }, first, store.capture)
+    expect(both[0]?.media?.map(handle => [handle.digest, handle.width])).toEqual([[first[0]!.media![0]!.digest, 3], [expect.any(String), 4]])
+  })
+})
+
+describe('a tool\'s raw output as words', () => {
+  it('leaves every picture\'s bytes out, in the MCP and Messages API shapes, and keeps the rest', () => {
+    const data = b64(png())
+    const text = rawOutputText({ content: [{ type: 'text', text: 'Took a screenshot.' }, { type: 'image', data, mimeType: 'image/png' }, { type: 'image', source: { type: 'base64', media_type: 'image/png', data } }] })
+    expect(text).not.toContain(data)
+    expect(JSON.parse(text)).toEqual({ content: [{ type: 'text', text: 'Took a screenshot.' }, { type: 'image', mimeType: 'image/png' }, { type: 'image', source: { type: 'base64', media_type: 'image/png' } }] })
+    expect(rawOutputText('plain')).toBe('plain')
+  })
+
+  it('keeps a Grok or Devin step\'s output free of the picture when its words come only from the raw output', () => {
+    const data = b64(png())
+    const update = { sessionUpdate: 'tool_call_update', toolCallId: 'shot', status: 'completed', content: [{ type: 'content', content: { type: 'image', data, mimeType: 'image/png' } }], rawOutput: { content: [{ type: 'image', data, mimeType: 'image/png' }] } }
+    expect(grokActivities(update, { turnId: 'turn', cwd: '/repo' })[0]?.output).not.toContain(data)
+    expect(devinActivities(update, { turnId: 'turn', cwd: '/repo' })[0]?.output).not.toContain(data)
   })
 })
 

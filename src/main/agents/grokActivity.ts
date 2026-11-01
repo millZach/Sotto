@@ -1,6 +1,6 @@
 import { MAX_ACTIVITY_TEXT, mergeAgentActivities, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
-import { acpToolMedia, type MediaCapture } from './threadMedia'
+import { acpToolMedia, rawOutputText, type MediaCapture } from './threadMedia'
 import { acpThinkingActivities, settledThinking, thinkingSettledAs, type AcpThinking } from './thinkingActivity'
 
 type Context = { turnId: string; afterMessageId?: string | undefined; cwd: string }
@@ -106,7 +106,7 @@ function grokWork(update: Record<string, unknown>, context: Context, previous: r
     ...(startedAt ? { startedAt, timingSource: 'observed' as const } : {}),
     ...(typeof input?.command === 'string' ? { command: bounded(input.command) } : {}),
     ...(update.rawInput !== undefined ? { text: bounded(JSON.stringify(update.rawInput)) } : {}),
-    ...(texts?.length ? { output: bounded(texts.join('\n')) } : update.rawOutput !== undefined ? { output: bounded(typeof update.rawOutput === 'string' ? update.rawOutput : JSON.stringify(update.rawOutput)) } : {}),
+    ...(texts?.length ? { output: bounded(texts.join('\n')) } : update.rawOutput !== undefined ? { output: bounded(rawOutputText(update.rawOutput)) } : {}),
     ...(Number.isInteger(output?.exitCode ?? output?.exit_code) ? { exitCode: (output?.exitCode ?? output?.exit_code) as number } : {}),
     ...(changes?.length || locations.length ? { changes: (changes?.length ? changes : locations).slice(0, 200) } : {}), ...acpToolMedia(capture, update.content, old), ...(truncated || (changes?.length ?? 0) > 200 || locations.length > 200 ? { truncated: true } : {}) }]
 }
