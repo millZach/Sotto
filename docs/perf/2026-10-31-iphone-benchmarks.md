@@ -60,8 +60,9 @@ Then:
    the thread's scroll and the stream, the functions and images the main thread was in, and the app's own functions,
    anywhere on the stack and as the innermost app frame. Instruments' `xctrace` cannot record a simulator app on
    GitHub's runners: attaching hung or found no process, a launch was ambiguous because of the Share extension and
-   ignored its time limit, and recording the whole Mac never finished saving (#1976, six runs). The sampler slows the
-   app, so the traced journey's numbers are not summarized; read its shares, not its times.
+   ignored its time limit, and recording the whole Mac never finished saving (#1976, six runs). Each phase's frames
+   longer than 50 ms get the same tables for the samples taken while they lasted. The sampler slows the app, so the
+   traced journey's numbers are not summarized; read its shares, not its times.
 4. **SottoCore's share.** `SOTTO_IOS_BENCH=1 swift test -c release --filter PhoneBenchTests` times reading, merging and
    laying out the same frames on the runner's Mac, without the simulator.
 
@@ -151,3 +152,33 @@ What they say:
   timeline for each word (`core.delta.timeline-200`) adds about 50 ms on the runner's Mac, outside the simulator.
 - **Scrolling the long thread** is late for half of every second.
 - **The thread list** draws about 4 seconds after launch and scrolls smoothly. The pushes are small since #1910.
+
+## Earlier turns made as they scroll into view
+
+The first change of the climb. The thread page laid out every row at once (#749), so SwiftUI updated and placed every
+row of a long thread for each streamed word, and opening one built every message first. Now the latest ten turns, as
+many as a computer sends when a thread opens, are laid out whole, and the turns before them are made as they scroll
+into view; each reply paragraph is measured once for its words, text size and width.
+[Run 41302083390](https://github.com/millZach/Sotto/actions/runs/41302083390) measured the page against the
+benchmarks' base on one runner, and [41306747223](https://github.com/millZach/Sotto/actions/runs/41306747223) the
+measuring once against the page:
+
+| Metric | Before | After | Unit |
+| --- | ---: | ---: | --- |
+| `open.app.tap_to_drawn` | 10,095 | 2,931 | ms |
+| `open.app.textview.make` | 500 | 22 | count |
+| `open.app.body.MessageView` | 402 | 44 | count |
+| `open.app.footprint` | 478 | 117 | MB |
+| `stream.cpu_per_chunk` | 245 | 113 | ms |
+| `stream.app.longest_frame` | 923 | 436 | ms |
+| `journey.app.peak_footprint` | 513 | 130 | MB |
+| `thread-scroll.app.hitches` | 176 | 84 | count |
+| `thread-scroll.app.longest_frame` | 54 | 192 | ms |
+| `thread-scroll.app.textview_measure` (the second run) | 275 | 12 | ms |
+
+Scrolling up through the earlier turns makes each as it arrives, so the longest frame of that scroll rose: the long
+frames' samples are SwiftUI sizing one tall turn (about half) and making its text views (about a fifth). The page laid
+out whole was late on nearly every frame of the same scroll, about 20 frames a second, so its longest frame was short
+because none were quick. Zach chose to ship the change with the longer frame named; making a turn cheaper is the
+next item.
+
