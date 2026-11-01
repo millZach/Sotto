@@ -1,0 +1,326 @@
+<!doctype html>
+<!-- Throwaway prototype, tag prototype/projects-folder-picker. Settings > Threads > Projects with the Default projects
+     directory as a picker-only field that opens Add project's folder browser (#371) for each computer.
+     Two field variants (?variant=A|B). All state is in memory; nothing is sent anywhere. -->
+<html lang="en" data-theme="dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sotto · Projects folder picker prototype</title>
+<link rel="stylesheet" href="tokens.css">
+<style>
+@font-face{font-family:Manrope;src:url('manrope-latin.woff2') format('woff2');font-weight:200 800;font-display:swap}
+*{box-sizing:border-box}
+html,body{min-height:100%}
+body{margin:0;background:var(--tt-canvas);color:var(--tt-text);font:14px/1.45 Manrope,system-ui,sans-serif}
+button,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:2px solid var(--tt-focus-ring);outline-offset:2px}
+svg{flex:none}
+
+/* The Settings window around the card. */
+.app{min-height:100vh;display:grid;grid-template-columns:280px 1fr}
+.side{background:var(--tt-sidebar);border-right:1px solid var(--tt-sidebar-border);padding:18px 10px;color:var(--tt-sidebar-text)}
+.side h1{font-size:var(--tt-type-figure);margin:28px 8px 14px;font-weight:600}
+.side .find{display:flex;gap:8px;align-items:center;margin:0 0 14px;padding:9px 10px;border:1px solid var(--tt-sidebar-border);border-radius:var(--tt-radius-row);color:var(--tt-sidebar-text-muted);font-size:var(--tt-type-small)}
+.side .item{padding:11px 12px;border-radius:var(--tt-radius-row);color:var(--tt-sidebar-text);font-size:var(--tt-type-body)}
+.side .item[aria-current]{background:var(--tt-sidebar-row-selected)}
+.main{padding:32px 36px 140px;max-width:790px;width:100%}
+.main h2{font-size:var(--tt-type-title);margin:16px 0 6px;font-weight:600}
+.main .sub{color:var(--tt-text-muted);font-size:var(--tt-type-reading);margin:0 0 18px;padding-bottom:18px;border-bottom:1px solid var(--tt-hairline)}
+.group h3{display:flex;gap:9px;align-items:center;font-size:var(--tt-type-body);font-weight:600;margin:22px 2px 8px}
+.group .note{color:var(--tt-text-muted);font-size:var(--tt-type-small);margin:0 2px 10px}
+.rows{padding:4px 20px;border-radius:var(--tt-radius-lg, 14px);background:var(--tt-card)}
+.row{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,300px);gap:6px 22px;align-items:center;min-height:66px;padding:17px 0;border-bottom:2px solid var(--tt-card-inset)}
+.row:last-child{border-bottom:0}
+.row .head strong{display:flex;gap:7px;align-items:center;font-size:var(--tt-type-reading);font-weight:500}
+.row .head span{display:block;margin-top:2px;color:var(--tt-text-muted);font-size:var(--tt-type-small)}
+.row .head .status{display:inline;margin:0 0 0 4px;font-size:var(--tt-type-caption);font-weight:400;color:var(--tt-text-muted)}
+.row .err{grid-column:1/-1;color:var(--tt-error);font-size:var(--tt-type-small)}
+.toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);padding:10px 16px;border-radius:var(--tt-radius-row);background:var(--tt-card);border-left:3px solid var(--tt-success);font-size:var(--tt-type-small);z-index:9;box-shadow:0 8px 30px var(--tt-shadow-color)}
+
+/* Variant A: the field is a button that shows the folder; a clear mark sits inside it. */
+.pick{position:relative;display:flex;align-items:center;min-width:0}
+.pick-btn{display:flex;align-items:center;gap:8px;width:100%;min-width:0;min-height:38px;padding:7px 12px;border:1px solid transparent;border-radius:var(--tt-radius-control);background:var(--tt-card-inset);font-size:var(--tt-type-body);text-align:left}
+.pick-btn:hover:not(:disabled){border-color:var(--tt-border)}
+.pick-btn:disabled{cursor:default;color:var(--tt-text-muted)}
+.pick-btn > svg{color:var(--tt-text-muted)}
+.pick-btn .path{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.pick-btn .path bdi{direction:ltr;unicode-bidi:isolate}
+.pick-btn .placeholder{flex:1;color:var(--tt-text-muted)}
+.pick.has-clear .pick-btn{padding-right:38px}
+.clear{position:absolute;right:5px;display:grid;place-items:center;width:28px;height:28px;border:0;border-radius:var(--tt-radius-tag);background:transparent;color:var(--tt-text-muted)}
+.clear:hover{background:var(--tt-hover-strong);color:var(--tt-text)}
+
+/* Variant B: the folder is written out under the computer's name; the control is a button. */
+.row.b{grid-template-columns:minmax(0,1fr) auto}
+.b-path{display:block;margin-top:6px;font-family:var(--tt-font-mono, ui-monospace),monospace;font-size:var(--tt-type-caption);color:var(--tt-text-2);overflow-wrap:anywhere}
+.b-path.none{font-family:inherit;color:var(--tt-text-muted)}
+.b-actions{display:flex;gap:6px;align-items:center;justify-content:flex-end}
+
+.btn{display:inline-flex;align-items:center;gap:7px;min-height:34px;padding:6px 14px;border-radius:var(--tt-radius-control);border:1px solid var(--tt-border);background:var(--tt-surface);font-size:var(--tt-type-small);white-space:nowrap}
+.btn:hover:not(:disabled){background:var(--tt-hover-strong)}
+.btn.ghost{border-color:transparent;background:transparent;color:var(--tt-text-2)}
+.btn.primary{background:var(--tt-primary);color:var(--tt-primary-contrast);border-color:transparent;font-weight:600}
+.btn.primary:hover:not(:disabled){background:var(--tt-primary-hover)}
+.btn:disabled{opacity:.55;cursor:default}
+.icon{display:grid;place-items:center;width:32px;height:32px;border:0;border-radius:var(--tt-radius-row);background:transparent;color:var(--tt-text-muted)}
+.icon:hover{background:var(--tt-hover-strong);color:var(--tt-text)}
+
+/* The folder browser, after .new-thread-dialog.folder-browser with the host already chosen. */
+.scrim{position:fixed;inset:0;background:var(--tt-backdrop);backdrop-filter:blur(5px);display:grid;place-items:center;z-index:5}
+.dlg{display:flex;flex-direction:column;width:min(600px,calc(100vw - 48px));height:min(560px,calc(100vh - 70px));background:var(--tt-panel);border:1px solid var(--tt-panel-border);border-radius:var(--tt-radius-overlay);box-shadow:0 28px 90px var(--tt-shadow-color);overflow:hidden;animation:arrive .16s ease-out}
+@keyframes arrive{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion:reduce){.dlg{animation:none}}
+.dlg-head{display:flex;align-items:center;gap:10px;padding:12px 12px 12px 15px}
+.dlg-head input{flex:1;min-width:0;padding:6px 0;border:0;outline:none;background:transparent;font-size:var(--tt-type-body)}
+.dlg-head > svg{color:var(--tt-text-muted)}
+.hostchip{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:999px;background:var(--tt-surface-elevated, var(--tt-card));font-size:var(--tt-type-small);color:var(--tt-text-2);white-space:nowrap}
+.purpose{margin:-2px 16px 6px;color:var(--tt-text-muted);font-size:var(--tt-type-small)}
+.crumbs{display:flex;align-items:center;flex-wrap:wrap;gap:2px;padding:0 12px 8px}
+.crumbs button{border:0;background:transparent;border-radius:var(--tt-radius-control);padding:3px 7px;font-size:var(--tt-type-small);color:var(--tt-text-muted);display:inline-flex;align-items:center;gap:5px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crumbs button:hover{background:var(--tt-hover-strong);color:var(--tt-text)}
+.crumbs button[aria-current]{color:var(--tt-text);font-weight:500}
+.crumbs .sep{color:var(--tt-text-faint)}
+.list{flex:1;min-height:0;overflow-y:auto;padding:0 9px 10px}
+.choice{display:flex;width:100%;align-items:center;gap:12px;padding:10px 12px;border:0;border-radius:var(--tt-radius-row);background:transparent;color:var(--tt-text-muted);text-align:left}
+.choice strong{flex:1;min-width:0;color:var(--tt-text-2);font-size:var(--tt-type-body);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.choice[data-hl],.choice:hover{background:var(--tt-hover-strong)}
+.tag{font-size:var(--tt-type-micro);padding:1px 7px;border-radius:var(--tt-radius-tag);border:1px solid var(--tt-border-faint);color:var(--tt-text-muted)}
+.tag.project{border-color:var(--tt-accent-border);color:var(--tt-accent-text)}
+.empty{margin:14px 12px;color:var(--tt-text-muted);font-size:var(--tt-type-small)}
+.error{margin:8px 3px;padding:10px 12px;border-radius:var(--tt-radius-row);background:var(--tt-error-surface);border:1px solid var(--tt-error-border);color:var(--tt-error-text);font-size:var(--tt-type-small)}
+.foot{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:12px 15px;border-top:1px solid var(--tt-hairline);background:var(--tt-surface)}
+.foot .target{flex:1;min-width:120px;color:var(--tt-text-muted);font-size:var(--tt-type-caption);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;direction:rtl;text-align:left}
+.foot .target bdi{direction:ltr;unicode-bidi:isolate}
+.keys{display:flex;flex-wrap:wrap;gap:14px;padding:9px 18px;border-top:1px solid var(--tt-hairline);background:var(--tt-surface);color:var(--tt-text-muted);font-size:var(--tt-type-micro)}
+.keys kbd{min-width:20px;padding:2px 5px;text-align:center;font:inherit;color:var(--tt-text-2);border-radius:var(--tt-radius-tag);background:var(--tt-kbd)}
+.loading{margin:14px 12px;color:var(--tt-text-muted);font-size:var(--tt-type-small)}
+
+/* Prototype controls: visibly not part of the design. */
+.proto{position:fixed;left:50%;bottom:14px;transform:translateX(-50%);z-index:20;display:flex;flex-wrap:wrap;justify-content:center;gap:6px;align-items:center;max-width:calc(100vw - 20px);padding:8px 10px;border-radius:14px;background:#111;color:#fff;font:12px/1.3 system-ui,sans-serif;box-shadow:0 8px 30px rgb(0 0 0 / 50%);border:2px dashed #f5c400}
+.proto button{border:1px solid #555;background:#222;color:#fff;border-radius:999px;padding:6px 10px;font:inherit}
+.proto button[aria-pressed='true']{background:#f5c400;color:#111;border-color:#f5c400;font-weight:600}
+.proto b{color:#f5c400;margin:0 2px}
+.statebox{position:fixed;right:12px;top:12px;z-index:20;max-width:340px;padding:8px 10px;border-radius:10px;background:#111;color:#cfc;font:11px/1.4 ui-monospace,monospace;white-space:pre-wrap;border:2px dashed #f5c400;opacity:.92}
+.statebox[hidden]{display:none}
+
+/* Phone and the 820 minimum: the card's rows stack, the browser fills the screen. */
+@media (max-width:900px){.app{grid-template-columns:200px 1fr}.main{padding:24px 22px 160px}}
+@media (max-width:700px){
+  .app{grid-template-columns:1fr}.side{display:none}
+  .main{padding:16px 14px 190px}
+  .row,.row.b{grid-template-columns:1fr}
+  .b-actions{justify-content:flex-start}
+  .scrim{place-items:end center}
+  body.browsing .proto,body.browsing .statebox{display:none}
+  .dlg{width:100%;height:92dvh;border-radius:var(--tt-radius-overlay) var(--tt-radius-overlay) 0 0}
+  .keys{display:none}
+  .statebox{top:auto;bottom:150px;right:8px;left:8px;max-width:none}
+  .proto{left:6px;right:6px;bottom:6px;transform:none;max-width:none;gap:4px;padding:6px}
+  .proto button{padding:5px 8px}
+}
+</style></head>
+<body>
+<div id="toast" class="toast" role="status" hidden>Setting saved.</div>
+<div class="app">
+  <nav class="side" aria-label="Settings pages">
+    <h1>Settings</h1>
+    <div class="find">⌕ Find a setting</div>
+    <div class="item">Dictation</div><div class="item">Cleanup</div>
+    <div class="item" aria-current="page">Threads</div>
+    <div class="item">Keyboard</div><div class="item">Git &amp; worktrees</div><div class="item">Watcher</div>
+    <div class="item">Providers</div><div class="item">Hosts &amp; phones</div>
+  </nav>
+  <main class="main">
+    <h2>Threads</h2>
+    <p class="sub">New threads, replies, the browser &amp; visuals</p>
+    <section class="group" aria-labelledby="g-projects">
+      <h3 id="g-projects">📂 Projects</h3>
+      <p class="note" id="projects-note"></p>
+      <div class="rows" id="rows"></div>
+    </section>
+    <section class="group" aria-hidden="true" style="opacity:.55">
+      <h3>Working copy</h3>
+      <div class="rows"><div class="row"><div class="head"><strong>New threads work in</strong><span>Project defaults below can override this.</span></div><div style="justify-self:end">Project folder ▾</div></div></div>
+    </section>
+  </main>
+</div>
+<div id="dialog-root"></div>
+<pre class="statebox" id="state" aria-hidden="true"></pre>
+<div class="proto" id="proto" aria-label="Prototype controls"></div>
+
+<script>
+// ---------- Fake computers and their folders ----------
+const WIN = { sep: '\\', home: 'C:\\Users\\zache', tree: {
+  '': ['C:', 'D:'],
+  'C:': ['Program Files', 'Users', 'Windows'],
+  'C:\\Users': ['zache', 'Public'],
+  'C:\\Users\\zache': ['Desktop', 'Documents', 'Downloads', 'Projects', 'source'],
+  'C:\\Users\\zache\\Projects': ['sotto*', 'controls-notes*', 'plant-hmi*', 'Archive'],
+  'C:\\Users\\zache\\Projects\\Archive': ['2025', '2026'],
+  'C:\\Users\\zache\\source': ['repos'],
+  'C:\\Users\\zache\\source\\repos': ['client-work'],
+  'C:\\Users\\zache\\source\\repos\\client-work': ['boiler-3-upgrade-dcs-migration-phase-two'],
+  'C:\\Users\\zache\\source\\repos\\client-work\\boiler-3-upgrade-dcs-migration-phase-two': ['drawings', 'plc'],
+  'D:': ['Dev', 'Media'], 'D:\\Dev': ['Projects', 'scratch'], 'D:\\Dev\\Projects': ['game-jam*'],
+}}
+const LINUX = { sep: '/', home: '/home/zach', tree: {
+  '/': ['home', 'opt', 'srv'], '/home': ['zach'],
+  '/home/zach': ['code', 'Downloads', 'models', 'projects'],
+  '/home/zach/projects': ['sotto*', 'forge-scripts*', 'blender-scenes'],
+  '/home/zach/code': ['experiments'], '/srv': ['projects'], '/srv/projects': ['shared*'],
+}}
+const LONG = 'C:\\Users\\zache\\source\\repos\\client-work\\boiler-3-upgrade-dcs-migration-phase-two'
+const children = (fs, path) => (fs.tree[path] || []).map(name => ({ name: name.replace('*', ''), git: name.endsWith('*') }))
+const join = (fs, parent, name) => parent === '' ? name : parent === '/' ? '/' + name : parent + fs.sep + name
+function crumbsOf(fs, path) {
+  if (fs.sep === '/') { const parts = path.split('/').filter(Boolean); const out = [{ name: '/', path: '/' }]; let at = ''; for (const p of parts) { at += '/' + p; out.push({ name: p, path: at }) } return out }
+  const out = [{ name: 'Drives', path: '' }]; if (!path) return out
+  let at = ''; for (const p of path.split('\\')) { at = at ? at + '\\' + p : p; out.push({ name: p, path: at }) } return out
+}
+const atTop = (fs, path) => fs.sep === '/' ? path === '/' : (path === '' || /^[A-Z]:$/.test(path))
+
+// ---------- State ----------
+const params = new URLSearchParams(location.search)
+const S = {
+  variant: params.get('variant') === 'B' ? 'B' : 'A',
+  twoComputers: params.get('computers') !== '1',
+  forge: params.get('forge') || 'connected', // connected | dropped | off
+  machines: { local: { name: 'This computer', kind: 'local', fs: WIN, path: '' }, forge: { name: 'forge', kind: 'remote', fs: LINUX, path: '/home/zach/projects' } },
+  browsing: null, // { id, path, hl, query, loading, error }
+  showState: params.get('state') !== '0',
+}
+const save = (id, path) => { S.machines[id].path = path; toast() }
+let toastTimer
+function toast() { const el = document.getElementById('toast'); el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true }, 1800) }
+const connected = id => id === 'local' || S.forge === 'connected'
+
+// ---------- Icons ----------
+const I = {
+  folder: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>',
+  open: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M6 14l1.5-3a2 2 0 0 1 1.8-1H21l-3 7a2 2 0 0 1-1.8 1H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h4l2 2h6a2 2 0 0 1 2 2v1"/></svg>',
+  laptop: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="4" y="5" width="16" height="11" rx="2"/><path d="M2 19h20"/></svg>',
+  server: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>',
+  x: '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  chev: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>',
+  search: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>',
+  home: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>',
+}
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]))
+
+// ---------- The card ----------
+function rowFor(id) {
+  const m = S.machines[id], on = connected(id), name = S.twoComputers ? m.name : 'Default projects directory'
+  const label = !S.twoComputers ? 'Default projects directory' : m.kind === 'local' ? 'Default projects directory on this computer' : 'Default projects directory on ' + m.name
+  const status = !S.twoComputers || on ? '' : S.forge === 'off' ? '<span class="status">· Off</span>' : '<span class="status">· Not connected</span>'
+  const desc = !S.twoComputers ? 'Where a new project goes.' : on ? 'Default projects directory' : (S.forge === 'off' ? 'Switch forge on in Hosts & phones to change its projects directory.' : 'Connect forge to change its projects directory.')
+  const icon = m.kind === 'local' ? I.laptop : I.server
+  const head = `<div class="head"><strong>${S.twoComputers ? icon : ''}${esc(name)}${status}</strong><span>${esc(desc)}</span></div>`
+  if (S.variant === 'A') {
+    const inner = m.path ? `${I.folder}<span class="path"><bdi>${esc(m.path)}</bdi></span>` : `${I.folder}<span class="placeholder">Choose a folder</span>`
+    const pressName = m.path ? `${label}: ${m.path}. Change folder` : `${label}: none. Choose a folder`
+    return `<div class="row">${head}<div class="pick ${m.path && on ? 'has-clear' : ''}">
+      <button class="pick-btn" data-browse="${id}" ${on ? '' : 'disabled'} title="${esc(m.path)}" aria-label="${esc(pressName)}">${inner}</button>
+      ${m.path && on ? `<button class="clear" data-clear="${id}" aria-label="Clear ${esc(label.toLowerCase())}" title="Clear">${I.x}</button>` : ''}</div></div>`
+  }
+  const path = m.path ? `<span class="b-path"><bdi>${esc(m.path)}</bdi></span>` : `<span class="b-path none">No folder chosen</span>`
+  return `<div class="row b"><div class="head"><strong>${S.twoComputers ? icon : ''}${esc(name)}${status}</strong><span>${esc(desc)}</span>${path}</div>
+    <div class="b-actions">${m.path && on ? `<button class="btn ghost" data-clear="${id}" aria-label="Clear ${esc(label.toLowerCase())}">Clear</button>` : ''}
+    <button class="btn" data-browse="${id}" ${on ? '' : 'disabled'} aria-label="${esc((m.path ? 'Change ' : 'Choose ') + label.toLowerCase())}">${I.open}${m.path ? 'Change…' : 'Choose…'}</button></div></div>`
+}
+function renderCard() {
+  document.getElementById('projects-note').textContent = S.twoComputers ? 'Where a new project goes. Each computer has its own folder.' : ''
+  document.getElementById('projects-note').hidden = !S.twoComputers
+  document.getElementById('rows').innerHTML = (S.twoComputers ? ['local', 'forge'] : ['local']).map(rowFor).join('')
+}
+
+// ---------- The folder browser (Add project's, host already chosen) ----------
+let returnFocus = null
+function openBrowser(id) {
+  returnFocus = document.activeElement
+  const m = S.machines[id]
+  // It starts in the saved folder when there is one, else the computer's home folder.
+  S.browsing = { id, path: m.path || m.fs.home, hl: 0, query: '', loading: true, error: null }
+  render(); setTimeout(() => { if (S.browsing) { S.browsing.loading = false; render() } }, id === 'forge' ? 450 : 120)
+}
+function closeBrowser() { S.browsing = null; render(); returnFocus?.isConnected && returnFocus.focus() }
+function go(path) { const b = S.browsing; if (!connected(b.id)) { b.error = notConnected(); render(); return } b.path = path; b.query = ''; b.hl = 0; b.loading = true; b.error = null; render(); setTimeout(() => { if (S.browsing) { S.browsing.loading = false; render() } }, b.id === 'forge' ? 300 : 60) }
+function notConnected() { return S.forge === 'off' ? "forge is switched off, so its folders can't be listed. Nothing was changed. Switch it on in Settings > Hosts & phones, then try again." : "forge is not connected, so its folders can't be listed. Nothing was changed. Connect it in Settings > Hosts & phones, then try again." }
+function useFolder() { const b = S.browsing; const fs = S.machines[b.id].fs; if (atTop(fs, b.path) || b.loading || !connected(b.id)) return; save(b.id, b.path); closeBrowser() }
+function renderBrowser() {
+  const root = document.getElementById('dialog-root'); const b = S.browsing
+  if (!b) { root.innerHTML = ''; return }
+  const m = S.machines[b.id], fs = m.fs, on = connected(b.id)
+  if (!on && !b.error) b.error = notConnected()
+  const crumbs = crumbsOf(fs, b.path)
+  const shown = children(fs, b.path).filter(f => f.name.toLowerCase().includes(b.query.toLowerCase()))
+  const top = atTop(fs, b.path)
+  const where = m.kind === 'local' ? 'this computer' : m.name
+  const list = b.loading ? `<p class="loading" role="status">Reading folders on ${esc(where)}…</p>`
+    : on ? (shown.map((f, i) => `<button class="choice" data-open="${esc(join(fs, b.path, f.name))}" ${i === b.hl ? 'data-hl' : ''}>${I.folder}<strong>${esc(f.name)}</strong>${f.git ? '<span class="tag">Git</span>' : ''}${I.chev}</button>`).join('') || `<p class="empty">${b.query ? 'No folders match.' : 'No folders in here.'}</p>`) : ''
+  const heading = m.kind === 'local' ? 'Default projects directory on this computer' : 'Default projects directory on ' + m.name
+  root.innerHTML = `<div class="scrim" data-scrim><div class="dlg" role="dialog" aria-modal="true" aria-label="${esc(heading)}. Folders on ${esc(where)}">
+    <div class="dlg-head"><span class="hostchip">${m.kind === 'local' ? I.laptop : I.server}${esc(m.name)}</span>${I.search}
+      <input id="q" type="search" placeholder="Search in ${esc(crumbs.at(-1).path === fs.home ? 'Home' : crumbs.at(-1).name)}…" aria-label="Search folders" value="${esc(b.query)}" ${on ? '' : 'disabled'}>
+      <button class="icon" data-close aria-label="Close">${I.x}</button></div>
+    <p class="purpose">Choose the folder new projects go in on ${esc(where)}.</p>
+    <nav class="crumbs" aria-label="Folder on ${esc(m.name)}">${crumbs.map((c, i) => `${i ? `<span class="sep">${I.chev}</span>` : ''}<button data-open="${esc(c.path)}" ${i === crumbs.length - 1 ? 'aria-current="location"' : ''}>${c.path === fs.home ? I.home + 'Home' : esc(c.name)}</button>`).join('')}</nav>
+    <div class="list">${b.error ? `<p class="error" role="alert">${esc(b.error)}</p>` : ''}${list}</div>
+    <div class="foot">
+      ${m.kind === 'local' ? `<button class="btn ghost" data-explorer>${I.open}Browse with File Explorer</button>` : ''}
+      <span class="target" title="${esc(top ? '' : b.path)}"><bdi>${top ? 'Open a folder to choose it' : esc(b.path)}</bdi></span>
+      <button class="btn ghost" data-close>Cancel</button>
+      <button class="btn primary" data-use ${top || b.loading || !on ? 'disabled' : ''}>Use this folder</button>
+    </div>
+    <div class="keys"><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>Enter</kbd> Open folder</span><span><kbd>⌫</kbd> Up a folder</span><span><kbd>Ctrl</kbd><kbd>Enter</kbd> Use this folder</span><span><kbd>Esc</kbd> Close</span></div>
+  </div></div>`
+  const q = document.getElementById('q'); if (q && !q.disabled) { q.focus(); q.setSelectionRange(q.value.length, q.value.length) }
+}
+
+// ---------- Prototype controls ----------
+function renderProto() {
+  const pressed = c => `aria-pressed="${c}"`
+  document.getElementById('proto').innerHTML = `<b>PROTOTYPE</b>
+    <button data-v="A" ${pressed(S.variant === 'A')}>A · Field</button><button data-v="B" ${pressed(S.variant === 'B')}>B · Path + button</button>
+    <b>|</b><button data-p="two" ${pressed(S.twoComputers)}>Two computers</button><button data-p="one" ${pressed(!S.twoComputers)}>One</button>
+    <b>|</b><span>forge:</span><button data-f="connected" ${pressed(S.forge === 'connected')}>Connected</button><button data-f="dropped" ${pressed(S.forge === 'dropped')}>Not connected</button><button data-f="off" ${pressed(S.forge === 'off')}>Off</button>
+    <b>|</b><button data-long>Long path</button><button data-reset>Empty</button><button data-theme>Light/dark</button><button data-statebox ${pressed(S.showState)}>State</button>`
+}
+function renderState() {
+  const box = document.getElementById('state'); box.hidden = !S.showState
+  box.textContent = JSON.stringify({ variant: S.variant, computers: S.twoComputers ? 2 : 1, forge: S.forge,
+    saved: { thisComputer: S.machines.local.path || '(none)', forge: S.machines.forge.path || '(none)' },
+    browsing: S.browsing && { on: S.browsing.id, at: S.browsing.path || 'Drives', loading: S.browsing.loading, error: !!S.browsing.error } }, null, 1)
+}
+function render() { document.body.classList.toggle('browsing', !!S.browsing); renderCard(); renderBrowser(); renderProto(); renderState()
+  const u = new URL(location); u.searchParams.set('variant', S.variant); history.replaceState(null, '', u) }
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button, [data-scrim]'); if (!t) return
+  const d = t.dataset
+  if (d.v) { S.variant = d.v; render() }
+  else if (d.p) { S.twoComputers = d.p === 'two'; render() }
+  else if (d.f) { S.forge = d.f; if (S.browsing?.id === 'forge' && d.f !== 'connected') { S.browsing.error = notConnected(); S.browsing.loading = false } if (S.browsing?.id === 'forge' && d.f === 'connected') { S.browsing.error = null } render() }
+  else if (d.long !== undefined) { S.machines.local.path = LONG; render() }
+  else if (d.reset !== undefined) { S.machines.local.path = ''; S.machines.forge.path = ''; render() }
+  else if (d.theme !== undefined) { const r = document.documentElement; r.dataset.theme = r.dataset.theme === 'dark' ? 'light' : 'dark' }
+  else if (d.statebox !== undefined) { S.showState = !S.showState; render() }
+  else if (d.browse) openBrowser(d.browse)
+  else if (d.clear) { save(d.clear, ''); render(); document.querySelector(`[data-browse="${d.clear}"]`)?.focus() }
+  else if (d.close !== undefined) closeBrowser()
+  else if (d.open !== undefined) go(d.open)
+  else if (d.use !== undefined) useFolder()
+  else if (d.explorer !== undefined) { const p = prompt('Stands in for the Windows folder dialog. Folder chosen:', 'D:\\Dev\\Projects'); if (p) { save('local', p); closeBrowser() } }
+  else if (d.scrim !== undefined && e.target === t) closeBrowser()
+})
+document.addEventListener('input', e => { if (e.target.id === 'q' && S.browsing) { S.browsing.query = e.target.value; S.browsing.hl = 0; renderBrowser(); renderState() } })
+document.addEventListener('keydown', e => {
+  const b = S.browsing; if (!b) return
+  const fs = S.machines[b.id].fs, shown = children(fs, b.path).filter(f => f.name.toLowerCase().includes(b.query.toLowerCase()))
+  if (e.key === 'Escape') { e.preventDefault(); closeBrowser() }
+  else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); useFolder() }
+  else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); if (shown.length) { b.hl = (b.hl + (e.key === 'ArrowDown' ? 1 : shown.length - 1)) % shown.length; renderBrowser() } }
+  else if (e.key === 'Enter' && e.target.id === 'q') { e.preventDefault(); const f = shown[b.hl]; if (f) go(join(fs, b.path, f.name)) }
+  else if (e.key === 'Backspace' && e.target.id === 'q' && !b.query) { e.preventDefault(); const c = crumbsOf(fs, b.path); if (c.length > 1) go(c.at(-2).path) }
+})
+render()
+</script>
+</body></html>
