@@ -159,7 +159,8 @@ describe('Owl native numeric projection', () => {
     delete (withoutModels.update.usage as { modelUsage?: unknown }).modelUsage
     const third = new NativeUsage(root, 'grok', true); await third.load(); drains.push(() => third.flushed())
     third.subscribeUsage(row => store.observeTokens(row))
-    third.grok('thread', 'selected-model', withoutModels, { phase: 'replay' })
+    // The thread's saved requests are read before its first report after the restart applies (#1937).
+    third.grok('thread', 'selected-model', withoutModels, { phase: 'replay' }); await third.flushed()
     expect(store.query({}).totals.tokens.total.value).toBe(58)
     expect(store.query({}).totals.tokens.total.partial).toBe(true)
     third.grok('thread', 'selected-model', grokFrame(), { phase: 'replay' })

@@ -542,7 +542,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
     capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, skills: true, steer: true, compact: true } }
   constructor(private readonly options: ClaudeStreamJsonHostOptions) {
     this.usageEnabled = options.usageEnabled === true
-    this.usage = new NativeUsage(options.userDataPath, 'claude', options.usageEnabled)
+    this.usage = new NativeUsage(options.userDataPath, 'claude', options.usageEnabled, id => { this.usageApplied(id) })
     if (options.usageEnabled) {
       this.subscribeUsage = listener => this.usage.subscribeUsage(listener)
       this.visitUsage = (id, visitor) => this.usage.visitUsage(id, visitor)
@@ -2614,6 +2614,12 @@ export class ClaudeStreamJsonHost implements AgentHost {
    * (`markAll`). What goes through the message log is marked by the log.
    */
   private changed(id: string): void { this.threadChanges.mark(id) }
+  /** A thread's usage reports, held while its saved requests were read, have been applied: the thread shows where they left it. */
+  private usageApplied(id: string): void {
+    const thread = this.threads.get(id)
+    if (!thread) return
+    thread.usage = this.usage.get(id); this.changed(id); this.emit()
+  }
   /**
    * Read a starting session's tool list for the approval surface Sotto asked for. The CLI does not report
    * a refused surface any other way: it keeps working, answers every prompt that needed a person with a

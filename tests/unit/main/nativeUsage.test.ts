@@ -140,7 +140,8 @@ describe('native usage observations', () => {
     expect(store.get('thread')?.partial).toBe(true)
     await store.flushed()
     const reopened = new NativeUsage(root, 'codex'); await reopened.load()
-    reopened.codex('thread', 'gpt-5.4', frame(1000, 100))
+    // The thread's saved requests are read before its first report after the restart applies (#1937).
+    reopened.codex('thread', 'gpt-5.4', frame(1000, 100)); await reopened.flushed()
     expect(reopened.get('thread')?.estimatedUsd).toBeCloseTo(0.008, 8)
     reopened.codex('thread', 'gpt-5.4', frame(1500, 150))
     expect(reopened.get('thread')?.estimatedUsd).toBeCloseTo(0.008, 8)

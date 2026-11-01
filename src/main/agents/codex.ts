@@ -507,7 +507,7 @@ export class CodexAppServerHost implements AgentHost {
     this.activity = new CodexActivityProjection(undefined, options.captureMedia)
     this.usageEnabled = options.usageEnabled === true
     this.roleFiles = new CodexRoleFiles(join(options.userDataPath, 'codex-roles'), runtimePolicy, event => options.logEvent?.(event))
-    this.usage = new NativeUsage(options.userDataPath, 'codex', options.usageEnabled)
+    this.usage = new NativeUsage(options.userDataPath, 'codex', options.usageEnabled, id => { this.usageApplied(id) })
     if (options.usageEnabled) {
       this.subscribeUsage = listener => this.usage.subscribeUsage(listener)
       this.visitUsage = (id, visitor) => this.usage.visitUsage(id, visitor)
@@ -1108,6 +1108,12 @@ export class CodexAppServerHost implements AgentHost {
    * and the open-session set is marked by them.
    */
   private changed(id: string): void { this.threadChanges.mark(id) }
+  /** A thread's usage reports, held while its saved requests were read, have been applied: the thread shows where they left it. */
+  private usageApplied(id: string): void {
+    const thread = this.threads.get(id)
+    if (!thread) return
+    thread.usage = this.usage.get(id); this.changed(id); this.emit()
+  }
   private async projectInstructions(cwd: string, id?: string): Promise<string> {
     // A thread's developerInstructions replaces Codex's configured value. Resolve
     // its own trusted config layers first, and retain only the field we append to.

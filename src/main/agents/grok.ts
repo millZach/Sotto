@@ -406,7 +406,7 @@ export class GrokAcpHost implements AgentHost {
   private state: AgentHostSnapshot = { connected: false, name: 'Grok', version: '', projects: [], models: [], threads: [], capabilities: { projects: true, threads: true, submit: true, observe: true, questions: true, permissions: true, interrupt: true, messageOrigin: true, reconcile: true, configureThread: true, configureThreadModel: false, skills: true } }
   constructor(private readonly userDataDirectory: string, private readonly options: GrokAcpOptions = {}) {
     this.usageEnabled = options.usageEnabled === true
-    this.usage = new NativeUsage(userDataDirectory, 'grok', options.usageEnabled)
+    this.usage = new NativeUsage(userDataDirectory, 'grok', options.usageEnabled, id => { this.usageApplied(id) })
     if (options.usageEnabled) {
       this.subscribeUsage = listener => this.usage.subscribeUsage(listener)
       this.visitUsage = (id, visitor) => this.usage.visitUsage(id, visitor)
@@ -771,6 +771,12 @@ export class GrokAcpHost implements AgentHost {
    * open-session set is marked by them.
    */
   private changed(id: string): void { this.threadChanges.mark(id) }
+  /** A thread's usage reports, held while its saved requests were read, have been applied: the thread shows where they left it. */
+  private usageApplied(id: string): void {
+    const thread = this.threads.get(id)
+    if (!thread) return
+    thread.usage = this.usage.get(id); this.changed(id); this.emit()
+  }
   private emit(streaming = false): void { this.publisher.publish(streaming); this.stopOutdated() }
   subscribe(listener: (snapshot: AgentHostSnapshot) => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener) } }
   subscribeActivitySnapshots(listener: (snapshot: AgentHostSnapshot) => void, options?: ActivitySubscriptionOptions): () => void {

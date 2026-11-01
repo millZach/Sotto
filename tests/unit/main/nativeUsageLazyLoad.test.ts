@@ -1,8 +1,9 @@
 // @vitest-environment node
 /**
  * Start reads each thread's usage view and none of its requests, and a thread's requests are read the first time
- * something needs them (#1937). These hold the guard, that start parses no ledger and a report parses its own thread's
- * once, and the exactness: a thread read late counts what a thread read at start counts, to the last field.
+ * something needs them (#1937), a report being held meanwhile. These hold the guard, that start parses no ledger and a
+ * report parses its own thread's once, off its own task, and the exactness: a thread read late counts what a thread read at
+ * start counts, to the last field, even when a read fails first.
  */
 import { createHash } from 'node:crypto'
 import * as fs from 'node:fs'
@@ -31,9 +32,19 @@ async function folder(): Promise<string> {
   const root = await mkdtemp(join(tmpdir(), 'sotto-usage-lazy-')); roots.push(root)
   return root
 }
-async function started(root: string, provider: Provider = 'claude', usageEnabled = false): Promise<NativeUsage> {
-  const usage = new NativeUsage(root, provider, usageEnabled); await usage.load(); drains.push(() => usage.flushed())
+async function started(root: string, provider: Provider = 'claude', usageEnabled = false, applied?: (id: string) => void): Promise<NativeUsage> {
+  const usage = new NativeUsage(root, provider, usageEnabled, applied); await usage.load(); drains.push(() => usage.flushed())
   return usage
+}
+/** Reads of the ledger file of `id` under `root` fail once with `code`, as a file another program holds can, then read as before. */
+function failOnce(root: string, provider: Provider, id: string, code = 'EBUSY'): void {
+  const path = join(root, `${provider}-usage`, ledgerName(id)), read = fsp.readFile
+  let failed = false
+  vi.spyOn(fsp, 'readFile').mockImplementation(((file: Parameters<typeof read>[0], ...rest: unknown[]) => {
+    if (failed || String(file) !== path) return (read as (...args: unknown[]) => Promise<unknown>)(file, ...rest)
+    failed = true
+    return Promise.reject(Object.assign(new Error('Synthetic unreadable ledger'), { code }))
+  }) as typeof read)
 }
 const ledgerName = (id: string): string => `${createHash('sha256').update(id).digest('hex').slice(0, 40)}.json`
 const viewName = (id: string): string => ledgerName(id).replace(/\.json$/u, '.view.json')
@@ -77,18 +88,27 @@ it('reads every thread\'s view at start and no thread\'s requests, then one thre
   for (let thread = 0; thread < 30; thread++) for (let index = 0; index < 20; index++) first.claude(`thread-${thread}`, claudeReport(index))
   await first.flushed()
   const reads = ledgerReads()
-  const usage = await started(root)
+  const applied: string[] = []
+  const usage = await started(root, 'claude', false, id => applied.push(id))
   expect(reads.paths()).toEqual([])
   for (let thread = 0; thread < 30; thread++) expect(usage.get(`thread-${thread}`)).toEqual(first.get(`thread-${thread}`))
   usage.claude('thread-7', claudeReport(20))
-  expect(reads.paths()).toEqual([join(root, 'claude-usage', ledgerName('thread-7'))])
-  // A streaming reply on it, and its turn's end, read nothing more.
+  // Held while the thread's requests are read, off this task: the thread shows its view until they apply.
+  expect(usage.get('thread-7')).toEqual(first.get('thread-7'))
+  // A streaming reply on it, and its turn's end, are held behind it in order.
   usage.claude('thread-7', { type: 'stream_event', event: { type: 'message_start', message: claudeReport(21, 1).message } })
   usage.claude('thread-7', { type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 100 } } })
+  usage.claude('thread-7', { type: 'stream_event', event: { type: 'message_stop' } })
   usage.claudeResult('thread-7', { duration_ms: 1_234 })
-  expect(reads.paths()).toHaveLength(1)
+  await usage.flushed()
+  expect(reads.paths()).toEqual([join(root, 'claude-usage', ledgerName('thread-7'))])
+  expect(applied).toEqual(['thread-7'])
   expect(usage.get('thread-7')).toMatchObject({ total: { output: 22 * 100 }, elapsedMs: 1_234 })
   expect(usage.get('thread-8')).toEqual(first.get('thread-8'))
+  // Read once, its next report counts at once.
+  usage.claude('thread-7', claudeReport(22))
+  expect(usage.get('thread-7')!.total!.output).toBe(23 * 100)
+  expect(reads.paths()).toHaveLength(1)
   await usage.flushed()
   // A reconnect reads the views again, and a replay of a request already counted counts nothing.
   const view = structuredClone(usage.get('thread-7'))
@@ -97,6 +117,7 @@ it('reads every thread\'s view at start and no thread\'s requests, then one thre
   expect(reads.paths()).toEqual([])
   expect(usage.get('thread-7')).toEqual(view)
   usage.claude('thread-7', claudeReport(20))
+  await usage.flushed()
   expect(usage.get('thread-7')!.total).toEqual(view!.total)
 })
 
@@ -138,11 +159,11 @@ it.each(['claude', 'codex', 'grok'] as const)('counts nothing twice when %s repl
     // The thread read again from its provider's record: every request it made, then two new ones.
     for (let index = 1; index <= 12; index++) report(usage, provider, 'thread', index)
   }
+  await lazy.flushed(); await eager.flushed()
   expect(lazy.get('thread')).toEqual(eager.get('thread'))
   expect(lazy.get('idle')).toEqual(eager.get('idle'))
   expect(lazy.get('thread')!.total).toMatchObject({ input: 12_000, output: 1_200 })
   expect(lazy.get('thread')!.estimatedUsd).toBeCloseTo(counted!.estimatedUsd! * 12 / 10, 12)
-  await lazy.flushed(); await eager.flushed()
   // What each saves is the same to the last request and key.
   expect(await savedUsageLedgers(root, provider)).toEqual(await savedUsageLedgers(eagerRoot, provider))
 })
@@ -202,6 +223,7 @@ it('sets a thread\'s ledger aside as the store would when it is unreadable by it
   const directory = join(root, 'claude-usage')
   await writeFile(join(directory, ledgerName('thread')), '{"id":"thread","ledger":')
   usage.claude('thread', claudeReport(3))
+  await usage.flushed()
   expect((await readdir(directory)).filter(name => name.startsWith(`${ledgerName('thread')}.corrupt-`))).toHaveLength(1)
   expect(usage.get('thread')!.total!.output).toBe(100)
   await usage.flushed()
@@ -209,7 +231,7 @@ it('sets a thread\'s ledger aside as the store would when it is unreadable by it
   expect(reopened.get('thread')).toEqual(usage.get('thread'))
 })
 
-it('visits an unread thread\'s saved rows as a thread read at start does, without keeping its requests', async () => {
+it('visits an unread thread\'s saved rows as a thread read at start does, and keeps its requests for its reports', async () => {
   const root = await folder()
   const first = await started(root, 'claude', true)
   for (let index = 0; index < 6; index++) first.claude('thread', claudeReport(index))
@@ -222,30 +244,78 @@ it('visits an unread thread\'s saved rows as a thread read at start does, withou
   expect(visited).toHaveLength(6)
   expect(visited).toEqual(visit(eager))
   expect(reads.paths()).toEqual([join(root, 'claude-usage', ledgerName('thread'))])
-  // Not kept: a second visit reads the file again, and the thread still shows its view.
+  // Kept: a second visit reads nothing, and the thread's first report counts at once, the one new request alone.
   expect(visit(lazy)).toEqual(visited)
-  expect(reads.paths()).toHaveLength(2)
+  expect(reads.paths()).toHaveLength(1)
   expect(lazy.get('thread')).toEqual(first.get('thread'))
-  // Its first report reads the requests to keep them, and counts the one new request alone.
   lazy.claude('thread', claudeReport(6))
-  expect(reads.paths()).toHaveLength(3)
   expect(lazy.get('thread')!.total!.output).toBe(700)
+  expect(reads.paths()).toHaveLength(1)
 })
 
-it('counts nothing, and changes nothing saved, for a report whose thread\'s ledger cannot be read at the moment', async () => {
+it('applies a report held for a thread when Usage visits it before its read lands, and never twice', async () => {
   const root = await folder()
-  const first = await started(root)
+  const first = await started(root, 'claude', true)
   for (let index = 0; index < 3; index++) first.claude('thread', claudeReport(index))
   await first.flushed()
-  const usage = await started(root)
-  const ledgerPath = join(root, 'claude-usage', ledgerName('thread'))
-  const saved = await readFile(ledgerPath, 'utf8')
-  vi.spyOn(fs, 'readFileSync').mockImplementationOnce(() => { throw Object.assign(new Error('Synthetic busy file'), { code: 'EBUSY' }) })
-  expect(() => usage.claude('thread', claudeReport(3))).not.toThrow()
-  expect(usage.get('thread')).toEqual(first.get('thread'))
+  const usage = await started(root, 'claude', true)
+  usage.claude('thread', claudeReport(3))
+  const rows: UsageTokenObservation[] = []
+  usage.visitUsage('thread', row => rows.push(row))
+  expect(rows).toHaveLength(4)
+  expect(usage.get('thread')!.total!.output).toBe(400)
   await usage.flushed()
-  expect(await readFile(ledgerPath, 'utf8')).toBe(saved)
-  // The next report reads the requests, and the provider's replay of the one missed counts it once.
-  usage.claude('thread', claudeReport(4)); usage.claude('thread', claudeReport(3))
-  expect(usage.get('thread')!.total!.output).toBe(500)
+  expect(usage.get('thread')!.total!.output).toBe(400)
+})
+
+it.each(['claude', 'codex', 'grok'] as const)('loses no %s report to a read that fails, and ends where reading every ledger at start ends', async provider => {
+  vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-31T12:00:00Z'))
+  const root = await folder()
+  const first = await started(root, provider)
+  report(first, provider, 'thread', 1)
+  await first.flushed()
+  const eagerRoot = await withoutViews(root, provider)
+  const lazy = await started(root, provider), eager = await started(eagerRoot, provider)
+  failOnce(root, provider, 'thread')
+  vi.setSystemTime(new Date('2026-10-31T13:00:00Z'))
+  // The next request is reported as the thread's read fails, and another after it; nothing replays either.
+  for (const usage of [lazy, eager]) { report(usage, provider, 'thread', 2); report(usage, provider, 'thread', 3) }
+  await lazy.flushed(); await eager.flushed()
+  expect(lazy.get('thread')!.total).toMatchObject({ input: 3_000, output: 300 })
+  expect(lazy.get('thread')).toEqual(eager.get('thread'))
+  expect(await savedUsageLedgers(root, provider)).toEqual(await savedUsageLedgers(eagerRoot, provider))
+})
+
+it('reads a thread again on its own a short while after its read failed, and applies its held reports then', async () => {
+  const root = await folder()
+  const first = await started(root)
+  first.claude('thread', claudeReport(0))
+  await first.flushed()
+  let applied: () => void = () => undefined
+  const landed = new Promise<void>(resolve => { applied = resolve })
+  const usage = await started(root, 'claude', false, () => { applied() })
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+  failOnce(root, 'claude', 'thread')
+  usage.claude('thread', claudeReport(1))
+  // The failed read is behind it once a task has passed; the retry waits half a second.
+  await new Promise(resolve => { setImmediate(resolve) }); await new Promise(resolve => { setImmediate(resolve) })
+  expect(usage.get('thread')!.total!.output).toBe(100)
+  await vi.advanceTimersByTimeAsync(500)
+  await landed
+  expect(usage.get('thread')!.total!.output).toBe(200)
+})
+
+it('reads a thread\'s ledger whole at start when its view cannot be read, rather than failing to start', async () => {
+  const root = await folder()
+  const first = await started(root)
+  first.claude('thread', claudeReport(0))
+  await first.flushed()
+  const viewPath = join(root, 'claude-usage', viewName('thread')), read = fsp.readFile
+  vi.spyOn(fsp, 'readFile').mockImplementation(((file: Parameters<typeof read>[0], ...rest: unknown[]) => String(file) === viewPath
+    ? Promise.reject(Object.assign(new Error('Synthetic refused view'), { code: 'EACCES' }))
+    : (read as (...args: unknown[]) => Promise<unknown>)(file, ...rest)) as typeof read)
+  const reads = ledgerReads()
+  const usage = await started(root)
+  expect(reads.paths()).toEqual([join(root, 'claude-usage', ledgerName('thread'))])
+  expect(usage.get('thread')).toEqual(first.get('thread'))
 })
