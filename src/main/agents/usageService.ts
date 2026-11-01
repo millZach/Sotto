@@ -34,6 +34,19 @@ const QUOTA_READ_WAIT_MS = 6_000
  */
 const VISITS_AT_ONCE = 3
 const VISIT_TASK_MS = 5
+/** The providers whose thread usage is a ledger's view (`NativeUsage`), which changes whenever the ledger's rows do. */
+const MARKED_PROVIDERS: ReadonlySet<string> = new Set(['claude', 'codex', 'grok'])
+type HostThread = AgentHostSnapshot['threads'][number]
+/**
+ * A thread's usage as its host shows it, to tell whether its saved rows changed since Usage last read them (#1937): the
+ * time it was last reported, its rate versions, its totals and whether any of it is partial, every one of which a new or
+ * changed row moves. Undefined for a thread whose usage is not a ledger's view, which is read at every start as before.
+ */
+function visitMark(thread: HostThread): string | undefined {
+  if (!thread.providerId || !MARKED_PROVIDERS.has(thread.providerId)) return undefined
+  const usage = thread.usage
+  return JSON.stringify(usage ? [usage.updatedAt, usage.rateVersions, usage.total ?? null, usage.partial] : [null])
+}
 
 /** Numeric-only callbacks at the coordinator's durable intent and exact echo boundaries. */
 export interface UsagePromptRecorder {
@@ -52,12 +65,14 @@ type Store = UsageRequestStore & { close(): void }
 interface Flight {
   readonly tokens: readonly (readonly [string, UsageTokenObservation])[]
   readonly prompts: readonly (readonly [string, UsagePromptWrite])[]
+  /** Threads whose saved rows were read, with their marks, written after the rows. */
+  readonly visits: readonly (readonly [string, string])[]
   readonly seed: boolean
   landed?: Promise<void>
 }
 
 /** What failed flushes left unsaved, held until every flush behind them has been answered. */
-interface Unsaved { tokens: (readonly [string, UsageTokenObservation])[]; prompts: (readonly [string, UsagePromptWrite])[]; seed: boolean }
+interface Unsaved { tokens: (readonly [string, UsageTokenObservation])[]; prompts: (readonly [string, UsagePromptWrite])[]; visits: (readonly [string, string])[]; seed: boolean }
 
 /** Created only by an owning host whose startup Usage answer is on. Never sends a provider prompt. */
 export class UsageService implements UsagePromptRecorder {
@@ -76,10 +91,16 @@ export class UsageService implements UsagePromptRecorder {
   private quotaStarts = 0
   private readonly visited = new Set<string>()
   /** Threads whose usage is to be read, by ID, read a few per task in the order they came. */
-  private readonly visits = new Map<string, AgentHostSnapshot['threads'][number]>()
+  private readonly visits = new Map<string, HostThread>()
   private visitTimer: ReturnType<typeof setImmediate> | undefined
   /** Reads and clears waiting for every queued thread to be read first. */
   private readonly visitWaiters: (() => void)[] = []
+  /** Each thread's mark as its saved rows were last read, from the store, once it has answered; until then nothing is read. */
+  private marks: Map<string, string> | undefined
+  /** Marks of threads read since the last flush, written once the rows they gave are. */
+  private readonly markWrites = new Map<string, string>()
+  /** Records lost to a full buffer or a bad shape: a thread read while one is lost gets no mark, so it is read again. */
+  private dropped = 0
   /** Threads whose usage could not be read: each change reads them again, as every snapshot read every thread not yet read. */
   private readonly unread = new Set<string>()
   private readonly connected = new Set<UsageProviderId>()
@@ -118,6 +139,8 @@ export class UsageService implements UsagePromptRecorder {
     hasAcceptedPrompt?: (threadId: string, messageId: string) => boolean
     /** Preferred bounded recovery lookup: one host flush and event scan for the whole batch. */
     acceptedPromptIdentities?: (identities: readonly UsagePromptIdentity[]) => readonly UsagePromptIdentity[]
+    /** The clock a task of thread reads is timed by, in milliseconds, for a test; `performance.now` otherwise. */
+    clock?: () => number
   }) {
     this.client = options.client ?? (options.store ? new UsageStoreOnMain(options.store) : usageStoreClient(join(options.directory, 'usage.sqlite'), options.worker))
   }
@@ -296,7 +319,9 @@ export class UsageService implements UsagePromptRecorder {
     if (!this.open()) { this.schedule(RETRY_MS); return undefined }
     // A flush that failed is still being answered, with those behind it: the retry follows once they all are.
     if (this.unsaved) return this.flights.at(-1)?.landed
-    if (!this.tokens.size && !this.prompts.size && !this.seedPending) {
+    // The legacy seed is marked only with no thread left to read, whose rows it would otherwise go without.
+    const seed = this.seedPending && !this.visits.size
+    if (!this.tokens.size && !this.prompts.size && !this.markWrites.size && !seed) {
       const last = this.flights.at(-1)?.landed ?? this.opening
       if (last) return last
       // Nothing to write and nothing unanswered: as a flush that wrote nothing always did.
@@ -304,8 +329,9 @@ export class UsageService implements UsagePromptRecorder {
       if (this.started && this.reconciliationRequested) this.reconcilePending()
       return undefined
     }
-    const flight: Flight = { tokens: [...this.tokens], prompts: [...this.prompts], seed: this.seedPending }
-    this.tokens.clear(); this.prompts.clear(); this.seedPending = false
+    const flight: Flight = { tokens: [...this.tokens], prompts: [...this.prompts], visits: [...this.markWrites], seed }
+    this.tokens.clear(); this.prompts.clear(); this.markWrites.clear()
+    if (seed) this.seedPending = false
     const retry = this.retry
     this.retry = false
     this.flights.push(flight)
@@ -313,6 +339,7 @@ export class UsageService implements UsagePromptRecorder {
     let answer: Maybe<UsageFlushOutcome>
     try {
       answer = this.client.request({ kind: 'flush', flush: { retry, seed: flight.seed, tokens: flight.tokens.map(([, record]) => record),
+        ...(flight.visits.length ? { visits: flight.visits.map(([threadId, mark]) => ({ threadId, mark })) } : {}),
         prompts: flight.prompts.map(([key, write]) => { const [threadId, messageId] = parsePromptKey(key); return { threadId, messageId, write } }) } })
     } catch { answer = failed }
     if (!(answer instanceof Promise)) { this.landed(flight, answer); return undefined }
@@ -327,11 +354,13 @@ export class UsageService implements UsagePromptRecorder {
   private landed(flight: Flight, outcome: UsageFlushOutcome): void {
     this.flights.splice(this.flights.indexOf(flight), 1)
     if (outcome.seed) this.seedMarked = true
+    if (outcome.visits !== undefined) for (const [threadId, mark] of flight.visits) this.marks?.set(threadId, mark)
     if (outcome.failed || outcome.skipped) {
       this.failed = true
-      const unsaved = this.unsaved ??= { tokens: [], prompts: [], seed: false }
+      const unsaved = this.unsaved ??= { tokens: [], prompts: [], visits: [], seed: false }
       unsaved.tokens.push(...flight.tokens.slice(outcome.tokens))
       unsaved.prompts.push(...flight.prompts.slice(outcome.prompts))
+      if (outcome.visits === undefined) unsaved.visits.push(...flight.visits)
       unsaved.seed ||= flight.seed && !outcome.seed
     } else if (!this.unsaved) this.failed = false
     if (this.flights.length) return
@@ -350,6 +379,9 @@ export class UsageService implements UsagePromptRecorder {
     for (const [key, write] of [...unsaved.prompts, ...this.prompts]) prompts.set(key, laterPromptWrite(prompts.get(key), write))
     this.tokens.clear(); for (const [key, record] of tokens) this.tokens.set(key, record)
     this.prompts.clear(); for (const [key, write] of prompts) this.prompts.set(key, write)
+    const visits = new Map(unsaved.visits)
+    for (const [threadId, mark] of this.markWrites) visits.set(threadId, mark)
+    this.markWrites.clear(); for (const [threadId, mark] of visits) this.markWrites.set(threadId, mark)
     this.seedPending ||= unsaved.seed
     this.retry = true
     if (this.closed) return
@@ -378,25 +410,43 @@ export class UsageService implements UsagePromptRecorder {
     if (this.opened || this.opening) return true
     if (this.closed) return false
     let answer: Maybe<UsageMetadata>
-    try { answer = this.client.request({ kind: 'open' }) } catch { this.failed = true; return false }
-    if (!(answer instanceof Promise)) { this.opened = true; this.seedMarked = answer.legacySeedCompleted; return true }
+    try { answer = this.client.request({ kind: 'open' }) } catch { this.failed = true; this.markless(); return false }
+    if (!(answer instanceof Promise)) { this.opened = true; this.seedMarked = answer.legacySeedCompleted; this.readMarks(); return true }
     this.opening = answer.then(metadata => {
       this.opening = undefined
       if (this.closed) return
       this.opened = true; this.seedMarked = metadata.legacySeedCompleted
+      this.readMarks()
       if (this.started) this.reconcilePending()
     }, () => {
       this.opening = undefined
       this.failed = true
+      this.markless()
       this.schedule(RETRY_MS)
     })
     return true
   }
 
+  /** Each thread's mark as Usage last read its rows, asked once the store is open; the queued threads are read after it. */
+  private readMarks(): void {
+    if (this.marks !== undefined) return
+    next(() => this.client.request({ kind: 'visit-marks' }), rows => {
+      this.marks ??= new Map(rows.map(row => [row.threadId, row.mark]))
+      this.visitQueued()
+    }, () => { this.markless() })
+  }
+
+  /** With no marks to be had, every queued thread is read, as every start read them before marks. */
+  private markless(): void {
+    if (this.marks !== undefined) return
+    this.marks = new Map()
+    this.visitQueued()
+  }
+
   private observeTokens(input: UsageTokenObservation): void {
     if (this.closed) return
     const parsed = usageTokenObservationSchema.safeParse(input)
-    if (!parsed.success) { this.lost = true; return }
+    if (!parsed.success) { this.lost = true; this.dropped += 1; return }
     const record = parsed.data
     if (this.tokens.size >= BUFFER_MAX) this.flush()
     this.put(this.tokens, JSON.stringify([record.providerId, record.threadId, record.recordKey]), record)
@@ -441,7 +491,7 @@ export class UsageService implements UsagePromptRecorder {
   }
 
   /** Queues a thread whose usage is not read yet; the queue is read a few threads per task (`visitBatch`). */
-  private queueVisit(thread: AgentHostSnapshot['threads'][number]): void {
+  private queueVisit(thread: HostThread): void {
     if (!this.options.host.visitUsage || this.visited.has(thread.id)) return
     this.visits.set(thread.id, thread)
   }
@@ -452,21 +502,31 @@ export class UsageService implements UsagePromptRecorder {
    */
   private visitQueued(): void {
     if (this.closed) return
-    if (this.visits.size) { this.visitTimer ??= setImmediate(() => this.visitBatch()); return }
+    if (this.visits.size) {
+      // The marks say which threads changed since their rows were last read; until the store answers, none is read.
+      if (this.marks !== undefined) this.visitTimer ??= setImmediate(() => this.visitBatch())
+      return
+    }
     if (this.connected.size && !this.seedMarked) { this.seedPending = true; this.schedule(FLUSH_MS) }
     for (const resolve of this.visitWaiters.splice(0)) resolve()
   }
 
-  /** One task's share of the queue: at most `VISITS_AT_ONCE` threads, and none begun once `VISIT_TASK_MS` have passed. */
+  /**
+   * One task's share of the queue: at most `VISITS_AT_ONCE` threads read, and none begun once `VISIT_TASK_MS` have passed.
+   * A thread whose mark is the one its rows were last read at is passed over unread: nothing in them changed since.
+   */
   private visitBatch(): void {
     this.visitTimer = undefined
     if (this.closed) return
-    const started = performance.now()
+    const clock = this.options.clock ?? (() => performance.now())
+    const started = clock()
     let read = 0
     for (const [id, thread] of this.visits) {
       this.visits.delete(id)
-      this.visit(thread)
-      if (++read >= VISITS_AT_ONCE || performance.now() - started >= VISIT_TASK_MS) break
+      const mark = visitMark(thread)
+      if (mark !== undefined && this.marks?.get(id) === mark) { this.visited.add(id); this.unread.delete(id); continue }
+      this.visit(thread, mark)
+      if (++read >= VISITS_AT_ONCE || clock() - started >= VISIT_TASK_MS) break
     }
     this.visitQueued()
   }
@@ -477,15 +537,20 @@ export class UsageService implements UsagePromptRecorder {
     return new Promise(resolve => { this.visitWaiters.push(resolve) })
   }
 
-  /** Reads a thread's usage once its provider is connected; a read that fails is tried again with the next publication. */
-  private visit(thread: AgentHostSnapshot['threads'][number]): void {
+  /**
+   * Reads a thread's usage once its provider is connected; a read that fails is tried again with the next publication.
+   * A read that lost none of its rows leaves the thread's mark to be written after them.
+   */
+  private visit(thread: HostThread, mark?: string): void {
     if (!this.options.host.visitUsage) return
     if (this.visited.has(thread.id) || (thread.providerId && (!isUsageProviderId(thread.providerId) || !this.connected.has(thread.providerId)))) return
+    const dropped = this.dropped
     try {
       this.options.host.visitUsage(thread.id, record => this.observeTokens(record))
       this.visited.add(thread.id)
       this.unread.delete(thread.id)
-    } catch { this.failed = true; this.unread.add(thread.id) }
+    } catch { this.failed = true; this.unread.add(thread.id); return }
+    if (mark !== undefined && this.dropped === dropped) { this.markWrites.set(thread.id, mark); this.schedule(FLUSH_MS) }
   }
 
   private reconcilePending(): void {
@@ -572,7 +637,7 @@ export class UsageService implements UsagePromptRecorder {
   }
 
   private put<T>(buffer: Map<string, T>, key: string, value: T): void {
-    if (!buffer.has(key) && buffer.size >= BUFFER_MAX) { this.lost = true; return }
+    if (!buffer.has(key) && buffer.size >= BUFFER_MAX) { this.lost = true; this.dropped += 1; return }
     buffer.set(key, value)
   }
 

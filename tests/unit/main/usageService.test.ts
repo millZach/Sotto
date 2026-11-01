@@ -341,37 +341,54 @@ describe('host usage collection service', () => {
 })
 
 describe('reading every thread\'s saved usage when a provider connects', () => {
-  /** A connected Codex host of `threads` threads, whose usage reads record which thread was read and fail for `failing`. */
-  function visiting(threads: number, failing = new Set<string>()) {
+  type Thread = ReturnType<typeof FakeProviderHost.prototype.snapshot> extends Promise<infer S> ? S extends { threads: (infer T)[] } ? T : never : never
+  /** `count` Codex threads, each showing usage last reported at `updated` unless `changed` names it. */
+  const threadsOf = (count: number, updated = at, changed = new Set<string>()) => (template: Thread): Thread[] => Array.from({ length: count }, (_, index) => {
+    const id = `thread-${index}`
+    return { ...template, id, providerId: 'codex', usage: { rateVersions: ['rates'], partial: false, total: { input: 100, output: 20 },
+      updatedAt: changed.has(id) ? '2026-10-13T12:00:00.000Z' : updated } }
+  })
+  /**
+   * A connected Codex host of `threads` threads, whose usage reads record which thread was read, fail for `failing` and move
+   * `clock` on by `costMs`, over `store`.
+   */
+  function visiting(threads: number | ((template: Thread) => Thread[]), options: { failing?: Set<string>; store?: UsageStore; clock?: { now: number }; costMs?: number } = {}) {
     const fake = new FakeProviderHost()
     fake.state.connected = true
-    fake.state.threads = Array.from({ length: threads }, (_, index) => ({ ...fake.state.threads[0]!, id: `thread-${index}`, providerId: 'codex' }))
+    const template = fake.state.threads[0]!
+    fake.state.threads = typeof threads === 'number' ? threadsOf(threads)(template) : threads(template)
     fake.state.models[0]!.providerId = 'codex'
     const read: string[] = []
     const host: AgentHost = fake
     host.visitUsage = (threadId, visitor) => {
       read.push(threadId)
-      if (failing.has(threadId)) throw new Error('The usage could not be read.')
+      if (options.clock) options.clock.now += options.costMs ?? 0
+      if (options.failing?.has(threadId)) throw new Error('The usage could not be read.')
       visitor(token({ threadId, recordKey: hash(`request-${threadId}`), groupKey: hash(`turn-${threadId}`), phase: 'seed' }))
     }
-    const store = new UsageStore(':memory:', () => at)
+    const store = options.store ?? new UsageStore(':memory:', () => at)
     const seed = vi.spyOn(store, 'markLegacySeedCompleted')
-    const service = new UsageService({ directory: '.', host, store })
+    const clock = options.clock
+    const service = new UsageService({ directory: '.', host, store, ...(clock ? { clock: () => clock.now } : {}) })
     opened.push(service); service.start(); fake.emit()
-    return { fake, service, read, seed }
+    return { fake, service, read, seed, store, template }
   }
   /** The tasks begun before this call have run: the next batch of queued threads among them. */
   const nextTask = () => new Promise<void>(resolve => { setImmediate(resolve) })
+  /** How many threads each task read, task by task, until none is left queued. */
+  async function readPerTask(read: readonly string[], total: number): Promise<number[]> {
+    const counts: number[] = []
+    for (let seen = read.length; seen < total;) { await nextTask(); counts.push(read.length - seen); seen = read.length }
+    return counts
+  }
 
-  it('reads a few threads per task rather than all in the publication\'s, and marks the seed only once all are read', async () => {
+  it('reads at most three threads in a task, none in the publication\'s own, and marks the seed only once all are read', async () => {
     const f = visiting(20)
     expect(f.read).toEqual([])
-    await nextTask()
-    expect(f.read.length).toBeGreaterThan(0)
-    expect(f.read.length).toBeLessThan(20)
     // A flush meanwhile carries no seed mark: threads are still to be read.
     f.service.flush()
     expect(f.seed).not.toHaveBeenCalled()
+    expect(await readPerTask(f.read, 20)).toEqual([3, 3, 3, 3, 3, 3, 2])
     // A read waits for every queued thread, then writes what they gave, the seed mark after it.
     const result = await f.service.read()
     expect([...f.read].sort()).toEqual(Array.from({ length: 20 }, (_, index) => `thread-${index}`).sort())
@@ -379,9 +396,28 @@ describe('reading every thread\'s saved usage when a provider connects', () => {
     expect(result.activity!.totals.tokens.input).toMatchObject({ rows: 20, value: 20 * 100 })
   })
 
+  it('begins no further thread in a task once its 5 ms are spent', async () => {
+    const f = visiting(6, { clock: { now: 0 }, costMs: 6 })
+    expect(await readPerTask(f.read, 6)).toEqual([1, 1, 1, 1, 1, 1])
+    const g = visiting(6, { clock: { now: 0 }, costMs: 2 })
+    expect(await readPerTask(g.read, 6)).toEqual([3, 3])
+  })
+
+  it('marks the seed with no thread left to read, though the first publication had none and a flush comes between', async () => {
+    const f = visiting(0)
+    f.fake.state.threads = threadsOf(20)(f.template)
+    f.fake.emit()
+    f.service.flush()
+    expect(f.seed).not.toHaveBeenCalled()
+    expect(f.read).toEqual([])
+    await f.service.read()
+    expect(f.read).toHaveLength(20)
+    expect(f.seed).toHaveBeenCalledOnce()
+  })
+
   it('reads a thread queued twice once, and one whose read failed again with the next publication', async () => {
     const failing = new Set(['thread-2'])
-    const f = visiting(5, failing)
+    const f = visiting(5, { failing })
     f.fake.emit()
     await f.service.read()
     expect([...f.read].sort()).toEqual(['thread-0', 'thread-1', 'thread-2', 'thread-3', 'thread-4'])
@@ -400,6 +436,39 @@ describe('reading every thread\'s saved usage when a provider connects', () => {
     for (let task = 0; task < 5; task++) await nextTask()
     expect(f.read).toHaveLength(before)
     expect(f.seed).not.toHaveBeenCalled()
+  })
+
+  it('reads on the next start only the threads whose usage changed since their rows were read, or that it never read', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-usage-service-')); roots.push(root)
+    const path = join(root, 'usage.sqlite')
+    const first = visiting(6, { store: new UsageStore(path, () => at) })
+    await first.service.read()
+    expect(first.read).toHaveLength(6)
+    first.service.close()
+    // Thread 1 reported since; thread 6 is new.
+    const second = visiting(threadsOf(7, at, new Set(['thread-1'])), { store: new UsageStore(path, () => at) })
+    await second.service.read()
+    expect(second.read.sort()).toEqual(['thread-1', 'thread-6'])
+    second.service.close()
+    const third = visiting(threadsOf(7, at, new Set(['thread-1'])), { store: new UsageStore(path, () => at) })
+    await third.service.read()
+    expect(third.read).toEqual([])
+  })
+
+  it('writes a thread\'s mark only once the rows its read gave are written, so a failed write reads it again next start', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-usage-service-')); roots.push(root)
+    const path = join(root, 'usage.sqlite')
+    const store = new UsageStore(path, () => at)
+    const rows = vi.spyOn(store, 'observeTokenBatch').mockImplementationOnce(() => { throw new Error('synthetic write failure') })
+    const marks = vi.spyOn(store, 'setVisitMarks')
+    const first = visiting(3, { store })
+    expect(await first.service.read()).toMatchObject({ persistence: 'failed' })
+    expect(store.visitMarks()).toEqual([])
+    // The failed flush wrote no mark; its retry writes the rows, then the marks.
+    expect(await first.service.read()).toMatchObject({ persistence: 'saved' })
+    expect(rows).toHaveBeenCalledTimes(2)
+    expect(marks.mock.invocationCallOrder[0]!).toBeGreaterThan(rows.mock.invocationCallOrder[1]!)
+    expect(store.visitMarks().map(mark => mark.threadId).sort()).toEqual(['thread-0', 'thread-1', 'thread-2'])
   })
 })
 

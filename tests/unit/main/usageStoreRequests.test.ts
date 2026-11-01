@@ -48,4 +48,22 @@ describe('usage store requests', () => {
       expect(store.historyCursors()).toEqual([{ key: 'codex:file', cursor: { size: 1, mtimeMs: 1, offset: 2 } }])
     })
   }
+  it('writes a flush\'s visit marks after its rows, keeps them through Clear, and reads them back', () => {
+    const store = opened()
+    const state = usageRequestState()
+    const order: string[] = []
+    const rows = vi.spyOn(store, 'observeTokenBatch'), marks = vi.spyOn(store, 'setVisitMarks')
+    rows.mockImplementation(function (this: UsageStore, ...args) { order.push('rows'); return UsageStore.prototype.observeTokenBatch.apply(this, args) })
+    marks.mockImplementation(function (this: UsageStore, ...args) { order.push('marks'); return UsageStore.prototype.setVisitMarks.apply(this, args) })
+    const visits = [{ threadId: 'thread-1', mark: '["2026-10-12T12:00:00.000Z"]' }]
+    expect(answerUsageRequest(store, { kind: 'flush', flush: { ...flush('a'), visits } }, state)).toEqual({ tokens: 1, prompts: 0, visits: 1, seed: false })
+    expect(order).toEqual(['rows', 'marks'])
+    const revision = store.metadata().revision
+    store.clear(revision)
+    expect(answerUsageRequest(store, { kind: 'visit-marks' }, state)).toEqual(visits)
+    // A flush whose rows fail writes no mark, and says so by leaving the count out.
+    rows.mockImplementationOnce(() => { throw new Error('synthetic disk failure') })
+    expect(answerUsageRequest(store, { kind: 'flush', flush: { ...flush('b'), visits: [{ threadId: 'thread-2', mark: '[null]' }] } }, state)).toEqual({ tokens: 0, prompts: 0, seed: false, failed: true })
+    expect(answerUsageRequest(store, { kind: 'visit-marks' }, state)).toEqual(visits)
+  })
 })

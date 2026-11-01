@@ -48,6 +48,9 @@ const bucketKey = ['provider', 'thread_id', 'model_id', 'source', 'client', 'sub
 /** History cursors name a file by a digest the reader chose, never by its path. */
 const usageProviderIdsSchema = usageProviderIdSchema.array()
 const cursorKeySchema = z.string().min(1).max(256).regex(/^[^\s\p{Cc}/\\]+$/u)
+/** A thread's usage as Usage last read its saved rows: numbers and times only, never what was said (#1937). */
+const visitMarkSchema = z.object({ threadId: usagePromptIdentitySchema.shape.threadId, mark: z.string().min(1).max(4_096) }).strict()
+export type UsageVisitMark = z.infer<typeof visitMarkSchema>
 
 /**
  * The UTC 15-minute bucket an instant falls in, as `YYYY-MM-DDTHH:MM`, or '' for an undated row. Plain SQL, so the
@@ -293,6 +296,23 @@ export class UsageStore {
       const upsert = this.statement(`INSERT INTO history_cursors (key,size,mtime_ms,offset,state) VALUES (?,?,?,?,?)
         ON CONFLICT(key) DO UPDATE SET size=excluded.size,mtime_ms=excluded.mtime_ms,offset=excluded.offset,state=excluded.state`)
       for (const { key, cursor } of parsed) upsert.run(key, cursor.size, cursor.mtimeMs, cursor.offset, cursor.state ?? null)
+    })
+  }
+
+  /**
+   * Each thread's mark as Usage last read its saved rows, so a start reads again only the threads whose usage changed
+   * since (#1937). Marks are not usage figures: they bump no revision and survive Clear, as cursors do.
+   */
+  visitMarks(): UsageVisitMark[] {
+    return this.statement('SELECT thread_id,mark FROM visit_marks').all().map(row => visitMarkSchema.parse({ threadId: row.thread_id, mark: row.mark }))
+  }
+
+  setVisitMarks(entries: readonly UsageVisitMark[]): void {
+    bounded(entries, 'Visit marks')
+    const parsed = entries.map(entry => visitMarkSchema.parse(entry))
+    this.transaction(() => {
+      const upsert = this.statement('INSERT INTO visit_marks (thread_id,mark) VALUES (?,?) ON CONFLICT(thread_id) DO UPDATE SET mark=excluded.mark')
+      for (const { threadId, mark } of parsed) upsert.run(threadId, mark)
     })
   }
 
@@ -782,6 +802,7 @@ export class UsageStore {
       CREATE TABLE IF NOT EXISTS history_cursors (
         key TEXT PRIMARY KEY NOT NULL, size INTEGER NOT NULL, mtime_ms INTEGER NOT NULL, offset INTEGER NOT NULL, state TEXT
       );
+      CREATE TABLE IF NOT EXISTS visit_marks (thread_id TEXT PRIMARY KEY NOT NULL, mark TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS token_buckets (
         provider TEXT NOT NULL, thread_id TEXT NOT NULL, model_id TEXT NOT NULL, source TEXT NOT NULL, client TEXT NOT NULL,
         sub_agent INTEGER NOT NULL, bucket TEXT NOT NULL, records INTEGER NOT NULL, partial_records INTEGER NOT NULL,

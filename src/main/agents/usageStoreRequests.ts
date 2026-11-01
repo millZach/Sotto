@@ -9,7 +9,7 @@ import {
   type UsageHistoryCursor, type UsageHistoryPrompt, type UsageHistoryStatus, type UsageLocalClearResult, type UsageLocalQuery,
   type UsageLocalRead, type UsageMetadata, type UsagePromptIdentity, type UsagePromptSubmission, type UsageTokenObservation,
 } from '../../shared/usageDashboard'
-import type { UsageStore } from './usageStore'
+import type { UsageStore, UsageVisitMark } from './usageStore'
 
 /** One prompt's buffered numeric writes: its original selection, and whether its echo or a refusal settled it. */
 export interface UsagePromptWrite {
@@ -18,14 +18,16 @@ export interface UsagePromptWrite {
 }
 
 /**
- * One flush of the live buffer, in the order it was buffered: token records, then prompts, then the legacy seed mark.
- * `retry` is the first flush main sends after one failed; until it arrives the writer refuses every flush, so nothing
- * buffered after a failed record commits ahead of it.
+ * One flush of the live buffer, in the order it was buffered: token records, then prompts, then the marks of threads whose
+ * saved rows were read, then the legacy seed mark. `retry` is the first flush main sends after one failed; until it arrives
+ * the writer refuses every flush, so nothing buffered after a failed record commits ahead of it, a thread's mark among
+ * them: a mark commits only once every row its read gave has.
  */
 export interface UsageFlush {
   readonly retry: boolean
   readonly tokens: readonly UsageTokenObservation[]
   readonly prompts: readonly { readonly threadId: string; readonly messageId: string; readonly write: UsagePromptWrite }[]
+  readonly visits?: readonly UsageVisitMark[] | undefined
   readonly seed: boolean
 }
 
@@ -33,6 +35,8 @@ export interface UsageFlush {
 export interface UsageFlushOutcome {
   readonly tokens: number
   readonly prompts: number
+  /** The flush's visit marks, all written, where it carried any. */
+  readonly visits?: number | undefined
   readonly seed: boolean
   /** A write failed; what follows it was not tried. */
   readonly failed?: true | undefined
@@ -56,6 +60,7 @@ export type UsageStoreRequest =
   | { readonly kind: 'clear'; readonly expectedRevision: number }
   | { readonly kind: 'query'; readonly query: UsageLocalQuery }
   | { readonly kind: 'history-cursors' }
+  | { readonly kind: 'visit-marks' }
   | { readonly kind: 'history'; readonly pass: number; readonly write: UsageHistoryWrite }
 
 /** What each request answers with. */
@@ -68,13 +73,14 @@ export interface UsageStoreAnswers {
   clear: UsageLocalClearResult
   query: UsageLocalRead
   'history-cursors': { key: string; cursor: UsageHistoryCursor }[]
+  'visit-marks': UsageVisitMark[]
   history: null
 }
 
 /** The store calls a request can make. Tests hand the service a store with only some history calls. */
 export type UsageRequestStore = Pick<UsageStore, 'open' | 'metadata' | 'observeTokenBatch' | 'submitPrompt' | 'acceptSubmittedPrompt' |
   'discardSubmittedPrompt' | 'pendingPromptReconciliationEnd' | 'pendingPromptIdentities' | 'markLegacySeedCompleted' | 'query' | 'clear'>
-  & Partial<Pick<UsageStore, 'importPrompts' | 'historyCursors' | 'setHistoryCursors' | 'setHistoryStatus'>>
+  & Partial<Pick<UsageStore, 'importPrompts' | 'historyCursors' | 'setHistoryCursors' | 'setHistoryStatus' | 'visitMarks' | 'setVisitMarks'>>
 
 /** What a connection remembers between requests: whether a flush failed, and the newest history pass that did. */
 export interface UsageRequestState { flushFailed: boolean; failedPass: number }
@@ -103,6 +109,7 @@ export function answerUsageRequest(store: UsageRequestStore, request: UsageStore
     case 'clear': return store.clear(request.expectedRevision)
     case 'query': return store.query(request.query)
     case 'history-cursors': return historyStore(store).historyCursors()
+    case 'visit-marks': return store.visitMarks?.() ?? []
   }
 }
 
@@ -115,6 +122,8 @@ function flush(store: UsageRequestStore, request: UsageFlush, state: UsageReques
   if (state.flushFailed && !request.retry) return { tokens: 0, prompts: 0, seed: false, skipped: true }
   state.flushFailed = false
   let tokens = 0, prompts = 0, seed = false
+  let visits: number | undefined
+  const counted = (): Pick<UsageFlushOutcome, 'visits'> => visits === undefined ? {} : { visits }
   try {
     prepare()
     for (let index = 0; index < request.tokens.length; index += USAGE_HISTORY_BATCH_MAX) {
@@ -128,11 +137,15 @@ function flush(store: UsageRequestStore, request: UsageFlush, state: UsageReques
       else if (write.action === 'discard') store.discardSubmittedPrompt(threadId, messageId)
       prompts += 1
     }
+    if (request.visits?.length) {
+      for (let index = 0; index < request.visits.length; index += USAGE_HISTORY_BATCH_MAX) store.setVisitMarks?.(request.visits.slice(index, index + USAGE_HISTORY_BATCH_MAX))
+      visits = request.visits.length
+    }
     if (request.seed) { store.markLegacySeedCompleted(); seed = true }
-    return { tokens, prompts, seed }
+    return { tokens, prompts, ...counted(), seed }
   } catch {
     state.flushFailed = true
-    return { tokens, prompts, seed, failed: true }
+    return { tokens, prompts, ...counted(), seed, failed: true }
   }
 }
 
