@@ -4,6 +4,7 @@
   bench-summary.py summarize <folder>         reads what Scripts/bench.sh left there, writes summary.json and summary.md
   bench-summary.py compare <before> <after>   prints a Markdown table of both folders' summaries, and before over after
   bench-summary.py budget <folder>            fails when a work count in the folder's summary is over its budget
+  bench-summary.py look <before> <after>      fails when the long thread's photos differ from the base's (bench.sh's look)
 
 Every number is the median over the benchmark's iterations: five launches or journeys, or the rounds PhoneBenchTests
 times each core step. Lower is better for all of them but journey.completed, which counts only journeys that finished.
@@ -189,6 +190,37 @@ def budget(folder):
         sys.exit(1)
 
 
+def look(before, after):
+    """Each distance's photo from two launches of each build. A distance whose two base photos differ is not compared,
+    as something there changes from launch to launch; otherwise the change's photos must be the base's, byte for byte."""
+    old, new = Path(before) / "look", Path(after) / "look"
+    distances = sorted({p.name.split("-")[2] for p in old.glob("look-1-*.png")}, key=lambda d: int(d.split(".")[0]))
+    if not distances:
+        print("The base took no photos of the long thread, so the look was not compared.")
+        return
+    print("| Distance above the end | The base's two launches | The change's two launches | The change against the base |")
+    print("| ---: | --- | --- | --- |")
+    differs = []
+    for name in distances:
+        a1, a2, b1, b2 = (folder / f"look-{run}-{name}" for folder in (old, new) for run in (1, 2))
+        if not all(p.exists() for p in (a1, a2, b1, b2)):
+            differs.append(name)
+            print(f"| {name[:-4]} pt | {'–' if not a1.exists() or not a2.exists() else 'taken'} | missing | not compared |")
+            continue
+        base_same, change_same = a1.read_bytes() == a2.read_bytes(), b1.read_bytes() == b2.read_bytes()
+        if not base_same:
+            verdict = "not compared: the base differs between launches"
+        elif b1.read_bytes() == a1.read_bytes() or b2.read_bytes() == a1.read_bytes():
+            verdict = "the same"
+        else:
+            verdict = "different"
+            differs.append(name)
+        print(f"| {name[:-4]} pt | {'the same' if base_same else 'different'} | {'the same' if change_same else 'different'} | {verdict} |")
+    if differs:
+        print(f"\nThe change looks different from the base at {', '.join(d[:-4] + ' pt' for d in differs)}: the photos are in the artifact.")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     if len(sys.argv) == 3 and sys.argv[1] == "summarize":
         summarize(sys.argv[2])
@@ -196,5 +228,7 @@ if __name__ == "__main__":
         compare(sys.argv[2], sys.argv[3])
     elif len(sys.argv) == 3 and sys.argv[1] == "budget":
         budget(sys.argv[2])
+    elif len(sys.argv) == 4 and sys.argv[1] == "look":
+        look(sys.argv[2], sys.argv[3])
     else:
         sys.exit(__doc__)

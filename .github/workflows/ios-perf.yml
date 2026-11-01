@@ -83,6 +83,13 @@ jobs:
       - name: Hold the work counts to their budgets
         # The change's text views made, message bodies and measures; counts, unlike times, are the same on any runner.
         run: python3 apps/ios/Scripts/bench-summary.py budget "$RUNNER_TEMP/bench/after"
+      - name: Hold the long thread to the base's look
+        # Both builds photograph the long thread at the same distances above its end, from two launches each; a photo
+        # the change draws differently from the base fails here, and both are in the artifact to see where.
+        if: always() && steps.base.outputs.measure == 'true'
+        # Named, so the step runs with pipefail and the comparison's failure is not lost in tee.
+        shell: bash
+        run: python3 apps/ios/Scripts/bench-summary.py look "$RUNNER_TEMP/bench/before" "$RUNNER_TEMP/bench/after" | tee -a "$GITHUB_STEP_SUMMARY"
       - name: Keep the reports
         if: always()
         uses: actions/upload-artifact@v4
@@ -97,5 +104,6 @@ jobs:
             ${{ runner.temp }}/bench/*/trace.md
             ${{ runner.temp }}/bench/*/trace-samples.json
             ${{ runner.temp }}/bench/*/app/*.json
+            ${{ runner.temp }}/bench/*/look/*
           if-no-files-found: warn
           retention-days: 30

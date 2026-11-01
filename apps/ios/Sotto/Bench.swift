@@ -11,7 +11,9 @@ import SottoCore
 /// `launch` to the first frame showing every thread, `list-scroll` down the list and back, `open` the long thread as a
 /// notification opens it, `thread-scroll` up through it and back, `stream` a reply into it, then `finished`. Each phase
 /// lasts until the screen is quiet, and records its frames, hitches, CPU time, memory and what the probes counted.
-/// With `--bench-journey launch` it stops after the first. It reads and changes nothing the app shows.
+/// With `--bench-journey launch` it stops after the first. With `--bench-journey look` it opens the long thread and
+/// photographs the page at fixed distances above its end (`look`), so two builds can be held to the same look. It
+/// reads and changes nothing the app shows.
 @MainActor final class BenchDriver {
     private static var running: BenchDriver?
 
@@ -19,7 +21,7 @@ import SottoCore
         guard running == nil, let path = ProcessInfo.processInfo.environment["SOTTO_BENCH_FILE"], !path.isEmpty else { return }
         let driver = BenchDriver(model: model, report: URL(fileURLWithPath: path), chunks: chunks, long: long)
         running = driver
-        driver.begin(all: journey == "all")
+        driver.begin(journey: journey)
     }
     /// The laptop's whole list has been applied: the next Threads body draws it.
     static func listApplied() { running?.waiting.insert("first-list") }
@@ -52,7 +54,7 @@ import SottoCore
         self.model = model; self.report = report; self.chunks = chunks; self.long = long
     }
 
-    private func begin(all: Bool) {
+    private func begin(journey: String) {
         BenchProbe.onBody = { name in MainActor.assumeIsolated { BenchDriver.running?.body(name) } }
         let link = CADisplayLink(target: FrameTarget(self), selector: #selector(FrameTarget.tick(_:)))
         link.add(to: .main, forMode: .common)
@@ -64,13 +66,14 @@ import SottoCore
             sampler = BenchSampler(output: URL(fileURLWithPath: arguments[index + 1]))
             sampler?.start(phase: phase)
         }
-        Task { await journey(all: all) }
+        Task { await self.journey(journey) }
     }
 
-    private func journey(all: Bool) async {
+    private func journey(_ kind: String) async {
         guard await until({ self.marks["first-list"] != nil }) else { return finish("no-list") }
         await quiet()
-        guard all else { return finish(nil) }
+        if kind == "look" { return await look() }
+        guard kind == "all" else { return finish(nil) }
 
         next("list-scroll")
         scrolled(await scroll(up: false))
@@ -95,6 +98,42 @@ import SottoCore
         phaseNotes["wallMs"] = (CACurrentMediaTime() - started) * 1000
         await quiet()
         finish(nil)
+    }
+
+    /// Opens the long thread and photographs the page at its end's distances: inside the latest turns, which are made at
+    /// open, at their edge, and among the earlier turns, made as they scroll in. Its end is left out, as the working
+    /// line there glows, and so is the bar. Each photo is the report's name and the distance (`look-1-1500.png`).
+    private func look() async {
+        next("open")
+        model?.alertOpened = long
+        guard await until({ self.marks["open-rendered"] != nil }) else { return finish("no-thread") }
+        await quiet()
+        next("look")
+        for distance in [1_500, 5_000, 10_000] as [CGFloat] {
+            guard let view = Self.pageScroller() else { return finish("no-page") }
+            let bottom = view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom
+            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: max(-view.adjustedContentInset.top, bottom - distance)), animated: false)
+            await quiet()
+            try? await Task.sleep(nanoseconds: 500_000_000)
+            snap("\(Int(distance))", page: view)
+            // Back to the end, so each distance is reached from there as the one before it was.
+            let end = view.contentSize.height - view.bounds.height + view.adjustedContentInset.bottom
+            view.setContentOffset(CGPoint(x: view.contentOffset.x, y: end), animated: false)
+            await quiet()
+        }
+        finish(nil)
+    }
+
+    /// The window as drawn below the bar, written beside the report. The bar is left out: its Working light breathes.
+    private func snap(_ name: String, page: UIScrollView) {
+        guard let window = page.window else { return }
+        let top = page.convert(CGPoint(x: 0, y: page.bounds.minY + page.adjustedContentInset.top), to: window).y
+        let area = CGRect(x: 0, y: top, width: window.bounds.width, height: window.bounds.height - top)
+        let image = UIGraphicsImageRenderer(bounds: area).image { _ in
+            _ = window.drawHierarchy(in: window.bounds, afterScreenUpdates: true)
+        }
+        let file = URL(fileURLWithPath: report.deletingPathExtension().path + "-" + name + ".png")
+        try? image.pngData()?.write(to: file, options: .atomic)
     }
 
     /// Extra numbers for the phase now running, kept in its summary.

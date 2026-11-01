@@ -9,8 +9,8 @@ mkdir -p "$1"
 out=$(cd "$1" && pwd)
 # A folder used before keeps nothing from that run: Xcode refuses an existing result bundle, and old reports would be
 # summarized with the new ones.
-rm -rf "$out/app" "$out/bench.xcresult" "$out/summary.json" "$out/summary.md"
-mkdir -p "$out/app"
+rm -rf "$out/app" "$out/look" "$out/bench.xcresult" "$out/summary.json" "$out/summary.md"
+mkdir -p "$out/app" "$out/look"
 
 # One phone for every run, so a branch and main are measured on the same simulated hardware.
 xcrun simctl list runtimes --json > "$out/runtimes.json"
@@ -63,16 +63,16 @@ TEST_RUNNER_SOTTO_BENCH_OUT="$out/app" xcodebuild -project Sotto.xcodeproj -sche
     $optimized ONLY_ACTIVE_ARCH=YES CODE_SIGNING_ALLOWED=NO test-without-building > "$out/test.log" 2>&1 || status=$?
 grep -E "measured \[|Test Case .*(passed|failed|skipped)|error:" "$out/test.log" || true
 
-# One journey from a cold launch with nothing else attached, writing its report to $1 and waiting up to $2 seconds;
-# any further arguments go to the app. Sets `outcome`: the app ends on `finished`, or on `failed-<why>` when a phase
-# never got what it waited for.
+# One journey ($3, `all` or `look`) from a cold launch with nothing else attached, writing its report to $1 and waiting
+# up to $2 seconds; any further arguments go to the app. Sets `outcome`: the app ends on `finished`, or on
+# `failed-<why>` when a phase never got what it waited for.
 journey() {
-    report="$1"; limit="$2"; shift 2
+    report="$1"; limit="$2"; kind="$3"; shift 3
     rm -f "$report"
     xcrun simctl terminate "$device_id" com.millzach.sotto.ios >/dev/null 2>&1 || true
     sleep 2
     SIMCTL_CHILD_SOTTO_BENCH_FILE="$report" xcrun simctl launch "$device_id" com.millzach.sotto.ios \
-        --ui-fixture --reset-ui-preferences --bench-threads 300 --bench-turns 200 --bench-chunks 200 --bench-journey all \
+        --ui-fixture --reset-ui-preferences --bench-threads 300 --bench-turns 200 --bench-chunks 200 --bench-journey "$kind" \
         "$@" -AppleLanguages '(en)' -AppleLocale en_US >/dev/null
     outcome=timed-out
     for _ in $(seq 1 "$limit"); do
@@ -87,9 +87,16 @@ journey() {
 # The journey, five times: the app scrolls the list, opens the long thread, scrolls it and streams a reply into it by
 # itself (Sotto/Bench.swift) and writes journey-<n>.json.
 for run in 1 2 3 4 5; do
-    journey "$out/app/journey-$run.json" 600
+    journey "$out/app/journey-$run.json" 600 all
     echo "Journey $run: $outcome"
     [ "$outcome" = finished ] || status=1
+done
+
+# The long thread photographed at fixed distances above its end, twice, so a change can be held to the base's look
+# (`bench-summary.py look`) and a photo that differs between two launches of one build is known not to be the change's.
+for run in 1 2; do
+    journey "$out/look/look-$run.json" 300 look
+    echo "Look $run: $outcome"
 done
 xcrun simctl terminate "$device_id" com.millzach.sotto.ios >/dev/null 2>&1 || true
 
@@ -100,7 +107,7 @@ xcrun simctl terminate "$device_id" com.millzach.sotto.ios >/dev/null 2>&1 || tr
 if [ "${BENCH_TRACE:-}" = 1 ]; then
     samples="$out/trace-samples.json"
     rm -f "$samples"
-    journey "$out/app/trace-journey.json" 900 --bench-sample "$samples"
+    journey "$out/app/trace-journey.json" 900 all --bench-sample "$samples"
     echo "Sampled journey: $outcome"
     if [ -f "$samples" ]; then
         python3 Scripts/bench-sample.py "$samples" > "$out/trace.md" 2> "$out/trace.log" || echo "The samples were not read (see trace.log)"
