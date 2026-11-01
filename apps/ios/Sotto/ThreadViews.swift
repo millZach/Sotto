@@ -408,6 +408,9 @@ private struct ConversationRow: Identifiable {
 private final class TimelineCache {
     private var key: String?
     private var cached: [ConversationRow] = []
+    /// The first row of the latest turns, which the page lays out whole; the rows before it are made as they scroll
+    /// into view. Set with the rows.
+    private(set) var latestTurns = 0
     private var dates: [String: Date] = [:]
     /// `held` marks the copy kept on screen while the thread is read again. A fresh copy can carry the same revision, from
     /// a computer whose Sotto restarted, so it is always drawn anew.
@@ -415,6 +418,7 @@ private final class TimelineCache {
         guard let detail else {
             key = nil
             cached = []
+            latestTurns = 0
             return []
         }
         let next = detail.threadId + "#" + String(detail.revision) + (held ? "#held" : "")
@@ -424,6 +428,7 @@ private final class TimelineCache {
         cached = BenchProbe.time("timeline.rows") {
             let items = ThreadTimeline.items(messages: detail.messages, activities: detail.activities ?? [],
                                              earlierAvailable: detail.earlierAvailable == true, date: { self.date($0) })
+            self.latestTurns = ThreadTimeline.latestTurnsStart(items)
             return ConversationRow.make(items, date: { self.date($0) })
         }
         return cached
@@ -571,9 +576,22 @@ private struct Conversation: View {
                 let moved = thread?.modelMoved
                 let movedAfter = moved.flatMap { $0.anchor(in: detail?.messages ?? []) }.map { "message-" + $0 }
                 if let moved, movedAfter == nil, !rows.isEmpty { ModelMovedLine(words: moved.words(provider: provider)) }
-                ForEach(rows) { row in
-                    rowView(row, provider: provider, working: row.id == working, last: row.id == last, scroll: scroll)
-                    if let moved, row.id == movedAfter { ModelMovedLine(words: moved.words(provider: provider)) }
+                // The latest turns, as many as a thread opens with, are laid out whole, so the page's jump to its end
+                // always lands on rows already made: a lazy stack under that jump once left a thread black until it was
+                // scrolled (#749). The turns before them, from Show earlier messages or a long stay on the thread, are
+                // made as they scroll into view. Laid out whole, every row of a long thread was updated and placed again
+                // for each streamed word, and opening one took seconds (#1702).
+                let split = min(timeline.latestTurns, rows.count)
+                if split > 0 {
+                    LazyVStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
+                        ForEach(rows[..<split]) { row in
+                            entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter,
+                                  scroll: scroll)
+                        }
+                    }
+                }
+                ForEach(rows[split...]) { row in
+                    entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter, scroll: scroll)
                 }
             } else if model.detailProblem == nil || !online {
                 (model.status(ref.hostID) == .unreachable ? Text("Reconnect to read this thread.") : Text("Reading this thread…"))
@@ -590,6 +608,13 @@ private struct Conversation: View {
             }
         }
         .padding(.top, Space.s3)
+    }
+
+    /// A row, and under it the line saying Sotto moved the thread off its model, where that happened.
+    @ViewBuilder private func entry(_ row: ConversationRow, provider: String, working: String?, last: String?, moved: ModelMoved?,
+                                    movedAfter: String?, scroll: ScrollViewProxy) -> some View {
+        rowView(row, provider: provider, working: row.id == working, last: row.id == last, scroll: scroll)
+        if let moved, row.id == movedAfter { ModelMovedLine(words: moved.words(provider: provider)) }
     }
 
     @ViewBuilder private func rowView(_ row: ConversationRow, provider: String, working: Bool, last: Bool,
