@@ -17,6 +17,7 @@ const building = ['windows', 'linux-host']
 describe('Sotto Owl nightly workflow (ADR-0072, November 1, 2026)', () => {
   it('runs at midnight UTC and by hand, one at a time, as a dry run unless publish is ticked', () => {
     expect(workflow.name).toBe('Sotto Owl nightly')
+    expect(Object.keys(workflow.on)).toEqual(['schedule', 'workflow_dispatch'])
     expect(workflow.on.schedule).toEqual([{ cron: '0 0 * * *' }])
     expect(workflow.on.workflow_dispatch.inputs.publish).toMatchObject({ type: 'boolean', default: false })
     expect(workflow.concurrency).toEqual({ group: 'owl-nightly', 'cancel-in-progress': false })
