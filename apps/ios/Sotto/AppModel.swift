@@ -839,34 +839,44 @@ extension AppModel {
     }
     /// The models Watcher's computer lists, which the model menu draws from.
     func watcherCatalog(_ hostID: String) -> [ThreadModel] { live[hostID]?.shell?.host.models ?? [] }
-    /// What the model, effort and speed chips show: the choice just made while the computer takes it, then Watcher's own.
+    /// What the model, effort and speed chips show: the choice just made while the computer takes it, then the choice the
+    /// computer keeps for Watcher's next turn, then Watcher's own.
     func watcherSettingValues(_ hostID: String) -> ThreadSettingValues? {
-        guard let current = watcherPage(hostID)?.current else { return nil }
-        var values = WatcherSettings.values(current, catalog: watcherCatalog(hostID))
+        guard let page = watcherPage(hostID), let current = page.current else { return nil }
+        var values = WatcherSettings.values(current, next: page.nextTurnOptions, catalog: watcherCatalog(hostID))
         if let pick = watcherSettingPicks[hostID] { values[pick.kind] = pick.value }
         return values
     }
-    /// Why the model, effort and speed chips can't be pressed now, as on the desktop: while Watcher's turn runs or a card
-    /// of its own waits, while another change to Watcher is on its way, or away from its computer. Nil when they can.
+    /// Whether Watcher's computer keeps a change to its model, effort or speed for its next turn while it works, rather
+    /// than refusing it until Watcher rests (November 1, 2026).
+    func keepsWatcherSettingsForNextTurn(_ hostID: String) -> Bool {
+        live[hostID]?.features.contains(WatcherWire.settingsLaterFeature) == true
+    }
+    /// Why the model, effort and speed chips can't be pressed now: while another change to Watcher is on its way, away from
+    /// its computer, or while a permission change waits. On an older computer, also while Watcher's turn runs, a card of its
+    /// own waits or a message to it is on its way, as that computer refuses a change then. Nil when they can.
     func watcherSettingsHeld(_ hostID: String) -> String? {
         guard let page = watcherPage(hostID), let current = page.current, online(hostID), current.connected else { return ThreadSettings.FixedReason.away.hint }
         if watcherManaging.contains(Self.composerKey(hostID)) || watcherManaging.contains(Self.permissionKey(hostID)) {
             return String(localized: "Can change once the last change to Watcher is done.")
         }
-        if watcherPermissionFixed(hostID) { return WatcherPermissions.fixedHint }
-        // A message on its way starts a turn, which a change would run behind; a permission mode its provider hasn't
-        // confirmed holds the rest, as on a thread's chips (ADR-0166).
-        if watcherSending[hostID] != nil || page.draftDeliveries?.contains(where: { ["queued", "submitting", "uncertain"].contains($0.status) }) == true
-            || page.followups?.contains(where: { $0.status == "dispatching" || $0.status == "uncertain" }) == true {
-            return ThreadSettings.FixedReason.working.hint
+        // A message on its way starts a turn, which a change would run behind on an older computer.
+        let onItsWay = watcherSending[hostID] != nil || page.draftDeliveries?.contains(where: { ["queued", "submitting", "uncertain"].contains($0.status) }) == true
+            || page.followups?.contains(where: { $0.status == "dispatching" || $0.status == "uncertain" }) == true
+        switch WatcherSettings.busyHold(keptForNextTurn: keepsWatcherSettingsForNextTurn(hostID), working: watcherPermissionFixed(hostID), messageOnItsWay: onItsWay) {
+        case .working?: return WatcherPermissions.fixedHint
+        case .messageOnItsWay?: return ThreadSettings.FixedReason.working.hint
+        case nil: break
         }
+        // A permission mode its provider hasn't confirmed holds the rest, as on a thread's chips (ADR-0166).
         return watcherPermissionInForce(hostID) != nil ? ThreadSettings.FixedReason.unconfirmed.hint : nil
     }
     /// Chooses Watcher's model, effort or speed. The chip shows it at once; another provider's model starts a new Watcher.
+    /// While Watcher works, its computer keeps the change for Watcher's next turn and the chip shows it until then.
     /// Refused, the chip goes back and the computer's words say why.
     func chooseWatcherSetting(_ kind: ThreadSettingKind, _ value: String, on hostID: String) async {
-        guard offersWatcherComposer(hostID), watcherSettingsHeld(hostID) == nil, let current = watcherPage(hostID)?.current,
-              let operation = WatcherSettings.press(kind, value: value, current: current, catalog: watcherCatalog(hostID)) else { return }
+        guard offersWatcherComposer(hostID), watcherSettingsHeld(hostID) == nil, let page = watcherPage(hostID), let current = page.current,
+              let operation = WatcherSettings.press(kind, value: value, current: current, next: page.nextTurnOptions, catalog: watcherCatalog(hostID)) else { return }
         // Another provider needs this iPhone's answers grant there, which the computer checks again.
         if kind == .model, WatcherSettings.replaces(value, current: current, catalog: watcherCatalog(hostID)), !mayAnswer(hostID) { return }
         let key = Self.composerKey(hostID)

@@ -1,5 +1,6 @@
 import type { WatcherPhoneOrigin } from '../../shared/watcherPhone'
-import type { AgentCommand, AgentHostSnapshot } from '../../shared/agents'
+import type { AgentCommand, AgentHostSnapshot, AgentSpeed } from '../../shared/agents'
+import type { WatcherNextTurnOptions } from '../../shared/watcherRoom'
 import type { AgentHostCommand } from './host'
 import type { WatcherEvent } from '../../shared/watcherNews'
 import type { CheckpointObservation, PullRequestObservation } from './watcherEvidence'
@@ -48,6 +49,14 @@ export interface WatcherControlHooks {
   /** Whether each queued event may still go, answered in one pass that reads the snapshot and the record once. */
   wakeDueAll?(events: readonly WatcherEvent[]): boolean[]
   wakeReady?(): boolean
+  /**
+   * A desktop chip's change to Watcher's model, effort or speed, kept for Watcher's next turn while it works (watcher.ts).
+   * True when kept; `validate` throws the refusal of a choice that cannot be kept.
+   */
+  keepForNextTurnFromChip?(command: { readonly threadId: string; readonly modelId?: string | undefined; readonly reasoningEffort?: string | undefined
+    readonly speed?: AgentSpeed | null | undefined; readonly fastMode?: boolean | undefined }, validate: (wanted: WatcherNextTurnOptions) => void): boolean
+  /** Whether this thread's queue waits for Watcher's kept choice to go first. */
+  holdsQueue?(threadId: string): boolean
   /** Watcher's hidden wake-up left its queue with this outcome, holding these events (hiddenWakeUp.ts). */
   wakeUpSettled?(events: readonly WatcherEvent[], outcome: HiddenWakeUpOutcome): void
   pullRequestObserved?(read: PullRequestObservation): void
