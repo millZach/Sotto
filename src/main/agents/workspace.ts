@@ -28,7 +28,7 @@ import type { UserMessageInstantSource } from './usageHistory/sottoPrompts'
 import { threadEventSchema, type AnswerGivenEvent, type StoredThreadEvent, type ThreadEvent } from '../../shared/threadEvents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { samePlainData } from './agentStateBroadcast'
-import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentContinuation, type AgentHost, type ReplyFork, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type StartHandoverSent, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
+import { confirmedSettingsSnapshot, type ActivitySubscriptionOptions, type AgentContinuation, type AgentHost, type ReplyFork, type AgentHostCommand, type AgentHostResult, type ShortTextPrompt, type ShortTextTarget, type StartHandoverSent, type StoredMessageIdentity, type ThreadReadPurpose, type ThreadRenameSource } from './host'
 import { agentHandover, type AgentHandover } from './agentHandover'
 import { AGENT_HANDOVER_UNAVAILABLE, AGENT_NOT_SEEN_FINISHING, AGENT_STILL_WORKING, FORK_REPLY_GONE, FORK_TURN_RUNNING, NATIVE_FORKS } from '../../shared/threadStarts'
 import { EMPTY_WINDOW, FIRST_WINDOW_TURNS, LATER_WINDOW_TURNS, RECORDED_USER_MESSAGES_MAX, replacementEvents, summaryOf, ThreadStore, type RecordedUserMessageIdentity, type StoredVisual, type ThreadMessageWindow } from './threadStore'
@@ -5614,13 +5614,26 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
   resolveModelId(id: string): string { return this.inner.resolveModelId?.(id) ?? id }
   providerForThread(id: string): ProviderId | undefined { return this.threadById(id)?.providerId ?? this.inner.providerForThread?.(id) }
   /**
-   * A side call on the thread's own client (ADR-0026). A thread whose native session has not started has
-   * no client, model or folder to ask yet, so it gets nothing rather than a session started for it.
+   * A side call on the thread's own client (ADR-0026). A thread whose native session has not started gets nothing
+   * rather than a session started for it, except its next prompt (ADR-0173), which its provider writes on the model and
+   * in the folder the thread will use, with no session.
    */
   async writeShortText(threadId: string, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
     const thread = this.threadById(threadId)
-    if (!thread || !this.visible(thread) || thread.nativeSessionStarted === false || !this.inner.writeShortText) return null
+    if (!thread || !this.visible(thread)) return null
+    if (thread.nativeSessionStarted === false) {
+      if (prompt.purpose !== 'next-prompt' || !this.inner.writeShortTextOn) return null
+      // In its own folder, or its project's while a new worktree waits for the first send to be made.
+      let cwd: string | undefined
+      try { cwd = this.threadFolder(thread) } catch { cwd = this.state.snapshot.projects.find(project => project.id === thread.projectId)?.path }
+      return this.inner.writeShortTextOn({ modelId: thread.modelId, cwd }, prompt, signal)
+    }
+    if (!this.inner.writeShortText) return null
     return this.withProfileRefusal(threadId, () => this.inner.writeShortText!(threadId, prompt, signal))
+  }
+  /** A side call with no thread behind it (ADR-0173): Watcher's first message, on the model the user picked. */
+  async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    return await this.inner.writeShortTextOn?.(target, prompt, signal) ?? null
   }
   /**
    * The threads a window says it is looking at. Only those hold their messages in memory: one leaving the

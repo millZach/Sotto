@@ -1,3 +1,4 @@
+import { homedir } from 'node:os'
 import { preserveLegacyAliases } from './legacyAliases'
 import { ProviderUnavailable } from './providerProblem'
 import { BROWSER_MCP_SERVER, type BrowserAgentTools } from './browserAgentServer'
@@ -16,7 +17,7 @@ import { z } from 'zod'
 import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, type AgentHostSnapshot, type AgentThread, type AgentMessage, type AgentRuntimeMode, type ProviderId } from '../../shared/agents'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadLaunchProfiles, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
 import { subagentRoleInstructions } from '../../shared/workerRoles'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
 import { WatcherHistoryRefusal, WatcherProfileRefusal, validateWatcherProfile } from './watcherProfile'
@@ -1006,14 +1007,21 @@ export class GrokAcpHost implements AgentHost {
     if (profile && prompt.purpose !== 'next-prompt') return null
     if (this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
-    // A new thread's next prompt (ADR-0173) is asked before its session exists; the writer is a session of its own.
-    if (!this.state.connected || !alias || !alias.grokSessionId && prompt.purpose !== 'next-prompt') return null
+    if (!this.state.connected || !alias?.grokSessionId) return null
+    return this.writeOn({ modelId: alias.nativeModelId ?? alias.modelId, cwd: alias.cwd }, prompt, generation, signal)
+  }
+  /** A side call for what has no session yet (ADR-0173), on the model chosen. */
+  async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    if (!this.state.connected) return null
+    return this.writeOn(target, prompt, this.generation, signal)
+  }
+  private async writeOn(target: ShortTextTarget, prompt: ShortTextPrompt, generation: number, signal?: AbortSignal): Promise<string | null> {
     const writer = new GrokSubscriptionClient(join(this.userDataDirectory, 'writing', 'grok'), {
       ...(this.options.executable ? { executable: this.options.executable } : {}), ...(this.options.args ? { prefixArgs: this.options.args } : {}),
       ...(this.options.environment ? { environment: this.options.environment } : {}) })
-    const workingDirectory = await existingWorkingDirectory(alias.cwd)
+    const workingDirectory = await existingWorkingDirectory(target.cwd ?? homedir())
     this.assertGeneration(generation)
-    return writer.write({ ...prompt, model: alias.nativeModelId ?? alias.modelId, workingDirectory, timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
+    return writer.write({ ...prompt, model: target.modelId, workingDirectory, timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
   }
   /**
    * Read a thread back from Grok and hand back the snapshot. The read before a send (`beforeSend`) is the same
