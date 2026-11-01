@@ -162,7 +162,10 @@ public struct Shell: Decodable, Equatable, Sendable {
     /// connection only the ones that changed (`changed-thread-records`). Always nil once a shell leaves `HostConnection`,
     /// which puts the whole list back (`ThreadRecordsCache`).
     public var threadRecords: ChangedThreadRecords? = nil
-    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher, unconfirmedSettings }
+    /// How many settled threads the computer's list leaves out, from a host that sends this phone only the threads settled
+    /// this week (`settled-threads-on-request`): the Settled shelf reads them with `settled-threads`. Nil from any other.
+    public let settledHeldBack: Int?
+    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher, unconfirmedSettings, settledHeldBack }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         hostId = try c.decodeIfPresent(String.self, forKey: .hostId)
@@ -178,6 +181,7 @@ public struct Shell: Decodable, Equatable, Sendable {
         followupReceipts = try c.decodeIfPresent([DeliveryReceipt].self, forKey: .followupReceipts)
         watcher = c.tolerant(WatcherPhoneState.self, .watcher)
         unconfirmedSettings = c.tolerant(ThreadList<UnconfirmedSetting>.self, .unconfirmedSettings)
+        settledHeldBack = try c.decodeIfPresent(Int.self, forKey: .settledHeldBack)
     }
     public func validate(hostID: String) throws {
         guard hostId == hostID, host.hostId == hostID,

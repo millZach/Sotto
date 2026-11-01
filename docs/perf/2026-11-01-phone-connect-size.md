@@ -56,9 +56,24 @@ On the laptop a connect is half what it was. Hello is 790 KB smaller because Dev
 times; the first push no longer lists every record, because hello's are its base. Forge's catalog has no shared modes
 worth naming, so its hello is unchanged.
 
+## Part 2: this week's settled threads, older ones on request
+
+`settled-threads-on-request` holds back the threads settled before this week (ADR-0028, November 1 amendment, part 2). On
+the laptop's shell the list keeps 156 of 632 records, 149 of them settled this week, and holds back 476. The same replay:
+
+| | Laptop after #2002 | Laptop after part 2 | Forge after #2002 | Forge after part 2 |
+|---|---|---|---|---|
+| Hello | 1,978 KB | 832 KB | 228 KB | 191 KB |
+| First shell push | 279 KB | 277 KB | 84 KB | 83 KB |
+| Connect | 2,257 KB | 1,109 KB | 312 KB | 274 KB |
+| Connect with a `shell` read | 4,277 KB | 1,982 KB | 608 KB | 532 KB |
+| Connect, if it were compressed | 321 KB | 166 KB | 66 KB | 61 KB |
+
+From before either part, a laptop connect fell from 4,510 KB to 1,109 KB, a quarter. Opening older settled threads reads
+30 at a time, on request.
+
 ## What is left
 
-- Hello still lists every thread record: 1.48 MB of the laptop's 1,978 KB, 584 of the 632 threads settled.
 - Every shell push to a phone carries the whole state but the threads, about 280 KB on the laptop, most of it Watcher's
   page, every one to three seconds while threads run.
 - A `shell` read's answer lists every record, as a hello does.

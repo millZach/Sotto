@@ -72,9 +72,11 @@ public extension Wire {
     /// revision of the records it lists whole, which the connection then holds, so the push after it carries only what
     /// changed rather than every record again; `provider-mode-lists` has a catalog list each provider's modes once rather
     /// than on every model (ADR-0028's November 1 amendment). The connection puts both back before anything reads them.
+    /// `settled-threads-on-request` has the list leave out threads settled before this week, which the Settled shelf reads
+    /// with `settled-threads` (`SettledShelf.swift`).
     static let snapshotHello: [String: JSONValue] = ["op": .string("hello"), "afterSeq": .number(9_007_199_254_740_991),
         "accepts": .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("changed-thread-records"),
-                    .string("reply-thread-records"), .string("provider-mode-lists")])]
+                    .string("reply-thread-records"), .string("provider-mode-lists"), .string("settled-threads-on-request")])]
 
     // Nonisolated async functions run on the generic executor in this package's Swift 5 mode.
     // Awaiting each frame before receiving the next keeps pushes and replies in socket order.

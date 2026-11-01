@@ -368,3 +368,23 @@ does sending a phone only the threads it shows first.
 Replaying the laptop's captured hello through the listener, a phone connect fell from 4,510 KB to 2,257 KB, and from
 7,994 KB to 4,277 KB with a `shell` read; hello from 2,768 KB to 1,978 KB and the first push from 1,742 KB to 279 KB. The
 replay's before matched the installed laptop's within 1% (`docs/perf/2026-11-01-phone-connect-size.md`).
+
+### Part 2: a phone is sent this week's settled threads, and reads older ones when asked
+
+After the first part, hello still listed every thread record: 1.48 MB of the laptop's 1,978 KB, for 632 threads of which
+584 were settled. The iPhone shows a settled thread only on its Settled shelf, folded until opened. The owner chose, from
+three mock-ups (tag `prototype/ios-settled-shelf`, variant C), to keep the threads settled in the last seven days on the
+phone, so the shelf opens at once and Settle's Undo never waits, and to read older ones from the computer when the shelf
+asks for them, and when Threads is searched, a moment after typing stops.
+
+**To a phone that accepts `settled-threads-on-request`, every shell holds back the threads settled before this week**,
+and says how many in `settledHeldBack` (`heldBackSettled.ts`). A thread that asks the user something is never held back,
+nor any thread above it in its delegation, so Needs you reads as before; nor one the phone observes or has selected, so
+a thread opened from the shelf stays in its list while it is open. The iPhone keeps the older threads it read beside its
+lists, so a thread opened from them is open before its computer lists it, and a new connection reads them afresh but for
+the one open. **`settled-threads` reads the held-back threads a page at a time**, newest settled first, matching a search
+when it names one. The settled time is the latest any settlement names, as the iPhone's `isSettled` reads settlement.
+
+On the laptop's replayed hello, the list kept 156 of 632 records (149 settled this week) and held back 476: hello fell
+from 1,978 KB to 832 KB, a connect from 2,257 KB to 1,109 KB, and with a `shell` read from 4,277 KB to 1,982 KB. From
+before either part, a connect fell from 4,510 KB to 1,109 KB (`docs/perf/2026-11-01-phone-connect-size.md`).
