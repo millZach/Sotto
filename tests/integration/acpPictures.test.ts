@@ -7,17 +7,14 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { ThreadMediaStore } from '../../src/main/agents/threadMedia'
 import { deepseekFixture } from '../fixtures/fakeDeepSeekFixture'
 import { devinFixture } from '../fixtures/devinFixture'
+import { cursorFixture } from '../fixtures/fakeCursorFixture'
 import { grokFixture } from '../fixtures/fakeGrokThreadFixture'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentHost } from '../../src/main/agents/host'
+import { pngHeader } from '../fixtures/stagedImages'
 
-/** A PNG header Sotto reads as a 5x4 picture: the signature, then IHDR. */
-function png(): Buffer {
-  const bytes = Buffer.alloc(40)
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bytes)
-  bytes.writeUInt32BE(13, 8); bytes.write('IHDR', 12, 'ascii'); bytes.writeUInt32BE(5, 16); bytes.writeUInt32BE(4, 20)
-  return bytes
-}
+/** A picture Sotto reads as 5x4. */
+const png = (): Buffer => pngHeader(5, 4)
 const picture = png().toString('base64')
 /** A screenshot tool's result as ACP carries it: its words, then the picture. */
 const screenshot = [{ type: 'content', content: { type: 'text', text: 'Took a screenshot.' } }, { type: 'content', content: { type: 'image', data: picture, mimeType: 'image/png' } }]
@@ -81,6 +78,36 @@ describe('pictures in an ACP tool result (ADR-0170)', () => {
     await f.action(id, { type: 'tool', command: 'screenshot', output: 'Took a screenshot.', image: picture })
     await expect.poll(async () => (await pictured(f.host, id))?.status).toBe('completed')
     await heldByHandle(media, await pictured(f.host, id))
+  })
+
+  it('Cursor: puts them on the step by handle, and its replays keep the same handle without hashing it again', async () => {
+    const media = await store()
+    let captures = 0
+    const options = { captureMedia: (pictures: Parameters<ThreadMediaStore['capture']>[0], source: Parameters<ThreadMediaStore['capture']>[1]) => { captures += 1; return media.capture(pictures, source) } }
+    // A provider session left idle closes quickly, so the next send opens it again with a replay.
+    let f = await cursorFixture(undefined, undefined, { reaperSweepMs: 20, sessionIdleMs: 150 }, options); cleanups.push(() => f.cleanup())
+    const id = await started(f.host, f.root, f.modelId)
+    const status = async () => (await f.host.snapshot()).threads.find(thread => thread.id === id)?.status
+    await f.action(id, { type: 'screenshot', data: picture })
+    await expect.poll(async () => (await pictured(f.host, id))?.status).toBe('completed')
+    const live = await pictured(f.host, id)
+    await heldByHandle(media, live)
+    await f.driver.completeTurn(id, 'Here it is.')
+    await expect.poll(status).toBe('idle')
+    // A send to a closed provider session opens it with a replay of the thread; the step's handle answers, so nothing is hashed again.
+    f.host.observeThreads?.([])
+    await expect.poll(() => f.sessions.stopped(id), { timeout: 12_000 }).toBe(true)
+    const loads = await f.sessions.starts(id)
+    await f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: 'm2', text: 'Thanks' })
+    await expect.poll(() => f.sessions.starts(id)).toBeGreaterThan(loads)
+    await f.driver.completeTurn(id, 'You are welcome.')
+    await expect.poll(status).toBe('idle')
+    expect(captures).toBe(1)
+    expect((await pictured(f.host, id))?.media).toEqual(live!.media)
+    // A new Sotto process holds no rows yet: the replay hashes the picture once more and lands on the same handle.
+    f = await f.driver.restart(); cleanups.push(() => f.cleanup())
+    f.host.observeThreads?.([id]); await f.host.connect()
+    await expect.poll(async () => (await pictured(f.host, id))?.media).toEqual(live!.media)
   })
 
   it('captures nothing without the feature', async () => {

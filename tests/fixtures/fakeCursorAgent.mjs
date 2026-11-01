@@ -234,16 +234,21 @@ function run(command) {
     finish(command.reason ?? 'end_turn')
   }
   if (command.type === 'takeover') update(sessionId, { sessionUpdate: 'user_message_chunk', content: { type: 'text', text: command.text } })
-  if (command.type === 'tool') {
+  // A tool call, opened and completed, live with Cursor's own ID and in the replayed history with the replay's.
+  const toolCall = (opening, completion) => {
     const toolCallId = `call_${randomUUID()}\nfc_fixture`
-    update(sessionId, { sessionUpdate: 'tool_call', toolCallId, title: `\`${command.command}\``, kind: 'execute', status: 'pending', rawInput: { command: command.command } }, false)
-    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, status: 'completed', rawOutput: { exitCode: 0, stdout: command.output ?? '', stderr: '' } }, false)
+    update(sessionId, { sessionUpdate: 'tool_call', toolCallId, ...opening }, false)
+    update(sessionId, { sessionUpdate: 'tool_call_update', toolCallId, ...completion }, false)
     const turn = sessions.get(sessionId).history.filter(body => body.sessionUpdate === 'user_message_chunk').length - 1
-    const step = sessions.get(sessionId).history.length
-    sessions.get(sessionId).history.push({ sessionUpdate: 'tool_call', toolCallId: `replay-${turn}-${step}`, title: `\`${command.command}\``, kind: 'execute', status: 'pending', rawInput: { command: command.command } },
-      { sessionUpdate: 'tool_call_update', toolCallId: `replay-${turn}-${step}`, status: 'completed', rawOutput: { exitCode: 0, stdout: command.output ?? '', stderr: '' } })
+    const replayed = `replay-${turn}-${sessions.get(sessionId).history.length}`
+    sessions.get(sessionId).history.push({ sessionUpdate: 'tool_call', toolCallId: replayed, ...opening }, { sessionUpdate: 'tool_call_update', toolCallId: replayed, ...completion })
     save(sessionId)
   }
+  if (command.type === 'tool') toolCall({ title: `\`${command.command}\``, kind: 'execute', status: 'pending', rawInput: { command: command.command } },
+    { status: 'completed', rawOutput: { exitCode: 0, stdout: command.output ?? '', stderr: '' } })
+  // A tool that hands a picture back, as ACP image content after its words (ADR-0170).
+  if (command.type === 'screenshot') toolCall({ title: 'screenshot', kind: 'other', status: 'pending' }, { status: 'completed',
+    content: [{ type: 'content', content: { type: 'text', text: 'Took a screenshot.' } }, { type: 'content', content: { type: 'image', data: command.data, mimeType: 'image/png' } }] })
   if (command.type === 'permission') ask('permission', 'session/request_permission', { sessionId, toolCall: { toolCallId: `call_${serial}`, title: command.text, kind: 'execute', status: 'pending',
     content: [{ type: 'content', content: { type: 'text', text: `Not in allowlist: ${command.text}` } }] },
     options: [{ optionId: 'allow-once', name: 'Allow once', kind: 'allow_once' }, { optionId: 'allow-always', name: 'Allow always', kind: 'allow_always' }, { optionId: 'reject-once', name: 'Reject', kind: 'reject_once' }] })

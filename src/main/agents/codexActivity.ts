@@ -1,7 +1,8 @@
 import { picturesIn, rasterTypeOf, type MediaCapture, type MediaFileCapture } from './threadMedia'
 import { createHash } from 'node:crypto'
+import { isAbsolute } from 'node:path'
 import { z } from 'zod'
-import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, REASONING_SUMMARY_TITLE, compactAgentIdentity, wordlessReasoningSummary, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type ObservedAgent } from '../../shared/agentActivity'
+import { MAX_ACTIVITY_TEXT, MAX_AGENT_ACTIVITIES, REASONING_SUMMARY_TITLE, compactAgentIdentity, wordlessReasoningSummary, mergeAgentActivities, isTerminalActivity, planSteps, type AgentActivity, type AgentActivityMedia, type ObservedAgent } from '../../shared/agentActivity'
 import type { AgentThread } from '../../shared/agents'
 type ActivityConversation = Pick<AgentThread, 'id' | 'messages' | 'activities'> & { runtimeMode?: AgentThread['runtimeMode'] }
 
@@ -17,6 +18,8 @@ const displayFields: Readonly<Record<string, readonly string[]>> = {
   subAgentActivity: ['kind', 'agentThreadId', 'agentPath', 'model'],
   webSearch: ['query'], contextCompaction: [],
   imageGeneration: ['result', 'savedPath', 'revisedPrompt', 'failure'],
+  // `view_image`: the picture file Codex looked at, by path (codex-cli 0.166.0).
+  imageView: ['path'],
 }
 /**
  * Codex's Computer Use runs as MCP tool calls: `cua_repl`, or the general `node_repl` JavaScript tool with its
@@ -70,7 +73,7 @@ export const codexItemSchema = z.preprocess(value => {
   contentItems: z.array(z.unknown()).nullish(), error: z.object({ message: z.string() }).nullish(),
   query: z.string().optional(), computerUse: z.literal(true).optional(),
   kind: z.string().optional(), agentThreadId: z.string().optional(), agentPath: z.string().optional(),
-  imageData: z.string().optional(), savedPath: z.string().nullish(), revisedPrompt: z.string().nullish(),
+  imageData: z.string().optional(), savedPath: z.string().nullish(), revisedPrompt: z.string().nullish(), path: z.string().optional(),
   failure: z.object({ type: z.string() }).nullish().catch(null),
 }))
 type Item = z.infer<typeof codexItemSchema>
@@ -88,6 +91,8 @@ const codexActivityId = (turnId: string, itemId: string): string => `codex-activ
 const agentId = (id: string): string => `codex-agent-${opaque(id)}`
 /** How many of one agent's assignments a conversation remembers having opened, so a reread recognises them. */
 const OPENED_KEPT = 200
+/** How many picture files that held no picture the projection remembers having read, so a replay reads none again. */
+const FILES_REMEMBERED = 1_000
 /** How many messages held live a conversation remembers the time of. */
 const MESSAGES_TIMED = 200
 /** Multi-agent v2 addresses agents by path: `/root` is the thread Sotto drives and `/root/review/tests` a child of `review`. */
@@ -155,8 +160,9 @@ export class CodexActivityProjection {
    * the `inline-media` Owl feature is off, when a row carries none.
    */
   /**
-   * Generated images whose saved file is being read, by thread and activity, so a replay meanwhile reads it no second
-   * time, while a fork reading the same item reads its own.
+   * Picture files read or being read for a step, by thread and activity, so a replay reads one no second time, while a
+   * fork reading the same item reads its own. A read that found a picture leaves its key, since the record then holds
+   * the handle; one that found none keeps it, at most `FILES_REMEMBERED`, so a missing file is not looked for again.
    */
   private readonly reading = new Set<string>()
   /**
@@ -250,16 +256,29 @@ export class CodexActivityProjection {
     const mimeType = item.imageData ? rasterTypeOf(Buffer.from(item.imageData.slice(0, 24), 'base64')) : undefined
     const media = item.imageData && mimeType ? this.capture([{ mimeType, data: item.imageData }], 'generated') : []
     if (media.length) { activity.media = media; return }
-    const path = item.savedPath
-    const key = `${thread.id}\n${activity.id}`
-    if (!path || !this.captureFile || this.reading.has(key)) return
+    if (item.savedPath) this.readFile(thread, activity.id, item.savedPath, 'generated')
+  }
+
+  /**
+   * Reads the picture file a step names, once, off the update path, and adds its handle to the record when it lands: a
+   * generated image Codex saved, or one `view_image` looked at. A record that holds a picture by then keeps its own.
+   */
+  private readFile(thread: ActivityConversation, activityId: string, path: string, source: AgentActivityMedia['source']): void {
+    const key = `${thread.id}\n${activityId}`
+    if (!this.captureFile || this.reading.has(key)) return
     this.reading.add(key)
-    void this.captureFile(path, 'generated').then(found => {
-      const current = thread.activities?.find(record => record.id === activity.id)
-      if (!found.length || !current || current.media) return
+    void this.captureFile(path, source).catch(() => []).then(found => {
+      if (!found.length) {
+        // Remembered in the order tried: past the limit the oldest is forgotten.
+        if (this.reading.size > FILES_REMEMBERED) this.reading.delete(this.reading.values().next().value!)
+        return
+      }
+      this.reading.delete(key)
+      const current = thread.activities?.find(record => record.id === activityId)
+      if (!current || current.media) return
       this.put(thread, { ...current, media: found })
       this.changed?.(thread.id)
-    }).catch(() => undefined).finally(() => this.reading.delete(key))
+    })
   }
 
   item(thread: ActivityConversation, item: Item, context: Context, senderPath = ROOT_PATH): void {
@@ -271,7 +290,9 @@ export class CodexActivityProjection {
       plan: ['plan', 'Plan'], collabAgentToolCall: ['subagent', item.tool ?? 'Subagent'],
       webSearch: ['tool', 'Web search'], contextCompaction: ['compaction', 'Context compacted'],
       // A generated image is a step only while its picture can be kept (ADR-0170): `inline-media` gives the capture.
-      ...this.capture ? { imageGeneration: ['tool', item.revisedPrompt?.trim() ? `Image: ${item.revisedPrompt.trim().split(/\r?\n/u)[0]}` : 'Image'] as [AgentActivity['kind'], string] } : {},
+      // So is a picture `view_image` looked at, which Codex names only by its file.
+      ...this.capture ? { imageGeneration: ['tool', item.revisedPrompt?.trim() ? `Image: ${item.revisedPrompt.trim().split(/\r?\n/u)[0]}` : 'Image'] as [AgentActivity['kind'], string],
+        imageView: ['tool', 'View image'] as [AgentActivity['kind'], string] } : {},
     }
     const kind = kinds[item.type]
     if (!kind) return
@@ -322,6 +343,12 @@ export class CodexActivityProjection {
       if (status === 'failed' && item.failure) activity.error = item.failure.type === 'usageLimitExceeded'
         ? 'Codex reached its image limit, so no image was made. Try again when the limit resets.' : 'Codex could not make the image. Ask for it again to try once more.'
       if (status === 'completed') this.generated(thread, activity, previous, item)
+    }
+    if (item.type === 'imageView' && item.path) {
+      activity.changes = [{ path: item.path, kind: 'read' }]
+      // Read once the step is done, and only a path Codex resolved: a relative one would be read against Sotto's folder.
+      // A record that holds the picture keeps it (`put` keeps the previous record's fields), so a replay reads nothing.
+      if (!previous?.media && status !== 'running' && status !== 'failed' && isAbsolute(item.path)) this.readFile(thread, id, item.path, 'tool')
     }
     // A Computer Use call that failed for a known reason says what to do, above Codex's own words.
     const needs = item.computerUse ? computerUseNeeds([item.error?.message, output].filter(Boolean).join('\n'), thread.runtimeMode !== 'full-access') : undefined

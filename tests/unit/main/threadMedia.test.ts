@@ -5,6 +5,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
 import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
+import { cursorActivities } from '../../../src/main/agents/cursorActivity'
 import { deepseekActivities } from '../../../src/main/agents/deepseekActivity'
 import { devinActivities } from '../../../src/main/agents/devinActivity'
 import { grokActivities } from '../../../src/main/agents/grokActivity'
@@ -15,15 +16,10 @@ import { activitySummary } from '../../../src/shared/hostProtocol'
 import { imageDimensions } from '../../../src/shared/imageDimensions'
 import type { AgentActivity } from '../../../src/shared/agentActivity'
 import type { AgentThread } from '../../../src/shared/agents'
+import { pngHeader } from '../../fixtures/stagedImages'
 
-/** A real 3x2 PNG: the signature, then IHDR. Only the header is read for its size. */
-function png(width = 3, height = 2, salt = 0): Buffer {
-  const bytes = Buffer.alloc(40)
-  Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]).copy(bytes)
-  bytes.writeUInt32BE(13, 8); bytes.write('IHDR', 12, 'ascii'); bytes.writeUInt32BE(width, 16); bytes.writeUInt32BE(height, 20)
-  bytes[39] = salt
-  return bytes
-}
+/** A real 3x2 PNG unless a test asks for another size. */
+const png = (width = 3, height = 2, salt = 0): Buffer => pngHeader(width, height, salt)
 const b64 = (bytes: Buffer): string => bytes.toString('base64')
 
 const folders: string[] = []
@@ -180,6 +176,78 @@ describe('capture where the adapters read a tool result', () => {
   })
 })
 
+describe('a picture Codex looked at', () => {
+  const thread = (): AgentThread => ({ id: 't', projectId: 'p', title: 'T', modelId: 'm', status: 'running', requests: [], messages: [] })
+
+  it('reads the file `view_image` names, once, onto a View image step that names it', async () => {
+    const directory = await folder()
+    const store = new ThreadMediaStore(directory); await store.load()
+    const path = join(directory, 'shot.png'); await writeFile(path, png(800, 600))
+    let reads = 0
+    const changes: string[] = []
+    const projection = new CodexActivityProjection(() => 1_000, store.capture, (file, source) => { reads += 1; return store.captureFile(file, source) }, threadId => { changes.push(threadId) })
+    const conversation = thread()
+    const viewed = codexItemSchema.parse({ id: 'view', type: 'imageView', path })
+    projection.item(conversation, viewed, { turnId: 'turn', phase: 'completed' })
+    expect(conversation.activities?.[0]).toEqual(expect.objectContaining({ kind: 'tool', status: 'completed', title: 'View image', changes: [{ path, kind: 'read' }] }))
+    // Read again before the first read lands: still one read.
+    projection.item(conversation, viewed, { turnId: 'turn', phase: 'history' })
+    await expect.poll(() => conversation.activities?.[0]?.media?.length ?? 0).toBe(1)
+    expect(conversation.activities![0]!.media![0]).toEqual(expect.objectContaining({ width: 800, height: 600, source: 'tool' }))
+    expect(changes).toEqual(['t'])
+    projection.item(conversation, viewed, { turnId: 'turn', phase: 'history' })
+    expect(reads).toBe(1)
+    expect(await store.read(conversation.activities![0]!, 'm0')).toBe(`data:image/png;base64,${b64(png(800, 600))}`)
+  })
+
+  it('looks for a file that held no picture once, however often the step is read again', async () => {
+    const directory = await folder()
+    const store = new ThreadMediaStore(directory); await store.load()
+    let reads = 0
+    const projection = new CodexActivityProjection(() => 1_000, store.capture, async (file, source) => { reads += 1; return store.captureFile(file, source) })
+    const conversation = thread()
+    const viewed = codexItemSchema.parse({ id: 'view', type: 'imageView', path: join(directory, 'gone.png') })
+    projection.item(conversation, viewed, { turnId: 'turn', phase: 'completed' })
+    await expect.poll(() => reads).toBe(1)
+    await new Promise(resolve => setTimeout(resolve, 0))
+    projection.item(conversation, viewed, { turnId: 'turn', phase: 'history' })
+    projection.item(conversation, viewed, { turnId: 'turn', phase: 'history' })
+    expect(reads).toBe(1)
+    expect(conversation.activities?.[0]?.media).toBeUndefined()
+  })
+
+  it('reads no relative path and no running step, and is no step at all without the feature', async () => {
+    const store = new ThreadMediaStore(await folder()); await store.load()
+    let reads = 0
+    const projection = new CodexActivityProjection(() => 1_000, store.capture, async (file, source) => { reads += 1; return store.captureFile(file, source) })
+    const relative = thread()
+    projection.item(relative, codexItemSchema.parse({ id: 'view', type: 'imageView', path: 'shot.png' }), { turnId: 'turn', phase: 'completed' })
+    const running = thread()
+    projection.item(running, codexItemSchema.parse({ id: 'view', type: 'imageView', status: 'inProgress', path: '/repo/shot.png' }), { turnId: 'turn', phase: 'started' })
+    expect([relative, running].map(each => each.activities?.[0]?.title)).toEqual(['View image', 'View image'])
+    expect(reads).toBe(0)
+    const off = thread()
+    new CodexActivityProjection(() => 1_000).item(off, codexItemSchema.parse({ id: 'view', type: 'imageView', path: '/repo/shot.png' }), { turnId: 'turn', phase: 'completed' })
+    expect(off.activities).toBeUndefined()
+  })
+})
+
+describe('a Codex Computer Use screenshot', () => {
+  it('lands on the Computer Use step as a handle: node_repl hands it back as MCP image content (`nodeRepl.emitImage`)', async () => {
+    const store = new ThreadMediaStore(await folder()); await store.load()
+    const thread: AgentThread = { id: 't', projectId: 'p', title: 'T', modelId: 'm', status: 'running', requests: [], messages: [] }
+    const data = b64(png(1280, 800))
+    const item = { id: 'cu', type: 'mcpToolCall', status: 'completed', server: 'node_repl', tool: 'js', arguments: { code: 'await nodeRepl.emitImage(await sky.screenshot())' },
+      result: { content: [{ type: 'text', text: 'Script completed' }, { type: 'image', data, mimeType: 'image/png' }] } }
+    new CodexActivityProjection(() => 1_000, store.capture).item(thread, codexItemSchema.parse(item), { turnId: 'turn', phase: 'completed' })
+    const row = thread.activities![0]!
+    expect(row.title).toBe('Computer Use')
+    expect(row.output).toBe('Script completed')
+    expect(row.media).toEqual([expect.objectContaining({ mimeType: 'image/png', width: 1280, height: 800, source: 'tool' })])
+    expect(JSON.stringify(row)).not.toContain(data)
+  })
+})
+
 describe('an image Codex generates', () => {
   const thread = (): AgentThread => ({ id: 't', projectId: 'p', title: 'T', modelId: 'm', status: 'running', requests: [], messages: [] })
   const started = { id: 'gen', type: 'imageGeneration', status: 'inProgress', revisedPrompt: null }
@@ -273,6 +341,7 @@ describe('capture in an ACP tool step', () => {
     ['Grok Build', (update, previous, capture) => grokActivities(update, context, previous, true, {}, capture)],
     ['Devin', (update, previous, capture) => devinActivities(update, context, previous, true, capture)],
     ['DeepSeek Harness', (update, previous, capture) => deepseekActivities(update, context, previous, true, capture)],
+    ['Cursor', (update, previous, capture) => cursorActivities(update, { ...context, key: 'shot' }, previous, true, capture)],
   ]
 
   it.each(projections)('%s captures a step\'s pictures once, keeps them through later updates, and captures nothing without the feature', async (_name, project) => {

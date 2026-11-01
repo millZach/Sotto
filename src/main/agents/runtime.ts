@@ -280,7 +280,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // Pictures in threads (ADR-0170): one store for this runtime, built only with the Owl feature on.
   const threadMedia = options.host ? undefined : options.threadMedia ?? (options.inlineMedia === true ? new ThreadMediaStore(directory, { historyEnabled: options.historyEnabled }) : undefined)
   const captureMedia = threadMedia ? { captureMedia: threadMedia.capture, captureMediaFile: threadMedia.captureFile } : {}
-  const captureMediaFile = threadMedia ? { captureMediaFile: threadMedia.captureFile } : {}
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
     codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
     claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
@@ -293,7 +292,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     opencode: adapter('opencode', () => options.providers?.opencode ?? new OpenCodeHost(directory, options.runsAs === 'headless-host' ? { heldProviders: held, usageEnabled: options.usageEnabled === true } : { heldProviders: held, openExternal: options.openExternal, usageEnabled: options.usageEnabled === true,
       ...(options.ownServers ? { ownServers: options.ownServers } : {}) })),
     // Cursor runs with Sotto's own Cursor folder under this runtime's directory: user data, or a headless host's data (ADR-0128).
-    cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMediaFile)),
+    cursor: adapter('cursor', () => options.providers?.cursor ?? new CursorAcpHost(directory, captureMedia)),
     // DeepSeek Harness runs only the user's own model servers, whose record is this computer's in this phase, so a
     // headless host holds it back as OpenCode was held before its hosts slice (ADR-0138).
     deepseek: adapter('deepseek', () => options.providers?.deepseek ?? (options.runsAs === 'headless-host' ? new HeldProviderHost('deepseek')
