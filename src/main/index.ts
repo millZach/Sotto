@@ -21,7 +21,6 @@ import { moveTargetsOf } from './agents/threadMoves'
 import { registerThreadMoveIpc } from './agents/threadMovesIpc'
 import { registerNextPromptIpc, windowNextPrompt } from './agents/nextPromptIpc'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
-import { desktopWindowClient } from './agents/hostService'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
 import type { QuestionPageOpenResult } from '../shared/questionPageOpen'
@@ -245,6 +244,7 @@ import type { MainCheckoutEvent } from './agents/mainCheckout'
 import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_RENDERER_ARGUMENT } from '../shared/mainCheckout'
 import { fakeNotification } from './e2e/fakeNotification'
 import { createDesktopNotifier } from './notifications/desktopNotifier'
+import { openNotificationThread } from './notifications/openNotificationThread'
 import { registerNotificationIpc } from './notifications/notificationIpc'
 import { ThreadAlerts } from './notifications/threadAlerts'
 import { mainProcessProfiler, windowProfiler } from './performance/profilers'
@@ -1929,7 +1929,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Loads the chosen model now that a choice can be saved; an install whose own model is already here keeps it.
   saveSpeechModelChoice = async (id) => { await settingsCoordinator.updateSettings({ speechModel: id }) }
   // Notifications (ADR-0117): the tracker reads each state the router publishes, which joins every host's threads, and the
-  // notifier shows what it finds. A press brings the window forward, selects the thread and shows Threads. An end-to-end
+  // notifier shows what it finds. A press brings the window forward and opens the thread's room. An end-to-end
   // run shows a stand-in, never the system's.
   const desktopNotifier = desktopNotificationsEnabled ? createDesktopNotifier({
     create: options => e2eConfiguration === null ? new Notification(options) : fakeNotification(options),
@@ -1937,8 +1937,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     switches: async () => { const current = await settingsCoordinator.getSettings(); return { needsYou: current.notifyNeedsYou, finished: current.notifyFinished } },
     open: threadId => {
       void windows.showMain()
-        .then(() => hostRouter.command({ type: 'select-thread', threadId }, desktopWindowClient()))
-        .then(() => { windows.sendToMain(NOTIFICATION_OPENED, null) })
+        .then(() => {
+          const watcher = localRuntime.watcher ? agentControl.watcherRecordView().current : null
+          return openNotificationThread(hostRouter, threadId, watcher ? hostEntityKey(watcher.target.hostId, watcher.target.threadId) : undefined)
+        })
+        .then(opening => { windows.sendToMain(NOTIFICATION_OPENED, opening) })
         .catch(() => logOperational('native-main-show-failed'))
     },
     log: logOperational,

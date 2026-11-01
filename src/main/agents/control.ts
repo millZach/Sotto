@@ -4940,7 +4940,7 @@ export class AgentControl {
     await this.dispatch({ type: 'steer', threadId: command.threadId, commandId: randomUUID(), messageId: this.watcher.operations.find(item => item.draftId === command.draftId)?.messageId ?? randomUUID(), text: command.text.trim(),
       ...(command.attachments ? { attachments: command.attachments } : {}), ...(command.skills ? { skills: command.skills } : {}), ...(command.files ? { files: command.files } : {}),
       expectedLastUserMessageId: lastUserMessageIdOf(this.thread(command.threadId)) }, turn, validate, command.draftId, this.localClient, undefined, origin)
-    this.say(`Steered ${this.thread(command.threadId).title}.`)
+    if (!origin || origin.phoneOrigin) this.say(`Steered ${this.thread(command.threadId).title}.`)
   }
   private async providerCommand(command: Extract<AgentCommand, { type: 'connect' | 'disconnect' | 'refresh' | 'update-client' | 'queue-client-updates' | 'cancel-client-updates' | 'check-client-updates' | 'dismiss-client-updates' }>): Promise<AgentState> {
     const turn = this.beginTurn({ source: 'command', commandType: command.type, text: '' })
@@ -6086,7 +6086,7 @@ export class AgentControl {
       this.observe(threadId)
       this.acceptSnapshot(await this.readThread(threadId))
       if (this.outbox.some(item => item.id === pendingId)) throw new Error('An earlier action has an unknown result. Reconnect and inspect the provider before retrying; Sotto will not send it twice.')
-      this.say(`Reconciled the earlier action on ${this.thread(threadId).title}. No new prompt was sent.`)
+      if (!origin) this.say(`Reconciled the earlier action on ${this.thread(threadId).title}. No new prompt was sent.`)
       this.observe()
       return
     }
@@ -6128,7 +6128,7 @@ export class AgentControl {
     let thread = this.thread(threadId)
     if (this.settledForWork(thread)) { await this.reopenForWork(threadId); thread = this.thread(threadId) }
     await this.dispatch({ type: 'send', commandId: randomUUID(), threadId, messageId, text: text.trim(), ...(skills ? { skills } : {}), ...(files ? { files } : {}), ...(attachments.length ? { attachments } : {}), expectedLastUserMessageId: lastUserMessageIdOf(thread) }, turn, validate, draftId, this.localClient, undefined, origin)
-    this.say(`Sent to ${thread.title}.`)
+    if (!origin) this.say(`Sent to ${thread.title}.`)
     this.observe()
   }
   private async sendDraft(turn?: ActiveTurn, retryId?: string, selectionRevision = this.selectionRevision, client = this.localClient, selectedThreadId?: string,

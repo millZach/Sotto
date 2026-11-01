@@ -27,11 +27,16 @@ describe('Notifications preload (ADR-0117)', () => {
     const listener = vi.fn()
     const stop = bridge.onOpened(listener)
     const handler = ipc.on.mock.calls.find(([channel]) => channel === NOTIFICATION_OPENED)![1] as (event: unknown, value: unknown) => void
-    handler({}, null)
+    handler({}, { page: 'threads' })
     expect(listener).toHaveBeenCalledTimes(1)
-    // Main sends nothing with it: a payload is refused rather than passed on.
+    expect(listener).toHaveBeenLastCalledWith({ page: 'threads' })
+    handler({}, { page: 'watcher', notice: 'This notification is for Watcher.' })
+    expect(listener).toHaveBeenLastCalledWith({ page: 'watcher', notice: 'This notification is for Watcher.' })
+    // Only a known destination and optional explanation cross this boundary.
+    handler({}, { page: 'settings' })
     handler({}, { threadId: 'private' })
-    expect(listener).toHaveBeenCalledTimes(1)
+    handler({}, null)
+    expect(listener).toHaveBeenCalledTimes(2)
     stop()
     expect(ipc.removeListener).toHaveBeenCalledWith(NOTIFICATION_OPENED, expect.any(Function))
   })

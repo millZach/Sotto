@@ -1128,6 +1128,10 @@ msgstr ""
 msgid "Sotto could not install {to} on {name}."
 msgstr ""
 
+#: src/main/notifications/openNotificationThread.ts
+msgid "Sotto could not open this thread. Check its host's connection in Settings, then choose the thread again."
+msgstr ""
+
 #: src/main/omarchy/setup.ts
 msgid "Sotto could not read Hyprland’s keys. Nothing was changed. Open Sotto in your Omarchy desktop session, then try again."
 msgstr ""
@@ -2167,6 +2171,10 @@ msgstr ""
 msgid "The thread could not start."
 msgstr ""
 
+#: src/main/notifications/openNotificationThread.ts
+msgid "The thread for this notification is no longer available. Choose another thread or start a new one."
+msgstr ""
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "The threads to dismiss could not be read."
 msgstr ""
@@ -2533,6 +2541,14 @@ msgstr ""
 
 #: src/main/tools/browser.ts
 msgid "This navigation is blocked. Only HTTP and HTTPS pages can open here."
+msgstr ""
+
+#: src/main/notifications/openNotificationThread.ts
+msgid "This notification is for another Watcher room. Open Sotto on its computer to read it."
+msgstr ""
+
+#: src/main/notifications/openNotificationThread.ts
+msgid "This notification is for Watcher. Its conversation is in this room."
 msgstr ""
 
 #: src/main/omarchy/setup.ts
