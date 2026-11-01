@@ -4,7 +4,8 @@ import { join } from 'node:path'
 import { cleanup, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it } from 'vitest'
 import { EffortPicker } from '../../../src/renderer/src/agents/EffortPicker'
-import { effortChoices } from '../../../src/renderer/src/agents/ThreadOptions'
+import { SplitChipEffort } from '../../../src/renderer/src/agents/SplitChipEffort'
+import { effortChoices, ThreadOptions } from '../../../src/renderer/src/agents/ThreadOptions'
 import { ULTRACODE, withUltracode } from '../../../src/shared/ultracode'
 import type { AgentState } from '../../../src/shared/agents'
 import { fixture, mount, setupThreadOptionsTests } from '../../fixtures/renderer/threadOptionsHarness'
@@ -27,6 +28,12 @@ function claudeState(reasoningEffort: string): AgentState {
   state.host.models.find(model => model.id === 'claude:model')!.reasoningEfforts = withUltracode(['low', 'medium', 'high', 'xhigh', 'max'])
   return state
 }
+/** The composer every thread and Watcher draws (ADR-0168, ADR-0172): its effort word carries the trace's mark. */
+function mountComposer(state: AgentState, watcher = false): void {
+  render(<form className="thread-prompt" data-quiet="true"><EffortTrace />
+    <ThreadOptions thread={state.host.threads[0]!} state={state} command={async () => state} watcher={watcher} quiet={{ effortScore: 0, shieldSlot: null }} /></form>)
+}
+const wordTrace = (): string | null => screen.getByRole('combobox', { name: 'Thread reasoning' }).closest('[data-effort-trace]')?.getAttribute('data-effort-trace') ?? null
 const composerTrace = (): string | null => screen.getByRole('combobox', { name: 'Thread reasoning' }).closest('.effort-picker-anchor')!.getAttribute('data-effort-trace')
 const css = readFileSync(join(process.cwd(), 'src/renderer/src/agents/effortTrace.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '')
 
@@ -57,11 +64,43 @@ describe('the effort trace', () => {
     }
   })
 
-  it('lights Watcher’s composer at Max, its top level, since Watcher is never offered Ultracode', () => {
+  it('lights Watcher’s composer word at Max and not below it', () => {
     const model = claudeState('max').host.models.find(entry => entry.id === 'claude:model')
     const watcherLevels = effortChoices(model, 'max', { ultracode: false })
     expect(watcherLevels.map(option => option.id)).not.toContain(ULTRACODE)
     expect(traceMark('max', watcherLevels.map(option => ({ id: option.id, label: option.label })))).toBe('true')
+  })
+
+  it('lights the thread composer’s effort word at Max and at Ultracode, and nowhere below', () => {
+    for (const [level, lit] of [[ULTRACODE, 'true'], ['max', 'true'], ['xhigh', 'false'], ['high', 'false']] as const) {
+      mountComposer(claudeState(level))
+      expect(wordTrace(), level).toBe(lit)
+      cleanup()
+    }
+  })
+
+  it('lights the thread composer at the top level of a provider with no Max', () => {
+    for (const [level, lit] of [['xhigh', 'true'], ['high', 'false']] as const) {
+      const state = fixture({ providerId: 'codex', modelId: 'codex:model', reasoningEffort: level })
+      state.host.models.find(model => model.id === 'codex:model')!.reasoningEfforts = ['minimal', 'low', 'medium', 'high', 'xhigh']
+      mountComposer(state)
+      expect(wordTrace(), level).toBe(lit)
+      cleanup()
+    }
+  })
+
+  it('lights Watcher’s composer at Max, its top level, since Watcher is never offered Ultracode', () => {
+    mountComposer(claudeState('max'), true)
+    expect(wordTrace()).toBe('true')
+    cleanup()
+    mountComposer(claudeState('xhigh'), true)
+    expect(wordTrace()).toBe('false')
+  })
+
+  it('lets the effort word light the composer it sits in', () => {
+    const { container } = render(<SplitChipEffort levels={['low', 'medium', 'high', 'xhigh', 'max', ULTRACODE]} value="max" disabled={false} suggestion={null} onChange={() => {}} />)
+    expect(container.querySelector('[data-effort-trace]')?.getAttribute('data-effort-trace')).toBe('true')
+    expect(css).toMatch(/\.thread-prompt:has\(\[data-effort-trace='true'\]\) > \.effort-trace \{ display: block; \}/u)
   })
 
   it('draws a halo and a head, hidden from speech, and nothing unless the effort chip asks for it', () => {
@@ -70,7 +109,6 @@ describe('the effort trace', () => {
     expect(trace.getAttribute('aria-hidden')).toBe('true')
     expect(trace.querySelectorAll(':scope > .effort-trace__halo .effort-trace__light, :scope > .effort-trace__line .effort-trace__light')).toHaveLength(2)
     expect(css).toMatch(/\.effort-trace \{ display: none;/u)
-    expect(css).toMatch(/\.thread-prompt:has\(\.effort-picker-anchor\[data-effort-trace='true'\]\) > \.effort-trace \{ display: block; \}/u)
   })
 
   it('turns by transform alone, under motion only, and pauses in a hidden window', () => {

@@ -960,9 +960,60 @@ extension View {
     func composerSurface<S: InsettableShape>(in shape: S, interactive: Bool = false) -> some View {
         modifier(ComposerSurface(shape: shape, interactive: interactive))
     }
+    /// The light round the reply box at the top effort; see `EffortTraceLight`. Nothing is drawn while `lit` is false.
+    func effortTrace<S: InsettableShape>(_ lit: Bool, in shape: S) -> some View {
+        background { if lit { EffortTraceLight(shape: shape, halo: true) } }
+            .overlay { if lit { EffortTraceLight(shape: shape, halo: false) } }
+    }
     /// A round button drawn smaller than 44 points that still takes a press across 44, without taking more room.
     func pressArea(drawn size: CGFloat) -> some View {
         frame(width: 44, height: 44).contentShape(Circle()).padding(-(44 - size) / 2)
+    }
+}
+
+/// The light that travels round the reply box while its thread, or Watcher, is at the top effort, as round the desktop's
+/// composer (ADR-0019, October 26 amendment; `effortTrace.css`): a thin bright head on the box's edge, and a soft halo
+/// behind the box that spills onto the room, one lap every nine seconds. The iPhone has no colourway setting, so it wears
+/// the desktop's default, Ember, from the theme's warning role. Each layer is one angular gradient on a square that turns
+/// and is stretched to the box's shape, so the light keeps an even pace along the long edges; only the turn animates.
+/// Under Reduce Motion, and in the `--ui-still` journeys, it rests past the top-left corner.
+struct EffortTraceLight<S: InsettableShape>: View {
+    let shape: S
+    /// The halo, drawn behind the box so the box covers its inner half; otherwise the head on the edge.
+    let halo: Bool
+    @Environment(\.sottoTheme) private var theme
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var turned = false
+    /// Where the head rests, in degrees: past the top-left corner, as on the desktop.
+    private static var rest: Double { -120 }
+    private var moving: Bool { !reduceMotion && !DebugFlags.still }
+    var body: some View {
+        GeometryReader { box in
+            let side = max(box.size.height, 1)
+            Rectangle()
+                .fill(AngularGradient(stops: stops, center: .center))
+                .frame(width: side * 1.5, height: side * 1.5)
+                .rotationEffect(.degrees(turned ? Self.rest + 360 : Self.rest))
+                .animation(moving && turned ? .linear(duration: 9).repeatForever(autoreverses: false) : nil, value: turned)
+                .scaleEffect(x: box.size.width / side, y: 1)
+                .frame(width: box.size.width, height: box.size.height)
+        }
+        .mask { if halo { shape.stroke(lineWidth: 16) } else { shape.strokeBorder(lineWidth: 1.5) } }
+        .blur(radius: halo ? 7 : 0)
+        .opacity(halo ? 0.55 : 1)
+        .allowsHitTesting(false)
+        .accessibilityHidden(true)
+        .onAppear { turned = moving }
+        .onChange(of: moving) { _, now in turned = now }
+    }
+    /// A long faint tail and a bright head. The halo keeps to the warning hue; the head's tip leans toward the ink.
+    private var stops: [Gradient.Stop] {
+        let warning = theme.color(.warning)
+        return [
+            .init(color: warning.opacity(0), location: 0), .init(color: warning.opacity(0), location: 0.7),
+            .init(color: warning.opacity(0.35), location: 0.84), .init(color: warning, location: halo ? 0.93 : 0.95),
+            .init(color: halo ? warning : theme.tinted(.warning, with: .ink, 0.4), location: 0.97), .init(color: warning.opacity(0), location: 1),
+        ]
     }
 }
 

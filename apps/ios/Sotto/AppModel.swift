@@ -846,6 +846,10 @@ extension AppModel {
         if let pick = watcherSettingPicks[hostID] { values[pick.kind] = pick.value }
         return values
     }
+    /// Whether the effort Watcher's chip shows is the top its model offers Watcher, where its box's trace lights.
+    func watcherAtTopEffort(_ hostID: String) -> Bool {
+        watcherSettingValues(hostID).map { WatcherSettings.atTopEffort($0, catalog: watcherCatalog(hostID)) } ?? false
+    }
     /// Why the model, effort and speed chips can't be pressed now, as on the desktop: while Watcher's turn runs or a card
     /// of its own waits, while another change to Watcher is on its way, or away from its computer. Nil when they can.
     func watcherSettingsHeld(_ hostID: String) -> String? {

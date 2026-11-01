@@ -54,6 +54,12 @@ public enum WatcherSettings {
     /// for a thread and never Watcher's (ADR-0148, decision 6).
     public static func efforts(_ model: ThreadModel?) -> [String] { (model?.reasoningEfforts ?? []).filter { $0 != "ultracode" } }
 
+    /// Whether the effort Watcher's chip shows is the top its model offers Watcher, where its box's trace lights: Max on
+    /// a Claude model, since Ultracode is never Watcher's.
+    public static func atTopEffort(_ values: ThreadSettingValues, catalog: [ThreadModel]) -> Bool {
+        EffortWords.isTop(efforts(CatalogEntry.model(catalog, id: values.model)), level: values.effort)
+    }
+
     /// Whether a model is another provider's, so choosing it starts a new Watcher.
     public static func replaces(_ modelID: String, current: WatcherPhoneState.Current, catalog: [ThreadModel]) -> Bool {
         guard let chosen = CatalogEntry.model(catalog, id: modelID) else { return false }

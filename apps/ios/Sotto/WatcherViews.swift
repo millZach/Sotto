@@ -1677,6 +1677,8 @@ private struct WatcherDock: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .composerSurface(in: shape)
+            // The trace at the top level Watcher's model offers it: Max on Claude, where Ultracode is never Watcher's.
+            .effortTrace(model.offersWatcherManage(hostID) && model.watcherAtTopEffort(hostID), in: shape)
         }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written || preparing)
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canStopWatcherTurn(hostID))

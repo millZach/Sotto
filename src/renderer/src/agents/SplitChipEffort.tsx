@@ -5,6 +5,7 @@ import { effortLabel } from './EffortPicker'
 import { moveListboxFocus } from './listboxKeys'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { SPEED_STANDARD } from './pendingSettings'
+import { isTopEffort } from '../../../shared/topEffort'
 import { ULTRACODE } from '../../../shared/ultracode'
 import './quietComposer.css'
 
@@ -105,7 +106,8 @@ export function SplitChipEffort({ levels, value, disabled, pending = false, desc
   const teamOffered = suggestion !== null && levels[suggestion] === ULTRACODE
   const bolts = speed === undefined ? null : speed.value === SPEED_STANDARD ? <Zap size={11} strokeWidth={2} aria-hidden="true" data-off="" />
     : <>{speed.value === 'ultrafast' ? <Zap size={11} strokeWidth={0} fill="currentColor" aria-hidden="true" /> : null}<Zap size={11} strokeWidth={0} fill="currentColor" aria-hidden="true" /></>
-  return <span className="split-chip-effort" data-speed={speed?.value} data-pending={pending || undefined}
+  // The composer around the word reads this mark for its travelling light at the top level (effortTrace.css).
+  return <span className="split-chip-effort" data-speed={speed?.value} data-pending={pending || undefined} data-effort-trace={isTopEffort(levels, value)}
     onKeyDown={event => {
       if (!open || event.key !== 'Escape') return
       event.preventDefault(); event.stopPropagation(); close()

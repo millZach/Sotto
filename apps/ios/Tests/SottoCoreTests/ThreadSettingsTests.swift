@@ -35,6 +35,30 @@ final class ThreadSettingsTests: XCTestCase {
         XCTAssertEqual(value.models.map(\.id), ["sol", "astra"], "Only the thread's own provider's ready models")
         XCTAssertNil(value.fixed)
     }
+    /// The reply box's trace lights at the top level of whatever provider the thread is on, and on Claude at Max and at
+    /// Ultracode, as the desktop's composer does (`tests/unit/shared/topEffort.test.ts`).
+    func testTheTraceLightsAtEachProvidersTopEffortAndAtClaudesMaxAndUltracode() throws {
+        let providers: [(String, [String], Set<String>)] = [
+            ("codex", ["minimal", "low", "medium", "high", "xhigh"], ["xhigh"]),
+            ("claude", ["low", "medium", "high", "xhigh", "max", "ultracode"], ["max", "ultracode"]),
+            ("claude without Ultracode", ["low", "medium", "high", "xhigh", "max"], ["max"]),
+            ("grok", ["low", "medium", "high"], ["high"]),
+            ("muse", ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"], ["max", "ultra"]),
+        ]
+        for (provider, levels, top) in providers {
+            for level in levels { XCTAssertEqual(EffortWords.isTop(levels, level: level), top.contains(level), "\(provider) at \(level)") }
+        }
+        XCTAssertFalse(EffortWords.isTop(["max"], level: "max"), "A model with one level has no top")
+        XCTAssertFalse(EffortWords.isTop(["low", "max", "ultracode"], level: ""), "The provider's default is not a level")
+        // The panel reads it from the effort it shows, so a pressed level lights it before the agent answers.
+        XCTAssertTrue(try XCTUnwrap(panel(shell(thread: #""status":"idle","reasoningEffort":"xhigh""#))).atTopEffort)
+        XCTAssertFalse(try XCTUnwrap(panel(shell(thread: #""status":"idle","reasoningEffort":"high""#))).atTopEffort)
+        let claude = #"{"id":"opus","name":"Opus 5.5","provider":"Claude Code","providerId":"claude","ready":true,"reasoningEfforts":["low","medium","high","xhigh","max","ultracode"],"defaultReasoningEffort":"high"}"#
+        for (level, lit) in [("ultracode", true), ("max", true), ("xhigh", false)] {
+            let value = try XCTUnwrap(panel(shell(thread: #""status":"idle","reasoningEffort":"\#(level)""#, models: claude, modelID: "opus")))
+            XCTAssertEqual(value.atTopEffort, lit, level)
+        }
+    }
     func testAnOlderComputersChipsStayOffTheBox() throws {
         let older = try JSONDecoder().decode(Shell.self, from: Data(#"{"hostId":"h","host":{"hostId":"h","name":"Laptop","threads":[{"id":"t","projectId":"p","title":"Thread","providerId":"codex","status":"idle","requests":[],"modelId":"sol"}],"projects":[],"models":[\#(sol)],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true}}}"#.utf8))
         XCTAssertNil(panel(older), "A computer that doesn't say it changes a thread's settings in place gets no chips")

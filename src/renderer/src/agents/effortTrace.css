@@ -12,7 +12,8 @@
 .effort-trace { display: none; position: absolute; inset: -1px; z-index: 2; border-radius: var(--tt-radius-card); pointer-events: none; }
 /* Placed automatically, so the card's padding box holds it rather than the grid area every other child spans. */
 .thread-prompt > .effort-trace { grid-area: auto; }
-.thread-prompt:has(.effort-picker-anchor[data-effort-trace='true']) > .effort-trace { display: block; }
+/* The effort chip and the composer's effort word (SplitChipEffort.tsx) both carry the mark. */
+.thread-prompt:has([data-effort-trace='true']) > .effort-trace { display: block; }
 .effort-trace__halo, .effort-trace__line { position: absolute;
   -webkit-mask: linear-gradient(black 0 0) content-box, linear-gradient(black 0 0); -webkit-mask-composite: xor;
   mask: linear-gradient(black 0 0) content-box exclude, linear-gradient(black 0 0); }
