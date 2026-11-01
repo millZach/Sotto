@@ -2376,8 +2376,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
             ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
           }),
           ...(cleanupModelEnabled ? {
-            models: async () => listOpenRouterModels({
-              apiKey: (await settings.forFormatting()).llmApiKey,
+            models: () => listOpenRouterModels({
+              getApiKey: async () => (await settings.forFormatting()).llmApiKey,
               ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
             }),
           } : {}),

@@ -19,7 +19,7 @@ function nextPage(next: unknown): string | null {
 
 export interface OpenRouterModelsDependencies {
   readonly fetchFn?: typeof fetch
-  readonly apiKey?: string
+  readonly getApiKey?: () => Promise<string>
 }
 
 /**
@@ -31,14 +31,16 @@ export async function listOpenRouterModels(dependencies: OpenRouterModelsDepende
   const signal = AbortSignal.timeout(10_000)
   const [catalog, presets] = await Promise.all([
     listPublicModels(fetchFn, signal),
-    dependencies.apiKey ? listPresets(fetchFn, signal, dependencies.apiKey).catch(() => []) : [],
+    dependencies.getApiKey ? listPresets(fetchFn, signal, dependencies.getApiKey).catch(() => []) : [],
   ])
   if (!catalog.ok && presets.length === 0) return catalog
   const models = [...presets, ...(catalog.ok ? catalog.models : [])]
   return { ok: true, complete: catalog.ok && catalog.complete && models.length <= MAX_MODELS, models: models.slice(0, MAX_MODELS) }
 }
 
-async function listPresets(fetchFn: typeof fetch, signal: AbortSignal, apiKey: string): Promise<{ id: string; name: string }[]> {
+async function listPresets(fetchFn: typeof fetch, signal: AbortSignal, getApiKey: () => Promise<string>): Promise<{ id: string; name: string }[]> {
+  const apiKey = await getApiKey()
+  if (!apiKey) return []
   const presets = new Map<string, string>()
   for (let page = 0, offset = 0; page < MAX_PAGES; page += 1) {
     const response = await fetchFn(`${PRESETS_URL}?limit=100&offset=${offset}`, {

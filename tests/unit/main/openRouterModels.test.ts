@@ -55,7 +55,7 @@ describe('listOpenRouterModels', () => {
         { slug: 'bad/slug', status: 'active' },
       ], total_count: 3 }))
     })
-    await expect(listOpenRouterModels({ fetchFn, apiKey: 'test-key' })).resolves.toEqual({
+    await expect(listOpenRouterModels({ fetchFn, getApiKey: async () => 'test-key' })).resolves.toEqual({
       ok: true, complete: true, models: [
         { id: '@preset/qwen-cerebras', name: 'Qwen Cerebras' },
         { id: 'a/model', name: 'A model' },
@@ -71,8 +71,20 @@ describe('listOpenRouterModels', () => {
     const fetchFn = vi.fn(async (url: string | URL | Request) => String(url).endsWith('/models')
       ? page([{ id: 'a/model', name: 'A model' }])
       : new Response('', { status: 403 }))
-    await expect(listOpenRouterModels({ fetchFn, apiKey: 'restricted-key' })).resolves.toEqual({
+    await expect(listOpenRouterModels({ fetchFn, getApiKey: async () => 'restricted-key' })).resolves.toEqual({
       ok: true, complete: true, models: [{ id: 'a/model', name: 'A model' }],
     })
+  })
+
+  it('keeps the public catalog when the saved key cannot be read', async () => {
+    const getApiKey = vi.fn<() => Promise<string>>().mockRejectedValue(new Error('key unreadable'))
+    const fetchFn = vi.fn().mockResolvedValue(page([{ id: 'a/model', name: 'A model' }]))
+    await expect(listOpenRouterModels({ fetchFn, getApiKey })).resolves.toEqual({
+      ok: true, complete: true, models: [{ id: 'a/model', name: 'A model' }],
+    })
+    expect(getApiKey).toHaveBeenCalledOnce()
+    expect(fetchFn.mock.calls).toEqual([
+      ['https://openrouter.ai/api/v1/models', expect.not.objectContaining({ headers: expect.anything() })],
+    ])
   })
 })
