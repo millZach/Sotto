@@ -175,7 +175,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const pickedId = model?.id
   useEffect(() => {
     const bridge = window.sotto?.nextPrompt
-    if (!nextOn || pickedId === undefined || !bridge) return
+    if (!nextOn || pickedId === undefined || !bridge || starting) return
     let live = true
     const timer = window.setTimeout(() => {
       let asked = watcherFirstAsked.get(pickedId)
@@ -186,10 +186,12 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
       }
       void asked.then(prompt => { if (live && prompt?.ghost) setSuggested({ modelId: pickedId, ghost: prompt.ghost }) })
     }, watcherFirstAsked.has(pickedId) ? 0 : WATCHER_FIRST_SETTLE_MS)
-    return () => { live = false; window.clearTimeout(timer) }
-  }, [nextOn, pickedId])
+    // Another model, the switch off, Watcher starting or the box closing: main stops the side request still in flight.
+    return () => { live = false; window.clearTimeout(timer); bridge.cancelWatcherFirst() }
+  }, [nextOn, pickedId, starting])
   const ghostText = suggested !== null && suggested.modelId === pickedId ? suggested.ghost : ''
-  const ghost = ghostText && !starting && dismissed !== ghostText && !DICTATING.has(app?.dictation?.status ?? 'idle') ? ghostRest(ghostText, text) : null
+  // With Suggest a next prompt off, a ghost fetched earlier goes too, and Tab moves on.
+  const ghost = nextOn && ghostText && !starting && dismissed !== ghostText && !DICTATING.has(app?.dictation?.status ?? 'idle') ? ghostRest(ghostText, text) : null
   const tabFree = chordClaimed('tab', app?.settings?.hotkey, app?.platform ?? 'win32')
   // A taken ghost puts the caret after it once the editor holds the new text.
   useLayoutEffect(() => {

@@ -1,7 +1,7 @@
 import { t } from '@lingui/core/macro'
 import { z } from 'zod'
 import { hostEntityKey } from '../../shared/clientIdentity'
-import { NEXT_PROMPT_READ, NEXT_PROMPT_WATCHER_FIRST, nextPromptEntriesSchema, nextPromptSchema, type NextPrompt, type NextPromptEntry } from '../../shared/nextPrompt'
+import { NEXT_PROMPT_READ, NEXT_PROMPT_WATCHER_FIRST, NEXT_PROMPT_WATCHER_FIRST_CANCEL, nextPromptEntriesSchema, nextPromptSchema, type NextPrompt, type NextPromptEntry } from '../../shared/nextPrompt'
 import { isAuthorizedIpcSender, type IpcMainAdapter, type TrustedIpcSender } from '../ipc/registerIpc'
 
 /** Each call's arguments, checked against schemas built once rather than on every call. */
@@ -21,13 +21,30 @@ export function windowNextPrompt(hostId: string | undefined, entry: NextPromptEn
  */
 export function registerNextPromptIpc(ipc: IpcMainAdapter, enabled: boolean, nextPrompts: { list(): readonly NextPromptEntry[] } | undefined,
   hostId: () => string | undefined, senders: () => readonly TrustedIpcSender[], hosts?: { hostNextPrompts(): readonly NextPromptEntry[] },
-  /** Watcher's first message, on the model its first-start box picked (ADR-0173); absent, the box is offered none. */
-  watcherFirst?: (modelId: string) => Promise<NextPrompt | null>): () => void {
+  /**
+   * Watcher's first message, on the model its first-start box picked (ADR-0173); absent, the box is offered none. `signal`
+   * stops the side request when a newer ask, the box's cancel or unregistering supersedes it.
+   */
+  watcherFirst?: (modelId: string, signal: AbortSignal) => Promise<NextPrompt | null>): () => void {
   if (!enabled) return () => undefined
+  // The one box asks one thing at a time: a newer ask, its cancel or quitting stops the side request in flight.
+  let asking: AbortController | undefined
+  const stopAsking = (): void => { asking?.abort(); asking = undefined }
   ipc.handle(NEXT_PROMPT_WATCHER_FIRST, async (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Ask for Watcher's first message from the main Sotto window.`)
     const [modelId] = watcherFirstArguments.parse(args)
-    return watcherFirstAnswer.parse(await watcherFirst?.(modelId).catch(() => null) ?? null)
+    stopAsking()
+    const ask = asking = new AbortController()
+    try {
+      const answer = await watcherFirst?.(modelId, ask.signal).catch(() => null) ?? null
+      // A superseded ask's late answer is not offered.
+      return watcherFirstAnswer.parse(ask.signal.aborted ? null : answer)
+    } finally { if (asking === ask) asking = undefined }
+  })
+  ipc.handle(NEXT_PROMPT_WATCHER_FIRST_CANCEL, (event, ...args) => {
+    if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Ask for Watcher's first message from the main Sotto window.`)
+    noArguments.parse(args)
+    stopAsking()
   })
   ipc.handle(NEXT_PROMPT_READ, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Read next prompts from the main Sotto window.`)
@@ -35,5 +52,5 @@ export function registerNextPromptIpc(ipc: IpcMainAdapter, enabled: boolean, nex
     const id = hostId()
     return nextPromptEntriesSchema.parse([...(nextPrompts?.list() ?? []).map(entry => windowNextPrompt(id, entry)), ...hosts?.hostNextPrompts() ?? []].slice(0, 1_000))
   })
-  return () => { ipc.removeHandler(NEXT_PROMPT_READ); ipc.removeHandler(NEXT_PROMPT_WATCHER_FIRST) }
+  return () => { stopAsking(); ipc.removeHandler(NEXT_PROMPT_READ); ipc.removeHandler(NEXT_PROMPT_WATCHER_FIRST); ipc.removeHandler(NEXT_PROMPT_WATCHER_FIRST_CANCEL) }
 }

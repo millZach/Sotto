@@ -34,7 +34,7 @@ import {
   OWN_SERVER_CLEANUP_MEASURE, OWN_SERVER_CLEANUP_MEASURED, OWN_SERVER_CLEANUP_RENDERER_ARGUMENT, ownCleanupChoiceSchema, ownCleanupMeasuredListSchema,
   ownCleanupMeasureResultSchema, type OwnServerCleanupBridge,
 } from '../shared/ownServerCleanup'
-import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_READ, NEXT_PROMPT_RENDERER_ARGUMENT, NEXT_PROMPT_WATCHER_FIRST, nextPromptEntriesSchema, nextPromptEntrySchema, nextPromptSchema, type NextPromptBridge } from '../shared/nextPrompt'
+import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_READ, NEXT_PROMPT_RENDERER_ARGUMENT, NEXT_PROMPT_WATCHER_FIRST, NEXT_PROMPT_WATCHER_FIRST_CANCEL, nextPromptEntriesSchema, nextPromptEntrySchema, nextPromptSchema, type NextPromptBridge } from '../shared/nextPrompt'
 import { THREAD_MOVE_ANSWER, THREAD_MOVE_PREPARE, THREAD_MOVE_START, THREAD_MOVES_CHANGED, THREAD_MOVES_READ, threadMoveAnswerRequestSchema, threadMoveAnswerSchema,
   threadMovePrepareRequestSchema, threadMovePrepareSchema, threadMovesViewSchema, threadMoveStartRequestSchema, threadMoveStartSchema,
   type ThreadMovesBridge } from '../shared/threadMoves'
@@ -544,6 +544,8 @@ export function createSottoBridge(
       read: () => invokeParsed(renderer, NEXT_PROMPT_READ, nextPromptEntriesSchema),
       onChanged: listener => subscribe(renderer, NEXT_PROMPT_CHANGED, nextPromptEntrySchema, listener),
       watcherFirst: modelId => invokeParsed(renderer, NEXT_PROMPT_WATCHER_FIRST, watcherFirstAnswerSchema, watcherFirstModelSchema.parse(modelId)),
+      // Nothing waits on a cancel; a lost one leaves the side request to its own timeout.
+      cancelWatcherFirst: () => { void renderer.invoke(NEXT_PROMPT_WATCHER_FIRST_CANCEL).catch(() => undefined) },
     }) } : {}),
     // Continue a thread on another provider (ADR-0089): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(continueEnabled ? { continueThread: Object.freeze<ContinueBridge>({

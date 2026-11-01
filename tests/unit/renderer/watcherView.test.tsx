@@ -1154,3 +1154,47 @@ describe('Watcher’s night scene', () => {
     expect(container.querySelectorAll('canvas')).toHaveLength(0)
   })
 })
+
+describe("Watcher's first-start box suggests a first message (ADR-0173)", () => {
+  const suggestion = { headline: '', ghost: 'Check on the footer links thread', suggestions: [], answers: [] }
+  /** The first-start box with next prompts on, Suggest a next prompt as `on`, and a window bridge that answers as given. */
+  function firstStart(on: boolean, watcherFirst: (modelId: string) => Promise<unknown>, cancelWatcherFirst = vi.fn()) {
+    const app = (suggest: boolean) => vi.mocked(useOptionalApp).mockReturnValue({
+      navigation: 'watcher', platform: 'win32', windowMaximized: false, settings: { ...DEFAULT_SETTINGS, nextPromptSuggestions: suggest },
+      update: { watcherEnabled: true, owlFeatures: { watcher: true, 'next-prompt': true } },
+      actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn(), dismissPastePermissionNotices: vi.fn() },
+    } as unknown as AppContextValue)
+    app(on)
+    mockAgents(stateWithWatcher())
+    const { bridge } = fakeBridge(roomState({ current: null, currentOptions: null, watchedThreads: [], requests: [] }))
+    const before = window.sotto
+    window.sotto = { ...before, nextPrompt: { read: async () => [], onChanged: () => () => undefined, watcherFirst: vi.fn(watcherFirst), cancelWatcherFirst } } as unknown as NonNullable<typeof window.sotto>
+    const tree = () => <WatcherRoomProvider bridge={bridge}><SidebarChromeProvider updateControl={null}><WatcherView now={NOW} /></SidebarChromeProvider></WatcherRoomProvider>
+    const view = render(tree())
+    return { view, setSuggest: (suggest: boolean) => { app(suggest); view.rerender(tree()) },
+      restore: () => { if (before === undefined) delete window.sotto; else window.sotto = before } }
+  }
+
+  it('takes its ghost away, and Tab no longer takes it, once Suggest a next prompt is turned off', async () => {
+    const box = firstStart(true, async () => suggestion)
+    try {
+      const prompt = await screen.findByRole('textbox', { name: 'Watcher message' })
+      await waitFor(() => expect(document.querySelector('.prompt-editor__ghost')).toHaveTextContent('Check on the footer links thread'), { timeout: 4000 })
+      box.setSuggest(false)
+      expect(document.querySelector('.prompt-editor__ghost')).toBeNull()
+      fireEvent.keyDown(prompt, { key: 'Tab' })
+      expect(promptText(prompt)).toBe('')
+    } finally { box.restore() }
+  })
+
+  it('tells main to stop the side request it waits on once the box closes', async () => {
+    const cancelWatcherFirst = vi.fn()
+    const box = firstStart(true, () => new Promise(() => undefined), cancelWatcherFirst)
+    try {
+      await screen.findByRole('textbox', { name: 'Watcher message' })
+      expect(cancelWatcherFirst).not.toHaveBeenCalled()
+      box.view.unmount()
+      expect(cancelWatcherFirst).toHaveBeenCalled()
+    } finally { box.restore() }
+  })
+})
