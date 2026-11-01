@@ -14,7 +14,7 @@ import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { NativeUsage } from '../../../src/main/agents/nativeUsage'
 import type { AgentHost } from '../../../src/main/agents/host'
-import { UsageReadPending } from '../../../src/main/agents/usageReadPending'
+import { UsageReadPending } from '../../../src/main/agents/usageVisits'
 import { UsageService } from '../../../src/main/agents/usageService'
 import { UsageStore } from '../../../src/main/agents/usageStore'
 import type { AgentHostSnapshot } from '../../../src/shared/agents'
@@ -92,17 +92,20 @@ function usageOver(usage: NativeUsage, root: string, ids: readonly string[]) {
   const host = { subscribe: (next: (snapshot: AgentHostSnapshot) => void) => { listener = next; return () => { listener = undefined } },
     visitUsage: (id: string, visitor: (row: UsageTokenObservation) => void) => usage.visitUsage(id, visitor),
     subscribeUsage: (next: (row: UsageTokenObservation) => void) => usage.subscribeUsage(next) } as unknown as AgentHost
-  const rows: UsageTokenObservation[] = []
+  const rows: UsageTokenObservation[] = [], perVisit: number[] = []
   const inner = host.visitUsage!.bind(host)
-  host.visitUsage = (id, visitor) => inner(id, row => { rows.push(row); visitor(row) })
+  host.visitUsage = (id, visitor) => {
+    let handed = 0
+    try { inner(id, row => { handed += 1; rows.push(row); visitor(row) }) } finally { perVisit.push(handed) }
+  }
   const store = new UsageStore(join(root, 'usage.sqlite'), () => '2026-10-31T12:00:00.000Z')
   const service = new UsageService({ directory: root, host, store })
   service.start()
   drains.push(async () => { service.close() })
-  const publish = (): void => listener!({ connected: true, providers: [{ id: 'claude', connection: 'connected' }], models: [],
-    threads: ids.map(id => ({ id, providerId: 'claude', usage: usage.get(id) })) } as unknown as AgentHostSnapshot)
+  const publish = (shown: readonly string[] = ids): void => listener!({ connected: true, providers: [{ id: 'claude', connection: 'connected' }], models: [],
+    threads: shown.map(id => ({ id, providerId: 'claude', usage: usage.get(id) })) } as unknown as AgentHostSnapshot)
   const visits = vi.spyOn(host as { visitUsage: (id: string, visitor: (row: UsageTokenObservation) => void) => void }, 'visitUsage')
-  return { service, store, publish, visits, rows }
+  return { service, store, publish, visits, rows, perVisit }
 }
 
 /** A copy of `root` as an earlier build left it, with no thread's view beside its ledger: started from, it reads every ledger whole. */
@@ -340,27 +343,32 @@ it('marks a thread read again when an older request\'s model is corrected though
   expect(f3.rows).toEqual([])
 })
 
-it('shows a Codex context reading in the view at once while its request waits, so a compaction under way keeps it (ADR-0095)', async () => {
+it.each([
+  ['keeps a context reading that came in while it ran', 2, 10_000],
+  ['clears the reading when what came in was a report Codex had counted already', 1, undefined],
+])('orders a Codex compaction among reports held while the thread\'s requests are read, so it %s, as reading every ledger at start does (ADR-0095)', async (_case, turn, kept) => {
   const root = await folder()
   const first = await started(root, 'codex')
-  first.codex('thread', 'gpt-5.4', { turnId: 'turn-1', tokenUsage: { total: { inputTokens: 1_000, outputTokens: 100, cachedInputTokens: 0 },
-    last: { inputTokens: 1_000, outputTokens: 100, cachedInputTokens: 0, totalTokens: 50_000 }, modelContextWindow: 200_000 } })
+  const codex = (turn: number, used: number) => ({ turnId: `turn-${turn}`, tokenUsage: { total: { inputTokens: turn * 1_000, outputTokens: turn * 100, cachedInputTokens: 0 },
+    last: { inputTokens: 1_000, outputTokens: 100, cachedInputTokens: 0, totalTokens: used }, modelContextWindow: 200_000 } })
+  first.codex('thread', 'gpt-5.4', codex(1, 50_000))
   await first.flushed()
   const eagerRoot = await withoutViews(root, 'codex')
-  const kept = async (usage: NativeUsage) => {
-    // Codex's compaction: the reading as it starts, a report while it runs, and its end, which clears the reading unless one came in.
-    const started = JSON.stringify([usage.get('thread')!.contextUsed, usage.get('thread')!.contextUpdatedAt])
-    usage.codex('thread', 'gpt-5.4', { turnId: 'turn-2', tokenUsage: { total: { inputTokens: 2_000, outputTokens: 200, cachedInputTokens: 0 },
-      last: { inputTokens: 1_000, outputTokens: 100, cachedInputTokens: 0, totalTokens: 10_000 }, modelContextWindow: 200_000 } })
-    const readSince = started !== JSON.stringify([usage.get('thread')!.contextUsed, usage.get('thread')!.contextUpdatedAt])
-    if (!readSince) usage.compacted('thread', undefined)
+  const compacting = async (usage: NativeUsage) => {
+    // Codex's compaction as its adapter drives it: its start, a report while it runs, and its end.
+    usage.compactionStarted('thread')
+    const before = structuredClone(usage.get('thread'))
+    usage.codex('thread', 'gpt-5.4', codex(turn, turn === 1 ? 50_000 : 10_000))
+    // A report Codex counted already changes nothing in the view, held or not.
+    if (turn === 1) expect(usage.get('thread')).toEqual(before)
+    usage.compactionEnded('thread')
     await usage.flushed()
     return usage.get('thread')!.contextUsed
   }
   vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-31T12:00:00Z'))
-  expect(await kept(await started(eagerRoot, 'codex'))).toBe(10_000)
+  expect(await compacting(await started(eagerRoot, 'codex'))).toBe(kept)
   vi.setSystemTime(new Date('2026-10-31T12:00:01Z'))
-  expect(await kept(await started(root, 'codex'))).toBe(10_000)
+  expect(await compacting(await started(root, 'codex'))).toBe(kept)
 })
 
 it('normalises a long thread\'s requests a chunk a task when they are read for its report, to the same totals', async () => {
@@ -429,4 +437,98 @@ it('reads a thread\'s ledger whole at start when its view cannot be read, rather
   const usage = await started(root)
   expect(reads.paths()).toEqual([join(root, 'claude-usage', ledgerName('thread'))])
   expect(usage.get('thread')).toEqual(first.get('thread'))
+})
+
+it('visits a long thread\'s rows five hundred a task when its first report moves its mark, and Usage\'s read and seed wait for all of them', async () => {
+  const root = await folder()
+  const first = await started(root, 'claude', true)
+  for (let index = 0; index < 4_500; index++) first.claude('long', claudeReport(index))
+  first.claude('short', claudeReport(0))
+  await first.flushed()
+  const start = await started(root, 'claude', true)
+  const f1 = usageOver(start, root, ['short', 'long'])
+  const seed = vi.spyOn(f1.store, 'markLegacySeedCompleted')
+  // Connected with no thread first, so the seed is due; then the threads, the long one read a chunk a task.
+  f1.publish([])
+  f1.publish()
+  // Once its ledger is read the long thread is visited a chunk a task; mid-visit, a flush carries no seed mark.
+  const midVisit = () => (f1.service as unknown as { active?: unknown; visits: Map<string, unknown> }).active !== undefined
+  // Its read lands, then Usage visits it again a short while on (UsageReadPending): turns of the event loop until then.
+  for (const until = performance.now() + 5_000; !midVisit() && performance.now() < until;) await new Promise(resolve => { setImmediate(resolve) })
+  expect(midVisit()).toBe(true)
+  expect((f1.service as unknown as { visits: Map<string, unknown> }).visits.size).toBe(0)
+  f1.service.flush()
+  expect(seed).not.toHaveBeenCalled()
+  await f1.service.read()
+  expect(seed).toHaveBeenCalledOnce()
+  expect(Math.max(...f1.perVisit)).toBeLessThanOrEqual(500)
+  f1.service.close(); await start.flushed()
+  // The next start passes the long thread over on its mark, until its first report moves the mark.
+  const next = await started(root, 'claude', true)
+  const f2 = usageOver(next, root, ['short', 'long'])
+  f2.publish()
+  await f2.service.read()
+  expect(f2.rows).toEqual([])
+  next.claude('long', claudeReport(4_500))
+  await next.flushed()
+  f2.publish()
+  const read = await f2.service.read()
+  expect(f2.rows).toHaveLength(4_501)
+  expect(Math.max(...f2.perVisit)).toBeLessThanOrEqual(500)
+  expect(read.activity!.totals.tokens.output).toMatchObject({ rows: 4_502 })
+})
+
+it('keeps Usage from saying it saved, and Clear from clearing, while a thread\'s ledger cannot be read', async () => {
+  const root = await folder()
+  const first = await started(root, 'claude', true)
+  first.claude('thread', claudeReport(0)); first.claude('other', claudeReport(0))
+  await first.flushed()
+  const usage = await started(root, 'claude', true)
+  const path = join(root, 'claude-usage', ledgerName('thread')), read = fsp.readFile
+  const refusing = vi.spyOn(fsp, 'readFile').mockImplementation(((file: Parameters<typeof read>[0], ...rest: unknown[]) => String(file) === path
+    ? Promise.reject(Object.assign(new Error('Synthetic refused ledger'), { code: 'EACCES' }))
+    : (read as (...args: unknown[]) => Promise<unknown>)(file, ...rest)) as typeof read)
+  const f = usageOver(usage, root, ['thread', 'other'])
+  f.publish()
+  const refused = await f.service.read()
+  expect(refused.persistence).toBe('failed')
+  expect(refused.activity!.totals.tokens.output).toMatchObject({ rows: 1 })
+  await expect(f.service.clear({ expectedRevision: refused.activity!.metadata.revision })).rejects.toThrow('could not be saved')
+  // Readable again: its read is tried again, the next publication visits it, and Usage has saved everything.
+  refusing.mockRestore()
+  await usage.flushed()
+  f.publish()
+  const saved = await f.service.read()
+  expect(saved.persistence).toBe('saved')
+  expect(saved.activity!.totals.tokens.output).toMatchObject({ rows: 2 })
+})
+
+it('reads a thread whose ledger an earlier build wrote, with no revision, at every start until it is read, then marks it', async () => {
+  const root = await folder()
+  const first = await started(root, 'claude', true)
+  first.claude('thread', { ...claudeReport(1), message: { ...claudeReport(1).message, model: 'claude-opus-5' } })
+  first.claude('thread', claudeReport(2))
+  await first.flushed()
+  /** The thread's ledger as a build with no revision writes it: no revision in it, and no view beside it. */
+  const asEarlierBuild = async (correct = false) => {
+    const directory = join(root, 'claude-usage'), ledgerPath = join(directory, ledgerName('thread'))
+    const saved = JSON.parse(await readFile(ledgerPath, 'utf8')) as { ledger: { view: Record<string, unknown>; entries: Record<string, { model: string }> } }
+    delete saved.ledger.view.revision
+    if (correct) saved.ledger.entries['message-1']!.model = 'claude-sonnet-4-6'
+    await writeFile(ledgerPath, `${JSON.stringify(saved)}\n`)
+    await rm(join(directory, viewName('thread')), { force: true })
+  }
+  const startWith = async () => {
+    const usage = await started(root, 'claude', true)
+    const f = usageOver(usage, root, ['thread']); f.publish(); await f.service.read(); f.service.close(); await usage.flushed()
+    return f.rows.map(row => row.modelId)
+  }
+  await asEarlierBuild()
+  expect(await startWith()).toEqual(['claude-opus-5', 'claude-sonnet-4-6'])
+  // An earlier build runs again and corrects the first request's model, totals and times unmoved: read again, not passed over.
+  await asEarlierBuild(true)
+  expect(await startWith()).toEqual(['claude-sonnet-4-6', 'claude-sonnet-4-6'])
+  // Read, it has a revision now; the start after marks it, and the one after that passes it over.
+  expect(await startWith()).toHaveLength(2)
+  expect(await startWith()).toEqual([])
 })

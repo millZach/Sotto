@@ -40,7 +40,8 @@ export function benchUsageStore(root: string): { client: UsageStoreClient; saved
 
 /**
  * Usage over `native`, as main wires it, once Claude connects: `publish` hands it every thread as the host shows it, with
- * the thread's usage, and `queued` says how many threads it has still to read (none on a source that reads them at once).
+ * the thread's usage, and `queued` says how many threads it has still to read, queued, being read or mid-visit (none on a
+ * source that reads them at once).
  */
 export function connectUsage(native: NativeUsage, root: string, ids: readonly string[]) {
   const store = benchUsageStore(root)
@@ -52,6 +53,9 @@ export function connectUsage(native: NativeUsage, root: string, ids: readonly st
   service.start()
   const publish = (): void => listener!({ connected: true, providers: [{ id: 'claude', connection: 'connected' }], models: [],
     threads: ids.map(id => ({ id, providerId: 'claude', usage: native.get(id) })) } as unknown as AgentHostSnapshot)
-  const queued = (): number => (service as unknown as { visits?: Map<string, unknown> }).visits?.size ?? 0
+  const queued = (): number => {
+    const state = service as unknown as { visits?: Map<string, unknown>; pendingVisits?: Map<string, unknown>; active?: unknown }
+    return (state.visits?.size ?? 0) + (state.pendingVisits?.size ?? 0) + (state.active ? 1 : 0)
+  }
   return { service, store, publish, queued }
 }

@@ -35,7 +35,7 @@ const exec = promisify(execFile)
 type Label = 'before' | 'upgrade' | 'later'
 type Row = { loadMs: number; loadCpuMs: number; loadHeapMb: number; snapshotTaskMs?: number; visitMs?: number; visitCpuMs?: number; batches?: number
   medianBatchMs?: number; longestTaskMs?: number; visitHeapMb?: number; rows?: number; startLongestMs: number; ledgerBytesRead: number; viewBytesRead: number
-  reportTaskMs: number; reportAppliedMs: number; reportLongestMs: number; output: number }
+  reportTaskMs: number; reportAppliedMs: number; reportVisitRows?: number; reportVisitTasks?: number; reportVisitLongestTaskMs?: number; reportLongestMs: number; output: number }
 
 const report = (index: number) => ({ type: 'assistant', timestamp: new Date(Date.UTC(2026, 8, 1) + index * 60_000).toISOString(),
   message: { id: `msg_${index}`, model: 'claude-opus-5-5', usage: { input_tokens: 1_000, output_tokens: 100, cache_read_input_tokens: 2_000, cache_creation_input_tokens: 0 } } })
@@ -112,7 +112,10 @@ describe.skipIf(!PERF_BENCH)('reading the usage ledgers at start (timing benchma
           // The longest main went without a turn of its event loop through the start, and the bytes of requests it parsed.
           startLongestMs: med('startLongestMs'), startLongestMsWorstRun: most('startLongestMs'), ledgerBytesRead: med('ledgerBytesRead', 0), viewBytesRead: med('viewBytesRead', 0),
           // The long thread's first report: its own task, until it counted, and the longest main was held meanwhile.
-          reportTaskMs: med('reportTaskMs', 2), reportAppliedMs: med('reportAppliedMs', 2), reportLongestMs: med('reportLongestMs', 2) }))
+          reportTaskMs: med('reportTaskMs', 2), reportAppliedMs: med('reportAppliedMs', 2), reportLongestMs: med('reportLongestMs', 2),
+          reportLongestMsWorstRun: most('reportLongestMs'),
+          // With Usage on: the rows Usage read again after the report moved the thread's mark, in how many tasks, the longest.
+          reportVisitRows: med('reportVisitRows', 0), reportVisitTasks: med('reportVisitTasks', 0), reportVisitLongestTaskMs: med('reportVisitLongestTaskMs', 2) }))
       }
       // Every start counts the same tokens. Usage saves every row on the source at BASE and on the first start after it;
       // on the start after that it reads no thread, none having changed.

@@ -346,7 +346,7 @@ describe('reading every thread\'s saved usage when a provider connects', () => {
   const threadsOf = (count: number, updated = at, changed = new Set<string>()) => (template: Thread): Thread[] => Array.from({ length: count }, (_, index) => {
     const id = `thread-${index}`
     return { ...template, id, providerId: 'codex', usage: { rateVersions: ['rates'], partial: false, total: { input: 100, output: 20 },
-      updatedAt: changed.has(id) ? '2026-10-13T12:00:00.000Z' : updated } }
+      revision: changed.has(id) ? 2 : 1, updatedAt: changed.has(id) ? '2026-10-13T12:00:00.000Z' : updated } }
   })
   /**
    * A connected Codex host of `threads` threads, whose usage reads record which thread was read, fail for `failing` and move

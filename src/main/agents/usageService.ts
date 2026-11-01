@@ -16,7 +16,7 @@ import { USAGE_PENDING_RECONCILIATION_BATCH_MAX } from './usageStore'
 import { UsageStoreOnMain, usageStoreClient, type Maybe, type UsageStoreClient } from './usageStoreClient'
 import type { UsageFlushOutcome, UsageHistoryWrite, UsagePromptWrite, UsageRequestStore } from './usageStoreRequests'
 import { UsageHistoryImporter, type UsageHistoryStore } from './usageHistory/importer'
-import { UsageReadPending } from './usageReadPending'
+import { UsageReadPending, UsageVisitUnfinished } from './usageVisits'
 
 /** OpenCode reports no account limits, so it is never asked for any (ADR-0087). */
 const LIMIT_PROVIDERS: readonly UsageLimitProviderId[] = USAGE_LIMIT_PROVIDERS
@@ -43,13 +43,15 @@ type HostThread = AgentHostSnapshot['threads'][number]
 /**
  * A thread's usage as its host shows it, to tell whether its saved rows changed since Usage last read them (#1937): its
  * revision, which every change to one of its requests moves on, a model corrected without a token changing among them,
- * and, for a ledger an earlier build kept with no revision, the time it was last reported, its rate versions, its totals
- * and whether any of it is partial. Undefined for a thread whose usage is not a ledger's view, read at every start as before.
+ * with the time it was last reported, its rate versions, its totals and whether any of it is partial. Undefined for a
+ * thread whose usage is not a ledger's view, or is one with no revision yet: such a thread is read at every start.
  */
 function visitMark(thread: HostThread): string | undefined {
   if (!thread.providerId || !MARKED_PROVIDERS.has(thread.providerId)) return undefined
   const usage = thread.usage
-  return JSON.stringify(usage ? [usage.revision ?? null, usage.updatedAt, usage.rateVersions, usage.total ?? null, usage.partial] : [null])
+  // A ledger an earlier build kept has no revision to tell a corrected request by: it is read, and given one then.
+  if (usage && usage.revision === undefined) return undefined
+  return JSON.stringify(usage ? [usage.revision, usage.updatedAt, usage.rateVersions, usage.total ?? null, usage.partial] : [null])
 }
 
 /** Numeric-only callbacks at the coordinator's durable intent and exact echo boundaries. */
@@ -110,6 +112,8 @@ export class UsageService implements UsagePromptRecorder {
   /** Threads whose saved requests were still being read when Usage came to them, visited again shortly. */
   private readonly pendingVisits = new Map<string, HostThread>()
   private pendingTimer: ReturnType<typeof setTimeout> | undefined
+  /** The thread whose rows are being visited a chunk a task, gone on with before any other, and what its visit began with. */
+  private active: { readonly thread: HostThread; readonly mark: string | undefined; readonly dropped: number } | undefined
   /** Threads whose usage could not be read: each change reads them again, as every snapshot read every thread not yet read. */
   private readonly unread = new Set<string>()
   private readonly connected = new Set<UsageProviderId>()
@@ -288,13 +292,13 @@ export class UsageService implements UsagePromptRecorder {
       return { status: 'error', quotas: await quotas, persistence: 'failed' }
     }
     return usageLocalHostReadSchema.parse({ status: 'ready', activity, quotas: await quotas,
-      persistence: this.failed || this.lost ? 'failed' : 'saved' })
+      persistence: this.failed || this.lost || this.unread.size ? 'failed' : 'saved' })
   }
 
   /** `background` is a refresh Usage made on its own when it opened; Read again leaves it out and always reads afresh. */
   async refresh(providerIds?: readonly UsageProviderId[], background = false): Promise<UsageLocalHostRead> {
     const quotas = await this.readQuotas(providerIds, true, background)
-    return { status: 'ready', quotas, persistence: this.failed || this.lost ? 'failed' : 'saved' }
+    return { status: 'ready', quotas, persistence: this.failed || this.lost || this.unread.size ? 'failed' : 'saved' }
   }
 
   async clear(input: UsageLocalClearRequest): Promise<UsageLocalClearResult> {
@@ -304,7 +308,8 @@ export class UsageService implements UsagePromptRecorder {
     await this.flushing()
     // Everything buffered before Clear was pressed is written, or Clear is refused. What arrives after it is written
     // after the clear, as the store always ordered them.
-    if (!this.opened || this.failed || this.unsaved) throw new Error('Usage could not be saved')
+    // A thread whose rows could not be read is not saved either: Clear waits until it is (#1937).
+    if (!this.opened || this.failed || this.unsaved || this.unread.size) throw new Error('Usage could not be saved')
     // The revision includes every flushed row. A changed revision requires another user confirmation.
     const result = await this.client.request({ kind: 'clear', expectedRevision: request.expectedRevision })
     if (result.status === 'cleared') this.lost = false
@@ -329,7 +334,7 @@ export class UsageService implements UsagePromptRecorder {
     // A flush that failed is still being answered, with those behind it: the retry follows once they all are.
     if (this.unsaved) return this.flights.at(-1)?.landed
     // The legacy seed is marked only with no thread left to read, whose rows it would otherwise go without.
-    const seed = this.seedPending && !this.visits.size && !this.pendingVisits.size
+    const seed = this.seedPending && !this.visitsOutstanding()
     if (!this.tokens.size && !this.prompts.size && !this.markWrites.size && !seed) {
       const last = this.flights.at(-1)?.landed ?? this.opening
       if (last) return last
@@ -408,7 +413,7 @@ export class UsageService implements UsagePromptRecorder {
     clearTimeout(this.reconcileTimer); this.reconcileTimer = undefined
     clearImmediate(this.visitTimer); this.visitTimer = undefined
     clearTimeout(this.pendingTimer); this.pendingTimer = undefined
-    this.visits.clear(); this.pendingVisits.clear()
+    this.visits.clear(); this.pendingVisits.clear(); this.active = undefined
     for (const resolve of this.visitWaiters.splice(0)) resolve()
     // On the worker this waits, a bounded while, for every write asked for to commit.
     try { this.client.close() } catch { /* Usage never holds provider shutdown open. */ }
@@ -474,6 +479,8 @@ export class UsageService implements UsagePromptRecorder {
       for (const model of snapshot.models) if (isUsageProviderId(model.providerId)) this.connected.add(model.providerId)
     }
     for (const thread of snapshot.threads) this.queueVisit(thread)
+    // A thread whose read failed and that has gone since is no longer waited for.
+    if (this.unread.size) { const present = new Set(snapshot.threads.map(thread => thread.id)); for (const id of this.unread) if (!present.has(id)) this.unread.delete(id) }
     if (this.started && (firstSnapshot || [...this.connected].some(provider => !previouslyConnected.has(provider)))) {
       this.reconciliationRequested = true
       this.reconcilePending()
@@ -514,7 +521,7 @@ export class UsageService implements UsagePromptRecorder {
    */
   private visitQueued(): void {
     if (this.closed) return
-    if (this.visits.size) {
+    if (this.visits.size || this.active) {
       // The marks say which threads changed since their rows were last read; until the store answers, none is read.
       if (this.marks !== undefined) this.visitTimer ??= setImmediate(() => this.visitBatch())
       return
@@ -535,14 +542,27 @@ export class UsageService implements UsagePromptRecorder {
     const clock = this.options.clock ?? (() => performance.now())
     const started = clock()
     let taken = 0
-    for (const [id, thread] of this.visits) {
-      this.visits.delete(id)
-      const mark = visitMark(thread)
-      if (this.connectedFor(thread) && mark !== undefined && this.marks?.get(id) === mark) { this.accepted.set(id, mark); this.unread.delete(id) }
-      else this.visit(thread, mark)
-      if (++taken >= VISITS_AT_ONCE || clock() - started >= VISIT_TASK_MS) break
+    for (;;) {
+      // A thread whose rows are half visited goes first, a chunk a task.
+      if (this.active) this.visit(this.active.thread, this.active.mark, this.active.dropped)
+      else {
+        const next = this.visits.entries().next()
+        if (next.done) break
+        const [id, thread] = next.value
+        this.visits.delete(id)
+        const mark = visitMark(thread)
+        if (this.connectedFor(thread) && mark !== undefined && this.marks?.get(id) === mark) { this.accepted.set(id, mark); this.unread.delete(id) }
+        else this.visit(thread, mark)
+      }
+      // A chunk of a long thread's rows is a task's worth on its own.
+      if (this.active || ++taken >= VISITS_AT_ONCE || clock() - started >= VISIT_TASK_MS) break
     }
     this.visitQueued()
+  }
+
+  /** Whether any thread is queued, being read, mid-visit, or could not be read: the legacy seed waits for them all. */
+  private visitsOutstanding(): boolean {
+    return this.visits.size > 0 || this.pendingVisits.size > 0 || this.active !== undefined || this.unread.size > 0
   }
 
   /** Whether the thread's provider is one Usage reads and is connected; a thread naming none is its host's own. */
@@ -564,7 +584,7 @@ export class UsageService implements UsagePromptRecorder {
 
   /** Once no thread is left queued to be read: at once when none is. */
   private visitsRead(): Promise<void> | undefined {
-    if (this.closed || !this.visits.size && !this.pendingVisits.size) return undefined
+    if (this.closed || !this.visits.size && !this.pendingVisits.size && !this.active) return undefined
     return new Promise(resolve => { this.visitWaiters.push(resolve) })
   }
 
@@ -572,18 +592,21 @@ export class UsageService implements UsagePromptRecorder {
    * Reads a thread's usage once its provider is connected; a read that fails is tried again with the next publication.
    * A read that lost none of its rows leaves the thread's mark to be written after them.
    */
-  private visit(thread: HostThread, mark?: string): void {
+  private visit(thread: HostThread, mark?: string, dropped = this.dropped): void {
+    this.active = undefined
     if (!this.options.host.visitUsage) return
     if (this.visited.has(thread.id) || !this.connectedFor(thread)) return
-    const dropped = this.dropped
     try {
       this.options.host.visitUsage(thread.id, record => this.observeTokens(record))
       this.visited.add(thread.id)
       this.unread.delete(thread.id)
       this.accepted.delete(thread.id)
     } catch (error) {
+      // More rows to come: gone on with in the next task. Reads, Clear and the seed wait for it.
+      if (error instanceof UsageVisitUnfinished) { this.active = { thread, mark, dropped }; return }
       // Being read for a report: visited once that read lands, rather than read twice. Reads and Clear wait for it.
       if (error instanceof UsageReadPending) { this.pendingVisits.set(thread.id, thread); this.visitPendingSoon(); return }
+      // Not read: read again with the next publication; until then Usage says it could not save, and Clear waits.
       this.failed = true; this.unread.add(thread.id); return
     }
     if (mark !== undefined && this.dropped === dropped) { this.markWrites.set(thread.id, mark); this.schedule(FLUSH_MS) }

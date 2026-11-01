@@ -67,15 +67,17 @@ await usage.load()
 const loadMs = performance.now() - started, loadCpu = process.cpuUsage(cpuBefore)
 const loadHeapMb = megabytes(settledHeap() - heapBefore)
 let visit: Record<string, number> | undefined
-if (visiting) {
-  const connected = connectUsage(usage, root, ids)
+const connected = visiting ? connectUsage(usage, root, ids) : undefined
+/** Whether Usage has any thread left to read: queued, being read, or mid-visit. */
+const reading = (): boolean => (connected?.queued() ?? 0) > 0
+if (connected) {
   await nextTurn()
   tasks.length = 0
   const cpuVisit = process.cpuUsage(), publishing = performance.now()
   connected.publish()
   const snapshotTaskMs = performance.now() - publishing
   // Until no thread is left to read; the source at BASE reads them all in the snapshot's own task.
-  while (connected.queued()) await nextTurn()
+  while (reading()) await nextTurn()
   const visitMs = performance.now() - publishing, visitCpu = process.cpuUsage(cpuVisit)
   const batches = [...tasks]
   connected.service.flush()
@@ -83,7 +85,6 @@ if (visiting) {
   visit = { snapshotTaskMs, visitMs, visitCpuMs: (visitCpu.user + visitCpu.system) / 1000, batches: batches.length,
     medianBatchMs: batches.length ? [...batches].sort((a, b) => a - b)[batches.length >> 1]! : 0,
     longestTaskMs: Math.max(snapshotTaskMs, ...batches), visitHeapMb: megabytes(settledHeap() - heapBefore), rows: connected.store.saved() }
-  connected.service.close()
   await connected.store.written()
 }
 const startLongestMs = monitor.longest
@@ -92,6 +93,7 @@ const parsed = { ...read }
 await usage.flushed()
 const output = usage.get('long')?.total?.output ?? 0
 monitor.longest = 0
+tasks.length = 0
 const reporting = performance.now()
 usage.claude('long', { type: 'assistant', timestamp: '2026-10-31T12:00:00.000Z', message: { id: 'msg_after_start', model: 'claude-opus-5-5',
   usage: { input_tokens: 1_000, output_tokens: 100, cache_read_input_tokens: 2_000, cache_creation_input_tokens: 0 } } })
@@ -102,8 +104,21 @@ const reportAppliedMs = performance.now() - reporting
 // The write its count sets off encodes the thread's ledger in a microtask behind it, on either source: two turns more
 // take that in too.
 await nextTurn(); await nextTurn()
+// With Usage on, the report moved the thread's usage: Usage hears of it with the next publication and, the thread's mark
+// moved, reads its rows, a chunk a task on this source, until none is left.
+let reportVisit: Record<string, number> = {}
+if (connected) {
+  const visitedBefore = connected.store.saved()
+  connected.publish()
+  while (reading()) await nextTurn()
+  connected.service.flush()
+  for (let turn = 0; turn < 3; turn++) await nextTurn()
+  reportVisit = { reportVisitRows: connected.store.saved() - visitedBefore, reportVisitTasks: tasks.length, reportVisitLongestTaskMs: Math.max(0, ...tasks) }
+}
 const reportLongestMs = monitor.longest
 monitor.running = false
+connected?.service.close()
+await connected?.store.written()
 await usage.flushed()
 console.log(JSON.stringify({ loadMs, loadCpuMs: (loadCpu.user + loadCpu.system) / 1000, loadHeapMb, ...visit, startLongestMs,
-  ledgerBytesRead: parsed.ledger, viewBytesRead: parsed.view, reportTaskMs, reportAppliedMs, reportLongestMs, output: usage.get('long')?.total?.output }))
+  ledgerBytesRead: parsed.ledger, viewBytesRead: parsed.view, reportTaskMs, reportAppliedMs, ...reportVisit, reportLongestMs, output: usage.get('long')?.total?.output }))

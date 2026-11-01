@@ -283,8 +283,6 @@ export class CodexAppServerHost implements AgentHost {
   private quota: UsageQuotaRead | undefined
   private quotaReading: Promise<UsageQuotaRead> | undefined
   private readonly usageTurnStarts = new Map<string, string>()
-  /** When each thread's context was last reported as its compaction started, so the end can tell whether a reading came since. */
-  private readonly compactionReadings = new Map<string, string>()
   private readonly usageEnabled: boolean
   private launchProfiles: ThreadLaunchProfiles | undefined
   private readonly watcherProfiles = new Map<string, WatcherLaunchProfile>()
@@ -851,7 +849,6 @@ export class CodexAppServerHost implements AgentHost {
     this.creating.delete(id)
     this.threadReads.delete(id)
     this.pendingLogMessages.delete(id)
-    this.compactionReadings.delete(id)
     this.purgeThreadKeyedState(id)
     this.providerSessionIds.delete(alias.codexThreadId)
     this.watcher?.drop(alias.codexThreadId)
@@ -1498,13 +1495,10 @@ export class CodexAppServerHost implements AgentHost {
     }
     // Nor does it report the size after one, so the figure from before it would outlive it: cleared at the end, with a new
     // time, unless a reading came in while it ran. The next reading restores it, and the compaction recommendation does
-    // not ask again for a context just compacted, wherever the compaction started (ADR-0095).
-    if (item.type === 'contextCompaction' && turnId && lifecycle.phase === 'started') this.compactionReadings.set(id, JSON.stringify([thread.usage?.contextUsed, thread.usage?.contextUpdatedAt]))
-    if (item.type === 'contextCompaction' && turnId && lifecycle.phase === 'completed') {
-      const readSince = this.compactionReadings.has(id) && this.compactionReadings.get(id) !== JSON.stringify([thread.usage?.contextUsed, thread.usage?.contextUpdatedAt])
-      this.compactionReadings.delete(id)
-      if (thread.usage?.contextUsed !== undefined && !readSince) { this.usage.compacted(id, undefined); thread.usage = this.usage.get(id) }
-    }
+    // not ask again for a context just compacted, wherever the compaction started (ADR-0095). The ledger compares the
+    // readings in the order of the thread's reports, a report held while its requests are read among them.
+    if (item.type === 'contextCompaction' && turnId && lifecycle.phase === 'started') this.usage.compactionStarted(id)
+    if (item.type === 'contextCompaction' && turnId && lifecycle.phase === 'completed') { this.usage.compactionEnded(id); thread.usage = this.usage.get(id) }
     if (item.type === 'fileChange') {
       this.fileSummaries.set(turnKey(id, item.id), (item.changes ?? []).map(c => `${c.kind?.type ?? 'change'}: ${c.path}`).join('\n'))
       return

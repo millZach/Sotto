@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { threadUsageSchema, usageTokensSchema, type ThreadUsage, type UsageTokens } from '../../shared/threadUsage'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
-import { UsageReadPending } from './usageReadPending'
+import { UsageReadPending, UsageVisitUnfinished } from './usageVisits'
 import { estimateUsage, USAGE_RATE_VERSION } from './usageRates'
 import type { UsageProviderId, UsageTokenObservation } from '../../shared/usageDashboard'
 
@@ -157,6 +157,13 @@ const READ_RETRY_FIRST_MS = 500
 const READ_RETRY_MOST_MS = 30_000
 /** How many of a ledger's requests one task normalises, so a long thread's never holds main longer than its file's parse. */
 const NORMALISED_AT_ONCE = 2_000
+/**
+ * How many of a thread's rows one visit hands Usage, which takes each row through its schema, before it lets main go on: on
+ * forge a row costs about 6 microseconds there, and a flush of Usage's full buffer, which the rows can set off, about 5 ms.
+ */
+const VISITED_AT_ONCE = 500
+/** A thread's visit under way: its requests in the order the visit began with, how far it got, and what it handed over. */
+interface VisitUnderway { readonly ledger: Ledger; readonly keys: readonly string[]; next: number; readonly emitted: Set<string>; readonly identities: ReadonlySet<string> }
 const nextTask = (): Promise<void> => new Promise(resolve => { setImmediate(resolve) })
 /** What a context reading, from a provider or a compaction, sets in a thread's view. */
 function contextReading(view: ThreadUsage, used: number | undefined, at: string): void { view.contextUsed = used; view.contextUpdatedAt = at }
@@ -280,6 +287,10 @@ export class NativeUsage {
   private readonly held = new Map<string, HeldReports>()
   /** When the report being applied came in, while a held one is applied, so it reads as of then. */
   private reportedAt: number | undefined
+  /** Each thread's visit under way, by thread ID, which the next visit goes on with. */
+  private readonly visiting = new Map<string, VisitUnderway>()
+  /** Each thread's context reading as its compaction started, taken in the order of its reports (ADR-0095). */
+  private readonly compactionReadings = new Map<string, string>()
   /** `applied`: told a thread's held reports were applied, so its owner shows the thread's usage as they left it. */
   constructor(directory: string, private readonly provider: 'codex' | 'claude' | 'grok', private readonly usageEnabled = false,
     private readonly applied?: (id: string) => void) {
@@ -605,60 +616,89 @@ export class NativeUsage {
     }
     const ledger = this.data[id]
     if (!ledger) return
-    const projected = this.projections.get(id)
-    const emitted = new Set<string>()
+    // A long thread's rows are handed over a chunk a visit; the next visit goes on where this one stopped. A ledger read
+    // again since, as a reconnect reads them, is visited from its start: Usage passes over a row it holds.
+    let visit = this.visiting.get(id)
+    if (visit?.ledger !== ledger) {
+      visit = { ledger, keys: Object.keys(ledger.entries), next: 0, emitted: new Set(), identities: this.provider === 'grok' ? new Set(ledger.seen) : new Set() }
+      this.visiting.set(id, visit)
+    }
+    const end = Math.min(visit.keys.length, visit.next + VISITED_AT_ONCE)
+    for (let index = visit.next; index < end; index++) {
+      const key = visit.keys[index]!, entry = ledger.entries[key]
+      if (entry) this.visitRow(id, ledger, visit, key, entry, visitor)
+    }
+    visit.next = end
+    if (end < visit.keys.length) throw new UsageVisitUnfinished()
+    this.visiting.delete(id)
+    for (const [key, row] of this.projections.get(id) ?? []) {
+      if (visit.emitted.has(key)) continue
+      const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
+      visitor(seed)
+    }
+    // A ledger an earlier build kept has no revision, so Usage reads it at every start until it has one; now it was read.
+    if (ledger.view.revision === undefined) {
+      ledger.view.revision = 0
+      this.serializedLedgers.delete(ledger); this.dirty.add(id); this.writePending()
+    }
+  }
+  /** One of a thread's saved requests handed to Usage's visit as the row, or rows, it makes. */
+  private visitRow(id: string, ledger: Ledger, visit: VisitUnderway, key: string, entry: LedgerEntry, visitor: (record: UsageTokenObservation) => void): void {
+    const { emitted } = visit
     if (this.provider === 'grok') {
-      const grokProjected = projected ?? new Map<string, UsageTokenObservation>()
-      const identities = new Set(ledger.seen)
-      for (const [key, entry] of Object.entries(ledger.entries)) {
-        const aggregate = identities.has(key)
-        // Legacy per-model entries are prompt identity + ':' + the exact saved model.
-        const candidate = key.endsWith(`:${entry.model}`) ? key.slice(0, -entry.model.length - 1) : undefined
-        const identity = aggregate ? key : candidate && identities.has(candidate) ? candidate : undefined
-        if (!identity) continue
-        const record = this.grokRecord(identity, aggregate ? undefined : entry.model)
-        if (!aggregate) {
-          this.detailedGrokGroups.add(JSON.stringify([id, identity]))
-          const aggregateKey = this.grokRecord(identity)
-          const retirement = grokProjected.get(aggregateKey)?.removed ? grokProjected.get(aggregateKey)!
-            : { ...this.projected(id, aggregateKey, 'unknown', {}, undefined, true, identity), removed: true as const }
-          grokProjected.set(aggregateKey, retirement); this.projections.set(id, grokProjected)
-          if (!emitted.has(aggregateKey)) {
-            const seed = { ...retirement, tokens: { ...retirement.tokens } }; delete seed.liveNewGroup
-            visitor(seed); emitted.add(aggregateKey)
-          }
+      const grokProjected = this.projections.get(id) ?? new Map<string, UsageTokenObservation>()
+      const aggregate = visit.identities.has(key)
+      // Legacy per-model entries are prompt identity + ':' + the exact saved model.
+      const candidate = key.endsWith(`:${entry.model}`) ? key.slice(0, -entry.model.length - 1) : undefined
+      const identity = aggregate ? key : candidate && visit.identities.has(candidate) ? candidate : undefined
+      if (!identity) return
+      const record = this.grokRecord(identity, aggregate ? undefined : entry.model)
+      if (!aggregate) {
+        this.detailedGrokGroups.add(JSON.stringify([id, identity]))
+        const aggregateKey = this.grokRecord(identity)
+        const retirement = grokProjected.get(aggregateKey)?.removed ? grokProjected.get(aggregateKey)!
+          : { ...this.projected(id, aggregateKey, 'unknown', {}, undefined, true, identity), removed: true as const }
+        grokProjected.set(aggregateKey, retirement); this.projections.set(id, grokProjected)
+        if (!emitted.has(aggregateKey)) {
+          const seed = { ...retirement, tokens: { ...retirement.tokens } }; delete seed.liveNewGroup
+          visitor(seed); emitted.add(aggregateKey)
         }
-        if (emitted.has(record)) continue
-        const existing = grokProjected.get(record)
-        const row = existing ?? this.projected(id, record, aggregate ? 'unknown' : entry.model, entry.tokens, undefined,
-          ledger.incomplete || aggregate, identity)
-        if (!aggregate && !existing) { grokProjected.set(record, row); this.projections.set(id, grokProjected) }
-        emitted.add(record)
-        const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
-        visitor(seed)
       }
-      for (const [key, row] of grokProjected) {
-        if (emitted.has(key)) continue
-        const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
-        visitor(seed)
-      }
+      if (emitted.has(record)) return
+      const existing = grokProjected.get(record)
+      const row = existing ?? this.projected(id, record, aggregate ? 'unknown' : entry.model, entry.tokens, undefined,
+        ledger.incomplete || aggregate, identity)
+      if (!aggregate && !existing) { grokProjected.set(record, row); this.projections.set(id, grokProjected) }
+      emitted.add(record)
+      const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
+      visitor(seed)
       return
     }
-    for (const [key, entry] of Object.entries(ledger.entries)) {
-      if (entry.model === SYNTHETIC) continue
-      const anchor = key
-      const existing = projected?.get(anchor)
-      const row = existing ?? this.projected(id, anchor, entry.model, entry.tokens, undefined, ledger.incomplete,
-        this.provider === 'claude' ? key : undefined)
-      emitted.add(anchor)
-      const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
-      visitor(seed)
-    }
-    for (const [key, row] of projected ?? []) {
-      if (emitted.has(key)) continue
-      const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
-      visitor(seed)
-    }
+    if (entry.model === SYNTHETIC) return
+    const existing = this.projections.get(id)?.get(key)
+    const row = existing ?? this.projected(id, key, entry.model, entry.tokens, undefined, ledger.incomplete,
+      this.provider === 'claude' ? key : undefined)
+    emitted.add(key)
+    const seed = { ...row, tokens: { ...row.tokens } }; delete seed.liveNewGroup
+    visitor(seed)
+  }
+  /**
+   * Codex's compaction started: its end clears the context reading unless one came in while it ran (ADR-0095). The reading
+   * it compares with is taken here, in the order of the thread's reports, so a report held while its requests are read
+   * counts as before or after the compaction began as it came.
+   */
+  compactionStarted(id: string): void {
+    if (this.deferred(id, () => this.compactionStarted(id), 'order')) return
+    const view = this.get(id)
+    this.compactionReadings.set(id, JSON.stringify([view?.contextUsed, view?.contextUpdatedAt]))
+  }
+  /** Codex's compaction ended: the context reading is cleared, with a new time, unless one came in since it began. */
+  compactionEnded(id: string): void {
+    if (this.deferred(id, () => this.compactionEnded(id), 'order')) return
+    const view = this.get(id), started = this.compactionReadings.get(id)
+    this.compactionReadings.delete(id)
+    const readSince = started !== undefined && started !== JSON.stringify([view?.contextUsed, view?.contextUpdatedAt])
+    if (view?.contextUsed !== undefined && !readSince) this.compacted(id, undefined, new Date(this.now()).toISOString())
   }
   compacted(id: string, used: unknown, updatedAt = new Date().toISOString()): void {
     if (this.deferred(id, () => this.compacted(id, used, updatedAt))) { this.preview(id, view => { contextReading(view, tokenCount(used), updatedAt) }); return }
@@ -849,9 +889,9 @@ export class NativeUsage {
     if (!params.turnId || !usage.total || !usage.last) return
     const total = codexTokens(usage.total); const last = codexTokens(usage.last)
     if (!Object.values(last).some(value => value !== undefined)) return
-    // A report Codex counted before reads in the view as any other until the requests are read: Codex sends one again only
-    // for a thread read from its rollout, its newest turns, whose reading is the view's already.
-    if (this.deferred(id, () => this.codex(id, model, value, context))) { this.preview(id, view => { this.codexReading(view, model, last, usage) }); return }
+    // Not shown in the view before the requests are read: only they say whether Codex counted the report before, which
+    // then changes nothing. Its compaction compares readings in the order of the reports (`compactionStarted`).
+    if (this.deferred(id, () => this.codex(id, model, value, context))) return
     const ledger = this.ledger(id)
     const key = codexEntryKey(params.turnId, total)
     if (this.seen(ledger).has(key)) {
