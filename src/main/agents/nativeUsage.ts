@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { z } from 'zod'
 import { threadUsageSchema, usageTokensSchema, type ThreadUsage, type UsageTokens } from '../../shared/threadUsage'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
+import { UsageReadPending } from './usageReadPending'
 import { estimateUsage, USAGE_RATE_VERSION } from './usageRates'
 import type { UsageProviderId, UsageTokenObservation } from '../../shared/usageDashboard'
 
@@ -25,6 +26,11 @@ type Ledger = z.infer<typeof ledgerSchema>
 const threadLedgerSchema = z.object({ id: z.string(), ledger: ledgerSchema })
 /** A file found among the threads' ledgers, which the store reads as null when it is not one. */
 const foundLedgerSchema = threadLedgerSchema.nullable()
+/**
+ * A thread's ledger file as a report's read parses it: everything but its requests checked, which are checked a chunk a
+ * task after (`checkedInTasks`), so a long thread's check never holds main longer than its file's JSON parse.
+ */
+const uncheckedLedgerSchema = z.object({ id: z.string(), ledger: ledgerSchema.extend({ entries: z.record(z.string(), z.unknown()) }) }).nullable()
 const legacyLedgersSchema = z.record(z.string(), ledgerSchema)
 /**
  * A thread's view in a file beside its ledger, which start reads instead of the ledger (#1937): the thread's ID, the rate
@@ -34,7 +40,7 @@ const legacyLedgersSchema = z.record(z.string(), ledgerSchema)
 const ledgerViewSchema = z.object({ id: z.string(), rateVersion: z.string(), ledgerSize: z.number(), ledgerModified: z.number(), view: threadUsageSchema })
 /** A file found beside the threads' ledgers, which the store reads as null when it is not a view. */
 const foundViewSchema = ledgerViewSchema.nullable()
-const emptyLedger = (): Ledger => ({ view: { rateVersions: [], partial: false, updatedAt: new Date().toISOString() }, entries: {}, seen: [], incomplete: false })
+const emptyLedger = (at: number): Ledger => ({ view: { rateVersions: [], partial: false, updatedAt: new Date(at).toISOString() }, entries: {}, seen: [], incomplete: false })
 type LedgerEntry = Ledger['entries'][string]
 const TOKEN_FIELDS = ['input', 'output', 'cached', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h'] as const
 
@@ -149,6 +155,16 @@ const LEDGER_READS_AT_ONCE = 16
 /** How long a thread's held reports wait before its ledger is read again after a failed read, doubling up to the most. */
 const READ_RETRY_FIRST_MS = 500
 const READ_RETRY_MOST_MS = 30_000
+/** How many of a ledger's requests one task normalises, so a long thread's never holds main longer than its file's parse. */
+const NORMALISED_AT_ONCE = 2_000
+const nextTask = (): Promise<void> => new Promise(resolve => { setImmediate(resolve) })
+/** What a context reading, from a provider or a compaction, sets in a thread's view. */
+function contextReading(view: ThreadUsage, used: number | undefined, at: string): void { view.contextUsed = used; view.contextUpdatedAt = at }
+/** What a turn's end, its duration and its model's context window, sets in a thread's view. */
+function turnEnd(view: ThreadUsage, elapsed: unknown, contextWindow: unknown): void {
+  view.elapsedMs = tokenCount(elapsed)
+  view.contextWindow = tokenCount(contextWindow) || view.contextWindow
+}
 /** A thread's reports held until its requests are read, in the order they came, and the read under way or due again. */
 interface HeldReports { readonly reports: (() => void)[]; reading: Promise<void> | undefined; failures: number; retry: ReturnType<typeof setTimeout> | undefined }
 /** Which Claude frames count in a ledger: those that need its requests, and those that change nothing but must keep their order. */
@@ -262,6 +278,8 @@ export class NativeUsage {
   private readonly ambiguousGrokGroups = new Set<string>()
   /** Each thread's reports held until its requests are read, by thread ID. */
   private readonly held = new Map<string, HeldReports>()
+  /** When the report being applied came in, while a held one is applied, so it reads as of then. */
+  private reportedAt: number | undefined
   /** `applied`: told a thread's held reports were applied, so its owner shows the thread's usage as they left it. */
   constructor(directory: string, private readonly provider: 'codex' | 'claude' | 'grok', private readonly usageEnabled = false,
     private readonly applied?: (id: string) => void) {
@@ -272,7 +290,7 @@ export class NativeUsage {
   private store(id: string): AtomicJsonStore<{ id: string; ledger: Ledger }> {
     let store = this.stores.get(id)
     if (!store) {
-      store = AtomicJsonStore.compact(this.ledgerPath(id), threadLedgerSchema.parse, () => ({ id, ledger: emptyLedger() }))
+      store = AtomicJsonStore.compact(this.ledgerPath(id), threadLedgerSchema.parse, () => ({ id, ledger: emptyLedger(Date.now()) }))
       this.stores.set(id, store)
     }
     return store
@@ -358,10 +376,66 @@ export class NativeUsage {
   }
   /** What reading a ledger from its file does to it before anything counts in it; true when that changed it. */
   private normalized(ledger: Ledger): boolean {
+    const failed = this.clearedFailure(ledger)
+    const keys = Object.keys(ledger.entries)
+    const repriced = this.repriced(ledger, keys)
+    const before = JSON.stringify(ledger.view)
+    if (repriced) this.advance(ledger)
+    this.summarize(ledger)
+    return failed || repriced || JSON.stringify(ledger.view) !== before
+  }
+  /**
+   * `normalized`, a chunk of requests a task, for a ledger read while main goes on: a long thread's walk of every request is
+   * then never one task longer than its file's parse. The running totals are walked in the ledger's order, as `summarize`
+   * walks them, so they are the same numbers to the last bit.
+   */
+  private async normalizedInTasks(ledger: Ledger): Promise<boolean> {
+    const failed = this.clearedFailure(ledger)
+    const keys = Object.keys(ledger.entries)
+    let repriced = false
+    for (let start = 0; start < keys.length; start += NORMALISED_AT_ONCE) {
+      if (start) await nextTask()
+      repriced = this.repriced(ledger, keys.slice(start, start + NORMALISED_AT_ONCE)) || repriced
+    }
+    const counted = repriced ? Object.keys(ledger.entries) : keys
+    const totals = noTotals()
+    const split = Math.max(0, counted.length - 1)
+    for (let start = 0; start < split; start += NORMALISED_AT_ONCE) {
+      await nextTask()
+      for (const key of counted.slice(start, Math.min(split, start + NORMALISED_AT_ONCE))) addRequest(totals, ledger.entries[key]!)
+    }
+    totals.tail.push(...counted.slice(split))
+    this.running.set(ledger, totals)
+    const before = JSON.stringify(ledger.view)
+    if (repriced) this.advance(ledger)
+    this.summarize(ledger)
+    return failed || repriced || JSON.stringify(ledger.view) !== before
+  }
+  /** A ledger's requests checked against the ledger's schema, a chunk a task; undefined when one is not a request. */
+  private async checkedInTasks(raw: Record<string, unknown>): Promise<Ledger['entries'] | undefined> {
+    const keys = Object.keys(raw)
+    const entries: Ledger['entries'] = {}
+    for (let start = 0; start < keys.length; start += NORMALISED_AT_ONCE) {
+      if (start) await nextTask()
+      for (const key of keys.slice(start, start + NORMALISED_AT_ONCE)) {
+        const entry = entrySchema.safeParse(raw[key])
+        if (!entry.success) return undefined
+        entries[key] = entry.data
+      }
+    }
+    return entries
+  }
+  /** A successfully read archive is durable; an old process's failure flag is not. True when there was one. */
+  private clearedFailure(ledger: Ledger): boolean {
+    if (!ledger.view.persistenceError) return false
+    delete ledger.view.persistenceError
+    return true
+  }
+  /** Drops Claude's local notices among `keys` and prices what has a price now; true when that changed a request. */
+  private repriced(ledger: Ledger, keys: readonly string[]): boolean {
     let changed = false
-    // A successfully read archive is durable; an old process's failure flag is not.
-    if (ledger.view.persistenceError) { delete ledger.view.persistenceError; changed = true }
-    for (const [key, entry] of Object.entries(ledger.entries)) {
+    for (const key of keys) {
+      const entry = ledger.entries[key]!
       // Claude's own local notices carry no billed work.
       if (entry.model === SYNTHETIC) { delete ledger.entries[key]; changed = true; continue }
       // Usage recorded before its model had a price is priced once one exists; priced entries keep their rate.
@@ -369,9 +443,16 @@ export class NativeUsage {
       const estimate = estimateUsage(this.provider, entry.model, entry.tokens)
       if (estimate) { ledger.entries[key] = { ...entry, usd: estimate.usd, ...(estimate.lowerBound ? { lowerBound: true } : {}), rate: USAGE_RATE_VERSION }; changed = true }
     }
-    const before = JSON.stringify(ledger.view)
-    this.summarize(ledger)
-    return changed || JSON.stringify(ledger.view) !== before
+    return changed
+  }
+  /** Moves the thread's revision on: one of its requests changed. */
+  private advance(ledger: Ledger): void { ledger.view.revision = (ledger.view.revision ?? 0) + 1 }
+  /** Now, or when the held report being applied came in. */
+  private now(): number { return this.reportedAt ?? Date.now() }
+  /** Shows a reading in an unread thread's view at once, while its requests are read and its report waits for them. */
+  private preview(id: string, reading: (view: ThreadUsage) => void): void {
+    const view = this.unread.get(id)
+    if (view) reading(view)
   }
   /**
    * Holds a report on a thread whose requests have not been read since start (#1937), and reads them off the report's task:
@@ -380,12 +461,20 @@ export class NativeUsage {
    * no request, `order`, is held only behind reports already held, so it keeps its place among them.
    */
   private deferred(id: string, report: () => void, need: 'requests' | 'order' = 'requests'): boolean {
-    const held = this.held.get(id)
-    if (held) { held.reports.push(report); return true }
-    if (need === 'order' || !this.unread.has(id)) return false
-    this.held.set(id, { reports: [report], reading: undefined, failures: 0, retry: undefined })
-    void this.readHeld(id)
+    if (!this.held.has(id) && (need === 'order' || !this.unread.has(id))) return false
+    const at = Date.now()
+    this.readSoon(id).reports.push(() => { this.reportedAt = at; try { report() } finally { this.reportedAt = undefined } })
     return true
+  }
+  /** The thread's held reports, its requests' read started if it was not. */
+  private readSoon(id: string): HeldReports {
+    let held = this.held.get(id)
+    if (!held) {
+      held = { reports: [], reading: undefined, failures: 0, retry: undefined }
+      this.held.set(id, held)
+      void this.readHeld(id)
+    }
+    return held
   }
   /**
    * Reads a thread's requests with the store's own read, then, in a task of its own, makes of them what start made of every
@@ -398,29 +487,39 @@ export class NativeUsage {
     if (held.reading) return held.reading
     if (held.retry !== undefined) { clearTimeout(held.retry); held.retry = undefined }
     const reading = (async () => {
-      let read: z.infer<typeof foundLedgerSchema> = null
+      const path = this.ledgerPath(id)
+      let read: z.infer<typeof uncheckedLedgerSchema> = null
       try {
-        if (!this.data[id] && this.unread.has(id)) read = await AtomicJsonStore.compact(this.ledgerPath(id), foundLedgerSchema.parse, () => null).read()
+        if (!this.data[id] && this.unread.has(id)) read = await AtomicJsonStore.compact(path, uncheckedLedgerSchema.parse, () => null).read()
       } catch {
         held.failures += 1
         held.retry = setTimeout(() => { held.retry = undefined; void this.readHeld(id) }, Math.min(READ_RETRY_MOST_MS, READ_RETRY_FIRST_MS * 2 ** (held.failures - 1)))
         held.retry.unref?.()
         return
       }
-      await new Promise(resolve => { setImmediate(resolve) })
-      // Usage's visit may have read the requests meanwhile and applied the reports.
-      if (this.held.get(id) !== held) return
+      await nextTask()
       // A file that is not this thread's ledger was set aside by the store if unreadable: the thread starts afresh, as at start.
-      if (!this.data[id] && this.unread.delete(id) && read && read.id === id) this.install(id, read.ledger)
+      if (!this.data[id] && this.unread.has(id) && read && read.id === id) {
+        const entries = await this.checkedInTasks(read.ledger.entries)
+        if (entries) {
+          const ledger = read.ledger as unknown as Ledger
+          ledger.entries = entries
+          const changed = await this.normalizedInTasks(ledger)
+          if (this.held.get(id) !== held || this.data[id] || !this.unread.has(id)) return
+          this.data[id] = ledger
+          if (changed) this.dirty.add(id)
+        } else {
+          // A request the ledger's schema refuses: the store's own read refuses the file too and sets it aside, as it sets
+          // aside any file it cannot read as a ledger, and the thread starts afresh, as it would have at start.
+          await AtomicJsonStore.compact(path, foundLedgerSchema.parse, () => null).read().catch(() => null)
+        }
+      }
+      if (this.held.get(id) !== held) return
+      this.unread.delete(id)
       this.applyHeld(id)
     })()
     held.reading = reading.finally(() => { held.reading = undefined })
     return held.reading
-  }
-  /** Keeps a thread's requests read from its file, made what start made of every ledger it read. */
-  private install(id: string, ledger: Ledger): void {
-    this.data[id] = ledger
-    if (this.normalized(ledger)) this.dirty.add(id)
   }
   /** Applies a thread's held reports, now that its requests are read, in the order they came, and tells its owner. */
   private applyHeld(id: string): void {
@@ -433,14 +532,6 @@ export class NativeUsage {
     }
     this.writePending()
     try { this.applied?.(id) } catch { /* As above. */ }
-  }
-  /**
-   * An unread thread's ledger, read from its file on this thread for Usage's visit, which reads on its own task. Undefined
-   * when the file is not this thread's ledger, which the store has then set aside if it was unreadable.
-   */
-  private readLedger(id: string): Ledger | undefined {
-    const read = AtomicJsonStore.compact(this.ledgerPath(id), foundLedgerSchema.parse, () => null).readSync()
-    return read && read.id === id ? read.ledger : undefined
   }
   /** Drain the latest observations, retrying a prior failure once without spinning on a broken disk. */
   async flushed(): Promise<void> {
@@ -500,19 +591,17 @@ export class NativeUsage {
     }
   }
   /**
-   * Saved rows only; reading usage never starts native sessions. An unread thread's requests are read from its file for
-   * the visit and kept: Usage visits a thread at start only when its usage changed since Usage last visited it, which is
-   * a thread likely to report this run, and reports held for it meanwhile are applied first. A file that cannot be read at
-   * the moment throws, and Usage reads the thread again with its next change.
+   * Saved rows only; reading usage never starts native sessions. An unread thread's requests are read as a report's are,
+   * once, in the background, and kept: Usage visits a thread at start only when its usage changed since Usage last read it,
+   * a thread likely to report this run. Until they are read the visit throws `UsageReadPending`, and Usage visits again;
+   * once a read has failed it throws as any unreadable thread does, and Usage reads the thread again with its next change.
    */
   visitUsage(id: string, visitor: (record: UsageTokenObservation) => void): void {
     if (!this.usageEnabled) return
-    if (!this.data[id] && this.unread.has(id)) {
-      const read = this.readLedger(id)
-      this.unread.delete(id)
-      if (read) this.install(id, read)
-      this.applyHeld(id)
-      this.writePending()
+    if (this.held.has(id) || (!this.data[id] && this.unread.has(id))) {
+      const held = this.readSoon(id)
+      if (held.failures && !held.reading) throw new Error('The thread\'s usage could not be read.')
+      throw new UsageReadPending()
     }
     const ledger = this.data[id]
     if (!ledger) return
@@ -572,11 +661,10 @@ export class NativeUsage {
     }
   }
   compacted(id: string, used: unknown, updatedAt = new Date().toISOString()): void {
-    if (this.deferred(id, () => this.compacted(id, used, updatedAt))) return
+    if (this.deferred(id, () => this.compacted(id, used, updatedAt))) { this.preview(id, view => { contextReading(view, tokenCount(used), updatedAt) }); return }
     const ledger = this.ledger(id)
     const changed = ledger.view.contextUsed !== tokenCount(used) || ledger.view.contextUpdatedAt !== updatedAt || ledger.contextCompacted !== true
-    ledger.view.contextUsed = tokenCount(used)
-    ledger.view.contextUpdatedAt = updatedAt
+    contextReading(ledger.view, tokenCount(used), updatedAt)
     ledger.contextCompacted = true
     this.save(id, changed, true)
   }
@@ -584,7 +672,7 @@ export class NativeUsage {
   private ledger(id: string): Ledger {
     const known = this.data[id]
     if (known) { this.serializedLedgers.delete(known); return known }
-    return this.data[id] = emptyLedger()
+    return this.data[id] = emptyLedger(this.now())
   }
   /**
    * The thread's view of its requests: what they cost, at which rate versions, whether any is unpriced, and their tokens
@@ -750,6 +838,7 @@ export class NativeUsage {
     if (previous && previous.model === model && JSON.stringify(previous.tokens) === JSON.stringify(tokens)
       && (!reported || previous.usd === reported.usd && previous.rate === reported.rate)) return false
     this.changingRequest(ledger, key)
+    this.advance(ledger)
     if (reported) { ledger.entries[key] = { tokens, model, usd: reported.usd, rate: reported.rate }; return true }
     const estimate = estimateUsage(this.provider, model, tokens)
     ledger.entries[key] = { tokens, model, usd: estimate?.usd, ...(estimate?.lowerBound ? { lowerBound: true } : {}), rate: USAGE_RATE_VERSION }
@@ -760,7 +849,9 @@ export class NativeUsage {
     if (!params.turnId || !usage.total || !usage.last) return
     const total = codexTokens(usage.total); const last = codexTokens(usage.last)
     if (!Object.values(last).some(value => value !== undefined)) return
-    if (this.deferred(id, () => this.codex(id, model, value, context))) return
+    // A report Codex counted before reads in the view as any other until the requests are read: Codex sends one again only
+    // for a thread read from its rollout, its newest turns, whose reading is the view's already.
+    if (this.deferred(id, () => this.codex(id, model, value, context))) { this.preview(id, view => { this.codexReading(view, model, last, usage) }); return }
     const ledger = this.ledger(id)
     const key = codexEntryKey(params.turnId, total)
     if (this.seen(ledger).has(key)) {
@@ -788,13 +879,17 @@ export class NativeUsage {
     this.record(ledger, key, model, delta)
     if (ledger.entries[key]) this.publishUsage(id, key, model, delta, context, ledger.incomplete, String(params.turnId))
     if (!reset) { ledger.total = total; ledger.model = model }
-    ledger.view.latest = last
-    ledger.view.modelId = model
-    ledger.view.contextUsed = tokenCount(object(usage.last).totalTokens)
-    ledger.view.contextWindow = tokenCount(usage.modelContextWindow) || undefined
-    ledger.view.updatedAt = new Date().toISOString()
-    ledger.view.contextUpdatedAt = ledger.view.updatedAt
+    this.codexReading(ledger.view, model, last, usage)
     this.save(id)
+  }
+  /** What a Codex turn's usage report sets in a thread's view. */
+  private codexReading(view: ThreadUsage, model: string, last: UsageTokens, usage: Record<string, unknown>): void {
+    view.latest = last
+    view.modelId = model
+    view.contextUsed = tokenCount(object(usage.last).totalTokens)
+    view.contextWindow = tokenCount(usage.modelContextWindow) || undefined
+    view.updatedAt = new Date(this.now()).toISOString()
+    view.contextUpdatedAt = view.updatedAt
   }
   claude(id: string, value: unknown, selectedModel?: string, context?: NativeUsageContext): void {
     const frame = object(value)
@@ -803,7 +898,7 @@ export class NativeUsage {
     // A streamed message's frames are held together, in order, while the thread's requests are read: its start names the
     // request its deltas count in, and its stop ends that.
     const counts = claudeCounts(frame)
-    if (counts && this.deferred(id, () => this.claude(id, value, selectedModel, context), counts)) return
+    if (counts && this.deferred(id, () => this.claude(id, value, selectedModel, context), counts)) { this.preview(id, view => { this.claudeReading(view, frame, selectedModel) }); return }
     if (frame.type === 'stream_event') {
       const event = object(frame.event)
       if (event.type === 'message_start') {
@@ -850,33 +945,78 @@ export class NativeUsage {
       if (isNew || ledger.view.modelId === undefined) ledger.view.modelId = nextModel
       // A timestamp-less replay is not a new observation of the context's age.
       if (changed || before !== JSON.stringify([ledger.view, ledger.latestId, ledger.contextCompacted]) || typeof frame.timestamp === 'string') {
-        ledger.view.updatedAt = typeof frame.timestamp === 'string' ? frame.timestamp : new Date().toISOString()
+        ledger.view.updatedAt = typeof frame.timestamp === 'string' ? frame.timestamp : new Date(this.now()).toISOString()
       }
       if (contextChanged) ledger.view.contextUpdatedAt = ledger.view.updatedAt
       ledger.contextCompacted = false
     }
     this.save(id, changed || before !== JSON.stringify([ledger.view, ledger.latestId, ledger.contextCompacted]))
   }
+  /**
+   * What a Claude frame sets in an unread thread's view while its requests are read: a new message's reading, as `claude`
+   * reads one newer than the view's, and a streamed message's growing output. One older than the view's, as history
+   * replays carry, waits for the requests.
+   */
+  private claudeReading(view: ThreadUsage, frame: Record<string, unknown>, selectedModel: string | undefined): void {
+    const event = object(frame.event)
+    if (frame.type === 'stream_event' && event.type === 'message_delta') {
+      const output = tokenCount(object(event.usage).output_tokens)
+      if (view.latest && output !== undefined && output >= (view.latest.output ?? 0)) view.latest = { ...view.latest, output }
+      return
+    }
+    const message = object(frame.type === 'stream_event' ? event.message : frame.message)
+    if (!message.usage || typeof message.id !== 'string') return
+    const older = typeof frame.timestamp === 'string' && Number.isFinite(Date.parse(frame.timestamp)) && Date.parse(frame.timestamp) < Math.max(Date.parse(view.updatedAt), Date.parse(view.contextUpdatedAt ?? view.updatedAt))
+    if (older && view.latest) return
+    const tokens = claudeTokens(message.usage)
+    const nextModel = selectedModel ?? (typeof message.model === 'string' ? message.model : undefined)
+    if (view.modelId !== nextModel) delete view.contextWindow
+    view.latest = tokens; view.modelId = nextModel
+    view.updatedAt = typeof frame.timestamp === 'string' ? frame.timestamp : new Date(this.now()).toISOString()
+    contextReading(view, tokens.input, view.updatedAt)
+  }
   elapsed(id: string, elapsed: unknown, contextWindow?: unknown): void {
     if (tokenCount(elapsed) === undefined && !tokenCount(contextWindow)) return
-    if (this.deferred(id, () => this.elapsed(id, elapsed, contextWindow))) return
+    if (this.deferred(id, () => this.elapsed(id, elapsed, contextWindow))) { this.preview(id, view => { turnEnd(view, elapsed, contextWindow) }); return }
     const ledger = this.ledger(id)
     const changed = ledger.view.elapsedMs !== tokenCount(elapsed) || ledger.view.contextWindow !== (tokenCount(contextWindow) || ledger.view.contextWindow)
-    ledger.view.elapsedMs = tokenCount(elapsed)
-    ledger.view.contextWindow = tokenCount(contextWindow) || ledger.view.contextWindow
+    turnEnd(ledger.view, elapsed, contextWindow)
     // The turn's duration comes with its end, which is written at once.
     this.save(id, changed, true)
   }
   claudeResult(id: string, value: unknown): void {
-    if (this.deferred(id, () => this.claudeResult(id, value))) return
+    if (this.deferred(id, () => this.claudeResult(id, value))) {
+      // The served model is the latest request's, which waits for the requests; the view's model names the same one.
+      this.preview(id, view => {
+        const frame = object(value)
+        turnEnd(view, frame.duration_ms, view.modelId ? object(claudeModelUsage(frame.modelUsage, view.modelId)).contextWindow : undefined)
+      })
+      return
+    }
     const frame = object(value); const ledger = this.data[id]
     const model = ledger?.latestId ? ledger.entries[ledger.latestId]?.model : undefined
     this.elapsed(id, frame.duration_ms, model ? object(claudeModelUsage(frame.modelUsage, model)).contextWindow : undefined)
   }
+  /** What a Grok turn's end sets in a thread's view; `dated`, asked once it is set: whether the turn's time is the view's now. */
+  private grokReading(view: ThreadUsage, selectedModel: string, params: Record<string, unknown>, dated: () => boolean): void {
+    const usage = object(object(params.update).usage)
+    const timestamp = tokenCount(object(params._meta).agentTimestampMs)
+    if (view.latest && timestamp !== undefined && timestamp < Date.parse(view.updatedAt)) return
+    view.latest = { input: tokenCount(usage.inputTokens), output: tokenCount(usage.outputTokens), cached: tokenCount(usage.cachedReadTokens), cacheWrite: tokenCount(usage.cacheCreationTokens) }
+    view.modelId = selectedModel
+    // Native turn usage aggregates model calls. It is not a current context size.
+    view.contextUsed = undefined; view.contextWindow = undefined
+    view.elapsedMs = tokenCount(usage.apiDurationMs); view.elapsedKind = 'api'
+    if (timestamp !== undefined || dated()) view.updatedAt = new Date(timestamp ?? this.now()).toISOString()
+  }
   grok(id: string, selectedModel: string, value: unknown, context?: NativeUsageContext): void {
     const params = object(value); const update = object(params.update); const usage = object(update.usage)
     if (update.sessionUpdate !== 'turn_completed' || !update.usage) return
-    if (this.deferred(id, () => this.grok(id, selectedModel, value, context))) return
+    if (this.deferred(id, () => this.grok(id, selectedModel, value, context))) {
+      // A turn Grok reports again carries the time it ended, older than the view's, so only a newer turn reads in the view.
+      this.preview(id, view => { this.grokReading(view, selectedModel, params, () => true) })
+      return
+    }
     const meta = object(params._meta)
     const identity = typeof update.prompt_id === 'string' ? update.prompt_id
       : typeof meta.eventId === 'string' && tokenCount(meta.agentTimestampMs) !== undefined ? `${meta.eventId}:${meta.agentTimestampMs}` : undefined
@@ -946,16 +1086,7 @@ export class NativeUsage {
       else if (models.length) for (const [model, row] of models) this.record(ledger, `${identity}:${model}`, model, tokens(object(row)))
       else this.record(ledger, identity, selectedModel, tokens(usage))
     } else ledger.incomplete = true
-    const timestamp = tokenCount(meta.agentTimestampMs)
-    if (!ledger.view.latest || timestamp === undefined || timestamp >= Date.parse(ledger.view.updatedAt)) {
-      ledger.view.latest = tokens(usage); ledger.view.modelId = selectedModel
-      // Native turn usage aggregates model calls. It is not a current context size.
-      ledger.view.contextUsed = undefined; ledger.view.contextWindow = undefined
-      ledger.view.elapsedMs = tokenCount(usage.apiDurationMs); ledger.view.elapsedKind = 'api'
-      if (identity || timestamp !== undefined || before !== JSON.stringify([ledger.view, ledger.incomplete])) {
-        ledger.view.updatedAt = new Date(timestamp ?? Date.now()).toISOString()
-      }
-    }
+    this.grokReading(ledger.view, selectedModel, params, () => identity !== undefined || before !== JSON.stringify([ledger.view, ledger.incomplete]))
     // Grok reports usage once, at the turn's end, which is written at once.
     this.save(id, identity !== undefined || before !== JSON.stringify([ledger.view, ledger.incomplete]), true)
   }

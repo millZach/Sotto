@@ -16,6 +16,8 @@ export const threadUsageSchema = z.object({
   contextUpdatedAt: z.string().optional(),
   persistenceError: z.boolean().optional(),
   modelId: z.string().optional(),
+  /** Moves on whenever any of the thread's requests changes, so Usage can tell its saved rows changed (#1937). */
+  revision: count.optional(),
 })
 export type ThreadUsage = z.infer<typeof threadUsageSchema>
 

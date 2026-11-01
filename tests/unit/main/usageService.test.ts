@@ -352,9 +352,9 @@ describe('reading every thread\'s saved usage when a provider connects', () => {
    * A connected Codex host of `threads` threads, whose usage reads record which thread was read, fail for `failing` and move
    * `clock` on by `costMs`, over `store`.
    */
-  function visiting(threads: number | ((template: Thread) => Thread[]), options: { failing?: Set<string>; store?: UsageStore; clock?: { now: number }; costMs?: number } = {}) {
+  function visiting(threads: number | ((template: Thread) => Thread[]), options: { failing?: Set<string>; store?: UsageStore; clock?: { now: number }; costMs?: number; connected?: boolean } = {}) {
     const fake = new FakeProviderHost()
-    fake.state.connected = true
+    fake.state.connected = options.connected ?? true
     const template = fake.state.threads[0]!
     fake.state.threads = typeof threads === 'number' ? threadsOf(threads)(template) : threads(template)
     fake.state.models[0]!.providerId = 'codex'
@@ -383,7 +383,8 @@ describe('reading every thread\'s saved usage when a provider connects', () => {
   }
 
   it('reads at most three threads in a task, none in the publication\'s own, and marks the seed only once all are read', async () => {
-    const f = visiting(20)
+    // A clock that stands still, so the count alone ends each task.
+    const f = visiting(20, { clock: { now: 0 } })
     expect(f.read).toEqual([])
     // A flush meanwhile carries no seed mark: threads are still to be read.
     f.service.flush()
@@ -453,6 +454,52 @@ describe('reading every thread\'s saved usage when a provider connects', () => {
     const third = visiting(threadsOf(7, at, new Set(['thread-1'])), { store: new UsageStore(path, () => at) })
     await third.service.read()
     expect(third.read).toEqual([])
+  })
+
+  it('counts a thread passed over on its mark against a task\'s three, as a thread read', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-usage-service-')); roots.push(root)
+    const path = join(root, 'usage.sqlite')
+    const first = visiting(20, { store: new UsageStore(path, () => at) })
+    await first.service.read()
+    first.service.close()
+    const second = visiting(20, { store: new UsageStore(path, () => at), clock: { now: 0 } })
+    const queued = () => (second.service as unknown as { visits: Map<string, unknown> }).visits.size
+    const left: number[] = [queued()]
+    while (queued()) { await nextTask(); left.push(queued()) }
+    expect(left).toEqual([20, 17, 14, 11, 8, 5, 2, 0])
+    expect(second.read).toEqual([])
+  })
+
+  it('reads a thread whose provider connects with newer usage, though its usage matched its mark while the provider was not connected', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-usage-service-')); roots.push(root)
+    const path = join(root, 'usage.sqlite')
+    const first = visiting(1, { store: new UsageStore(path, () => at) })
+    await first.service.read()
+    first.service.close()
+    // The thread shows the usage its rows were read at, its provider not connected yet; then it connects, the thread newer.
+    const second = visiting(1, { store: new UsageStore(path, () => at), connected: false })
+    for (let task = 0; task < 3; task++) await nextTask()
+    expect(second.read).toEqual([])
+    second.fake.state.connected = true
+    second.fake.state.threads = threadsOf(1, at, new Set(['thread-0']))(second.template)
+    second.fake.emit()
+    await second.service.read()
+    expect(second.read).toEqual(['thread-0'])
+  })
+
+  it('reads a thread passed over on its mark once its usage moves on later in the run', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'sotto-usage-service-')); roots.push(root)
+    const path = join(root, 'usage.sqlite')
+    const first = visiting(2, { store: new UsageStore(path, () => at) })
+    await first.service.read()
+    first.service.close()
+    const second = visiting(2, { store: new UsageStore(path, () => at) })
+    await second.service.read()
+    expect(second.read).toEqual([])
+    second.fake.state.threads = threadsOf(2, at, new Set(['thread-1']))(second.template)
+    second.fake.emit()
+    await second.service.read()
+    expect(second.read).toEqual(['thread-1'])
   })
 
   it('writes a thread\'s mark only once the rows its read gave are written, so a failed write reads it again next start', async () => {

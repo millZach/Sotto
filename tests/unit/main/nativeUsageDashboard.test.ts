@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { NativeUsage, tokenCount } from '../../../src/main/agents/nativeUsage'
+import { UsageReadPending } from '../../../src/main/agents/usageReadPending'
 import { UsageStore } from '../../../src/main/agents/usageStore'
 import type { UsageTokenObservation } from '../../../src/shared/usageDashboard'
 import { usageTokenObservationSchema } from '../../../src/shared/usageDashboard'
@@ -24,6 +25,15 @@ afterEach(async () => {
   for (const drain of drains.splice(0)) await drain()
   await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true })))
 })
+/**
+ * Usage's visit of a thread as Usage makes it: a restarted thread's saved requests are read first, in the background, and
+ * the visit made again once they are (#1937).
+ */
+async function visit(usage: NativeUsage, id: string, visitor: (row: UsageTokenObservation) => void): Promise<void> {
+  try { usage.visitUsage(id, visitor); return } catch (error) { if (!(error instanceof UsageReadPending)) throw error }
+  await usage.flushed()
+  usage.visitUsage(id, visitor)
+}
 async function fixture(provider: 'claude' | 'codex' | 'grok', enabled = true) {
   const root = await mkdtemp(join(tmpdir(), 'sotto-dashboard-native-')); roots.push(root)
   const usage = new NativeUsage(root, provider, enabled); await usage.load(); drains.push(() => usage.flushed())
@@ -50,7 +60,7 @@ describe('Owl native numeric projection', () => {
     const { usage, rows, root } = await fixture('claude', false)
     usage.claude('thread', claudeFrame('native-message-secret'))
     expect(rows).toEqual([])
-    const visited: UsageTokenObservation[] = []; usage.visitUsage('thread', row => visited.push(row)); expect(visited).toEqual([])
+    const visited: UsageTokenObservation[] = []; await visit(usage, 'thread', row => visited.push(row)); expect(visited).toEqual([])
     expect(usage.get('thread')?.total).toMatchObject({ input: 35, output: 3, cached: 10, cacheWrite: 20, cacheWrite5m: 8, cacheWrite1h: 12 })
     await usage.flushed()
     // The thread's ledger file, of the one thread here (#555).
@@ -69,7 +79,7 @@ describe('Owl native numeric projection', () => {
     expect(rows.at(-1)).toMatchObject({ tokens: { input: 35, output: 12 }, groupStartedAt: new Date(context.groupStartedAt).toISOString(), phase: 'replay' })
     expect(JSON.stringify(rows)).not.toContain('native-message-secret')
     expect(JSON.stringify(rows)).not.toContain('native-user-secret')
-    const seed: UsageTokenObservation[] = []; usage.visitUsage('thread', row => seed.push(row))
+    const seed: UsageTokenObservation[] = []; await visit(usage, 'thread', row => seed.push(row))
     expect(seed).toHaveLength(1); expect(seed[0]).toMatchObject({ phase: 'replay', tokens: { output: 12 } })
     expect(seed[0]?.liveNewGroup).toBeUndefined()
   })
@@ -77,7 +87,7 @@ describe('Owl native numeric projection', () => {
     const { usage, root } = await fixture('claude')
     usage.claude('thread', { ...claudeFrame('old'), timestamp: '2026-10-01T10:00:00Z' }); await usage.flushed()
     const restarted = new NativeUsage(root, 'claude', true); await restarted.load(); drains.push(() => restarted.flushed())
-    const seed: UsageTokenObservation[] = []; restarted.visitUsage('thread', row => seed.push(row))
+    const seed: UsageTokenObservation[] = []; await visit(restarted, 'thread', row => seed.push(row))
     expect(seed[0]).toMatchObject({ phase: 'seed' }); expect(seed[0]?.at).toBeUndefined(); expect(seed[0]?.groupStartedAt).toBeUndefined()
   })
   it('keeps a cleared Claude parent turn suppressed across streams and later assistant requests', async () => {
@@ -125,7 +135,7 @@ describe('Owl native numeric projection', () => {
     usage.grok('thread', 'selected-model', grokFrame()); await usage.flushed()
     const restarted = new NativeUsage(root, 'grok', true); await restarted.load(); drains.push(() => restarted.flushed())
     const store = new UsageStore(join(root, 'usage.sqlite')); store.open(); drains.push(async () => store.close())
-    restarted.visitUsage('thread', row => store.observeTokens(row))
+    await visit(restarted, 'thread', row => store.observeTokens(row))
     expect(store.query({}).models).toHaveLength(1)
     expect(store.query({}).models[0]).toMatchObject({ modelId: 'unknown', partialTokenRecords: 1 })
     restarted.subscribeUsage(row => store.observeTokens(row))
@@ -149,7 +159,7 @@ describe('Owl native numeric projection', () => {
     const before = store.query({}); expect(before.totals.tokens.total.value).toBe(58)
     const revision = before.metadata.revision
     const restarted = new NativeUsage(root, 'grok', true); await restarted.load(); drains.push(() => restarted.flushed())
-    restarted.visitUsage('thread', row => { expect(row.phase).toBe('seed'); expect(store.observeTokens(row).status).toBe('suppressed') })
+    await visit(restarted, 'thread', row => { expect(row.phase).toBe('seed'); expect(store.observeTokens(row).status).toBe('suppressed') })
     expect(store.query({}).totals.tokens.total.value).toBe(58); expect(store.metadata().revision).toBe(revision)
     expect(store.query({}).models).toEqual(before.models)
     restarted.subscribeUsage(row => store.observeTokens(row))
@@ -172,10 +182,10 @@ describe('Owl native numeric projection', () => {
     const store = new UsageStore(join(root, 'usage.sqlite')); store.open(); drains.push(async () => store.close())
     const context = { phase: 'live' as const, groupId: 'current-parent', groupStartedAt: '2026-10-12T10:00:00Z' }
     usage.claude('thread', claudeFrame('current', 3), undefined, context)
-    usage.visitUsage('thread', row => store.observeTokens(row))
+    await visit(usage, 'thread', row => store.observeTokens(row))
     // The replacement arrives before Sotto can bind its native observer. Only a later visitor recovers it.
     usage.claude('thread', claudeFrame('current', 20), undefined, context)
-    usage.visitUsage('thread', row => { expect(row.phase).toBe('live'); store.observeTokens(row) })
+    await visit(usage, 'thread', row => { expect(row.phase).toBe('live'); store.observeTokens(row) })
     expect(store.query({}).totals.tokens.output.value).toBe(20)
     expect(store.query({}).totals.tokenRecords).toBe(1)
   })
@@ -213,7 +223,7 @@ describe('Owl native numeric projection', () => {
     expect(rows[0]?.groupRecordsHash).toBe(createHash('sha256').update(JSON.stringify(keys)).digest('hex'))
     usage.grok('thread', 'selected-model', grokFrame(), { phase: 'replay' })
     expect(rows.slice(-2).map(row => row.recordKey).sort()).toEqual(keys)
-    const seed: UsageTokenObservation[] = []; usage.visitUsage('thread', row => seed.push(row))
+    const seed: UsageTokenObservation[] = []; await visit(usage, 'thread', row => seed.push(row))
     expect(seed.filter(row => !row.removed).map(row => row.recordKey).sort()).toEqual(keys)
     expect(seed.reduce((sum, row) => sum + (row.tokens.input ?? 0) + (row.tokens.output ?? 0), 0)).toBe(58)
   })
@@ -231,7 +241,7 @@ describe('Owl native numeric projection', () => {
     await usage.flushed()
     for (let restart = 0; restart < 2; restart++) {
       const native = new NativeUsage(root, 'grok', true); await native.load(); drains.push(() => native.flushed())
-      native.visitUsage('thread', row => store.observeTokens(row))
+      await visit(native, 'thread', row => store.observeTokens(row))
       expect(store.query({}).totals.tokens.total.value).toBe(58)
       native.subscribeUsage(row => store.observeTokens(row)); native.grok('thread', 'selected-model', grokFrame(), { phase: 'replay' })
       const read = store.query({})
@@ -248,7 +258,7 @@ describe('Owl native numeric projection', () => {
     usage.grok('thread', 'selected-model', grokFrame(), { phase: 'live' }); await usage.flushed()
     expect(store.query({}).totals.tokens.total.value).toBe(58)
     const native = new NativeUsage(root, 'grok', true); await native.load(); drains.push(() => native.flushed())
-    native.visitUsage('thread', row => store.observeTokens(row))
+    await visit(native, 'thread', row => store.observeTokens(row))
     const before = store.query({}); expect(before.totals.tokens.total.value).toBe(58); expect(before.totals.tokens.total.partial).toBe(false)
     native.subscribeUsage(row => store.observeTokens(row))
     const onlyB = grokFrame()
@@ -271,7 +281,7 @@ describe('Owl native numeric projection', () => {
     usage.subscribeUsage(row => store.observeTokens(row))
     usage.grok('thread', 'selected-model', grokFrame(), { phase: 'live' }); await usage.flushed()
     const native = new NativeUsage(root, 'grok', true); await native.load(); drains.push(() => native.flushed())
-    native.visitUsage('thread', row => store.observeTokens(row)); native.subscribeUsage(row => store.observeTokens(row))
+    await visit(native, 'thread', row => store.observeTokens(row)); native.subscribeUsage(row => store.observeTokens(row))
     const changed = grokFrame()
     const modelC = { inputTokens: 50, outputTokens: 8, cachedReadTokens: 5, cacheCreationTokens: 2 }
     Object.assign(changed.update.usage, { modelUsage: { 'grok-c': modelC } })
@@ -301,7 +311,7 @@ describe('Owl native numeric projection', () => {
     }
     usage.grok('thread', 'selected-model', frame(30), { phase: 'live' }); await usage.flushed()
     const native = new NativeUsage(root, 'grok', true); await native.load(); drains.push(() => native.flushed())
-    native.visitUsage('thread', row => store.observeTokens(row)); native.subscribeUsage(row => store.observeTokens(row))
+    await visit(native, 'thread', row => store.observeTokens(row)); native.subscribeUsage(row => store.observeTokens(row))
     native.grok('thread', 'selected-model', frame(10), { phase: 'replay' })
     expect(store.query({}).totals.tokens.total.value).toBeUndefined()
     expect(store.query({}).totals.partialTokenRecords).toBe(1)
@@ -322,7 +332,7 @@ describe('Owl native numeric projection', () => {
     usage.grok('thread', 'selected-model', grokFrame(), { phase: 'replay' }); await usage.flushed()
     expect(store.query({}).totals.tokens.total.value).toBe(58)
     const native = new NativeUsage(root, 'grok', true); await native.load(); drains.push(() => native.flushed())
-    native.visitUsage('thread', row => store.observeTokens(row)); native.subscribeUsage(row => store.observeTokens(row))
+    await visit(native, 'thread', row => store.observeTokens(row)); native.subscribeUsage(row => store.observeTokens(row))
     const lowered = grokFrame()
     lowered.update.usage.modelUsage['grok-a'].inputTokens = 10; lowered.update.usage.inputTokens = 30
     for (let replay = 0; replay < 3; replay++) {
@@ -337,7 +347,7 @@ describe('Owl native numeric projection', () => {
     // SQLite's numeric confidence must survive reopening the actual database as well.
     store.close(); store = new UsageStore(path); store.open()
     const afterRestart = new NativeUsage(root, 'grok', true); await afterRestart.load(); drains.push(() => afterRestart.flushed())
-    afterRestart.visitUsage('thread', row => store.observeTokens(row)); afterRestart.subscribeUsage(row => store.observeTokens(row))
+    await visit(afterRestart, 'thread', row => store.observeTokens(row)); afterRestart.subscribeUsage(row => store.observeTokens(row))
     for (let replay = 0; replay < 2; replay++) {
       afterRestart.grok('thread', 'selected-model', lowered, { phase: 'replay' })
       const read = store.query({})
@@ -360,7 +370,7 @@ describe('Owl native numeric projection', () => {
     const native = new NativeUsage(root, 'grok', true); await native.load(); drains.push(() => native.flushed())
     const store = new UsageStore(join(root, 'usage.sqlite')); store.open(); drains.push(async () => store.close())
     const seed: UsageTokenObservation[] = []
-    native.visitUsage('thread', row => { seed.push(row); store.observeTokens(row) })
+    await visit(native, 'thread', row => { seed.push(row); store.observeTokens(row) })
     expect(seed[0]?.removed).toBe(true)
     expect(seed.filter(row => !row.removed)).toHaveLength(2)
     expect(store.query({}).totals.tokens.total.value).toBe(58)
@@ -372,11 +382,11 @@ describe('Owl native numeric projection', () => {
     expect(store.query({}).totals.tokenRecords).toBe(2)
     native.grok('thread', 'selected-model', grokFrame(null), { phase: 'replay' })
     expect(store.query({}).totals.tokens.total.value).toBe(58)
-    const restored: UsageTokenObservation[] = []; native.visitUsage('thread', row => restored.push(row))
+    const restored: UsageTokenObservation[] = []; await visit(native, 'thread', row => restored.push(row))
     expect(restored.filter(row => !row.removed).map(row => row.recordKey).sort()).toEqual(initialKeys)
     expect(restored.filter(row => !row.removed).every(row => row.phase === 'replay')).toBe(true)
     store.clear(store.metadata().revision)
-    native.visitUsage('thread', row => store.observeTokens(row))
+    await visit(native, 'thread', row => store.observeTokens(row))
     expect(store.query({}).totals.tokenRecords).toBe(0)
   })
   it('makes a same-model downward Grok report unknown instead of publishing an old high-water vector as complete', async () => {

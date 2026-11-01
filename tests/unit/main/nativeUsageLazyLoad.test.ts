@@ -13,6 +13,11 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vitest'
 import { NativeUsage } from '../../../src/main/agents/nativeUsage'
+import type { AgentHost } from '../../../src/main/agents/host'
+import { UsageReadPending } from '../../../src/main/agents/usageReadPending'
+import { UsageService } from '../../../src/main/agents/usageService'
+import { UsageStore } from '../../../src/main/agents/usageStore'
+import type { AgentHostSnapshot } from '../../../src/shared/agents'
 import type { UsageTokenObservation } from '../../../src/shared/usageDashboard'
 import { savedUsageLedgers } from '../../fixtures/usageLedgerFiles'
 
@@ -73,6 +78,33 @@ function report(usage: NativeUsage, provider: Provider, id: string, index: numbe
   else usage.grok(id, 'grok-4.6-build', grokReport(index))
 }
 
+/** Usage's visit of a thread as Usage makes it: once its saved requests are read, in the background, the visit is made again. */
+async function visited(usage: NativeUsage, id: string): Promise<UsageTokenObservation[]> {
+  const rows: UsageTokenObservation[] = []
+  try { usage.visitUsage(id, row => rows.push(row)); return rows } catch (error) { if (!(error instanceof UsageReadPending)) throw error }
+  await usage.flushed()
+  usage.visitUsage(id, row => rows.push(row))
+  return rows
+}
+/** Usage over `usage`'s Claude threads, as main wires it, on a store in `root`; `publish` hands it the threads as the host shows them. */
+function usageOver(usage: NativeUsage, root: string, ids: readonly string[]) {
+  let listener: ((snapshot: AgentHostSnapshot) => void) | undefined
+  const host = { subscribe: (next: (snapshot: AgentHostSnapshot) => void) => { listener = next; return () => { listener = undefined } },
+    visitUsage: (id: string, visitor: (row: UsageTokenObservation) => void) => usage.visitUsage(id, visitor),
+    subscribeUsage: (next: (row: UsageTokenObservation) => void) => usage.subscribeUsage(next) } as unknown as AgentHost
+  const rows: UsageTokenObservation[] = []
+  const inner = host.visitUsage!.bind(host)
+  host.visitUsage = (id, visitor) => inner(id, row => { rows.push(row); visitor(row) })
+  const store = new UsageStore(join(root, 'usage.sqlite'), () => '2026-10-31T12:00:00.000Z')
+  const service = new UsageService({ directory: root, host, store })
+  service.start()
+  drains.push(async () => { service.close() })
+  const publish = (): void => listener!({ connected: true, providers: [{ id: 'claude', connection: 'connected' }], models: [],
+    threads: ids.map(id => ({ id, providerId: 'claude', usage: usage.get(id) })) } as unknown as AgentHostSnapshot)
+  const visits = vi.spyOn(host as { visitUsage: (id: string, visitor: (row: UsageTokenObservation) => void) => void }, 'visitUsage')
+  return { service, store, publish, visits, rows }
+}
+
 /** A copy of `root` as an earlier build left it, with no thread's view beside its ledger: started from, it reads every ledger whole. */
 async function withoutViews(root: string, provider: Provider = 'claude'): Promise<string> {
   const copy = await folder()
@@ -93,8 +125,8 @@ it('reads every thread\'s view at start and no thread\'s requests, then one thre
   expect(reads.paths()).toEqual([])
   for (let thread = 0; thread < 30; thread++) expect(usage.get(`thread-${thread}`)).toEqual(first.get(`thread-${thread}`))
   usage.claude('thread-7', claudeReport(20))
-  // Held while the thread's requests are read, off this task: the thread shows its view until they apply.
-  expect(usage.get('thread-7')).toEqual(first.get('thread-7'))
+  // Its request is held while the thread's requests are read, off this task; its reading shows in the view at once.
+  expect(usage.get('thread-7')).toMatchObject({ total: first.get('thread-7')!.total, updatedAt: claudeReport(20).timestamp, contextUsed: 1_000 })
   // A streaming reply on it, and its turn's end, are held behind it in order.
   usage.claude('thread-7', { type: 'stream_event', event: { type: 'message_start', message: claudeReport(21, 1).message } })
   usage.claude('thread-7', { type: 'stream_event', event: { type: 'message_delta', usage: { output_tokens: 100 } } })
@@ -209,11 +241,18 @@ it('reads a ledger whole at start to price its unpriced requests when its view w
   const reads = ledgerReads()
   const usage = await started(root)
   expect(reads.paths()).toHaveLength(1)
-  expect(usage.get('thread')).toEqual(first.get('thread'))
-  expect(usage.get('thread')!.partial).toBe(false)
+  // Pricing a request is a change to it, so the thread's revision moves on.
+  const { revision, ...priced } = usage.get('thread')!
+  const { revision: firstRevision, ...counted } = first.get('thread')!
+  expect(priced).toEqual(counted)
+  expect(revision).toBe(firstRevision! + 1)
+  expect(priced.partial).toBe(false)
 })
 
-it('sets a thread\'s ledger aside as the store would when it is unreadable by its first report, and starts the thread afresh', async () => {
+it.each([
+  ['unreadable', () => '{"id":"thread","ledger":'],
+  ['holding a request its schema refuses', (saved: string) => saved.replace('"output":100', '"output":-1')],
+])('sets a thread\'s ledger aside as the store would when it is %s by its first report, and starts the thread afresh', async (_kind, spoil) => {
   const root = await folder()
   const first = await started(root)
   for (let index = 0; index < 3; index++) first.claude('thread', claudeReport(index))
@@ -221,7 +260,7 @@ it('sets a thread\'s ledger aside as the store would when it is unreadable by it
   const usage = await started(root)
   expect(usage.get('thread')!.total!.output).toBe(300)
   const directory = join(root, 'claude-usage')
-  await writeFile(join(directory, ledgerName('thread')), '{"id":"thread","ledger":')
+  await writeFile(join(directory, ledgerName('thread')), spoil(await readFile(join(directory, ledgerName('thread')), 'utf8')))
   usage.claude('thread', claudeReport(3))
   await usage.flushed()
   expect((await readdir(directory)).filter(name => name.startsWith(`${ledgerName('thread')}.corrupt-`))).toHaveLength(1)
@@ -238,14 +277,13 @@ it('visits an unread thread\'s saved rows as a thread read at start does, and ke
   await first.flushed()
   const eagerRoot = await withoutViews(root)
   const lazy = await started(root, 'claude', true), eager = await started(eagerRoot, 'claude', true)
-  const visit = (usage: NativeUsage) => { const rows: UsageTokenObservation[] = []; usage.visitUsage('thread', row => rows.push(row)); return rows }
   const reads = ledgerReads()
-  const visited = visit(lazy)
-  expect(visited).toHaveLength(6)
-  expect(visited).toEqual(visit(eager))
+  const rows = await visited(lazy, 'thread')
+  expect(rows).toHaveLength(6)
+  expect(rows).toEqual(await visited(eager, 'thread'))
   expect(reads.paths()).toEqual([join(root, 'claude-usage', ledgerName('thread'))])
   // Kept: a second visit reads nothing, and the thread's first report counts at once, the one new request alone.
-  expect(visit(lazy)).toEqual(visited)
+  expect(await visited(lazy, 'thread')).toEqual(rows)
   expect(reads.paths()).toHaveLength(1)
   expect(lazy.get('thread')).toEqual(first.get('thread'))
   lazy.claude('thread', claudeReport(6))
@@ -253,19 +291,92 @@ it('visits an unread thread\'s saved rows as a thread read at start does, and ke
   expect(reads.paths()).toHaveLength(1)
 })
 
-it('applies a report held for a thread when Usage visits it before its read lands, and never twice', async () => {
+it('reads a thread\'s requests once when it reports usage and Usage visits it before the read lands', async () => {
   const root = await folder()
   const first = await started(root, 'claude', true)
-  for (let index = 0; index < 3; index++) first.claude('thread', claudeReport(index))
+  for (let index = 0; index < 3; index++) { first.claude('thread', claudeReport(index)); first.claude('other', claudeReport(index)) }
   await first.flushed()
   const usage = await started(root, 'claude', true)
+  const reads = ledgerReads()
+  const f = usageOver(usage, root, ['thread', 'other'])
   usage.claude('thread', claudeReport(3))
-  const rows: UsageTokenObservation[] = []
-  usage.visitUsage('thread', row => rows.push(row))
-  expect(rows).toHaveLength(4)
+  // Usage comes to the thread while its read for the report is under way: it waits for that read rather than reading again.
+  f.publish()
+  const read = await f.service.read()
+  expect(reads.paths().filter(path => path.endsWith(ledgerName('thread')))).toHaveLength(1)
+  expect(reads.paths().filter(path => path.endsWith(ledgerName('other')))).toHaveLength(1)
+  expect(f.visits.mock.calls.filter(([id]) => id === 'thread').length).toBeGreaterThan(1)
+  expect(read.activity!.totals.tokens.output).toMatchObject({ rows: 7, value: 700 })
   expect(usage.get('thread')!.total!.output).toBe(400)
   await usage.flushed()
   expect(usage.get('thread')!.total!.output).toBe(400)
+})
+
+it('marks a thread read again when an older request\'s model is corrected though no total or time moved', async () => {
+  const root = await folder()
+  const first = await started(root, 'claude', true)
+  // Both models are priced, so correcting one to the other moves no total, time, rate version or partial mark.
+  first.claude('thread', { ...claudeReport(1), message: { ...claudeReport(1).message, model: 'claude-opus-5' } })
+  first.claude('thread', claudeReport(2))
+  await first.flushed()
+  const start = await started(root, 'claude', true)
+  const f1 = usageOver(start, root, ['thread']); f1.publish(); await f1.service.read(); f1.service.close()
+  expect(f1.rows.map(row => row.modelId).sort()).toEqual(['claude-opus-5', 'claude-sonnet-4-6'])
+  await start.flushed()
+  const view = structuredClone(start.get('thread')!)
+  // History replays the first request with the model it was served by: the same tokens, an older time.
+  start.claude('thread', claudeReport(1))
+  await start.flushed()
+  expect(start.get('thread')).toMatchObject({ total: view.total, updatedAt: view.updatedAt, latest: view.latest, rateVersions: view.rateVersions, partial: view.partial })
+  expect(start.get('thread')!.revision).toBe(view.revision! + 1)
+  const next = await started(root, 'claude', true)
+  const f2 = usageOver(next, root, ['thread']); f2.publish(); await f2.service.read()
+  // Its rows are read again at the next start, the corrected model among them.
+  expect(f2.rows.map(row => row.modelId)).toEqual(['claude-sonnet-4-6', 'claude-sonnet-4-6'])
+  // A start after that, nothing having changed, reads nothing.
+  f2.service.close()
+  const after = await started(root, 'claude', true)
+  const f3 = usageOver(after, root, ['thread']); f3.publish(); await f3.service.read()
+  expect(f3.rows).toEqual([])
+})
+
+it('shows a Codex context reading in the view at once while its request waits, so a compaction under way keeps it (ADR-0095)', async () => {
+  const root = await folder()
+  const first = await started(root, 'codex')
+  first.codex('thread', 'gpt-5.4', { turnId: 'turn-1', tokenUsage: { total: { inputTokens: 1_000, outputTokens: 100, cachedInputTokens: 0 },
+    last: { inputTokens: 1_000, outputTokens: 100, cachedInputTokens: 0, totalTokens: 50_000 }, modelContextWindow: 200_000 } })
+  await first.flushed()
+  const eagerRoot = await withoutViews(root, 'codex')
+  const kept = async (usage: NativeUsage) => {
+    // Codex's compaction: the reading as it starts, a report while it runs, and its end, which clears the reading unless one came in.
+    const started = JSON.stringify([usage.get('thread')!.contextUsed, usage.get('thread')!.contextUpdatedAt])
+    usage.codex('thread', 'gpt-5.4', { turnId: 'turn-2', tokenUsage: { total: { inputTokens: 2_000, outputTokens: 200, cachedInputTokens: 0 },
+      last: { inputTokens: 1_000, outputTokens: 100, cachedInputTokens: 0, totalTokens: 10_000 }, modelContextWindow: 200_000 } })
+    const readSince = started !== JSON.stringify([usage.get('thread')!.contextUsed, usage.get('thread')!.contextUpdatedAt])
+    if (!readSince) usage.compacted('thread', undefined)
+    await usage.flushed()
+    return usage.get('thread')!.contextUsed
+  }
+  vi.useFakeTimers({ toFake: ['Date'] }); vi.setSystemTime(new Date('2026-10-31T12:00:00Z'))
+  expect(await kept(await started(eagerRoot, 'codex'))).toBe(10_000)
+  vi.setSystemTime(new Date('2026-10-31T12:00:01Z'))
+  expect(await kept(await started(root, 'codex'))).toBe(10_000)
+})
+
+it('normalises a long thread\'s requests a chunk a task when they are read for its report, to the same totals', async () => {
+  const root = await folder()
+  const first = await started(root)
+  for (let index = 0; index < 4_500; index++) first.claude('thread', claudeReport(index, 100 + index % 7))
+  await first.flushed()
+  const eagerRoot = await withoutViews(root)
+  const lazy = await started(root), eager = await started(eagerRoot)
+  const tasks = vi.spyOn(globalThis, 'setImmediate')
+  lazy.claude('thread', claudeReport(4_500)); eager.claude('thread', claudeReport(4_500))
+  await lazy.flushed(); await eager.flushed()
+  // The read's own task, then the repricing and the totals of 4,500 requests, two thousand a task.
+  expect(tasks.mock.calls.length).toBeGreaterThanOrEqual(5)
+  expect(lazy.get('thread')).toEqual(eager.get('thread'))
+  expect(await savedUsageLedgers(root)).toEqual(await savedUsageLedgers(eagerRoot))
 })
 
 it.each(['claude', 'codex', 'grok'] as const)('loses no %s report to a read that fails, and ends where reading every ledger at start ends', async provider => {
