@@ -1229,6 +1229,14 @@ struct HeldDetail {
     let detail: ThreadDetail
 }
 
+/// What a press on the folded Duo's thread rail asks of the thread showing. It lives with the model, which
+/// holds it, so the model's tests compile without the views.
+struct RailAsk: Equatable {
+    enum Action: Equatable { case back, agents }
+    let ref: ThreadRef
+    let action: Action
+}
+
 /// Every paired computer, each with its own connection, session and state. A computer that can't be
 /// reached, or fails, never holds up the others. Everything that names a thread names its computer too.
 @MainActor final class AppModel: ObservableObject {

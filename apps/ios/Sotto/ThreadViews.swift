@@ -142,13 +142,6 @@ struct FoldedThreadRail: View, Equatable {
     static func == (lhs: FoldedThreadRail, rhs: FoldedThreadRail) -> Bool { lhs.ref == rhs.ref && lhs.clear == rhs.clear }
 }
 
-/// What a press on the folded Duo's thread rail asks of the thread showing.
-struct RailAsk: Equatable {
-    enum Action: Equatable { case back, agents }
-    let ref: ThreadRef
-    let action: Action
-}
-
 /// Keeps iOS's swipe back on a page whose navigation bar is hidden, which otherwise loses it, while `enabled`. It answers
 /// the stack's swipe only while there is a page to go back to, and gives the swipe back to iOS when the page goes.
 struct InteractivePop: UIViewControllerRepresentable {
