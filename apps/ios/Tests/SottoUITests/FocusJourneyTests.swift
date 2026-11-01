@@ -1670,7 +1670,8 @@ import UIKit
     }
 
     /// Watcher's box takes the thread box's line (Zach, October 31, 2026): model, effort, speed and the shield side by
-    /// side, New Watcher at the end. The model menu lists another provider Watcher runs on; New Watcher starts one at once,
+    /// side, New Watcher at the end, the model on a line of its own at the accessibility text sizes. The model menu lists
+    /// another provider Watcher runs on; New Watcher starts one at once,
     /// whose empty conversation says so, with the last one's handover offered over the box until X puts it away.
     func testWatchersBoxChangesItsModelAndStartsANewWatcher() {
         launch(Self.watcher + ["--ui-watcher-box", "--ui-watcher-can-answer", "--ui-watcher-nothing-waits"])
@@ -1682,7 +1683,11 @@ import UIKit
         XCTAssertTrue(model.waitForExistence(timeout: 5))
         XCTAssertEqual(model.value as? String, "GPT-6.1 Sol")
         XCTAssertEqual(effort.value as? String, "High")
-        XCTAssertLessThan(model.frame.maxX, effort.frame.minX + 1, "Model, then effort")
+        // Side by side; at the accessibility text sizes, as on a thread's box, the model takes a line of its own and the
+        // others start the next one under it (ADR-0166).
+        let sideBySide = model.frame.maxX < effort.frame.minX + 1 && abs(model.frame.midY - effort.frame.midY) < 1
+        let nextLine = effort.frame.minY >= model.frame.maxY - 1 && abs(effort.frame.minX - model.frame.minX) < 1
+        XCTAssertTrue(sideBySide || nextLine, "Model, then effort (model \(model.frame), effort \(effort.frame))")
         XCTAssertLessThan(effort.frame.maxX, shield.frame.minX + 1, "Then the shield")
         XCTAssertGreaterThan(new.frame.minX, shield.frame.maxX, "New Watcher at the end")
         XCTAssertGreaterThanOrEqual(model.frame.minY, reply.frame.maxY - 1, "Under the words, in the box")
