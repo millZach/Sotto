@@ -1,3 +1,5 @@
+import { mediaThumbnailMaker } from './agents/mediaThumbnail'
+import { ThreadMediaStore } from './agents/threadMedia'
 import { t } from '@lingui/core/macro'
 import { cleanSettingsHistory } from './settings/privacyCleanup'
 import { RetiredChatHistory } from './settings/retiredChats'
@@ -21,7 +23,6 @@ import { moveTargetsOf } from './agents/threadMoves'
 import { registerThreadMoveIpc } from './agents/threadMovesIpc'
 import { registerNextPromptIpc, windowNextPrompt } from './agents/nextPromptIpc'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
-import { desktopWindowClient } from './agents/hostService'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
 import type { QuestionPageOpenResult } from '../shared/questionPageOpen'
@@ -88,7 +89,7 @@ import {
   type WebContentsWillNavigateEventParams,
   type WebContentsWillRedirectEventParams,
 } from 'electron'
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { appendFile, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir, release as osRelease } from 'node:os'
 import { isAbsolute, join } from 'node:path'
@@ -136,6 +137,7 @@ import { createWaylandClipboard } from './output/waylandClipboard'
 import { createWarmPasteAdapter } from './output/pasteHelper'
 import { createHyprlandFocusedApp, createLsappinfoFocusedApp } from './output/focusedApp'
 import { createOsascriptPasteAdapter, type OsascriptPasteEvent } from './output/pasteOsascript'
+import { createPastePermissionRecovery } from './output/pastePermissionRecovery'
 import { createSystemSettingsOpener } from './app/systemSettings'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { LocalTranscriptionService } from './asr/localTranscriptionService'
@@ -245,6 +247,7 @@ import type { MainCheckoutEvent } from './agents/mainCheckout'
 import { MAIN_CHECKOUT_CHANGED, MAIN_CHECKOUT_RENDERER_ARGUMENT } from '../shared/mainCheckout'
 import { fakeNotification } from './e2e/fakeNotification'
 import { createDesktopNotifier } from './notifications/desktopNotifier'
+import { openNotificationThread } from './notifications/openNotificationThread'
 import { registerNotificationIpc } from './notifications/notificationIpc'
 import { ThreadAlerts } from './notifications/threadAlerts'
 import { mainProcessProfiler, windowProfiler } from './performance/profilers'
@@ -1002,12 +1005,16 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => showing(window)
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const windowShowing = (): boolean => BrowserWindow.getAllWindows().some(showing)
+  // Pictures in threads (ADR-0170): one store, which the runtime's providers and the native e2e fixtures' capture into.
+  const threadMedia = owlFeatures['inline-media'] ? new ThreadMediaStore(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
     attachAnyFile: owlFeatures['attach-any-file'],
+    inlineMedia: owlFeatures['inline-media'],
+    ...threadMedia ? { threadMedia } : {},
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
     clearThreadsEnabled: owlFeatures['clear-threads'], clearLog: (event, detail) => { console.error(`[Sotto] ${event} ${detail}`) },
     ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
@@ -1061,9 +1068,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     } } : {}),
     ...(nativeFixtureRoot ? { providers: {
       claude: new ClaudeStreamJsonHost({ userDataPath, executable: nativeFixtureExecutable!,
-        args: [join(__dirname, '../../tests/fixtures/fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home'), limitStops: owlFeatures['restart-stopped-threads'] }),
+        args: [join(__dirname, '../../tests/fixtures/fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home'), limitStops: owlFeatures['restart-stopped-threads'], ...threadMedia ? { captureMedia: threadMedia.capture } : {} }),
       codex: new CodexAppServerHost({ userDataPath, executable: nativeFixtureExecutable!,
-        args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home'), limitStops: owlFeatures['restart-stopped-threads'] }),
+        args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home'), limitStops: owlFeatures['restart-stopped-threads'], ...threadMedia ? { captureMedia: threadMedia.capture } : {} }),
       grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
@@ -1092,6 +1099,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ...crossMachineEnabled && 'delegation' in localRuntime && localRuntime.delegation ? { stopsLeft: (threadId: string) => localRuntime.delegation?.stopsLeft(threadId) } : {},
     ...cascadedSettles ? { cascadedSettles } : {},
     attachAnyFile: owlFeatures['attach-any-file'],
+    // Pictures in threads (ADR-0170): their tile thumbnails are made here, on this desktop, for every host's threads.
+    ...owlFeatures['inline-media'] ? { mediaThumbnail: mediaThumbnailMaker(url => nativeImage.createFromDataURL(url)) } : {},
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     // A paired host's deleted thread takes the answer drafts this computer kept for it (ADR-0140).
     threadsDeleted: threadIds => { void requestDrafts.forgetThreads(new Set(threadIds)).catch(() => undefined) },
@@ -1130,7 +1139,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       () => owlFeatures['worker-swarms'] ? { workerCeiling: workingCopySettings.workerCeiling, workerMachineCeilings: workingCopySettings.workerMachineCeilings } : undefined) : undefined
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
-    detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
+    detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request), media: request => agentControl.threadMedia(request),
     stage: image => agentControl.stageAttachment(image), content: digest => agentControl.attachmentContent(digest),
     gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request),
     offersBabysitting: () => hostService.supportsBabysitting === true,
@@ -1441,6 +1450,12 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     e2eConfiguration === null && profile.pasteRequiresAccessibilityTrust
       ? { isTrusted: (prompt) => systemPreferences.isTrustedAccessibilityClient(prompt) }
       : ALWAYS_TRUSTED_ACCESSIBILITY
+  const accessibilityGate = createAccessibilityGate(accessibilityTrust)
+  const pastePermissionRecovery = createPastePermissionRecovery(recoveryNotices, accessibilityGate, () => new Promise(resolve => {
+    // Read System Events' setting, without pasting, prompting for Accessibility or logging its output.
+    execFile('/usr/bin/osascript', ['-e', 'tell application "System Events" to get UI elements enabled'], { timeout: 5_000 }, error => resolve(error === null))
+  }))
+  app.on('browser-window-focus', () => { void pastePermissionRecovery.check() })
   const output = new OutputService({
     clipboard: e2eState === null
       ? linuxClipboard ?? clipboard
@@ -1452,12 +1467,13 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         setTimeout(resolve, milliseconds)
       }),
     process: createAccessibilityGatedPasteAdapter({
-      gate: createAccessibilityGate(accessibilityTrust),
+      gate: accessibilityGate,
       inner: basePaste,
       onUntrusted: () => recoveryNotices.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' }),
     }),
     buildPasteInvocation: pasteCommands.oneShot,
     keepWidgetVisibleDuringPaste: platform === 'linux',
+    onPasted: () => pastePermissionRecovery.pasted(),
     ...(platform === 'linux' ? { preparePasteText: sanitizeLinuxPasteText } : {}),
     // The delivered app (ADR-0100). A test run delivers into Sotto's own window.
     readFocusedApp: e2eConfiguration !== null
@@ -1929,7 +1945,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   // Loads the chosen model now that a choice can be saved; an install whose own model is already here keeps it.
   saveSpeechModelChoice = async (id) => { await settingsCoordinator.updateSettings({ speechModel: id }) }
   // Notifications (ADR-0117): the tracker reads each state the router publishes, which joins every host's threads, and the
-  // notifier shows what it finds. A press brings the window forward, selects the thread and shows Threads. An end-to-end
+  // notifier shows what it finds. A press brings the window forward and opens the thread's room. An end-to-end
   // run shows a stand-in, never the system's.
   const desktopNotifier = desktopNotificationsEnabled ? createDesktopNotifier({
     create: options => e2eConfiguration === null ? new Notification(options) : fakeNotification(options),
@@ -1937,8 +1953,11 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     switches: async () => { const current = await settingsCoordinator.getSettings(); return { needsYou: current.notifyNeedsYou, finished: current.notifyFinished } },
     open: threadId => {
       void windows.showMain()
-        .then(() => hostRouter.command({ type: 'select-thread', threadId }, desktopWindowClient()))
-        .then(() => { windows.sendToMain(NOTIFICATION_OPENED, null) })
+        .then(() => {
+          const watcher = localRuntime.watcher ? agentControl.watcherRecordView().current : null
+          return openNotificationThread(hostRouter, threadId, watcher ? hostEntityKey(watcher.target.hostId, watcher.target.threadId) : undefined)
+        })
+        .then(opening => { windows.sendToMain(NOTIFICATION_OPENED, opening) })
         .catch(() => logOperational('native-main-show-failed'))
     },
     log: logOperational,
@@ -2392,6 +2411,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         },
         recoveryNotices: {
           list: () => recoveryNotices.list(),
+          dismissPastePermission: code => recoveryNotices.clear(code),
         },
         ...(microphoneAccessWhileOn === null ? {} : { microphoneAccess: microphoneAccessWhileOn }),
       })

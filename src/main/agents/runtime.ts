@@ -1,3 +1,4 @@
+import { ThreadMediaStore } from './threadMedia'
 import { join } from 'node:path'
 import type { AgentThread, ProviderId } from '../../shared/agents'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
@@ -162,6 +163,14 @@ export interface AgentRuntimeOptions {
    */
   attachAnyFile?: boolean
   /**
+   * The Owl list's answer for pictures in threads (ADR-0170), read once by the process owner. With it Claude Code and Codex
+   * keep their tool results' pictures in the thread media store and the host answers `thread-media` reads. Absent fails
+   * closed: nothing is captured.
+   */
+  inlineMedia?: boolean
+  /** The store itself, when the process owner built it for providers of its own as well (the desktop's native fixtures). */
+  threadMedia?: ThreadMediaStore
+  /**
    * The Owl list's answer for next prompts (ADR-0132), read once by the process owner. Absent fails closed, and a headless
    * host builds none: only this computer's window shows them. `nextPromptChanged` hears each change, for the window.
    */
@@ -264,9 +273,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const held = heldProvidersOption(options)
   // A held provider's adapter is never built: its stand-in starts nothing and refuses in the provider's name.
   const adapter = (id: ProviderId, build: () => NativeHost): NativeHost => held.has(id) ? new HeldProviderHost(id) : build()
+  // Pictures in threads (ADR-0170): one store for this runtime, built only with the Owl feature on.
+  const threadMedia = options.host ? undefined : options.threadMedia ?? (options.inlineMedia === true ? new ThreadMediaStore(directory, { historyEnabled: options.historyEnabled }) : undefined)
+  const captureMedia = threadMedia ? { captureMedia: threadMedia.capture } : {}
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
-    codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
-    claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
+    codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
+    claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
       ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}), ultracodeEffort: () => agentControl.configuration().claudeUltracodeEffort })),
     grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true, ...limitStops })),
     devin: adapter('devin', () => options.providers?.devin ?? new DevinAcpHost(directory)),
@@ -385,6 +397,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.logFailure ? { logFailure: options.logFailure } : {}),
     ...(options.missingAttachment ? { missingAttachment: options.missingAttachment } : {}),
     ...(options.attachAnyFile === true ? { attachAnyFile: true } : {}),
+    ...(threadMedia ? { threadMedia } : {}),
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
     ...(options.locateClient ? { locateClient: options.locateClient } : {}),
@@ -789,6 +802,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
     ...(options.clearThreadsEnabled === true ? { threadDelete: true } : {}),
     ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
+    ...(threadMedia ? { threadMedia: true } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which on a headless host is only
     // where Work across machines is on (#1310).
     ...(options.agentsViewEnabled === true ? { agentsView: delegationRecord ? { delegations: (threadId, threads) => threadDelegations(delegationRecord, threads, threadId) } : {} } : {}),

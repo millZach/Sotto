@@ -16,6 +16,7 @@ function createBridge(overrides: Partial<SottoBridge> = {}): SottoBridge {
     platform: 'win32',
     listRecoveryNotices: vi.fn(async () => []),
     onRecoveryNotice: vi.fn(() => () => undefined),
+    dismissPastePermissionNotice: vi.fn(async () => OK),
     getSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS })),
     updateSettings: vi.fn(async (patch) => ({ ...DEFAULT_SETTINGS, ...patch })),
     resetSettings: vi.fn(async () => ({ ...DEFAULT_SETTINGS })),

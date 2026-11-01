@@ -1,0 +1,179 @@
+/**
+ * What an agent's pictures cost a long thread (ADR-0170): the Threads page opened on a thread of 400 messages whose 200
+ * turns each took a screenshot, against the same thread with no pictures. Synthetic, so it runs in CI on every pull
+ * request, where it holds the counts that do not wobble:
+ *
+ *   - a streamed chunk commits as often with pictures as without, and reads no picture;
+ *   - opening the thread reads only the tiles near the screen;
+ *   - a scroll step reads only the tiles that came near, and the tiles that left let go of their pictures.
+ *
+ * The milliseconds print every run, for the before and after numbers each pull request in docs/plans/inline-media.md
+ * shows; they are asserted only under SOTTO_PERF_ASSERT=1. jsdom has no layout, so "near the screen" is the observer
+ * this test drives, standing in for the scroller's.
+ *
+ *   npx vitest run tests/perf/inlineMediaTranscript.perf.test.tsx --maxWorkers=1 --disable-console-intercept
+ */
+import React, { Profiler, type ReactNode } from 'react'
+import { act, cleanup, render } from '@testing-library/react'
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest'
+import { agentContextFixture } from '../fixtures/agentContext'
+import { stateAround, withChunk } from './support/transcriptState'
+import { round } from '../fixtures/perfBench'
+import { upperMedian as median } from './support/statistics.mjs'
+import { EMPTY_AGENT_HOST, type AgentHostSnapshot, type AgentMessage, type AgentThread } from '../../src/shared/agents'
+import type { AgentActivity } from '../../src/shared/agentActivity'
+import { share } from '../../src/renderer/src/agents/stateSharing'
+import { useAgents } from '../../src/renderer/src/agents/AgentContext'
+import { ThreadsView } from '../../src/renderer/src/agents/ThreadsView'
+import { ThreadDraftStore } from '../../src/renderer/src/agents/threadDraftStore'
+import { SplitLayoutStore } from '../../src/renderer/src/agents/splitLayout'
+import { threadMediaRequests } from '../../src/renderer/src/agents/threadMediaSources'
+
+vi.mock('../../src/renderer/src/agents/AgentContext', () => ({ useAgents: vi.fn() }))
+vi.mock('../../src/renderer/src/state/owlFeature', () => ({ useOwlFeature: (id: string) => id === 'inline-media' }))
+
+const TURNS = 200
+const ITERATIONS = 20
+const WARMUP = 10
+const MOUNTS = 5
+const MOUNT_WARMUP = 2
+/** How many tiles count as near the screen at once: a screen and a half either side of a pane's worth. */
+const NEAR = 6
+/** How many one-turn scroll steps each run takes; fewer than the page's tiles less the near ones, so every step brings one in. */
+const SCROLL_STEPS = 30
+const NOW = Date.parse('2026-10-31T12:00:00Z')
+const TILE = 'data:image/jpeg;base64,/9j/4AAQ'
+
+/** The observer jsdom lacks. The test says which tiles are near; each change reaches the tile's own listener. */
+class DrivenObserver {
+  static all = new Set<DrivenObserver>()
+  readonly targets = new Set<Element>()
+  constructor(private readonly callback: IntersectionObserverCallback) { DrivenObserver.all.add(this) }
+  observe(target: Element): void { this.targets.add(target) }
+  unobserve(target: Element): void { this.targets.delete(target) }
+  disconnect(): void { this.targets.clear() }
+  takeRecords(): IntersectionObserverEntry[] { return [] }
+  /** Tells every observer which of its targets are near now. */
+  static near(near: ReadonlySet<Element>): void {
+    for (const observer of DrivenObserver.all) {
+      const entries = [...observer.targets].map(target => ({ target, isIntersecting: near.has(target) }) as unknown as IntersectionObserverEntry)
+      if (entries.length) observer.callback(entries, observer as unknown as IntersectionObserver)
+    }
+  }
+}
+
+function thread(pictures: boolean): AgentThread {
+  const messages: AgentMessage[] = []
+  const activities: AgentActivity[] = []
+  for (let index = 0; index < TURNS; index += 1) {
+    const at = (offset: number) => new Date(NOW - (TURNS - index) * 120_000 + offset).toISOString()
+    messages.push({ id: `u${index}`, role: 'user', text: `Check page ${index} and show me.`, createdAt: at(0) })
+    messages.push({ id: `a${index}`, role: 'assistant', text: `Page ${index} looks right. The header holds and the footer is where it should be.`, createdAt: at(60_000) })
+    activities.push({ id: `tool-${index}`, turnId: `u${index}`, sequence: index, afterMessageId: `u${index}`, kind: 'tool', status: 'completed',
+      title: 'sotto_browser / screenshot', output: 'Took a screenshot.', startedAt: at(1_000), completedAt: at(2_000),
+      ...pictures ? { media: [{ id: 'm0', digest: index.toString(16).padStart(64, '0'), kind: 'image' as const, mimeType: 'image/png' as const,
+        sizeBytes: 480_000, width: 1280, height: 800, name: 'picture-1.png', source: 'tool' as const }] } : {} })
+  }
+  return { id: 'media-thread', projectId: 'project', title: 'Check every page', modelId: 'claude:test', providerId: 'claude', status: 'running', requests: [], messages, activities }
+}
+
+const host = (open: AgentThread): AgentHostSnapshot => ({ ...EMPTY_AGENT_HOST, connected: true, projects: [{ id: 'project', title: 'Project', path: '/repo' }], threads: [open] })
+
+describe('inline media cost', () => {
+  const realObserver = globalThis.IntersectionObserver
+  const bridge = vi.fn(async () => ({ dataUrl: TILE }))
+  beforeAll(() => {
+    globalThis.IntersectionObserver = DrivenObserver as unknown as typeof IntersectionObserver
+    ;(window as unknown as { sotto: unknown }).sotto = { agents: { threadMedia: bridge } }
+  })
+  afterEach(() => { cleanup(); DrivenObserver.all.clear() })
+  afterAll(() => { globalThis.IntersectionObserver = realObserver; delete (window as unknown as { sotto?: unknown }).sotto })
+
+  it('holds a streamed chunk, mount and scroll to their counts with 200 pictures', async () => {
+    let commits = 0, committed = 0
+    const measure = async (pictures: boolean) => {
+      const open = thread(pictures)
+      let state = stateAround(host(open), open.id)
+      const store = new ThreadDraftStore(vi.fn(async () => state))
+      vi.mocked(useAgents).mockImplementation(() => agentContextFixture(state, vi.fn(async () => state), { threadDrafts: store }))
+      const view = (): ReactNode => <Profiler id="threads" onRender={(_id, _phase, actual) => { commits++; committed += actual }}>
+        <ThreadsView now={NOW} layoutStore={new SplitLayoutStore()} paneAreaWidth={1200} paneAreaHeight={800} />
+      </Profiler>
+
+      const mounts: number[] = []
+      for (let index = 0; index < MOUNT_WARMUP + MOUNTS; index += 1) {
+        const started = performance.now()
+        const mounted = render(view())
+        if (index >= MOUNT_WARMUP) mounts.push(performance.now() - started)
+        mounted.unmount(); DrivenObserver.all.clear()
+      }
+
+      const rendered = render(view())
+      const tiles = (): HTMLButtonElement[] => [...rendered.container.querySelectorAll<HTMLButtonElement>('.thread-media .rich-attachment__frame')]
+      const holding = (): number => rendered.container.querySelectorAll('.thread-media img[src]').length
+      const flush = async (): Promise<void> => { await act(async () => { await new Promise(resolve => setTimeout(resolve, 0)) }) }
+
+      // Opening: the newest tiles are near, as a pane opened at its end shows them.
+      const readsBefore = threadMediaRequests()
+      await act(async () => { DrivenObserver.near(new Set(tiles().slice(-NEAR))) })
+      await flush()
+      const mountReads = threadMediaRequests() - readsBefore
+
+      // Streaming: a chunk on the newest reply, as the window receives it.
+      const samples: number[] = []
+      const readsBeforeChunks = threadMediaRequests()
+      for (let index = 0; index < WARMUP + ITERATIONS; index += 1) {
+        if (index === WARMUP) { commits = 0; committed = 0 }
+        const started = performance.now()
+        state = share(state, withChunk(state, open.id, ` chunk ${index}`))
+        act(() => { rendered.rerender(view()) })
+        if (index >= WARMUP) samples.push(performance.now() - started)
+      }
+      const chunkCommits = commits
+      const chunkReact = committed / ITERATIONS
+      const chunkReads = threadMediaRequests() - readsBeforeChunks
+
+      // Scrolling up a turn at a time: the near window moves by one, the same SCROLL_STEPS steps with pictures or without.
+      // Without pictures nothing on the page watches the scroll, which is the cost a step had before (the baseline).
+      const all = tiles()
+      const steps: number[] = []
+      const readsBeforeScroll = threadMediaRequests()
+      let mostHeld = holding()
+      for (let step = 0; step < SCROLL_STEPS; step += 1) {
+        const end = all.length - 1 - step
+        const started = performance.now()
+        await act(async () => { DrivenObserver.near(new Set(all.slice(Math.max(0, end - NEAR), Math.max(0, end)))) })
+        await flush()
+        steps.push(performance.now() - started)
+        mostHeld = Math.max(mostHeld, holding())
+      }
+      const scrollReads = threadMediaRequests() - readsBeforeScroll
+      const result = { tiles: all.length, mountMs: round(median(mounts), 2), chunkMs: round(median(samples), 2), chunkReactMs: round(chunkReact, 3),
+        chunkCommits, chunkReads, mountReads, scrollSteps: steps.length, scrollStepMs: round(median(steps), 2), scrollReads, mostHeld }
+      rendered.unmount()
+      return result
+    }
+
+    const without = await measure(false)
+    const withPictures = await measure(true)
+    console.info(`inline media: ${JSON.stringify({ without, withPictures })}`)
+
+    // The page draws its newest messages first, so some of the 200 turns' tiles are on it, and none without pictures.
+    expect(without.tiles).toBe(0)
+    expect(withPictures.tiles).toBeGreaterThan(NEAR)
+    // A streamed chunk is the same work with pictures as without, and reads none.
+    expect(withPictures.chunkCommits).toBe(without.chunkCommits)
+    expect(withPictures.chunkReads).toBe(0)
+    // Opening reads only the near tiles; each scroll step reads only the tile that came near.
+    expect(withPictures.mountReads).toBe(NEAR)
+    expect(withPictures.scrollReads).toBe(withPictures.scrollSteps)
+    expect(without.scrollReads).toBe(0)
+    // A tile that leaves lets go of its picture, so the page never holds more than the near ones.
+    expect(withPictures.mostHeld).toBeLessThanOrEqual(NEAR)
+    if (process.env.SOTTO_PERF_ASSERT === '1') {
+      expect(withPictures.chunkReactMs).toBeLessThan(Math.max(without.chunkReactMs * 1.25, without.chunkReactMs + 0.5))
+      expect(withPictures.mountMs).toBeLessThan(without.mountMs * 1.5)
+      expect(withPictures.scrollStepMs).toBeLessThan(without.scrollStepMs + 5)
+    }
+  }, 300_000)
+})

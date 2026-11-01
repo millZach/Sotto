@@ -6,7 +6,7 @@ import type { DictationRecord } from './dictationRecord'
 import type { FinishedDictation, HistoryEntry } from './history'
 import type { AppSettings, SettingsPatch } from './settings'
 import type { SottoE2EBridge } from './e2e'
-import type { RecoveryNotice } from './recoveryNotice'
+import type { PastePermissionNoticeCode, RecoveryNotice, RecoveryNoticeEvent } from './recoveryNotice'
 import type { SpeechModelOption, SpeechModelStatus } from './speechModel'
 import type { SottoPlatform } from './platform'
 import { widgetPaletteSchema } from './themeBranding'
@@ -444,7 +444,8 @@ export interface SottoBridge {
   readonly platform: SottoPlatform
 
   listRecoveryNotices(): Promise<readonly RecoveryNotice[]>
-  onRecoveryNotice(listener: (notice: RecoveryNotice) => void): Unsubscribe
+  onRecoveryNotice(listener: (notice: RecoveryNoticeEvent) => void): Unsubscribe
+  dismissPastePermissionNotice(code: PastePermissionNoticeCode): Promise<CommandResult>
 
   getSettings(): Promise<AppSettings>
   updateSettings(patch: SettingsPatch): Promise<AppSettings>

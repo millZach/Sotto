@@ -1882,6 +1882,7 @@ msgid "Disconnected"
 msgstr ""
 
 #: src/renderer/src/App.tsx
+#: src/renderer/src/components/ToastRegion.tsx
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 #: src/renderer/src/watcher/WatchControls.tsx

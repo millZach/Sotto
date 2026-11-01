@@ -55,12 +55,21 @@ export function wrapAgentBridge(bridge: AgentWireBridge): AgentBridge {
   // The thread records the window's subscription was last broadcast, which a reply's changed thread records are put back from.
   let held: ThreadReassembly | undefined
   const completeReceipt = createReceiptCompleter({ get }, catalogs, lastRead, () => held)
+  // An end-to-end run marks how many replies the page is still putting back, so a journey can tell a reply waiting for its
+  // broadcast, and any read it falls back to, from one already answered before it counts the reads (#1939).
+  let puttingBack = 0
+  const marked = typeof window !== 'undefined' && window.sottoE2E !== undefined
+  const mark = (): void => { if (marked) document.documentElement.dataset.agentRepliesPending = String(puttingBack) }
+  const putBack = async (completing: Promise<AgentState>): Promise<AgentState> => {
+    puttingBack++; mark()
+    try { return await completing } finally { puttingBack--; mark() }
+  }
   const result: AgentBridge = {
     ...bridge,
     get,
     onState: listener => { const threads = createThreadReassembly(); held = threads; return bridge.onState(createReassembler({ get }, catalogs, listener, threads)) },
     // A window holding a broadcast asks for a reply's threads as the changed thread records since it (ADR-0028, October 30 amendment).
-    command: async request => completeReceipt(held && bridge.commandWithChangedThreadRecords ? await bridge.commandWithChangedThreadRecords(request) : await bridge.command(request)),
+    command: async request => putBack(completeReceipt(held && bridge.commandWithChangedThreadRecords ? await bridge.commandWithChangedThreadRecords(request) : await bridge.command(request))),
   }
   wrapped.set(bridge, result)
   return result
@@ -173,6 +182,12 @@ function catalogIn(full: AgentState, key: string): AgentModel[] | undefined {
  * recorded no catalog as sent to it, so the next broadcast carries the catalog in full; until then that
  * host has no models, which is what the window already showed.
  */
+/**
+ * How long a reply waits for the broadcast it was measured from when it arrives first. Main sent that broadcast before
+ * the reply, so it is a few milliseconds behind on a busy computer; one that has not come by then is read whole.
+ */
+const OVERTAKEN_REPLY_WAIT_MS = 1_000
+
 function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: CatalogCache, lastRead: LastRead, held: () => ThreadReassembly | undefined): (reply: AgentCommandReceipt | AgentCommandChangedThreadRecordsReceipt) => Promise<AgentState> {
   const recoveries = new Map<string, Promise<AgentState>>()
   const readAfresh = (reply: Cataloged): Promise<AgentState> => bridge.get().catch(() => bridge.get()).then(full => { rememberRecovered(catalogs, reply, full); return full })
@@ -191,12 +206,13 @@ function createReceiptCompleter(bridge: Pick<AgentBridge, 'get'>, catalogs: Cata
   return async reply => {
     // A reply's changed thread records are put back from the broadcast the window holds; a complete list needs nothing held.
     const wire = reply.host.threads
-    const threads: AgentThread[] | undefined = Array.isArray(wire) ? wire : wire.base === null ? wire.changed : held()?.peek(wire)
+    // One that overtook the broadcast it was measured from waits for it: main sent it first (#1939).
+    const threads: AgentThread[] | undefined = Array.isArray(wire) ? wire : wire.base === null ? wire.changed : await held()?.peekOnArrival(wire, OVERTAKEN_REPLY_WAIT_MS)
     const receipt: AgentCommandReceipt = { ...reply, host: { ...reply.host, threads: threads ?? [] } }
     const assembled = assembleState(catalogs, receipt, { newer: true })
     if (assembled !== undefined && threads !== undefined) return assembled
-    // A catalog or the threads this window cannot put back: a reply that overtook the broadcast it was measured from, or
-    // one measured from a broadcast this window never held. The whole state answers, and the next broadcast lists every
+    // A catalog or the threads this window cannot put back: a reply whose broadcast did not arrive in time, or one measured
+    // from a broadcast this window never held. The whole state answers, and the next broadcast lists every
     // thread record.
     // Threads the window cannot put back are read afresh, in a read begun after this reply arrived, so it holds the reply's
     // own command: one begun for an earlier reply may predate it. A read for catalogs alone is shared, since a catalog's

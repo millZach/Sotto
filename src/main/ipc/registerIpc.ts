@@ -36,6 +36,7 @@ import {
   OUTPUT_COPY_IMAGE,
   OUTPUT_DELIVER,
   RECOVERY_NOTICE_LIST,
+  PASTE_PERMISSION_NOTICE_DISMISS,
   TRANSCRIPTION_CANCEL,
   SPEECH_MODEL_GET_STATUS,
   SPEECH_MODEL_CHOOSE,
@@ -101,7 +102,7 @@ import {
   type SettingsPatch,
 } from '../../shared/settings'
 import type { RendererRole } from '../security'
-import type { RecoveryNotice } from '../../shared/recoveryNotice'
+import { pastePermissionNoticeCodeSchema, type PastePermissionNoticeCode, type RecoveryNotice } from '../../shared/recoveryNotice'
 import { OMARCHY_THEME_ID } from '../../shared/themes/omarchy'
 import { INTERFACE_LANGUAGE_GET } from '../../shared/interfaceLanguageBridge'
 import type { InterfaceLanguageState } from '../../shared/interfaceLanguages'
@@ -412,6 +413,7 @@ export interface UpdateIpcService {
 
 export interface RecoveryNoticeIpcService {
   list(): readonly RecoveryNotice[] | Promise<readonly RecoveryNotice[]>
+  dismissPastePermission?(code: PastePermissionNoticeCode): void
 }
 
 export interface RegisterIpcDependencies {
@@ -618,6 +620,10 @@ export function registerIpc(
     register(RECOVERY_NOTICE_LIST, noPayloadSchema, 0, () =>
       dependencies.recoveryNotices?.list() ?? [],
     )
+    register(PASTE_PERMISSION_NOTICE_DISMISS, pastePermissionNoticeCodeSchema, 1, code => {
+      dependencies.recoveryNotices?.dismissPastePermission?.(code)
+      return { ok: true as const }
+    })
     register(SETTINGS_GET, noPayloadSchema, 0, () => dependencies.settings.get())
     register(SETTINGS_UPDATE, settingsPatchSchema, 1, (patch) =>
       dependencies.settings.update(patch),
