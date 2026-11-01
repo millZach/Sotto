@@ -36,7 +36,8 @@ describe('Sotto Owl nightly workflow (ADR-0072, November 1, 2026)', () => {
     expect(jobs.linux.uses).toBe('./.github/workflows/owl-linux.yml')
     for (const job of ['mac', 'linux']) {
       expect(jobs[job].with).toEqual({ version: '${{ needs.decide.outputs.version }}', source: '${{ needs.decide.outputs.source }}' })
-      expect(jobs[job].secrets).toBeUndefined()
+      // Only the Mac call inherits: its signing secrets sit in the owl-mac environment, which admits only main.
+      expect(jobs[job].secrets).toBe(job === 'mac' ? 'inherit' : undefined)
       expect(jobs[job].permissions).toEqual({ contents: 'read', 'id-token': 'write', attestations: 'write' })
     }
   })
