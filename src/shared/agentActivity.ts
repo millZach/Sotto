@@ -84,6 +84,11 @@ export const agentActivitySchema = z.object({
   ownServer: ownServerTurnSchema.optional(),
   /** Pictures the step made or looked at (ADR-0170): handles only, behind the `inline-media` Owl feature. */
   media: z.array(agentActivityMediaSchema).max(MAX_ACTIVITY_MEDIA).optional(),
+  /**
+   * The step makes an image (ADR-0170): Codex's `imageGeneration` and Cursor's `generate_image`. While it runs and holds no
+   * picture yet, a tile plays the owl at the easel in the picture's place.
+   */
+  generates: z.literal('image').optional(),
   truncated: z.boolean().optional(),
   /**
    * Bodies the host sent cut, whose whole is still on the host (ADR-0025, October 18 amendment): each one's whole size in

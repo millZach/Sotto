@@ -393,6 +393,11 @@ public struct Activity: Decodable, Identifiable, Equatable, Sendable {
     /// The pictures this step made or looked at (ADR-0170): handles only. A tile reads one's bytes with `thread-media`
     /// when it shows, from a computer that lists that feature.
     public var media: [Media]? = nil
+    /// "image" when the step makes an image (ADR-0170): while it runs with no picture yet, its tile plays the owl at the
+    /// easel. Older computers never send it.
+    public var generates: String? = nil
+    /// Whether the step is making an image that has not landed: it runs and holds no picture yet.
+    public var makingImage: Bool { generates == "image" && status == "running" && (media ?? []).isEmpty }
     public struct Change: Decodable, Equatable, Sendable { public let path: String; public let kind: String }
     /// One picture's handle: its place in the step, its type, and its size when the computer read it.
     public struct Media: Decodable, Identifiable, Equatable, Sendable {

@@ -252,6 +252,8 @@ function run(command) {
   if (command.type === 'plan') ask('plan', 'cursor/create_plan', { toolCallId: `call_p${serial}`, name: 'fixture-plan', overview: command.text, plan: '1. First\n2. Second', todos: [{ id: 'a', content: 'First', status: 'pending' }] })
   if (command.type === 'todos') ask('ack', 'cursor/update_todos', { toolCallId: `call_t${serial}`, todos: command.todos, merge: false })
   if (command.type === 'mcp-call') void callTool(sessionId, command)
+  // An image Cursor made: told once while it works, with no file, and again with the file it saved (ADR-0170).
+  if (command.type === 'image') ask('ack', 'cursor/generate_image', { toolCallId: command.toolCallId ?? 'call_image', description: command.text, ...(command.filePath ? { filePath: command.filePath } : {}) })
   if (command.type === 'task') ask('ack', 'cursor/task', { toolCallId: command.toolCallId ?? `call_task`, description: command.text, prompt: command.text, subagentType: 'explore', ...(command.durationMs === undefined ? {} : { durationMs: command.durationMs }) })
 }
 

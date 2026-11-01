@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
-import { dirname, isAbsolute, join } from 'node:path'
+import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { z } from 'zod'
 import { version as appVersion } from '../../../package.json'
 import { agentProjectSchema, attachmentReferences, type AgentHostSnapshot, type AgentMessage, type AgentModel, type AgentThread } from '../../shared/agents'
@@ -30,6 +30,7 @@ import { SIDE_WRITING_TIMEOUT_MS } from './sideWriting'
 import { settledThinking, thinkingSettledAs } from './thinkingActivity'
 import { ThreadMessageLog } from './threadMessageLog'
 import { acpImageBlocks, deliverAttachments, withAttachedFilesNote } from './attachedFiles'
+import type { MediaFileCapture } from './threadMedia'
 import { effortAfterChange, validatePromptAttachments, validateThreadOptions } from './threadOptions'
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -246,6 +247,8 @@ export interface CursorAcpOptions {
   startTimeoutMs?: number
   reaperSweepMs?: number
   sessionIdleMs?: number
+  /** Reads an image Cursor generated from the file it saved it to (ADR-0170); absent while `inline-media` is off. */
+  captureMediaFile?: MediaFileCapture
 }
 
 export class CursorAcpHost implements AgentHost {
@@ -260,6 +263,8 @@ export class CursorAcpHost implements AgentHost {
   private readonly indexes = new Map<string, ThreadIndex>()
   private readonly threads = new Map<string, AgentThread>()
   private readonly connections = new Map<string, Connection>()
+  /** Generated images whose file is being read, by activity ID (ADR-0170). */
+  private readonly readingImages = new Set<string>()
   private readonly loading = new Map<string, Promise<Connection>>()
   private readonly stopping = new Map<string, Promise<void>>()
   private readonly turns = new Map<string, LiveTurn>()
@@ -757,6 +762,22 @@ export class CursorAcpHost implements AgentHost {
     connection.effort = typeof effort === 'string' ? effort : undefined
   }
   /** Every frame from one thread's process. A request is answered on the process that asked, never another. */
+  /**
+   * The picture Cursor generated (ADR-0170), read from the file it saved it to once the step names one, off the update
+   * path, and added to the step when it lands. A step that holds it already, or is being read, reads nothing again.
+   */
+  private generatedImage(id: string, cwd: string, row: AgentActivity | undefined): void {
+    const path = row?.status === 'completed' && !row.media ? row.changes?.[0]?.path : undefined
+    if (!row || !path || !this.options.captureMediaFile || this.readingImages.has(row.id)) return
+    this.readingImages.add(row.id)
+    void this.options.captureMediaFile(isAbsolute(path) ? path : resolve(cwd, path), 'generated').then(media => {
+      const current = this.threads.get(id)?.activities?.find(record => record.id === row.id)
+      if (!media.length || !current || current.media || !this.aliases[id]) return
+      const thread = this.thread(id)
+      thread.activities = mergeAgentActivities(thread.activities, [{ ...current, media }]); this.emit(true)
+    }).catch(() => undefined).finally(() => this.readingImages.delete(row.id))
+  }
+
   private async frame(id: string, connection: Connection, frame: CursorFrame): Promise<void> {
     const alias = this.aliases[id]
     if (!alias || connection.closing) return
@@ -783,6 +804,7 @@ export class CursorAcpHost implements AgentHost {
         : frame.method === 'cursor/task' ? cursorTask(frame.params, place(params?.toolCallId, false), previous, true)
         : cursorImage(frame.params, place(params?.toolCallId, false), previous)
       if (rows.length) { thread.activities = mergeAgentActivities(previous, rows); this.emit(true) }
+      if (frame.method === 'cursor/generate_image') this.generatedImage(id, alias.cwd, rows[0])
       void connection.rpc.reply(frame.id, {}).catch(() => undefined)
       return
     }

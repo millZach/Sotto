@@ -248,3 +248,9 @@
 /* An agent's pictures (ADR-0170): its turn's tiles, the size of a sent image's. Waiting, or let go off screen, a tile shows a quiet mark. */
 .thread-media-tiles { margin: 8px 0 14px; }
 .thread-media__placeholder { color: var(--tt-text-muted); opacity: .6; }
+.thread-media__making { position: relative; cursor: default; }
+/* The owl at the easel (ADR-0170): two layers of text the same size, the painting over the easel and the owl. */
+.owl-easel { position: absolute; inset: 0; overflow: hidden; }
+.owl-easel pre { position: absolute; inset: 0; margin: 0; font-family: var(--tt-font-mono); white-space: pre; overflow: hidden; }
+.owl-easel__sketch { color: var(--tt-text-muted); }
+.owl-easel__paint { color: var(--tt-accent); }

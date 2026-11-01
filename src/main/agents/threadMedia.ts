@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto'
+import { open } from 'node:fs/promises'
 import { join } from 'node:path'
 import { z } from 'zod'
 import { MAX_ACTIVITY_MEDIA, type AgentActivity, type AgentActivityMedia } from '../../shared/agentActivity'
@@ -11,6 +12,11 @@ import { AttachmentStore } from './attachmentStore'
 export interface CapturedPicture { readonly mimeType: string; readonly data: string }
 /** Captures a tool result's pictures (ADR-0170): their handles, in order, at most eight. */
 export type MediaCapture = (pictures: readonly CapturedPicture[], source: AgentActivityMedia['source']) => AgentActivityMedia[]
+/**
+ * Captures one picture a provider saved to a file (ADR-0170): its handle, or none when the file is not a picture Sotto
+ * shows. Read off the update path, so the row it belongs to gains it a moment after the step ends.
+ */
+export type MediaFileCapture = (path: string, source: AgentActivityMedia['source']) => Promise<AgentActivityMedia[]>
 
 /** How much the thread media store keeps on disk before its oldest pictures go (ADR-0170). */
 export const THREAD_MEDIA_KEEP_BYTES = 1024 * 1024 * 1024
@@ -49,6 +55,31 @@ export function picturesIn(content: unknown): CapturedPicture[] {
     if (found.length === MAX_ACTIVITY_MEDIA) break
   }
   return found
+}
+
+/** The raster type a picture's own first bytes say it is, of the four Sotto shows. */
+export function rasterTypeOf(bytes: Uint8Array): string | undefined {
+  return Object.keys(NAMES).find(mimeType => bytesHaveRasterSignature(mimeType, bytes))
+}
+
+/** A picture file's bytes, or undefined when it is missing, not a file, empty or over the image limit. Nothing is logged. */
+async function readPicture(path: string): Promise<Buffer | undefined> {
+  const file = await open(path, 'r').catch(() => undefined)
+  if (!file) return undefined
+  try {
+    const stat = await file.stat()
+    if (!stat.isFile() || stat.size < 1 || stat.size > AGENT_MAX_IMAGE_BYTES) return undefined
+    // Read at most the size it had plus one byte: a file still growing is refused, never read past the limit.
+    const bytes = Buffer.alloc(stat.size + 1)
+    let length = 0
+    for (;;) {
+      const { bytesRead } = await file.read(bytes, length, bytes.length - length, length)
+      if (bytesRead === 0) break
+      length += bytesRead
+      if (length > stat.size) return undefined
+    }
+    return length > 0 ? bytes.subarray(0, length) : undefined
+  } catch { return undefined } finally { await file.close().catch(() => undefined) }
 }
 
 /**
@@ -128,28 +159,48 @@ export class ThreadMediaStore {
     const handles: AgentActivityMedia[] = []
     for (const picture of pictures.slice(0, MAX_ACTIVITY_MEDIA)) {
       if (!isImageAttachment(picture.mimeType) || picture.data.length > Math.ceil(AGENT_MAX_IMAGE_BYTES / 3) * 4 + 4) continue
-      const bytes = Buffer.from(picture.data, 'base64')
-      if (bytes.byteLength < 1 || bytes.byteLength > AGENT_MAX_IMAGE_BYTES || !bytesHaveRasterSignature(picture.mimeType, bytes)) continue
-      const digest = createHash('sha256').update(bytes).digest('hex')
-      const size = imageDimensions(bytes)
-      const index = handles.length
-      handles.push({ id: `m${index}`, digest, kind: 'image', mimeType: picture.mimeType, sizeBytes: bytes.byteLength,
-        ...(size ? { width: size.width, height: size.height } : {}), name: `picture-${index + 1}.${NAMES[picture.mimeType]}`, source })
-      if (!this.kept.has(digest)) this.total += bytes.byteLength
-      this.kept.set(digest, { sizeBytes: bytes.byteLength, at: this.now() })
-      if (!this.content.has(digest) && !this.staging.has(digest)) {
-        const write = this.content.stage({ name: 'picture', mimeType: picture.mimeType, bytes }, { digest }).catch(() => undefined)
-          .finally(() => this.staging.delete(digest))
-        this.staging.set(digest, write)
-      }
-      this.unsaved = true
+      const handle = this.keep(Buffer.from(picture.data, 'base64'), picture.mimeType, source, handles.length)
+      if (handle) handles.push(handle)
     }
-    // Past the limit, the oldest go now rather than at the next upkeep, so a burst of screenshots never holds more for long.
-    if (this.total > this.limit() && !this.sweepQueued) {
-      this.sweepQueued = true
-      setTimeout(() => { this.sweepQueued = false; void this.sweep().catch(() => undefined) }, 0)
-    }
+    this.limitSoon()
     return handles
+  }
+
+  /**
+   * The handle for a picture a provider saved to a file: Codex's generated images when its item carries only the path, and
+   * Cursor's. Its type is read from its own first bytes, never its name, and a file over the image limit is not read.
+   */
+  captureFile: MediaFileCapture = async (path, source) => {
+    const bytes = await readPicture(path)
+    const mimeType = bytes ? rasterTypeOf(bytes) : undefined
+    const handle = bytes && mimeType ? this.keep(bytes, mimeType, source, 0) : undefined
+    this.limitSoon()
+    return handle ? [handle] : []
+  }
+
+  /** Keeps one picture's bytes and makes its handle, `m{index}`, or none when they are not the type they claim. */
+  private keep(bytes: Buffer, mimeType: string, source: AgentActivityMedia['source'], index: number): AgentActivityMedia | undefined {
+    if (!Object.hasOwn(NAMES, mimeType) || bytes.byteLength < 1 || bytes.byteLength > AGENT_MAX_IMAGE_BYTES || !bytesHaveRasterSignature(mimeType, bytes)) return undefined
+    const digest = createHash('sha256').update(bytes).digest('hex')
+    const size = imageDimensions(bytes)
+    const handle: AgentActivityMedia = { id: `m${index}`, digest, kind: 'image', mimeType: mimeType as AgentActivityMedia['mimeType'], sizeBytes: bytes.byteLength,
+      ...(size ? { width: size.width, height: size.height } : {}), name: `picture-${index + 1}.${NAMES[mimeType]}`, source }
+    if (!this.kept.has(digest)) this.total += bytes.byteLength
+    this.kept.set(digest, { sizeBytes: bytes.byteLength, at: this.now() })
+    if (!this.content.has(digest) && !this.staging.has(digest)) {
+      const write = this.content.stage({ name: 'picture', mimeType, bytes }, { digest }).catch(() => undefined)
+        .finally(() => this.staging.delete(digest))
+      this.staging.set(digest, write)
+    }
+    this.unsaved = true
+    return handle
+  }
+
+  /** Past the limit, the oldest go now rather than at the next upkeep, so a burst of screenshots never holds more for long. */
+  private limitSoon(): void {
+    if (this.total <= this.limit() || this.sweepQueued) return
+    this.sweepQueued = true
+    setTimeout(() => { this.sweepQueued = false; void this.sweep().catch(() => undefined) }, 0)
   }
 
   private saveKept(): Promise<void> {

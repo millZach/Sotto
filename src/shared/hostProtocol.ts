@@ -406,6 +406,7 @@ export function activitySummary(record: AgentActivity): AgentActivity {
     ...(record.changes !== undefined ? { changes: record.changes.map(change => ({ path: change.path, kind: change.kind })) } : {}),
     // A picture's handle is small and says nothing of its content; the bytes are read with `thread-media` (ADR-0170).
     ...(record.media !== undefined ? { media: record.media } : {}),
+    ...(record.generates !== undefined ? { generates: record.generates } : {}),
   }
 }
 /** A message without the visual Sotto drew for it (ADR-0056): its text, the visual's words, stands in. */

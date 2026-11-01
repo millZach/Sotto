@@ -429,7 +429,9 @@ struct AgentPictures: View {
     }
     var body: some View {
         let items = self.items
-        if !items.isEmpty {
+        // A step still making an image shows the owl at the easel in its picture's place.
+        let making = steps.filter(\.makingImage)
+        if !items.isEmpty || !making.isEmpty {
             LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2), GridItem(.flexible(), spacing: Space.s2)], alignment: .leading, spacing: Space.s2) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
                     Button { open(OpenPhotos(ref: ref, id: "pictures-" + (steps.first?.id ?? ""), items: items, index: index)) } label: {
@@ -438,9 +440,54 @@ struct AgentPictures: View {
                     .buttonStyle(.plain)
                     .accessibilityLabel(Text("Open picture \(index + 1) of \(items.count), from \(item.name)", comment: "%1$lld of %2$lld pictures an agent's steps made; %3$@ names the step."))
                 }
+                ForEach(making) { step in OwlEaselTile(startedAt: step.startedAt) }
             }
             .padding(.vertical, Space.s2)
         }
+    }
+}
+
+/// The owl at the easel (ADR-0170) in the tile of an image a step is still making. It draws twelve frames a second only
+/// while it is on screen and the app is in front, holds one still frame under Reduce Motion, and is gone, timeline and
+/// all, the moment the picture lands.
+private struct OwlEaselTile: View {
+    let startedAt: String?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var shown = false
+    @State private var began: Date?
+    var body: some View {
+        let still = reduceMotion || !shown || scenePhase != .active
+        Rectangle().fill(Palette.raised)
+            .aspectRatio(1.5, contentMode: .fit)
+            .overlay {
+                GeometryReader { box in
+                    TimelineView(.animation(minimumInterval: 1 / OwlEasel.framesPerSecond, paused: still)) { context in
+                        scene(in: box.size, at: reduceMotion ? nil : context.date)
+                    }
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(Text("Making the image", comment: "A tile standing in for an image an agent is still making."))
+            .onAppear { shown = true; if began == nil { began = startedAt.flatMap(Stamp.date) ?? Date() } }
+            .onDisappear { shown = false }
+    }
+
+    /// One frame sized to the tile: the scene's rows fill its height and its columns its width. `at` nil is the still frame.
+    private func scene(in size: CGSize, at date: Date?) -> some View {
+        let grid = OwlEasel.grid(width: Double(size.width), height: Double(max(1, size.height)))
+        let seconds = date.map { max(0, $0.timeIntervalSince(began ?? $0)) } ?? 0
+        let frame = OwlEasel.frame(cols: grid.cols, rows: grid.rows, progress: date == nil ? 0.5 : OwlEasel.progress(seconds: seconds), seconds: seconds)
+        let font = Font.system(size: max(1, grid.fontSize), design: .monospaced)
+        return ZStack {
+            Text(verbatim: frame.sketch).foregroundStyle(Palette.muted)
+            Text(verbatim: frame.paint).foregroundStyle(Palette.accent)
+        }
+        .font(font)
+        .lineSpacing(0)
+        .fixedSize()
+        .frame(width: size.width, height: size.height)
     }
 }
 

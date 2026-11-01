@@ -7,6 +7,7 @@ import { AttachmentViewer, type ViewerImage } from './AttachmentViewer'
 import type { ActivityGroup } from './threadActivityView'
 import { useThreadMediaSource, watchNear, type ThreadMediaOrigin } from './threadMediaSources'
 import { useOwlFeature } from '../state/owlFeature'
+import { OwlEasel } from './OwlEasel'
 
 /** One picture as a tile and the viewer know it: its handle and where it is found. */
 interface Shown { readonly origin: ThreadMediaOrigin; readonly media: AgentActivityMedia; readonly record: AgentActivity }
@@ -51,10 +52,28 @@ function MediaTile({ shown, index, count, onOpen }: {
   </figure>
 }
 
+/** A step making an image that has not landed yet: the owl at the easel in the picture's place (ADR-0170). */
+function MakingTile({ record }: { readonly record: AgentActivity }): ReactNode {
+  const { t } = useLingui()
+  // Started when the step says it did, or when this tile first saw it.
+  const [startedAt] = useState(() => Date.parse(record.startedAt ?? '') || Date.now())
+  return <figure className="rich-attachment rich-attachment--image thread-media thread-media--making" role="listitem">
+    <div className="rich-attachment__frame thread-media__making" role="img" aria-label={t`Making the image`}>
+      <OwlEasel startedAt={startedAt} />
+    </div>
+    <figcaption><span className="rich-attachment__name" title={record.title}>{t`Making the image`}</span>
+      <span className="rich-attachment__meta">{t`It shows here when it is done`}</span></figcaption>
+  </figure>
+}
+
+/** Whether a step is making an image that has not landed: it runs and holds no picture yet. */
+const making = (record: AgentActivity): boolean => record.generates === 'image' && record.status === 'running' && !record.media?.length
+
 /**
  * The pictures a turn's agent made or looked at (ADR-0170), as tiles under its work, whether its steps are open or folded.
- * A press opens the viewer over the pane, where ← and → step through the turn's pictures. Nothing shows while the
- * `inline-media` Owl feature is off, and a turn with no pictures draws nothing.
+ * A press opens the viewer over the pane, where ← and → step through the turn's pictures. A step still making an image
+ * shows the owl at the easel in its place. Nothing shows while the `inline-media` Owl feature is off, and a turn with no
+ * pictures draws nothing.
  */
 export const ThreadMediaTiles = memo(function ThreadMediaTiles({ groups, threadId }: {
   readonly groups: readonly ActivityGroup[] | undefined; readonly threadId: string | undefined
@@ -63,14 +82,17 @@ export const ThreadMediaTiles = memo(function ThreadMediaTiles({ groups, threadI
   const enabled = useOwlFeature('inline-media')
   const pictures = useMemo<readonly Shown[]>(() => !enabled || !threadId || !groups ? [] : groups.flatMap(group => group.records.flatMap(record =>
     (record.media ?? []).map(media => ({ media, record, origin: { threadId, activityId: record.id, mediaId: media.id } })))), [enabled, groups, threadId])
+  const makers = useMemo<readonly AgentActivity[]>(() => !enabled || !groups ? [] : groups.flatMap(group => group.records.filter(making)), [enabled, groups])
   const [open, setOpen] = useState<{ readonly id: string; readonly from: HTMLElement } | null>(null)
   const images = useMemo<readonly ViewerImage[]>(() => pictures.map((picture, index) => ({ id: `${picture.record.id}/${picture.media.id}`,
     name: pictureName(t, index + 1), details: mediaDetails(picture.media), media: picture.origin })), [pictures, t])
-  if (!pictures.length) return null
+  if (!pictures.length && !makers.length) return null
+  const count = pictures.length + makers.length
   return <div className="rich-attachments thread-media-tiles">
-    <div className="rich-attachments__list" role="list" aria-label={plural(pictures.length, { one: 'Picture', other: '# pictures' })}>
+    <div className="rich-attachments__list" role="list" aria-label={plural(count, { one: 'Picture', other: '# pictures' })}>
       {pictures.map((picture, index) => <MediaTile key={`${picture.record.id}/${picture.media.id}`} shown={picture} index={index} count={pictures.length}
         onOpen={from => setOpen({ id: `${picture.record.id}/${picture.media.id}`, from })} />)}
+      {makers.map(record => <MakingTile key={`${record.id}/making`} record={record} />)}
     </div>
     {open ? <AttachmentViewer images={images} origin={undefined} startId={open.id} anchor={open.from} onClose={() => setOpen(null)} /> : null}
   </div>
