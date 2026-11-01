@@ -5,10 +5,9 @@ import { longHistory } from './support/longHistory'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 
-// The composer's two styles (ADR-0168): Zach's composer, the prompt above a footer of attach, permissions, the model and
-// its effort and the disc, is the default; Drake's one pill is the other, chosen in Settings › Appearance. Both draw at a
-// laptop's size and at the window's minimum, dark and light, at rest and while a turn runs, without an edge and without
-// spilling. Captures go to disposable run evidence; `SOTTO_E2E_EVIDENCE=publish` writes artifacts/composer-style.
+// Zach's composer (ADR-0168, ADR-0172): the prompt above a footer of attach, permissions, the model and its effort and
+// the disc, the only style. It draws at a laptop's size and at the window's minimum, dark and light, at rest and while a
+// turn runs, without an edge and without spilling. Captures go to disposable run evidence; `SOTTO_E2E_EVIDENCE=publish` writes artifacts/composer-style.
 
 const evidence = evidenceDirectory('artifacts/composer-style')
 const hostKeys = hostKeysPerTest()
@@ -42,7 +41,7 @@ async function selectThread(page: Page, threadId: string): Promise<void> {
   await expect(paneOf(page, threadId)).toBeVisible()
 }
 
-interface Layout { style: string | null; edge: string; editor: number; card: number; spills: boolean; footerInside: boolean; promptAboveFooter: boolean; actions: string[] }
+interface Layout { edge: string; editor: number; card: number; spills: boolean; footerInside: boolean; promptAboveFooter: boolean; actions: string[] }
 
 async function layout(pane: Locator): Promise<Layout> {
   return pane.evaluate(element => {
@@ -51,7 +50,7 @@ async function layout(pane: Locator): Promise<Layout> {
     const footer = card.querySelector<HTMLElement>('.thread-prompt__footer')!.getBoundingClientRect()
     const box = card.getBoundingClientRect()
     return {
-      style: card.getAttribute('data-style'), edge: getComputedStyle(card).borderTopColor, editor: Math.round(editor.width), card: Math.round(box.width),
+      edge: getComputedStyle(card).borderTopColor, editor: Math.round(editor.width), card: Math.round(box.width),
       spills: element.scrollWidth > element.clientWidth + 1,
       footerInside: footer.left >= box.left - 1 && footer.right <= box.right + 1 && footer.bottom <= box.bottom + 1,
       promptAboveFooter: editor.bottom <= footer.top + 1,
@@ -72,17 +71,15 @@ async function capture(launched: LaunchedSotto, name: string, pane: Locator): Pr
       expect(shown.footerInside, context).toBe(true)
       // No edge in any state (ADR-0110): the card's border stays transparent.
       expect(shown.edge, context).toMatch(/rgba\(0, 0, 0, 0\)|transparent/u)
-      if (shown.style === 'rows') {
-        expect(shown.promptAboveFooter, context).toBe(true)
-        expect(shown.editor, context).toBeGreaterThan(shown.card * 0.85)
-      }
+      expect(shown.promptAboveFooter, context).toBe(true)
+      expect(shown.editor, context).toBeGreaterThan(shown.card * 0.85)
       await launched.page.screenshot({ path: join(evidence, `${name}-${width}-${appearance}.png`), animations: 'disabled' })
     }
   }
   await launched.page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
 }
 
-test('Zach’s composer is the default and Drake’s pill is one Appearance choice away, at rest and while a turn runs', async () => {
+test('Zach’s composer draws at rest and while a turn runs', async () => {
   test.setTimeout(240_000)
   const launched = await launchSotto('composer-speed')
   const { page } = launched
@@ -102,7 +99,6 @@ test('Zach’s composer is the default and Drake’s pill is one Appearance choi
 
     await selectThread(page, 'workshop')
     const idle = paneOf(page, 'workshop')
-    await expect(idle.locator('.thread-prompt')).toHaveAttribute('data-style', 'rows')
     // Permissions, then the model and its effort with the speed's bolt, at the footer's end.
     await expect(idle.locator('.thread-prompt__shield').getByRole('combobox', { name: 'Thread permissions' })).toBeVisible()
     await expect(idle.locator('.split-chip-effort__bolts')).toBeVisible()
@@ -110,7 +106,6 @@ test('Zach’s composer is the default and Drake’s pill is one Appearance choi
 
     await selectThread(page, 'docs')
     const running = paneOf(page, 'docs')
-    await expect(running.locator('.thread-prompt')).toHaveAttribute('data-style', 'rows')
     // With nothing typed, the disc is Stop and Stop is drawn once.
     await expect.poll(async () => (await layout(running)).actions).toEqual(['Stop agent'])
     await capture(launched, 'rows-working', running)
@@ -119,27 +114,6 @@ test('Zach’s composer is the default and Drake’s pill is one Appearance choi
     // Typed, the disc is Queue and a small Stop stands beside it.
     await expect.poll(async () => (await layout(running)).actions).toEqual(['Stop agent', 'Queue prompt'])
     await capture(launched, 'rows-working-typed', running)
-
-    await page.evaluate(async () => window.sotto!.updateSettings({ composerStyle: 'pill' }))
-    await expect(running.locator('.thread-prompt')).toHaveAttribute('data-style', 'pill')
-    await capture(launched, 'pill-working-typed', running)
-    await selectThread(page, 'workshop')
-    await capture(launched, 'pill-idle', idle)
-    // Settings › Appearance offers the two, Drake's in use now; pressing Zach's brings it back.
-    await resize(launched, 1280, 800)
-    await page.getByRole('link', { name: 'Settings', exact: true }).click()
-    await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Appearance', exact: true }).click()
-    const choice = page.getByRole('radiogroup', { name: 'Composer' })
-    await expect(choice.getByRole('radio', { name: 'Use Drake’s composer, in use' })).toBeChecked()
-    await choice.scrollIntoViewIfNeeded()
-    for (const appearance of ['dark', 'light'] as const) {
-      await page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode }), appearance)
-      await expect(page.locator('html')).toHaveAttribute('data-theme', appearance)
-      await choice.screenshot({ path: join(evidence, `appearance-choice-${appearance}.png`), animations: 'disabled' })
-    }
-    await choice.getByRole('radio', { name: 'Use Zach’s composer' }).click()
-    await expect(choice.getByRole('radio', { name: 'Use Zach’s composer, in use' })).toBeChecked()
-    await expect.poll(() => page.evaluate(async () => (await window.sotto!.getSettings()).composerStyle)).toBe('rows')
   } finally {
     await closeSotto(launched)
   }

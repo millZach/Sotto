@@ -1,4 +1,3 @@
-import type { ComposerStyle } from '../../../src/shared/composerStyle'
 import React from 'react'
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
@@ -67,9 +66,9 @@ function roomState(current: string, patch: Partial<WatcherRoomState> = {}): Watc
   }
 }
 
-function renderRoom(room: WatcherRoomState, state: AgentState, startNew: () => Promise<WatcherRoomResult>, quiet = false, style: ComposerStyle = 'pill') {
+function renderRoom(room: WatcherRoomState, state: AgentState, startNew: () => Promise<WatcherRoomResult>, quiet = false) {
   vi.mocked(useOptionalApp).mockReturnValue({
-    navigation: 'watcher', platform: 'win32', windowMaximized: false, settings: { ...DEFAULT_SETTINGS, composerStyle: style },
+    navigation: 'watcher', platform: 'win32', windowMaximized: false, settings: DEFAULT_SETTINGS,
     update: { watcherEnabled: true, owlFeatures: { watcher: true, 'quiet-composer': quiet } }, actions: { navigate: vi.fn(), minimizeApp: vi.fn(), toggleMaximizeApp: vi.fn(), hideApp: vi.fn(), updateSettings: vi.fn() },
   } as unknown as AppContextValue)
   const command = vi.fn<(request: AgentCommand) => Promise<AgentState | null>>(async () => state)
@@ -137,20 +136,13 @@ describe('New Watcher in Watcher’s composer', () => {
     expect(button).toHaveAccessibleDescription(NEW_WATCHER_BUSY)
     // Still in the Tab order, so its reason can be heard.
     expect(button).not.toBeDisabled()
-    if (quiet) {
-      const pane = await watcherPane()
-      const controls = pane.querySelector('.thread-prompt__actions')!
-      expect([...controls.querySelectorAll('button')].map(control => control.getAttribute('aria-label'))).toEqual(['New Watcher', 'Stop agent', 'Queue prompt'])
-      expect(pane.querySelector('.thread-prompt__lead .thread-chip')).not.toBeNull()
-      expect(controls.querySelector('.thread-prompt__send')).toHaveClass('thread-prompt__disc')
-    }
     await user.click(button)
     expect(bridge.startNew).not.toHaveBeenCalled()
     expect(NEW_WATCHER_BUSY).toBe('Watcher is working. Stop its turn to start a new one.')
   })
 
   it('stands before the disc in Zach\'s composer, where the disc is Stop while Watcher works with nothing typed', async () => {
-    renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a', { messages: said, status: 'running' })), vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: roomState('watcher-b') })), true, 'rows')
+    renderRoom(roomState('watcher-a'), stateWith(watcherThread('watcher-a', { messages: said, status: 'running' })), vi.fn(async (): Promise<WatcherRoomResult> => ({ status: 'ok', state: roomState('watcher-b') })), true)
     await newButton()
     const pane = await watcherPane()
     const controls = pane.querySelector('.thread-prompt__actions')!

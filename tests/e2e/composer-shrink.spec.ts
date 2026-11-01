@@ -5,7 +5,6 @@ import { longHistory } from './support/longHistory'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
 import { READING_BACK_PX } from '../../src/renderer/src/agents/slimComposer'
-import { COMPOSER_STYLES, type ComposerStyle } from '../../src/shared/composerStyle'
 
 // The slim composer (ADR-0125; Owl only, the user's pick B of docs/prototypes/composer-shrink-prototype.html): reading
 // back through a thread steps the floating composer down to one line with its disc, and the end, a click, a key typed
@@ -23,13 +22,13 @@ async function launch(enabled: boolean): Promise<LaunchedSotto> {
   try { return await launchSotto('design-threads') } finally { if (previous === undefined) delete process.env.SOTTO_OWL_FEATURES; else process.env.SOTTO_OWL_FEATURES = previous }
 }
 
-async function prepare(launched: LaunchedSotto, reducedMotion: 'system' | 'on' = 'system', composerStyle: ComposerStyle = 'rows'): Promise<void> {
+async function prepare(launched: LaunchedSotto, reducedMotion: 'system' | 'on' = 'system'): Promise<void> {
   const { page } = launched
-  await page.evaluate(async ({ reducedMotion, composerStyle }) => {
-    await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', accent: 'blue', reducedMotion, composerStyle })
+  await page.evaluate(async ({ reducedMotion }) => {
+    await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', accent: 'blue', reducedMotion })
     await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
     await window.sotto!.agents!.command({ type: 'connect' })
-  }, { reducedMotion, composerStyle })
+  }, { reducedMotion })
   await page.reload()
   await hostKeys.read(page)
   await openThreads(page)
@@ -124,13 +123,12 @@ async function capture(launched: LaunchedSotto, name: string, pane: Locator, fro
   await launched.page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
 }
 
-// Both of the composer's styles (ADR-0168): Zach's two rows, the default, and Drake's pill.
-for (const style of COMPOSER_STYLES) test(`reading back slims ${style === 'rows' ? 'Zach’s' : 'Drake’s'} composer to one line, and the end, a click, typing and a draft bring it back full`, async () => {
+test('reading back slims the composer to one line, and the end, a click, typing and a draft bring it back full', async () => {
   test.setTimeout(180_000)
   const launched = await launch(true)
   const { page } = launched
   try {
-    await prepare(launched, 'system', style)
+    await prepare(launched)
     await resize(launched, 1280, 860)
     await selectThread(page, 'Grok voice previews')
     await history(page, 'grok-previews')
@@ -167,9 +165,8 @@ for (const style of COMPOSER_STYLES) test(`reading back slims ${style === 'rows'
     const slim = await shape(pane)
     const context = JSON.stringify({ full, slim })
     expect(slim.editorLines, context).toBe(1)
-    // Zach's two rows step down to one; Drake's pill is one line already, and only its options step away.
-    if (style === 'rows') expect(slim.card, context).toBeLessThan(full.card - 30)
-    else expect(slim.card, context).toBeLessThanOrEqual(full.card)
+    // Zach's two rows step down to one.
+    expect(slim.card, context).toBeLessThan(full.card - 30)
     expect(slim.discBeside, context).toBe(true)
     expect(slim.optionsShown || slim.metaShown || slim.toolbarShown, context).toBe(false)
     expect(slim.compose, context).toBe(full.compose)
@@ -278,9 +275,8 @@ for (const style of COMPOSER_STYLES) test(`reading back slims ${style === 'rows'
     })
     expect(moving).toBe(1)
 
-    const name = style === 'rows' ? 'thread' : 'thread-pill'
-    await capture(launched, `${name}-full`, pane, 0)
-    await capture(launched, `${name}-slim`, pane, 420)
+    await capture(launched, 'thread-full', pane, 0)
+    await capture(launched, 'thread-slim', pane, 420)
   } finally { await closeSotto(launched) }
 })
 

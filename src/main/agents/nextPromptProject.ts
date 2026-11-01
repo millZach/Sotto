@@ -1,5 +1,6 @@
 import type { AgentHostSnapshot, AgentThread } from '../../shared/agents'
-import { NEXT_PROMPT_PROJECT_LIMITS, type NextPromptProject } from '../llm/nextPrompt'
+import { resolveThreadWorkingDirectory } from '../../shared/threadWorkingDirectory'
+import { NEXT_PROMPT_PROJECT_LIMITS, NEXT_PROMPT_WATCHER_THREADS, type NextPromptProject, type NextPromptWatcherFacts } from '../llm/nextPrompt'
 import type { RunGitCommand } from './gitStatus'
 
 /** A read that takes longer is left out rather than holding the suggestion. */
@@ -13,7 +14,9 @@ const GIT_TIMEOUT_MS = 5_000
  */
 export async function nextPromptProject(thread: AgentThread, host: Pick<AgentHostSnapshot, 'threads' | 'projects'>, run: RunGitCommand): Promise<NextPromptProject | null> {
   const project = host.projects.find(item => item.id === thread.projectId && (item.providerId === undefined || thread.providerId === undefined || item.providerId === thread.providerId))
-  const folder = thread.worktree?.path ?? thread.workingDirectory ?? project?.path
+  // The thread's own folder; a new worktree is made on the first send, so until it is ready the project's folder is read.
+  let folder: string | undefined
+  try { folder = resolveThreadWorkingDirectory(thread, project) } catch { folder = project?.path }
   if (!folder) return null
   const git = (args: readonly string[], separator = '\n'): Promise<string[]> => run(folder, 'git', args, { timeoutMs: GIT_TIMEOUT_MS })
     .then(output => output.split(separator).map(line => line.trimEnd()).filter(Boolean), () => [])
@@ -46,4 +49,19 @@ export async function nextPromptProject(thread: AgentThread, host: Pick<AgentHos
     changed,
     threads,
   }
+}
+
+/**
+ * What Watcher's provider is told to guess the user's first message to Watcher (ADR-0173): the user's latest named threads
+ * on every host the window joins, each with its project and whether it works, waits on the user or is at rest. Watcher
+ * reads all of them once it starts. Read when the first-start box is shown, never per update.
+ */
+export function nextPromptWatcherFacts(host: Pick<AgentHostSnapshot, 'threads' | 'projects'>): NextPromptWatcherFacts {
+  const threads = host.threads
+    .filter(item => (item.kind ?? 'project') === 'project' && !item.archivedAt && item.titleSource !== undefined && item.titleSource !== 'default')
+    .sort((a, b) => (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
+    .slice(0, NEXT_PROMPT_WATCHER_THREADS)
+    .map(item => ({ title: item.title, project: host.projects.find(project => project.id === item.projectId)?.title ?? '',
+      state: item.requests.length > 0 ? 'waiting on you' as const : item.status === 'running' ? 'working' as const : 'at rest' as const }))
+  return { threads }
 }

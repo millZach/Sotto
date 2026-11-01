@@ -437,6 +437,10 @@ msgstr ""
 msgid "Answer the request to open this page first."
 msgstr ""
 
+#: src/main/agents/nextPromptIpc.ts
+msgid "Ask for Watcher's first message from the main Sotto window."
+msgstr ""
+
 #: src/main/tray/trayController.ts
 msgid "Auto-paste"
 msgstr "Indsæt automatisk"

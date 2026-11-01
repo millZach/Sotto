@@ -1249,8 +1249,7 @@ export class CursorAcpHost implements AgentHost {
     const generation = this.generation
     if (await this.checkLaunchProfile(id) && prompt.purpose !== 'next-prompt') return null
     const alias = this.aliases[id], program = this.program
-    // A new thread's next prompt (ADR-0173) is asked before its session exists; the writer starts a session of its own.
-    if (!this.state.connected || !program || !alias || !alias.cursorSessionId && prompt.purpose !== 'next-prompt') return null
+    if (!this.state.connected || !program || !alias?.cursorSessionId) return null
     const cwd = await existingWorkingDirectory(alias.cwd)
     this.assertGeneration(generation)
     await writeCursorSideConfig(this.sideConfigDirectory)
