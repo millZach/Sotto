@@ -25,6 +25,15 @@ const RETRY_MS = 5_000
 const RECONCILE_MS = 5_000
 /** How long a read waits for account limits before answering with the last ones it has; the read goes on behind it. */
 const QUOTA_READ_WAIT_MS = 6_000
+/**
+ * The most threads whose usage one task reads, and how long a task goes on beginning another before it lets main do
+ * something else. One task read every thread's usage when a provider connected, now each one's ledger file too (#1937):
+ * 434 ms on forge for a folder the size of the owner's, 291 threads. There a thread of 190 requests takes about 1.2 ms, and
+ * a flush of the store's full buffer, which a thread's rows can set off, about 6 ms more, so three threads leave room for
+ * one in about 8 ms. A slower computer stops sooner, once 5 ms have passed.
+ */
+const VISITS_AT_ONCE = 3
+const VISIT_TASK_MS = 5
 
 /** Numeric-only callbacks at the coordinator's durable intent and exact echo boundaries. */
 export interface UsagePromptRecorder {
@@ -66,6 +75,11 @@ export class UsageService implements UsagePromptRecorder {
   private readonly quotaStarted = new Map<UsageLimitProviderId, number>()
   private quotaStarts = 0
   private readonly visited = new Set<string>()
+  /** Threads whose usage is to be read, by ID, read a few per task in the order they came. */
+  private readonly visits = new Map<string, AgentHostSnapshot['threads'][number]>()
+  private visitTimer: ReturnType<typeof setImmediate> | undefined
+  /** Reads and clears waiting for every queued thread to be read first. */
+  private readonly visitWaiters: (() => void)[] = []
   /** Threads whose usage could not be read: each change reads them again, as every snapshot read every thread not yet read. */
   private readonly unread = new Set<string>()
   private readonly connected = new Set<UsageProviderId>()
@@ -224,7 +238,9 @@ export class UsageService implements UsagePromptRecorder {
 
   async read(input: UsageLocalQuery = {}): Promise<UsageLocalHostRead> {
     const query = usageLocalQuerySchema.parse(input)
-    // Everything buffered before the read is written before the store reads.
+    // Every thread queued to be read before the read is read, and everything buffered is written before the store reads.
+    const queued = this.visitsRead()
+    if (queued) await queued
     const flushed = this.flushing()
     this.history?.poke()
     // Limits and activity are read together: a slow provider never holds the history back.
@@ -251,6 +267,8 @@ export class UsageService implements UsagePromptRecorder {
 
   async clear(input: UsageLocalClearRequest): Promise<UsageLocalClearResult> {
     const request = usageLocalClearRequestSchema.parse(input)
+    const queued = this.visitsRead()
+    if (queued) await queued
     await this.flushing()
     // Everything buffered before Clear was pressed is written, or Clear is refused. What arrives after it is written
     // after the clear, as the store always ordered them.
@@ -347,6 +365,9 @@ export class UsageService implements UsagePromptRecorder {
     this.closed = true
     clearTimeout(this.timer); this.timer = undefined
     clearTimeout(this.reconcileTimer); this.reconcileTimer = undefined
+    clearImmediate(this.visitTimer); this.visitTimer = undefined
+    this.visits.clear()
+    for (const resolve of this.visitWaiters.splice(0)) resolve()
     // On the worker this waits, a bounded while, for every write asked for to commit.
     try { this.client.close() } catch { /* Usage never holds provider shutdown open. */ }
     this.opened = false
@@ -392,12 +413,12 @@ export class UsageService implements UsagePromptRecorder {
       for (const thread of snapshot.threads) if (isUsageProviderId(thread.providerId)) this.connected.add(thread.providerId)
       for (const model of snapshot.models) if (isUsageProviderId(model.providerId)) this.connected.add(model.providerId)
     }
-    for (const thread of snapshot.threads) this.visit(thread)
+    for (const thread of snapshot.threads) this.queueVisit(thread)
     if (this.started && (firstSnapshot || [...this.connected].some(provider => !previouslyConnected.has(provider)))) {
       this.reconciliationRequested = true
       this.reconcilePending()
     }
-    if (this.connected.size && !this.seedMarked) { this.seedPending = true; this.schedule(FLUSH_MS) }
+    this.visitQueued()
   }
 
   /**
@@ -414,9 +435,46 @@ export class UsageService implements UsagePromptRecorder {
       this.acceptSnapshot({ ...map.rest!, threads: map.threads() } as AgentHostSnapshot)
       return
     }
-    for (const thread of changes.upserts) this.visit(thread)
-    for (const id of [...this.unread]) { const thread = map.get(id); if (thread) this.visit(thread); else this.unread.delete(id) }
+    for (const thread of changes.upserts) this.queueVisit(thread)
+    for (const id of [...this.unread]) { const thread = map.get(id); if (thread) this.queueVisit(thread); else this.unread.delete(id) }
+    this.visitQueued()
+  }
+
+  /** Queues a thread whose usage is not read yet; the queue is read a few threads per task (`visitBatch`). */
+  private queueVisit(thread: AgentHostSnapshot['threads'][number]): void {
+    if (!this.options.host.visitUsage || this.visited.has(thread.id)) return
+    this.visits.set(thread.id, thread)
+  }
+
+  /**
+   * Reads the queued threads in the tasks to come, or, once none is queued, marks the legacy seed for the next flush: never
+   * with a thread still unread, whose rows the seed would then go without.
+   */
+  private visitQueued(): void {
+    if (this.closed) return
+    if (this.visits.size) { this.visitTimer ??= setImmediate(() => this.visitBatch()); return }
     if (this.connected.size && !this.seedMarked) { this.seedPending = true; this.schedule(FLUSH_MS) }
+    for (const resolve of this.visitWaiters.splice(0)) resolve()
+  }
+
+  /** One task's share of the queue: at most `VISITS_AT_ONCE` threads, and none begun once `VISIT_TASK_MS` have passed. */
+  private visitBatch(): void {
+    this.visitTimer = undefined
+    if (this.closed) return
+    const started = performance.now()
+    let read = 0
+    for (const [id, thread] of this.visits) {
+      this.visits.delete(id)
+      this.visit(thread)
+      if (++read >= VISITS_AT_ONCE || performance.now() - started >= VISIT_TASK_MS) break
+    }
+    this.visitQueued()
+  }
+
+  /** Once no thread is left queued to be read: at once when none is. */
+  private visitsRead(): Promise<void> | undefined {
+    if (this.closed || !this.visits.size) return undefined
+    return new Promise(resolve => { this.visitWaiters.push(resolve) })
   }
 
   /** Reads a thread's usage once its provider is connected; a read that fails is tried again with the next publication. */

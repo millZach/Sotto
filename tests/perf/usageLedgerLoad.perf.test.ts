@@ -18,7 +18,8 @@ import { median, PERF_BENCH, round } from '../fixtures/perfBench'
  * Each run starts from a copy of it in a process of its own (`tests/fixtures/usageLoadBench.ts`) and times `load()`, the
  * heap it leaves behind once collected, and the long thread's first report after it. "before" is the source at BASE;
  * "upgrade" is the working tree on a folder an earlier build left, with no views; "later" is the working tree on the next
- * start, views written. Each is run again with Usage on, which visits every thread's saved rows after the start:
+ * start, views written. Each is run again with Usage on: a `UsageService` reads every thread's saved rows once Claude
+ * connects, and each task it reads them in is timed, the longest of them being the claim with the total and the heap:
  *
  *   SOTTO_PERF_BENCH=1 NODE_OPTIONS=--max-old-space-size=3072 npx vitest run tests/perf/usageLedgerLoad.perf.test.ts --maxWorkers=1 --disable-console-intercept
  *
@@ -29,7 +30,9 @@ const BASE = 'f976052cceddad79b00542fc1caf5113e47c1b58'
 const THREADS = 290, REQUESTS = 190, LONG = 10_000
 const exec = promisify(execFile)
 type Label = 'before' | 'upgrade' | 'later'
-type Row = { loadMs: number; loadCpuMs: number; loadHeapMb: number; visitMs?: number; visitHeapMb?: number; rows?: number; firstReportMs: number; output: number }
+type Row = { loadMs: number; loadCpuMs: number; loadHeapMb: number; snapshotTaskMs?: number; visitMs?: number; visitCpuMs?: number; batches?: number
+  medianBatchMs?: number; longestBatchMs?: number; longestTaskMs?: number; secondLongestTaskMs?: number; batchesOver8Ms?: number; visitHeapMb?: number
+  rows?: number; firstReportMs: number; output: number }
 
 const report = (index: number) => ({ type: 'assistant', timestamp: new Date(Date.UTC(2026, 8, 1) + index * 60_000).toISOString(),
   message: { id: `msg_${index}`, model: 'claude-opus-5-5', usage: { input_tokens: 1_000, output_tokens: 100, cache_read_input_tokens: 2_000, cache_creation_input_tokens: 0 } } })
@@ -47,8 +50,10 @@ describe.skipIf(!PERF_BENCH)('reading the usage ledgers at start (timing benchma
     await seeding.flushed()
     for (const label of ['before', 'after']) {
       const outfile = join(root, `${label}.mjs`)
+      // The usage store's worker is found beside the bundle by `__dirname`, which a module has not; the benchmark answers
+      // for the store itself.
       await build({ entryPoints: ['tests/fixtures/usageLoadBench.ts'], bundle: true, platform: 'node', format: 'esm', outfile,
-        plugins: label === 'before' ? [sourceAt(BASE)] : [] })
+        define: { __dirname: '"."' }, plugins: label === 'before' ? [sourceAt(BASE)] : [] })
       bundles[label] = outfile
     }
   }, 300_000)
@@ -85,8 +90,14 @@ describe.skipIf(!PERF_BENCH)('reading the usage ledgers at start (timing benchma
       for (const label of labels) {
         const samples = rows[label]
         const med = (field: keyof Row, places = 1) => samples[0]![field] === undefined ? undefined : round(median(samples.map(row => row[field] as number)), places)
+        const most = (field: keyof Row) => samples[0]![field] === undefined ? undefined : round(Math.max(...samples.map(row => row[field] as number)), 1)
         console.log(JSON.stringify({ benchmark: 'usage-ledger-load', baseline: BASE, label, usage: visit === 'visit' ? 'on' : 'off', runs: samples.length,
-          loadMs: med('loadMs'), loadCpuMs: med('loadCpuMs'), loadHeapMb: med('loadHeapMb'), visitMs: med('visitMs'), visitHeapMb: med('visitHeapMb'),
+          loadMs: med('loadMs'), loadCpuMs: med('loadCpuMs'), loadHeapMb: med('loadHeapMb'),
+          // Usage's visit: the snapshot's own task, each later task reading queued threads, and the longest of them all.
+          snapshotTaskMs: med('snapshotTaskMs'), visitMs: med('visitMs'), visitCpuMs: med('visitCpuMs'), batches: med('batches', 0),
+          medianBatchMs: med('medianBatchMs'), longestBatchMs: med('longestBatchMs'), longestTaskMs: med('longestTaskMs'), longestTaskMsWorstRun: most('longestTaskMs'),
+          secondLongestTaskMs: med('secondLongestTaskMs'), secondLongestTaskMsWorstRun: most('secondLongestTaskMs'), batchesOver8Ms: med('batchesOver8Ms', 0),
+          visitHeapMb: med('visitHeapMb'),
           firstReportMs: med('firstReportMs', 2) }))
       }
       // Every start counts the same tokens, and Usage visits the same rows.

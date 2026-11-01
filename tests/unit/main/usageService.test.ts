@@ -340,6 +340,69 @@ describe('host usage collection service', () => {
   })
 })
 
+describe('reading every thread\'s saved usage when a provider connects', () => {
+  /** A connected Codex host of `threads` threads, whose usage reads record which thread was read and fail for `failing`. */
+  function visiting(threads: number, failing = new Set<string>()) {
+    const fake = new FakeProviderHost()
+    fake.state.connected = true
+    fake.state.threads = Array.from({ length: threads }, (_, index) => ({ ...fake.state.threads[0]!, id: `thread-${index}`, providerId: 'codex' }))
+    fake.state.models[0]!.providerId = 'codex'
+    const read: string[] = []
+    const host: AgentHost = fake
+    host.visitUsage = (threadId, visitor) => {
+      read.push(threadId)
+      if (failing.has(threadId)) throw new Error('The usage could not be read.')
+      visitor(token({ threadId, recordKey: hash(`request-${threadId}`), groupKey: hash(`turn-${threadId}`), phase: 'seed' }))
+    }
+    const store = new UsageStore(':memory:', () => at)
+    const seed = vi.spyOn(store, 'markLegacySeedCompleted')
+    const service = new UsageService({ directory: '.', host, store })
+    opened.push(service); service.start(); fake.emit()
+    return { fake, service, read, seed }
+  }
+  /** The tasks begun before this call have run: the next batch of queued threads among them. */
+  const nextTask = () => new Promise<void>(resolve => { setImmediate(resolve) })
+
+  it('reads a few threads per task rather than all in the publication\'s, and marks the seed only once all are read', async () => {
+    const f = visiting(20)
+    expect(f.read).toEqual([])
+    await nextTask()
+    expect(f.read.length).toBeGreaterThan(0)
+    expect(f.read.length).toBeLessThan(20)
+    // A flush meanwhile carries no seed mark: threads are still to be read.
+    f.service.flush()
+    expect(f.seed).not.toHaveBeenCalled()
+    // A read waits for every queued thread, then writes what they gave, the seed mark after it.
+    const result = await f.service.read()
+    expect([...f.read].sort()).toEqual(Array.from({ length: 20 }, (_, index) => `thread-${index}`).sort())
+    expect(f.seed).toHaveBeenCalledOnce()
+    expect(result.activity!.totals.tokens.input).toMatchObject({ rows: 20, value: 20 * 100 })
+  })
+
+  it('reads a thread queued twice once, and one whose read failed again with the next publication', async () => {
+    const failing = new Set(['thread-2'])
+    const f = visiting(5, failing)
+    f.fake.emit()
+    await f.service.read()
+    expect([...f.read].sort()).toEqual(['thread-0', 'thread-1', 'thread-2', 'thread-3', 'thread-4'])
+    failing.clear()
+    f.fake.emit()
+    await f.service.read()
+    expect(f.read.filter(id => id === 'thread-2')).toHaveLength(2)
+    expect(f.read).toHaveLength(6)
+  })
+
+  it('stops reading queued threads once it closes', async () => {
+    const f = visiting(30)
+    await nextTask()
+    const before = f.read.length
+    f.service.close()
+    for (let task = 0; task < 5; task++) await nextTask()
+    expect(f.read).toHaveLength(before)
+    expect(f.seed).not.toHaveBeenCalled()
+  })
+})
+
 describe('host usage history import', () => {
   it('answers with activity while a provider is slow to say its limits, and keeps the reading for later', async () => {
     vi.useFakeTimers()

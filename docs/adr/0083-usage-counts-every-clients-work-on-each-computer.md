@@ -122,12 +122,17 @@ although only the threads working that run touch their requests. For a folder th
   for that report, and the next one tries again. One unreadable as a ledger is set aside as any store sets one aside, and
   the thread starts afresh, as it would have at start. Usage's visit reads an unread thread's requests for the visit and
   keeps none of them.
+- **Usage reads its threads a few per task.** Usage read every thread's saved rows in one task on main when a provider
+  connected, and that read now reads each thread's ledger file too. It reads at most three threads a task, and begins no
+  further thread once 5 ms have passed, so no task of it holds main longer than one thread's rows and a flush of its
+  buffer. A thread queued twice is read once, a failed read is tried again with the next publication, and closing stops
+  the reading. The legacy seed is marked only once no thread is left to read, and a Usage read or Clear waits for them.
 - **What stays.** What a ledger holds, and when it is written, are as before; so is a reconnect keeping unsaved counts. A
   new price reaches the threads that may hold unpriced requests through a new rate version (`USAGE_RATE_VERSION`), as the
   rate table already requires; a price added without one reaches a thread's totals when its requests are next read.
 
 On `usageLedgerLoad.perf.test.ts`, a later start read 140,654 bytes of views rather than 9,818,789 bytes of ledgers, in
-13.2 ms rather than 192.3, and kept 0.6 MB of heap rather than 18.4. A thread's first report after start reads its ledger:
-30.1 ms for one of 10,000 requests. With Usage on, its visit of every thread still reads every ledger, now one file at a time
-on main: start and visit together took 228 ms against 328 and kept 0.8 MB against 18.4, but the visit, one task on main,
-took 214 ms where it took 129 (`docs/perf/2026-11-01-usage-ledger-lazy-load.md`).
+13.2 ms rather than 197.3, and kept 0.6 MB of heap rather than 18.4. A thread's first report after start reads its ledger:
+29.4 ms for one of 10,000 requests. With Usage on, start and Usage's visit together took 544 ms against 630 and kept
+1.1 MB against 18.7, and the longest task on main, the visit of that one thread, took 80 ms where the whole visit had been
+one task of 434 (`docs/perf/2026-11-01-usage-ledger-lazy-load.md`).
