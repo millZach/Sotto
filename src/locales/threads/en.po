@@ -754,6 +754,11 @@ msgstr "{name} is already checked out here."
 msgid "{name} is checked out in another worktree. Start a new thread there to work on it."
 msgstr "{name} is checked out in another worktree. Start a new thread there to work on it."
 
+#. {name} is a provider, such as Claude Code or Codex.
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "{name} is not connected. Connect it in Settings › Providers to choose a model."
+msgstr "{name} is not connected. Connect it in Settings › Providers to choose a model."
+
 #. {name} is a provider's name; {installed} is a version number.
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "{name} is now {installed}."
@@ -995,6 +1000,11 @@ msgstr "{provider} has not confirmed {wanted}. Until it does, a turn can still r
 #: src/renderer/src/agents/ThreadOptions.tsx
 msgid "{provider} keeps its own default until it confirms."
 msgstr "{provider} keeps its own default until it confirms."
+
+#. {provider} is a provider, such as Claude Code; {from} and {to} are model names, such as Opus 5.5.
+#: src/renderer/src/agents/ThreadTranscript.tsx
+msgid "{provider} no longer offers {from}, so this thread now uses {to}."
+msgstr "{provider} no longer offers {from}, so this thread now uses {to}."
 
 #. {delivery} says whether the answer was sent; {provider} is a provider name.
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
@@ -4720,6 +4730,11 @@ msgstr "Last seen working, {taken} so far"
 #: src/renderer/src/agents/GitActionButton.tsx
 msgid "Leave empty to auto-generate"
 msgstr "Leave empty to auto-generate"
+
+#. In the model menu: the older models of a provider, kept apart from its newest.
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Legacy"
+msgstr "Legacy"
 
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "Let’s get into it."

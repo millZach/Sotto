@@ -243,6 +243,8 @@ public struct ThreadSummary: Decodable, Identifiable, Equatable, Sendable {
     /// How many monitors the thread's provider runs. Never work on its own (`ThreadState`), but its end can move a
     /// delegated thread's outcome from Background work to Answered, so the Agents sheet reads again (ADR-0103).
     public var monitoring: MonitorCount? = nil
+    /// Sotto moved the thread off a model its provider stopped offering (ADR-0171). Older computers never send it.
+    public var modelMoved: ModelMoved? = nil
     public let finishedUnread: Bool?
     /// The thread's working copy as its computer last read it, for the branch, changes and pull request chips on
     /// the thread page. Read tolerantly: a record this build can't read is absent and never fails the thread.
@@ -360,6 +362,22 @@ private extension KeyedDecodingContainer {
     }
 }
 
+/// Sotto moved a thread off a model its provider stopped offering (ADR-0171): the two models' names and when. The thread's
+/// page draws one line after the last message written before then.
+public struct ModelMoved: Decodable, Equatable, Sendable {
+    public let from: String; public let to: String; public let at: String
+    public init(from: String, to: String, at: String) { self.from = from; self.to = to; self.at = at }
+    /// The message the line follows: the last one written at or before the move. Nil when none was, so the line leads.
+    public func anchor(in messages: [Message], date: (String) -> Date? = Stamp.date) -> String? {
+        guard let moment = date(at) else { return messages.last?.id }
+        return messages.last(where: { message in message.createdAt.flatMap(date).map { $0 <= moment } ?? false })?.id
+    }
+    /// The line's words, with the thread's provider named: "Claude Code no longer offers …, so this thread now uses …."
+    public func words(provider: String) -> String {
+        String(localized: "\(provider) no longer offers \(from), so this thread now uses \(to).", bundle: .module,
+               comment: "A note in a thread: its model was retired by the provider (first), and Sotto moved it to another (third).")
+    }
+}
 public struct ThreadDetail: Decodable, Sendable {
     public let threadId: String; public let revision: Int; public let messages: [Message]; public let earlierAvailable: Bool?
     public let activities: [Activity]?

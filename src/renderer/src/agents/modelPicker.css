@@ -94,6 +94,11 @@
 .model-picker__dialog:has(.model-picker__group) .model-picker__panel, .model-picker__models--grouped, .model-picker__models--grouped > [role='group'] { background: inherit; }
 .model-picker__group { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 8px; margin: 0 -6px; padding: 10px 16px 4px; background: inherit; color: var(--tt-text-muted); font-size: var(--tt-type-caption); font-weight: 600; }
 .model-picker__group > span { margin-left: auto; font-size: var(--tt-type-caption); font-weight: 500; }
+/* Legacy (ADR-0171): a closed row under a Claude Code or Codex list that opens the older models of each line beneath it. */
+.model-picker__legacy { display: flex; align-items: center; gap: 6px; width: 100%; min-height: 32px; margin-top: 4px; padding: 6px 10px; border: 0; border-top: 1px solid var(--tt-hairline); border-radius: 0; background: transparent; color: var(--tt-text-muted); font: inherit; font-size: var(--tt-type-small); text-align: left; }
+.model-picker__legacy:hover, .model-picker__legacy:focus-visible { background: var(--tt-hover); color: var(--tt-text); outline: 0; }
+.model-picker__legacy:focus-visible { box-shadow: inset 0 0 0 2px var(--tt-focus-ring); }
+.model-picker__legacy > span { margin-left: auto; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 
 /* Favorites (ADR-0147): a star tile heads the rail, and a star ends each model row. The star shows on a row the pointer or
    focus is on, and always where it is filled; a favorite carries its provider's mark before its name. */

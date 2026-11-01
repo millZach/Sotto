@@ -301,11 +301,20 @@ struct NewThreadSheet: View {
     private var fields: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
             FieldBox(label: String(localized: "Model", comment: "The field for the model a new thread uses."), value: chosenModel.map(modelName) ?? String(localized: "Choose a model"), identifier: "new-thread-model") {
+                let lineup = ModelLineup.split(models)
                 Picker("Model", selection: $modelID) {
                     if chosenModel == nil {
                         Text("Saved model unavailable — choose a model").tag(modelID).selectionDisabled(true)
                     }
-                    ForEach(models) { value in Text(modelName(value)).tag(value.id) }
+                    ForEach(lineup.latest) { value in Text(modelName(value)).tag(value.id) }
+                }
+                // Older models of each line wait in a closed submenu (ADR-0171).
+                if !lineup.legacy.isEmpty {
+                    Menu("Legacy") {
+                        Picker("Legacy", selection: $modelID) {
+                            ForEach(lineup.legacy) { value in Text(modelName(value)).tag(value.id) }
+                        }
+                    }
                 }
             }
             if let chosenModel, let efforts = chosenModel.reasoningEfforts, !efforts.isEmpty {

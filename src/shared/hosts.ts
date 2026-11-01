@@ -119,7 +119,9 @@ export interface HostStatus extends Omit<RemoteHost, 'enabled'> {
   bootStart?: BootStatus | undefined
 }
 /** A model the host setup thread can run on: one of this computer's ready models. */
-export interface HostSetupModel { readonly id: string; readonly name: string; readonly provider: string }
+export interface HostSetupModel { readonly id: string; readonly name: string; readonly provider: string
+  /** A Claude Code or Codex legacy model (ADR-0171), listed after the provider's newest under its own heading. */
+  readonly legacy?: true }
 /** What Have my agent set this up can offer: whether it can run at all, and the models to pick from. */
 export interface HostSetupChoice {
   /** Why no setup can start, such as the local host being off. Absent when one can. */

@@ -22,6 +22,7 @@ import { isAbsolute, join } from 'node:path'
 import { z } from 'zod'
 import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, agentSpeedSchema, type AgentModel, type AgentRuntimeMode, type AgentSpeed, type AgentHostSnapshot, type AgentMessage, type AgentThread, type ProviderId } from '../../shared/agents'
 import { resolveModel } from '../../shared/modelCatalog'
+import { markLegacyModels } from '../../shared/modelLineup'
 import { orderReasoningEfforts } from '../../shared/reasoningEfforts'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import type { AgentSkillCatalog, AgentSkillReference } from '../../shared/agentSkills'
@@ -703,7 +704,8 @@ export class CodexAppServerHost implements AgentHost {
           cursors.add(cursor)
         }
       } while (cursor)
-      return { version, models }
+      // Older models of a line go under Legacy in every menu (ADR-0171).
+      return { version, models: markLegacyModels(models) }
     } catch { return { version, models: undefined } }
   }
   /**

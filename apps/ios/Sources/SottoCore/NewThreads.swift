@@ -19,6 +19,9 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
     /// older computer, `fastMode` alone for Fast.
     public var speeds: ThreadList<ModelSpeed>? = nil
     public var fastMode: ModelFastMode? = nil
+    /// A Claude Code or Codex model with a newer model of its line in the same catalog (ADR-0171). Menus list it under a
+    /// closed Legacy submenu. Older computers never send it, and their models all list together.
+    public var legacy: Bool? = nil
     public struct ProviderMode: Decodable, Equatable, Sendable {
         public let id: String; public let name: String; public let allows: String?; public let asks: String?
     }
@@ -53,6 +56,13 @@ public struct ThreadModel: Decodable, Identifiable, Equatable, Sendable {
     }
     /// Prefer an asking mode. A grant is never selected just because this iPhone may answer.
     public var startingPermission: String { permissions.first { !$0.grants }?.id ?? "" }
+}
+/// A model menu's two parts (ADR-0171): the models it leads with, and the legacy ones under a closed Legacy submenu, each in
+/// the computer's order. The computer marks which are legacy, so the iPhone and the desktop list the same models the same way.
+public enum ModelLineup {
+    public static func split(_ models: [ThreadModel]) -> (latest: [ThreadModel], legacy: [ThreadModel]) {
+        (models.filter { $0.legacy != true }, models.filter { $0.legacy == true })
+    }
 }
 public struct ThreadPermission: Identifiable, Equatable, Sendable {
     public let id: String; public let name: String; public let asks: String?
