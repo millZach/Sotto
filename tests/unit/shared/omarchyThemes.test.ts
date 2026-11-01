@@ -183,11 +183,12 @@ describe('Omarchy M3 and readability check', () => {
     // solid colour arrived (ADR-0150), and when the collapsed rail's trays got their group colours (ADR-0146, October 28 amendment),
     // and when text sizes and corners got their scale of `--tt-type-*` and `--tt-radius-*` steps (ADR-0169), and when the
     // prompt's placeholder got its hint tier, `--tt-text-hint`, from the theme's Muted text role, mixed with the room on Glass
-    // (October 31, 2026); none of them changes a palette.
+    // (October 31, 2026), and when High Contrast began lifting that hint at half strength (November 1, 2026); none of them
+    // changes a palette.
     expect(createHash('sha256').update(JSON.stringify(BUILT_IN_THEMES)).digest('hex')).toBe('5e43d8dae0a93190f59afd80f75f3400076c21aa2cb023b1aec0f8348ca8aac1')
     const tokenText = readFileSync('src/renderer/src/styles/tokens.css', 'utf8').replace(/\r\n/gu, '\n')
     const tokenHash = createHash('sha256').update(tokenText).digest('hex')
-    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('21acf4a2b412cadd20154af9537d5bfeb8f3dd373cfc5d80569dadc82c99e683')
+    expect(tokenHash, `tokens.css changed. If that was meant and no palette moved, update the pin to ${tokenHash} and say why above`).toBe('400962ef615b5d06607a0ff8c02355fe9c20f0bc1a11d92bbb17c49bf8fbc758')
     // Existing Windows and macOS imports named Omarchy remain user themes.
     expect(parseCustomThemes([{ ...parseOmarchyTheme(fixtures.themes.hackerman.rendered), id: 'omarchy' }])[0]?.id).toBe('omarchy')
   })
