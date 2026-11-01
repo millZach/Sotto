@@ -2188,7 +2188,7 @@ private struct ReplyDock: View, Equatable {
             } pill: {
                 if let settings, !listening { ThreadSettingsPill(ref: ref, panel: settings) }
             } trailing: {
-                trailingButtons(listening: listening)
+                trailingButtons()
             }
         }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canInterrupt(ref))
@@ -2208,8 +2208,8 @@ private struct ReplyDock: View, Equatable {
             .accessibilityIdentifier("thread-reply")
             .pasteAttaches(to: .thread(ref))
             .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == ref.id { model.focusRequest = nil; focused = true } }
-            // Locked while the reply's photos are staged, so nothing typed now joins it.
-            .disabled(model.preparingSends.contains(ref.id))
+            // Locked while the reply's photos are staged, so nothing typed now joins it, and while the mic writes in it.
+            .disabled(model.preparingSends.contains(ref.id) || dictation.key == ref.id)
     }
 
     /// Whether the box holds something to send: words, photos or files.
@@ -2220,16 +2220,16 @@ private struct ReplyDock: View, Equatable {
 
     /// The mic, then Send, which is always there: the accent once the box holds something, dim while it's empty. While
     /// the turn can be stopped, Stop takes Send's place until something is written; then Stop and Send sit side by side,
-    /// and Send queues for after the turn. While the box listens, the mic alone.
-    @ViewBuilder private func trailingButtons(listening: Bool) -> some View {
+    /// and Send queues for after the turn. Sending while the mic listens stops it. The mic waits while a send's photos are
+    /// made ready.
+    @ViewBuilder private func trailingButtons() -> some View {
         let interrupts = model.canInterrupt(ref)
-        let ready = written || model.preparingSends.contains(ref.id)
+        let preparing = model.preparingSends.contains(ref.id)
+        let ready = written || preparing
         HStack(spacing: ComposerMetrics.gap) {
-            DictateButton(key: ref.id, words: draft)
-            if !listening {
-                if interrupts { stopButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
-                if ready || !interrupts { sendButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
-            }
+            DictateButton(key: ref.id, words: draft).disabled(preparing)
+            if interrupts { stopButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
+            if ready || !interrupts { sendButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
         }
     }
 
@@ -2357,20 +2357,8 @@ private struct ThreadSettingsPill: View {
 
     @ViewBuilder private var speedMenu: some View {
         if !panel.speeds.isEmpty {
-            Menu {
-                // The offered speeds are those past Standard, so Standard leads them.
-                option(ThreadSettings.speedName(ThreadSettings.standard, offered: panel.speeds), chosen: panel.speed == ThreadSettings.standard) {
-                    choose(.speed, ThreadSettings.standard)
-                }
-                ForEach(panel.speeds, id: \.id) { speed in
-                    option(ThreadSettings.speedName(speed.id, offered: panel.speeds), line: ThreadSettings.speedCost(speed, providerID: panel.providerID),
-                           chosen: speed.id == panel.speed) { choose(.speed, speed.id) }
-                }
-            } label: {
-                Text("Speed", comment: "The thread setting for how fast its agent answers.")
-                Text(verbatim: ThreadSettings.speedName(panel.speed, offered: panel.speeds))
-            }
-            .disabled(!panel.pressable(.speed))
+            SpeedMenu(speeds: panel.speeds, speed: panel.speed, providerID: panel.providerID) { choose(.speed, $0) }
+                .disabled(!panel.pressable(.speed))
         }
     }
 

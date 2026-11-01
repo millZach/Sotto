@@ -12,13 +12,13 @@ iOS has a speech recognizer, `SFSpeechRecognizer`, that can be told to recognize
 
 ## Decision
 
-**1. The mic dictates into its own box, on this iPhone only.** A press of the mic in a thread's reply box or Watcher's box asks iOS for the microphone and speech recognition the first time, then listens. What it hears goes after the words already in the box, revised as it hears more, with one space between where neither side has one. The mic fills with the accent and the row's left side says **Listening on this iPhone** while it listens. A second press, a send, or the box leaving the screen stops it. One box listens at a time; pressing another box's mic moves the listening there.
+**1. The mic dictates into its own box, on this iPhone only.** A press of the mic in a thread's reply box or Watcher's box asks iOS for the microphone and speech recognition the first time, then listens. What it hears goes after the words already in the box, revised as it hears more, with one space between where neither side has one. The mic fills with the accent and the row's left side says **Listening on this iPhone** while it listens, and the box's words are locked until the last of what was heard has arrived, so nothing typed is written over. A second press, a send, or the box leaving the screen stops it; a box that leaves while iOS is still asking never starts. One box listens at a time; pressing another box's mic moves the listening there. The mic waits while a send's photos are made ready.
 
 **2. Recognition stays on the device.** Every request sets `requiresOnDeviceRecognition`. Where the iPhone can't recognize its language on the device, the mic says so and does nothing: **This iPhone can't recognize speech in its language without sending it to Apple, so Sotto doesn't dictate here. The keyboard's own mic key still works.** Sotto adds no host, and the README's "Privacy and cost" says so.
 
 **3. Nothing is kept.** The microphone's audio goes to the recognizer in memory and is never written to disk, recorded or sent. What is heard is never logged; it is the box's draft, and leaves the iPhone only when the user sends it. The phone keeps no dictation record ([CONTEXT.md](../../CONTEXT.md) **Dictation record** is the desktop's).
 
-**4. Errors say what happened.** If iOS hasn't allowed the microphone or speech recognition, an alert says so with **Open iOS Settings**. If the microphone doesn't start, it says nothing was heard and the words are as they were.
+**4. Errors say what happened.** If iOS hasn't allowed the microphone or speech recognition, an alert says so with **Open iOS Settings**. If the microphone doesn't start, or the recognizer ends with an error before hearing anything, it says nothing was heard and the words are as they were. If it ends with an error after hearing something, it says **Dictation stopped** and that what was heard is in the box.
 
 ## Consequences
 

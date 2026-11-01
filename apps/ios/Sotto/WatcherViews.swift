@@ -1627,7 +1627,7 @@ private struct WatcherDock: View {
         } pill: {
             if !listening, model.offersWatcherManage(hostID), model.watcherPage(hostID) != nil { WatcherSettingsPill(hostID: hostID) }
         } trailing: {
-            trailing(key: key, listening: listening, stops: stops, ready: written || preparing, preparing: preparing)
+            trailing(key: key, stops: stops, ready: written || preparing, preparing: preparing)
         }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written || preparing)
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: stops)
@@ -1646,18 +1646,17 @@ private struct WatcherDock: View {
             .accessibilityIdentifier("watcher-reply")
             .pasteAttaches(to: box)
             .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == box.id { model.focusRequest = nil; focused = true } }
-            .disabled(preparing)
+            // Locked while the mic writes in it, as a thread's box is.
+            .disabled(preparing || dictation.key == model.watcherDraftKey(hostID))
     }
 
     /// The mic, then Send, which is always there; while Watcher's own turn can be stopped, Stop takes Send's place until
-    /// something is written. While the box listens, the mic alone.
-    private func trailing(key: String, listening: Bool, stops: Bool, ready: Bool, preparing: Bool) -> some View {
+    /// something is written. Sending while the mic listens stops it; the mic waits while a send's photos are made ready.
+    private func trailing(key: String, stops: Bool, ready: Bool, preparing: Bool) -> some View {
         HStack(spacing: ComposerMetrics.gap) {
-            DictateButton(key: key, words: draft)
-            if !listening {
-                if stops { stopButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
-                if ready || !stops { sendButton(preparing: preparing).transition(.scale(scale: 0.6).combined(with: .opacity)) }
-            }
+            DictateButton(key: key, words: draft).disabled(preparing)
+            if stops { stopButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
+            if ready || !stops { sendButton(preparing: preparing).transition(.scale(scale: 0.6).combined(with: .opacity)) }
         }
     }
 
@@ -1867,20 +1866,8 @@ private struct WatcherSettingsPill: View {
 
     @ViewBuilder private var speedMenu: some View {
         if !speeds.isEmpty, values != nil {
-            Menu {
-                // The offered speeds are those past Standard, so Standard leads them.
-                option(ThreadSettings.speedName(ThreadSettings.standard, offered: speeds), chosen: speed == ThreadSettings.standard) {
-                    choose(.speed, ThreadSettings.standard)
-                }
-                ForEach(speeds, id: \.id) { item in
-                    option(ThreadSettings.speedName(item.id, offered: speeds), line: ThreadSettings.speedCost(item, providerID: shownModel?.providerId),
-                           chosen: item.id == speed) { choose(.speed, item.id) }
-                }
-            } label: {
-                Text("Speed", comment: "The thread setting for how fast its agent answers.")
-                Text(verbatim: ThreadSettings.speedName(speed, offered: speeds))
-            }
-            .disabled(held != nil)
+            SpeedMenu(speeds: speeds, speed: speed, providerID: shownModel?.providerId) { choose(.speed, $0) }
+                .disabled(held != nil)
         }
     }
 

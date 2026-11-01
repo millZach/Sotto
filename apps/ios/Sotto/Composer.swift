@@ -126,8 +126,8 @@ struct DictateButton: View {
         } message: { problem in
             Text(problem.message)
         }
-        // A box that leaves the screen stops listening, and keeps what it heard.
-        .onDisappear { if dictation.key == key { dictation.stop() } }
+        // A box that leaves the screen stops listening, and keeps what it heard; one still asking iOS never starts.
+        .onDisappear { dictation.leave(key) }
     }
 }
 
@@ -150,9 +150,32 @@ struct ListeningLine: View {
     }
 }
 
-/// Why dictation couldn't start, said once in an alert over the box that asked.
+/// The Speed submenu in a settings pill's menu, a thread's and Watcher's: Standard first, since the offered speeds are
+/// those past it, then each offered speed with what it costs.
+struct SpeedMenu: View {
+    let speeds: [ModelSpeed]
+    let speed: String
+    let providerID: String?
+    let choose: (String) -> Void
+    var body: some View {
+        Menu {
+            SettingOption(name: ThreadSettings.speedName(ThreadSettings.standard, offered: speeds), chosen: speed == ThreadSettings.standard) {
+                choose(ThreadSettings.standard)
+            }
+            ForEach(speeds, id: \.id) { item in
+                SettingOption(name: ThreadSettings.speedName(item.id, offered: speeds), line: ThreadSettings.speedCost(item, providerID: providerID),
+                              chosen: item.id == speed) { choose(item.id) }
+            }
+        } label: {
+            Text("Speed", comment: "The thread setting for how fast its agent answers.")
+            Text(verbatim: ThreadSettings.speedName(speed, offered: speeds))
+        }
+    }
+}
+
+/// Why dictation couldn't start, or stopped on its own, said once in an alert over the box that asked.
 struct DictationProblem: Identifiable {
-    enum Kind { case notAllowed, notOnDevice, microphone }
+    enum Kind { case notAllowed, notOnDevice, microphone, interrupted }
     let key: String
     let kind: Kind
     var id: String { key }
@@ -161,6 +184,7 @@ struct DictationProblem: Identifiable {
         case .notAllowed: return String(localized: "Dictation is off for Sotto")
         case .notOnDevice: return String(localized: "Can’t dictate on this iPhone")
         case .microphone: return String(localized: "The microphone didn’t start")
+        case .interrupted: return String(localized: "Dictation stopped")
         }
     }
     var message: String {
@@ -171,6 +195,8 @@ struct DictationProblem: Identifiable {
             return String(localized: "This iPhone can’t recognize speech in its language without sending it to Apple, so Sotto doesn’t dictate here. The keyboard’s own mic key still works.")
         case .microphone:
             return String(localized: "Nothing was heard, and your words are as they were. Try the mic again.")
+        case .interrupted:
+            return String(localized: "What was heard is in the box. Press the mic to go on.")
         }
     }
 }
@@ -178,11 +204,13 @@ struct DictationProblem: Identifiable {
 /// Dictation into a reply box on this iPhone (ADR-0174): Apple's speech recognition on the device only, writing what it
 /// hears after the words already in the box. The audio goes from the microphone to the recognizer in memory and is
 /// never recorded, kept or sent; what it hears is never logged. It listens only from a press of the mic until the next
-/// press, a send, or the box leaving the screen. One box listens at a time.
+/// press, a send, or the box leaving the screen. One box listens at a time, and its words are locked while it does, so
+/// nothing typed is written over.
 @MainActor final class Dictation: ObservableObject {
     static let shared = Dictation()
-    /// The box listening, by its draft's key; nil while nothing listens. It changes only as listening starts and stops,
-    /// so what watches it is drawn again only then; what is heard goes straight into the box's draft.
+    /// The box listening, by its draft's key, until its last words have arrived; nil while nothing listens. It changes
+    /// only as listening starts and ends, so what watches it is drawn again only then; what is heard goes straight into
+    /// the box's draft.
     @Published private(set) var key: String?
     @Published var problem: DictationProblem?
 
@@ -196,22 +224,38 @@ struct DictationProblem: Identifiable {
     private var before = ""
     /// Each start's own number, so a result from one that has ended writes nothing.
     private var session = 0
+    /// The box whose start is still asking iOS for leave, so leaving it or pressing again can call the start off.
+    private var starting: String?
+    /// Whether this start has heard anything yet, which says what an error means.
+    private var heardAny = false
 
-    /// Starts listening into this box, or stops it if it is the one listening.
+    /// Starts listening into this box, or stops it if it is the one listening or about to.
     func toggle(key: String, words: String, write: @escaping (String) -> Void) {
         if self.key == key { stop(); return }
+        if starting == key { session += 1; starting = nil; return }
         cancel()
         session += 1
+        starting = key
         let started = session
         Task { await start(key: key, words: words, write: write, session: started) }
     }
 
-    /// Stops listening and lets the last words heard arrive.
+    /// Stops listening and lets the last words heard arrive; the box stays locked until they have, or two seconds pass.
     func stop() {
         guard key != nil else { return }
         endAudio()
         task?.finish()
-        key = nil
+        let ending = session
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(2))
+            if self?.session == ending { self?.cancel() }
+        }
+    }
+
+    /// The box is leaving the screen: it stops listening, and a start still asking iOS is called off.
+    func leave(_ key: String) {
+        if self.key == key { stop() }
+        if starting == key { session += 1; starting = nil }
     }
 
     /// Stops listening and writes nothing more, as a send does: what was heard is already in the box.
@@ -223,8 +267,11 @@ struct DictationProblem: Identifiable {
     }
 
     private func start(key: String, words: String, write: @escaping (String) -> Void, session started: Int) async {
-        guard await Self.allowed() else { problem = DictationProblem(key: key, kind: .notAllowed); return }
+        let allowed = await Self.allowed()
+        // Called off while iOS asked: the box left the screen, its mic was pressed again, or another box's was.
         guard session == started else { return }
+        starting = nil
+        guard allowed else { problem = DictationProblem(key: key, kind: .notAllowed); return }
         guard let recognizer = SFSpeechRecognizer(), recognizer.supportsOnDeviceRecognition else {
             problem = DictationProblem(key: key, kind: .notOnDevice)
             return
@@ -252,14 +299,19 @@ struct DictationProblem: Identifiable {
         self.before = words
         self.writing = key
         self.key = key
-        task = recognizer.recognitionTask(with: request, resultHandler: Self.results { [weak self] heard, done in
-            Task { @MainActor in self?.heard(heard, done: done, session: started) }
+        task = recognizer.recognitionTask(with: request, resultHandler: Self.results { [weak self] heard, failed, done in
+            Task { @MainActor in self?.heard(heard, failed: failed, done: done, session: started) }
         })
     }
 
-    private func heard(_ heard: String?, done: Bool, session from: Int) {
+    private func heard(_ heard: String?, failed: Bool, done: Bool, session from: Int) {
         guard from == session else { return }
-        if let heard { write?(DictatedWords.join(before, heard)) }
+        if let heard, !heard.isEmpty {
+            heardAny = true
+            write?(DictatedWords.join(before, heard))
+        }
+        // A start that ends in an error says so: nothing heard, or listening cut short with what was heard kept.
+        if failed, let writing { problem = DictationProblem(key: writing, kind: heardAny ? .interrupted : .microphone) }
         if done { tearDown() }
     }
 
@@ -275,6 +327,7 @@ struct DictationProblem: Identifiable {
         task = nil
         write = nil
         writing = nil
+        heardAny = false
         before = ""
         key = nil
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
@@ -292,8 +345,9 @@ struct DictationProblem: Identifiable {
         { buffer, _ in request.append(buffer) }
     }
 
-    /// The recognizer's results, read where it calls from: the words so far, and whether it has finished.
-    nonisolated private static func results(_ hear: @escaping @Sendable (String?, Bool) -> Void) -> (SFSpeechRecognitionResult?, Error?) -> Void {
-        { result, error in hear(result?.bestTranscription.formattedString, error != nil || result?.isFinal == true) }
+    /// The recognizer's results, read where it calls from: the words so far, whether it failed, and whether it has
+    /// finished.
+    nonisolated private static func results(_ hear: @escaping @Sendable (String?, Bool, Bool) -> Void) -> (SFSpeechRecognitionResult?, Error?) -> Void {
+        { result, error in hear(result?.bestTranscription.formattedString, error != nil, error != nil || result?.isFinal == true) }
     }
 }
