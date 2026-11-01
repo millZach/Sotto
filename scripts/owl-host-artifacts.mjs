@@ -1,8 +1,9 @@
 import { execFileSync } from 'node:child_process'
 import { lstat, mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { basename, dirname, join, posix, resolve } from 'node:path'
+import { basename, dirname, join, posix, resolve, win32 } from 'node:path'
 import { gunzipSync } from 'node:zlib'
+import process from 'node:process'
 import { TextDecoder } from 'node:util'
 import { checkedFullOwlVersion } from './owl-release.mjs'
 import { sha256, verifyHostArchive } from './verify-host-archive.mjs'
@@ -86,6 +87,14 @@ export function safeHostTarInventory(compressed) {
 }
 
 /** Publication trusts extracted bytes and provenance, never a packaging receipt beside them. */
+/**
+ * Windows' own tar.exe on Windows, not whichever tar comes first on PATH: on a hosted Windows runner that is Git's GNU
+ * tar, which cannot extract there. The release PC already finds Windows' own. Elsewhere, the system tar.
+ */
+export function hostArchiveTar(platform = process.platform, environment = process.env) {
+  return platform === 'win32' ? win32.join(environment.SystemRoot ?? 'C:\\Windows', 'System32', 'tar.exe') : 'tar'
+}
+
 export async function verifyOwlHostArtifact(archive, { version, sourceCommit } = {}) {
   checkedOwlHostVersion(version)
   if (!/^[a-f0-9]{40}$/u.test(sourceCommit ?? '')) throw new Error('Supply a full lower-case source commit')
@@ -110,7 +119,7 @@ export async function verifyOwlHostArtifact(archive, { version, sourceCommit } =
     // Extract the exact bytes inspected above, so a concurrent replacement cannot bypass the path checks.
     const unpacked = join(temporary, 'unpacked'); await mkdir(unpacked)
     await writeFile(join(temporary, 'archive.tar.gz'), bytes)
-    execFileSync('tar', ['-xzf', 'archive.tar.gz', '-C', unpacked], { cwd: temporary, windowsHide: true, timeout: 30000, stdio: 'ignore' })
+    execFileSync(hostArchiveTar(), ['-xzf', 'archive.tar.gz', '-C', 'unpacked'], { cwd: temporary, windowsHide: true, timeout: 30000, stdio: 'ignore' })
     const verified = await verifyHostArchive(unpacked, { expectedVersion: version, expectedSourceCommit: sourceCommit, requireClean: true })
     if (verified.manifest.platform !== match[2] || verified.manifest.arch !== match[3] ||
       verified.provenance.builder?.platform !== match[2] || verified.provenance.builder?.arch !== match[3]) throw new Error('Host archive platform does not match its native build and filename')
