@@ -219,7 +219,9 @@ import SottoCore
     }
 
     fileprivate func tick(_ link: CADisplayLink) {
+        let previous = frames.last
         frames.tick(link)
+        if link.timestamp - previous > BenchSampler.longFrame { sampler?.longFrame(from: previous, to: link.timestamp) }
         if !drawing.isEmpty {
             drawing.forEach(mark)
             drawing = []
@@ -322,7 +324,8 @@ import SottoCore
 /// millisecond a background thread suspends the main thread, reads its registers and walks its frame pointers, and
 /// resumes it; nothing is allocated while it is suspended, as the main thread may hold the allocator's lock. Each
 /// distinct stack is counted under the phase it fell in. At the end it writes the stacks and, for every address in
-/// them, the image it lies in and its load address, which `Scripts/bench-sample.py` turns into function names.
+/// them, the image it lies in and its load address, which `Scripts/bench-sample.py` turns into function names. Each
+/// sample's time is kept too, so the frames longer than `longFrame` are written with the stacks sampled while they lasted.
 /// It slows the app it samples, so the traced journey's own numbers are not summarized.
 final class BenchSampler: @unchecked Sendable {
     private static let depth = 512
@@ -336,6 +339,13 @@ final class BenchSampler: @unchecked Sendable {
     private var stacks: [String: [[UInt]: Int]] = [:]
     private var order: [String] = []
     private let stopped = DispatchSemaphore(value: 0)
+    /// A frame longer than this is kept with the samples taken while it lasted.
+    static let longFrame: CFTimeInterval = 0.05
+    /// Each sample's time, phase and stack, so the samples inside a long frame can be found again.
+    private var timeline: [(time: CFTimeInterval, phase: String, stack: Int)] = []
+    private var stackIDs: [[UInt]: Int] = [:]
+    private var stackList: [[UInt]] = []
+    private var long: [(phase: String, start: CFTimeInterval, end: CFTimeInterval)] = []
 
     init(output: URL) { self.output = output }
 
@@ -350,6 +360,12 @@ final class BenchSampler: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         current = name
         if !order.contains(name) { order.append(name) }
+    }
+
+    /// A frame the display link saw come late by more than `longFrame`, in `CACurrentMediaTime`'s clock.
+    func longFrame(from start: CFTimeInterval, to end: CFTimeInterval) {
+        lock.lock(); defer { lock.unlock() }
+        long.append((current, start, end))
     }
 
     /// Stops sampling and writes what it found. Called on the main thread at the journey's end.
@@ -374,7 +390,24 @@ final class BenchSampler: @unchecked Sendable {
             }
             phases.append(["phase": name, "samples": samples, "stacks": rows])
         }
-        let object: [String: Any] = ["phases": phases, "addresses": addresses]
+        // The longest frames of each phase, with the stacks sampled while each lasted.
+        var longFrames: [[String: Any]] = []
+        for name in order {
+            for frame in long.filter({ $0.phase == name }).sorted(by: { $0.end - $0.start > $1.end - $1.start }).prefix(60) {
+                var counted: [Int: Int] = [:]
+                for sample in timeline where sample.time > frame.start && sample.time <= frame.end { counted[sample.stack, default: 0] += 1 }
+                let rows: [[Any]] = counted.map { id, count in
+                    [count, stackList[id].map { address -> Int in
+                        if let index = table[address] { return index }
+                        table[address] = addresses.count
+                        addresses.append(Self.describe(address))
+                        return addresses.count - 1
+                    }]
+                }
+                longFrames.append(["phase": name, "ms": (frame.end - frame.start) * 1000, "stacks": rows])
+            }
+        }
+        let object: [String: Any] = ["phases": phases, "longFrames": longFrames, "addresses": addresses]
         if let data = try? JSONSerialization.data(withJSONObject: object) { try? data.write(to: output, options: .atomic) }
     }
 
@@ -386,11 +419,15 @@ final class BenchSampler: @unchecked Sendable {
             lock.unlock()
             if done { break }
             usleep(1_000)
+            let time = CACurrentMediaTime()
             let count = capture()
             guard count > 0 else { continue }
             let stack = Array(UnsafeBufferPointer(start: frames, count: count))
             lock.lock()
             stacks[name, default: [:]][stack, default: 0] += 1
+            let id: Int
+            if let known = stackIDs[stack] { id = known } else { id = stackList.count; stackIDs[stack] = id; stackList.append(stack) }
+            timeline.append((time, name, id))
             lock.unlock()
         }
         stopped.signal()
