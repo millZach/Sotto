@@ -248,8 +248,12 @@ a whole reply was, and the base, revision, removals and order structurally (`age
 **The page puts the threads back from the broadcast it holds, and moves nothing it holds.** The subscription's
 reassembly (`createThreadReassembly`) reads the reply's changed records against its held records with `peek` and keeps them
 held, so a reply never changes what the next broadcast is applied to. A thread the reply did not change is the record the
-broadcast gave, so state sharing meets it by identity. A reply measured from a broadcast the window does not hold, as when
-it overtakes one, reads the whole state through `AGENT_GET`. That read is begun for the reply alone, after it arrived, so
+broadcast gave, so state sharing meets it by identity. A reply that overtook the broadcast it was measured from waits for
+it (October 31, #1939): main sent that broadcast first, but the two cross separately and a busy computer can deliver the
+reply first. When the reply names a newer base than the one held, `peekOnArrival` puts it back from that broadcast the
+moment it is held, before a later one replaces it, for up to a second. A reply measured from a broadcast the window does
+not hold, an older one or one that did not come in time, reads the whole state through `AGENT_GET`. That read is begun
+for the reply alone, after it arrived, so
 it holds the reply's own command; a catalog's recovery may be shared, since its revision only advances. The next
 broadcast then lists every record. When that read fails twice, the reply carries the whole list the window was last
 broadcast, never its changed records alone, and the next broadcast carries the change. In a real window the command
