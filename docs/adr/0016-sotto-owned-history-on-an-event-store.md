@@ -425,7 +425,9 @@ resident on forge (ps, October 31, 2026) and 270 to 295 MB on Windows (#992), so
 and reading: the thread's transcript is read as it comes into view and each second while it is observed (the October 30
 amendment above), and its messages are held. It starts no CLI. A thread's CLI starts on any command for it (a send, an
 answer, an interrupt, a settings change, a compaction, a rewind), on a read made before acting on it (a send's, a
-review's, Watcher's), and when the user starts typing in its composer (ADR-0057's early start).
+review's, Watcher's), and when the user starts typing in its composer (ADR-0057's early start). One process is not a
+session and may still run for a thread on screen: a composer restored with skills chosen asks for the skills catalog, and
+Claude Code lists them in a process of its own with no session (`--no-session-persistence`), which exits once it has.
 
 **The live-session set keeps a session running.** The threads Sotto sends to unasked or waits on keep a CLI, as the whole
 watched set did: Watcher's watched threads, the threads a delegation follows, threads with a queued follow-up of the

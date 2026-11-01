@@ -552,7 +552,15 @@ export class AgentControl {
   private readonly threadPrompts = new Map<string, number>()
   private readonly pumping = new Set<string>()
   private state: AgentState
-  private outbox: Saved['outbox'] = []
+  private outboxEntries: Saved['outbox'] = []
+  /**
+   * The commands main holds for dispatch. An entry keeps its thread's provider session live (CONTEXT.md, live-session set),
+   * so the set is refreshed whenever the entries change, and a thread whose last entry went is let go to the reaper.
+   */
+  private get outbox(): Saved['outbox'] { return this.outboxEntries }
+  private set outbox(next: Saved['outbox']) { this.outboxEntries = next; this.refreshLiveSessions() }
+  /** The live-session set as last sent to the host, so an unchanged one is not sent again. */
+  private liveSessionsSent: string | undefined
   private readonly pendingSetAsideDeliveries = new Map<string, AgentDelivery>()
   private watcher: WatcherRecord = emptyWatcherRecord()
   /**
@@ -3318,13 +3326,31 @@ export class AgentControl {
    */
   private observe(...threadIds: string[]): void {
     const host = this.dependencies.host
-    const live = [...new Set([...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.delegationHooks?.observedThreadIds() ?? [], ...this.queuedThreadIds(),
-      ...this.outbox.flatMap(item => item.threadId ? [item.threadId] : []), ...threadIds])].filter(id => this.threadAvailable(id))
+    const live = this.liveSessionIds(threadIds)
+    this.liveSessionsSent = live.join('\n')
     host.keepSessionsLive?.(live)
     host.observeThreads?.([...new Set([
       ...(this.dependencies.observeActiveThread !== false && this.state.activeThreadId ? [this.state.activeThreadId] : []),
       ...(this.state.draftThreadId && this.hasDraft() ? [this.state.draftThreadId] : []),
       ...this.viewedThreadIds.filter(id => this.threadById(id) !== undefined), ...live])].filter(id => this.threadAvailable(id)))
+  }
+  /** The live-session set: the threads Sotto sends to unasked or waits on, and `extra` (a send's own thread). */
+  private liveSessionIds(extra: readonly string[] = []): string[] {
+    return [...new Set([...this.watcherHooks?.watchedThreadIds?.() ?? [], ...this.delegationHooks?.observedThreadIds() ?? [], ...this.queuedThreadIds(),
+      ...this.outboxEntries.flatMap(item => item.threadId ? [item.threadId] : []), ...extra])].filter(id => this.threadAvailable(id))
+  }
+  /**
+   * Sends the host the live-session set again when what keeps a session live has changed without the window's view
+   * changing: a queued follow-up delivered, an outbox entry settled. Without it a thread whose work was done would stay in
+   * the set, and its CLI would never be stopped for idling (ADR-0038).
+   */
+  private refreshLiveSessions(): void {
+    if (this.liveSessionsSent === undefined) return
+    const live = this.liveSessionIds()
+    const sent = live.join('\n')
+    if (sent === this.liveSessionsSent) return
+    this.liveSessionsSent = sent
+    this.dependencies.host.keepSessionsLive?.(live)
   }
   /**
    * The threads whose follow-up queue holds something of the user's, or a wake-up already sending. A queue holding only
@@ -4467,6 +4493,7 @@ export class AgentControl {
   }
   /** Returns whether anything a client is shown changed: a change to a wake-up no one is shown alone changes nothing. */
   private syncFollowups(): boolean {
+    this.refreshLiveSessions()
     const shown = (): string => JSON.stringify([this.state.followups, this.state.followupReceipts, this.state.deliveries, this.state.threadDrafts, this.state.draftThreadId, this.state.draft])
     const before = shown()
     const { items, receipts } = this.followupStore.get()

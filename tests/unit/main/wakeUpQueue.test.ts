@@ -249,6 +249,16 @@ describe('a wake-up', () => {
     // The user's own follow-up keeps the thread's provider session live, so it can send without waiting for a start.
     expect(f.host.live.at(-1)).toContain('workshop')
     expect(f.control.hasPendingThreadWork('workshop')).toBe(true)
+    // Delivered, the follow-up no longer keeps it live, so an idle CLI there is the reaper's again (ADR-0038).
+    // Each delivery starts a turn, so the next item waits for it to end.
+    const mineWaits = (): boolean => f.control.get().followups?.some(item => item.threadId === 'workshop' && item.text === 'mine') ?? false
+    for (let turn = 0; turn < 3 && mineWaits(); turn++) {
+      const sent = sends(f.host).length
+      complete(f.host)
+      await expect.poll(() => sends(f.host).length).toBeGreaterThan(sent)
+    }
+    await expect.poll(mineWaits).toBe(false)
+    await expect.poll(() => f.host.live.at(-1) ?? []).not.toContain('workshop')
   })
 
   it('folds later news of a pull request into that pull request\'s part, so one that merged is told once, as ended', async () => {

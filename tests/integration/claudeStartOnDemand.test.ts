@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { randomUUID } from 'node:crypto'
-import { mkdtemp } from 'node:fs/promises'
+import { appendFile, mkdtemp } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -24,15 +24,17 @@ type Fixture = Awaited<ReturnType<typeof claudeFixture>>
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => { vi.restoreAllMocks(); for (const cleanup of cleanups.splice(0).reverse()) await cleanup() })
 
-const entry = (session: string, text: string): string => JSON.stringify({ type: 'user', uuid: randomUUID(), sessionId: session, timestamp: new Date().toISOString(), message: { role: 'user', content: text } })
+const entry = (session: string, text: string, role: 'user' | 'assistant' = 'user'): string => JSON.stringify(role === 'user'
+  ? { type: 'user', uuid: randomUUID(), sessionId: session, timestamp: new Date().toISOString(), message: { role: 'user', content: text } }
+  : { type: 'assistant', uuid: randomUUID(), sessionId: session, timestamp: new Date().toISOString(), message: { id: randomUUID(), role: 'assistant', model: 'fixture-model', content: [{ type: 'text', text }] } })
 
 /** `count` saved Claude threads, as an earlier run left them, each with one message in its transcript. */
-async function saved(count: number, session: Parameters<typeof claudeFixture>[3] = {}): Promise<{ f: Fixture; ids: string[] }> {
+async function saved(count: number, session: Parameters<typeof claudeFixture>[3] = {}, role: 'user' | 'assistant' = 'user'): Promise<{ f: Fixture; ids: string[]; transcript: (id: string) => string; session: (id: string) => string }> {
   const root = await mkdtemp(join(tmpdir(), 'sotto-claude-start-'))
-  const { sessions } = await savedClaudeThreads(root, count, (native, index) => `${entry(native, `Saved ${index}`)}\n`)
+  const { folder, sessions } = await savedClaudeThreads(root, count, (native, index) => `${entry(native, `Saved ${index}`, role)}\n`)
   const f = await claudeFixture(root, 15_000, undefined, session)
   cleanups.push(() => f.cleanup())
-  return { f, ids: [...sessions.keys()] }
+  return { f, ids: [...sessions.keys()], transcript: id => join(folder, `${sessions.get(id)!}.jsonl`), session: id => sessions.get(id)! }
 }
 /** Every Claude Code CLI the fake client saw start for a thread, whichever thread; the account's own metadata call is not one. */
 const launches = async (f: Fixture): Promise<number> => (await f.driver.requests()).filter(record => (record.method === 'launch' || record.method === 'resume')
@@ -43,7 +45,7 @@ const sorted = (ids: readonly string[]): string[] => [...ids].sort()
 
 describe('Claude Code starts on demand', () => {
   it('starts no CLI for ten threads on screen, one for each delegated thread, and one when typing starts', async () => {
-    const { f, ids } = await saved(10)
+    const { f, ids, transcript, session: sessions } = await saved(10)
     // The coordinator, the workspace, the provider switch and the Sotto thread host over the adapter, as main wires them.
     const registry = new ThreadRegistry(join(f.root, 'identity'))
     await registry.load()
@@ -61,12 +63,19 @@ describe('Claude Code starts on demand', () => {
     await expect.poll(() => control.get().host.threads.filter(thread => sottoIds.includes(thread.id)).length).toBe(10)
     expect(await launches(f)).toBe(0)
 
+    // A thread on screen is still read from its transcript: what Claude Code writes there after the thread came into view
+    // reaches the adapter's events by its own reading, with nothing asking for a snapshot.
+    const texts: string[] = []
+    const unsubscribe = f.adapter.subscribeEvents!(({ event }) => { if (event.kind === 'message-added') texts.push(event.message.text) })
     // Ten panes, as browsing ten saved threads leaves them. Before: ten CLIs asked for here, one per pane.
     const starts = vi.spyOn(f.adapter as unknown as { start(id: string): Promise<unknown> }, 'start')
     await control.command({ type: 'observe-threads', threadIds: sottoIds })
     expect(starts).not.toHaveBeenCalled()
-    // Each pane's transcript is still read, and its messages held for the window.
+    // Connect read every saved transcript already; the threads on screen hold their messages for the window.
     await expect.poll(async () => (await f.adapter.snapshot()).threads.filter(thread => ids.includes(thread.id) && thread.messages.length > 0).length).toBe(10)
+    await appendFile(transcript(ids[4]!), `${entry(sessions(ids[4]!), 'Written after it came into view')}\n`)
+    await expect.poll(() => texts.includes('Written after it came into view'), { timeout: 10_000 }).toBe(true)
+    unsubscribe()
     expect(await launches(f)).toBe(0)
     expect(await open(f)).toEqual([])
 
@@ -140,5 +149,24 @@ describe('Claude Code starts on demand', () => {
     f.adapter.observeThreads(ids)
     await expect.poll(() => open(f)).toEqual(sorted(ids))
     expect(await launches(f)).toBe(2)
+  })
+
+  it('sends with no start of its own after typing started the CLI, and a send without typing starts it (open to first words)', async () => {
+    const { f, ids } = await saved(2, {}, 'assistant')
+    await f.host.connect()
+    f.adapter.keepSessionsLive([])
+    f.adapter.observeThreads(ids)
+    const send = (id: string) => f.host.execute({ type: 'send', threadId: id, commandId: randomUUID(), messageId: randomUUID(), text: 'Plan the trip' })
+    // Typed into first (ADR-0057): the CLI starts while the user types, and the send finds it running.
+    await f.adapter.startThreadSession(ids[0]!)
+    await expect.poll(() => open(f)).toEqual([ids[0]!])
+    const typed = await f.sessions!.starts(ids[0]!)
+    expect(await send(ids[0]!)).toMatchObject({ accepted: true })
+    expect(await f.sessions!.starts(ids[0]!)).toBe(typed)
+    // Opened and sent to at once: the send starts the CLI itself, the 1.0-1.5 s a Claude Code start takes
+    // (docs/perf/2026-10-06-early-start.md), where on screen alone had already started it.
+    expect(await f.sessions!.starts(ids[1]!)).toBe(0)
+    expect(await send(ids[1]!)).toMatchObject({ accepted: true })
+    expect(await f.sessions!.starts(ids[1]!)).toBe(1)
   })
 })
