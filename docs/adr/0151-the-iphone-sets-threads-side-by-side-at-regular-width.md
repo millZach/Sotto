@@ -32,6 +32,15 @@ Amended October 30, 2026, a second time: the Threads page becomes the sidebar's 
 - **The header (#1849).** The counts line is gone, since each section counts its own threads. The computer menu shares the search row, as it already did at regular width. The computers that can't be reached share one note, their names joined as the language joins a list, and its Try again tries each of them on its own.
 - **The rail's ground.** Zach saw the rail not match the theme: it painted the plain page ground over the strip while the page beside it carries the theme's wash, so the strip read as a darker panel. The rail in the strip now draws no ground, and Threads, Computers and Settings carry their wash on under the strip, so the strip is the page's own in every theme. A rail in a column of its own keeps the page's ground.
 
+Amended October 31, 2026: Zach tested TestFlight build 45 on his iPhone Duo and picked from `docs/prototypes/iphone-duo-rail-composer-prototype.html` (Rail A). This reverses the October 28 and 29 amendments' bar on the cover screen (#1724):
+
+- **No bar on a folded thread.** On the cover screen a thread has no top bar and no title over the page: its title is only the page's own, which scrolls away with the conversation. Its controls stand in the strip instead, in place of the tabs: Back at the top, where New thread stands on the other pages, then the thread's state as a light over its word, Agents with its count, Watch and •••, centred in the height under it. The tabs come back with the list. iOS's own Back in the vertical bar goes with the bar.
+- **Swipe back.** A swipe in from the left edge goes back to the list, as on any iPhone: the page keeps iOS's own swipe though its bar is hidden.
+- **Clear of the battery.** On Zach's Duo New thread overlapped the battery and signal in the strip. It sits lower, 176 points down the cover screen's strip and 124 down the unfolded one's, and a folded thread's Back sits where it does.
+- **Unfolding opens the top row.** Unfolding the Duo from the Threads list and holding it sideways opens the list's top row beside the sidebar, marked there: Needs you first, then Working now, then Recent, as if it were pressed, so a question waiting rises as its sheet (Zach's pick). Upright, the list stays.
+
+The iPhone Duo is not among CI's simulators, so none of this is exercised in CI; the iPhone's README lists it among the checks by hand.
+
 ## Context
 
 The iPhone Duo folds. Folded, its cover screen gives the app 382×644 points at compact width, and Sotto looks as it does on any iPhone. Unfolded, the inner screen is landscape, 951×669 points. Beside the tab bar, which iOS 27.1 draws as a floating rail at the right edge, the app gets 867×635 points at regular width. The client had no layout for regular width, so every page stretched to the full 867 points: a thread's lines ran to about 140 characters and its tables spread across the screen.

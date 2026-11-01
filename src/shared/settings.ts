@@ -6,12 +6,12 @@ import { DEFAULT_HOTKEY } from './constants'
 import { INTERFACE_LANGUAGE_SETTINGS, type InterfaceLanguageSetting } from './interfaceLanguages'
 import { DEFAULT_MENU_BAR_OWL_BODY, DEFAULT_MENU_BAR_OWL_EYES, MENU_BAR_OWL_BODIES, MENU_BAR_OWL_EYES, type MenuBarOwlBody, type MenuBarOwlEyes } from './menuBarOwl'
 import { DEFAULT_WATCHER_SCENE, WATCHER_SCENES, type WatcherScene } from './watcherScene'
-import { COMPOSER_STYLES, DEFAULT_COMPOSER_STYLE, type ComposerStyle } from './composerStyle'
 import { parseWorkerRoleChoices, workerRoleChoicesSchema, type WorkerRoleChoices } from './workerRoles'
 import { DEFAULT_WORKER_CEILING, DEFAULT_WORKER_MACHINE, workerCeilingSchema, workerMachineCeilingsSchema, workerMachineSettingSchema,
   type WorkerMachineCeilings, type WorkerMachineSetting } from './workerMachine'
 import { parseThreadShortcutChoices, threadShortcutChoicesSchema, type ThreadShortcutChoices } from './threadShortcuts'
 import { ownCleanupChoiceSchema, type OwnCleanupChoice } from './ownServerCleanup'
+import { OPENROUTER_MODEL_ID } from './openRouterModel'
 import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
@@ -147,8 +147,6 @@ export interface AppSettings {
   menuBarOwlEyes: MenuBarOwlEyes
   /** The place Watcher's night scene is set in (ADR-0149); kept whole where Watcher is off. */
   watcherScene: WatcherScene
-  /** How the thread and Watcher composers are drawn (ADR-0168): Zach's two rows unless Drake's pill is chosen. */
-  composerStyle: ComposerStyle
   /** Which character stands above the composer; Sotto's own unless Claude bot is chosen. */
   creature: Creature
   /** Off hides the creature and its readout above every composer; the sidebar still says what a thread is doing. */
@@ -442,7 +440,6 @@ const fieldSchemas = {
   menuBarOwlBody: z.enum(MENU_BAR_OWL_BODIES),
   menuBarOwlEyes: z.enum(MENU_BAR_OWL_EYES),
   watcherScene: z.enum(WATCHER_SCENES),
-  composerStyle: z.enum(COMPOSER_STYLES),
   creature: z.enum(CREATURES),
   showCreature: z.boolean(),
   interfaceLanguage: z.enum(INTERFACE_LANGUAGE_SETTINGS),
@@ -506,7 +503,7 @@ const fieldSchemas = {
   llmDictionary: z.string().max(4_000),
   llmTimeoutMs: z.number().int().min(500).max(10_000),
   llmMinWords: z.number().int().min(0).max(50),
-  llmModel: z.string().regex(/^[\w.\-/:]{1,128}$/u).nullable(),
+  llmModel: z.string().regex(OPENROUTER_MODEL_ID).nullable(),
   llmMode: z.enum(LLM_MODES),
   llmOwnModel: ownCleanupChoiceSchema.nullable(),
   threadTitles: z.boolean(),
@@ -560,7 +557,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   menuBarOwlBody: DEFAULT_MENU_BAR_OWL_BODY,
   menuBarOwlEyes: DEFAULT_MENU_BAR_OWL_EYES,
   watcherScene: DEFAULT_WATCHER_SCENE,
-  composerStyle: DEFAULT_COMPOSER_STYLE,
   creature: 'sotto',
   showCreature: true,
   interfaceLanguage: 'system',
@@ -744,7 +740,6 @@ export function parseSettings(input: unknown, defaults: AppSettings = DEFAULT_SE
     menuBarOwlBody: parseField(persisted, 'menuBarOwlBody', defaults),
     menuBarOwlEyes: parseField(persisted, 'menuBarOwlEyes', defaults),
     watcherScene: parseField(persisted, 'watcherScene', defaults),
-    composerStyle: parseField(persisted, 'composerStyle', defaults),
     creature: parseField(persisted, 'creature', defaults),
     showCreature: parseField(persisted, 'showCreature', defaults),
     interfaceLanguage: parseField(persisted, 'interfaceLanguage', defaults),

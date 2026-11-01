@@ -295,7 +295,8 @@ extension AppModel {
         // Whether Watcher's turn ran when these words left: an older computer's refusal of them says only that, even if a
         // page saying Watcher finished arrives before it.
         let workingAtSend = current.status == "running"
-        let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text, steer: steer, images: images, files: stagedFiles)
+        let operation = WatcherWire.send(target: current.target, clientID: computer.pairing.clientId, draftID: draftID, text: text, steer: steer,
+                                         images: images, files: stagedFiles, handover: watcherHandoverOffered(hostID))
         do {
             let reply = try await connection.call(operation, as: WatcherSendResult.self)
             // A reply over a connection that has since changed doesn't say what happened to the words.
@@ -822,6 +823,117 @@ extension AppModel {
     }
 }
 
+// Watcher's box (Zach, October 31, 2026): the thread box's line, model, effort, speed and permissions, with New Watcher
+// after them, and Stop while Watcher's own turn runs, as the desktop's composer has them. A computer that offers
+// `watcher-phone-composer` takes each from this iPhone through its own Watcher, under the request's ID, as a management
+// change; another provider's model and New Watcher start a new Watcher there, which offers a handover of the last one.
+// None answers anything, and none widens what Watcher may do: a new Watcher keeps the saved permission mode.
+extension AppModel {
+    static let watcherComposerFeature = WatcherWire.composerFeature
+    /// Where `watcherManaging` marks a change from Watcher's box on a computer.
+    static func composerKey(_ hostID: String) -> String { "composer/" + hostID }
+
+    /// Whether this computer takes Watcher's box's changes from this iPhone. An older one keeps only the permissions.
+    func offersWatcherComposer(_ hostID: String) -> Bool {
+        offersWatcherManage(hostID) && live[hostID]?.features.contains(Self.watcherComposerFeature) == true
+    }
+    /// The models Watcher's computer lists, which the model menu draws from.
+    func watcherCatalog(_ hostID: String) -> [ThreadModel] { live[hostID]?.shell?.host.models ?? [] }
+    /// What the model, effort and speed chips show: the choice just made while the computer takes it, then Watcher's own.
+    func watcherSettingValues(_ hostID: String) -> ThreadSettingValues? {
+        guard let current = watcherPage(hostID)?.current else { return nil }
+        var values = WatcherSettings.values(current, catalog: watcherCatalog(hostID))
+        if let pick = watcherSettingPicks[hostID] { values[pick.kind] = pick.value }
+        return values
+    }
+    /// Why the model, effort and speed chips can't be pressed now, as on the desktop: while Watcher's turn runs or a card
+    /// of its own waits, while another change to Watcher is on its way, or away from its computer. Nil when they can.
+    func watcherSettingsHeld(_ hostID: String) -> String? {
+        guard let page = watcherPage(hostID), let current = page.current, online(hostID), current.connected else { return ThreadSettings.FixedReason.away.hint }
+        if watcherManaging.contains(Self.composerKey(hostID)) || watcherManaging.contains(Self.permissionKey(hostID)) {
+            return String(localized: "Can change once the last change to Watcher is done.")
+        }
+        if watcherPermissionFixed(hostID) { return WatcherPermissions.fixedHint }
+        // A message on its way starts a turn, which a change would run behind; a permission mode its provider hasn't
+        // confirmed holds the rest, as on a thread's chips (ADR-0166).
+        if watcherSending[hostID] != nil || page.draftDeliveries?.contains(where: { ["queued", "submitting", "uncertain"].contains($0.status) }) == true
+            || page.followups?.contains(where: { $0.status == "dispatching" || $0.status == "uncertain" }) == true {
+            return ThreadSettings.FixedReason.working.hint
+        }
+        return watcherPermissionInForce(hostID) != nil ? ThreadSettings.FixedReason.unconfirmed.hint : nil
+    }
+    /// Chooses Watcher's model, effort or speed. The chip shows it at once; another provider's model starts a new Watcher.
+    /// Refused, the chip goes back and the computer's words say why.
+    func chooseWatcherSetting(_ kind: ThreadSettingKind, _ value: String, on hostID: String) async {
+        guard offersWatcherComposer(hostID), watcherSettingsHeld(hostID) == nil, let current = watcherPage(hostID)?.current,
+              let operation = WatcherSettings.press(kind, value: value, current: current, catalog: watcherCatalog(hostID)) else { return }
+        // Another provider needs this iPhone's answers grant there, which the computer checks again.
+        if kind == .model, WatcherSettings.replaces(value, current: current, catalog: watcherCatalog(hostID)), !mayAnswer(hostID) { return }
+        let key = Self.composerKey(hostID)
+        watcherManaging.insert(key)
+        watcherSettingPicks[hostID] = WatcherSettingPick(kind: kind, value: value)
+        defer { watcherManaging.remove(key); watcherSettingPicks[hostID] = nil }
+        #if DEBUG && os(iOS)
+        if isUIFixture { await setFixtureWatcherSetting(kind, value, on: hostID); return }
+        #endif
+        _ = await manageWatcher(operation, on: hostID, unconfirmed: WatcherWords.changeUnconfirmed(name(hostID)))
+    }
+
+    /// Why New Watcher can't start one now, in the desktop's words, or nil when a press may go: Watcher's own turn running,
+    /// or nothing said yet to hand over. A press still asks the computer.
+    func newWatcherUnavailable(_ hostID: String) -> String? {
+        guard let page = watcherPage(hostID), page.current != nil else { return ThreadSettings.FixedReason.away.hint }
+        if watcherManaging.contains(Self.composerKey(hostID)) { return String(localized: "Starting a new Watcher…") }
+        switch page.newWatcher {
+        case "busy"?: return WatcherWords.newWatcherBusy
+        case "empty"?: return WatcherWords.newWatcherEmpty
+        default: return online(hostID) ? nil : ThreadSettings.FixedReason.away.hint
+        }
+    }
+    /// Starts a new Watcher on the current one's model, effort, speed and permissions. The last conversation goes to Watcher
+    /// history on the computer, and its handover is offered over the new one's box.
+    func startNewWatcher(_ hostID: String) async {
+        guard offersWatcherComposer(hostID), newWatcherUnavailable(hostID) == nil, let target = watcherPage(hostID)?.current?.target else { return }
+        let key = Self.composerKey(hostID)
+        watcherManaging.insert(key)
+        defer { watcherManaging.remove(key) }
+        #if DEBUG && os(iOS)
+        if isUIFixture { await replaceFixtureWatcher(provider: nil, modelID: nil, on: hostID); return }
+        #endif
+        _ = await manageWatcher(WatcherWire.startNew(target: target), on: hostID, unconfirmed: WatcherWords.changeUnconfirmed(name(hostID)))
+    }
+
+    /// Whether Stop shows in Watcher's box: while Watcher's own turn runs, on a computer that takes it from here.
+    func canStopWatcherTurn(_ hostID: String) -> Bool {
+        offersWatcherComposer(hostID) && online(hostID) && watcherPage(hostID)?.current?.status == "running"
+    }
+    /// Stops Watcher's own turn. The threads it started carry on.
+    func stopWatcherTurn(_ hostID: String) async {
+        guard canStopWatcherTurn(hostID), !watcherManaging.contains(Self.composerKey(hostID)), let target = watcherPage(hostID)?.current?.target else { return }
+        let key = Self.composerKey(hostID)
+        watcherManaging.insert(key)
+        defer { watcherManaging.remove(key) }
+        #if DEBUG && os(iOS)
+        if isUIFixture { await stopFixtureWatcherTurn(on: hostID); return }
+        #endif
+        _ = await manageWatcher(WatcherWire.stopTurn(target: target), on: hostID, unconfirmed: WatcherWords.changeUnconfirmed(name(hostID)))
+    }
+
+    /// Whether the handover strip stands over Watcher's box: a new Watcher's offer, until its first message or until the
+    /// user puts it away.
+    func watcherHandoverOffered(_ hostID: String) -> Bool {
+        offersWatcherComposer(hostID) && watcherPage(hostID)?.handoverOffered == true
+    }
+    /// Puts the handover away. Nothing is sent, and the new Watcher's first message goes without it.
+    func dismissWatcherHandover(_ hostID: String) async {
+        guard watcherHandoverOffered(hostID), let target = watcherPage(hostID)?.current?.target else { return }
+        #if DEBUG && os(iOS)
+        if isUIFixture { changeFixtureWatcher(on: hostID) { $0["handoverOffered"] = false }; return }
+        #endif
+        _ = await manageWatcher(WatcherWire.dismissHandover(target: target), on: hostID, unconfirmed: WatcherWords.changeUnconfirmed(name(hostID)))
+    }
+}
+
 /// Whether a card in Watcher's page can be answered from here.
 enum WatcherCardRoute: Equatable {
     /// Answered at this place, with the request as its computer holds it now.
@@ -1117,6 +1229,14 @@ struct HeldDetail {
     let detail: ThreadDetail
 }
 
+/// What a press on the folded Duo's thread rail asks of the thread showing. It lives with the model, which
+/// holds it, so the model's tests compile without the views.
+struct RailAsk: Equatable {
+    enum Action: Equatable { case back, agents }
+    let ref: ThreadRef
+    let action: Action
+}
+
 /// Every paired computer, each with its own connection, session and state. A computer that can't be
 /// reached, or fails, never holds up the others. Everything that names a thread names its computer too.
 @MainActor final class AppModel: ObservableObject {
@@ -1270,6 +1390,12 @@ struct HeldDetail {
     @Published var show = ComputerFilter.all
     /// A thread whose alert was tapped, for the tabs to open. They set it back to nil once it is open.
     @Published var alertOpened: ThreadRef?
+    /// A press on the folded Duo's thread rail, for the thread showing to act on: its page owns Back and its Agents sheet,
+    /// and a delegated thread opened from Agents is pushed by that page, not by the tabs. Set back to nil once taken.
+    @Published var railAsked: RailAsk?
+    /// What the Threads list is searched for now, read once when the Duo unfolds from it. Not published: nothing draws it.
+    var listQuery = ""
+
     /// A computer whose Watcher alert was tapped, for the tabs to open the Watcher tab. Set back to nil once it is open.
     @Published var watcherAlertOpened: String?
     /// The computer whose Watcher was last chosen for the Watcher tab, by its alert or the header's menu.
@@ -1310,6 +1436,8 @@ struct HeldDetail {
     @Published private(set) var watcherManaging: Set<String> = []
     /// The mode just chosen for Watcher on each computer, shown on its chip while the computer takes it.
     @Published private(set) var watcherPermissionPicks: [String: String] = [:]
+    /// The model, effort or speed just chosen in Watcher's box on each computer, shown on its chip while the computer takes it.
+    @Published private(set) var watcherSettingPicks: [String: WatcherSettingPick] = [:]
     /// What the last Watch or Stop watching press did, said with Undo for a few seconds.
     @Published private(set) var watchNotice: WatchNotice?
     /// Each pull request as this iPhone last read it while running, by computer and pull request, for the chip's dot
@@ -1389,6 +1517,7 @@ struct HeldDetail {
         // --ui-watcher-can-answer the laptop lets this iPhone answer; with --ui-watcher-asks Watcher itself is asking.
         let watching = arguments.contains("--ui-watcher")
         let watcherAnswers = watching && arguments.contains("--ui-watcher-can-answer")
+        let watcherBox = watching && arguments.contains("--ui-watcher-box")
         // The thread settings journey: the idle Add keyboard shortcuts thread runs on a known model whose computer changes a
         // thread's settings in place, and the laptop lets this iPhone answer, so every mode can be chosen (ADR-0166).
         let settingThreads = arguments.contains("--ui-thread-settings")
@@ -1502,12 +1631,15 @@ struct HeldDetail {
                 "threads": threads[host] ?? [], "projects": [["id": "sotto", "title": "Sotto", "path": "D:\\Talk to Text Application"],
                     ["id": "panel", "title": "Panel tools", "path": "D:\\Engineering\\Panel tools"], ["id": "house", "title": "House", "path": "D:\\House"]],
                 "models": settingThreads ? Self.fixtureSettingModels(modes) : [["id": "fixture-model", "name": "GPT-6.1 Sol", "provider": "Codex", "providerId": "codex", "ready": true,
-                    "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes]] as [[String: Any]],
+                    "reasoningEfforts": ["low", "medium", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes]]
+                    // Watcher's box lists another provider Watcher runs on, whose model starts a new Watcher.
+                    + (watcherBox ? [["id": "fixture-opus", "name": "Opus 5.5", "provider": "Claude Code", "providerId": "claude", "ready": true,
+                                      "reasoningEfforts": ["low", "high"], "defaultReasoningEffort": "high", "runtimeModes": modes]] : []) as [[String: Any]],
                 "providers": [["id": "codex", "connection": "connected", "capabilities": hostCaps]], "capabilities": hostCaps]]
             fixtureShells[host] = shellObject
             let shell = decode(Shell.self, shellObject)
             var features = ["host-folders"]
-            if watching && host == laptop { features += [Self.watcherFeature, Self.watcherStopFeature, Self.watcherManageFeature] }
+            if watching && host == laptop { features += [Self.watcherFeature, Self.watcherStopFeature, Self.watcherManageFeature, Self.watcherComposerFeature] }
             // The pull request journey: the laptop is an Owl computer that offers the pull request sheet and babysitting.
             if arguments.contains("--ui-pull-request") && host == laptop { features += [Self.pullRequestViewFeature, Self.babysitFeature] }
             if agents && host == laptop { features += [AgentsRoster.feature, "subagents", "failure-seen"] }
@@ -1535,6 +1667,12 @@ struct HeldDetail {
                 waiting = cards + [Self.fixtureNotesPermission(laptop: laptop, mayAnswer: watcherAnswers)]
             }
             if keepsWriting { page["needsYou"] = [[String: Any]]() }
+            // Watcher's box: New Watcher can start one, and nothing is handed over yet. With --ui-watcher-turn, Watcher's
+            // own turn runs, so its box offers Stop and New Watcher waits for it.
+            page["newWatcher"] = "available"; page["handoverOffered"] = false; page["replaced"] = false
+            if arguments.contains("--ui-watcher-turn"), var current = page["current"] as? [String: Any] {
+                current["status"] = "running"; page["current"] = current; page["newWatcher"] = "busy"
+            }
             // With --ui-watcher-nothing-waits, no card waits on the user, so the bar slides as the user reads (#1288).
             if arguments.contains("--ui-watcher-nothing-waits") { page["needsYou"] = [[String: Any]]() }
             // With --ui-watcher-queued-below, ten of the user's follow-ups wait in Watcher's queue at the page's end, so
@@ -1817,6 +1955,50 @@ struct HeldDetail {
             }
         }
     }
+    /// The laptop takes a change from Watcher's box a moment after it is made: the effort or speed on Watcher's thread, or
+    /// another provider's model, which starts a new Watcher there.
+    private func setFixtureWatcherSetting(_ kind: ThreadSettingKind, _ value: String, on hostID: String) async {
+        if kind == .model, WatcherSettings.replaces(value, current: watcherPage(hostID)!.current!, catalog: watcherCatalog(hostID)) {
+            let provider = CatalogEntry.model(watcherCatalog(hostID), id: value)?.providerId
+            await replaceFixtureWatcher(provider: provider, modelID: value, on: hostID); return
+        }
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        changeFixtureWatcher(on: hostID) { page in
+            guard var current = page["current"] as? [String: Any] else { return }
+            switch kind {
+            case .model: current["modelId"] = value; current["reasoningEffort"] = NSNull()
+            case .effort: current["reasoningEffort"] = value
+            case .speed: current["speed"] = value == ThreadSettings.standard ? NSNull() : value
+            case .permissions: break
+            }
+            page["current"] = current
+        }
+    }
+    /// A new Watcher on the laptop, by New Watcher or another provider's model: an empty conversation on a new thread, the
+    /// last one's handover offered, and nothing to hand over yet. The threads it watches carry on.
+    private func replaceFixtureWatcher(provider: String?, modelID: String?, on hostID: String) async {
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        changeFixtureWatcher(on: hostID) { page in
+            guard var current = page["current"] as? [String: Any] else { return }
+            current["target"] = ["hostId": hostID, "threadId": "watcher-" + UUID().uuidString.lowercased()]
+            if let provider { current["provider"] = provider }
+            if let modelID { current["modelId"] = modelID; current["reasoningEffort"] = NSNull() }
+            current["status"] = "idle"
+            page["current"] = current
+            page["conversation"] = ["messages": [[String: Any]](), "earlierAvailable": false, "revision": 0]
+            page["receiptGroups"] = [[String: Any]](); page["ownChanges"] = [[String: Any]]()
+            page["needsYou"] = (page["needsYou"] as? [[String: Any]] ?? []).filter { ($0["title"] as? String) != "Watcher" }
+            page["handoverOffered"] = true; page["replaced"] = true; page["newWatcher"] = "empty"
+        }
+    }
+    /// Watcher's own turn stops on the laptop a moment after Stop; the threads it started carry on.
+    private func stopFixtureWatcherTurn(on hostID: String) async {
+        try? await Task.sleep(nanoseconds: 300_000_000)
+        changeFixtureWatcher(on: hostID) { page in
+            guard var current = page["current"] as? [String: Any] else { return }
+            current["status"] = "idle"; page["current"] = current; page["newWatcher"] = "available"
+        }
+    }
     /// The laptop watches the thread until the user stops it, or stops watching it, as it would: a watched row with its
     /// standing watch, or the row no longer watched and its watch gone.
     private func watchFixtureThread(_ ref: ThreadRef, _ watched: Bool, title: String, on hostID: String) async {
@@ -1906,6 +2088,8 @@ struct HeldDetail {
     /// Watcher takes the words, then a moment later answers and sends Babysit #845 release notes a note.
     private func sendToFixtureWatcher(_ text: String, on hostID: String) async {
         let stamp = ISO8601DateFormatter()
+        // The first message spends the handover offer, carried or not, and a Watcher that has said something can be replaced.
+        changeFixtureWatcher(on: hostID) { $0["handoverOffered"] = false; $0["newWatcher"] = "available" }
         appendFixtureWatcherMessage(["id": "phone-" + UUID().uuidString, "role": "user", "text": text, "createdAt": stamp.string(from: Date())], on: hostID)
         Task { [weak self] in
             try? await Task.sleep(nanoseconds: 700_000_000)

@@ -382,6 +382,8 @@ export class PhoneAccess {
 
   /** How many paired clients hold an open socket on the listener now, phones and desktops alike. */
   peers(): number { return this.listenerStopped ? 0 : this.listener?.peers() ?? 0 }
+  /** Whether a desktop on the tailnet listener wants the host's next prompts now (ADR-0173). */
+  nextPromptsWanted(): boolean { return !this.listenerStopped && (this.listener?.nextPromptsWanted() ?? false) }
 
   private async reconcile(): Promise<void> {
     if (this.phase === 'cleanup-failed' || this.listenerStopped) {

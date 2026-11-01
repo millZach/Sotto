@@ -84,6 +84,8 @@ export const PAINTED_TEXT_PAIRS: readonly PaintedTextPair[] = [
   ...each('accent-text', [['canvas'], ['surface'], ['surface-elevated'], ['card'], ['card-selected'], ['sidebar'], ['selected'], ['bubble'], ['field'], ['hover-strong']], 'accent text and activity'),
   // Steer now, in the composer and on a queued message, keeps the accent while pointed at.
   ...each('accent-text', [['card', hover], ['canvas', hover]], 'Steer now, hovered'),
+  // The effort offer's level on the accent's wash, on the composer card (ADR-0172).
+  pair('accent-text', ['card', '--effort-offer-wash'], 'the effort offer'),
   // Text on its own fill.
   pair('bubble-text', ['bubble'], 'bubble'), pair('sidebar-text', ['sidebar'], 'sidebar'), pair('update-text', ['update-surface'], 'update chip'),
   pair('on-accent', ['accent'], 'accent fill'), pair('primary-contrast', ['primary'], 'primary action'), pair('primary-contrast', ['primary-hover'], 'primary action, hovered'),
@@ -106,6 +108,7 @@ export function withPaintedLayers(declarations: Map<string, string>): Map<string
   declarations.set(followups, stylesheetProperty('src/renderer/src/agents/composer.css', followups))
   declarations.set('--delegated-needs', stylesheetProperty('src/renderer/src/tools/agentsSurface.css', '--delegated-needs'))
   declarations.set('--placeholder-ink', stylesheetProperty('src/renderer/src/agents/threads.css', '--placeholder-ink'))
+  declarations.set('--effort-offer-wash', stylesheetProperty('src/renderer/src/agents/quietComposer.css', '--effort-offer-wash'))
   return declarations
 }
 

@@ -48,3 +48,8 @@ export function threadsStateFixture(overrides: AgentStateOverrides = {}): AgentS
   }
   return overrides.cloneOverrides === false ? result : structuredClone(result)
 }
+
+/** The state as main publishes it after one thread's record changed: a new state, host and list, the rest shared. */
+export function withThread(state: AgentState, id: string, change: (thread: AgentThread) => AgentThread): AgentState {
+  return { ...state, host: { ...state.host, threads: state.host.threads.map(thread => thread.id === id ? change(thread) : thread) } }
+}

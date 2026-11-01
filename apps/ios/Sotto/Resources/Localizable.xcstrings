@@ -1728,6 +1728,198 @@
         }
       }
     },
+    "%@ didn’t confirm the change to Watcher. Check Watcher’s page before you change it again." : {
+      "comment" : "%@ is the computer's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "لم يؤكد %@ التغيير على Watcher. تحقق من صفحة Watcher قبل أن تغيّره مرة أخرى."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ Watcher-এর পরিবর্তন নিশ্চিত করেনি। আবার পরিবর্তন করার আগে Watcher-এর পাতা দেখুন।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ nepotvrdil změnu Watchera. Než ho znovu změníte, podívejte se na stránku Watchera."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ bekræftede ikke ændringen af Watcher. Tjek Watchers side, før du ændrer den igen."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ hat die Änderung an Watcher nicht bestätigt. Sieh auf der Seite von Watcher nach, bevor du ihn erneut änderst."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ο υπολογιστής %@ δεν επιβεβαίωσε την αλλαγή στον Watcher. Ελέγξτε τη σελίδα του Watcher πριν τον αλλάξετε ξανά."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ didn’t confirm the change to Watcher. Check Watcher’s page before you change it again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no confirmó el cambio de Watcher. Revisa la página de Watcher antes de volver a cambiarlo."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no confirmó el cambio de Watcher. Revisa la página de Watcher antes de volver a cambiarlo."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ no confirmó el cambio de Watcher. Revisa la página de Watcher antes de volver a cambiarlo."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ei vahvistanut Watcherin muutosta. Tarkista Watcherin sivu ennen kuin muutat sitä uudelleen."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ n’a pas confirmé la modification de Watcher. Consultez la page de Watcher avant de le modifier à nouveau."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ने Watcher में बदलाव की पुष्टि नहीं की। फिर से बदलने से पहले Watcher का पेज देखें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A(z) %@ nem erősítette meg a Watcher módosítását. Mielőtt újra módosítaná, nézze meg a Watcher oldalát."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ non ha confermato la modifica a Watcher. Controlla la pagina di Watcher prima di modificarlo di nuovo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ は Watcher の変更を確認しませんでした。もう一度変更する前に Watcher のページを確認してください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ ने Watcher मधील बदलाची पुष्टी केली नाही. पुन्हा बदलण्यापूर्वी Watcher चे पान तपासा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ bekreftet ikke endringen av Watcher. Sjekk Watchers side før du endrer den igjen."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ heeft de wijziging aan Watcher niet bevestigd. Bekijk de pagina van Watcher voordat je hem opnieuw wijzigt."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ nie potwierdził zmiany Watchera. Sprawdź stronę Watchera, zanim zmienisz go ponownie."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não confirmou a mudança no Watcher. Confira a página do Watcher antes de mudar de novo."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ não confirmou a alteração ao Watcher. Verifique a página do Watcher antes de o alterar outra vez."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ nu a confirmat schimbarea lui Watcher. Verifică pagina lui Watcher înainte să-l schimbi din nou."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ bekräftade inte ändringen av Watcher. Kontrollera Watchers sida innan du ändrar den igen."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher இன் மாற்றத்தை %@ உறுதிப்படுத்தவில்லை. மீண்டும் மாற்றும் முன் Watcher இன் பக்கத்தைப் பாருங்கள்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher కు చేసిన మార్పును %@ నిర్ధారించలేదు. మళ్లీ మార్చే ముందు Watcher పేజీని చూడండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@, Watcher’daki değişikliği onaylamadı. Yeniden değiştirmeden önce Watcher’ın sayfasına bakın."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ не підтвердив зміну Watcher. Перегляньте сторінку Watcher, перш ніж змінювати його знову."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ نے Watcher میں تبدیلی کی تصدیق نہیں کی۔ دوبارہ بدلنے سے پہلے Watcher کا صفحہ دیکھیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 没有确认对 Watcher 的更改。再次更改前，请查看 Watcher 的页面。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 沒有確認對 Watcher 的變更。再次變更前，請查看 Watcher 的頁面。"
+          }
+        }
+      }
+    },
     "%@ didn’t confirm the change to Watcher’s permissions. Check what they say before you change them again." : {
       "comment" : "%@ is the computer's name",
       "extractionState" : "manual",
@@ -27666,6 +27858,197 @@
         }
       }
     },
+    "Another provider’s model starts a new Watcher. This conversation stays in Watcher history." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نموذج من مزوّد آخر يبدأ Watcher جديدًا. تبقى هذه المحادثة في سجل Watcher."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "অন্য প্রদানকারীর মডেল একটি নতুন Watcher শুরু করে। এই কথোপকথনটি Watcher-এর ইতিহাসে থাকে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model jiného poskytovatele spustí nový Watcher. Tato konverzace zůstane v historii Watchera."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En anden udbyders model starter en ny Watcher. Denne samtale bliver i Watcher-historikken."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ein Modell eines anderen Anbieters startet einen neuen Watcher. Diese Unterhaltung bleibt im Watcher-Verlauf."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ένα μοντέλο άλλου παρόχου ξεκινά νέο Watcher. Αυτή η συζήτηση μένει στο ιστορικό του Watcher."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Another provider’s model starts a new Watcher. This conversation stays in Watcher history."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El modelo de otro proveedor inicia un Watcher nuevo. Esta conversación se queda en el historial de Watcher."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El modelo de otro proveedor inicia un Watcher nuevo. Esta conversación se queda en el historial de Watcher."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El modelo de otro proveedor inicia un Watcher nuevo. Esta conversación se queda en el historial de Watcher."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Toisen palveluntarjoajan malli aloittaa uuden Watcherin. Tämä keskustelu jää Watcherin historiaan."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le modèle d’un autre fournisseur démarre un nouveau Watcher. Cette conversation reste dans l’historique de Watcher."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "किसी दूसरे प्रदाता का मॉडल नया Watcher शुरू करता है। यह बातचीत Watcher के इतिहास में रहती है।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Egy másik szolgáltató modellje új Watchert indít. Ez a beszélgetés a Watcher előzményeiben marad."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Il modello di un altro fornitore avvia un nuovo Watcher. Questa conversazione resta nella cronologia di Watcher."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "別のプロバイダのモデルを選ぶと新しい Watcher が始まります。この会話は Watcher 履歴に残ります。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "दुसऱ्या प्रदात्याचे मॉडेल नवीन Watcher सुरू करते. हे संभाषण Watcher च्या इतिहासात राहते."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En annen leverandørs modell starter en ny Watcher. Denne samtalen blir værende i Watcher-historikken."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Een model van een andere provider start een nieuwe Watcher. Dit gesprek blijft in de Watcher-geschiedenis."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Model innego dostawcy uruchamia nowego Watchera. Ta rozmowa zostaje w historii Watchera."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O modelo de outro provedor inicia um novo Watcher. Esta conversa fica no histórico do Watcher."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O modelo de outro fornecedor inicia um novo Watcher. Esta conversa fica no histórico do Watcher."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modelul altui furnizor pornește un Watcher nou. Această conversație rămâne în istoricul lui Watcher."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "En annan leverantörs modell startar en ny Watcher. Den här konversationen stannar i Watcher-historiken."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "வேறொரு வழங்குநரின் மாடல் புதிய Watcher ஐத் தொடங்கும். இந்த உரையாடல் Watcher வரலாற்றில் இருக்கும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "మరో ప్రొవైడర్ మోడల్ కొత్త Watcher ను ప్రారంభిస్తుంది. ఈ సంభాషణ Watcher చరిత్రలో ఉంటుంది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Başka bir sağlayıcının modeli yeni bir Watcher başlatır. Bu konuşma Watcher geçmişinde kalır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Модель іншого постачальника запускає новий Watcher. Ця розмова залишається в історії Watcher."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "کسی دوسرے فراہم کنندہ کا ماڈل نیا Watcher شروع کرتا ہے۔ یہ گفتگو Watcher کی ہسٹری میں رہتی ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择其他提供方的模型会启动新的 Watcher。此对话保留在 Watcher 历史记录中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇其他供應商的模型會啟動新的 Watcher。此對話保留在 Watcher 歷史記錄中。"
+          }
+        }
+      }
+    },
     "Answer sent." : {
       "comment" : "Said once the computer confirms the user's answer to a request",
       "extractionState" : "manual",
@@ -32828,6 +33211,197 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "相機"
+          }
+        }
+      }
+    },
+    "Can change once the last change to Watcher is done." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يمكن التغيير بعد اكتمال آخر تغيير على Watcher."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher-এ শেষ পরিবর্তনটি হয়ে গেলে পরিবর্তন করা যাবে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lze změnit, až skončí poslední změna Watchera."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan ændres, når den sidste ændring af Watcher er færdig."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kann geändert werden, sobald die letzte Änderung an Watcher abgeschlossen ist."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Μπορεί να αλλάξει όταν ολοκληρωθεί η τελευταία αλλαγή στον Watcher."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Can change once the last change to Watcher is done."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se podrá cambiar cuando termine el último cambio de Watcher."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se podrá cambiar cuando termine el último cambio de Watcher."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se podrá cambiar cuando termine el último cambio de Watcher."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Voi muuttaa, kun Watcherin viimeisin muutos on valmis."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Modifiable une fois la dernière modification de Watcher terminée."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher में पिछला बदलाव पूरा होने पर बदला जा सकता है।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Akkor módosítható, ha a Watcher legutóbbi módosítása befejeződött."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Si potrà cambiare quando l’ultima modifica a Watcher sarà completata."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher への前回の変更が終わると変更できます。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher मधील शेवटचा बदल पूर्ण झाल्यावर बदलता येईल."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan endres når den siste endringen av Watcher er ferdig."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan worden gewijzigd zodra de laatste wijziging aan Watcher klaar is."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Można zmienić, gdy zakończy się ostatnia zmiana Watchera."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pode mudar quando a última mudança no Watcher terminar."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pode mudar quando a última alteração ao Watcher terminar."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se poate schimba după ce se încheie ultima schimbare a lui Watcher."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Kan ändras när den senaste ändringen av Watcher är klar."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher இன் கடைசி மாற்றம் முடிந்ததும் மாற்றலாம்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher కు చివరి మార్పు పూర్తయిన తర్వాత మార్చవచ్చు."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher’daki son değişiklik bitince değiştirilebilir."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Можна змінити, щойно завершиться остання зміна Watcher."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher میں پچھلی تبدیلی مکمل ہونے پر بدلا جا سکتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "对 Watcher 的上一次更改完成后即可更改。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "對 Watcher 的上一次變更完成後即可變更。"
           }
         }
       }
@@ -46800,6 +47374,197 @@
         }
       }
     },
+    "Don’t hand over: start the new Watcher without it" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "عدم التسليم: بدء Watcher الجديد بدونه"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "হস্তান্তর করবেন না: নতুন Watcher এটি ছাড়াই শুরু করুন"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nepředávat: spustit nový Watcher bez předání"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Overdrag ikke: start den nye Watcher uden den"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nicht übergeben: den neuen Watcher ohne Übergabe starten"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Χωρίς παράδοση: έναρξη του νέου Watcher χωρίς αυτήν"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Don’t hand over: start the new Watcher without it"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No traspasar: iniciar el Watcher nuevo sin él"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No traspasar: iniciar el Watcher nuevo sin él"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No traspasar: iniciar el Watcher nuevo sin él"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Älä luovuta: aloita uusi Watcher ilman sitä"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ne pas transmettre : démarrer le nouveau Watcher sans elle"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "हैंडओवर न करें: नया Watcher इसके बिना शुरू करें"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nincs átadás: az új Watcher indítása nélküle"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nessun passaggio: avvia il nuovo Watcher senza"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "引き継がない：新しい Watcher を引き継ぎなしで開始"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "हस्तांतर करू नका: नवीन Watcher त्याशिवाय सुरू करा"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ikke overlever: start den nye Watcher uten den"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Niet overdragen: start de nieuwe Watcher zonder"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bez przekazania: uruchom nowego Watchera bez niego"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não passar: iniciar o novo Watcher sem ela"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Não passar: iniciar o novo Watcher sem ela"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fără predare: pornește noul Watcher fără ea"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lämna inte över: starta den nya Watcher utan den"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ஒப்படைக்க வேண்டாம்: அது இல்லாமல் புதிய Watcher ஐத் தொடங்கு"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "అప్పగించవద్దు: అది లేకుండా కొత్త Watcher ను ప్రారంభించండి"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Devretme: yeni Watcher’ı devir olmadan başlat"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Не передавати: запустити новий Watcher без нього"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "حوالگی نہ کریں: نیا Watcher اس کے بغیر شروع کریں"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不交接：在没有交接的情况下启动新的 Watcher"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "不交接：在沒有交接的情況下啟動新的 Watcher"
+          }
+        }
+      }
+    },
     "Draft" : {
       "comment" : "A pull request’s state: a draft.",
       "extractionState" : "manual",
@@ -51013,198 +51778,6 @@
         }
       }
     },
-    "Fixed while Watcher works." : {
-      "comment" : "Why Watcher's permission mode can't be changed now",
-      "extractionState" : "manual",
-      "localizations" : {
-        "ar" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "ثابت أثناء عمل Watcher."
-          }
-        },
-        "bn" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher কাজ করার সময় বদলানো যায় না।"
-          }
-        },
-        "cs" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Uzamčeno, dokud Watcher pracuje."
-          }
-        },
-        "da" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Låst, mens Watcher arbejder."
-          }
-        },
-        "de" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fest, solange Watcher arbeitet."
-          }
-        },
-        "el" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Κλειδωμένο όσο δουλεύει ο Watcher."
-          }
-        },
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fixed while Watcher works."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fijo mientras Watcher trabaja."
-          }
-        },
-        "es-419" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fijo mientras Watcher trabaja."
-          }
-        },
-        "es-MX" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fijo mientras Watcher trabaja."
-          }
-        },
-        "fi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Lukittu Watcherin työskennellessä."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Verrouillé pendant que Watcher travaille."
-          }
-        },
-        "hi" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher के काम करते समय तय है।"
-          }
-        },
-        "hu" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Rögzített, amíg a Watcher dolgozik."
-          }
-        },
-        "it" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Bloccato mentre Watcher lavora."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher の作業中は変更できません。"
-          }
-        },
-        "mr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher काम करत असताना निश्चित."
-          }
-        },
-        "nb" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Låst mens Watcher jobber."
-          }
-        },
-        "nl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Vast zolang Watcher bezig is."
-          }
-        },
-        "pl" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Zablokowane, gdy Watcher pracuje."
-          }
-        },
-        "pt-BR" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fixo enquanto o Watcher trabalha."
-          }
-        },
-        "pt-PT" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fixo enquanto o Watcher trabalha."
-          }
-        },
-        "ro" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Fixat cât lucrează Watcher."
-          }
-        },
-        "sv" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Låst medan Watcher arbetar."
-          }
-        },
-        "ta" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher வேலை செய்யும்போது மாற்ற முடியாது."
-          }
-        },
-        "te" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher పని చేస్తుండగా స్థిరంగా ఉంటుంది."
-          }
-        },
-        "tr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher çalışırken değiştirilemez."
-          }
-        },
-        "uk" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Зафіксовано, поки Watcher працює."
-          }
-        },
-        "ur" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher کے کام کے دوران طے شدہ۔"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher 工作时无法更改。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Watcher 工作時無法變更。"
-          }
-        }
-      }
-    },
     "Folder browsing is unavailable. Reconnect or update Sotto on this computer." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -54650,193 +55223,193 @@
         }
       }
     },
-    "Go to the top, where Watcher’s state and permissions are" : {
+    "Go to the top, where Watcher’s state is" : {
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "الانتقال إلى الأعلى، حيث حالة Watcher وأذوناته"
+            "value" : "الانتقال إلى الأعلى، حيث حالة Watcher"
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "উপরে যান, যেখানে Watcher-এর অবস্থা ও অনুমতি আছে"
+            "value" : "উপরে যান, যেখানে Watcher-এর অবস্থা আছে"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Přejít nahoru, ke stavu a oprávněním Watchera"
+            "value" : "Přejít nahoru, ke stavu Watchera"
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gå til toppen, hvor Watchers status og tilladelser er"
+            "value" : "Gå til toppen, hvor Watchers status er"
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Nach oben, zu Status und Berechtigungen von Watcher"
+            "value" : "Nach oben, zum Status von Watcher"
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Μετάβαση στην κορυφή, όπου είναι η κατάσταση και οι άδειες του Watcher"
+            "value" : "Μετάβαση στην κορυφή, όπου είναι η κατάσταση του Watcher"
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Go to the top, where Watcher’s state and permissions are"
+            "value" : "Go to the top, where Watcher’s state is"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ir arriba, donde están el estado y los permisos de Watcher"
+            "value" : "Ir arriba, donde está el estado de Watcher"
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ir arriba, donde están el estado y los permisos de Watcher"
+            "value" : "Ir arriba, donde está el estado de Watcher"
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ir arriba, donde están el estado y los permisos de Watcher"
+            "value" : "Ir arriba, donde está el estado de Watcher"
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Siirry ylös, missä ovat Watcherin tila ja luvat"
+            "value" : "Siirry ylös, missä on Watcherin tila"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aller en haut, à l’état et aux autorisations de Watcher"
+            "value" : "Aller en haut, à l’état de Watcher"
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "सबसे ऊपर जाएँ, जहाँ Watcher की स्थिति और अनुमतियाँ हैं"
+            "value" : "सबसे ऊपर जाएँ, जहाँ Watcher की स्थिति है"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ugrás a tetejére, ahol a Watcher állapota és engedélyei vannak"
+            "value" : "Ugrás a tetejére, ahol a Watcher állapota van"
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Vai in cima, dove si trovano lo stato e le autorizzazioni di Watcher"
+            "value" : "Vai in cima, dove si trova lo stato di Watcher"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Watcher の状態と許可がある先頭へ移動"
+            "value" : "Watcher の状態がある先頭へ移動"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "सर्वात वर जा, जिथे Watcher ची स्थिती आणि परवानग्या आहेत"
+            "value" : "सर्वात वर जा, जिथे Watcher ची स्थिती आहे"
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gå til toppen, der Watchers tilstand og tillatelser er"
+            "value" : "Gå til toppen, der Watchers tilstand er"
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ga naar boven, waar de status en toestemmingen van Watcher staan"
+            "value" : "Ga naar boven, waar de status van Watcher staat"
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Przejdź na górę, do stanu i uprawnień Watchera"
+            "value" : "Przejdź na górę, do stanu Watchera"
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ir para o topo, onde estão o estado e as permissões do Watcher"
+            "value" : "Ir para o topo, onde está o estado do Watcher"
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Ir para o topo, onde estão o estado e as permissões do Watcher"
+            "value" : "Ir para o topo, onde está o estado do Watcher"
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mergi sus, unde sunt starea și permisiunile lui Watcher"
+            "value" : "Mergi sus, unde este starea lui Watcher"
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Gå till toppen, där Watchers status och behörigheter finns"
+            "value" : "Gå till toppen, där Watchers status finns"
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Watcher இன் நிலையும் அனுமதிகளும் உள்ள மேற்பகுதிக்குச் செல்"
+            "value" : "Watcher இன் நிலை உள்ள மேற்பகுதிக்குச் செல்"
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Watcher స్థితి, అనుమతులు ఉన్న పైభాగానికి వెళ్లండి"
+            "value" : "Watcher స్థితి ఉన్న పైభాగానికి వెళ్లండి"
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Watcher’ın durumunun ve izinlerinin olduğu en üste git"
+            "value" : "Watcher’ın durumunun olduğu en üste git"
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Перейти вгору, до стану й дозволів Watcher"
+            "value" : "Перейти вгору, до стану Watcher"
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "اوپر جائیں، جہاں Watcher کی حالت اور اجازتیں ہیں"
+            "value" : "اوپر جائیں، جہاں Watcher کی حالت ہے"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "前往顶部，即 Watcher 的状态和权限所在位置"
+            "value" : "前往顶部，即 Watcher 的状态所在位置"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "前往頂端，即 Watcher 的狀態和權限所在位置"
+            "value" : "前往頂端，即 Watcher 的狀態所在位置"
           }
         }
       }
@@ -61425,6 +61998,198 @@
         }
       }
     },
+    "Legacy" : {
+      "comment" : "In a model menu: the submenu holding a provider’s older models, apart from its newest.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "قديمة"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "পুরোনো"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starší"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ældre"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ältere"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Παλαιότερα"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Legacy"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anteriores"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anteriores"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anteriores"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vanhemmat"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anciens"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पुराने"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Régebbiek"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Precedenti"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "以前のモデル"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "जुने"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eldre"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouder"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starsze"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anteriores"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Anteriores"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mai vechi"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Äldre"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "பழையவை"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "పాతవి"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Eski"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Старіші"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "پرانے"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "旧版"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "舊版"
+          }
+        }
+      }
+    },
     "Light" : {
       "comment" : "Appearance choice: always light.",
       "extractionState" : "manual",
@@ -64486,6 +65251,389 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "需要你處理"
+          }
+        }
+      }
+    },
+    "New Watcher" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher جديد"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "নতুন Watcher"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nový Watcher"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ny Watcher"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuer Watcher"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Νέος Watcher"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Watcher"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nuevo"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nuevo"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nuevo"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uusi Watcher"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveau Watcher"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "नया Watcher"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Új Watcher"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuovo Watcher"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しい Watcher"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "नवीन Watcher"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ny Watcher"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nieuwe Watcher"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nowy Watcher"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Novo Watcher"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Novo Watcher"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nou"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ny Watcher"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "புதிய Watcher"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "కొత్త Watcher"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yeni Watcher"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Новий Watcher"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نیا Watcher"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新的 Watcher"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新的 Watcher"
+          }
+        }
+      }
+    },
+    "New Watcher on %@." : {
+      "comment" : "%@ is the model the new Watcher is on, such as GPT-6.1 Sol",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher جديد على %@."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@-এ নতুন Watcher।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nový Watcher na %@."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ny Watcher på %@."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuer Watcher mit %@."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Νέος Watcher σε %@."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "New Watcher on %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nuevo en %@."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nuevo en %@."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nuevo en %@."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uusi Watcher: %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nouveau Watcher sur %@."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ पर नया Watcher।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Új Watcher ezen: %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nuovo Watcher su %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ の新しい Watcher。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ वर नवीन Watcher."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ny Watcher på %@."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nieuwe Watcher op %@."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nowy Watcher na %@."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Novo Watcher em %@."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Novo Watcher em %@."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher nou pe %@."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ny Watcher på %@."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ இல் புதிய Watcher."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ పై కొత్త Watcher."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ üzerinde yeni Watcher."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Новий Watcher на %@."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ پر نیا Watcher۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 上的新 Watcher。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@ 上的新 Watcher。"
           }
         }
       }
@@ -73860,6 +75008,197 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "在 iOS 中打開 Sotto 的通知設定。"
+          }
+        }
+      }
+    },
+    "Opens Watcher’s models" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "يفتح نماذج Watcher"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher-এর মডেলগুলো খোলে"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otevře modely Watchera"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Åbner Watchers modeller"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öffnet die Modelle von Watcher"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ανοίγει τα μοντέλα του Watcher"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opens Watcher’s models"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre los modelos de Watcher"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre los modelos de Watcher"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre los modelos de Watcher"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avaa Watcherin mallit"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ouvre les modèles de Watcher"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher के मॉडल खोलता है"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Megnyitja a Watcher modelljeit"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Apre i modelli di Watcher"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher のモデルを開きます"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher ची मॉडेल्स उघडते"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Åpner Watchers modeller"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Opent de modellen van Watcher"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Otwiera modele Watchera"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre os modelos do Watcher"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Abre os modelos do Watcher"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deschide modelele lui Watcher"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Öppnar Watchers modeller"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher இன் மாடல்களைத் திறக்கும்"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher మోడల్‌లను తెరుస్తుంది"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher’ın modellerini açar"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Відкриває моделі Watcher"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher کے ماڈل کھولتا ہے"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "打开 Watcher 的模型"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "開啟 Watcher 的模型"
           }
         }
       }
@@ -94226,6 +95565,197 @@
         }
       }
     },
+    "Sending starts the new Watcher with a handover of the last one." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "الإرسال يبدأ Watcher الجديد بتسليم من السابق."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "পাঠালে নতুন Watcher আগেরটির হস্তান্তর নিয়ে শুরু হয়।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Odesláním se nový Watcher spustí s předáním od předchozího."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Når du sender, starter den nye Watcher med en overdragelse fra den forrige."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beim Senden startet der neue Watcher mit einer Übergabe vom letzten."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Η αποστολή ξεκινά τον νέο Watcher με παράδοση από τον προηγούμενο."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sending starts the new Watcher with a handover of the last one."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al enviar, el Watcher nuevo empieza con un traspaso del anterior."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al enviar, el Watcher nuevo empieza con un traspaso del anterior."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Al enviar, el Watcher nuevo empieza con un traspaso del anterior."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Lähettäminen aloittaa uuden Watcherin edellisen luovutuksella."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’envoi démarre le nouveau Watcher avec une transmission du précédent."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "भेजने पर नया Watcher पिछले वाले के हैंडओवर के साथ शुरू होता है।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A küldés az új Watchert az előző átadásával indítja."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’invio avvia il nuovo Watcher con un passaggio di consegne dal precedente."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "送信すると、新しい Watcher は前の Watcher からの引き継ぎで始まります。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पाठवल्यावर नवीन Watcher मागील Watcher च्या हस्तांतरासह सुरू होतो."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Når du sender, starter den nye Watcher med en overlevering fra den forrige."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Verzenden start de nieuwe Watcher met een overdracht van de vorige."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wysłanie uruchamia nowego Watchera z przekazaniem od poprzedniego."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ao enviar, o novo Watcher começa com uma passagem do anterior."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ao enviar, o novo Watcher começa com uma passagem do anterior."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Trimiterea pornește noul Watcher cu o predare de la cel anterior."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "När du skickar startar den nya Watcher med en överlämning från den förra."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "அனுப்பினால், முந்தையதின் ஒப்படைப்புடன் புதிய Watcher தொடங்கும்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "పంపితే, కొత్త Watcher మునుపటిదాని అప్పగింతతో ప్రారంభమవుతుంది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Göndermek, yeni Watcher’ı öncekinin devriyle başlatır."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Надсилання запускає новий Watcher із передаванням від попереднього."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بھیجنے پر نیا Watcher پچھلے والے کی حوالگی کے ساتھ شروع ہوتا ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "发送后，新的 Watcher 会带着上一个的交接开始。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "傳送後，新的 Watcher 會帶著上一個的交接開始。"
+          }
+        }
+      }
+    },
     "Sending to Watcher…" : {
       "extractionState" : "manual",
       "localizations" : {
@@ -102501,6 +104031,197 @@
         }
       }
     },
+    "Start a new Watcher with a handover of this one" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "بدء Watcher جديد مع تسليم من هذا"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এটির হস্তান্তর নিয়ে একটি নতুন Watcher শুরু করুন"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spustit nový Watcher s předáním od tohoto"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start en ny Watcher med en overdragelse fra denne"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuen Watcher mit einer Übergabe von diesem starten"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Έναρξη νέου Watcher με παράδοση από αυτόν"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start a new Watcher with a handover of this one"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar un Watcher nuevo con un traspaso de este"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar un Watcher nuevo con un traspaso de este"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar un Watcher nuevo con un traspaso de este"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aloita uusi Watcher tämän luovutuksella"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Démarrer un nouveau Watcher avec une transmission de celui-ci"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "इसके हैंडओवर के साथ नया Watcher शुरू करें"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Új Watcher indítása ennek átadásával"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avvia un nuovo Watcher con un passaggio di consegne da questo"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Watcher からの引き継ぎで新しい Watcher を開始"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "याच्या हस्तांतरासह नवीन Watcher सुरू करा"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Start en ny Watcher med en overlevering fra denne"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Een nieuwe Watcher starten met een overdracht van deze"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uruchom nowego Watchera z przekazaniem od tego"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar um novo Watcher com uma passagem deste"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciar um novo Watcher com uma passagem deste"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pornește un Watcher nou cu o predare de la acesta"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starta en ny Watcher med en överlämning från den här"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இதன் ஒப்படைப்புடன் புதிய Watcher ஐத் தொடங்கு"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "దీని అప్పగింతతో కొత్త Watcher ను ప్రారంభించండి"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bunun devriyle yeni bir Watcher başlat"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запустити новий Watcher із передаванням від цього"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "اس کی حوالگی کے ساتھ نیا Watcher شروع کریں"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "带着这个 Watcher 的交接启动新的 Watcher"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "帶著這個 Watcher 的交接啟動新的 Watcher"
+          }
+        }
+      }
+    },
     "Start by asking" : {
       "comment" : "A new-thread permission default: start every thread by asking for permission.",
       "extractionState" : "manual",
@@ -102881,6 +104602,197 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已啟動"
+          }
+        }
+      }
+    },
+    "Starting a new Watcher…" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "جارٍ بدء Watcher جديد…"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "নতুন Watcher শুরু হচ্ছে…"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Spouští se nový Watcher…"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starter en ny Watcher…"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Neuer Watcher wird gestartet…"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ξεκινά νέος Watcher…"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starting a new Watcher…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciando un Watcher nuevo…"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciando un Watcher nuevo…"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciando un Watcher nuevo…"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uutta Watcheria käynnistetään…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Démarrage d’un nouveau Watcher…"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "नया Watcher शुरू हो रहा है…"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Új Watcher indítása…"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Avvio di un nuovo Watcher…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "新しい Watcher を開始しています…"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "नवीन Watcher सुरू होत आहे…"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Starter en ny Watcher…"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nieuwe Watcher starten…"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Uruchamianie nowego Watchera…"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Iniciando um novo Watcher…"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A iniciar um novo Watcher…"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se pornește un Watcher nou…"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Startar en ny Watcher…"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "புதிய Watcher தொடங்குகிறது…"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "కొత్త Watcher ను ప్రారంభిస్తోంది…"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Yeni Watcher başlatılıyor…"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Запуск нового Watcher…"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "نیا Watcher شروع ہو رہا ہے…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在启动新的 Watcher…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在啟動新的 Watcher…"
           }
         }
       }
@@ -106020,6 +107932,197 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "停止 1 個對話"
+          }
+        }
+      }
+    },
+    "Stop Watcher’s turn" : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "إيقاف دور Watcher"
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher-এর টার্ন থামান"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zastavit kolo Watchera"
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop Watchers omgang"
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Durchgang von Watcher stoppen"
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Διακοπή του γύρου του Watcher"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stop Watcher’s turn"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detener el turno de Watcher"
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detener el turno de Watcher"
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Detener el turno de Watcher"
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Pysäytä Watcherin vuoro"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrêter le tour de Watcher"
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher का टर्न रोकें"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Watcher körének leállítása"
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ferma il turno di Watcher"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher のターンを停止"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher चा टर्न थांबवा"
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stopp Watchers runde"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Beurt van Watcher stoppen"
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Zatrzymaj turę Watchera"
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parar o turno do Watcher"
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Parar o turno do Watcher"
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Oprește tura lui Watcher"
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Stoppa Watchers omgång"
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher இன் டர்னை நிறுத்து"
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher టర్న్‌ను ఆపండి"
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher’ın turunu durdur"
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Зупинити хід Watcher"
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher کا ٹرن روکیں"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止 Watcher 的这一轮"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "停止 Watcher 的這個回合"
           }
         }
       }
@@ -112878,6 +114981,198 @@
         }
       }
     },
+    "The last conversation is in Watcher history on %@." : {
+      "comment" : "%@ is the computer's name",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "المحادثة الأخيرة في سجل Watcher على %@."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "শেষ কথোপকথনটি %@-এ Watcher-এর ইতিহাসে আছে।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Poslední konverzace je v historii Watchera na %@."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Den sidste samtale er i Watcher-historikken på %@."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Die letzte Unterhaltung ist im Watcher-Verlauf auf %@."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Η τελευταία συζήτηση βρίσκεται στο ιστορικό του Watcher στον υπολογιστή %@."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "The last conversation is in Watcher history on %@."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La última conversación está en el historial de Watcher en %@."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La última conversación está en el historial de Watcher en %@."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La última conversación está en el historial de Watcher en %@."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Viimeisin keskustelu on Watcherin historiassa koneella %@."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La dernière conversation se trouve dans l’historique de Watcher sur %@."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "पिछली बातचीत %@ पर Watcher के इतिहास में है।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A legutóbbi beszélgetés a Watcher előzményeiben van ezen: %@."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’ultima conversazione è nella cronologia di Watcher su %@."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "前回の会話は %@ の Watcher 履歴にあります。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "मागील संभाषण %@ वरील Watcher च्या इतिहासात आहे."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Den siste samtalen er i Watcher-historikken på %@."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Het laatste gesprek staat in de Watcher-geschiedenis op %@."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ostatnia rozmowa jest w historii Watchera na %@."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A última conversa está no histórico do Watcher em %@."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A última conversa está no histórico do Watcher em %@."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ultima conversație este în istoricul lui Watcher pe %@."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Den senaste konversationen finns i Watcher-historiken på %@."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "கடைசி உரையாடல் %@ இல் உள்ள Watcher வரலாற்றில் உள்ளது."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "చివరి సంభాషణ %@ లోని Watcher చరిత్రలో ఉంది."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Son konuşma %@ üzerindeki Watcher geçmişinde."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Остання розмова є в історії Watcher на %@."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "پچھلی گفتگو %@ پر Watcher کی ہسٹری میں ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一段对话在 %@ 上的 Watcher 历史记录中。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上一段對話在 %@ 上的 Watcher 歷史記錄中。"
+          }
+        }
+      }
+    },
     "The name shows on this iPhone only. Leave it empty to use the computer’s own name." : {
       "extractionState" : "manual",
       "localizations" : {
@@ -116127,6 +118422,197 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "它們因一個請求而受到監看：如果你親自傳送內容給其中一個，Watcher 就會停止傳送給它。"
+          }
+        }
+      }
+    },
+    "This Watcher is new, so there is nothing to hand over yet." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher هذا جديد، لذا لا يوجد ما يُسلَّم بعد."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "এই Watcher নতুন, তাই এখনও হস্তান্তর করার কিছু নেই।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tento Watcher je nový, takže zatím není co předat."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denne Watcher er ny, så der er intet at overdrage endnu."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dieser Watcher ist neu, es gibt also noch nichts zu übergeben."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Αυτός ο Watcher είναι νέος, οπότε δεν υπάρχει ακόμη κάτι να παραδοθεί."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "This Watcher is new, so there is nothing to hand over yet."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Watcher es nuevo, así que aún no hay nada que traspasar."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Watcher es nuevo, así que todavía no hay nada que traspasar."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Watcher es nuevo, así que todavía no hay nada que traspasar."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tämä Watcher on uusi, joten luovutettavaa ei vielä ole."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ce Watcher est nouveau : il n’y a encore rien à transmettre."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "यह Watcher नया है, इसलिए अभी सौंपने के लिए कुछ नहीं है।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ez a Watcher új, így még nincs mit átadni."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Questo Watcher è nuovo, quindi non c’è ancora niente da passare."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "この Watcher は新しいため、まだ引き継ぐものはありません。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "हा Watcher नवीन आहे, त्यामुळे अजून सोपवण्यासारखे काही नाही."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Denne Watcher er ny, så det er ingenting å overlevere ennå."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Deze Watcher is nieuw, dus er is nog niets over te dragen."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ten Watcher jest nowy, więc nie ma jeszcze czego przekazać."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Watcher é novo, então ainda não há nada para passar adiante."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Este Watcher é novo, por isso ainda não há nada para passar."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Acest Watcher este nou, deci încă nu e nimic de predat."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Den här Watcher är ny, så det finns inget att lämna över än."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "இந்த Watcher புதியது, எனவே ஒப்படைக்க இன்னும் எதுவும் இல்லை."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ఈ Watcher కొత్తది, కాబట్టి ఇంకా అప్పగించడానికి ఏమీ లేదు."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Bu Watcher yeni, bu yüzden henüz devredilecek bir şey yok."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Цей Watcher новий, тож передавати поки нічого."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "یہ Watcher نیا ہے، اس لیے ابھی سونپنے کو کچھ نہیں ہے۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "这个 Watcher 是新的，目前还没有可以交接的内容。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "這個 Watcher 是新的，目前還沒有可以交接的內容。"
           }
         }
       }
@@ -131707,6 +134193,197 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "Watcher 正在工作"
+          }
+        }
+      }
+    },
+    "Watcher is working. Stop its turn to start a new one." : {
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher يعمل. أوقف دوره لبدء Watcher جديد."
+          }
+        },
+        "bn" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher কাজ করছে। নতুন একটি শুরু করতে এর টার্ন থামান।"
+          }
+        },
+        "cs" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher pracuje. Chcete-li spustit nový, zastavte jeho kolo."
+          }
+        },
+        "da" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher arbejder. Stop dens omgang for at starte en ny."
+          }
+        },
+        "de" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher arbeitet. Stoppe seinen Durchgang, um einen neuen zu starten."
+          }
+        },
+        "el" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ο Watcher δουλεύει. Διακόψτε τον γύρο του για να ξεκινήσετε νέο."
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher is working. Stop its turn to start a new one."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher está trabajando. Detén su turno para iniciar uno nuevo."
+          }
+        },
+        "es-419" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher está trabajando. Detén su turno para iniciar uno nuevo."
+          }
+        },
+        "es-MX" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher está trabajando. Detén su turno para iniciar uno nuevo."
+          }
+        },
+        "fi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher työskentelee. Pysäytä sen vuoro aloittaaksesi uuden."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher travaille. Arrêtez son tour pour en démarrer un nouveau."
+          }
+        },
+        "hi" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher काम कर रहा है। नया शुरू करने के लिए उसका टर्न रोकें।"
+          }
+        },
+        "hu" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "A Watcher dolgozik. Új indításához állítsa le a körét."
+          }
+        },
+        "it" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher sta lavorando. Ferma il suo turno per avviarne uno nuovo."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher が作業中です。新しく開始するには、そのターンを停止してください。"
+          }
+        },
+        "mr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher काम करत आहे. नवीन सुरू करण्यासाठी त्याचा टर्न थांबवा."
+          }
+        },
+        "nb" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher jobber. Stopp runden dens for å starte en ny."
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher is bezig. Stop de beurt om een nieuwe te starten."
+          }
+        },
+        "pl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher pracuje. Zatrzymaj jego turę, aby uruchomić nowego."
+          }
+        },
+        "pt-BR" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Watcher está trabalhando. Pare o turno dele para iniciar um novo."
+          }
+        },
+        "pt-PT" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "O Watcher está a trabalhar. Pare o turno dele para iniciar um novo."
+          }
+        },
+        "ro" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher lucrează. Oprește-i tura ca să pornești unul nou."
+          }
+        },
+        "sv" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher arbetar. Stoppa dess omgång för att starta en ny."
+          }
+        },
+        "ta" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher வேலை செய்கிறது. புதியதைத் தொடங்க அதன் டர்னை நிறுத்துங்கள்."
+          }
+        },
+        "te" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher పని చేస్తోంది. కొత్తదాన్ని ప్రారంభించడానికి దాని టర్న్‌ను ఆపండి."
+          }
+        },
+        "tr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher çalışıyor. Yenisini başlatmak için turunu durdurun."
+          }
+        },
+        "uk" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher працює. Зупиніть його хід, щоб запустити новий."
+          }
+        },
+        "ur" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher کام کر رہا ہے۔ نیا شروع کرنے کے لیے اس کا ٹرن روکیں۔"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 正在工作。停止它的这一轮即可启动新的 Watcher。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Watcher 正在工作。停止它的這個回合即可啟動新的 Watcher。"
           }
         }
       }

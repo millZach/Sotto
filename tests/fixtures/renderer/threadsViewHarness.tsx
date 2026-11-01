@@ -24,10 +24,29 @@ function connection(state: AgentState | null, command = vi.fn(async () => state)
   return { ...agentContextFixture(state, command, { threadDrafts }), threadDrafts }
 }
 
+/**
+ * The state as main would publish it after a test changed it in place: a new state and new thread records, as the window
+ * receives every update. Panes are memoised on what they read (#993), so a record changed in place would not reach them.
+ */
+function published(state: AgentState): AgentState {
+  return { ...state, host: { ...state.host, threads: state.host.threads.map(thread => ({ ...thread })) } }
+}
+
 function renderThreads(state: AgentState | null, command = vi.fn(async () => state)) {
   vi.mocked(useAgents).mockReturnValue(connection(state, command))
   const view = render(<ThreadsView now={NOW} />)
-  return { ...view, command }
+  const shown = new WeakSet<AgentState>(state ? [state] : [])
+  // A test that changes `state` in place and draws again is publishing it: the page is handed it as main would send it.
+  // One that has handed the page another connection meanwhile keeps it.
+  const rerender: typeof view.rerender = ui => {
+    const current = vi.mocked(useAgents).getMockImplementation() === undefined ? null : vi.mocked(useAgents)().state
+    if (state !== null && current !== null && shown.has(current)) {
+      const next = published(state); shown.add(next)
+      vi.mocked(useAgents).mockReturnValue(connection(next, command))
+    }
+    view.rerender(ui)
+  }
+  return { ...view, rerender, command }
 }
 
 beforeEach(() => {

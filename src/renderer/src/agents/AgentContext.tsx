@@ -1,4 +1,5 @@
 import React, { createContext, startTransition, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ResponseStreamingProvider } from './responseStreaming'
 import { msg } from '@lingui/core/macro'
 
 import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
@@ -65,8 +66,14 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     viewed: new Set<string>(), shell: null as AgentState | null, clock: 0, hits: 0, misses: 0,
     pendingShell: null as AgentState | null, frame: 0,
     channel: bridge?.threadDetail !== undefined || bridge?.onThreadDetail !== undefined,
+    /** The threads the last commit held, by ID in order, and whether a state arrived while hidden that is not committed yet. */
+    committedThreads: '', committedHistory: undefined as boolean | undefined, heldWhileHidden: false,
+    /** Each state received, numbered in the order it arrived, and the newest the draft store has been handed. */
+    received: 0, draftsFed: 0,
   }), [bridge])
-  const [snapshot, setSnapshot] = useState<{ session: typeof session; state: AgentState } | null>(null)
+  /** The draft store the window's commits feed, which a state held while the window is hidden feeds directly. */
+  const draftsRef = useRef<ThreadDraftStore | null>(null)
+  const [snapshot, setSnapshot] = useState<{ session: typeof session; state: AgentState; received: number } | null>(null)
   // Read when shown, so a change of language rewords it; the provider subscribes to the language for that alone.
   useInterfaceLanguageState()
   const [failure, setFailure] = useState<{ session: typeof session; error: LaterWords } | null>(null)
@@ -127,15 +134,33 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // straight onto the selected thread, with no pane change to declare it viewed.
     if (next.stale !== true && next.activeThreadId !== null) ask.current(next.activeThreadId)
     const assembled = assemble(next)
+    // While the window is hidden nobody sees a commit, and each one drew the window again: about 8 ms for every update of
+    // every thread, all the time Sotto sat in the tray (#993). A broadcast's waits for the window to show, which commits
+    // the newest at once. What must not wait does not: request answers were pruned above, the draft store hears of drafts
+    // directly, a command's own reply (urgent) commits, and so does a state that adds or removes a thread, since the
+    // browser tools watch each thread's tasks from the threads committed (ADR-0029).
+    // Keep local history going off commits too, so the cached shell's excerpts are cleared at once (ADR-0016).
+    const received = ++detail.received
+    const threads = assembled.host.threads.map(thread => thread.id).join('\n')
+    if (options.urgent !== true && next.stale !== true && windowHidden() && threads === detail.committedThreads
+      && next.historyEnabled === detail.committedHistory) {
+      detail.heldWhileHidden = true
+      // In arrival order with what commits hand it: a transition begun before the window hid can still commit after this.
+      if (received > detail.draftsFed) { detail.draftsFed = received; draftsRef.current?.receive(visibleWatcherState(assembled, watcherEnabledRef.current)) }
+      return
+    }
+    detail.heldWhileHidden = false
+    detail.committedThreads = threads
+    detail.committedHistory = next.historyEnabled
     // React's own update queue, not extra bookkeeping here, keeps this in order: a `useState` setter
     // called from a transition and one called urgently both enqueue on the same fiber, and whichever
     // priority renders first, React replays the whole queue in the order the setters were called
     // once every lane has rendered — so a call made after another's can never be overwritten by it.
     const commit = (): void => setSnapshot(current => {
       // The cached shell is replaced outright, never reconciled: its identities belong to the last run.
-      if (current?.session !== session || current.state.stale === true) return { session, state: assembled }
+      if (current?.session !== session || current.state.stale === true) return { session, state: assembled, received }
       const state = session.share(current.state, assembled)
-      return state === current.state ? current : { session, state }
+      return state === current.state ? current : { session, state, received }
     })
     if (options.urgent === true) commit(); else startTransition(commit)
   }, [session, assemble, detail])
@@ -269,6 +294,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     return operation
   }, [bridge, session, receiveState, commitPendingShell, detail, requestDetail])
   const threadDrafts = useMemo(() => new ThreadDraftStore(command), [command])
+  draftsRef.current = threadDrafts
   const state = snapshot?.session === session ? snapshot.state : null
   const error = failure?.session === session ? shownWords(failure.error) : null
   const shownState = useMemo(() => visibleWatcherState(state, watcherEnabled), [state, watcherEnabled])
@@ -297,8 +323,13 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       detail.pendingShell = next
       detail.frame = requestAnimationFrame(flushPendingShell)
     })
-    const visibilityChanged = (): void => { if (document.hidden) flushPendingShell() }
+    // Hidden, a shell held for its frame goes to the hold at once rather than wait for a frame that will not come; shown,
+    // the newest state held while hidden commits at once. Main's word that the window is visible again counts as well as
+    // the page's own, since a window started hidden or kept visible for a capture can leave the page's out of step.
+    const catchUp = (): void => { if (active && detail.heldWhileHidden && detail.shell !== null) receive(detail.shell, { urgent: true }) }
+    const visibilityChanged = (): void => { if (document.hidden) flushPendingShell(); else catchUp() }
     document.addEventListener('visibilitychange', visibilityChanged)
+    const unsubscribeVisible = window.sotto?.onWindowVisible?.(visible => { if (visible) catchUp() })
     const unsubscribeDetail = bridge?.onThreadDetail?.(next => { if (active) receiveDetail.current(next) })
     // The shell this window saw last time paints the page on the first frame, marked stale and
     // disconnected, and the first live shell replaces it. Both are urgent: there is nothing on
@@ -318,7 +349,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       if (detail.frame !== 0) { cancelAnimationFrame(detail.frame); detail.frame = 0 }
       detail.pendingShell = null
       active = false; session.current = false; unsubscribe?.(); unsubscribeDetail?.()
-      document.removeEventListener('visibilitychange', visibilityChanged)
+      document.removeEventListener('visibilitychange', visibilityChanged); unsubscribeVisible?.()
       window.removeEventListener('pagehide', flush)
       window.removeEventListener('beforeunload', flush)
     }
@@ -340,7 +371,13 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
   // including while the Threads page is absent.
   // The cached shell carries no draft evidence and must not be read as any: what a previous run saw
   // says nothing about what is on disk now.
-  useLayoutEffect(() => { if (shownState !== null && shownState.stale !== true) threadDrafts.receive(shownState) }, [shownState, threadDrafts])
+  // In arrival order with what a hidden window hands the store directly: an older state committing late is not handed over.
+  const committedAt = snapshot?.session === session ? snapshot.received : 0
+  useLayoutEffect(() => {
+    if (shownState === null || shownState.stale === true || committedAt < detail.draftsFed) return
+    detail.draftsFed = committedAt
+    threadDrafts.receive(shownState)
+  }, [shownState, threadDrafts, committedAt, detail])
   // What one state update costs this window, from the moment it arrived to the commit that shows it, in the
   // dev console at most once a second — the figure now includes whatever time a transition spent waiting
   // behind a higher-priority input. Development only: the production bundle drops the whole effect body.
@@ -367,6 +404,12 @@ interface AgentContextValue extends AgentConnection {
   readonly showBrowserPreviews: boolean
 }
 
+/**
+ * Whether nobody can see the window: its page is hidden, or main says the window is (`data-window-hidden`, which
+ * `startWindowVisibility` keeps), since a window started hidden or kept visible for a capture reports its page visible.
+ */
+const windowHidden = (): boolean => document.hidden || document.documentElement.hasAttribute('data-window-hidden')
+
 const AgentContext = createContext<AgentContextValue | null>(null)
 
 export function AgentProvider({ children, settings }: {
@@ -379,7 +422,7 @@ export function AgentProvider({ children, settings }: {
     ...connection,
     responseStreaming: settings?.responseStreaming ?? 'live',
     showBrowserPreviews: settings?.showBrowserPreviews ?? true,
-  }}>{children}</AgentContext.Provider>
+  }}><ResponseStreamingProvider value={settings?.responseStreaming ?? 'live'}>{children}</ResponseStreamingProvider></AgentContext.Provider>
 }
 
 export function useAgents(): AgentContextValue {

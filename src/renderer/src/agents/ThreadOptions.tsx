@@ -461,11 +461,11 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
   /** Another provider's models, under "Continue in a new thread on", for a started thread that may continue elsewhere. */
   readonly continueOffer?: ThreadContinueOffer | undefined
   /**
-   * The quiet composer (ADR-0161, Owl): effort and speed as a word and a bolt beside the model, which may mark a level the
-   * draft seems to want, and the permissions shield drawn in `shieldSlot`, at the pill's start. Absent, the options are
-   * the chips of ADR-0113.
+   * Zach's composer (ADR-0168): effort and speed as a word and a bolt beside the model, which may offer a level the draft
+   * seems to want (ADR-0172), and the permissions drawn in `shieldSlot`, before the model. Absent, the options are the
+   * chips of ADR-0113.
    */
-  readonly quiet?: { readonly effortScore: number; readonly shieldSlot?: HTMLElement | null | undefined } | undefined
+  readonly quiet?: { readonly effortScore: number; readonly broadWork?: boolean; readonly shieldSlot?: HTMLElement | null | undefined } | undefined
 }): ReactNode {
   const { t } = useLingui()
   const settings = usePendingSettings(thread.id)
@@ -672,9 +672,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={fixed || modelDisabled}
         pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={effortDescription}
         speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), options: speedOptions(speeds, speedProvider), onChange: changeSpeed, onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
-        suggestion={thread.status === 'running' ? null : suggestedEffortIndex(quiet.effortScore, levels.length,
-          // On the provider's default, the model's own default is what a suggestion must stand above.
-          levels.includes(reasoning) ? levels.indexOf(reasoning) : levels.indexOf(model?.defaultReasoningEffort ?? ''))}
+        suggestion={suggestedEffortIndex(quiet.effortScore, levels, reasoning, model?.defaultReasoningEffort, quiet.broadWork)}
         onChange={reasoningEffort => {
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
           orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)

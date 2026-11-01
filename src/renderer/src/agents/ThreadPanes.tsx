@@ -53,6 +53,39 @@ export interface PaneChrome {
 /** A pane outside the pane area, or before it knows its place: no layout rows, no close, no handle. */
 const NO_CHROME: PaneChrome = { layout: [] }
 
+/** What a pane's chrome shows, and so what a press on it can be: its rows' names and states, its close's words, its handle. */
+function chromeKey(chrome: PaneChrome): string {
+  return JSON.stringify([chrome.layout.map(item => [item.id, item.label, item.disabled, item.hint, item.tone, item.checked, item.shown, item.shortcut?.plain, item.shortcut?.keys, item.description]),
+    chrome.close === undefined ? null : [chrome.close.label, chrome.close.title, chrome.close.keys], chrome.handle !== undefined])
+}
+
+/**
+ * Each pane's chrome, kept the same object while what it shows is the same, so a pane memoised on its props is not drawn
+ * again because the pane area made its chrome afresh (#993). Its presses run the newest chrome made for that pane, so a
+ * kept one never acts on an older arrangement.
+ */
+function useStableChrome(paneIds: readonly string[]): (threadId: string, chrome: PaneChrome) => PaneChrome {
+  const kept = useRef(new Map<string, { readonly key: string; readonly chrome: PaneChrome }>())
+  const latest = useRef(new Map<string, PaneChrome>())
+  // A pane that has closed lets its chrome go, with the arrangement its presses closed over.
+  for (const map of [kept.current, latest.current]) for (const threadId of map.keys()) if (!paneIds.includes(threadId)) map.delete(threadId)
+  return (threadId, chrome) => {
+    latest.current.set(threadId, chrome)
+    if (chrome === NO_CHROME) return chrome
+    const key = chromeKey(chrome)
+    const previous = kept.current.get(threadId)
+    if (previous?.key === key) return previous.chrome
+    const live = (): PaneChrome | undefined => latest.current.get(threadId)
+    const stable: PaneChrome = {
+      layout: chrome.layout.map(item => ({ ...item, run: () => live()?.layout.find(row => row.id === item.id)?.run() })),
+      close: chrome.close === undefined ? undefined : { ...chrome.close, run: () => live()?.close?.run() },
+      handle: chrome.handle === undefined ? undefined : { start: event => live()?.handle?.start(event), end: () => live()?.handle?.end() },
+    }
+    kept.current.set(threadId, { key, chrome: stable })
+    return stable
+  }
+}
+
 export interface ThreadPanesProps {
   /** The arrangement on screen; panes whose thread is missing are already left out. */
   readonly layout: SplitLayout
@@ -277,6 +310,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
   const moveStart = useRef<number | undefined>(undefined)
   const [announcement, setAnnouncement] = useState('')
   /** Scroll offsets and keyboard focus from before a move; React moves pane nodes to keep reading order, and a moved node loses both. */
+  const stableChrome = useStableChrome(paneIds)
   const preserved = useRef<{ readonly offsets: readonly (readonly [Element, number, number])[]; readonly active: Element | null } | null>(null)
   const split = isSplit(layout) && paneIds.length >= 2
   const fits = fitsArea(layout, width, height)
@@ -470,7 +504,7 @@ export function ThreadPanes({ layout, paneIds, rows, label: givenLabel, focusedI
           inert={hidden}
           onPointerDownCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}
           onFocusCapture={event => { if (!(event.target as HTMLElement).closest(CHROME)) onFocusPane(id) }}>
-          {renderPane(id, chrome)}
+          {renderPane(id, stableChrome(id, chrome))}
         </section>}</Marked>
         {dividersAfter.get(index)}</React.Fragment>
       })}

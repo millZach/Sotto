@@ -1,6 +1,6 @@
 import { focusedComposerField } from './promptSelection'
 import { Marked } from '../components/marks'
-import React, { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import React, { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { msg } from '@lingui/core/macro'
 import { Trans, useLingui } from '@lingui/react/macro'
 import { useListedRows } from './unsentThreads'
@@ -25,8 +25,9 @@ import { ProviderUpgradeNotice, isRecoveredDraft } from './ProviderUpgradeNotice
 import { EmptyWorkspace, type CarriedDraft } from './EmptyWorkspace'
 import { HostUpdateControl } from './HostUpdates'
 import { THREAD_PROMPT_ID } from './ThreadComposer'
-import { hasDraftContent } from './threadDraftStore'
+import { hasDraftContent, type ThreadDraftStore } from './threadDraftStore'
 import { ThreadPane } from './ThreadPane'
+import { samePaneWorld } from './paneWorld'
 import { ThreadPanes, focusInPane, type PaneChrome, type PaneLabel } from './ThreadPanes'
 import { paneGridActions, useClock } from './paneGrid'
 import { ThreadSidebar } from './ThreadSidebar'
@@ -59,6 +60,50 @@ export interface ThreadPaneSlotProps {
   readonly focusPrompt: () => void
 }
 export type ThreadPaneSlot = (props: ThreadPaneSlotProps) => ReactNode
+
+interface ShownPaneProps {
+  readonly row: ThreadRow
+  readonly state: AgentState
+  readonly command: Command
+  readonly store: ThreadDraftStore
+  readonly focused: boolean
+  readonly promptId: string
+  readonly error: string | null
+  readonly now: number | undefined
+  /**
+   * The page's clock. Parts of a pane work out what they say from the time as they draw (babysitting's "since"), and the
+   * page's clock redrew every pane each time it moved; it still does, so those parts are as fresh as before.
+   */
+  readonly clock: number
+  readonly chrome: PaneChrome
+  readonly onOpenBeside: (threadId: string) => void
+  readonly tools: boolean
+  readonly paneTerminal: ThreadsViewProps['paneTerminal']
+  readonly paneWorkingCopy: ThreadPaneSlot | undefined
+  readonly paneNotice: ThreadPaneSlot | undefined
+  readonly paneDrawer: ThreadPaneSlot | undefined
+}
+
+/** A pane is drawn again when its props change, its world as `samePaneWorld` reads it included; nothing else redraws it. */
+function samePaneProps(previous: ShownPaneProps, next: ShownPaneProps): boolean {
+  for (const key of Object.keys(next) as (keyof ShownPaneProps)[]) if (key !== 'state' && !Object.is(previous[key], next[key])) return false
+  return samePaneWorld(previous.state, next.state, next.row.thread.id)
+}
+
+/**
+ * One thread's pane in the workspace, behind a memo boundary (#993): an update that leaves its thread, the threads related
+ * to it and everything else it reads as they were does not draw it again, where every pane was drawn again for every word
+ * any thread streamed. Its slots are called here, inside the boundary, from the row and command they are given.
+ */
+const ShownPane = memo(function ShownPane({ row, state, command, store, focused, promptId, error, now, chrome, onOpenBeside, tools, paneTerminal, paneWorkingCopy, paneNotice, paneDrawer }: ShownPaneProps): ReactNode {
+  const threadId = row.thread.id
+  const slot: ThreadPaneSlotProps = { row, state, command, focused, focusPrompt: () => focusInPane(threadId) }
+  // Tools and the drawer are rows of the pane's ··· menu now, so nothing in the header comes or goes with focus.
+  return <ThreadPane row={row} state={state} command={command} store={store} focused={focused}
+    promptId={promptId} error={error} onOpenBeside={() => onOpenBeside(threadId)} now={now}
+    workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} drawer={paneDrawer?.(slot)}
+    chrome={chrome} tools={tools} terminal={paneTerminal?.(slot) ?? false} />
+}, samePaneProps)
 
 export interface ThreadsViewProps {
   readonly now?: number | undefined
@@ -313,12 +358,10 @@ export function ThreadsView({ now: fixedNow, updateControl, tools, paneTools = f
     const row: ThreadRow | undefined = rowsById.get(threadId)
     if (row === undefined) return null
     const focused = threadId === focusedId
-    const slot: ThreadPaneSlotProps = { row, state, command, focused, focusPrompt: () => focusInPane(threadId) }
-    // Tools and the drawer are rows of the pane's ··· menu now, so nothing in the header comes or goes with focus.
-    return <ThreadPane row={row} state={state} command={command} store={store} focused={focused}
-      promptId={split ? threadPromptId(threadId) : THREAD_PROMPT_ID} error={focused ? error : null} onOpenBeside={() => openBeside(threadId)} now={fixedNow}
-      workingCopy={paneWorkingCopy?.(slot)} notice={paneNotice?.(slot)} drawer={paneDrawer?.(slot)}
-      chrome={chrome} tools={paneTools && focused} terminal={paneTerminal?.(slot) ?? false} />
+    return <ShownPane row={row} state={state} command={command} store={store} focused={focused}
+      promptId={split ? threadPromptId(threadId) : THREAD_PROMPT_ID} error={focused ? error : null} now={fixedNow} clock={now} chrome={chrome}
+      onOpenBeside={openBeside} tools={paneTools && focused} paneTerminal={paneTerminal}
+      paneWorkingCopy={paneWorkingCopy} paneNotice={paneNotice} paneDrawer={paneDrawer} />
   }
 
   return <SidebarChromeProvider updateControl={updateControl}><Marked>{marks => <div className={page} data-room-backdrop="" {...marks}>

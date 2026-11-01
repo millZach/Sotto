@@ -547,6 +547,11 @@ msgstr ""
 msgid "{problem} {kept} still works."
 msgstr ""
 
+#. {provider} is a provider, such as Claude Code. Heads its older models in a model list.
+#: src/renderer/src/features/settings/HostSetupView.tsx
+msgid "{provider} · Legacy"
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "{providerName} doesn’t offer it."
 msgstr ""
@@ -1748,15 +1753,6 @@ msgstr ""
 msgid "Compaction"
 msgstr ""
 
-#: src/renderer/src/features/settings/settingsPages.ts
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "Composer"
-msgstr ""
-
-#: src/renderer/src/features/settings/AppearanceSettings.tsx
-msgid "Composer saved."
-msgstr ""
-
 #. Connects a provider on a host.
 #: src/renderer/src/features/settings/HostProviders.tsx
 msgid "Connect"
@@ -2198,11 +2194,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Drafted pull requests use Sotto's own sections."
-msgstr ""
-
-#. A style of the thread composer, named for the person who made it
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "Drake’s composer"
 msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeImportDialog.tsx
@@ -2699,10 +2690,6 @@ msgstr ""
 msgid "How Sotto connects to {name} could not be changed. Nothing was changed. Try again."
 msgstr ""
 
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "How the box you write to threads and Watcher in is laid out."
-msgstr ""
-
 #: src/renderer/src/features/settings/PhonesSettings.tsx
 msgid "How this computer appears on phones. Leave it empty to use {defaultName}."
 msgstr ""
@@ -2772,7 +2759,6 @@ msgstr ""
 msgid "In the thread <0>{workingThread}</0> on this computer."
 msgstr ""
 
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
 #: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
 msgid "In use"
@@ -3631,10 +3617,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "One client updates at a time. Your threads keep working, and move to the new version when they are idle."
-msgstr ""
-
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "One pill: the shield, the prompt and a chip of the model and effort on one line."
 msgstr ""
 
 #: src/renderer/src/features/settings/HostBootStart.tsx
@@ -5430,7 +5412,7 @@ msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
-msgid "Suggest a next prompt after each turn"
+msgid "Suggest a next prompt"
 msgstr ""
 
 #. A family of theme colors in the theme editor
@@ -5813,10 +5795,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "The pasted text was cut to fit the 4,000-character limit."
-msgstr ""
-
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "The prompt on its own row, with the model, effort and permissions in words under it."
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -6477,14 +6455,6 @@ msgstr ""
 msgid "Use {label} as the owl's eye color, currently active"
 msgstr ""
 
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "Use {name}"
-msgstr ""
-
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "Use {name}, in use"
-msgstr ""
-
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Use advanced theme colors"
 msgstr ""
@@ -6799,7 +6769,7 @@ msgid "When a thread needs you"
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
-msgid "When a turn ends, the thread's own model suggests what to ask next. Each suggestion is one short request to the thread's provider. Press Tab or Up in an empty prompt to use one."
+msgid "When a turn ends, or you open a new thread, the thread's own model suggests what to ask next. For a new thread it reads the project's recent work and your latest thread titles there. Each suggestion is one short request to the thread's provider. Press Tab or Up in an empty prompt to use one."
 msgstr ""
 
 #: src/renderer/src/features/settings/SettingsView.tsx
@@ -6990,11 +6960,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostClientUpdates.tsx
 msgid "Your threads on {host} keep working."
-msgstr ""
-
-#. A style of the thread composer, named for the person who chose it
-#: src/renderer/src/features/settings/themes/ComposerStyleChoice.tsx
-msgid "Zach’s composer"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx

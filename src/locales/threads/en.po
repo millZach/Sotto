@@ -753,6 +753,11 @@ msgstr "{name} is already checked out here."
 msgid "{name} is checked out in another worktree. Start a new thread there to work on it."
 msgstr "{name} is checked out in another worktree. Start a new thread there to work on it."
 
+#. {name} is a provider, such as Claude Code or Codex.
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "{name} is not connected. Connect it in Settings › Providers to choose a model."
+msgstr "{name} is not connected. Connect it in Settings › Providers to choose a model."
+
 #. {name} is a provider's name; {installed} is a version number.
 #: src/renderer/src/agents/ClientUpdateCard.tsx
 msgid "{name} is now {installed}."
@@ -995,6 +1000,11 @@ msgstr "{provider} has not confirmed {wanted}. Until it does, a turn can still r
 msgid "{provider} keeps its own default until it confirms."
 msgstr "{provider} keeps its own default until it confirms."
 
+#. {provider} is a provider, such as Claude Code; {from} and {to} are model names, such as Opus 5.5.
+#: src/renderer/src/agents/ThreadTranscript.tsx
+msgid "{provider} no longer offers {from}, so this thread now uses {to}."
+msgstr "{provider} no longer offers {from}, so this thread now uses {to}."
+
 #. {delivery} says whether the answer was sent; {provider} is a provider name.
 #: src/renderer/src/agents/requests/RequestDraftRecovery.tsx
 msgid "{provider} no longer shows this question. {delivery}"
@@ -1170,6 +1180,16 @@ msgstr "{spaced, plural, one {# entry has a space in its name and cannot be ment
 #: src/renderer/src/agents/browserLine.ts
 msgid "{steps}, {unfinished, plural, one {# did not finish} other {# did not finish}}"
 msgstr "{steps}, {unfinished, plural, one {# did not finish} other {# did not finish}}"
+
+#. {suggested} is a reasoning effort level, such as High.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "{suggested} effort may suit this draft"
+msgstr "{suggested} effort may suit this draft"
+
+#. {suggested} is a reasoning effort level, such as High.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "{suggested} effort suggested for this draft."
+msgstr "{suggested} effort suggested for this draft."
 
 #: src/renderer/src/agents/threadActivityView.ts
 msgid "{summaries, plural, one {{summaryCount} reasoning summary} other {{summaryCount} reasoning summaries}}"
@@ -4714,6 +4734,11 @@ msgstr "Last seen working, {taken} so far"
 msgid "Leave empty to auto-generate"
 msgstr "Leave empty to auto-generate"
 
+#. In the model menu: the older models of a provider, kept apart from its newest.
+#: src/renderer/src/agents/ModelPicker.tsx
+msgid "Legacy"
+msgstr "Legacy"
+
 #: src/renderer/src/agents/threadGreeting.logic.ts
 msgid "Let’s get into it."
 msgstr "Let’s get into it."
@@ -7010,6 +7035,11 @@ msgstr "Sent"
 msgid "Set aside · Unconfirmed"
 msgstr "Set aside · Unconfirmed"
 
+#. {suggested} is a reasoning effort level, such as High.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "Set effort to {suggested}, suggested for this draft"
+msgstr "Set effort to {suggested}, suggested for this draft"
+
 #. The Settings page.
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Settings"
@@ -7915,11 +7945,6 @@ msgstr "Suggested for this draft"
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Suggested next prompt: {ghostText}. Press Tab to take it, or Up for more."
 msgstr "Suggested next prompt: {ghostText}. Press Tab to take it, or Up for more."
-
-#. {suggested} is a reasoning effort level, such as High.
-#: src/renderer/src/agents/SplitChipEffort.tsx
-msgid "Suggests {suggested}. Choose it from the effort list."
-msgstr "Suggests {suggested}. Choose it from the effort list."
 
 #. A step in the browser line; starts lowercase.
 #: src/renderer/src/agents/browserLine.ts
@@ -8901,6 +8926,16 @@ msgstr "Ultracode"
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Ultracode effort"
 msgstr "Ultracode effort"
+
+#. Tooltip on the suggestion to switch the thread to Ultracode, Claude Code’s multi-agent workflow mode. Ultracode is Claude Code’s own name; keep it as it is.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "Ultracode may suit this draft. It runs the work as a team of agents and uses many more tokens."
+msgstr "Ultracode may suit this draft. It runs the work as a team of agents and uses many more tokens."
+
+#. Said to assistive technology when the composer suggests Ultracode, Claude Code’s multi-agent workflow mode. Ultracode is Claude Code’s own name; keep it as it is.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "Ultracode suggested for this draft. It uses many more tokens."
+msgstr "Ultracode suggested for this draft. It uses many more tokens."
 
 #. Ultrathink is a keyword Claude Code reads in a prompt; keep it as it is.
 #: src/renderer/src/agents/EffortPicker.tsx

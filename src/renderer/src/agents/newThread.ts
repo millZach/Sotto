@@ -3,6 +3,7 @@ import { msg } from '@lingui/core/macro'
 import { hostEntityKey, parseHostEntityKey, projectWorkingCopyDefaultKey } from '../../../shared/clientIdentity'
 import { defaultNewThreadModelId, hostForThread, type AgentModel, type AgentProject, type AgentState, type AgentThread } from '../../../shared/agents'
 import { resolveModel } from '../../../shared/modelCatalog'
+import { modelInForce } from '../../../shared/modelLineup'
 import { hostNewThreadPermission, nearestReasoningEffort } from '../../../shared/newThreadDefaults'
 import { isThreadClosed, isWorkspaceThreadSettled } from '../../../shared/threadActivity'
 import type { AgentConnection } from './AgentContext'
@@ -84,7 +85,9 @@ export function newThreadDefaultsCatalog(state: AgentState): AgentModel[] {
 export function newThreadDefaultModelId(state: AgentState): string {
   const local = state.connections?.find(connection => connection.kind === 'local')?.hostId
   if (local !== undefined && state.hostId !== local) return state.configuration.newThreadModelId
-  return defaultNewThreadModelId(state.configuration, newThreadDefaultsCatalog(state), state.reasoningAccounts)
+  const catalog = newThreadDefaultsCatalog(state)
+  // A saved model its provider has retired starts new threads on the newest of its line (ADR-0171).
+  return modelInForce(catalog, defaultNewThreadModelId(state.configuration, catalog, state.reasoningAccounts))
 }
 
 /**
