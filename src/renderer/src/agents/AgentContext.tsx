@@ -1,4 +1,5 @@
 import React, { createContext, startTransition, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { ResponseStreamingProvider } from './responseStreaming'
 import { msg } from '@lingui/core/macro'
 
 import type { AgentBridge, AgentCommand, AgentState, AgentThread, AgentThreadDetail, AgentThreadDetailUpdate } from '../../../shared/agents'
@@ -379,7 +380,7 @@ export function AgentProvider({ children, settings }: {
     ...connection,
     responseStreaming: settings?.responseStreaming ?? 'live',
     showBrowserPreviews: settings?.showBrowserPreviews ?? true,
-  }}>{children}</AgentContext.Provider>
+  }}><ResponseStreamingProvider value={settings?.responseStreaming ?? 'live'}>{children}</ResponseStreamingProvider></AgentContext.Provider>
 }
 
 export function useAgents(): AgentContextValue {

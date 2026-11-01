@@ -907,7 +907,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const mainRenderer = options.webPreferences?.additionalArguments?.includes('--sotto-renderer-role=main')
       const featureArguments = [...(interfaceLanguageEnabled ? [interfaceLanguageArgument(interfaceLanguage.current())] : []), ...(mainRenderer ? [...(watcherEnabled ? [WATCHER_RENDERER_ARGUMENT] : []), ...(usageEnabled ? [USAGE_RENDERER_ARGUMENT] : []),
         ...(delegationEnabled ? [DELEGATION_RENDERER_ARGUMENT] : []), ...(continueEnabled ? [CONTINUE_RENDERER_ARGUMENT] : []),
-        ...(nextPromptEnabled && startupSettings.localHostEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
+        // The window hears next prompts from its hosts as well as this computer's own (ADR-0173), so the local host's switch does not hide them.
+        ...(nextPromptEnabled ? [NEXT_PROMPT_RENDERER_ARGUMENT] : []),
         ...(mainActivity ? [MAIN_ACTIVITY_RENDERER_ARGUMENT] : []),
         ...(keepMainCurrentEnabled ? [MAIN_CHECKOUT_RENDERER_ARGUMENT] : []),
         ...(desktopNotificationsEnabled ? [DESKTOP_NOTIFICATIONS_RENDERER_ARGUMENT] : []),
@@ -1162,7 +1163,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const retainedDrafts = new RetainedDraftStore({ directory: userDataPath, watcherEnabled, heldProviders, historyEnabled: () => agentHistoryEnabled,
     onRecovery: () => recoveryNotices.publish({ code: 'REMOTE_DRAFTS_UNREADABLE' }),
     onWriteFailure: () => recoveryNotices.publish({ code: 'REMOTE_DRAFT_STORAGE_NOT_UPDATED' }) })
-  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled, relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
+  const desktopHosts = new DesktopHosts({ directory: userDataPath, credentials, router: hostRouter, retainedDrafts, watcherEnabled, crossMachineEnabled,
+    ...(nextPromptEnabled ? { nextPromptsWanted: () => workingCopySettings.nextPromptSuggestions } : {}), relaysDelegation: delegationRelay !== undefined, heldProviders, streamingPublishCost: owlFeatures['streaming-publish-cost'], clientVersion: hostVersion,
     waitingClientVersion: () => waitingHostVersion,
     localHostRunning: startupSettings.localHostEnabled, localHostEnabled: () => workingCopySettings.localHostEnabled,
     restart: () => { app.relaunch(); app.quit() },
@@ -1892,6 +1894,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       const workerRolesChanged = JSON.stringify(settings.workerRoles) !== JSON.stringify(workingCopySettings.workerRoles)
       const previous = workingCopySettings
       workingCopySettings = settings
+      // Hosts ask their providers for next prompts only while this desktop wants them (ADR-0173).
+      if (nextPromptEnabled && settings.nextPromptSuggestions !== previous.nextPromptSuggestions) hostRouter.setNextPromptsWanted(settings.nextPromptSuggestions)
       menuBarOwl?.applySettings(settings)
       // A new interface language reaches the tray, the menu and both windows at once, with no restart (ADR-0123).
       if (await applyInterfaceLanguage(settings)) {
@@ -2183,7 +2187,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // registers nothing.
       const cleanupThreadMoves = registerThreadMoveIpc(ipcMain, watcherEnabled && crossMachineEnabled ? threadMoves : undefined, () => windows.getTrustedRenderers(),
         (channel, payload) => { windows.sendToMain(channel, payload) })
-      const cleanupNextPrompts = registerNextPromptIpc(ipcMain, localRuntime.nextPrompts, () => agentControl.hostId(), () => windows.getTrustedRenderers())
+      const cleanupNextPrompts = registerNextPromptIpc(ipcMain, nextPromptEnabled, localRuntime.nextPrompts, () => agentControl.hostId(), () => windows.getTrustedRenderers(), hostRouter)
+      // What the connected hosts push goes to the window as this computer's own does (ADR-0173).
+      const unsubscribeHostNextPrompts = nextPromptEnabled ? hostRouter.subscribeNextPrompts(entry => windows.sendToMain(NEXT_PROMPT_CHANGED, entry)) : undefined
       const cleanupNotifications = registerNotificationIpc(ipcMain, desktopNotifier, () => windows.getTrustedRenderers())
       // A recording profiles the main window that asked, through its own debugger (ADR-0098).
       const cleanupMainActivity = registerMainActivityIpc(ipcMain, mainActivity, () => windows.getTrustedRenderers(),
@@ -2395,7 +2401,10 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
             ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
           }),
           ...(cleanupModelEnabled ? {
-            models: () => listOpenRouterModels(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+            models: () => listOpenRouterModels({
+              getApiKey: async () => (await settings.forFormatting()).llmApiKey,
+              ...(e2eConfiguration === null ? {} : { fetchFn: () => Promise.reject(new Error('E2E_NETWORK_DISABLED')) }),
+            }),
           } : {}),
           ...(speechModelsReader === null ? {} : { speechModels: () => speechModelsReader.list(true) }),
         },
@@ -2437,6 +2446,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupContinue()
         cleanupThreadMoves()
         cleanupNextPrompts()
+        unsubscribeHostNextPrompts?.()
         cleanupMainActivity()
         cleanupGlassWindow()
         cleanupMainCheckout()

@@ -1,4 +1,5 @@
 import { setPromptText, promptText } from './helpers/promptEditor'
+import { ResponseStreamingProvider } from '../../../src/renderer/src/agents/responseStreaming'
 import { deferred } from '../../fixtures/deferred'
 import React from 'react'
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
@@ -713,7 +714,8 @@ describe('Thread transcript scrolling', () => {
       const live = liveAgentState(state)
       vi.mocked(useAgents).mockImplementation(() => ({ ...live.useLive(), responseStreaming }))
       const conversation = { receipts: new Map(keptInView.map(id => [id, []])), takeovers: new Map() } as unknown as WatcherConversation
-      render(keptInView.length ? <WatcherConversationContext.Provider value={conversation}><ThreadsView now={NOW} /></WatcherConversationContext.Provider> : <ThreadsView now={NOW} />)
+      const page = keptInView.length ? <WatcherConversationContext.Provider value={conversation}><ThreadsView now={NOW} /></WatcherConversationContext.Provider> : <ThreadsView now={NOW} />
+      render(<ResponseStreamingProvider value={responseStreaming}>{page}</ResponseStreamingProvider>)
       const transcript = screen.getByRole('log', { name: 'Thread transcript' })
       const update = (change: (thread: Thread) => Partial<Thread>): void => act(() => {
         live.publish({ host: { ...live.state.host, threads: live.state.host.threads.map(item => item.id === 'grok-previews' ? { ...item, ...change(item) } : item) } })

@@ -67,8 +67,10 @@ describe('threads render cost', async () => {
       const rows: Record<string, { msPerUpdate: number; reactMsPerUpdate: number; commits: number }> = {}
       for (const panes of [1, 2]) {
         let state = stateAround(host, open!.id)
-        const store = new ThreadDraftStore(vi.fn(async () => state))
-        const connection = (): ReturnType<typeof useAgents> => agentContextFixture(state, vi.fn(async () => state), { threadDrafts: store })
+        // One command for the whole run, as AgentContext keeps one: a new one per update would redraw every pane.
+        const command = vi.fn(async () => state)
+        const store = new ThreadDraftStore(command)
+        const connection = (): ReturnType<typeof useAgents> => agentContextFixture(state, command, { threadDrafts: store })
         const layoutStore = new SplitLayoutStore()
         if (panes === 2) layoutStore.set(openBeside(layoutStore.get(), open!.id, second.id))
 

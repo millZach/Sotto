@@ -1006,7 +1006,8 @@ export class GrokAcpHost implements AgentHost {
     if (profile && prompt.purpose !== 'next-prompt') return null
     if (this.aliases[id]?.kind === 'personal') return null
     const alias = this.aliases[id]
-    if (!this.state.connected || !alias?.grokSessionId) return null
+    // A new thread's next prompt (ADR-0173) is asked before its session exists; the writer is a session of its own.
+    if (!this.state.connected || !alias || !alias.grokSessionId && prompt.purpose !== 'next-prompt') return null
     const writer = new GrokSubscriptionClient(join(this.userDataDirectory, 'writing', 'grok'), {
       ...(this.options.executable ? { executable: this.options.executable } : {}), ...(this.options.args ? { prefixArgs: this.options.args } : {}),
       ...(this.options.environment ? { environment: this.options.environment } : {}) })

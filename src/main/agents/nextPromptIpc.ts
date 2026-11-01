@@ -13,17 +13,18 @@ export function windowNextPrompt(hostId: string | undefined, entry: NextPromptEn
 }
 
 /**
- * The main window's read of the next prompts main holds (ADR-0132), for a window that has just loaded; changes reach it
- * on `NEXT_PROMPT_CHANGED`. Where the Owl feature is off main builds no next prompts, so nothing is registered.
+ * The main window's read of the next prompts main holds (ADR-0132) and the ones its connected hosts pushed (ADR-0173), for
+ * a window that has just loaded; changes reach it on `NEXT_PROMPT_CHANGED`. Where the Owl feature is off nothing is
+ * registered. With this computer's own host off, only the hosts' are read.
  */
-export function registerNextPromptIpc(ipc: IpcMainAdapter, nextPrompts: { list(): readonly NextPromptEntry[] } | undefined,
-  hostId: () => string | undefined, senders: () => readonly TrustedIpcSender[]): () => void {
-  if (!nextPrompts) return () => undefined
+export function registerNextPromptIpc(ipc: IpcMainAdapter, enabled: boolean, nextPrompts: { list(): readonly NextPromptEntry[] } | undefined,
+  hostId: () => string | undefined, senders: () => readonly TrustedIpcSender[], hosts?: { hostNextPrompts(): readonly NextPromptEntry[] }): () => void {
+  if (!enabled) return () => undefined
   ipc.handle(NEXT_PROMPT_READ, (event, ...args) => {
     if (!isAuthorizedIpcSender(event, senders(), ['main'])) throw new Error(t`Read next prompts from the main Sotto window.`)
     noArguments.parse(args)
     const id = hostId()
-    return nextPromptEntriesSchema.parse(nextPrompts.list().map(entry => windowNextPrompt(id, entry)))
+    return nextPromptEntriesSchema.parse([...(nextPrompts?.list() ?? []).map(entry => windowNextPrompt(id, entry)), ...hosts?.hostNextPrompts() ?? []].slice(0, 1_000))
   })
   return () => { ipc.removeHandler(NEXT_PROMPT_READ) }
 }

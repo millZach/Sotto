@@ -87,6 +87,29 @@ describe('CleanupModelFields', () => {
     expect(screen.queryByText(/no longer lists this model/u)).toBeNull()
   })
 
+  it('accepts a pasted preset absent from the catalog and leaves its routing controls to the preset', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    const onListModels = vi.fn(async () => ({ ok: true as const, complete: true, models: MODELS }))
+    const { rerender } = render(<CleanupModelFields settings={{ llmModel: null, llmMode: 'nitro' }} onSave={onSave} onListModels={onListModels} />)
+    const box = screen.getByRole('combobox', { name: 'Cleanup model' })
+    await user.click(box)
+    await user.type(box, '@preset/qwen-cerebras')
+    await user.keyboard('{Enter}')
+    expect(onSave).toHaveBeenCalledWith({ llmModel: '@preset/qwen-cerebras' })
+
+    rerender(<CleanupModelFields settings={{ llmModel: '@preset/qwen-cerebras', llmMode: 'nitro' }} onSave={onSave} onListModels={onListModels} />)
+    expect(box).toHaveValue('@preset/qwen-cerebras')
+    expect(screen.queryByRole('radio', { name: 'Nitro' })).toBeNull()
+    expect(screen.queryByText(/no longer lists this model/u)).toBeNull()
+    expect(screen.getByText('Provider and reasoning settings come from this preset.')).toBeVisible()
+    expect(matchModels([{ id: '@preset/qwen-cerebras', name: 'Qwen Cerebras' }], '@preset/qwen-cerebras')).toHaveLength(1)
+    expect(matchModels([
+      { id: '@preset/qwen-cerebras-low', name: 'A quick model' },
+      { id: '@preset/qwen-cerebras', name: 'Zippy cleanup' },
+    ], '@preset/qwen-cerebras')[0]?.id).toBe('@preset/qwen-cerebras')
+  })
+
   it('lists only the models of servers added without a key, matched by model, ID or server', () => {
     expect(matchOwnModels([SPARKS, KEYED], '').map(model => model.own)).toEqual([SPARKS_CHOICE])
     expect(matchOwnModels([SPARKS, KEYED], 'sparks').map(model => model.name)).toEqual(['DeepSeek V4.1 Flash'])
