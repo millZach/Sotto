@@ -99,6 +99,7 @@ describe('Sotto Owl nightly workflow (ADR-0072, November 1, 2026)', () => {
     expect(publish).toContain('--prerelease --latest=false --notes-file owl-notes.md')
     expect(publish).toContain('git ls-remote --exit-code --tags')
     expect(publish.indexOf('git ls-remote')).toBeLessThan(publish.indexOf('gh release create'))
+    expect(publish.indexOf('gh release view "$tag"')).toBeLessThan(publish.indexOf('gh release create'))
     expect(publish.indexOf('gh release create')).toBeLessThan(publish.indexOf('gh release upload "$tag" SHA256SUMS.txt'))
     expect(step('publish', 'Check every file against its checksum and attestation')).toBeLessThan(step('publish', 'Publish the prerelease'))
     expect(step('publish', 'Check the release token')).toBe(0)
