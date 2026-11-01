@@ -285,11 +285,11 @@ describe('a picture file that grows while it is read', () => {
     const path = join(directory, 'growing.png'); await writeFile(path, png())
     const { open } = await import('node:fs/promises')
     const real = (await open(path, 'r'))
-    const prototype = Object.getPrototypeOf(real) as { read: (...args: unknown[]) => Promise<{ bytesRead: number }> }
+    const prototype = Object.getPrototypeOf(real) as { read: (buffer: Buffer, offset: number, length: number) => Promise<{ bytesRead: number }> }
     await real.close()
     const read = prototype.read
     // The file gains a byte after its size was taken: the read returns one more than the size said.
-    prototype.read = async function (this: unknown, buffer: Buffer, offset: number, length: number) { Buffer.concat([png(), Buffer.from([0])]).copy(buffer, offset); return { bytesRead: length } }
+    prototype.read = async (buffer, offset, length) => { Buffer.concat([png(), Buffer.from([0])]).copy(buffer, offset); return { bytesRead: length } }
     // What was read is a picture; only its growing makes it refused.
     try { expect(await store.captureFile(path, 'generated')).toEqual([]) } finally { prototype.read = read }
     expect(await store.captureFile(path, 'generated')).toHaveLength(1)

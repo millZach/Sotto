@@ -11,7 +11,7 @@ import { randomUUID } from 'node:crypto'
 import { copyFile, mkdir, readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
 import { expect, test, type Page } from '@playwright/test'
-import { owlEaselFrame, owlEaselGrid } from '../../src/renderer/src/agents/owlEasel'
+import { owlEaselFrame, owlEaselGrid } from '../../src/renderer/src/agents/owlEaselFrames'
 import { ownedE2EProfile, removeOwnedE2EProfile } from './support/e2eProfile'
 import { closeSotto, launchSotto, openThreads, resizeWindow, type LaunchedSotto } from './support/sottoLaunch'
 

@@ -1,7 +1,7 @@
 import Foundation
 
 /// The owl at the easel (ADR-0170): Watcher's owl paints a picture on an easel under the night sky while an agent makes
-/// an image. The desktop draws the same scene from `src/renderer/src/agents/owlEasel.ts`; this is its port. A frame is
+/// an image. The desktop draws the same scene from `src/renderer/src/agents/owlEaselFrames.ts`; this is its port. A frame is
 /// two layers of text the same size: `paint`, the picture as it is painted, and `sketch`, the easel, the owl, its brush
 /// and the stars. Nothing here draws; the tile writes the text.
 public enum OwlEasel {

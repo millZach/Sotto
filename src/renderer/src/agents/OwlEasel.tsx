@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, type ReactNode } from 'react'
 import { useReducedMotion } from '../state/reducedMotion'
-import { OWL_EASEL_FPS, owlEaselFrame, owlEaselGrid, owlEaselProgress } from './owlEasel'
+import { OWL_EASEL_FPS, owlEaselFrame, owlEaselGrid, owlEaselProgress } from './owlEaselFrames'
 
 const FRAME_MS = 1000 / OWL_EASEL_FPS
 

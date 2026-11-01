@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { OWL_EASEL_TILE_ROWS, owlEaselFrame, owlEaselProgress } from '../../../src/renderer/src/agents/owlEasel'
+import { OWL_EASEL_TILE_ROWS, owlEaselFrame, owlEaselProgress } from '../../../src/renderer/src/agents/owlEaselFrames'
 
 const painted = (text: string): number => text.replace(/[\s\n]/gu, '').length
 
