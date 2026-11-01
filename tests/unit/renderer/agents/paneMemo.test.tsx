@@ -46,7 +46,8 @@ it('draws neither pane when a thread not on screen streams, and only its own pan
 
   // A word on a shown thread draws that thread's pane alone, and not its branch toolbar, which reads none of its words.
   toolbarDraws.count = 0
-  publish(withThread(state, 'grok-previews', thread => ({ ...thread, messages: [...thread.messages] })))
+  publish(withThread(state, 'grok-previews', thread => ({ ...thread, messages: thread.messages.map((message, index) =>
+    index === thread.messages.length - 1 ? { ...message, text: `${message.text} and a word more` } : message) })))
   expect(drawn).toEqual(['grok-previews'])
   expect(toolbarDraws.count).toBe(0)
 

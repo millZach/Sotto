@@ -8,13 +8,15 @@ Part of #993, the composer half of its second item; #1957 did the panes. Measure
 SOTTO_PERF_BENCH=1 SOTTO_PERF_DATA=<a Sotto data folder> NODE_OPTIONS=--max-old-space-size=3072 npx vitest run tests/perf/threadsRender.perf.test.tsx --maxWorkers=1 --disable-console-intercept
 ```
 
-"Before" is the same file run on `origin/main` at `6e97b4f16`, four runs each, alternated, two rounds with the order
-reversed.
+"Before" is the same file run on `origin/main`, alternated with "after". The benchmark now also reports the render time of
+each pane's composer and of its branch toolbar (`composerMsPerUpdate`, `toolbarMsPerUpdate`), from a React Profiler
+around each. Its React figures are React's render time for an update, the Profiler's `actualDuration`, averaged over
+the timed updates.
 
 ## What it cost
 
 After #1957, the pane whose own thread streams is the one pane still drawn for every word, and its composer with it.
-Profiled per chunk on the open thread, the composer took 2.4-3.2 ms of React's time:
+Profiled per chunk on the open thread, a first look at the composer's parts gave this render time:
 
 | Part | React time per chunk |
 | --- | ---: |
@@ -36,27 +38,32 @@ the date of every message they held, and the open threads hold hundreds each.
   may also have moved in what moves while it streams (its messages, activity, summary, `updatedAt` and usage), so long as
   it still has a message or still has none. Of its row the toolbar reads only the thread.
 
-The chips, the editor and the composer's own body still draw with each chunk: they read the thread's newest user
-message, its summary and its usage, and are a third of what the toolbar was.
+The chips, the editor and the composer's own body still draw with each chunk, so this item is part of the composer's
+boundary, not all of it. They read the thread's newest user message, its summary and its usage, and they're handed props
+made afresh on each pane draw. What is left of them, 0.84-1.82 ms per chunk below, is about what the toolbar was. #1969
+has the rest.
 
 ## Before and after
 
-Milliseconds per update for a chunk on the open thread, the medians of each run, with React's own commit time in brackets:
+Per chunk on the open thread, the median time of an update and, in order, React's render time for the page, the panes'
+composers and their branch toolbars. "Before" ran on `origin/main` at `f976052cc` (two runs), "after" on this branch
+(three), alternated.
 
-| Update | Before (4 runs) | After (4 runs) |
-| --- | ---: | ---: |
-| 1 pane, chunk on the open thread | 19.1-23.0 (9.9-11.3) | 18.1-21.3 (8.6-9.4) |
-| 2 panes, chunk on the open thread | 15.8-17.3 (6.6-8.9) | 15.9-16.7 (7.7-8.2) |
+| Update | Before | After |
+| --- | --- | --- |
+| 1 pane, update | 23.5-26.7 ms | 22.3-23.2 ms |
+| 1 pane, page / composer / toolbar | 11.1-16.9 / 2.75-4.05 / 1.23-1.67 ms | 10.2-11.7 / 1.60-1.82 / 0 ms |
+| 2 panes, update | 17.7-25.0 ms | 15.7-16.9 ms |
+| 2 panes, page / composer / toolbar | 8.3-11.8 / 2.05-2.89 / 1.06-1.25 ms | 6.6-8.2 / 0.84-1.18 / 0 ms |
 
-Profiled the same way, the toolbar's own time per chunk fell from 1.0-1.25 ms to 0, and the composer's whole from
-2.4-3.2 ms to 1.2-1.37 ms. The page-level figures scatter by about 1.5 ms between rounds on forge. The two-pane React time
-came out higher after in the first round (8.1-8.2 against 6.6-7.3) and lower after in the second (7.7-8.2 against 7.8-8.9);
-the profile shows nothing of this change running there more often. The figures are jsdom on forge, so they are the ratio
-rather than the laptop's milliseconds.
+The page-level figures scatter by a few milliseconds between runs on forge, which other work shares; the composer's and
+the toolbar's are steadier. The figures are jsdom on forge, so they are the ratio rather than the laptop's
+milliseconds.
 
 ## The guards
 
-- `tests/unit/renderer/agents/paneMemo.test.tsx`, in the default suite: a word on a shown thread draws its pane and not
-  its branch toolbar. Without the toolbar's boundary it draws once per word.
+- `tests/unit/renderer/agents/paneMemo.test.tsx`, in the default suite: a word streaming onto a shown thread's reply draws
+  its pane and not its branch toolbar. Without the toolbar's boundary, or with one that compares records by identity
+  alone, it draws once per word.
 - `tests/unit/renderer/agents/paneWorld.test.ts`: `ownStreaming` keeps a part as it was while its own thread streams, but
   not when its first message lands or anything else of it changes.

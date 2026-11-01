@@ -198,7 +198,7 @@ function BranchToolbarView({ row, state, command, focused = true, onExplainedErr
  * covers with its own thread streaming.
  */
 export const BranchToolbar = memo(BranchToolbarView, (previous, next) => {
-  for (const key of Object.keys(next) as (keyof typeof next)[]) if (key !== 'row' && key !== 'state' && !Object.is(previous[key], next[key])) return false
+  for (const key of new Set([...Object.keys(previous), ...Object.keys(next)]) as Set<keyof typeof next>) if (key !== 'row' && key !== 'state' && !Object.is(previous[key], next[key])) return false
   return sameWhileStreaming(previous.row.thread, next.row.thread) && samePaneWorld(previous.state, next.state, next.row.thread.id, { ownStreaming: true })
 })
 
