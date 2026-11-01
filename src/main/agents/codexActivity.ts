@@ -16,7 +16,7 @@ const displayFields: Readonly<Record<string, readonly string[]>> = {
   collabAgentToolCall: ['tool', 'prompt', 'model', 'senderThreadId', 'receiverThreadIds', 'agentsStates'],
   subAgentActivity: ['kind', 'agentThreadId', 'agentPath', 'model'],
   webSearch: ['query'], contextCompaction: [],
-  imageGeneration: ['result', 'savedPath', 'revisedPrompt'],
+  imageGeneration: ['result', 'savedPath', 'revisedPrompt', 'failure'],
 }
 /**
  * Codex's Computer Use runs as MCP tool calls: `cua_repl`, or the general `node_repl` JavaScript tool with its
@@ -71,6 +71,7 @@ export const codexItemSchema = z.preprocess(value => {
   query: z.string().optional(), computerUse: z.literal(true).optional(),
   kind: z.string().optional(), agentThreadId: z.string().optional(), agentPath: z.string().optional(),
   imageData: z.string().optional(), savedPath: z.string().nullish(), revisedPrompt: z.string().nullish(),
+  failure: z.object({ type: z.string() }).nullish().catch(null),
 }))
 type Item = z.infer<typeof codexItemSchema>
 /**
@@ -153,7 +154,10 @@ export class CodexActivityProjection {
    * `capture` keeps a tool result's pictures in the thread media store and answers their handles (ADR-0170); absent while
    * the `inline-media` Owl feature is off, when a row carries none.
    */
-  /** Generated images whose saved file is being read, by activity ID, so a replay meanwhile reads it no second time. */
+  /**
+   * Generated images whose saved file is being read, by thread and activity, so a replay meanwhile reads it no second
+   * time, while a fork reading the same item reads its own.
+   */
   private readonly reading = new Set<string>()
   /**
    * `capture` keeps a tool result's or a generated image's pictures (ADR-0170); `captureFile` reads one Codex saved to a
@@ -247,14 +251,15 @@ export class CodexActivityProjection {
     const media = item.imageData && mimeType ? this.capture([{ mimeType, data: item.imageData }], 'generated') : []
     if (media.length) { activity.media = media; return }
     const path = item.savedPath
-    if (!path || !this.captureFile || this.reading.has(activity.id)) return
-    this.reading.add(activity.id)
+    const key = `${thread.id}\n${activity.id}`
+    if (!path || !this.captureFile || this.reading.has(key)) return
+    this.reading.add(key)
     void this.captureFile(path, 'generated').then(found => {
       const current = thread.activities?.find(record => record.id === activity.id)
       if (!found.length || !current || current.media) return
       this.put(thread, { ...current, media: found })
       this.changed?.(thread.id)
-    }).catch(() => undefined).finally(() => this.reading.delete(activity.id))
+    }).catch(() => undefined).finally(() => this.reading.delete(key))
   }
 
   item(thread: ActivityConversation, item: Item, context: Context, senderPath = ROOT_PATH): void {
@@ -265,7 +270,8 @@ export class CodexActivityProjection {
       dynamicToolCall: ['tool', item.tool ?? 'Tool'], reasoning: ['reasoning', REASONING_SUMMARY_TITLE],
       plan: ['plan', 'Plan'], collabAgentToolCall: ['subagent', item.tool ?? 'Subagent'],
       webSearch: ['tool', 'Web search'], contextCompaction: ['compaction', 'Context compacted'],
-      imageGeneration: ['tool', item.revisedPrompt?.trim() ? `Image: ${item.revisedPrompt.trim().split(/\r?\n/u)[0]}` : 'Image'],
+      // A generated image is a step only while its picture can be kept (ADR-0170): `inline-media` gives the capture.
+      ...this.capture ? { imageGeneration: ['tool', item.revisedPrompt?.trim() ? `Image: ${item.revisedPrompt.trim().split(/\r?\n/u)[0]}` : 'Image'] as [AgentActivity['kind'], string] } : {},
     }
     const kind = kinds[item.type]
     if (!kind) return
@@ -313,6 +319,8 @@ export class CodexActivityProjection {
     }
     if (item.type === 'imageGeneration') {
       activity.generates = 'image'
+      if (status === 'failed' && item.failure) activity.error = item.failure.type === 'usageLimitExceeded'
+        ? 'Codex reached its image limit, so no image was made. Try again when the limit resets.' : 'Codex could not make the image. Ask for it again to try once more.'
       if (status === 'completed') this.generated(thread, activity, previous, item)
     }
     // A Computer Use call that failed for a known reason says what to do, above Codex's own words.

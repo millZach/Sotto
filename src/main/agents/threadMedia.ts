@@ -69,7 +69,16 @@ async function readPicture(path: string): Promise<Buffer | undefined> {
   try {
     const stat = await file.stat()
     if (!stat.isFile() || stat.size < 1 || stat.size > AGENT_MAX_IMAGE_BYTES) return undefined
-    return await file.readFile()
+    // Read at most the size it had plus one byte: a file still growing is refused, never read past the limit.
+    const bytes = Buffer.alloc(stat.size + 1)
+    let length = 0
+    for (;;) {
+      const { bytesRead } = await file.read(bytes, length, bytes.length - length, length)
+      if (bytesRead === 0) break
+      length += bytesRead
+      if (length > stat.size) return undefined
+    }
+    return length > 0 ? bytes.subarray(0, length) : undefined
   } catch { return undefined } finally { await file.close().catch(() => undefined) }
 }
 

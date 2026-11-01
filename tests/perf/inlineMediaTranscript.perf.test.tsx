@@ -205,7 +205,7 @@ describe('inline media cost', () => {
       const rendered = render(view())
       const scenes = (): Element[] => [...rendered.container.querySelectorAll('.owl-easel')]
       expect(scenes()).toHaveLength(MAKING)
-      // Each scene draws one still frame as it mounts, so its tile is never blank.
+      // A scene draws nothing until it first comes on screen.
       const mountFrames = owlEaselFramesDrawn() - before
 
       // Off screen: nothing runs.
@@ -236,11 +236,12 @@ describe('inline media cost', () => {
       console.info(`owl at the easel: ${JSON.stringify(result)}`)
       rendered.unmount()
 
-      expect(mountFrames).toBe(MAKING)
+      expect(mountFrames).toBe(0)
       expect(offScreenFrames).toBe(0)
       expect(offScreenQueued).toBe(0)
       expect(inViewFrames).toBeGreaterThan(0)
-      expect(inViewFrames).toBeLessThanOrEqual(MAKING * Math.ceil(SECONDS * 1000 / FRAME))
+      // At most twelve a second each, and the one each draws the moment it comes on screen.
+      expect(inViewFrames).toBeLessThanOrEqual(MAKING * (Math.ceil(SECONDS * 1000 / FRAME) + 1))
       expect(playCommits).toBe(0)
       expect(result.landedScenes).toBe(0)
       expect(landedFrames).toBe(0)

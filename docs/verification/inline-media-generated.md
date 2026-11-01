@@ -29,9 +29,9 @@ The without-pictures numbers moved the same way between runs (chunk React 8.67 /
 
 | | Count |
 | --- | --- |
-| Frames each scene draws as it mounts | 1 |
+| Frames drawn before a scene first comes on screen | 0 |
 | Frames drawn in 2 s off screen, and frame requests left waiting | 0, 0 |
-| Frames per scene per second in view | 10 (at most 12) |
+| Frames per scene per second in view | 10 (at most 12, plus one as it comes on screen) |
 | React commits while the scenes play | 0 |
 | Time per frame drawn | 0.05 ms |
 | Frames drawn in 2 s after the pictures land, and requests left waiting | 0, 0 |

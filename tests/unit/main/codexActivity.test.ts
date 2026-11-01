@@ -13,15 +13,17 @@ const context = { turnId: 'turn-1', phase: 'started' as const, afterMessageId: '
 describe('Codex activity projection', () => {
   it('ignores unsupported native item payloads without interpreting shared field names as tool output', () => {
     const t = thread(); const projection = new CodexActivityProjection()
+    const image = codexItemSchema.parse({ id: 'image', type: 'imageGeneration', status: 'completed', result: 'SYNTHETIC_IMAGE_RESULT', revisedPrompt: null })
     const item = { id: 'future', type: 'futureNativeItem', result: ['opaque'], error: 'opaque', content: 'private', summary: 'opaque' }
     const parsed = codexItemSchema.parse(item)
     expect(parsed).toEqual({ id: item.id, type: item.type })
-    projection.item(t, parsed, { ...context, phase: 'completed' })
+    // Without `inline-media` a generated image is no step, as before (ADR-0170).
+    for (const each of [image, parsed]) projection.item(t, each, { ...context, phase: 'completed' })
     expect(t.activities).toBeUndefined()
     expect(t.messages).toHaveLength(1)
   })
   it('shows a generated image as an image step, never reading its result as tool output or keeping it (ADR-0170)', () => {
-    const t = thread(); const projection = new CodexActivityProjection()
+    const t = thread(); const projection = new CodexActivityProjection(undefined, () => [])
     const parsed = codexItemSchema.parse({ id: 'image', type: 'imageGeneration', status: 'completed', result: 'SYNTHETIC_IMAGE_RESULT', revisedPrompt: null })
     expect(parsed.result).toBeUndefined()
     projection.item(t, parsed, { ...context, phase: 'completed' })

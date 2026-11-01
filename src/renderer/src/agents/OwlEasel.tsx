@@ -11,8 +11,8 @@ export function owlEaselFramesDrawn(): number { return framesDrawn }
 /**
  * The owl at the easel, playing in a tile while an agent makes an image (ADR-0170). It writes its two layers of text
  * straight into the page, never through React, twelve times a second while the tile is on screen and the window is
- * shown. Off screen, hidden or unmounted (the picture landed) it draws nothing and holds no timer; under reduced motion
- * it draws one frame and holds it.
+ * shown. Until it first shows, off screen, hidden or unmounted (the picture landed) it draws nothing and holds no timer;
+ * under reduced motion it draws one frame when it first shows and holds it.
  */
 export function OwlEasel({ startedAt }: { readonly startedAt: number }): ReactNode {
   const box = useRef<HTMLDivElement>(null)
@@ -30,8 +30,7 @@ export function OwlEasel({ startedAt }: { readonly startedAt: number }): ReactNo
       paint.current!.textContent = frame.paint; sketch.current!.textContent = frame.sketch
       framesDrawn += 1
     }
-    draw()
-    if (still) return undefined
+    // Nothing is drawn until the tile first comes on screen: one never seen costs nothing (ADR-0170).
     let raf = 0, last = 0, visible = false
     const loop = (now: number): void => {
       raf = 0
@@ -43,10 +42,13 @@ export function OwlEasel({ startedAt }: { readonly startedAt: number }): ReactNo
     const halt = (): void => { if (raf) cancelAnimationFrame(raf); raf = 0 }
     const observer = new IntersectionObserver(entries => {
       visible = entries.at(-1)?.isIntersecting ?? false
-      if (visible) run(); else halt()
+      // Under reduced motion, one still frame the first time it shows, and nothing after.
+      if (still) { if (visible) { draw(); observer.disconnect() } return }
+      // Coming on screen it draws at once, so it never shows a blank tile, then runs.
+      if (visible) { if (!raf) draw(); run() } else halt()
     })
     observer.observe(element)
-    const shown = (): void => { if (document.hidden) halt(); else run() }
+    const shown = (): void => { if (document.hidden) halt(); else if (!still) run() }
     document.addEventListener('visibilitychange', shown)
     return () => { observer.disconnect(); document.removeEventListener('visibilitychange', shown); halt() }
   }, [startedAt, still])

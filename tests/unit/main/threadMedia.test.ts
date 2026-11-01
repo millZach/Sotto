@@ -217,18 +217,33 @@ describe('an image Codex generates', () => {
     expect(reads).toBe(1)
   })
 
-  it('has no picture without the feature, and none for a failed generation', async () => {
+  it('is no step at all without the feature, and a failed generation says why with no picture', async () => {
     const off = new CodexActivityProjection(() => 1_000)
     const conversation = thread()
     off.item(conversation, codexItemSchema.parse({ ...started, status: 'completed', result: b64(png()) }), { turnId: 'turn', phase: 'completed' })
-    expect(conversation.activities?.[0]).toEqual(expect.objectContaining({ generates: 'image', status: 'completed' }))
-    expect(conversation.activities?.[0]?.media).toBeUndefined()
+    expect(conversation.activities).toBeUndefined()
     const store = new ThreadMediaStore(await folder()); await store.load()
     const on = new CodexActivityProjection(() => 1_000, store.capture)
     const failed = thread()
-    on.item(failed, codexItemSchema.parse({ ...started, status: 'failed', result: '' }), { turnId: 'turn', phase: 'completed' })
-    expect(failed.activities?.[0]?.status).toBe('failed')
+    on.item(failed, codexItemSchema.parse({ ...started, status: 'failed', result: '', failure: { type: 'usageLimitExceeded', limitId: 'images', resetsAt: 1 } }), { turnId: 'turn', phase: 'completed' })
+    expect(failed.activities?.[0]).toEqual(expect.objectContaining({ status: 'failed', generates: 'image', error: 'Codex reached its image limit, so no image was made. Try again when the limit resets.' }))
     expect(failed.activities?.[0]?.media).toBeUndefined()
+    // A failure Sotto does not know still reads, and still says what to do.
+    const other = thread()
+    on.item(other, codexItemSchema.parse({ ...started, status: 'failed', failure: { type: 'somethingNew', detail: 'x' } }), { turnId: 'turn', phase: 'completed' })
+    expect(other.activities?.[0]?.error).toBe('Codex could not make the image. Ask for it again to try once more.')
+  })
+
+  it('reads the saved file for a fork reading the same item at the same time, so both get the picture', async () => {
+    const directory = await folder()
+    const store = new ThreadMediaStore(directory); await store.load()
+    const path = join(directory, 'owl.png'); await writeFile(path, png(640, 480))
+    const projection = new CodexActivityProjection(() => 1_000, store.capture, store.captureFile)
+    const original = thread(), fork = { ...thread(), id: 'fork' }
+    const done = codexItemSchema.parse({ ...started, status: 'completed', fileId: 'file_1', savedPath: path })
+    projection.item(original, done, { turnId: 'turn', phase: 'history' })
+    projection.item(fork, done, { turnId: 'turn', phase: 'history' })
+    await expect.poll(() => [original, fork].map(each => each.activities?.[0]?.media?.length ?? 0)).toEqual([1, 1])
   })
 })
 
@@ -260,5 +275,23 @@ describe('a record\'s pictures on the detail stream and the phone', () => {
   it('tells the phone a step makes an image, so it can play the owl while it runs', () => {
     expect(activitySummary({ ...base, status: 'running', generates: 'image' })).toEqual({ ...base, status: 'running', generates: 'image' })
     expect(agentActivitySignature({ ...base, generates: 'image' })).not.toBe(agentActivitySignature(base))
+  })
+})
+
+describe('a picture file that grows while it is read', () => {
+  it('is refused rather than read past the size it had', async () => {
+    const directory = await folder()
+    const store = new ThreadMediaStore(directory); await store.load()
+    const path = join(directory, 'growing.png'); await writeFile(path, png())
+    const { open } = await import('node:fs/promises')
+    const real = (await open(path, 'r'))
+    const prototype = Object.getPrototypeOf(real) as { read: (...args: unknown[]) => Promise<{ bytesRead: number }> }
+    await real.close()
+    const read = prototype.read
+    // The file gains a byte after its size was taken: the read returns one more than the size said.
+    prototype.read = async function (this: unknown, buffer: Buffer, offset: number, length: number) { Buffer.concat([png(), Buffer.from([0])]).copy(buffer, offset); return { bytesRead: length } }
+    // What was read is a picture; only its growing makes it refused.
+    try { expect(await store.captureFile(path, 'generated')).toEqual([]) } finally { prototype.read = read }
+    expect(await store.captureFile(path, 'generated')).toHaveLength(1)
   })
 })
