@@ -24,7 +24,7 @@ import { z } from 'zod'
 import { attachmentReferences, agentAttachmentReferenceSchema, agentProjectSchema, agentRuntimeModeSchema, agentSpeedSchema, PROVIDER_LABELS, type AgentHostSnapshot, type AgentMessage, type AgentRuntimeMode, type AgentThread, type ProviderId } from '../../shared/agents'
 import { AtomicJsonStore } from '../storage/atomicJsonStore'
 import { ClaudeOriginJournal } from './claudeOriginJournal'
-import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ThreadHistorySource, ThreadHostEvent, ThreadForkRequest, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
+import type { ActivitySubscriptionOptions, AgentHost, AgentHostCommand, AgentHostResult, AgentSkillScope, WatcherLaunchProfile, ThreadLaunchProfiles, RestoredThreadHistory, ShortTextPrompt, ShortTextTarget, ThreadHistorySource, ThreadHostEvent, ThreadForkRequest, ThreadReadPurpose, ThreadSessionDraft, WorkerRoleSource } from './host'
 import { claudeSubagents, narrowerMode } from './subagentRoles'
 import { subagentRoleInstructions } from '../../shared/workerRoles'
 import { DELEGATE_MCP_SERVER } from '../../shared/delegation'
@@ -792,6 +792,13 @@ export class ClaudeStreamJsonHost implements AgentHost {
     const workingDirectory = await existingWorkingDirectory(alias.cwd)
     this.checkProfileContinuation(id, generation)
     return this.client.write({ ...prompt, model: alias.modelId, ...(effort ? { effort } : {}), workingDirectory,
+      executable: this.executable, timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
+  }
+  /** A side call for what has no session yet (ADR-0173), on the model chosen, at its least effort. */
+  async writeShortTextOn(target: ShortTextTarget, prompt: ShortTextPrompt, signal?: AbortSignal): Promise<string | null> {
+    if (!this.state.connected || !this.executable) return null
+    const effort = sideWritingEffort(this.state.models, target.modelId)
+    return this.client.write({ ...prompt, model: target.modelId, ...(effort ? { effort } : {}), workingDirectory: await existingWorkingDirectory(target.cwd ?? homedir()),
       executable: this.executable, timeoutMs: SIDE_WRITING_TIMEOUT_MS, ...(signal ? { signal } : {}) })
   }
   /**

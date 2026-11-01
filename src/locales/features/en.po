@@ -5316,6 +5316,11 @@ msgstr "Subscription limits could not be read again. Your saved figures are stil
 msgid "Subscriptions"
 msgstr "Subscriptions"
 
+#. {ghostText} is the suggested message to Watcher.
+#: src/renderer/src/watcher/WatcherView.tsx
+msgid "Suggested first message: {ghostText}. Press Tab to take it."
+msgstr "Suggested first message: {ghostText}. Press Tab to take it."
+
 #: src/renderer/src/features/memory/MemoryInspector.tsx
 msgid "Supersede"
 msgstr "Supersede"

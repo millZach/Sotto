@@ -22,6 +22,8 @@ import { registerContinueIpc } from './agents/continueThreadIpc'
 import { moveTargetsOf } from './agents/threadMoves'
 import { registerThreadMoveIpc } from './agents/threadMovesIpc'
 import { registerNextPromptIpc, windowNextPrompt } from './agents/nextPromptIpc'
+import { nextPromptWatcherFacts } from './agents/nextPromptProject'
+import { nextPromptWatcherRequest, parseNextPrompt } from './llm/nextPrompt'
 import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_RENDERER_ARGUMENT } from '../shared/nextPrompt'
 import { DELEGATION_RENDERER_ARGUMENT } from '../shared/delegation'
 import { CONTINUE_RENDERER_ARGUMENT } from '../shared/continueThread'
@@ -2187,7 +2189,17 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       // registers nothing.
       const cleanupThreadMoves = registerThreadMoveIpc(ipcMain, watcherEnabled && crossMachineEnabled ? threadMoves : undefined, () => windows.getTrustedRenderers(),
         (channel, payload) => { windows.sendToMain(channel, payload) })
-      const cleanupNextPrompts = registerNextPromptIpc(ipcMain, nextPromptEnabled, localRuntime.nextPrompts, () => agentControl.hostId(), () => windows.getTrustedRenderers(), hostRouter)
+      // Watcher's first-start ask is not a thread's, so ShortTextWriter does not hold it: quitting stops it here.
+      const watcherFirstAsks = new AbortController()
+      const cleanupNextPrompts = registerNextPromptIpc(ipcMain, nextPromptEnabled, localRuntime.nextPrompts, () => agentControl.hostId(), () => windows.getTrustedRenderers(), hostRouter,
+        // Watcher's first-start box (ADR-0173): its picked model's provider on this computer, from the user's latest threads on every host.
+        async modelId => {
+          if (!workingCopySettings.nextPromptSuggestions || !agentHistoryEnabled) return null
+          const facts = nextPromptWatcherFacts(hostRouter.view().host)
+          if (facts.threads.length === 0) return null
+          const { instruction, material, purpose } = nextPromptWatcherRequest(facts)
+          return parseNextPrompt(await agentHost.writeShortTextOn({ modelId }, { instruction, material, purpose }, watcherFirstAsks.signal))
+        })
       // What the connected hosts push goes to the window as this computer's own does (ADR-0173).
       const unsubscribeHostNextPrompts = nextPromptEnabled ? hostRouter.subscribeNextPrompts(entry => windows.sendToMain(NEXT_PROMPT_CHANGED, entry)) : undefined
       const cleanupNotifications = registerNotificationIpc(ipcMain, desktopNotifier, () => windows.getTrustedRenderers())
@@ -2446,6 +2458,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         cleanupContinue()
         cleanupThreadMoves()
         cleanupNextPrompts()
+        watcherFirstAsks.abort()
         unsubscribeHostNextPrompts?.()
         cleanupMainActivity()
         cleanupGlassWindow()

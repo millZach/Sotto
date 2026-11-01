@@ -7,6 +7,8 @@ import { z } from 'zod'
  */
 export const NEXT_PROMPT_READ = 'sotto:next-prompt:read'
 export const NEXT_PROMPT_CHANGED = 'sotto:next-prompt:changed'
+/** Watcher's first-start box asks for the first message it suggests (ADR-0173), on the model the user picked there. */
+export const NEXT_PROMPT_WATCHER_FIRST = 'sotto:next-prompt:watcher-first'
 export const NEXT_PROMPT_RENDERER_ARGUMENT = '--sotto-next-prompt-enabled'
 
 /** What each of the four suggestions is for, in the order they are listed. */
@@ -50,4 +52,6 @@ export interface NextPromptBridge {
   /** Every next prompt main holds now, for a window that has just loaded. */
   read(): Promise<readonly NextPromptEntry[]>
   onChanged(listener: (entry: NextPromptEntry) => void): () => void
+  /** A first message for Watcher, on the model picked in its first-start box; null when there is nothing to suggest. */
+  watcherFirst(modelId: string): Promise<NextPrompt | null>
 }

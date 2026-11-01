@@ -34,7 +34,7 @@ import {
   OWN_SERVER_CLEANUP_MEASURE, OWN_SERVER_CLEANUP_MEASURED, OWN_SERVER_CLEANUP_RENDERER_ARGUMENT, ownCleanupChoiceSchema, ownCleanupMeasuredListSchema,
   ownCleanupMeasureResultSchema, type OwnServerCleanupBridge,
 } from '../shared/ownServerCleanup'
-import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_READ, NEXT_PROMPT_RENDERER_ARGUMENT, nextPromptEntriesSchema, nextPromptEntrySchema, type NextPromptBridge } from '../shared/nextPrompt'
+import { NEXT_PROMPT_CHANGED, NEXT_PROMPT_READ, NEXT_PROMPT_RENDERER_ARGUMENT, NEXT_PROMPT_WATCHER_FIRST, nextPromptEntriesSchema, nextPromptEntrySchema, nextPromptSchema, type NextPromptBridge } from '../shared/nextPrompt'
 import { THREAD_MOVE_ANSWER, THREAD_MOVE_PREPARE, THREAD_MOVE_START, THREAD_MOVES_CHANGED, THREAD_MOVES_READ, threadMoveAnswerRequestSchema, threadMoveAnswerSchema,
   threadMovePrepareRequestSchema, threadMovePrepareSchema, threadMovesViewSchema, threadMoveStartRequestSchema, threadMoveStartSchema,
   type ThreadMovesBridge } from '../shared/threadMoves'
@@ -196,6 +196,9 @@ const hotkeyResultSchema = z.discriminatedUnion('ok', [
     .strict(),
 ])
 const unavailableSchema = z.object({ ok: z.literal(false), reason: z.literal('unavailable') }).strict()
+/** Watcher's first-start suggestion (ADR-0173): the model it is asked on, and what main answers. */
+const watcherFirstModelSchema = z.string().min(1).max(512)
+const watcherFirstAnswerSchema = nextPromptSchema.nullable()
 const dictationShortcutsChangeSchema = z.object({ press: z.array(z.string().min(1).max(64)).min(1).max(4), hold: z.array(z.string().min(1).max(64)).max(4) }).strict()
 const dictationShortcutsResultSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(true) }).strict(),
@@ -540,6 +543,7 @@ export function createSottoBridge(
     ...(nextPromptEnabled ? { nextPrompt: Object.freeze<NextPromptBridge>({
       read: () => invokeParsed(renderer, NEXT_PROMPT_READ, nextPromptEntriesSchema),
       onChanged: listener => subscribe(renderer, NEXT_PROMPT_CHANGED, nextPromptEntrySchema, listener),
+      watcherFirst: modelId => invokeParsed(renderer, NEXT_PROMPT_WATCHER_FIRST, watcherFirstAnswerSchema, watcherFirstModelSchema.parse(modelId)),
     }) } : {}),
     // Continue a thread on another provider (ADR-0089): only while the Owl list turns it on, so stable's window has no such bridge.
     ...(continueEnabled ? { continueThread: Object.freeze<ContinueBridge>({

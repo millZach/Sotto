@@ -27,7 +27,11 @@ import { EffortTrace } from '../agents/EffortTrace'
 import { ModelPicker } from '../agents/ModelPicker'
 import { OwlRoomSky } from '../agents/OwlSky'
 import { useClock } from '../agents/paneGrid'
-import { PromptEditor, type PromptEditorElement } from '../agents/PromptEditor'
+import { PromptEditor, setPromptSelection, type PromptEditorElement } from '../agents/PromptEditor'
+import { promptDocText } from '../agents/promptDocument'
+import { DICTATING, ghostRest, withNextText } from '../agents/nextPrompts'
+import { chordClaimed } from '../agents/branchToolbar.logic'
+import type { NextPrompt } from '../../../shared/nextPrompt'
 import { useShared } from '../agents/stateSharing'
 import { threadDescriber, useWordsRevision, type ThreadRow } from '../agents/threadFacts'
 import { useContinueEnabled } from '../agents/continuations'
@@ -63,6 +67,15 @@ import { WatcherPermissionChip } from './WatcherPermissionChip'
 import { useOrchestratingSpeed, useOrchestratingStart, useSaveOrchestrating } from './orchestratingRole'
 
 const WATCHER_PROMPT_ID = 'watcher-prompt'
+
+/**
+ * Watcher's suggested first message (ADR-0173), kept per model picked in the first-start box for as long as the window is
+ * open, so reopening the room or picking a model again asks nothing more. Nothing to suggest is not kept: the next pick
+ * or opening asks again, once the model's provider has connected or threads have arrived.
+ */
+const watcherFirstAsked = new Map<string, Promise<NextPrompt | null>>()
+/** A pick stands this long before its provider is asked, so a model chosen in passing, or the first one shown while the catalog loads, costs nothing. */
+const WATCHER_FIRST_SETTLE_MS = 800
 const WATCHER_PANE_ID = 'watcher-pane'
 
 /** What Watcher's header holds besides its name: All threads and its count, and, once Watcher runs, Stop all. */
@@ -152,6 +165,39 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
   const levels = efforts.filter(option => !option.disabled).map(option => option.id)
   const starting = phase !== 'writing'
   const field = useRef<PromptEditorElement | null>(null)
+  const caretAfterInsert = useRef<number | null>(null)
+  // A first message to suggest (ADR-0173): the picked model's provider brainstorms from the user's latest threads, and its
+  // #1 idea is the ghost, which Tab takes and Escape puts away. It steps aside while dictation writes.
+  const nextOn = useOwlFeature('next-prompt') && app?.settings?.nextPromptSuggestions !== false
+  const [suggested, setSuggested] = useState<{ readonly modelId: string; readonly ghost: string } | null>(null)
+  // Escape puts away the ghost it was pressed on; another model's suggestion still shows.
+  const [dismissed, setDismissed] = useState<string | null>(null)
+  const pickedId = model?.id
+  useEffect(() => {
+    const bridge = window.sotto?.nextPrompt
+    if (!nextOn || pickedId === undefined || !bridge) return
+    let live = true
+    const timer = window.setTimeout(() => {
+      let asked = watcherFirstAsked.get(pickedId)
+      if (!asked) {
+        asked = bridge.watcherFirst(pickedId).catch(() => null)
+        watcherFirstAsked.set(pickedId, asked)
+        void asked.then(prompt => { if (!prompt?.ghost) watcherFirstAsked.delete(pickedId) })
+      }
+      void asked.then(prompt => { if (live && prompt?.ghost) setSuggested({ modelId: pickedId, ghost: prompt.ghost }) })
+    }, watcherFirstAsked.has(pickedId) ? 0 : WATCHER_FIRST_SETTLE_MS)
+    return () => { live = false; window.clearTimeout(timer) }
+  }, [nextOn, pickedId])
+  const ghostText = suggested !== null && suggested.modelId === pickedId ? suggested.ghost : ''
+  const ghost = ghostText && !starting && dismissed !== ghostText && !DICTATING.has(app?.dictation?.status ?? 'idle') ? ghostRest(ghostText, text) : null
+  const tabFree = chordClaimed('tab', app?.settings?.hotkey, app?.platform ?? 'win32')
+  // A taken ghost puts the caret after it once the editor holds the new text.
+  useLayoutEffect(() => {
+    const caret = caretAfterInsert.current
+    if (caret === null || field.current === null || promptDocText(field.current.editor.getJSON()) !== text) return
+    caretAfterInsert.current = null
+    setPromptSelection(field.current, caret)
+  })
   const [notices, setNotices] = useState<HTMLElement | null>(null)
   const provider = model === undefined ? null : watcherProviderOf(model)
   const speeds = offeredSpeeds(model, provider ?? undefined)
@@ -211,14 +257,25 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
         {/* The quiet pill draws the shield at its start, before the prompt (ADR-0161). */}
         {quiet ? <div className="thread-prompt__lead">{permissions}</div> : null}
         <div className="screenshot-input"><div>
-        <PromptEditor fieldRef={field} id={WATCHER_PROMPT_ID} text={text} skills={[]} sigils={[]} label={t`Watcher message`} editable={!starting}
-          placeholder={t`Say what to start or check.`}
+        <PromptEditor fieldRef={field} caretAfterInsert={caretAfterInsert} id={WATCHER_PROMPT_ID} text={text} skills={[]} sigils={[]} label={t`Watcher message`} editable={!starting}
+          placeholder={t`Say what to start or check.`} ghost={ghost}
+          aria-describedby={ghost !== null ? `${WATCHER_PROMPT_ID}-ghost` : undefined}
           onChange={next => firstMessage.update({ text: next })}
           onKeyDown={event => {
+            const plain = !event.nativeEvent.isComposing && !event.altKey && !event.ctrlKey && !event.metaKey
+            if (plain && ghost !== null && event.key === 'Tab' && !event.shiftKey && tabFree) {
+              event.preventDefault()
+              const next = withNextText(text, ghostText)
+              caretAfterInsert.current = next.length
+              firstMessage.update({ text: next })
+              return
+            }
+            if (plain && ghost !== null && event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); setDismissed(ghostText); return }
             if (event.key !== 'Enter' || event.shiftKey || event.altKey || event.nativeEvent.isComposing) return
             event.preventDefault()
             void start()
           }} />
+        {ghost !== null ? <span className="tt-visually-hidden" id={`${WATCHER_PROMPT_ID}-ghost`}>{t({ message: `Suggested first message: ${ghostText}. Press Tab to take it.`, comment: '{ghostText} is the suggested message to Watcher.' })}</span> : null}
         </div></div>
         <label className="tt-visually-hidden" htmlFor={WATCHER_PROMPT_ID} onClick={() => field.current?.focus()}>{t`Watcher message`}</label>
         <div className="thread-prompt__footer">
