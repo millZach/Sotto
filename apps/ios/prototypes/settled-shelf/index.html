@@ -1,0 +1,233 @@
+<!doctype html>
+<!-- PROTOTYPE, throwaway: three ways the iPhone's Settled shelf could work once a phone is sent only unsettled and
+     Needs-you threads, and settled ones come from the computer when asked. ?variant=A|B|C. Fictional data; nothing is sent. -->
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Sotto · Settled shelf study</title>
+<style>
+  :root { --canvas:#0f1113; --surface:#171a1d; --raised:#1f2327; --overlay:#262b30; --ink:#eef1f3; --muted:#9aa4ad; --border:#2c3238; --hair:#22272c; --accent:#7cc4a4; --warning:#e7b45a; --danger:#e57373; --r:14px; }
+  [data-theme=light] { --canvas:#f6f7f8; --surface:#ffffff; --raised:#f0f2f4; --overlay:#e8ebee; --ink:#15191c; --muted:#5b6670; --border:#d7dce0; --hair:#e6e9ec; --accent:#2f7d5c; --warning:#9a6408; --danger:#b3261e; }
+  * { box-sizing:border-box } html,body { margin:0; background:#08090a; color:var(--ink); font-family:Figtree, -apple-system, "Segoe UI", system-ui, sans-serif }
+  [data-theme=light] body { background:#cfd5da }
+  .studio { display:grid; grid-template-columns:minmax(220px,340px) 400px minmax(220px,320px); gap:32px; justify-content:center; align-items:start; padding:28px 20px 96px }
+  @media (max-width: 1100px) { .studio { grid-template-columns:1fr; justify-items:center } .notes, .try { max-width:400px } }
+  .notes h1 { font-size:22px; margin:6px 0 10px } .eyebrow { font-size:11px; letter-spacing:.12em; color:var(--muted); margin:0 }
+  .notes p, .notes li { color:var(--muted); font-size:14px; line-height:1.5 } .notes ul { padding-left:18px } .notes b { color:var(--ink) }
+  .try button { display:block; width:100%; margin:0 0 8px; padding:10px 12px; text-align:left; border-radius:10px; border:1px solid var(--border); background:var(--surface); color:var(--ink); font:inherit; font-size:14px; cursor:pointer }
+  .state { margin-top:14px; font:12px/1.5 ui-monospace, Consolas, monospace; color:var(--muted); white-space:pre-wrap; background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:10px }
+  .phone { width:400px; height:820px; border-radius:48px; background:var(--canvas); border:10px solid #000; position:relative; overflow:hidden; box-shadow:0 30px 80px rgba(0,0,0,.5) }
+  .status { height:44px; display:flex; justify-content:space-between; align-items:center; padding:0 26px; font-size:14px; font-weight:600 }
+  .screen { position:absolute; inset:44px 0 0 0; overflow-y:auto; padding:0 16px 120px }
+  .title { display:flex; align-items:center; justify-content:space-between; margin:6px 2px 10px } .title h2 { margin:0; font-size:30px }
+  .pill { font-size:13px; padding:7px 12px; border-radius:999px; background:var(--raised); color:var(--ink); border:none }
+  .search { width:100%; padding:11px 14px; border-radius:12px; border:1px solid var(--border); background:var(--surface); color:var(--ink); font:inherit; font-size:15px; margin-bottom:6px }
+  .heading { display:flex; justify-content:space-between; align-items:center; font-size:13px; font-weight:600; color:var(--muted); margin:20px 4px 8px }
+  .heading .dot { width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:7px }
+  .card { background:var(--surface); border:1px solid var(--border); border-radius:var(--r); padding:12px 14px; margin-bottom:10px }
+  .card.needs { border-color:color-mix(in srgb, var(--warning) 45%, var(--border)) }
+  .card small, .row small { color:var(--muted); font-size:12.5px } .card .q { margin:6px 0 10px; font-size:14.5px }
+  .card .actions { display:flex; gap:8px } .card .actions button { flex:1; padding:9px; border-radius:10px; border:1px solid var(--border); background:var(--raised); color:var(--ink); font:inherit; font-size:14px }
+  .row { display:flex; justify-content:space-between; align-items:center; padding:12px 6px; border-bottom:1px solid var(--hair); user-select:none; cursor:default; border-radius:8px }
+  .row:active { background:var(--raised) } .row .t { font-size:15px } .row .meta { text-align:right }
+  .toggle { width:100%; display:flex; align-items:center; gap:8px; background:none; border:none; color:var(--muted); font:inherit; font-size:13px; font-weight:600; padding:16px 4px; cursor:pointer }
+  .toggle .chev { transition:transform .25s } .toggle.open .chev { transform:rotate(90deg) } .toggle .n { margin-left:auto; font-weight:400 }
+  .loading { display:flex; align-items:center; gap:10px; padding:14px 6px; color:var(--muted); font-size:14px }
+  .spin { width:16px; height:16px; border:2px solid var(--border); border-top-color:var(--muted); border-radius:50%; animation:s .8s linear infinite } @keyframes s { to { transform:rotate(360deg) } }
+  @media (prefers-reduced-motion: reduce) { .spin { animation:none } .toggle .chev { transition:none } }
+  .more { width:100%; padding:12px; margin:8px 0; border-radius:12px; border:1px dashed var(--border); background:none; color:var(--muted); font:inherit; font-size:14px; cursor:pointer }
+  .linkrow { display:flex; justify-content:space-between; align-items:center; padding:14px; margin-top:16px; border-radius:var(--r); background:var(--surface); border:1px solid var(--border); cursor:pointer; font-size:15px }
+  .linkrow small { color:var(--muted) }
+  .subtle { color:var(--muted); font-size:13px; padding:4px 6px 10px; line-height:1.45 }
+  .menu { position:absolute; z-index:5; min-width:200px; background:var(--overlay); border:1px solid var(--border); border-radius:14px; box-shadow:0 12px 40px rgba(0,0,0,.45); overflow:hidden }
+  .menu button { display:block; width:100%; text-align:left; padding:13px 16px; background:none; border:none; border-bottom:1px solid var(--hair); color:var(--ink); font:inherit; font-size:15px; cursor:pointer } .menu button:last-child { border-bottom:none }
+  .banner { position:absolute; left:14px; right:14px; bottom:34px; z-index:6; display:flex; align-items:center; justify-content:space-between; padding:12px 14px; border-radius:14px; background:var(--overlay); border:1px solid var(--border); font-size:14px; box-shadow:0 10px 30px rgba(0,0,0,.4) }
+  .banner button { background:none; border:none; color:var(--accent); font:inherit; font-weight:600; font-size:14px; cursor:pointer }
+  .nav { display:flex; align-items:center; gap:8px; margin:6px 0 8px } .back { background:none; border:none; color:var(--accent); font:inherit; font-size:16px; cursor:pointer; padding:6px 0 }
+  .group { font-size:12px; color:var(--muted); margin:16px 6px 4px; letter-spacing:.04em }
+  .switcher { position:fixed; left:50%; bottom:18px; transform:translateX(-50%); display:flex; align-items:center; gap:4px; background:#fff; color:#111; border-radius:999px; padding:6px; box-shadow:0 8px 28px rgba(0,0,0,.45); z-index:10; font-family:system-ui, sans-serif }
+  .switcher button { border:none; background:#eceff1; color:#111; border-radius:999px; padding:8px 14px; font-size:14px; cursor:pointer } .switcher .label { background:#111; color:#fff; min-width:260px }
+  .theme { position:fixed; top:14px; right:16px; z-index:10 }
+  :focus-visible { outline:2px solid var(--accent); outline-offset:2px }
+</style>
+</head>
+<body>
+<button class="pill theme" id="theme">Light</button>
+<main class="studio">
+  <section class="notes" id="notes"></section>
+  <section class="phone" aria-label="iPhone preview"><div class="status"><span>9:41</span><span>●●● ▮</span></div><div class="screen" id="screen"></div></section>
+  <section class="try">
+    <p class="eyebrow">TRY IT</p>
+    <button data-act="open">Open settled threads</button>
+    <button data-act="press-recent">Long-press a Recent row (Settle)</button>
+    <button data-act="press-settled">Long-press a Settled row (Restore)</button>
+    <button data-act="search">Search “billing”</button>
+    <button data-act="reset">Start again</button>
+    <p class="subtle">Press and hold a row (or right-click it) for its menu. ← → switch directions.</p>
+    <div class="state" id="state"></div>
+  </section>
+</main>
+<nav class="switcher" aria-label="Prototype direction"><button id="prev" aria-label="Previous direction">←</button><button class="label" id="label"></button><button id="next" aria-label="Next direction">→</button></nav>
+<script>
+const VARIANTS = {
+  A: { name: 'A — Shelf loads when opened', what: 'The Settled shelf stays where it is, folded, with its count. Opening it reads the settled threads from each computer, 30 at a time, with Show more at the end. Search covers what the phone holds, then offers to search settled threads on the computers.',
+       points: ['<b>Closest to today.</b> Nothing moves; the shelf just takes a moment the first time it opens.', 'The count comes from the computer, so it is right before anything loads.', 'Once opened, the shelf stays loaded until the app goes to the background.'] },
+  B: { name: 'B — Settled is its own page', what: 'The shelf becomes one row at the bottom of Threads: Settled, with its count and a chevron. It opens a page of its own, grouped by computer, that loads as you scroll and has its own search.',
+       points: ['<b>Threads only ever shows live work.</b> The list never grows with history.', 'Searching Threads finds unsettled threads; a row at the end opens Settled with the same search.', 'Back returns to Threads where you left it.'] },
+  C: { name: 'C — Recently settled stays, older on request', what: 'The phone keeps threads settled in the last 7 days, so the shelf opens at once with them. Older settled threads sit behind one row that reads them from the computer.',
+       points: ['<b>Settle and Undo never wait.</b> What you just settled is still on the phone.', 'Most opens of the shelf need nothing from the computer.', 'Search covers this week’s settled threads; a row offers older ones.'] },
+}
+const order = Object.keys(VARIANTS)
+const param = new URLSearchParams(location.search).get('variant')
+let variant = order.includes(param) ? param : 'A'
+
+const fresh = () => ({
+  needs: [{ id: 'n1', title: 'Release Owl 0.1.44', computer: 'Laptop', q: 'Push the tag and publish to Sotto-releases?' }],
+  working: [{ id: 'w1', title: 'Phone connect size', computer: 'Laptop', when: 'now' }, { id: 'w2', title: 'Forge disk cleanup', computer: 'Forge', when: 'now' }],
+  recent: [{ id: 'r1', title: 'Fix fn+space shortcut', computer: 'Laptop', when: '12 min' }, { id: 'r2', title: 'Billing export for March', computer: 'Forge', when: '1 h' }, { id: 'r3', title: 'Shard durations refresh', computer: 'Laptop', when: '3 h' }],
+  settledLocal: [{ id: 's1', title: 'Effort offer from Settings', computer: 'Laptop', when: 'yesterday' }, { id: 's2', title: 'iOS lazy history', computer: 'Laptop', when: '2 days' }],
+  settledCount: { Laptop: 556, Forge: 28 },
+  loaded: false, loading: false, page: 0, open: false, query: '', remoteSearch: false, screen: 'threads', banner: null, menu: null, older: false,
+})
+let s = fresh()
+const older = Array.from({ length: 584 }, (_, i) => ({ id: 'o' + i, title: ['Billing reconcile', 'Watcher room badges', 'Vacancy advisor', 'Hint high contrast', 'Remote roster', 'Owl stars', 'Click binary', 'DNA relay'][i % 8] + ' ' + (i + 1), computer: i % 21 === 0 ? 'Forge' : 'Laptop', when: (3 + Math.floor(i / 6)) + ' days' }))
+const total = () => s.settledCount.Laptop + s.settledCount.Forge
+
+function load(then) { s.loading = true; render(); setTimeout(() => { s.loading = false; s.loaded = true; s.page = Math.max(s.page, 1); then?.(); render() }, 700) }
+function settledShown() {
+  if (variant === 'C') return s.settledLocal
+  return [...s.settledLocal, ...older.filter(o => !s.settledLocal.some(l => l.id === o.id))].slice(0, s.page * 30)
+}
+function matches(t) { return !s.query || t.title.toLowerCase().includes(s.query.toLowerCase()) }
+
+function row(t, kind) { return `<div class="row" data-id="${t.id}" data-kind="${kind}" tabindex="0" aria-label="${t.title}, ${t.computer}"><div><div class="t">${t.title}</div><small>${t.computer}</small></div><div class="meta"><small>${t.when}</small></div></div>` }
+function liveSections() {
+  let h = ''
+  const needs = s.needs.filter(matches), working = s.working.filter(matches), recent = s.recent.filter(matches)
+  if (needs.length) h += `<div class="heading"><span><span class="dot" style="background:var(--warning)"></span>Needs you</span><span>${needs.length}</span></div>` + needs.map(n => `<div class="card needs"><small>${n.computer} · ${n.title}</small><div class="q">${n.q}</div><div class="actions"><button>Allow</button><button>Deny</button></div></div>`).join('')
+  if (working.length) h += `<div class="heading"><span><span class="dot" style="background:var(--accent)"></span>Working now</span><span>${working.length}</span></div>` + working.map(w => `<div class="card"><small>${w.computer}</small><div class="t">${w.title}</div></div>`).join('')
+  if (recent.length) h += `<div class="heading"><span>Recent</span><span>${recent.length}</span></div>` + recent.map(r => row(r, 'recent')).join('')
+  return h
+}
+function threadsPage(extra) {
+  return `<div class="title"><h2>Threads</h2><button class="pill">New thread</button></div><input class="search" id="q" placeholder="Search threads" value="${s.query}" aria-label="Search threads">` + liveSections() + extra
+}
+function variantA() {
+  let shelf = ''
+  if (s.query) {
+    const local = s.loaded ? settledShown().filter(matches) : s.settledLocal.filter(matches)
+    const found = s.remoteSearch ? older.filter(matches).slice(0, 8) : []
+    shelf += `<div class="heading"><span>Settled</span><span>${local.length + found.length || ''}</span></div>` + [...local, ...found].map(t => row(t, 'settled')).join('')
+    shelf += s.loading ? `<div class="loading"><span class="spin"></span>Searching settled threads on Laptop and Forge…</div>` : s.remoteSearch ? '' : `<button class="more" data-act="remote">Search ${total()} settled threads on your computers</button>`
+    return threadsPage(shelf)
+  }
+  shelf += `<button class="toggle ${s.open ? 'open' : ''}" data-act="toggle" aria-expanded="${s.open}"><span class="chev">›</span>Settled<span class="n">${total()}</span></button>`
+  if (s.open) {
+    if (s.loading) shelf += `<div class="loading"><span class="spin"></span>Reading settled threads…</div>`
+    else { shelf += settledShown().map(t => row(t, 'settled')).join(''); if (s.page * 30 < total()) shelf += `<button class="more" data-act="page">Show 30 more</button>` }
+  }
+  return threadsPage(shelf)
+}
+function variantB() {
+  if (s.screen === 'settled') {
+    let h = `<div class="nav"><button class="back" data-act="back">‹ Threads</button></div><div class="title"><h2>Settled</h2></div><input class="search" id="q" placeholder="Search settled threads" value="${s.query}" aria-label="Search settled threads">`
+    if (s.loading) return h + `<div class="loading"><span class="spin"></span>Reading settled threads…</div>`
+    const shown = (s.query ? [...s.settledLocal, ...older] : settledShown()).filter(matches)
+    for (const computer of ['Laptop', 'Forge']) {
+      const mine = shown.filter(t => t.computer === computer); if (!mine.length) continue
+      h += `<div class="group">${computer.toUpperCase()} · ${s.query ? mine.length + ' found' : s.settledCount[computer]}</div>` + mine.slice(0, s.query ? 20 : 999).map(t => row(t, 'settled')).join('')
+    }
+    if (!s.query && s.page * 30 < total()) h += `<div class="loading"><span class="spin"></span>More as you scroll</div>`
+    return h
+  }
+  const link = s.query ? `<div class="linkrow" data-act="go"><span>Search settled threads for “${s.query}”</span><small>›</small></div>` : `<div class="linkrow" data-act="go"><span>Settled</span><small>${total()} ›</small></div>`
+  return threadsPage(link)
+}
+function variantC() {
+  const week = s.settledLocal.filter(matches)
+  let shelf = `<button class="toggle ${s.open ? 'open' : ''}" data-act="toggle" aria-expanded="${s.open}"><span class="chev">›</span>Settled<span class="n">${total()}</span></button>`
+  if (s.open || s.query) {
+    shelf += `<div class="group">THIS WEEK · ${week.length}</div>` + week.map(t => row(t, 'settled')).join('')
+    if (s.older) {
+      if (s.loading) shelf += `<div class="loading"><span class="spin"></span>Reading older settled threads…</div>`
+      else { const o = older.filter(matches).slice(0, s.page * 30); shelf += `<div class="group">OLDER</div>` + o.map(t => row(t, 'settled')).join(''); if (!s.query && s.page * 30 < older.length) shelf += `<button class="more" data-act="page">Show 30 more</button>` }
+    } else shelf += `<button class="more" data-act="older">${s.query ? 'Search' : 'Show'} ${total() - s.settledLocal.length} older settled threads</button>`
+  }
+  return threadsPage(shelf)
+}
+function render() {
+  const v = VARIANTS[variant]
+  document.getElementById('label').textContent = v.name
+  document.getElementById('notes').innerHTML = `<p class="eyebrow">IPHONE · SETTLED SHELF</p><h1>${v.name.slice(4)}</h1><p>${v.what}</p><ul>${v.points.map(p => `<li>${p}</li>`).join('')}</ul>
+    <p class="eyebrow" style="margin-top:18px">WITH #1871 (LONG PRESS, UNDO)</p><p>${variant === 'C' ? 'Settle and Restore act at once, as #1871 has them. A thread you settle stays in This week, so Undo puts it straight back.' : 'Settle and Restore act at once, as #1871 has them. A settled thread leaves the list and the count goes up; Undo restores it. Restoring a settled row moves it to Recent straight away.'}</p>
+    <p class="eyebrow" style="margin-top:18px">WHAT STAYS THE SAME</p><p>A settled thread that asks you something is still in <b>Needs you</b>. Opening a thread from a notification works whether or not it is settled.</p>`
+  const screen = document.getElementById('screen')
+  const top = screen.scrollTop
+  screen.innerHTML = (variant === 'A' ? variantA() : variant === 'B' ? variantB() : variantC())
+    + (s.menu ? `<div class="menu" style="left:${s.menu.x}px;top:${s.menu.y}px" role="menu"><button data-act="watch" role="menuitem">Watch</button><button data-act="${s.menu.kind === 'settled' ? 'restore' : 'settle'}" role="menuitem">${s.menu.kind === 'settled' ? 'Restore' : 'Settle'}</button></div>` : '')
+  screen.scrollTop = top
+  document.querySelector('.banner')?.remove()
+  if (s.banner) { const b = document.createElement('div'); b.className = 'banner'; b.setAttribute('role', 'status'); b.innerHTML = `<span>${s.banner.text}</span><button data-act="undo">Undo</button>`; document.querySelector('.phone').appendChild(b) }
+  const q = document.getElementById('q'); if (q) { q.oninput = e => { s.query = e.target.value; s.remoteSearch = false; const at = e.target.selectionStart; render(); const again = document.getElementById('q'); again.focus(); again.setSelectionRange(at, at) } }
+  document.getElementById('state').textContent = `variant ${variant}\nphone holds: ${s.needs.length + s.working.length + s.recent.length + (variant === 'C' ? s.settledLocal.length : 0)} threads${s.loaded ? ` + ${variant === 'C' ? Math.min(s.page * 30, older.length) : settledShown().length} settled read on request` : ''}\nsettled on computers: ${total()} (Laptop ${s.settledCount.Laptop}, Forge ${s.settledCount.Forge})\nshelf: ${s.open || s.screen === 'settled' ? 'open' : 'folded'}${s.loading ? ', reading…' : ''}${s.query ? `\nsearch: “${s.query}”` : ''}`
+}
+function find(id) { for (const k of ['recent', 'settledLocal']) { const i = s[k].findIndex(t => t.id === id); if (i >= 0) return [k, i] } const o = older.findIndex(t => t.id === id); return o >= 0 ? ['older', o] : null }
+function act(a, el) {
+  if (a === 'toggle') { s.open = !s.open; if (s.open && variant === 'A' && !s.loaded) load() }
+  else if (a === 'page') { if (variant === 'C') s.page++; else s.page++ }
+  else if (a === 'remote') { s.remoteSearch = true; load() }
+  else if (a === 'go') { s.screen = 'settled'; if (!s.loaded) load() }
+  else if (a === 'back') { s.screen = 'threads'; s.query = '' }
+  else if (a === 'older') { s.older = true; load() }
+  else if (a === 'settle' || a === 'restore') {
+    const id = s.menu.id, at = find(id); s.menu = null
+    if (!at) return render()
+    const [k, i] = at, t = k === 'older' ? older[i] : s[k][i]
+    if (a === 'settle') { s.recent.splice(i, 1); s.settledLocal.unshift({ ...t, when: 'now' }); s.settledCount[t.computer]++; s.banner = { text: `Settled “${t.title}”.`, undo: () => { s.settledLocal = s.settledLocal.filter(x => x.id !== t.id); s.recent.unshift(t); s.settledCount[t.computer]-- } } }
+    else { if (k === 'older') older.splice(i, 1); else s[k].splice(i, 1); s.recent.unshift({ ...t, when: 'now' }); s.settledCount[t.computer]--; s.banner = { text: `Restored “${t.title}”.`, undo: () => { s.recent = s.recent.filter(x => x.id !== t.id); s.settledLocal.unshift(t); s.settledCount[t.computer]++ } } }
+    clearTimeout(window.bannerTimer); window.bannerTimer = setTimeout(() => { s.banner = null; render() }, 5000)
+  }
+  else if (a === 'undo') { s.banner?.undo(); s.banner = null }
+  else if (a === 'watch') { s.menu = null }
+  render()
+}
+function menuFor(el, kind) {
+  const r = el.getBoundingClientRect(), p = document.getElementById('screen').getBoundingClientRect()
+  s.menu = { id: el.dataset.id, kind, x: 30, y: r.bottom - p.top + document.getElementById('screen').scrollTop - 4 }; render()
+}
+let pressTimer
+document.addEventListener('pointerdown', e => { const r = e.target.closest('.row'); if (!r) return; pressTimer = setTimeout(() => menuFor(r, r.dataset.kind), 450) })
+document.addEventListener('pointerup', () => clearTimeout(pressTimer)); document.addEventListener('pointerleave', () => clearTimeout(pressTimer))
+document.addEventListener('contextmenu', e => { const r = e.target.closest('.row'); if (!r) return; e.preventDefault(); menuFor(r, r.dataset.kind) })
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act]')
+  if (b && b.closest('.try')) return demo(b.dataset.act)
+  if (b) return act(b.dataset.act, b)
+  if (s.menu && !e.target.closest('.menu')) { s.menu = null; render() }
+})
+document.getElementById('screen').addEventListener('scroll', e => { if (variant === 'B' && s.screen === 'settled' && !s.loading && !s.query) { const el = e.target; if (el.scrollTop + el.clientHeight > el.scrollHeight - 80 && s.page * 30 < total()) { s.page++; render() } } })
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') { s.menu = null; render(); return }
+  if (e.target.matches('input, textarea, [contenteditable]')) return
+  if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') step(e.key === 'ArrowRight' ? 1 : -1)
+  if ((e.key === 'Enter' || e.key === 'ContextMenu') && e.target.classList?.contains('row')) menuFor(e.target, e.target.dataset.kind)
+})
+function demo(a) {
+  if (a === 'reset') { s = fresh(); return render() }
+  if (a === 'open') { s.query = ''; variant === 'B' ? act('go') : (s.open ? render() : act('toggle')); return setTimeout(() => document.querySelector('#screen .toggle')?.scrollIntoView({ block: 'start' }), 800) }
+  if (a === 'search') { s.query = 'billing'; s.screen = 'threads'; s.open = false; return render() }
+  if (a === 'press-recent') { s.screen = 'threads'; render(); const r = document.querySelector('.row[data-kind=recent]'); if (r) menuFor(r, 'recent'); return }
+  if (a === 'press-settled') {
+    const go = () => { const r = document.querySelector('.row[data-kind=settled]'); if (r) menuFor(r, 'settled') }
+    if (variant === 'B') { if (s.screen !== 'settled') act('go'); return setTimeout(go, 800) }
+    if (!s.open) act('toggle'); return setTimeout(go, variant === 'A' && !s.loaded ? 800 : 50)
+  }
+}
+function step(d) { variant = order[(order.indexOf(variant) + d + order.length) % order.length]; history.replaceState(null, '', '?variant=' + variant); s = fresh(); render() }
+document.getElementById('prev').onclick = () => step(-1); document.getElementById('next').onclick = () => step(1); document.getElementById('label').onclick = () => step(1)
+document.getElementById('theme').onclick = e => { const light = document.documentElement.dataset.theme !== 'light'; document.documentElement.dataset.theme = light ? 'light' : 'dark'; e.target.textContent = light ? 'Dark' : 'Light' }
+render()
+</script>
+</body>
+</html>
