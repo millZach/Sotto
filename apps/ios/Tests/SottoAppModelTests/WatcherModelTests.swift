@@ -1686,6 +1686,19 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(hidden, 0, accuracy: 0.0001)
     }
 
+    /// Following ends the newest words a gap above the box, not against the top of its frame.
+    func testFollowingEndsTheNewestWordsAGapAboveTheBox() throws {
+        // The header ends at 140 and the box starts at 600: `scrollTo` puts the zero-height mark under the newest words at
+        // 140 + anchor * 460.
+        let anchor = try XCTUnwrap(WatcherReaderPlace.newestAnchor(top: 140, dockTop: 600))
+        XCTAssertEqual(140 + anchor * 460, 600 - WatcherReaderPlace.newestGap, accuracy: 0.0001)
+        // The keyboard raised the box to 380: still the gap above it.
+        let raised = try XCTUnwrap(WatcherReaderPlace.newestAnchor(top: 140, dockTop: 380))
+        XCTAssertEqual(140 + raised * 240, 380 - WatcherReaderPlace.newestGap, accuracy: 0.0001)
+        XCTAssertNil(WatcherReaderPlace.newestAnchor(top: 140, dockTop: .greatestFiniteMagnitude), "Before the box is measured")
+        XCTAssertNil(WatcherReaderPlace.newestAnchor(top: 140, dockTop: 150), "No room for the gap")
+    }
+
     // MARK: The bar that slides away (#1278)
 
     /// Watcher's bar slides away once the user has read down the page a little way, comes back once they have gone up a

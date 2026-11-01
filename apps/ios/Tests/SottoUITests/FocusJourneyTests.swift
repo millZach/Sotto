@@ -870,6 +870,14 @@ import UIKit
             XCTFail("Watcher's visible bounds must provide a snapshot: \(error)")
             return (.infinity, -.infinity)
         }
+        guard let band = watcherBand(in: elements) else {
+            XCTFail("Watcher's visible bounds must include its window")
+            return (.infinity, -.infinity)
+        }
+        return band
+    }
+    /// The band from one reading of the hierarchy (`everyElement`), or nil without the app's window.
+    private func watcherBand(in elements: [any XCUIElementSnapshot]) -> (top: CGFloat, bottom: CGFloat)? {
         func element(_ identifier: String, type: XCUIElement.ElementType = .any) -> (any XCUIElementSnapshot)? {
             // Like matching(identifier:), keep the first descendant of the requested type whose identifying
             // attributes match. All of these attributes belong to the captured snapshot, with no further UI query.
@@ -879,10 +887,7 @@ import UIKit
                  ($0.value as? String) == identifier || $0.placeholderValue == identifier)
             }
         }
-        guard let window = elements.first(where: { $0.elementType == .window }) else {
-            XCTFail("Watcher's visible bounds must include its window")
-            return (.infinity, -.infinity)
-        }
+        guard let window = elements.first(where: { $0.elementType == .window }) else { return nil }
         let header = element("watcher-section-conversation")
         // The bar's glass ends the switch's own padding and the bar's bottom padding below Conversation | Watched. While
         // the bar is away (#1278), the page shows from under the status bar's glass, which no iPhone draws taller than 60
@@ -1432,13 +1437,15 @@ import UIKit
         capture("watcher-card-light")
     }
 
+    /// The first words of the reply the fixture's Watcher goes on writing (`--ui-watcher-keeps-writing`).
+    private static let writingStart = "Checking the threads I watch."
     /// A worker's question that arrives while Watcher writes stays where the reader scrolls to it: Watcher's words go on
     /// growing above it and never push it under the box, so it is answered there. Once it is answered, the page follows
     /// Watcher's words again (#1277).
     func testAWaitingCardStaysAboveTheBoxWhileWatcherKeepsWriting() {
         launch(Self.watcher + ["--ui-watcher-can-answer", "--ui-watcher-keeps-writing"])
         openWatcher()
-        let writing = text("Checking the threads I watch.")
+        let writing = text(Self.writingStart)
         XCTAssertTrue(writing.waitForExistence(timeout: 10), "Watcher is writing")
         XCTAssertTrue(text("The thread’s own card. Your answer goes to Fix login test, not to Watcher.").waitForExistence(timeout: 15),
                       "Fix login test's question arrives while Watcher writes")
@@ -1465,12 +1472,20 @@ import UIKit
         XCTAssertTrue(labelled("Answer sent.").waitForExistence(timeout: 10), "The answer reached its thread")
         XCTAssertTrue(waitUntilGone(send), "The card leaves Watcher's page once answered")
         // With the card answered, the page follows Watcher's words again: the end of its reply comes into view above the box.
-        // Each look reads the band again: Answer sent. stays a few seconds over the page, and the band ends above it.
+        // Each look reads the band again: Answer sent. stays a few seconds over the page, and the band ends above it. The
+        // band and the reply come from one reading of the hierarchy, the same instant, and the reply is found by its first
+        // words in that reading: queries of their own for a reply growing a line twice a second took a look a second on
+        // CI, and the wait cut the last one off before it could say where the reply was.
         var seen = "no look found the reply's frame"
         let following = NSPredicate { _, _ in
-            guard writing.exists else { seen = "the reply is missing"; return false }
-            let band = self.watcherBand
-            let frame = writing.frame
+            let elements: [any XCUIElementSnapshot]
+            // A reading the wait cuts off leaves the last look's report standing.
+            do { elements = try self.everyElement() } catch { return false }
+            guard let band = self.watcherBand(in: elements) else { seen = "no window"; return false }
+            guard let reply = elements.first(where: { $0.label.hasPrefix(Self.writingStart) }) else {
+                seen = "the reply is missing"; return false
+            }
+            let frame = reply.frame
             guard !frame.isEmpty else { return false }
             seen = "reply \(frame), between \(band.top) and \(band.bottom)"
             return frame.maxY > band.top && frame.maxY <= band.bottom + 1

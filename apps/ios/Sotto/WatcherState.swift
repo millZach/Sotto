@@ -346,6 +346,22 @@ struct WatcherReaderPlace: Equatable {
         guard abs(spare) > 1 else { return 0 }
         return min(max((wanted - top) / spare, 0), 1)
     }
+
+    /// How far above the box following leaves the newest words, so they end clear of it rather than against the top of
+    /// its frame, which sits only the box's padding above its glass.
+    static let newestGap: CGFloat = 12
+    /// Where following puts the newest words: `newestGap` above the box. Returns the point, as a fraction of the visible
+    /// page's height, that `ScrollViewProxy.scrollTo` lines a zero-height mark under the newest words up with, or nil
+    /// before the box has been measured or while the room between the header and the box is no taller than the gap.
+    /// `.bottom` would line the mark up with the top of the box's frame. A gap-tall mark inside a zero-height frame
+    /// doesn't help: on CI's phones `scrollTo` lined up the frame, and the newest words still ended against the box.
+    /// - Parameters:
+    ///   - top: the bottom of the header; `dockTop`, the top of the box.
+    static func newestAnchor(top: CGFloat, dockTop: CGFloat) -> CGFloat? {
+        let room = dockTop - top
+        guard dockTop < .greatestFiniteMagnitude / 2, room > newestGap else { return nil }
+        return (room - newestGap) / room
+    }
 }
 
 /// Which way the user moves one of Watcher's pages, so its bar slides away as they read down and comes back as they go

@@ -616,10 +616,8 @@ private struct WatcherConversationPane: View {
     @State private var viewing: OpenPhotos?
     private static let end = "watcher-end"
     private static let sendingID = "watcher-sending"
-    /// Just under the newest words, where following scrolls to: `newestGap` below them, so they end that far above the
-    /// box rather than against the edge of its frame, which on its own sits only the box's padding above the glass.
+    /// Just under the newest words, where following scrolls to, `WatcherReaderPlace.newestGap` above the box.
     private static let newestEnd = "watcher-newest-end"
-    private static let newestGap = Space.s3
     /// A waiting card's place on the page, to scroll it whole above the box.
     private static func cardID(_ key: String) -> String { "watcher-needs-you-" + key }
 
@@ -661,11 +659,8 @@ private struct WatcherConversationPane: View {
                             .environment(\.replyQuoteBox, ReplyQuoteBox(key: model.watcherDraftKey(hostID)) { [model, hostID] in
                                 model.quoteReply($0, into: model.watcherDraftKey(hostID))
                             })
-                            // The place following scrolls to, under the newest words: a zero-height frame whose gap-tall
-                            // content runs on below it, so it takes no room on the page.
-                            Color.clear.frame(height: Self.newestGap).id(Self.newestEnd)
-                                .frame(height: 0, alignment: .top)
-                                .accessibilityHidden(true)
+                            // The place following scrolls to, under the newest words, taking no room on the page.
+                            Color.clear.frame(height: 0).id(Self.newestEnd).accessibilityHidden(true)
                         }
                     }
                     ForEach(Array((model.watcherSetAside[hostID] ?? []).enumerated()), id: \.offset) { _, words in
@@ -860,16 +855,21 @@ private struct WatcherConversationPane: View {
         box.followRequests += 1
         let request = box.followRequests
         let still = reduceMotion
+        // The mark under the newest words goes `newestGap` above the box; the page's end, before any words, to the box.
+        func anchor() -> UnitPoint {
+            guard target == Self.newestEnd, let y = WatcherReaderPlace.newestAnchor(top: box.top, dockTop: box.dockTop) else { return .bottom }
+            return UnitPoint(x: 0.5, y: y)
+        }
         Task { @MainActor in
             await Task.yield()
             guard box.followRequests == request else { return }
             guard !box.userScrolling else { box.missedFollow = true; return }
             box.quiet()
-            withAnimation(still ? nil : .easeOut(duration: 0.3)) { scroll.scrollTo(target, anchor: .bottom) }
+            withAnimation(still ? nil : .easeOut(duration: 0.3)) { scroll.scrollTo(target, anchor: anchor()) }
             try? await Task.sleep(nanoseconds: still ? 120_000_000 : 360_000_000)
             if box.followRequests == request, box.following, !box.userScrolling {
                 box.quiet()
-                scroll.scrollTo(target, anchor: .bottom)
+                scroll.scrollTo(target, anchor: anchor())
             }
         }
     }
