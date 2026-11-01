@@ -16,7 +16,8 @@ import { targetKey } from './watcherEvidence'
  *
  * It also keeps which threads the list held at Watcher's last wake-up pass (`takeChanges`): this computer's from each
  * change the coordinator takes in, a paired host's from each push, so a pass can tell a thread that has just appeared
- * without reading every thread.
+ * without reading every thread. From the same changes it keeps which threads a look-up may now find otherwise
+ * (`touchedSince`), so a pass keeps what it looked up the pass before and looks up only the threads that changed (#1248).
  */
 
 /** A thread list's threads by ID, the first a search finds, with where each is and what Watcher looks up among them. */
@@ -65,6 +66,17 @@ export function threadsById(snapshot: AgentHostSnapshot): Pick<ReadonlyMap<strin
 /** Whether Watcher's passes count a thread among the threads they look at: every thread but Watcher's own conversations. */
 const listed = (thread: AgentThread | undefined): boolean => thread !== undefined && thread.kind !== 'watcher' && thread.kind !== 'watcher-history'
 
+/**
+ * Whether two snapshots of one host mark every thread connected or not alike (`markedThread`): the host's connection,
+ * and which providers are connected, which a new list of providers often says again unchanged.
+ */
+function sameMarks(before: AgentHostSnapshot, after: AgentHostSnapshot): boolean {
+  if (before.connected !== after.connected) return false
+  if (before.providers === after.providers) return true
+  if (!before.providers || !after.providers) return false
+  const connected = (host: AgentHostSnapshot) => [...new Set(host.providers!.flatMap(provider => provider.connection === 'connected' ? [provider.id] : []))].sort().join('\n')
+  return connected(before) === connected(after)
+}
 /** Each thread's record as the merged list carries it, made once for its record and its connection. */
 const marked = new WeakMap<AgentThread, { readonly connected: boolean; readonly thread: AgentThread }>()
 function markedThread(host: AgentHostSnapshot, thread: AgentThread): AgentThread {
@@ -113,6 +125,22 @@ export interface WatcherHostsReader {
    * held it then; undefined on the first call, when there is nothing to compare with.
    */
   takeChanges(snapshot: AgentHostSnapshot): ReadonlyMap<string, boolean> | undefined
+  /**
+   * What a look-up into `snapshot` may find otherwise than the same look-up found in the merged snapshot of the last
+   * `takeChanges` (#1248), without moving what that measures from; undefined when any look-up may, as before the first.
+   */
+  touchedSince?(snapshot: AgentHostSnapshot): WatcherHostsTouched | undefined
+}
+
+/**
+ * The look-ups that may have changed since Watcher's last wake-up pass. A look-up of any other thread finds the very record
+ * and place it found then, so a pass keeps what it found and looks up only the threads that changed.
+ */
+export interface WatcherHostsTouched {
+  /** The keys of the threads whose record or place in the merged list may differ. */
+  readonly keys: ReadonlySet<string>
+  /** Whether a thread may have come to name another as the thread that delegated it, or stopped (`delegatedFrom`). */
+  readonly delegations: boolean
 }
 
 /** Compares two places in the merged list (`WatcherHostsIndex.place`). */
@@ -141,6 +169,16 @@ export class WatcherHosts implements WatcherHostsReader {
   private unfollowed: AgentHostSnapshot | undefined
   /** Each paired host's snapshot as the journal last followed it. */
   private remotes = new Map<string, AgentHostSnapshot | undefined>()
+  /**
+   * What look-ups may have changed since the last `takeChanges` (`touchedSince`): `whole` once every one may, as when a
+   * thread moved in the list, which moves the places of the threads after it, or a host's connection or its providers,
+   * which mark each of its threads, changed. Before the first `takeChanges` every look-up may.
+   */
+  private touched = { keys: new Set<string>(), delegations: false, whole: true }
+  /** The coordinator's index of `local`, whose positions an accept of thread changes keeps while it is the same index. */
+  private localView: HostThreadsView | undefined
+  /** The paired hosts in the merged list's order at the last `takeChanges`: their places in it. */
+  private hostOrder = ''
 
   constructor(private readonly source: WatcherHostsSource) {}
 
@@ -174,14 +212,19 @@ export class WatcherHosts implements WatcherHostsReader {
    * changed, so the journal follows it without a walk; any other new snapshot is compared with the last thread by thread.
    */
   localChanged(snapshot: AgentHostSnapshot, changed: HostThreadsChange | undefined): void {
-    if (!this.baseline || snapshot === this.local) { this.local = snapshot; return }
-    const from = this.local
+    if (!this.baseline || snapshot === this.local) { this.local = snapshot; this.localView = this.source.localThreads(snapshot); return }
+    const from = this.local, fromView = this.localView
     this.local = snapshot
-    const view = this.source.localThreads(snapshot)
+    const view = this.localView = this.source.localThreads(snapshot)
     if (!changed || changed.from !== from || !view || from.hostId !== snapshot.hostId) { this.unfollowed ??= from; return }
     const hostId = snapshot.hostId
+    // The index the coordinator patched in place keeps every thread's position; one it built again may have moved them.
+    if (view !== fromView || !sameMarks(from, snapshot)) this.touched.whole = true
     const follow = (id: string) => {
       const before = changed.previous.get(id), after = view.thread(id)
+      // A thread shown again as the very record it was is found as it was.
+      if (before !== after) for (const thread of [before, after]) if (thread) this.touched.keys.add(targetKey({ hostId: thread.hostId ?? hostId ?? '', threadId: id }))
+      if (before?.delegatedBy !== after?.delegatedBy) this.touched.delegations = true
       if (listed(before) === listed(after)) return
       const keyed = (before && listed(before) ? before : after)!
       this.note(targetKey({ hostId: keyed.hostId ?? hostId ?? '', threadId: id }), listed(before))
@@ -196,25 +239,48 @@ export class WatcherHosts implements WatcherHostsReader {
     const local = built.parts[0]!.snapshot
     if (!this.baseline) {
       this.baseline = true
-      this.local = local; this.unfollowed = undefined
+      this.local = local; this.unfollowed = undefined; this.localView = built.parts[0]!.view
       this.remotes = new Map(built.parts.slice(1).map(part => [part.hostId!, part.snapshot]))
-      this.journal.clear()
+      this.journal.clear(); this.untouched(built)
       return undefined
     }
-    if (local !== this.local) { this.unfollowed ??= this.local; this.local = local }
+    this.follow(built)
+    const seen = new Set(built.parts.slice(1).map(part => part.hostId!))
+    for (const [hostId, before] of [...this.remotes]) if (!seen.has(hostId)) { this.compare(before, undefined, local.hostId); this.remotes.delete(hostId) }
+    const changes = new Map(this.journal)
+    this.journal.clear(); this.untouched(built)
+    return changes
+  }
+
+  touchedSince(snapshot: AgentHostSnapshot): WatcherHostsTouched | undefined {
+    const built = this.built
+    if (!this.baseline || built?.snapshot !== snapshot) return undefined
+    if (built.parts.slice(1).map(part => part.hostId).join('\n') !== this.hostOrder) return undefined
+    this.follow(built)
+    return this.touched.whole ? undefined : this.touched
+  }
+
+  /**
+   * Brings the journal up to `built`: a snapshot of this computer's the coordinator did not hand over with what changed
+   * (`localChanged`) is compared with the last followed, and each paired host's with its last, once each, whether a pass
+   * or the edge check before it asks first.
+   */
+  private follow(built: NonNullable<WatcherHosts['built']>): void {
+    const local = built.parts[0]!.snapshot
+    if (local !== this.local) { this.unfollowed ??= this.local; this.local = local; this.localView = built.parts[0]!.view }
     if (this.unfollowed) { this.compare(this.unfollowed, local); this.unfollowed = undefined }
-    const seen = new Set<string>()
     for (const part of built.parts.slice(1)) {
-      seen.add(part.hostId!)
       const before = this.remotes.get(part.hostId!)
       if (before === part.snapshot) continue
       this.compare(before, part.snapshot, local.hostId)
       this.remotes.set(part.hostId!, part.snapshot)
     }
-    for (const [hostId, before] of [...this.remotes]) if (!seen.has(hostId)) { this.compare(before, undefined, local.hostId); this.remotes.delete(hostId) }
-    const changes = new Map(this.journal)
-    this.journal.clear()
-    return changes
+  }
+
+  /** Every look-up stands as `built` has it: what `takeChanges` measures from. */
+  private untouched(built: NonNullable<WatcherHosts['built']>): void {
+    this.touched = { keys: new Set(), delegations: false, whole: false }
+    this.hostOrder = built.parts.slice(1).map(part => part.hostId).join('\n')
   }
 
   /** Notes a key's place moving, keeping whether the list held it at the last pass if it already moved since. */
@@ -226,15 +292,33 @@ export class WatcherHosts implements WatcherHostsReader {
    * their own host ID.
    */
   private compare(before: AgentHostSnapshot | undefined, after: AgentHostSnapshot | undefined, localId?: string): void {
-    const keys = (snapshot: AgentHostSnapshot | undefined): Set<string> => {
-      const held = new Set<string>()
+    // Read once each: the keys the list holds, and each ID's first thread and its position, as a look-up finds them.
+    const read = (snapshot: AgentHostSnapshot | undefined) => {
+      const held = new Set<string>(), firsts = new Map<string, { readonly thread: AgentThread; readonly at: number }>()
       const hostId = localId ?? snapshot?.hostId
-      for (const thread of snapshot?.threads ?? []) if (listed(thread)) held.add(targetKey({ hostId: thread.hostId ?? hostId ?? '', threadId: thread.id }))
-      return held
+      let at = 0
+      for (const thread of snapshot?.threads ?? []) {
+        if (listed(thread)) held.add(targetKey({ hostId: thread.hostId ?? hostId ?? '', threadId: thread.id }))
+        if (thread && !firsts.has(thread.id)) firsts.set(thread.id, { thread, at })
+        at++
+      }
+      return { held, firsts, hostId }
     }
-    const was = keys(before), is = keys(after)
-    for (const key of was) if (!is.has(key)) this.note(key, true)
-    for (const key of is) if (!was.has(key)) this.note(key, false)
+    const was = read(before), is = read(after)
+    for (const key of was.held) if (!is.held.has(key)) this.note(key, true)
+    for (const key of is.held) if (!was.held.has(key)) this.note(key, false)
+    // What a look-up may find otherwise (`touchedSince`): a thread whose record, position or delegator differs, by its key.
+    // A host's connection or providers mark each of its threads, and a thread that moved moves the places of others.
+    if (!before || !after || before.hostId !== after.hostId || !sameMarks(before, after)) { this.touched.whole = true; return }
+    const differ = (id: string, then: { thread: AgentThread; at: number } | undefined, now: { thread: AgentThread; at: number } | undefined) => {
+      if (then?.thread === now?.thread && then?.at === now?.at) return
+      if (then && now && then.at !== now.at) this.touched.whole = true
+      if (then?.thread.delegatedBy !== now?.thread.delegatedBy) this.touched.delegations = true
+      if (then) this.touched.keys.add(targetKey({ hostId: then.thread.hostId ?? was.hostId ?? '', threadId: id }))
+      if (now) this.touched.keys.add(targetKey({ hostId: now.thread.hostId ?? is.hostId ?? '', threadId: id }))
+    }
+    for (const [id, then] of was.firsts) differ(id, then, is.firsts.get(id))
+    for (const [id, now] of is.firsts) if (!was.firsts.has(id)) differ(id, undefined, now)
   }
 
   private build(): NonNullable<WatcherHosts['built']> {
