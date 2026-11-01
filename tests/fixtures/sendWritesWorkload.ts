@@ -98,6 +98,9 @@ export async function measureSendWrites(provider: 'claude' | 'codex', recorder: 
     const store = new ThreadDraftStore(command)
     for (let index = 0; index < sends; index += 1) {
       store.edit(threadId, { text: `Synthetic prompt ${index}` })
+      // Typing also starts the thread's provider session, as the composer does (ADR-0057): a thread only on screen holds
+      // no Claude Code CLI (ADR-0016, November 1, 2026 amendment), and the send finds the one typing started.
+      await control.command({ type: 'start-thread-session', threadId })
       await until(() => store.snapshot(threadId).save === 'saved', 'the typed draft to be saved')
       // Whatever the last reply set going lands before the press, so each send is measured on its own.
       await recorder.quiet()
