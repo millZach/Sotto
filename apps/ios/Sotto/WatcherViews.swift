@@ -1792,9 +1792,18 @@ private struct WatcherSettingsRow: View {
         let groups = current.map { WatcherSettings.groups($0, catalog: catalog, others: model.mayAnswer(hostID)) } ?? []
         return Menu {
             ForEach(groups) { group in
+                let lineup = ModelLineup.split(group.models)
                 Section(group.name) {
-                    ForEach(group.models) { item in
+                    ForEach(lineup.latest) { item in
                         option(item.name, chosen: item.id == shownModel?.id) { choose(.model, item.id) }
+                    }
+                    // Older models of each line wait in a closed submenu, as in a thread's menu (ADR-0171).
+                    if !lineup.legacy.isEmpty {
+                        Menu("Legacy") {
+                            ForEach(lineup.legacy) { item in
+                                option(item.name, chosen: item.id == shownModel?.id) { choose(.model, item.id) }
+                            }
+                        }
                     }
                 }
             }
