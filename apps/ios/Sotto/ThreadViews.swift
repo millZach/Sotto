@@ -1546,8 +1546,20 @@ private struct ReplyText: UIViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
         // Asked without a width, or with an unbounded one, it answers as Text does: its words on one line.
         let bounded = proposal.width.flatMap { $0.isFinite ? $0 : nil }
-        let fitted = BenchProbe.time("textview.measure") {
-            uiView.sizeThatFits(CGSize(width: bounded ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+        // Laying words out is the costly part of a text view, and SwiftUI asks for the same size several times while
+        // a row is made, and again when a row scrolled away is made again. The same words at the same width measure
+        // the same, so each is measured once.
+        let key = MeasuredWords.Key(inline: inline, size: uiView.traitCollection.preferredContentSizeCategory,
+                                    weight: uiView.traitCollection.legibilityWeight, width: bounded ?? -1)
+        let fitted: CGSize
+        if let known = MeasuredWords.sizes[key] {
+            fitted = known
+        } else {
+            fitted = BenchProbe.time("textview.measure") {
+                uiView.sizeThatFits(CGSize(width: bounded ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+            }
+            // A view asked before its first update holds no words yet, and its size is not theirs.
+            if uiView.textStorage.length > 0 || inline.source.isEmpty { MeasuredWords.keep(fitted, for: key) }
         }
         return CGSize(width: bounded ?? ceil(fitted.width), height: fitted.height)
     }
@@ -1576,6 +1588,23 @@ private struct ReplyText: UIViewRepresentable {
             }
             return UIMenu(children: [add] + suggestedActions)
         }
+    }
+}
+
+/// Reply text views' measured sizes, by everything that sizes their words: the Markdown, the text size and Bold Text
+/// that pick `InlineStyle`'s fonts, and the width they were measured at. Colour, from the theme and the ink, sizes nothing.
+@MainActor private enum MeasuredWords {
+    struct Key: Hashable {
+        let inline: MarkdownInline
+        let size: UIContentSizeCategory
+        let weight: UILegibilityWeight
+        let width: CGFloat
+    }
+    private(set) static var sizes: [Key: CGSize] = [:]
+    static func keep(_ size: CGSize, for key: Key) {
+        // A long stay on many threads stays bounded: the cache starts again rather than growing.
+        if sizes.count >= 4_000 { sizes = [:] }
+        sizes[key] = size
     }
 }
 
