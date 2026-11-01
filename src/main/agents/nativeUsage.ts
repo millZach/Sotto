@@ -27,6 +27,60 @@ const threadLedgerSchema = z.object({ id: z.string(), ledger: ledgerSchema })
 const foundLedgerSchema = threadLedgerSchema.nullable()
 const legacyLedgersSchema = z.record(z.string(), ledgerSchema)
 const emptyLedger = (): Ledger => ({ view: { rateVersions: [], partial: false, updatedAt: new Date().toISOString() }, entries: {}, seen: [], incomplete: false })
+type LedgerEntry = Ledger['entries'][string]
+const TOKEN_FIELDS = ['input', 'output', 'cached', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h'] as const
+
+/**
+ * What `summarize` reduces over a thread's requests, kept between calls (#555): everything up to its tail, in the ledger's
+ * own order. The tail is the newest few requests, the one a streaming reply keeps reporting on among them. A thread reports
+ * usage on nearly every frame of a reply, so its totals are the tail's requests added to these, in the very order a walk of
+ * every request adds them: the same numbers to the last bit, without walking a long thread's thousands of requests.
+ */
+interface RunningTotals {
+  usd: number
+  priced: number
+  /** Requests with no price yet, or only a lower bound. */
+  partial: number
+  /** The rate versions of priced requests, each once, in the order they first appear. */
+  readonly rates: string[]
+  readonly fields: Record<typeof TOKEN_FIELDS[number], { sum: number; count: number }>
+  /** The newest requests' keys, in the ledger's order, last in it, and not in the sums above. */
+  readonly tail: string[]
+  /**
+   * The request last changed that was already in the ledger, a streaming reply's. The tail never lets it go into the sums,
+   * however many requests a replay adds after it, so its next report is still counted from the tail.
+   */
+  hot: string | undefined
+  /** A change the tail cannot account for, as a request older than it changing: walk every request next time. */
+  stale: boolean
+}
+
+/** The tail's length past which its oldest requests go into the sums, and the most it holds behind a streaming reply. */
+const TAIL_KEPT = 32
+const TAIL_MOST = 1_024
+
+const noTotals = (): RunningTotals => ({ usd: 0, priced: 0, partial: 0, rates: [], tail: [], hot: undefined, stale: false,
+  fields: Object.fromEntries(TOKEN_FIELDS.map(field => [field, { sum: 0, count: 0 }])) as RunningTotals['fields'] })
+
+/** `totals`' sums alone, to add a tail to without changing them. */
+const sumsOf = (totals: RunningTotals): RunningTotals => ({ ...totals, rates: [...totals.rates], tail: [],
+  fields: Object.fromEntries(TOKEN_FIELDS.map(field => [field, { ...totals.fields[field] }])) as RunningTotals['fields'] })
+
+/** Adds one request to `totals` as `summarize`'s walk would at its place. */
+function addRequest(totals: RunningTotals, entry: LedgerEntry): void {
+  if (entry.usd !== undefined) {
+    totals.usd += entry.usd; totals.priced += 1
+    if (!totals.rates.includes(entry.rate)) totals.rates.push(entry.rate)
+  }
+  if (entry.usd === undefined || entry.lowerBound === true) totals.partial += 1
+  for (const field of TOKEN_FIELDS) {
+    const value = entry.tokens[field]
+    if (value !== undefined) { totals.fields[field].sum += value; totals.fields[field].count += 1 }
+  }
+}
+
+/** A key JavaScript orders ahead of every other key of an object, so a new one is not the newest in the ledger's order. */
+const ordersFirst = (key: string): boolean => /^(?:0|[1-9]\d{0,9})$/u.test(key) && Number(key) < 4_294_967_295
 const SYNTHETIC = '<synthetic>'
 const GROK_REPORTED_COST = 'grok-reported-cost'
 const object = (value: unknown): Record<string, unknown> => typeof value === 'object' && value !== null ? value as Record<string, unknown> : {}
@@ -148,6 +202,10 @@ export class NativeUsage {
    */
   private serializedLedgers = new WeakMap<Ledger, Buffer>()
   private readonly failed = new Set<string>()
+  /** Each ledger's running totals, made by the first `summarize` that walks it. */
+  private readonly running = new WeakMap<Ledger, RunningTotals>()
+  /** Each ledger's `seen` as a set, so telling a replayed report from a new one does not scan every key the thread saw. */
+  private readonly seenKeys = new WeakMap<Ledger, Set<string>>()
   /** When the last write started, by the monotonic clock: a wall clock set back must not hold writes back. */
   private lastWriteAt = Number.NEGATIVE_INFINITY
   private timer: ReturnType<typeof setTimeout> | undefined
@@ -342,20 +400,59 @@ export class NativeUsage {
     if (known) { this.serializedLedgers.delete(known); return known }
     return this.data[id] = emptyLedger()
   }
+  /**
+   * The thread's view of its requests: what they cost, at which rate versions, whether any is unpriced, and their tokens
+   * added up. Every request's change goes through `record`, which keeps the running totals up to the tail; a ledger read
+   * from disk, or one a request older than the tail changed in, is walked whole (#555).
+   */
   private summarize(ledger: Ledger): void {
-    const entries = Object.values(ledger.entries)
-    const priced = entries.filter(entry => entry.usd !== undefined)
-    ledger.view.estimatedUsd = priced.length ? priced.reduce((sum, entry) => sum + entry.usd!, 0) : undefined
-    ledger.view.rateVersions = [...new Set(priced.map(entry => entry.rate))]
-    ledger.view.partial = ledger.incomplete || entries.some(entry => entry.usd === undefined || entry.lowerBound === true)
+    let totals = this.running.get(ledger)
+    if (totals === undefined || totals.stale) {
+      // The tail starts at the request last changed when it is among the newest, so a streaming reply's next report needs no walk.
+      const hot = totals?.hot
+      totals = noTotals()
+      const keys = Object.keys(ledger.entries)
+      const at = hot === undefined ? -1 : keys.lastIndexOf(hot)
+      const split = at >= 0 && keys.length - at <= TAIL_MOST ? at : Math.max(0, keys.length - 1)
+      for (const key of keys.slice(0, split)) addRequest(totals, ledger.entries[key]!)
+      totals.tail.push(...keys.slice(split))
+      totals.hot = at >= 0 ? hot : undefined
+      this.running.set(ledger, totals)
+    }
+    const sums = sumsOf(totals)
+    for (const key of totals.tail) addRequest(sums, ledger.entries[key]!)
+    ledger.view.estimatedUsd = sums.priced ? sums.usd : undefined
+    ledger.view.rateVersions = sums.rates
+    ledger.view.partial = ledger.incomplete || sums.partial > 0
     // Every recorded request, so the thread's tokens add up rather than showing only the latest request.
     const total: UsageTokens = {}
-    for (const field of ['input', 'output', 'cached', 'cacheWrite', 'cacheWrite5m', 'cacheWrite1h'] as const) {
-      const reported = entries.filter(entry => entry.tokens[field] !== undefined)
-      if (reported.length) total[field] = reported.reduce((sum, entry) => sum + entry.tokens[field]!, 0)
-    }
+    for (const field of TOKEN_FIELDS) if (sums.fields[field].count) total[field] = sums.fields[field].sum
     ledger.view.total = Object.keys(total).length ? total : undefined
   }
+  /**
+   * Tells the running totals `key` is about to be written. A request in the tail changing needs nothing, and a new key the
+   * ledger orders last joins it; the tail's oldest requests go into the sums once it grows past `TAIL_KEPT`, never the one
+   * last changed. A request older than the tail changing, or a key JavaScript orders first, is walked whole next time.
+   */
+  private changingRequest(ledger: Ledger, key: string): void {
+    const totals = this.running.get(ledger)
+    if (totals === undefined) return
+    const known = Object.hasOwn(ledger.entries, key)
+    if (known) totals.hot = key
+    if (totals.stale) return
+    if (known) { if (!totals.tail.includes(key)) totals.stale = true; return }
+    if (ordersFirst(key)) { totals.stale = true; return }
+    totals.tail.push(key)
+    while (totals.tail.length > TAIL_KEPT && totals.tail[0] !== totals.hot) addRequest(totals, ledger.entries[totals.tail.shift()!]!)
+    // Behind a streaming reply a replay can add many: past the most the tail holds, the reply's next report walks once.
+    if (totals.tail.length > TAIL_MOST) totals.stale = true
+  }
+  private seen(ledger: Ledger): Set<string> {
+    let keys = this.seenKeys.get(ledger)
+    if (keys === undefined) { keys = new Set(ledger.seen); this.seenKeys.set(ledger, keys) }
+    return keys
+  }
+  private see(ledger: Ledger, key: string): void { ledger.seen.push(key); this.seen(ledger).add(key) }
   /** `now`: a turn ended, so this is written without waiting out the interval. */
   private save(id: string, changed = true, now = false): void {
     const ledger = this.data[id]
@@ -440,6 +537,7 @@ export class NativeUsage {
     const previous = ledger.entries[key]
     if (previous && previous.model === model && JSON.stringify(previous.tokens) === JSON.stringify(tokens)
       && (!reported || previous.usd === reported.usd && previous.rate === reported.rate)) return false
+    this.changingRequest(ledger, key)
     if (reported) { ledger.entries[key] = { tokens, model, usd: reported.usd, rate: reported.rate }; return true }
     const estimate = estimateUsage(this.provider, model, tokens)
     ledger.entries[key] = { tokens, model, usd: estimate?.usd, ...(estimate?.lowerBound ? { lowerBound: true } : {}), rate: USAGE_RATE_VERSION }
@@ -452,12 +550,12 @@ export class NativeUsage {
     if (!Object.values(last).some(value => value !== undefined)) return
     const ledger = this.ledger(id)
     const key = codexEntryKey(params.turnId, total)
-    if (ledger.seen.includes(key)) {
+    if (this.seen(ledger).has(key)) {
       const entry = ledger.entries[key]
       if (entry) this.publishUsage(id, key, entry.model, entry.tokens, context, ledger.incomplete, String(params.turnId))
       this.writePending(); return
     }
-    ledger.seen.push(key)
+    this.see(ledger, key)
     const previous = ledger.total
     let delta = last
     const reset = previous && (Object.keys(total) as (keyof UsageTokens)[]).some(field => total[field] !== undefined && previous[field] !== undefined && total[field]! < previous[field]!)
@@ -617,10 +715,10 @@ export class NativeUsage {
         this.publishUsage(id, this.grokRecord(identity), 'unknown', tokens(usage), facts, true, identity)
       }
     }
-    if (identity && ledger.seen.includes(identity)) { this.writePending(); return }
+    if (identity && this.seen(ledger).has(identity)) { this.writePending(); return }
     const before = JSON.stringify([ledger.view, ledger.incomplete])
     if (identity) {
-      ledger.seen.push(identity)
+      this.see(ledger, identity)
       const models = Object.entries(object(usage.modelUsage))
       const ticks = tokenCount(usage.costUsdTicks)
       // Grok reports what the turn cost (docs.x.ai cost tracking: 1 USD = 10^10 ticks). Its Build models have no published list price.
