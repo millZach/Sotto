@@ -456,6 +456,57 @@ describe('shell updates while the main window is hidden', () => {
     expect(result.current.state?.notice).toBe('Draft saved')
   })
 
+  it('hands the draft store a draft held while hidden, and never an older state committing after it', async () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    const drafts = vi.spyOn(ThreadDraftStore.prototype, 'receive')
+    const draft = (text: string, draftId: string) => ({ threadDrafts: [{ threadId: 'first', draftId, text, attachments: [], requestId: null, updatedAt: '2026-01-01T00:00:00.000Z' }] })
+    const initial = fullState([thread('first', [])])
+    const wire = shellBridge(initial, { detail: false })
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    drafts.mockClear()
+    act(() => {
+      // A broadcast arrives while the window shows and commits as a transition; before it renders the window hides and a
+      // newer draft arrives, which the store is handed at once. The older one then commits.
+      wire.publish({ ...initial, ...draft('older', '00000000-0000-4000-8000-000000000001') })
+      hidden.mockReturnValue(true)
+      wire.publish({ ...initial, ...draft('newer', '00000000-0000-4000-8000-000000000002') })
+    })
+    const handed = drafts.mock.calls.map(([state]) => state.threadDrafts?.[0]?.text)
+    expect(handed.at(-1)).toBe('newer')
+    expect(handed.slice(handed.indexOf('newer'))).not.toContain('older')
+  })
+
+  it('commits at once a state that turns Keep local history off while hidden, so the cached shell is cleared', async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    const initial = fullState([thread('first', [])])
+    writeShellCache(cacheableShell(initial)!)
+    const wire = shellBridge(initial, { detail: false })
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    act(() => wire.publish({ ...initial, historyEnabled: false }))
+    await waitFor(() => expect(result.current.state?.historyEnabled).toBe(false))
+    expect(readShellCache()).toBeNull()
+  })
+
+  it('holds while main says the window is hidden though its page reports it visible, and catches up when main says it shows', async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
+    let visible: ((shown: boolean) => void) | undefined
+    const sotto = window.sotto
+    Object.assign(window, { sotto: { ...sotto, onWindowVisible: (listener: (shown: boolean) => void) => { visible = listener; return () => { visible = undefined } } } })
+    document.documentElement.setAttribute('data-window-hidden', '')
+    try {
+      const initial = fullState([])
+      const wire = shellBridge(initial, { detail: false })
+      const { result } = renderHook(() => useAgentConnection(wire.bridge))
+      await waitFor(() => expect(result.current.state).not.toBeNull())
+      act(() => wire.publish({ ...initial, notice: 'started hidden' }))
+      expect(result.current.state?.notice).toBe('')
+      act(() => { document.documentElement.removeAttribute('data-window-hidden'); visible?.(true) })
+      expect(result.current.state?.notice).toBe('started hidden')
+    } finally { document.documentElement.removeAttribute('data-window-hidden'); Object.assign(window, { sotto }) }
+  })
+
   it('commits while hidden a state that adds a thread, and a command\'s own reply', async () => {
     vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
     const initial = fullState([thread('first', [])])

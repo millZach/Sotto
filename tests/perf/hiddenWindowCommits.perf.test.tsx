@@ -1,8 +1,9 @@
 /**
- * What the window draws while it is hidden (#993): four seconds of a thread streaming, fifteen updates a second as main
- * broadcasts them, into the real agent connection with the window hidden, counting React's commits of the state; then
- * the window shown. Each commit drew the window again for nobody, about 8 ms of renderer time per update by #993's
- * measure, and 6-23 ms by `threadsRender.perf.test.tsx`'s rows, all the time Sotto sat in the tray.
+ * What the window commits while it is hidden (#993). Sixty broadcasts, as many as main sends in four seconds while a
+ * thread streams, are handed one after another to the real agent connection with the window hidden, and React's commits
+ * of the state are counted; then the window is shown. It counts commits and times nothing. Each commit drew the window
+ * again for nobody: about 8 ms of renderer time per update by #993's estimate, and 3-23 ms in jsdom by
+ * `threadsRender.perf.test.tsx`'s rows.
  *
  * The count is a CI guard, in the default suite. Run on `origin/main` it counts the "before".
  */
