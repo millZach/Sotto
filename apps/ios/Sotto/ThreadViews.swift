@@ -1521,7 +1521,9 @@ private struct ReplyText: UIViewRepresentable {
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UITextView, context: Context) -> CGSize? {
         // Asked without a width, or with an unbounded one, it answers as Text does: its words on one line.
         let bounded = proposal.width.flatMap { $0.isFinite ? $0 : nil }
-        let fitted = uiView.sizeThatFits(CGSize(width: bounded ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+        let fitted = BenchProbe.time("textview.measure") {
+            uiView.sizeThatFits(CGSize(width: bounded ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+        }
         return CGSize(width: bounded ?? ceil(fitted.width), height: fitted.height)
     }
 

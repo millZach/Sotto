@@ -29,8 +29,9 @@ jobs:
     name: iPhone benchmarks (macOS)
     if: github.event_name == 'workflow_dispatch' || contains(github.event.pull_request.labels.*.name, 'ios-perf')
     runs-on: macos-26
-    # Two optimized builds, each with five launches and five journeys: about an hour.
-    timeout-minutes: 150
+    # Two optimized builds, each with five launches and five journeys: about an hour. Each side has its own limit
+    # too, so a hung simulator or profiler ends the run long before this one.
+    timeout-minutes: 120
     env:
       DEVELOPER_DIR: /Applications/Xcode_26.6.app/Contents/Developer
       HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -56,8 +57,13 @@ jobs:
           echo "Base: $base"
       - name: Measure the base
         if: steps.base.outputs.measure == 'true'
+        timeout-minutes: 50
         run: sh "$RUNNER_TEMP/base/apps/ios/Scripts/bench.sh" "$RUNNER_TEMP/bench/before"
       - name: Measure the change
+        # The change's side also samples where the main thread goes in one more journey (trace.md, here and in the summary).
+        timeout-minutes: 60
+        env:
+          BENCH_TRACE: '1'
         run: sh apps/ios/Scripts/bench.sh "$RUNNER_TEMP/bench/after"
       - name: Compare
         if: always()
@@ -72,6 +78,7 @@ jobs:
             else
               echo "No summary was written; see the logs in the artifact."
             fi
+            if [ -f "$RUNNER_TEMP/bench/after/trace.md" ]; then echo; cat "$RUNNER_TEMP/bench/after/trace.md"; fi
           } | tee "$RUNNER_TEMP/bench/comparison.md" >> "$GITHUB_STEP_SUMMARY"
       - name: Keep the reports
         if: always()
@@ -84,6 +91,8 @@ jobs:
             ${{ runner.temp }}/bench/*/summary.*
             ${{ runner.temp }}/bench/*/*.log
             ${{ runner.temp }}/bench/*/source.txt
+            ${{ runner.temp }}/bench/*/trace.md
+            ${{ runner.temp }}/bench/*/trace-samples.json
             ${{ runner.temp }}/bench/*/app/*.json
           if-no-files-found: warn
           retention-days: 30

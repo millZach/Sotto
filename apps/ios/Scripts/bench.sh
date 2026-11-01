@@ -87,6 +87,34 @@ for run in 1 2 3 4 5; do
 done
 xcrun simctl terminate "$device_id" com.millzach.sotto.ios >/dev/null 2>&1 || true
 
+# With BENCH_TRACE=1, one more journey with the app's own sampler on (`--bench-sample`, BenchSampler in Bench.swift):
+# Instruments could not record the simulator on GitHub's runners, attached, launched or recording the whole Mac.
+# bench-sample.py names the sampled stacks with atos and ranks where the main thread's time went in the open, the long
+# thread's scroll and the stream (trace.md). The traced journey's numbers are not summarized: sampling slows the app.
+if [ "${BENCH_TRACE:-}" = 1 ]; then
+    report="$out/app/trace-journey.json"
+    samples="$out/trace-samples.json"
+    rm -f "$report" "$samples"
+    xcrun simctl terminate "$device_id" com.millzach.sotto.ios >/dev/null 2>&1 || true
+    sleep 2
+    SIMCTL_CHILD_SOTTO_BENCH_FILE="$report" xcrun simctl launch "$device_id" com.millzach.sotto.ios \
+        --ui-fixture --reset-ui-preferences --bench-threads 300 --bench-turns 200 --bench-chunks 200 --bench-journey all \
+        --bench-sample "$samples" -AppleLanguages '(en)' -AppleLocale en_US >/dev/null
+    outcome=timed-out
+    for _ in $(seq 1 900); do
+        if [ -f "$report" ]; then
+            if grep -q '"phase":"finished"' "$report"; then outcome=finished; break; fi
+            if grep -q '"phase":"failed-' "$report"; then outcome=failed; break; fi
+        fi
+        sleep 1
+    done
+    echo "Sampled journey: $outcome"
+    if [ -f "$samples" ]; then
+        python3 Scripts/bench-sample.py "$samples" > "$out/trace.md" 2> "$out/trace.log" || echo "The samples were not read (see trace.log)"
+    fi
+    xcrun simctl terminate "$device_id" com.millzach.sotto.ios >/dev/null 2>&1 || true
+fi
+
 # SottoCore's part of the same work, timed on this Mac, optimized.
 SOTTO_IOS_BENCH=1 swift test -c release -Xswiftc -enable-testing --filter PhoneBenchTests > "$out/core.log" 2>&1 || { tail -40 "$out/core.log"; status=1; }
 grep "IOS-CORE" "$out/core.log" || true

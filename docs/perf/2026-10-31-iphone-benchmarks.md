@@ -16,7 +16,7 @@ sh apps/ios/Scripts/bench.sh /tmp/bench/after
 python3 apps/ios/Scripts/bench-summary.py compare /tmp/bench/before /tmp/bench/after
 ```
 
-A run takes about 25 minutes for each side. The workflow keeps the summaries, the logs and the app's own reports as
+A run takes about 25 minutes for each side, and a few more for the change's traced journey. The workflow keeps the summaries, the logs and the app's own reports as
 the `ios-benchmarks` artifact for 30 days.
 
 ## What runs
@@ -54,7 +54,15 @@ Then:
 
    Each phase lasts until half a second passes without a late frame. The scroll sets the offset from the clock every
    frame, so a late frame jumps as a fling would.
-3. **SottoCore's share.** `SOTTO_IOS_BENCH=1 swift test -c release --filter PhoneBenchTests` times reading, merging and
+3. **Where the main thread goes**, on the change's side only: one more journey with `--bench-sample`, in which a
+   background thread in the app suspends the main thread about once a millisecond, walks its frame pointers and resumes
+   it (`BenchSampler`). `Scripts/bench-sample.py` names the addresses with `atos` and writes `trace.md`: for the open,
+   the thread's scroll and the stream, the functions and images the main thread was in, and the app's own functions,
+   anywhere on the stack and as the innermost app frame. Instruments' `xctrace` cannot record a simulator app on
+   GitHub's runners: attaching hung or found no process, a launch was ambiguous because of the Share extension and
+   ignored its time limit, and recording the whole Mac never finished saving (#1976, six runs). The sampler slows the
+   app, so the traced journey's numbers are not summarized; read its shares, not its times.
+4. **SottoCore's share.** `SOTTO_IOS_BENCH=1 swift test -c release --filter PhoneBenchTests` times reading, merging and
    laying out the same frames on the runner's Mac, without the simulator.
 
 The journey is not driven by XCUITest. XCUITest turns on and reads the whole accessibility tree for every gesture, and
@@ -81,6 +89,7 @@ finished. A journey that ends on `failed-<why>` (the list or the thread never dr
 | `journey.app.peak_footprint` | The most it charged at any point of the journey, the kernel's high-water mark. |
 | `open.app.tap_to_drawn` | From the open to the first display frame after the frame that draws the long thread was committed. |
 | `open.app.<count>` | What opening it built: message bodies, Markdown blocks, text views, bytes of Markdown parsed. |
+| `<phase>.app.textview_measure`, `stream.textview_measure_per_chunk` | Time the paragraphs' text views spent measuring their words: in the phase, or per streamed word. |
 | `stream.wall_per_chunk` | Time per streamed word, including the 50 ms wait after each: 50 ms is the floor. |
 | `stream.cpu_per_chunk` | CPU time per streamed word. |
 | `stream.per_chunk.<count>` | View bodies, text view updates, Markdown parses and timeline rebuilds per streamed word. |
@@ -136,8 +145,9 @@ What they say:
   open-to-drawn time. It builds a body for each of the 402 messages and a text view for each of 500 paragraphs, and
   costs 380 MB more than the list.
 - **Each streamed word costs about 370 ms of CPU** and leaves the screen stuck for 95% of the stream, though only the
-  growing message's body runs again for it. The likely cost is layout: every paragraph's text view measures its words
-  again on each layout pass, with nothing cached, in a stack that lays out every row when one grows. Rebuilding the
+  growing message's body runs again for it. It is not the paragraphs' text views measuring their words, which happens
+  about twice a word (under 1 ms): the sampled trace puts it in SwiftUI's graph update and layout of the whole thread
+  page, which holds every row at once (#749), so each word costs in proportion to the thread. Rebuilding the
   timeline for each word (`core.delta.timeline-200`) adds about 50 ms on the runner's Mac, outside the simulator.
 - **Scrolling the long thread** is late for half of every second.
 - **The thread list** draws about 4 seconds after launch and scrolls smoothly. The pushes are small since #1910.

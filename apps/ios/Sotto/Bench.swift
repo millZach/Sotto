@@ -45,6 +45,7 @@ import SottoCore
     private var link: CADisplayLink?
     private var motion: Motion?
     private var timer: Timer?
+    private var sampler: BenchSampler?
     private let writes = DispatchQueue(label: "com.millzach.sotto.bench.report", qos: .utility)
 
     private init(model: AppModel, report: URL, chunks: Int, long: ThreadRef) {
@@ -58,6 +59,11 @@ import SottoCore
         self.link = link
         timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in MainActor.assumeIsolated { BenchDriver.running?.write() } }
         mark("driver-start")
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "--bench-sample"), arguments.indices.contains(index + 1) {
+            sampler = BenchSampler(output: URL(fileURLWithPath: arguments[index + 1]))
+            sampler?.start(phase: phase)
+        }
         Task { await journey(all: all) }
     }
 
@@ -101,6 +107,7 @@ import SottoCore
         cpuAtPhase = Self.cpuMs()
         phaseNotes = [:]
         phase = name
+        sampler?.phase(name)
         mark("phase-" + name)
         write()
     }
@@ -108,6 +115,9 @@ import SottoCore
     /// Ends the journey: `finished`, or `failed-<why>` when a phase never got what it waited for, which the script
     /// counts as a failed run and the summary leaves out.
     private func finish(_ failure: String?) {
+        // The samples are written before the report says `finished`, which the script waits for.
+        sampler?.finish()
+        sampler = nil
         next(failure.map { "failed-" + $0 } ?? "finished")
         link?.invalidate(); link = nil
         timer?.invalidate(); timer = nil
@@ -304,6 +314,133 @@ import SottoCore
         }
         guard result == KERN_SUCCESS else { return 0 }
         return Double(peak ? UInt64(info.ledger_phys_footprint_peak) : info.phys_footprint) / 1_048_576
+    }
+}
+
+/// Where the main thread spends each phase of the benchmarks' traced journey (`--bench-sample <file>`, Scripts/bench.sh
+/// with BENCH_TRACE=1), for when Instruments cannot record the simulator, as on GitHub's runners. About once a
+/// millisecond a background thread suspends the main thread, reads its registers and walks its frame pointers, and
+/// resumes it; nothing is allocated while it is suspended, as the main thread may hold the allocator's lock. Each
+/// distinct stack is counted under the phase it fell in. At the end it writes the stacks and, for every address in
+/// them, the image it lies in and its load address, which `Scripts/bench-sample.py` turns into function names.
+/// It slows the app it samples, so the traced journey's own numbers are not summarized.
+final class BenchSampler: @unchecked Sendable {
+    private static let depth = 512
+    private let output: URL
+    /// The main thread, read on the main thread.
+    private let target = mach_thread_self()
+    private let frames = UnsafeMutablePointer<UInt>.allocate(capacity: BenchSampler.depth)
+    private let lock = NSLock()
+    private var current = ""
+    private var stopping = false
+    private var stacks: [String: [[UInt]: Int]] = [:]
+    private var order: [String] = []
+    private let stopped = DispatchSemaphore(value: 0)
+
+    init(output: URL) { self.output = output }
+
+    func start(phase: String) {
+        self.phase(phase)
+        let thread = Thread { [self] in run() }
+        thread.qualityOfService = .userInteractive
+        thread.start()
+    }
+
+    func phase(_ name: String) {
+        lock.lock(); defer { lock.unlock() }
+        current = name
+        if !order.contains(name) { order.append(name) }
+    }
+
+    /// Stops sampling and writes what it found. Called on the main thread at the journey's end.
+    func finish() {
+        lock.lock(); stopping = true; lock.unlock()
+        stopped.wait()
+        var table: [UInt: Int] = [:]
+        var addresses: [[String: Any]] = []
+        var phases: [[String: Any]] = []
+        for name in order {
+            guard let counted = stacks[name] else { continue }
+            var rows: [[Any]] = []
+            var samples = 0
+            for (stack, count) in counted {
+                samples += count
+                rows.append([count, stack.map { address -> Int in
+                    if let index = table[address] { return index }
+                    table[address] = addresses.count
+                    addresses.append(Self.describe(address))
+                    return addresses.count - 1
+                }])
+            }
+            phases.append(["phase": name, "samples": samples, "stacks": rows])
+        }
+        let object: [String: Any] = ["phases": phases, "addresses": addresses]
+        if let data = try? JSONSerialization.data(withJSONObject: object) { try? data.write(to: output, options: .atomic) }
+    }
+
+    private func run() {
+        while true {
+            lock.lock()
+            let done = stopping
+            let name = current
+            lock.unlock()
+            if done { break }
+            usleep(1_000)
+            let count = capture()
+            guard count > 0 else { continue }
+            let stack = Array(UnsafeBufferPointer(start: frames, count: count))
+            lock.lock()
+            stacks[name, default: [:]][stack, default: 0] += 1
+            lock.unlock()
+        }
+        stopped.signal()
+    }
+
+    /// One sample of the main thread's stack into `frames`, leaf first: the program counter, then each return address
+    /// less one, so it falls inside the call. Returns how many it read.
+    private func capture() -> Int {
+        #if arch(arm64)
+        guard thread_suspend(target) == KERN_SUCCESS else { return 0 }
+        defer { thread_resume(target) }
+        var state = arm_thread_state64_t()
+        var count = mach_msg_type_number_t(MemoryLayout<arm_thread_state64_t>.size / MemoryLayout<natural_t>.size)
+        let result = withUnsafeMutablePointer(to: &state) {
+            $0.withMemoryRebound(to: natural_t.self, capacity: Int(count)) {
+                thread_get_state(target, thread_state_flavor_t(ARM_THREAD_STATE64), $0, &count)
+            }
+        }
+        guard result == KERN_SUCCESS else { return 0 }
+        frames[0] = UInt(state.__pc)
+        var read = 1
+        if state.__lr > 1 { frames[1] = UInt(state.__lr) - 1; read = 2 }
+        var frame = UInt(state.__fp)
+        var pair: (UInt, UInt) = (0, 0)
+        while frame != 0, frame % 8 == 0, read < Self.depth {
+            var size: vm_size_t = 0
+            let copied = withUnsafeMutablePointer(to: &pair) {
+                vm_read_overwrite(mach_task_self_, vm_address_t(frame), vm_size_t(16), vm_address_t(UInt(bitPattern: $0)), &size)
+            }
+            guard copied == KERN_SUCCESS, pair.1 > 1 else { break }
+            // The saved link register usually repeats the one already read for the leaf's caller.
+            if !(read == 2 && frames[1] == pair.1 - 1) { frames[read] = pair.1 - 1; read += 1 }
+            guard pair.0 > frame else { break }
+            frame = pair.0
+        }
+        return read
+        #else
+        return 0
+        #endif
+    }
+
+    /// The image an address lies in, its load address, and the nearest exported symbol, for when `atos` has none.
+    private static func describe(_ address: UInt) -> [String: Any] {
+        var info = Dl_info()
+        guard dladdr(UnsafeRawPointer(bitPattern: address), &info) != 0 else { return ["address": String(address, radix: 16)] }
+        var result: [String: Any] = ["address": String(address, radix: 16)]
+        if let image = info.dli_fname { result["image"] = String(cString: image) }
+        if let base = info.dli_fbase { result["base"] = String(UInt(bitPattern: base), radix: 16) }
+        if let symbol = info.dli_sname { result["symbol"] = String(cString: symbol) }
+        return result
     }
 }
 #endif

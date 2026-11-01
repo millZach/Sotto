@@ -20,9 +20,11 @@ TESTS = {"testLaunchToThreadList": "launch"}
 PER_CHUNK = ["body.RootView", "body.MainTabs", "body.ThreadsView", "body.ThreadListSections", "body.ThreadListRow", "body.ThreadRowList",
              "body.ThreadRow", "body.ThreadView", "body.Conversation", "body.ThreadHero", "body.MessageView", "body.MarkdownText",
              "body.MarkdownBlockView", "body.FoldedRun", "body.StepLine", "body.WorkingLine", "body.ReplyDock", "body.FollowupStack",
-             "textview.make", "textview.update", "textview.set", "markdown.blocks", "markdown.bytes", "time.timeline.rows.n"]
+             "textview.make", "textview.update", "textview.set", "time.textview.measure.n",
+             "markdown.blocks", "markdown.bytes", "time.timeline.rows.n"]
 # What opening the long thread made and read once.
-ON_OPEN = ["body.MessageView", "body.MarkdownBlockView", "body.FoldedRun", "body.StepLine", "textview.make", "markdown.blocks", "markdown.bytes"]
+ON_OPEN = ["body.MessageView", "body.MarkdownBlockView", "body.FoldedRun", "body.StepLine", "textview.make", "time.textview.measure.n",
+           "markdown.blocks", "markdown.bytes"]
 PHASES = ["launch", "list-scroll", "open", "thread-scroll", "stream"]
 
 
@@ -96,6 +98,9 @@ def app_metrics(folder):
         put(f"stream.bytes_per_push.{kind}", [c[f"bytes.{kind}"] / c[f"frames.{kind}"] if c.get(f"frames.{kind}") else None for c in counts["stream"]], "B")
         put(f"stream.decode_per_push.{kind}", [ns_ms(c, f"time.decode.{kind}.ns", f"time.decode.{kind}.n") for c in counts["stream"]], "ms")
         put(f"stream.apply_per_push.{kind}", [ns_ms(c, f"time.apply.{kind}.ns", f"time.apply.{kind}.n") for c in counts["stream"]], "ms")
+    for name in ["open", "thread-scroll"]:
+        put(f"{name}.app.textview_measure", [ns_ms(c, "time.textview.measure.ns") for c in counts[name]], "ms")
+    put("stream.textview_measure_per_chunk", [ns_ms(c, "time.textview.measure.ns") / chunks if "time.textview.measure.ns" in c else 0 for c in counts["stream"]], "ms")
     put("stream.timeline_rows_per_chunk", [ns_ms(c, "time.timeline.rows.ns") / chunks if "time.timeline.rows.ns" in c else 0 for c in counts["stream"]], "ms")
     return rows
 
