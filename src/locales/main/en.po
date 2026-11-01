@@ -1129,6 +1129,10 @@ msgstr "Sotto could not download {to} on {name}."
 msgid "Sotto could not install {to} on {name}."
 msgstr "Sotto could not install {to} on {name}."
 
+#: src/main/notifications/openNotificationThread.ts
+msgid "Sotto could not open this thread. Check its host's connection in Settings, then choose the thread again."
+msgstr "Sotto could not open this thread. Check its host's connection in Settings, then choose the thread again."
+
 #: src/main/omarchy/setup.ts
 msgid "Sotto could not read Hyprland’s keys. Nothing was changed. Open Sotto in your Omarchy desktop session, then try again."
 msgstr "Sotto could not read Hyprland’s keys. Nothing was changed. Open Sotto in your Omarchy desktop session, then try again."
@@ -2168,6 +2172,10 @@ msgstr "The thread {title} did not start working. {message} Nothing was changed 
 msgid "The thread could not start."
 msgstr "The thread could not start."
 
+#: src/main/notifications/openNotificationThread.ts
+msgid "The thread for this notification is no longer available. Choose another thread or start a new one."
+msgstr "The thread for this notification is no longer available. Choose another thread or start a new one."
+
 #: src/main/hosts/desktopHostRouter.ts
 msgid "The threads to dismiss could not be read."
 msgstr "The threads to dismiss could not be read."
@@ -2535,6 +2543,14 @@ msgstr "This memory no longer exists. Refresh the inspector."
 #: src/main/tools/browser.ts
 msgid "This navigation is blocked. Only HTTP and HTTPS pages can open here."
 msgstr "This navigation is blocked. Only HTTP and HTTPS pages can open here."
+
+#: src/main/notifications/openNotificationThread.ts
+msgid "This notification is for another Watcher room. Open Sotto on its computer to read it."
+msgstr "This notification is for another Watcher room. Open Sotto on its computer to read it."
+
+#: src/main/notifications/openNotificationThread.ts
+msgid "This notification is for Watcher. Its conversation is in this room."
+msgstr "This notification is for Watcher. Its conversation is in this room."
 
 #: src/main/omarchy/setup.ts
 msgid "This Omarchy theme left Sotto’s colours unreadable. Choose another theme, then try again."

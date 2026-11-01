@@ -21,7 +21,7 @@ import {
   resolveThemeFor,
   savedThemeHalfId,
 } from '../../../src/shared/themes/library'
-import { PAINTED_TEXT_PAIRS, paintedContrast, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
+import { PAINTED_TEXT_PAIRS, paintedContrast, placeholderApartFromText, withPaintedLayers } from '../../fixtures/renderer/paintedTextPairs'
 import { MODES, contrast, over, parseTokenBlocks, resolveColor, rootDeclarations, type Mode, type Rgba } from '../../fixtures/renderer/themeTokenResolver'
 
 const tokenBlocks = parseTokenBlocks(readFileSync(join(process.cwd(), 'src/renderer/src/styles/tokens.css'), 'utf8'))
@@ -92,6 +92,9 @@ describe('Glass, the see-through theme (ADR-0150)', () => {
         }
       }
       const declarations = glassRoom(mode, desk)
+      // The prompt's hint reads as a hint on the glass card: at least 2:1 from typed words, by night as well, where Glass's
+      // muted text stands close to its body text.
+      expect(placeholderApartFromText(declarations), 'placeholder against typed text').toBeGreaterThanOrEqual(2)
       const color = (name: string): Rgba => over(resolveColor(`--tt-${name}`, declarations), resolveColor('--tt-canvas', declarations))
       // The accent as a fill and the focus ring are not words: 3:1 is their bar, on the room and on the sidebar.
       for (const surface of ['canvas', 'sidebar', 'card'] as const) {

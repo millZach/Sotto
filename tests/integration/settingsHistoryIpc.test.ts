@@ -30,6 +30,7 @@ import {
   KEY_LISTENER_PERMISSION_GET,
   KEY_LISTENER_PERMISSION_REQUEST,
   RECOVERY_NOTICE_LIST,
+  PASTE_PERMISSION_NOTICE_DISMISS,
   SETTINGS_GET,
   SETTINGS_RESET,
   SETTINGS_UPDATE,
@@ -171,13 +172,14 @@ describe('IPC validation and lifecycle', () => {
       )
     })
 
-  it('returns typed retained recovery notices to the trusted main renderer', async () => {
+  it('returns recovery notices and dismisses only paste permission causes', async () => {
       const harness = createIpcHarness()
       harness.cleanup()
       const list = vi.fn(() => [
         { code: 'SETTINGS_RECOVERED' as const },
         { code: 'HISTORY_RECOVERED' as const },
       ])
+      const dismissPastePermission = vi.fn()
       registerIpc(harness.ipc, {
         settings: harness.settings,
         history: harness.history,
@@ -187,7 +189,7 @@ describe('IPC validation and lifecycle', () => {
         trustedSenders: () => [
           { role: 'main', webContents: harness.trustedContents, url: harness.trustedUrl },
         ],
-        recoveryNotices: { list },
+        recoveryNotices: { list, dismissPastePermission },
       })
 
       await expect(harness.ipc.invokeArgs(RECOVERY_NOTICE_LIST, [])).resolves.toEqual([
@@ -195,6 +197,11 @@ describe('IPC validation and lifecycle', () => {
         { code: 'HISTORY_RECOVERED' },
       ])
       expect(list).toHaveBeenCalledOnce()
+      await expect(harness.ipc.invoke(PASTE_PERMISSION_NOTICE_DISMISS, 'ACCESSIBILITY_PERMISSION_REQUIRED')).resolves.toEqual({ ok: true })
+      expect(dismissPastePermission).toHaveBeenCalledExactlyOnceWith('ACCESSIBILITY_PERMISSION_REQUIRED')
+      await expect(harness.ipc.invoke(PASTE_PERMISSION_NOTICE_DISMISS, 'HISTORY_RECOVERED')).rejects.toThrow('Invalid IPC payload')
+      await expect(harness.ipc.invokeArgs(PASTE_PERMISSION_NOTICE_DISMISS, ['AUTOMATION_PERMISSION_REQUIRED', true])).rejects.toThrow('Invalid IPC payload')
+      expect(dismissPastePermission).toHaveBeenCalledOnce()
     })
 
   it('lists transcripts kept from before history was turned off, as after a restart with it off', async () => {

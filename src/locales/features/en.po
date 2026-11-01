@@ -1882,6 +1882,7 @@ msgid "Disconnected"
 msgstr "Disconnected"
 
 #: src/renderer/src/App.tsx
+#: src/renderer/src/components/ToastRegion.tsx
 #: src/renderer/src/features/dictate/DictateRoom.tsx
 #: src/renderer/src/features/updates/UpdateAllCard.tsx
 #: src/renderer/src/watcher/WatchControls.tsx
@@ -3948,6 +3949,10 @@ msgstr "Prototype to review in a thread it delegated to"
 msgid "Provider"
 msgstr "Provider"
 
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Provider and reasoning settings come from this preset."
+msgstr "Provider and reasoning settings come from this preset."
+
 #: src/renderer/src/features/usage/UsageModels.tsx
 msgid "Provider sessions"
 msgstr "Provider sessions"
@@ -4405,8 +4410,8 @@ msgid "Scope"
 msgstr "Scope"
 
 #: src/renderer/src/components/CleanupModelFields.tsx
-msgid "Search models"
-msgstr "Search models"
+msgid "Search models or paste @preset/…"
+msgstr "Search models or paste @preset/…"
 
 #: src/renderer/src/features/dictate/Journal.tsx
 #: src/renderer/src/features/help/HelpView.tsx

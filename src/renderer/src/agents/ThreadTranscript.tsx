@@ -1,4 +1,6 @@
+import { ThreadMediaTiles } from './ThreadMediaTiles'
 import React, { memo, useCallback, useContext, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useResponseStreaming } from './responseStreaming'
 import { useMark } from '../components/marks'
 import { createPortal, flushSync } from 'react-dom'
 import { ArrowDown, Check, ChevronRight, Copy, GitFork, MessageSquare } from 'lucide-react'
@@ -8,7 +10,7 @@ import { Trans, useLingui } from '@lingui/react/macro'
 import type { AgentActivity } from '../../../shared/agentActivity'
 import { hostForThread, isThreadBusy, isVisualMessage, type AgentMessage, type AgentState, type ThreadContinuedIn } from '../../../shared/agents'
 import { Button } from '../components/Button'
-import { useAgents, type AgentConnection } from './AgentContext'
+import type { AgentConnection } from './AgentContext'
 import { sendThreadRevision } from './ThreadComposer'
 import { useWatchActions } from '../watcher/watcherRoom'
 import { watchAfterSend } from '../watcher/watchOnSend'
@@ -459,6 +461,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
     return <>
       <ActivityGroups groups={replyWork ? boundaries : groups} context={context} />
       {turn.replies.map(message => <React.Fragment key={message.id}>{article(message, message === head ? replyWork : undefined)}</React.Fragment>)}
+      <ThreadMediaTiles groups={groups} threadId={threadId} />
       <DelegatedWork views={delegations} />
       {continued}
     </>
@@ -466,7 +469,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
   const work = final ? written.filter(message => message !== final && drawn(message) && !visuals.some(visual => visual.message === message)) : []
   // A turn whose only record is how it ended has nothing to fold; its group states the outcome itself.
   if (!final || (!work.length && !groups.some(group => group.records.length && !compactionOf(group)))) return <>
-    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<UnfoldedWork views={delegations} work={final ? backgroundWork : undefined} />{continued}</>
+    <ActivityGroups groups={opening} context={context} />{everything.map(plain)}<ThreadMediaTiles groups={groups} threadId={threadId} /><UnfoldedWork views={delegations} work={final ? backgroundWork : undefined} />{continued}</>
   const finalAt = turn.replies.indexOf(final)
   const unfolded = new Set(visuals.map(visual => visual.message))
   const shown = (from: number, to: number): ReactNode => visuals.filter(visual => visual.at > from && visual.at < to)
@@ -489,6 +492,7 @@ const TurnView = memo(function TurnView({ turn, provider, running, last, writing
       <ActivityGroups groups={folded(placement.after.get(final.id))} context={context} outcome={lifecycle?.status} />
       <DelegatedWork views={delegations} />
     </TurnWork>
+    <ThreadMediaTiles groups={groups} threadId={threadId} />
     {shown(-1, finalAt)}
     <ActivityGroups groups={boundaries} context={context} />
     {article(final)}
@@ -690,8 +694,9 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   /** The inline request, rendered after the newest message. */
   readonly children?: ReactNode
   /**
-   * Told when the reader goes more than READING_BACK_PX above the end, or comes back, for the slim composer (ADR-0125).
-   * Only a crossing is told, never a scroll, and leaving says the reader is back.
+   * Told when the reader goes more than READING_BACK_PX above the end, or comes back, for the slim composer (ADR-0125),
+   * and told again at each scroll the reader makes while reading back, so a composer that came back full slims again.
+   * The transcript's own growth is never told.
    */
   readonly onReadingBack?: ((reading: boolean) => void) | undefined
   /** A printable key pressed in the transcript: the pane puts focus in the composer, which takes the key. */
@@ -704,7 +709,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const quoting = useOwlFeature('reply-quote')
   // A tip under the working words (ADR-0159; Owl only).
   const tipLine = useTipLine({ row, state, store, watcher, onFocusPrompt: onQuoted })
-  const streamText = useAgents().responseStreaming !== 'complete'
+  const streamText = useResponseStreaming() !== 'complete'
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
   const jump = useRef<HTMLButtonElement>(null)
@@ -734,9 +739,9 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
   const readingBack = useRef(false)
   const onReadingBackRef = useRef(onReadingBack)
   onReadingBackRef.current = onReadingBack
-  const noteReading = useCallback((element: HTMLElement): void => {
+  const noteReading = useCallback((element: HTMLElement, scrolled = false): void => {
     const reading = readsBack(element)
-    if (reading === readingBack.current) return
+    if (reading === readingBack.current && !(reading && scrolled)) return
     readingBack.current = reading
     onReadingBackRef.current?.(reading)
   }, [])
@@ -933,6 +938,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const held = reading.current
     if (held?.held === true && held.threadId === thread.id && Math.abs(element.scrollTop - held.top) < 1) return
     let distance = element.scrollHeight - element.scrollTop - element.clientHeight
+    const scrolled = Math.abs(element.scrollTop - lastTop.current) >= 1
     // Any move up that is not the end being cut short lets go of the end, however near it: a reply being written grows the
     // end faster than a reader scrolls out of the slack, and following would pull them back down with every word.
     const movedUp = element.scrollTop < lastTop.current - 1 && distance > 1
@@ -953,7 +959,7 @@ export function ThreadTranscript({ row, state, command, store, followSignal, chi
     const place = reading.current
     if (following.current) reading.current = null
     else if (place === null || place.threadId !== thread.id || Math.abs(element.scrollTop - place.top) >= 1) reading.current = readingPlace(element, rows, thread.id)
-    noteReading(element)
+    noteReading(element, scrolled)
   }
   /** The reader's own wheel, touch, press or scrolling key takes the scroll back from a held place, even where it cannot move. */
   const onReaderInput = (event: React.SyntheticEvent): void => {

@@ -634,6 +634,13 @@ describe('settings', () => {
     expect(parseSettings({ llmTimeoutMs: 100 }).llmTimeoutMs).toBe(2_500)
   })
 
+  it('persists OpenRouter preset references and refuses malformed ones', () => {
+    expect(parseSettings({ llmModel: '@preset/qwen-cerebras' }).llmModel).toBe('@preset/qwen-cerebras')
+    for (const llmModel of ['@preset/', '@preset/bad slug', '@preset/nested/slug', '@other/slug']) {
+      expect(parseSettings({ llmModel }).llmModel).toBeNull()
+    }
+  })
+
 
 
 

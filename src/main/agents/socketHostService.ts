@@ -10,7 +10,7 @@ import { watcherHostProjectionSchema, type WatcherHostControl, type WatcherHostR
 import { watcherRoomInputs } from './watcherRoomInput'
 import { type WatcherIdentity, watcherResultFromHostV1, watcherToolSchemas } from '../../shared/watcher'
 import { DEFLATE_OFFER, deflateAccepted, SocketFrames } from '../../host/socketFrames'
-import { HOST_CANNOT_STAGE_FILES, isImageAttachment, PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_FILES, isImageAttachment, PROVIDER_CONNECTION_NOTICES, PROVIDER_LABELS, providerConnectionNotice, agentAttachmentHandleSchema, agentThreadDetailResultSchema, agentAttachmentPreviewResultSchema, agentThreadMediaResultSchema, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { applyAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import { gitRefsPageSchema, type GitRefsPage, type GitRefsRequest } from '../../shared/gitRefs'
@@ -45,6 +45,7 @@ import type { HostThreadMoveRequest } from '../../shared/threadMoves'
 import { HOST_UPDATE_ANSWER_DEADLINES_MS, hostUpdateAnswerSchema, type HostUpdateAnswer, type HostUpdateRequest } from '../../shared/hostSelfUpdate'
 import type { HostUpdateStep } from '../../shared/hostUpdates'
 import { projectOriginsSchema, projectSetupResultSchema, type ProjectOrigins, type ProjectSetupRequest, type ProjectSetupResult } from '../../shared/workerMachine'
+import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { desktopDefaultsReceiptSchema, type DesktopDefaultsInput, type DesktopDefaultsReceipt } from '../../shared/desktopDefaults'
 import type { DelegationRelayAsk, DelegationRemoteAsk, RelayedReply } from '../../shared/delegationRelay'
 import type { DelegationNews } from '../../shared/delegation'
@@ -115,6 +116,11 @@ export interface SocketHostServiceOptions {
    * `delegation-views` and read a host's own threads' delegations. Stable reads none and is pushed none.
    */
   crossMachineEnabled?: boolean
+  /**
+   * Whether this desktop wants a host's next prompts now (ADR-0173): present only while its `next-prompt` Owl answer is on,
+   * which is what makes its hello accept `next-prompts`; read on each connection, and `setNextPromptsWanted` tells a change.
+   */
+  nextPromptsWanted?: () => boolean
   /**
    * This desktop relays a host's delegations to other machines (#1316): only then, and only with Work across machines on,
    * does its hello accept `delegation-relay`. Stable relays nothing and is asked nothing.
@@ -225,6 +231,9 @@ export class SocketHostService implements HostService {
   private readonly delegationListeners = new Set<(change: DelegationViewsChange) => void>()
   /** The host's check queue as it last pushed it (#1312), on this connection only; undefined before a push and once it closes. */
   private checks: readonly CheckQueueEntry[] | undefined
+  /** The host's next prompts as it pushed them on this connection, by its own thread IDs (ADR-0173). */
+  private readonly nextPromptEntries = new Map<string, NextPromptEntry>()
+  private readonly nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
   private readonly checkListeners = new Set<() => void>()
   private readonly relayListeners = new Set<(askId: string, ask: DelegationRelayAsk) => void>()
   /** Asks that came before anything listened, as when a host reads its relayed delegations again during this hello (#1316). */
@@ -387,7 +396,7 @@ export class SocketHostService implements HostService {
       // held on this run is hidden here as on this computer, by the held gate.
       // This connection holds no shell push's thread records yet, so the host's first push lists every one (#996).
       this.pushedThreads = createThreadReassembly()
-      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
+      const accepted = (['client-liveness', 'detail-delta', 'message-aliases', 'client-updates', 'client-update-not-listed', 'answer-receipts', 'usage-history', 'usage-muse-opencode', 'model-catalog-revision', 'host-update', 'activity-bodies', 'changed-thread-records', ...Object.values(PROVIDER_HOST_FEATURES), ...this.options.watcherEnabled === true ? ['watcher-reads'] : [], ...this.options.crossMachineEnabled === true ? ['delegation-views', 'check-queue-views'] : [], ...this.options.nextPromptsWanted ? ['next-prompts'] : [], ...this.relays ? ['delegation-relay', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts'] : []] as const).filter(feature => health.features.includes(feature))
       const accepts = { accepts: [...accepted] }
       const hello = this.read(hostHelloSchema, await this.call({ op: 'hello', afterSeq: this.catchesUp ? this.latestSeq : NO_EVENTS_AFTER, ...accepts }))
       if (hello.hostId !== session.hostId) throw new HostConnectionError(CONNECT_FAILURES.identityChangedConnect(), 'unauthenticated')
@@ -398,6 +407,8 @@ export class SocketHostService implements HostService {
         let page: HostEventPage = hello
         while (page.hasMore) page = await this.readEvents(this.latestSeq)
       }
+      // Told before the threads this window shows, which is when the host first looks at them for a next prompt (ADR-0173).
+      if (this.supportsNextPrompts) await this.call({ op: 'next-prompts-wanted', wanted: this.options.nextPromptsWanted!() }).catch(() => undefined)
       await this.observe(this.observed, this.shown)
       const pickedThreadId = this.options.getSelectedThreadId ? this.options.getSelectedThreadId() : selectedThreadId
       if (this.threadAvailable(pickedThreadId) && pickedThreadId && hello.shell.host.threads.some(thread => thread.id === pickedThreadId)) {
@@ -433,6 +444,10 @@ export class SocketHostService implements HostService {
   }
   private checksChanged(): void {
     for (const listener of [...this.checkListeners]) { try { listener() } catch { /* A listener's failure is its own. */ } }
+  }
+  private nextPromptChanged(entry: NextPromptEntry): void {
+    if (entry.prompt === null) this.nextPromptEntries.delete(entry.threadId); else this.nextPromptEntries.set(entry.threadId, entry)
+    for (const listener of [...this.nextPromptListeners]) { try { listener(entry) } catch { /* A listener's failure is its own. */ } }
   }
   private delegationsChanged(change: DelegationViewsChange): void {
     for (const listener of [...this.delegationListeners]) { try { listener(change) } catch { /* A listener's failure is its own. */ } }
@@ -484,6 +499,14 @@ export class SocketHostService implements HostService {
         else if (message.event === 'delegations-changed') { if (this.supportsDelegationViews) this.delegationsChanged({ threadIds: message.threadIds }) }
         // Pushed only to a desktop whose hello accepted `check-queue-views` (#1312), so only where Work across machines is on.
         else if (message.event === 'check-queue') { if (this.options.crossMachineEnabled === true) { this.checks = message.checks; this.checksChanged() } }
+        // Pushed only to a desktop whose hello accepted `next-prompts` and that said it wants them (ADR-0173).
+        else if (message.event === 'next-prompts') {
+          const pushed = new Map(message.entries.map(entry => [entry.threadId, entry] as const))
+          // What the host no longer holds is let go here too, so a prompt it dropped while this desktop was away goes.
+          for (const [threadId, entry] of this.nextPromptEntries) if (!pushed.has(threadId)) this.nextPromptChanged({ ...entry, prompt: null })
+          for (const entry of pushed.values()) this.nextPromptChanged(entry)
+        }
+        else if (message.event === 'next-prompt') this.nextPromptChanged(message.entry)
         else if (message.event === 'delegation-relay-ask') {
           // A host pushes asks only to a desktop whose hello accepted the feature, so one may come before that hello's answer.
           if (this.relays) {
@@ -1278,6 +1301,12 @@ export class SocketHostService implements HostService {
     completed: [...this.acceptedAnswers.values()].filter(item => item.threadId === threadId && item.providerId === providerId)
       .map(({ requestId, questionsDigest, decisionId }) => ({ requestId, questionsDigest, decisionId })) }
   }
+  /** One picture an activity record names (ADR-0170), behind previews, since the host takes one large frame at a time. */
+  threadMedia(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult> {
+    if (!this.features.includes('thread-media')) return Promise.resolve(null)
+    const result = this.previewTail.then(async () => this.read(agentThreadMediaResultSchema, await this.call({ op: 'thread-media', request })))
+    this.previewTail = result.catch(() => undefined); return result
+  }
   attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
     const result = this.previewTail.then(async () => this.read(agentAttachmentPreviewResultSchema, await this.call({ op: 'preview', request })))
     this.previewTail = result.catch(() => undefined); return result
@@ -1513,6 +1542,20 @@ export class SocketHostService implements HostService {
   subscribeCheckQueue(listener: () => void): () => void {
     this.checkListeners.add(listener)
     return () => { this.checkListeners.delete(listener) }
+  }
+  /** The host lists `next-prompts` and this desktop accepted it (ADR-0173): it pushes its threads' next prompts. */
+  get supportsNextPrompts(): boolean { return this.options.nextPromptsWanted !== undefined && this.features.includes('next-prompts') }
+  /** The host's next prompts as it last pushed them, by its own thread IDs, read in place. */
+  nextPrompts(): readonly NextPromptEntry[] { return [...this.nextPromptEntries.values()] }
+  /** Hears each next prompt the host pushes, and each it lets go. Returns the way to stop. */
+  subscribeNextPrompts(listener: (entry: NextPromptEntry) => void): () => void {
+    this.nextPromptListeners.add(listener)
+    return () => { this.nextPromptListeners.delete(listener) }
+  }
+  /** Tells the host whether this desktop wants its next prompts now: its own switch. A lost answer changes nothing here. */
+  setNextPromptsWanted(wanted: boolean): void {
+    if (!this.supportsNextPrompts || !this.frames) return
+    void this.call({ op: 'next-prompts-wanted', wanted }).catch(() => undefined)
   }
   /** The host lists `thread-starts`: it continues agents as threads and reads a started thread's handover (#1028). */
   get supportsThreadStarts(): boolean { return this.features.includes('thread-starts') }

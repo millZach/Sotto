@@ -12,6 +12,7 @@ import { DEFAULT_WORKER_CEILING, DEFAULT_WORKER_MACHINE, workerCeilingSchema, wo
   type WorkerMachineCeilings, type WorkerMachineSetting } from './workerMachine'
 import { parseThreadShortcutChoices, threadShortcutChoicesSchema, type ThreadShortcutChoices } from './threadShortcuts'
 import { ownCleanupChoiceSchema, type OwnCleanupChoice } from './ownServerCleanup'
+import { OPENROUTER_MODEL_ID } from './openRouterModel'
 import {
   APPEARANCE_CONTRAST,
   DEFAULT_THEME_ID,
@@ -506,7 +507,7 @@ const fieldSchemas = {
   llmDictionary: z.string().max(4_000),
   llmTimeoutMs: z.number().int().min(500).max(10_000),
   llmMinWords: z.number().int().min(0).max(50),
-  llmModel: z.string().regex(/^[\w.\-/:]{1,128}$/u).nullable(),
+  llmModel: z.string().regex(OPENROUTER_MODEL_ID).nullable(),
   llmMode: z.enum(LLM_MODES),
   llmOwnModel: ownCleanupChoiceSchema.nullable(),
   threadTitles: z.boolean(),

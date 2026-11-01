@@ -418,9 +418,10 @@ export function WatcherNightScene({ shown, held, place = 'night-wood', owls, glo
       if (text === null || accent === null || surface === null) return
       const present = (word: Word | null): word is Word => word !== null
       const words = [toWord(style.color, pixel), toWord(style.borderTopColor, pixel), toWord(style.borderRightColor, pixel), toWord(style.borderBottomColor, pixel)].filter(present)
-      // The glass composer's own words, its text, secondary and muted tiers, and its card (the probe's outline).
+      // The glass composer's own words, its text, secondary and muted tiers and its placeholder's hint tier, and its card
+      // (the probe's outline).
       const card = toRgb(style.outlineColor, pixel)
-      const cardWords = [toWord(style.color, pixel), toWord(style.borderTopColor, pixel), toWord(style.borderLeftColor, pixel)].filter(present)
+      const cardWords = [toWord(style.color, pixel), toWord(style.borderTopColor, pixel), toWord(style.borderLeftColor, pixel), toWord(style.textDecorationColor, pixel)].filter(present)
       const key = JSON.stringify([text, accent, words, card, cardWords, surface, style.fontFamily])
       if (key === inked) return
       inked = key

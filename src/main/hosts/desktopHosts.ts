@@ -263,6 +263,8 @@ export class DesktopHosts {
     watcherEnabled?: boolean; heldProviders?: HeldProviders; museEnabled?: boolean; streamingPublishCost?: boolean; clientVersion?: string; retainedDrafts?: RetainedDraftStore;
     /** Work across machines (#1310): each host's socket reads its own threads' delegations only where this is on. */
     crossMachineEnabled?: boolean;
+    /** Whether this desktop wants its hosts' next prompts now (ADR-0173), present only while its `next-prompt` Owl answer is on. */
+    nextPromptsWanted?: () => boolean;
     /** This desktop relays hosts' delegations to This computer (#1316), only while Work across machines and Watcher run. */
     relaysDelegation?: boolean;
     /**
@@ -1540,7 +1542,7 @@ export class DesktopHosts {
     // A push error stays on the row only until what it was about arrives, so a thread that was once too large
     // does not keep saying so after it fits again.
     const socket = new SocketHostService({ ...(this.options.clientVersion ? { clientVersion: this.options.clientVersion } : {}),
-      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, crossMachineEnabled: this.options.crossMachineEnabled === true, relaysDelegation: this.options.relaysDelegation === true, heldProviders: this.heldProviders, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
+      ...(this.options.waitingClientVersion ? { waitingVersion: this.options.waitingClientVersion } : {}), watcherEnabled: this.options.watcherEnabled === true, crossMachineEnabled: this.options.crossMachineEnabled === true, ...(this.options.nextPromptsWanted ? { nextPromptsWanted: this.options.nextPromptsWanted } : {}), relaysDelegation: this.options.relaysDelegation === true, heldProviders: this.heldProviders, streamingPublishCost: this.options.streamingPublishCost === true, retainedDrafts: this.retainedDrafts, retainedRegistrationId: host.id, getSelectedThreadId: () => {
       const selected = this.options.router.shell().activeThreadId
       const picked = selected ? parseHostEntityKey(selected) : null
       return picked?.hostId === target.expectedHostId ? picked.id : null
@@ -1577,7 +1579,7 @@ export class DesktopHosts {
     if (from && this.updates?.busy(host.id)) throw new MoveWaits()
     const connection: DesktopHostConnection = { hostId: hello.hostId, name: host.name, kind: 'remote', service: socket,
       refreshRequestAnswer: (decisionId, target) => socket.refreshRequestAnswer(decisionId, target),
-      detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request), observe: (ids, shown) => socket.observe(ids, shown),
+      detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request), media: request => socket.threadMedia(request), observe: (ids, shown) => socket.observe(ids, shown),
       activityBody: (threadId, activityId) => socket.activityBody(threadId, activityId),
       stage: image => socket.stageAttachment(image), content: digest => socket.attachmentContent(digest),
       gitRefs: request => socket.gitRefs(request), gitChangedFiles: request => socket.gitChangedFiles(request), gitPullRequest: request => socket.gitPullRequest(request),

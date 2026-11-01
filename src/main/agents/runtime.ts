@@ -1,3 +1,4 @@
+import { ThreadMediaStore } from './threadMedia'
 import { join } from 'node:path'
 import type { AgentThread, ProviderId } from '../../shared/agents'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
@@ -7,8 +8,9 @@ import { babysitEndedReasonSchema, type BabysitEndedReason } from '../../shared/
 import { ShortTextWriter } from '../llm/shortTextWriter'
 import { firstMessageTitleWriter, threadTitleWriter } from '../llm/threadTitle'
 import { threadBranchWriter } from '../llm/threadBranch'
-import { nextPromptWriter } from '../llm/nextPrompt'
+import { nextPromptOpeningWriter, nextPromptWriter } from '../llm/nextPrompt'
 import { NextPrompts } from './nextPrompts'
+import { nextPromptProject } from './nextPromptProject'
 import type { NextPromptEntry } from '../../shared/nextPrompt'
 import { CodexAppServerHost, type CodexAdapterEvent } from './codex'
 import { ClaudeStreamJsonHost, type ClaudeAdapterEvent } from './claude'
@@ -162,11 +164,22 @@ export interface AgentRuntimeOptions {
    */
   attachAnyFile?: boolean
   /**
-   * The Owl list's answer for next prompts (ADR-0132), read once by the process owner. Absent fails closed, and a headless
-   * host builds none: only this computer's window shows them. `nextPromptChanged` hears each change, for the window.
+   * The Owl list's answer for pictures in threads (ADR-0170), read once by the process owner. With it Claude Code and Codex
+   * keep their tool results' pictures in the thread media store and the host answers `thread-media` reads. Absent fails
+   * closed: nothing is captured.
+   */
+  inlineMedia?: boolean
+  /** The store itself, when the process owner built it for providers of its own as well (the desktop's native fixtures). */
+  threadMedia?: ThreadMediaStore
+  /**
+   * The Owl list's answer for next prompts (ADR-0132), read once by the process owner. Absent fails closed.
+   * `nextPromptChanged` hears each change: the desktop tells its window, and a headless host its desktops (ADR-0173).
+   * `nextPromptsWanted`, where given, is asked before each side call: a headless host asks only while a desktop that
+   * wants them, with its own switch on, is connected.
    */
   nextPromptEnabled?: boolean
   nextPromptChanged?: (entry: NextPromptEntry) => void
+  nextPromptsWanted?: () => boolean
   /**
    * The user's own model servers (ADR-0124), given to this computer's OpenCode at each process start. Present only while
    * the `own-model-servers` Owl answer is on; a headless host has none in this phase.
@@ -264,9 +277,12 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const held = heldProvidersOption(options)
   // A held provider's adapter is never built: its stand-in starts nothing and refuses in the provider's name.
   const adapter = (id: ProviderId, build: () => NativeHost): NativeHost => held.has(id) ? new HeldProviderHost(id) : build()
+  // Pictures in threads (ADR-0170): one store for this runtime, built only with the Owl feature on.
+  const threadMedia = options.host ? undefined : options.threadMedia ?? (options.inlineMedia === true ? new ThreadMediaStore(directory, { historyEnabled: options.historyEnabled }) : undefined)
+  const captureMedia = threadMedia ? { captureMedia: threadMedia.capture } : {}
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
-    codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
-    claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
+    codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
+    claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
       ...(options.claudeSettingsLog ? { logEvent: options.claudeSettingsLog } : {}), ultracodeEffort: () => agentControl.configuration().claudeUltracodeEffort })),
     grok: adapter('grok', () => options.providers?.grok ?? new GrokAcpHost(directory, { usageEnabled: options.usageEnabled === true, ...limitStops })),
     devin: adapter('devin', () => options.providers?.devin ?? new DevinAcpHost(directory)),
@@ -355,14 +371,21 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
       codex: new CodexSubscriptionClient(join(directory, 'reasoning', 'codex')),
       grok: new GrokSubscriptionClient(join(directory, 'reasoning', 'grok')),
     })
-  // Next prompts (ADR-0132): when a turn ends, the thread's own provider is asked on the side what the user will type next.
-  // Built only for this computer's own threads, while the Owl feature is on; the switch is read for every turn.
-  const nextPrompts = options.nextPromptEnabled === true && options.runsAs !== 'headless-host' && !options.host ? new NextPrompts({
-    write: nextPromptWriter(shortTextWriter, options.writingSettings),
+  // Next prompts (ADR-0132, ADR-0173): when a turn ends, or a new thread is first shown, the thread's own provider is asked on
+  // the side what the user will type next. Built for the threads this process runs, on a desktop and on a headless host,
+  // while the Owl feature is on; the switch is read for every ask.
+  const nextPromptListeners = new Set<(entry: NextPromptEntry) => void>()
+  const nextPromptGate = <Input>(write: (threadId: string, input: Input, signal?: AbortSignal) => Promise<string | null>) =>
+    (threadId: string, input: Input, signal: AbortSignal): Promise<string | null> => options.nextPromptsWanted?.() === false ? Promise.resolve(null) : write(threadId, input, signal)
+  const nextPrompts = options.nextPromptEnabled === true && !options.host ? new NextPrompts({
+    write: nextPromptGate(nextPromptWriter(shortTextWriter, options.writingSettings)),
+    writeOpening: nextPromptGate(nextPromptOpeningWriter(shortTextWriter, options.writingSettings)),
+    project: thread => nextPromptProject(thread, agentControl.liveHost(), gitRun ?? runGitStatusCommand),
+    asking: () => options.nextPromptsWanted?.() !== false && options.settings().nextPromptSuggestions,
     thread: id => agentControl.liveThread(id),
     history: thread => agentControl.threadHistory(thread),
     historyEnabled: options.historyEnabled,
-    publish: entry => options.nextPromptChanged?.(entry),
+    publish: entry => { options.nextPromptChanged?.(entry); for (const listener of [...nextPromptListeners]) listener(entry) },
     log: event => options.logFailure?.('next-prompt-failed', event === 'next-prompt-failed error' ? 'failed' : 'unreadable'),
   }) : undefined
   // Restart stopped threads retires babysitting (ADR-0144): then no thread has Sotto's pull request tools, and the
@@ -385,6 +408,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.logFailure ? { logFailure: options.logFailure } : {}),
     ...(options.missingAttachment ? { missingAttachment: options.missingAttachment } : {}),
     ...(options.attachAnyFile === true ? { attachAnyFile: true } : {}),
+    ...(threadMedia ? { threadMedia } : {}),
     ...(options.runsAs ? { runsAs: options.runsAs } : {}),
     ...(options.clients ? { clients: options.clients } : {}),
     ...(options.locateClient ? { locateClient: options.locateClient } : {}),
@@ -770,6 +794,11 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   if (delegation) await delegation.recover()
   const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
+    // A headless host pushes its threads' next prompts to the desktops that want them (ADR-0173).
+    ...(nextPrompts && options.runsAs === 'headless-host' ? { nextPrompts: { list: () => nextPrompts.list(), subscribe: (listener: (entry: NextPromptEntry) => void) => {
+      nextPromptListeners.add(listener)
+      return () => { nextPromptListeners.delete(listener) }
+    } } } : {}),
     ...workerAdmission ? { workerSwarms: true } : {},
     ...(crossMachine ? { projectOrigins: readProjectOrigins } : {}),
     ...(projectCopies ? { setUpProject: (request: ProjectSetupRequest) => projectCopies.setUp(request) } : {}),
@@ -789,6 +818,7 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     ...(options.pullRequestViewEnabled === true ? { pullRequestView: true } : {}),
     ...(options.clearThreadsEnabled === true ? { threadDelete: true } : {}),
     ...(options.attachAnyFile === true ? { fileStaging: true } : {}),
+    ...(threadMedia ? { threadMedia: true } : {}),
     // The iPhone's Agents view (ADR-0103): delegated threads only where delegation runs, which on a headless host is only
     // where Work across machines is on (#1310).
     ...(options.agentsViewEnabled === true ? { agentsView: delegationRecord ? { delegations: (threadId, threads) => threadDelegations(delegationRecord, threads, threadId) } : {} } : {}),

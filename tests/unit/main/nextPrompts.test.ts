@@ -125,7 +125,7 @@ describe('the generation guard', () => {
     const published: NextPromptEntry[] = []
     const log = vi.fn()
     const deps: NextPromptsDependencies = {
-      write: vi.fn(async () => REPLY), thread: () => thread,
+      write: vi.fn(async () => REPLY), thread: id => id === thread.id ? thread : undefined,
       publish: entry => { published.push(entry) }, log, defer: run => run(), ...patch,
     }
     return { prompts: new NextPrompts(deps), deps, published, log, set: (next: AgentThread) => { thread = next } }
@@ -331,18 +331,19 @@ describe('the Owl gate', () => {
     return answer
   }
 
-  it('builds next prompts only while the Owl feature is on, and only for this computer\'s own threads', async () => {
+  it('builds next prompts only while the Owl feature is on, on a desktop and on a headless host', async () => {
     await expect(built({})).resolves.toBeUndefined()
     await expect(built({ nextPromptEnabled: false })).resolves.toBeUndefined()
-    await expect(built({ nextPromptEnabled: true, runsAs: 'headless-host' })).resolves.toBeUndefined()
+    // A headless host builds its own, for the desktops that want them (ADR-0173).
+    await expect(built({ nextPromptEnabled: true, runsAs: 'headless-host' })).resolves.toBeInstanceOf(NextPrompts)
     await expect(built({ nextPromptEnabled: true })).resolves.toBeInstanceOf(NextPrompts)
   })
 
   it('registers no channel while off, and names each thread by its host for the window', () => {
     const ipc = { handle: vi.fn(), removeHandler: vi.fn() }
-    registerNextPromptIpc(ipc as never, undefined, () => 'host', () => [])
+    registerNextPromptIpc(ipc as never, false, undefined, () => 'host', () => [])
     expect(ipc.handle).not.toHaveBeenCalled()
-    registerNextPromptIpc(ipc as never, { list: () => [] }, () => 'host', () => [])
+    registerNextPromptIpc(ipc as never, true, { list: () => [] }, () => 'host', () => [])
     expect(ipc.handle).toHaveBeenCalledWith(NEXT_PROMPT_READ, expect.any(Function))
     expect(windowNextPrompt('host', { threadId: 'thread', afterUserMessageId: 'u1', prompt: null }).threadId).toBe(hostEntityKey('host', 'thread'))
   })

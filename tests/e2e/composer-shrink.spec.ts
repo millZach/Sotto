@@ -4,6 +4,8 @@ import { hostKeysPerTest } from './support/hostKeys'
 import { longHistory } from './support/longHistory'
 import { closeSotto, launchSotto, openThreads, type LaunchedSotto } from './support/sottoLaunch'
 import { evidenceDirectory } from '../fixtures/evidence'
+import { READING_BACK_PX } from '../../src/renderer/src/agents/slimComposer'
+import { COMPOSER_STYLES, type ComposerStyle } from '../../src/shared/composerStyle'
 
 // The slim composer (ADR-0125; Owl only, the user's pick B of docs/prototypes/composer-shrink-prototype.html): reading
 // back through a thread steps the floating composer down to one line with its disc, and the end, a click, a key typed
@@ -21,13 +23,13 @@ async function launch(enabled: boolean): Promise<LaunchedSotto> {
   try { return await launchSotto('design-threads') } finally { if (previous === undefined) delete process.env.SOTTO_OWL_FEATURES; else process.env.SOTTO_OWL_FEATURES = previous }
 }
 
-async function prepare(launched: LaunchedSotto, reducedMotion: 'system' | 'on' = 'system'): Promise<void> {
+async function prepare(launched: LaunchedSotto, reducedMotion: 'system' | 'on' = 'system', composerStyle: ComposerStyle = 'rows'): Promise<void> {
   const { page } = launched
-  await page.evaluate(async reducedMotion => {
-    await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', accent: 'blue', reducedMotion })
+  await page.evaluate(async ({ reducedMotion, composerStyle }) => {
+    await window.sotto!.updateSettings({ onboardingComplete: true, appearance: 'dark', accent: 'blue', reducedMotion, composerStyle })
     await window.sotto!.agents!.command({ type: 'configure', patch: { enabled: true } })
     await window.sotto!.agents!.command({ type: 'connect' })
-  }, reducedMotion)
+  }, { reducedMotion, composerStyle })
   await page.reload()
   await hostKeys.read(page)
   await openThreads(page)
@@ -106,10 +108,10 @@ async function capture(launched: LaunchedSotto, name: string, pane: Locator, fro
       await launched.page.evaluate(async mode => window.sotto!.updateSettings({ appearance: mode }), appearance)
       await expect(launched.page.locator('html')).toHaveAttribute('data-theme', appearance)
       await readBack(pane, fromEnd)
-      if (fromEnd > 160) await expect(compose).toHaveAttribute('data-slim', 'true')
+      if (fromEnd > READING_BACK_PX) await expect(compose).toHaveAttribute('data-slim', 'true')
       else await expect(compose).not.toHaveAttribute('data-slim')
       await settled(pane)
-      if (fromEnd > 160) {
+      if (fromEnd > READING_BACK_PX) {
         const slim = await shape(pane)
         expect(slim.editorLines, `${width}x${height} ${appearance} ${JSON.stringify(slim)}`).toBe(1)
         expect(slim.card, `${width}x${height} ${appearance} ${JSON.stringify(slim)}`).toBeLessThanOrEqual(44)
@@ -122,12 +124,13 @@ async function capture(launched: LaunchedSotto, name: string, pane: Locator, fro
   await launched.page.evaluate(async () => window.sotto!.updateSettings({ appearance: 'dark' }))
 }
 
-test('reading back slims the composer to one line, and the end, a click, typing and a draft bring it back full', async () => {
+// Both of the composer's styles (ADR-0168): Zach's two rows, the default, and Drake's pill.
+for (const style of COMPOSER_STYLES) test(`reading back slims ${style === 'rows' ? 'Zach’s' : 'Drake’s'} composer to one line, and the end, a click, typing and a draft bring it back full`, async () => {
   test.setTimeout(180_000)
   const launched = await launch(true)
   const { page } = launched
   try {
-    await prepare(launched)
+    await prepare(launched, 'system', style)
     await resize(launched, 1280, 860)
     await selectThread(page, 'Grok voice previews')
     await history(page, 'grok-previews')
@@ -144,8 +147,8 @@ test('reading back slims the composer to one line, and the end, a click, typing 
     expect(full.optionsShown, JSON.stringify(full)).toBe(true)
 
     const announced = await liveWords(pane)
-    // A little above the end is still the end.
-    await readBack(pane, 120)
+    // A pixel or two short of the end is still the end.
+    await readBack(pane, 2)
     await expect(compose).not.toHaveAttribute('data-slim')
 
     // Reading back: one line with its disc beside it; the options row, the toolbar and the row under the card step away.
@@ -164,7 +167,9 @@ test('reading back slims the composer to one line, and the end, a click, typing 
     const slim = await shape(pane)
     const context = JSON.stringify({ full, slim })
     expect(slim.editorLines, context).toBe(1)
-    expect(slim.card, context).toBeLessThan(full.card - 30)
+    // Zach's two rows step down to one; Drake's pill is one line already, and only its options step away.
+    if (style === 'rows') expect(slim.card, context).toBeLessThan(full.card - 30)
+    else expect(slim.card, context).toBeLessThanOrEqual(full.card)
     expect(slim.discBeside, context).toBe(true)
     expect(slim.optionsShown || slim.metaShown || slim.toolbarShown, context).toBe(false)
     expect(slim.compose, context).toBe(full.compose)
@@ -178,8 +183,41 @@ test('reading back slims the composer to one line, and the end, a click, typing 
     expect(await liveWords(pane), 'what the composer announces').toEqual(announced)
 
     // Back near the end: full again.
-    await readBack(pane, 40)
+    await readBack(pane, 2)
     await expect(compose).not.toHaveAttribute('data-slim')
+
+    // The caret resting in the empty prompt, as it is after a send or on opening a thread, does not hold the composer
+    // full: reading back slims it all the same, and the caret stays.
+    await textbox.focus()
+    await readBack(pane, 420)
+    await expect(compose).toHaveAttribute('data-slim', 'true')
+    await expect(textbox).toBeFocused()
+    await readBack(pane, 2)
+    await expect(compose).not.toHaveAttribute('data-slim')
+    await log.focus()
+
+    // Every scroll away from the end slims the empty composer, by a real wheel notch, time after time, with the caret in
+    // the prompt or not, and after a press on the card brought it back full (Zach's report on October 31, 2026).
+    const box = (await log.boundingBox())!
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 3)
+    for (let round = 0; round < 5; round++) {
+      await readBack(pane, 0)
+      await expect(compose, `full at the end, round ${round}`).not.toHaveAttribute('data-slim')
+      if (round % 2 === 0) await textbox.focus()
+      await page.mouse.wheel(0, -120)
+      await expect(compose, `slim after one notch, round ${round}`).toHaveAttribute('data-slim', 'true')
+      await settled(pane)
+    }
+    for (let round = 0; round < 3; round++) {
+      await compose.locator(':scope > .thread-prompt').click({ position: { x: 6, y: 6 } })
+      await expect(compose).not.toHaveAttribute('data-slim')
+      await expect(textbox).toBeFocused()
+      await page.mouse.move(box.x + box.width / 2, box.y + box.height / 3)
+      await page.mouse.wheel(0, -120)
+      await expect(compose, `slim again after a press on the card, round ${round}`).toHaveAttribute('data-slim', 'true')
+      await settled(pane)
+    }
+    await log.focus()
 
     // A click on the slim card puts the caret in it, and it comes back full.
     await readBack(pane, 420)
@@ -240,8 +278,9 @@ test('reading back slims the composer to one line, and the end, a click, typing 
     })
     expect(moving).toBe(1)
 
-    await capture(launched, 'thread-full', pane, 0)
-    await capture(launched, 'thread-slim', pane, 420)
+    const name = style === 'rows' ? 'thread' : 'thread-pill'
+    await capture(launched, `${name}-full`, pane, 0)
+    await capture(launched, `${name}-slim`, pane, 420)
   } finally { await closeSotto(launched) }
 })
 

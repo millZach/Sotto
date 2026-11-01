@@ -23,6 +23,7 @@ import {
   QUESTION_PAGE_OPEN,
   RECOVERY_NOTICE,
   RECOVERY_NOTICE_LIST,
+  PASTE_PERMISSION_NOTICE_DISMISS,
   SETTINGS_CHANGED,
   SETTINGS_UPDATE,
   SPEECH_MODEL_STATUS,
@@ -149,6 +150,7 @@ describe('typed preload bridge', () => {
         'downloadUpdate',
         'deleteHistory',
         'deliverOutput',
+        'dismissPastePermissionNotice',
         'files',
         'getHotkey',
         'getKeyListenerPermission',
@@ -222,7 +224,7 @@ describe('typed preload bridge', () => {
       expect(Object.isFrozen(surface)).toBe(true)
     }
     expect(Object.keys(bridge.memory!).sort()).toEqual(['command', 'get', 'onChanged'])
-    expect(Object.keys(bridge.agents!).sort()).toEqual(['activityBody', 'attachmentContent', 'attachmentPreview', 'chooseProjectDirectory', 'command', 'commandWithChangedThreadRecords', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitRefs', 'hostFolders', 'onState', 'onThreadDetail', 'stageAttachment', 'startHandover', 'threadDetail', 'threadPrompts', 'workingCopyOptions'])
+    expect(Object.keys(bridge.agents!).sort()).toEqual(['activityBody', 'attachmentContent', 'attachmentPreview', 'chooseProjectDirectory', 'command', 'commandWithChangedThreadRecords', 'get', 'gitChangedFiles', 'gitPullRequest', 'gitRefs', 'hostFolders', 'onState', 'onThreadDetail', 'stageAttachment', 'startHandover', 'threadDetail', 'threadMedia', 'threadPrompts', 'workingCopyOptions'])
   })
 
   it('creates a frozen widget surface without private settings, dictation history, or audio processing', async () => {
@@ -556,7 +558,7 @@ describe('typed preload bridge', () => {
       ([channel]) => channel === DICTATION_COMMAND,
     )?.[1]
     const listening = {
-      status: 'listening', sessionId: 's', startedAt: 1, level: 0.2,
+      status: 'listening', sessionId: 's', startedAt: 1, speaking: true,
       theme: 'system', palette: DEFAULT_WIDGET_PALETTE, reducedMotion: 'system', shortcut: 'Primary', cancellable: true,
     } as const
     widgetEvent?.({}, listening)
@@ -616,6 +618,13 @@ describe('typed preload bridge', () => {
     const unsubscribe = bridge.onRecoveryNotice(listener)
     expect(listener).toHaveBeenCalledOnce()
     expect(listener).toHaveBeenCalledWith({ code: 'SETTINGS_RECOVERED' })
+    recoveryEvent?.({}, { code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: true })
+    recoveryEvent?.({}, { code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: true, transcript: 'private words' })
+    expect(listener).toHaveBeenCalledTimes(2)
+    expect(listener).toHaveBeenLastCalledWith({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: true })
+    recoveryEvent?.({}, { code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: false })
+    expect(listener).toHaveBeenCalledTimes(3)
+    expect(listener).toHaveBeenLastCalledWith({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED', cleared: false })
     unsubscribe()
 
     electronMock.ipcRenderer.invoke.mockResolvedValueOnce([
@@ -627,6 +636,15 @@ describe('typed preload bridge', () => {
       { code: 'HISTORY_RECOVERED' },
     ])
     expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledWith(RECOVERY_NOTICE_LIST)
+  })
+
+  it('dismisses a paste permission notice through its fixed channel', async () => {
+    const bridge = createSottoBridge(electronMock.ipcRenderer, 'darwin')
+    electronMock.ipcRenderer.invoke.mockResolvedValueOnce({ ok: true })
+    await expect(bridge.dismissPastePermissionNotice('ACCESSIBILITY_PERMISSION_REQUIRED')).resolves.toEqual({ ok: true })
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledExactlyOnceWith(PASTE_PERMISSION_NOTICE_DISMISS, 'ACCESSIBILITY_PERMISSION_REQUIRED')
+    expect(() => bridge.dismissPastePermissionNotice('HISTORY_RECOVERED' as never)).toThrow()
+    expect(electronMock.ipcRenderer.invoke).toHaveBeenCalledOnce()
   })
 
   it('forwards immutable output policy and transcript-free widget snapshots on fixed channels', async () => {

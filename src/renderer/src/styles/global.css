@@ -546,6 +546,12 @@ textarea.tt-input {
   border-left-color: var(--tt-error);
 }
 
+.tt-toast[data-dismissible] {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
 .tt-toast[data-tone='success'] {
   border-left-color: var(--tt-success);
 }
