@@ -2575,13 +2575,6 @@ protocol.registerSchemesAsPrivileged([VISUAL_SCHEME_PRIVILEGES])
 enableWasmThreadSupport(app.commandLine)
 disableDnsPrefetching(app.commandLine)
 configurePasswordStore(platform, app.commandLine, process.env.XDG_CURRENT_DESKTOP)
-// Hidden browser captures need a native surface on Windows (ADR-0020).
-// Preserve any caller-supplied feature switches; background throttling remains per-view.
-if (process.platform === 'win32') {
-  const disabled = new Set(app.commandLine.getSwitchValue('disable-features').split(',').filter(Boolean))
-  disabled.add('CalculateNativeWinOcclusion')
-  app.commandLine.appendSwitch('disable-features', [...disabled].join(','))
-}
 
 app.setAppUserModelId(APP_ID)
 // Sotto lives in the tray/menu bar, so losing every window must not quit it —

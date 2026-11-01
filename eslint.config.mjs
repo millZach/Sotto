@@ -290,6 +290,12 @@ export default tseslint.config(
     },
   },
   {
+    // The Windows occlusion benchmark runs in Node; its entry and driver run inside the built app's main process, as CommonJS.
+    files: ['scripts/perf-bench/windows-occlusion/*.{cjs,mjs}'],
+    languageOptions: { globals: { Buffer: 'readonly', clearInterval: 'readonly', clearTimeout: 'readonly', console: 'readonly', performance: 'readonly', process: 'readonly', require: 'readonly', setInterval: 'readonly', setTimeout: 'readonly' } },
+    rules: { '@typescript-eslint/no-require-imports': 'off' },
+  },
+  {
     // A Babel plugin for Playwright's transform (#1579): Babel loads its plugins with require, so it is plain CommonJS.
     files: ['tests/e2e/support/*.cjs'],
     languageOptions: { globals: { __dirname: 'readonly', module: 'writable', require: 'readonly' } },

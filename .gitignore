@@ -910,3 +910,4 @@ artifacts/watcher-card-queue/*
 artifacts/macos-dock-icon-padding/*
 !artifacts/macos-dock-icon-padding/sidebar-before.png
 !artifacts/macos-dock-icon-padding/sidebar-after.png
+scripts/perf-bench/windows-occlusion/results/
