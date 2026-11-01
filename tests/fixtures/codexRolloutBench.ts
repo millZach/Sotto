@@ -13,6 +13,9 @@ const cpu = process.cpuUsage(), started = performance.now()
 // As a first read of a thread with no saved position runs: every rollout read to its end.
 for (const threadId of threadIds) await watcher.pollThread(threadId, true)
 const used = process.cpuUsage(cpu), wall = performance.now() - started
+// The identities each thread's reading kept: its turns' user and assistant rows, their native IDs and the turn it is in.
+const tails = (watcher as unknown as { tails: Map<string, { identities: { snapshot(): unknown } }> }).tails
+const identities = threadIds.map(threadId => `${threadId}\t${JSON.stringify(tails.get(threadId)?.identities.snapshot() ?? null)}`)
 await watcher.stop()
 console.log(JSON.stringify({ cpuMs: (used.user + used.system) / 1000, wallMs: wall, messages: seen.length,
-  digest: createHash('sha256').update(seen.sort().join('\n')).digest('hex') }))
+  digest: createHash('sha256').update(seen.sort().join('\n')).update('\n\n').update(identities.join('\n')).digest('hex') }))

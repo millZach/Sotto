@@ -104,50 +104,97 @@ export class RolloutPositionFiles implements RolloutPositions {
   }
 }
 
-/**
- * The start of every rollout line Codex writes today: its time, maybe its ordinal, its kind and, for most kinds, its
- * payload's kind. Anchored, so the kinds it finds are the line's own and not a nested object's.
- */
-const ROLLOUT_HEAD = /\{"timestamp":"[^"\\]*",(?:"ordinal":\d+,)?"type":"([a-z_]+)"(?:,"payload":\{"type":"([A-Za-z_]+)")?/y
-/** The payload's keys with plain values, up to a key that matters: one value never holds another key's text. */
-const LEADING_KEYS = String.raw`(?:,"[A-Za-z_]+":(?:"(?:[^"\\]|\\.)*"|-?[\d.eE+-]+|true|false|null))*?`
-const PAYLOAD_ROLE = new RegExp(`${LEADING_KEYS},"role":"([a-z_]+)"`, 'y')
-const PAYLOAD_ITEM = new RegExp(`${LEADING_KEYS},"item":\\{"type":"([A-Za-z_]+)"`, 'y')
-/** How much of a line's start `mayBeRead` is shown before the line is kept: past the furthest word it decides by. */
+/** How much of a line's start `mayBeRead` reads: past the furthest key it decides by, and all it ever reads of a line. */
 const LINE_HEAD_BYTES = 1024
 const READ_EVENTS = new Set(['task_started', 'task_complete', 'user_message', 'agent_message', 'item_completed'])
+/** A JSON number. Each character has one place in it, so a match never backtracks. */
+const JSON_NUMBER = /-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?/y
 /**
  * Whether a rollout line may hold anything this reader takes: a turn's context, its start and end, a user's or the
  * agent's message as an event, a completed user message, and the agent's message as a response item
- * (`CodexRolloutIdentities.consume`, and the user messages read below). It is judged from the line's first few hundred
- * characters, so a line's start alone answers for the whole line whenever the answer is no. Every other line, a tool
- * call and its output, reasoning, a user's or the developer's message as a response item, a token count, is skipped
- * before it is joined, decoded or parsed: across the development machine's 1,616 rollouts, 93% of lines and over 99% of
- * bytes (#992). A line that does not start the way Codex writes them today is parsed and checked as before, so the check
- * only spares work it can prove is not needed.
+ * (`CodexRolloutIdentities.consume`, and the user messages read below). Every other line, a tool call and its output,
+ * reasoning, a user's or the developer's message as a response item, a token count, is skipped before it is joined,
+ * decoded or parsed: across the development machine's 1,628 rollouts, 93% of lines and over 99% of bytes (#992).
+ *
+ * It reads at most the line's first kilobyte, one JSON token at a time, and answers no only for a line that starts
+ * exactly as Codex writes one, `{"timestamp":…,"ordinal":…,"type":…,"payload":{"type":…`, with the payload's role or
+ * completed item among its first keys after plain values. A line's start alone therefore answers for the whole line
+ * whenever the answer is no, and anything else is parsed and checked as before: an escaped key or value, a nested value
+ * before the key it looks for, a start cut short. Codex writes each key once; a key this start names twice is read, since
+ * JSON.parse keeps the last, and so is a key escaped among the ones it reads.
  */
 export function mayBeRead(line: string): boolean {
-  ROLLOUT_HEAD.lastIndex = 0
-  const head = ROLLOUT_HEAD.exec(line)
-  if (!head) return true
-  const [, kind, payloadKind] = head
-  if (kind === 'turn_context') return true
+  const head = new LineHead(line.length > LINE_HEAD_BYTES ? line.slice(0, LINE_HEAD_BYTES) : line)
+  if (!head.take('{"timestamp":') || head.string() === undefined || !head.take(',')) return true
+  if (head.take('"ordinal":') && !(head.number() && head.take(','))) return true
+  if (!head.take('"type":')) return true
+  const kind = head.word()
+  if (kind === undefined || kind === 'turn_context') return true
   if (kind !== 'event_msg' && kind !== 'response_item') return false
+  const payloadKind = head.take(',"payload":{"type":') ? head.word() : undefined
   if (payloadKind === undefined) return true
   if (kind === 'response_item') {
-    if (payloadKind !== 'message') return false
-    const role = leading(PAYLOAD_ROLE, line, head[0].length)
-    return role === undefined || role === 'assistant'
+    if (payloadKind !== 'message') return head.names('type')
+    const role = head.leading('role')
+    return role === undefined || role === 'assistant' || head.names('type', 'role')
   }
-  if (!READ_EVENTS.has(payloadKind)) return false
+  if (!READ_EVENTS.has(payloadKind)) return head.names('type')
   if (payloadKind !== 'item_completed') return true
-  const item = leading(PAYLOAD_ITEM, line, head[0].length)
+  const item = head.leading('item')
   return item === undefined || item === 'UserMessage' || item === 'user_message'
 }
-/** The value `pattern` finds among the payload's leading keys, from `at`; none when a nested value comes first. */
-function leading(pattern: RegExp, line: string, at: number): string | undefined {
-  pattern.lastIndex = at
-  return pattern.exec(line)?.[1]
+/** The start of a line, read one token at a time. Each read takes the token it names here and moves past it, or answers no. */
+class LineHead {
+  private at = 0
+  constructor(private readonly text: string) {}
+  take(literal: string): boolean {
+    if (!this.text.startsWith(literal, this.at)) return false
+    this.at += literal.length; return true
+  }
+  /** A string's raw text between its quotes, escapes as they are written. */
+  string(): string | undefined {
+    if (this.text[this.at] !== '"') return undefined
+    for (let index = this.at + 1; index < this.text.length; index++) {
+      const code = this.text.charCodeAt(index)
+      if (code === 0x5c) { index++; continue }
+      if (code === 0x22) { const raw = this.text.slice(this.at + 1, index); this.at = index + 1; return raw }
+    }
+    return undefined
+  }
+  /** A string with no escape in it, so its raw text is the value JSON.parse gives. */
+  word(): string | undefined {
+    const raw = this.string()
+    return raw === undefined || raw.includes('\\') ? undefined : raw
+  }
+  number(): boolean {
+    JSON_NUMBER.lastIndex = this.at
+    if (!JSON_NUMBER.test(this.text)) return false
+    this.at = JSON_NUMBER.lastIndex; return true
+  }
+  /** Whether one of `keys` is named again among the plain-valued keys that follow, up to a nested value or the start's end. */
+  names(...keys: string[]): boolean {
+    for (;;) {
+      if (!this.take(',')) return false
+      const name = this.string()
+      if (name === undefined || name.includes('\\')) return name !== undefined
+      if (keys.includes(name)) return true
+      if (!this.take(':') || !this.plain()) return false
+    }
+  }
+  private plain(): boolean { return this.string() !== undefined || this.number() || this.take('true') || this.take('false') || this.take('null') }
+  /**
+   * The payload's `role`, or its `item`'s type, found among the keys after the payload's type with plain values; none when
+   * a nested value, an escaped key or a second `type` comes first, or the start ends.
+   */
+  leading(key: 'role' | 'item'): string | undefined {
+    for (;;) {
+      if (!this.take(',')) return undefined
+      const name = this.word()
+      if (name === undefined || name === 'type' || !this.take(':')) return undefined
+      if (name === key) return key === 'role' ? this.word() : this.take('{"type":') ? this.word() : undefined
+      if (!this.plain()) return undefined
+    }
+  }
 }
 
 /** Rollout event messages are authored input; response_item user messages can be injected instructions. */

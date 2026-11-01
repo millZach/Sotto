@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { CodexSessionLogWatcher, mayBeRead } from '../../../src/main/agents/codexSessionLog'
+import { CodexRolloutIdentities } from '../../../src/main/agents/codexMessageIdentity'
 import type { AgentMessage } from '../../../src/shared/agents'
 
 const at = '2026-11-01T14:42:41.865Z'
@@ -52,6 +53,23 @@ describe('which rollout lines the Codex reader reads (#992)', () => {
     expect(mayBeRead('broken')).toBe(true)
   })
 
+  it('reads a line that names a key it decides by twice, or escapes one, as JSON.parse would read it', () => {
+    const head = '{"timestamp":"t","ordinal":1,'
+    expect(mayBeRead(head + '"type":"event_msg","payload":{"type":"token_count","type":"user_message","id":"n","message":"Hello"}}')).toBe(true)
+    expect(mayBeRead(head + '"type":"response_item","payload":{"type":"message","role":"user","role":"assistant","content":[]}}')).toBe(true)
+    expect(mayBeRead(head + '"type":"response_item","payload":{"type":"reasoning","id":"r","type":"message","role":"assistant"}}')).toBe(true)
+    expect(mayBeRead(head + '"type":"response_item","payload":{"type":"message","r\\u006fle":"assistant","role":"user"}}')).toBe(true)
+    expect(mayBeRead(head + '"type":"event_msg","payload":{"type":"user\\u005fmessage","message":"Hello"}}')).toBe(true)
+  })
+
+  it('reads no more than a line\'s start, whatever follows it', () => {
+    // Each of these took the old regular expressions far longer than a parse: many negative numbers before a nested value,
+    // and a value of sixteen million characters before the key it looks for.
+    const negatives = Array.from({ length: 40 }, (_, index) => `"k${index}":-1`).join(',')
+    expect(mayBeRead(line('response_item', { type: 'message' }).slice(0, -2) + `,${negatives},"content":[],"role":"assistant"}}`)).toBe(true)
+    expect(mayBeRead(line('event_msg', { type: 'item_completed', message: 'x'.repeat(16_000_000), item: { type: 'UserMessage', id: 'i' } }))).toBe(true)
+  })
+
   it('is not fooled by a key\'s words inside another key\'s value', () => {
     expect(mayBeRead(line('response_item', { type: 'message', id: 'a","role":"user', role: 'assistant', content: [] }))).toBe(true)
     expect(mayBeRead(line('event_msg', { type: 'item_completed', note: 'x\\","item":{"type":"Command', item: { type: 'UserMessage', id: 'i', content: [] } }))).toBe(true)
@@ -74,24 +92,37 @@ describe('a Codex rollout read past the lines it takes nothing from (#992)', () 
       line('turn_context', { turn_id: 'turn-1' }, 1),
       line('event_msg', { type: 'task_started', turn_id: 'turn-1' }, 2),
       line('event_msg', { type: 'user_message', id: 'first', message: 'Read the logs' }, 3),
+      line('event_msg', { type: 'agent_message', message: 'Reading them' }, 3),
+      line('response_item', { type: 'message', id: 'msg_0', role: 'assistant', content: [{ type: 'output_text', text: 'Reading them' }] }, 3),
       line('event_msg', { type: 'item_completed', item: { type: 'UserMessage', id: 'second', content: [{ type: 'text', text: 'And the 🌲 tests' }] } }, 7),
+      line('event_msg', { type: 'agent_message', message: 'Done' }, 8),
       line('response_item', { type: 'message', id: 'msg_1', role: 'assistant', content: [{ type: 'output_text', text: 'Done' }] }, 8),
       JSON.stringify({ type: 'event_msg', timestamp: at, payload: { type: 'user_message', id: 'reordered', message: 'Keys in another order' } }),
       line('event_msg', { type: 'task_complete', turn_id: 'turn-1' }, 10),
     ]
     // Three lines longer than the reader's one-megabyte read, two of them with text in several bytes a character.
-    const rollout = [kept[0], kept[1], kept[2],
+    const rollout = [kept[0], kept[1], kept[2], kept[3], kept[4],
       line('response_item', { type: 'function_call_output', call_id: 'c', output: '🌲'.repeat(700_000) }, 4),
       line('response_item', { type: 'message', role: 'user', content: [{ type: 'input_text', text: big(2_500_000) }] }, 5),
       line('response_item', { type: 'reasoning', encrypted_content: 'é'.repeat(600_000) }, 6),
-      kept[3], kept[4], kept[5], line('event_msg', { type: 'token_count', info: null }, 9), kept[6]].join('\n') + '\n'
+      kept[5], kept[6], kept[7], kept[8], line('event_msg', { type: 'token_count', info: null }, 9), kept[9]].join('\n') + '\n'
     await writeFile(join(directory, 'rollout-2026-11-01T14-42-41-thread.jsonl'), rollout)
     const messages: AgentMessage[] = []
     const watcher = new CodexSessionLogWatcher({ codexHome: root, onMessage: (_id, message) => messages.push(message) })
     watchers.push(watcher); watcher.observe('thread')
     const parse = vi.spyOn(JSON, 'parse')
+    const joined = vi.spyOn(Buffer, 'concat')
     await watcher.pollThread('thread', true)
+    // A skipped line is passed over as it is read: none of its megabytes is joined or decoded.
+    expect(joined.mock.calls.reduce((bytes, [, length]) => bytes + (length ?? 0), 0)).toBeLessThan(64 * 1024)
     expect(messages.map(message => [message.id, message.text])).toEqual([['first', 'Read the logs'], ['second', 'And the 🌲 tests'], ['reordered', 'Keys in another order']])
     expect(parse.mock.calls.map(([text]) => text).filter(text => typeof text === 'string' && text.startsWith('{"t'))).toEqual(kept)
+    // The turn's rows and native IDs are the ones every line read in full gives.
+    const whole = new CodexRolloutIdentities()
+    for (const text of rollout.split('\n').filter(Boolean)) whole.consume(JSON.parse(text))
+    const tails = (watcher as unknown as { tails: Map<string, { identities: CodexRolloutIdentities }> }).tails
+    expect(tails.get('thread')?.identities.snapshot()).toEqual(whole.snapshot())
+    // ...which hold the agent's message paired with its native ID, so the comparison is not of empty turns.
+    expect(whole.get('turn-1').some(row => row.role === 'assistant' && row.nativeId === 'msg_0')).toBe(true)
   })
 })
