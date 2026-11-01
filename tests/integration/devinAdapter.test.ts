@@ -418,16 +418,16 @@ describe('Devin dispatch and decision boundaries', () => {
   it('reads no history of an idle thread its own process holds, and reads a message typed in Devin when it next opens the thread (#992)', async () => {
     await send(); await f.driver.completeTurn(threadId, 'Reply')
     await expect.poll(async () => (await thread()).status).toBe('idle')
-    // Once a replay has confirmed the dispatch, an idle watched thread is not read again: each read was a process of its own.
-    const loads = async (): Promise<number> => (await f.driver.requests()).filter(record => record.method === 'session/load').length
-    await expect.poll(async () => (await f.host.snapshot(), (await f.adapter.snapshot()).threads.find(item => item.id === threadId)?.messages.some(m => m.role === 'user'))).toBe(true)
-    await new Promise(resolve => setTimeout(resolve, 200))
-    const settled = await loads()
-    // Twenty of the fixture's 20 ms read intervals: on f976052cc the thread was read four times in them, each in a process of its own.
-    await new Promise(resolve => setTimeout(resolve, 400))
-    const reads = await loads() - settled
-    console.info(`idle held Devin thread: ${JSON.stringify({ intervals: 20, reads })}`)
-    expect(reads).toBe(0)
+    // Once a replay has confirmed the dispatch, an idle watched thread is not read again. Each read started five processes:
+    // `plugins list` and `mcp list`, a `devin acp` that replayed the whole session, and both lists again to revalidate.
+    await expect.poll(async () => (await f.adapter.snapshot()).threads.find(item => item.id === threadId)?.messages.some(m => m.role === 'user')).toBe(true)
+    const spawns = async (): Promise<number> => (await f.driver.requests()).filter(record => record.method === 'fixture/spawn').length
+    // Five polls, each due (the fixture reads every 20 ms) and awaited: a snapshot runs the poll and waits for its reads.
+    const settled = await spawns()
+    for (let poll = 0; poll < 5; poll++) { await new Promise(resolve => setTimeout(resolve, 30)); await f.adapter.snapshot() }
+    const started = await spawns() - settled
+    console.info(`idle held Devin thread: ${JSON.stringify({ polls: 5, processesStarted: started })}`)
+    expect(started).toBe(0)
     // Released by Sotto, the session is Devin's again; a message typed there shows when Sotto opens the thread next.
     f = await f.driver.restart()
     await f.driver.typeInProvider(threadId, 'Typed in Devin')
