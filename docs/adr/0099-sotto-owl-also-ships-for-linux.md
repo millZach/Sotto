@@ -18,7 +18,7 @@ Zach's answers, October 21:
 - **Owl and stable replace each other**, as on Windows and the Mac: the same package name `sotto-bin`, the same `/opt/sotto`, the same data.
 - **No in-app updater on Linux.** ADR-0062 and ADR-0093 are unchanged on this: each Owl is installed by hand with `sudo pacman -U`.
 - **No Omarchy or Hyprland check for Owl.** `scripts/verify-linux-package.mjs` in a nested Hyprland session stays a stable-release step on forge. Owl ships once the workflow's checks pass.
-- **Started by hand** with the Windows Owl's version and full source commit, like the Mac workflow, never on a push or a pull request. It attests its files and publishes nothing.
+- **Started by hand** with the Windows Owl's version and full source commit, like the Mac workflow, never on a push or a pull request. It attests its files and publishes nothing. Amended November 1, 2026 by [ADR-0072's nightly Owl](0072-sotto-owl-is-a-windows-preview-release-track.md#november-1-2026-a-nightly-owl-cut-in-github-actions): the **Sotto Owl nightly** also calls it, with its own version and source, and builds the Linux host archive on a hosted runner rather than forge.
 
 ### The build
 
