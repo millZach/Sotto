@@ -6,7 +6,7 @@
  */
 import { createHash } from 'node:crypto'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { immutableActivities } from '../../../src/main/agents/activitySnapshots'
+import { immutableActivities, immutableRecord } from '../../../src/main/agents/activitySnapshots'
 import { observationDigest, targetKey } from '../../../src/main/agents/watcherEvidence'
 import { watcherProgressFingerprint } from '../../../src/main/agents/watcherWakeUp'
 import { activityBodySize, cutActivityBodies } from '../../../src/shared/activityBodies'
@@ -77,7 +77,9 @@ describe('Watcher progress fingerprint (#1331)', () => {
     watcherProgressFingerprint(item)
     const stringify = vi.spyOn(JSON, 'stringify')
     expect(watcherProgressFingerprint(item)).toBe(ordinary)
-    expect(stringify).toHaveBeenCalledTimes(7)
+    // At most one for each part the thread has: a part it does not have, or a status written before, is none (#1248).
+    const plain = stringify.mock.calls.length
+    expect(plain).toBeLessThanOrEqual(7)
 
     item.swarm = { id: 'swarm', leadThreadId: item.id, count: 2, done: 0, failed: 0, queued: 1 }
     stringify.mockClear()
@@ -92,7 +94,7 @@ describe('Watcher progress fingerprint (#1331)', () => {
     delete item.swarm
     stringify.mockClear()
     expect(watcherProgressFingerprint(item)).toBe(ordinary)
-    expect(stringify).toHaveBeenCalledTimes(7)
+    expect(stringify).toHaveBeenCalledTimes(plain)
   })
 
   it('is worked out again, and differs, exactly when something that counts changed', () => {
@@ -135,6 +137,53 @@ describe('Watcher progress fingerprint (#1331)', () => {
     const records = stringify.mock.calls.filter(([value]) => Array.isArray(value) && typeof value[0] === 'string' && value[0].startsWith('activity-'))
     stringify.mockRestore()
     expect(records).toHaveLength(1)
+  })
+})
+
+describe('Watcher progress fingerprint of an owned thread record (#1248)', () => {
+  /** A thread record copied and frozen all the way down, as the coordinator's records that a pass reads are. */
+  const owned = (extra: Partial<AgentThread> = {}) => immutableRecord(thread(history(50), {
+    messages: Array.from({ length: 400 }, (_, index) => ({ id: `message-${index}`, role: index % 2 ? 'assistant' as const : 'user' as const, text: `Synthetic ${index}`, createdAt: at })),
+    subagentSummary: { total: 1, working: 1, completed: 0, failed: 0, interrupted: 0, unknown: 0 }, backgroundWork: [{ id: 'work', type: 'subagent' }] as AgentThread['backgroundWork'],
+    monitoring: [{ id: 'watch' }] as AgentThread['monitoring'], requests: [{ id: 'card', kind: 'question' }] as unknown as AgentThread['requests'], ...extra }))
+
+  it('is the digest it always was, and is not worked out again while the record stands', () => {
+    const plain = owned()
+    expect(watcherProgressFingerprint(plain)).toBe(reference(plain))
+    // A swarm's part, which the reference predates: the same digest as an equal record that is not owned, read whole.
+    const item = owned({ swarm: { id: 'swarm', leadThreadId: 'thread', count: 2, done: 0, failed: 0, queued: 1 } })
+    expect(watcherProgressFingerprint(item)).toBe(watcherProgressFingerprint(structuredClone(item)))
+    for (const record of [plain, item]) {
+      const stringify = vi.spyOn(JSON, 'stringify')
+      expect(hashed(() => watcherProgressFingerprint(record))).toBe(0)
+      expect(stringify).not.toHaveBeenCalled()
+      stringify.mockRestore()
+    }
+  })
+
+  it('turns only the message that grew into JSON when a reply streams', () => {
+    let item = owned()
+    let last = watcherProgressFingerprint(item)
+    for (let chunk = 0; chunk < 3; chunk++) {
+      // The adapter replaces the reply and the list that holds it, and shares every other message (`immutableUpdates`).
+      const messages = [...item.messages.slice(0, -1), { ...item.messages.at(-1)!, text: `${item.messages.at(-1)!.text} more` }]
+      item = immutableRecord({ ...item, messages })
+      const stringify = vi.spyOn(JSON, 'stringify')
+      const next = watcherProgressFingerprint(item)
+      const written = stringify.mock.calls.length
+      stringify.mockRestore()
+      expect(next).toBe(reference(item))
+      expect(next).not.toBe(last)
+      expect(written).toBe(1)
+      last = next
+    }
+  })
+
+  it('reads a record that is not owned every time, as before', () => {
+    const item = thread(immutableActivities(history(5)))
+    watcherProgressFingerprint(item)
+    item.messages[1]!.text += ' and more'
+    expect(watcherProgressFingerprint(item)).toBe(reference(item))
   })
 })
 
