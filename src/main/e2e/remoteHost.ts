@@ -53,7 +53,7 @@ export function installRemoteHostE2E(router: DesktopHostRouter, retainedDrafts: 
             gate.completed++
             if (idle) gate.completedIdle++
           },
-          detail: id => socket.readThreadDetail(id), preview: request => socket.attachmentPreview(request),
+          detail: id => socket.windowDetail(id), preview: request => socket.attachmentPreview(request),
           observe: (ids, shown) => socket.observe(ids, shown), subscribeDetail: listener => socket.subscribeThreadDetail(listener), available: () => state.up,
           // A thread's Agents, read on the host as the real launcher's connection reads them.
           subagentPage: request => socket.subagentPage(request), subagentAssignments: request => socket.subagentAssignments(request),

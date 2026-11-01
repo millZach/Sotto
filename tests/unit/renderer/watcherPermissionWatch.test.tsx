@@ -256,6 +256,23 @@ describe('Watcher’s permissions chip', () => {
     expect(bridge.setPermission).not.toHaveBeenCalled()
   })
 
+  it('leaves Watcher’s model live while it works, and shows the choice main keeps for its next turn', async () => {
+    const state = stateWithWatcher()
+    const gpt = state.host.models.find(model => model.id === 'codex:gpt')!
+    gpt.providerId = 'codex'
+    state.host.models.push({ ...gpt, id: 'codex:other', name: 'Other model' })
+    state.host.capabilities = { ...state.host.capabilities, configureThread: true }
+    state.host.threads.find(thread => thread.id === 'watcher')!.status = 'running'
+    renderRoom(roomState({ nextTurnOptions: { modelId: 'codex:other', reasoningEffort: null } }), { state })
+    const pane = await watcherPane()
+    const model = within(pane).getByRole('combobox', { name: 'Thread model' })
+    expect(model).toBeEnabled()
+    expect(model).toHaveTextContent('Other model')
+    expect(within(pane).getByText('Watcher starts its next turn on this choice.')).toBeInTheDocument()
+    // Its permissions still wait for it.
+    expect(within(pane).getByRole('combobox', { name: 'Watcher’s permissions' })).toBeDisabled()
+  })
+
   it('says the mode as a fact where the bridge cannot change it', async () => {
     renderRoom(roomState(), { legacy: true })
     const pane = await watcherPane()

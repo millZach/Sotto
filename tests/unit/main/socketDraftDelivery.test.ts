@@ -389,9 +389,9 @@ describe('bounded targeted autosaves', () => {
         { type: 'select-thread', threadId: 'B' }, { type: 'select-thread', threadId: 'A' },
       ])
       for (const frame of f.frames) f.reply(frame)
-      await vi.waitFor(() => expect(f.frames.filter(frame => frame.op === 'detail')).toHaveLength(2))
-      for (const frame of f.frames.filter(frame => frame.op === 'detail')) f.reply(frame)
       await Promise.all([a, latestA, selectB, selectA])
+      // Selecting reads neither thread whole: neither is held behind, and the window asks for the history it shows (#996).
+      expect(f.frames.filter(frame => frame.op === 'detail')).toEqual([])
       expect(f.frames.filter(frame => frame.op === 'command' && frame.command.type === 'compose')).toHaveLength(2)
     } finally { await f.client.close() }
   })
