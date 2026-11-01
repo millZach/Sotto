@@ -20,26 +20,36 @@ export function draftEffortScore(text: string): number {
   return Math.min(3, named) + (lines >= 3 ? 1 : 0) + (trimmed.length > 140 ? 1 : 0)
 }
 
-/** Work that splits across agents (ADR-0148): building something out, changing much of a codebase at once, or researching widely. */
-const BROAD_WORK = [/\bbuild(?:ing)? out\b/iu, /\bfrom scratch\b/iu, /\boverhaul/iu, /\brewrite\b/iu, /\bmigrat/iu, /\brefactor/iu, /\bredesign/iu,
-  /\bresearch/iu, /\baudit/iu, /\bsurvey\b/iu, /\bcompare\b/iu, /\bexplore\b/iu, /\bend[- ]to[- ]end\b/iu, /\bin parallel\b/iu,
+/** Kinds of change that can split across agents, but say nothing of size by themselves (ADR-0148, ADR-0172 decision 5). */
+const CHANGES = [/\brewrite\b/iu, /\bmigrat/iu, /\brefactor/iu, /\bredesign/iu]
+/** Kinds of enquiry: alone they may be one small question, but two together are research wide enough to split. */
+const ENQUIRIES = [/\bresearch/iu, /\baudit/iu, /\bsurvey\b/iu, /\bcompare\b/iu, /\bexplore\b/iu]
+/** Signs of size: the work starts from nothing, spans much of a codebase, or runs side by side. */
+const SCOPE = [/\bbuild(?:ing)? out\b/iu, /\bfrom scratch\b/iu, /\boverhaul/iu, /\bend[- ]to[- ]end\b/iu, /\bin parallel\b/iu,
   /\b(?:across|throughout) the (?:app|codebase|code|repo|project)\b/iu, /\b(?:whole|entire) (?:app|codebase|code ?base|repo|project|system)\b/iu,
   /\b(?:every |all (?:the )?)(?:files?|pages?|screens?|components?|providers?|tests?|modules?|endpoints?|routes?)\b/iu]
-/** Five or more of something to make or weigh, each its own piece of work: it counts twice. */
-const MANY_PIECES = /\b(?:[5-9]|[1-9]\d{1,2})\s+(?:\w+\s+){0,3}(?:directions|options|variants|versions|mock-?ups|prototypes|ideas|approaches|designs|concepts|alternatives)\b/iu
+/**
+ * Five or more pieces to make side by side, after a verb that makes them ("build 20 mock-up directions"): it counts
+ * twice. A bare count is not enough, so "Node 24" or "5 ideas for a name" is not this.
+ */
+const MANY_PIECES = /\b(?:build|make|design|draft|sketch|mock(?:\s|-)?up|prototype|create|generate|try|explore)\w*\s+(?:\w+\s+){0,2}(?:[5-9]|[1-9]\d{1,2})\s+(?:\w+\s+){0,3}(?:directions|variants|mock-?ups|prototypes|designs|concepts|approaches|alternatives)\b/iu
 const LIST_ITEM = /^\s*(?:[-*•]|\d{1,2}[.)])\s+\S/u
 
 /**
- * Whether a draft reads like work that splits across agents, which Ultracode runs as a team (ADR-0148, ADR-0172): it
- * names broad work, five or more pieces to make, or a list of three or more items, and is big besides: another of those,
- * or more than 280 characters. Kept narrow, since Ultracode uses many more tokens.
+ * Whether a draft reads like work that splits across agents, which Ultracode runs as a team (ADR-0148, ADR-0172 decision
+ * 5): two kinds of enquiry (research and compare, say), or a sign of size (a build-out, the whole app, every page, five
+ * or more pieces to make, a list of three or more items) beside another sign of size, a kind of change or enquiry, or
+ * more than 280 characters. Length counts only beside a sign of size, so one verb before pasted material is not enough.
+ * Kept narrow, since Ultracode uses many more tokens.
  */
 export function draftBroadWork(text: string): boolean {
   const trimmed = text.trim()
   if (trimmed.length < 14) return false
+  const count = (patterns: readonly RegExp[]): number => patterns.filter(pattern => pattern.test(trimmed)).length
+  const enquiries = count(ENQUIRIES)
   const items = trimmed.split('\n').filter(line => LIST_ITEM.test(line)).length
-  const breadth = BROAD_WORK.filter(pattern => pattern.test(trimmed)).length + (MANY_PIECES.test(trimmed) ? 2 : 0) + (items >= 3 ? 1 : 0)
-  return breadth >= 1 && breadth + (trimmed.length > 280 ? 1 : 0) >= 2
+  const scope = count(SCOPE) + (MANY_PIECES.test(trimmed) ? 2 : 0) + (items >= 3 ? 1 : 0)
+  return enquiries >= 2 || scope > 0 && scope + count(CHANGES) + enquiries + (trimmed.length > 280 ? 1 : 0) >= 2
 }
 
 /**
