@@ -496,7 +496,9 @@ import UIKit
 
     /// A long thread whose messages arrive a moment after it opens shows its end at once. On the phone a thread sometimes
     /// opened black until scrolled; a lazy list landing over rows it had not drawn is the likely cause. The simulator did
-    /// not reproduce it, so this journey guards the end of a long thread rather than proving the fix.
+    /// not reproduce it, so this journey guards the end of a long thread rather than proving the fix. The page lays out
+    /// only the latest ten turns whole and makes the thirty before them as they scroll into view (#1702), so the first
+    /// turn is not made yet.
     func testALongThreadShowsItsEndWithoutAScroll() {
         launch(["--ui-fixture", "--reset-ui-preferences", "--ui-long-thread", "--ui-slow-detail"])
         let thread = row("drives")
@@ -508,8 +510,10 @@ import UIKit
         let end = byID("steps-run-long-final")
         // The last reply is taller than the screen, so its heading sits above the view at the end; its closing command
         // is what must be on screen.
-        let last = threadText("python compare_drives.py --option 12 --report")
+        let last = threadText("python compare_drives.py --option 40 --report")
         waitForEnd(end, last: last, above: reply, "A long thread opens showing its end, with no scroll needed")
+        XCTAssertFalse(threadText("python compare_drives.py --option 1 --report").exists,
+                       "The turns before the latest ten are made as they scroll into view, not when the thread opens")
         capture("thread-long-open")
     }
 
