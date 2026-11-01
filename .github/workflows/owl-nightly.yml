@@ -10,6 +10,10 @@
 name: Sotto Owl nightly
 
 on:
+  # Temporary, removed before merge: GitHub dispatches only a workflow it has seen run, and this one is not on main
+  # yet, so a push to its branch registers it for the dry run started by hand.
+  push:
+    branches: [feat/owl-nightly]
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
