@@ -3959,7 +3959,7 @@ export class AgentControl {
       const messageCount = threadSummaryOf(thread).messageCount
       if (messageCount < 2 || this.titleChecked.get(thread.id) === messageCount) continue
       this.titleChecked.set(thread.id, messageCount)
-      const exchange = firstExchange(thread, 'automatic', this.threadHistory(thread))
+      const exchange = firstExchange(thread, 'automatic', watcherWakeUpsAsShown(this.threadHistory(thread)))
       if (!exchange) continue
       this.titled.add(thread.id)
       this.trackTitleWrite(this.writeThreadTitle(thread.id, exchange))
@@ -3975,7 +3975,7 @@ export class AgentControl {
     if (threadSummaryOf(thread).messageCount === 0) { this.awaitingFirstMessage.add(thread.id); return }
     if (!this.awaitingFirstMessage.has(thread.id)) return
     // The first message, even when a steer is already beside it on the frame that brings it.
-    const first = this.threadHistory(thread).find(message => message.role === 'user' && message.text.trim().length > 0)
+    const first = watcherWakeUpsAsShown(this.threadHistory(thread)).find(message => message.role === 'user' && message.text.trim().length > 0)
     if (!first) return
     this.awaitingFirstMessage.delete(thread.id)
     this.trackTitleWrite(this.offerTitle(thread.id, () => this.dependencies.writeFirstMessageTitle!(first.text), 'first-message'))
@@ -4022,7 +4022,7 @@ export class AgentControl {
   private async regenerateThreadTitle(threadId: string): Promise<AgentState> {
     const thread = this.state.host.threads.find(item => item.id === threadId)
     // The same rule as automatic naming: with local history off, no thread content is sent to name it.
-    const exchange = thread && this.dependencies.historyEnabled?.() !== false ? firstExchange(thread, 'requested', this.threadHistory(thread)) : null
+    const exchange = thread && this.dependencies.historyEnabled?.() !== false ? firstExchange(thread, 'requested', watcherWakeUpsAsShown(this.threadHistory(thread))) : null
     if (thread && exchange) {
       this.titled.add(thread.id)
       await this.trackTitleWrite(this.writeThreadTitle(threadId, exchange))

@@ -173,6 +173,12 @@ export class LimitRestart {
   /** One thread read against the last read of it; true when its record changed. */
   private read(thread: AgentThread): boolean {
     if (this.dormant(thread.id)) return false
+    // An earlier Watcher conversation is read only: it cannot receive a restart or the user's next send.
+    if (thread.kind === 'watcher-history') {
+      if (!this.records.has(thread.id)) return false
+      this.drop(thread.id)
+      return true
+    }
     const turn = thread.lastTurn, key = turn ? `${turn.status} ${turn.id}` : ''
     const before = this.turns.get(thread.id)
     this.turns.set(thread.id, key)
