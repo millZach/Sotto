@@ -41,6 +41,9 @@ it.each([true, false])('recovers a late Claude stdin completion %s after native 
     await client.command({ type: 'connect', provider: 'claude' })
     const threadId = client.shell().host.threads.find(thread => thread.title === 'Late answer')!.id
     await client.observe([threadId])
+    // A thread on screen keeps no CLI (ADR-0016, November 1 amendment); typing in it starts one, which asks the question.
+    await client.command({ type: 'start-thread-session', threadId })
+    await expect.poll(() => client!.shell().host.threads.find(thread => thread.id === threadId)?.providerSessionOpen).toBe(true)
     await native.driver.raiseQuestion(nativeId, 'Which color?')
     await expect.poll(() => client!.shell().host.threads.find(thread => thread.id === threadId)?.requests.length).toBe(1)
     const request = client.shell().host.threads.find(thread => thread.id === threadId)!.requests[0]!

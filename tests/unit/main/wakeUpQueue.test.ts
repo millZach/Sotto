@@ -32,11 +32,13 @@ class Host implements AgentHost {
   listeners = new Set<(s: AgentHostSnapshot) => void>()
   attempts: AgentHostCommand[] = []
   observed: string[][] = []
+  live: string[][] = []
   async connect() { this.state ??= await new E2EAgentHost().connect(); this.state.connected = true; return this.snapshot() }
   async snapshot() { return structuredClone(this.state) }
   subscribe(fn: (s: AgentHostSnapshot) => void) { this.listeners.add(fn); return () => this.listeners.delete(fn) }
   disconnect() { this.state.connected = false }
   observeThreads(ids: readonly string[]) { this.observed.push([...ids]) }
+  keepSessionsLive(ids: readonly string[]) { this.live.push([...ids]) }
   update(id: string, patch: Partial<AgentThread>) { Object.assign(this.state.threads.find(t => t.id === id)!, patch); this.emit() }
   emit() { for (const fn of this.listeners) fn(structuredClone(this.state)) }
   async execute(c: AgentHostCommand): Promise<AgentHostResult> {
@@ -240,10 +242,23 @@ describe('a wake-up', () => {
     await f.control.deliverWakeUp('workshop', news(1), { tool: true })
     await f.control.command({ type: 'select-thread', threadId: 'docs' })
     expect(f.host.observed.at(-1) ?? []).not.toContain('workshop')
+    expect(f.host.live.at(-1) ?? []).not.toContain('workshop')
     expect(f.control.hasPendingThreadWork('workshop')).toBe(false)
     await f.control.command({ type: 'queue-followup', threadId: 'workshop', draftId: randomUUID(), text: 'mine' })
     expect(f.host.observed.at(-1)).toContain('workshop')
+    // The user's own follow-up keeps the thread's provider session live, so it can send without waiting for a start.
+    expect(f.host.live.at(-1)).toContain('workshop')
     expect(f.control.hasPendingThreadWork('workshop')).toBe(true)
+    // Delivered, the follow-up no longer keeps it live, so an idle CLI there is the reaper's again (ADR-0038).
+    // Each delivery starts a turn, so the next item waits for it to end.
+    const mineWaits = (): boolean => f.control.get().followups?.some(item => item.threadId === 'workshop' && item.text === 'mine') ?? false
+    for (let turn = 0; turn < 3 && mineWaits(); turn++) {
+      const sent = sends(f.host).length
+      complete(f.host)
+      await expect.poll(() => sends(f.host).length).toBeGreaterThan(sent)
+    }
+    await expect.poll(mineWaits).toBe(false)
+    await expect.poll(() => f.host.live.at(-1) ?? []).not.toContain('workshop')
   })
 
   it('folds later news of a pull request into that pull request\'s part, so one that merged is told once, as ended', async () => {

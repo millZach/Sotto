@@ -32,7 +32,7 @@ The next step is not a bigger cache. Sotto is heading for threads that run on a 
 
 **Adapters append; they do not rebuild.** Each adapter publishes deltas through one append path — `message-added` and `message-text-appended` — rather than handing up a rebuilt `messages` array: Claude from its transcript tail behind the cursor of ADR-0015, Codex from the app-server stream and from rollouts, Grok from its update cursor. Takeover detection is unchanged and is one of the sources these events come from. The snapshot the renderer draws is derived by the projection, and no adapter holds a full `messages` array for a thread outside the watched set. This supersedes the part of ADR-0015 that made `WorkspaceHost`'s cache the history of record between runs: the store is, and `restoreThreadHistory` is served from it. The cursor's own rule is untouched — it is trusted only beside the history it accounts for, and with Keep local history off there is no history to hand back, so the transcript is read whole.
 
-**Provider sessions start when something needs them.** Connect starts no per-thread provider session. A session starts on the first command for a thread, or when the thread enters the watched set; this is ADR-0005's "resume a thread when it is opened" extended to Claude and Grok, and the exception ADR-0005 records stands, because a personal chat owns its own native request channel and has no other opening step. A session reaper sweeps every five minutes and stops a session idle for thirty minutes. It never stops one with a running turn, one with a pending request, one with a confirmed live monitoring task or confirmed background work (ADR-0023), or one in the watched set. Monitoring observations are ephemeral: keeping the session alive does not persist the watch or grant authority. The resume cursor is host state, kept where the adapter already keeps its alias, so a stopped session costs a resume and never a re-read.
+**Provider sessions start when something needs them.** Connect starts no per-thread provider session. A session starts on the first command for a thread, or when the thread enters the watched set; this is ADR-0005's "resume a thread when it is opened" extended to Claude and Grok, and the exception ADR-0005 records stands, because a personal chat owns its own native request channel and has no other opening step. A session reaper sweeps every five minutes and stops a session idle for thirty minutes. It never stops one with a running turn, one with a pending request, one with a confirmed live monitoring task or confirmed background work (ADR-0023), or one in the watched set. Monitoring observations are ephemeral: keeping the session alive does not persist the watch or grant authority. The resume cursor is host state, kept where the adapter already keeps its alias, so a stopped session costs a resume and never a re-read. (November 1, 2026: for Claude Code, a thread entering the watched set no longer starts a session, and the reaper's exception is the live-session set; see the amendment of that date below.)
 
 **An answer says who gave it.** Every `answer-given` event carries `{ clientId, user, transport }`, where `transport` is `ipc` for the desktop window on this machine or `socket` for a paired remote client. This is attribution, which is evidence of who answered and never authority in itself: policy records decide whether an answer counts as a grant (ADR-0004), and the local desktop window always may answer. The rule that the user answers every permission is unchanged; recording which client the user answered from is how that rule survives a second client.
 
@@ -409,3 +409,50 @@ a second. Sidebar rows of such threads show it then too. Nothing of it is lost. 
 whole read of the adapter, which a send's read after the prompt asks for, still reads every transcript, as before. A
 subagent's model, read from its own transcript, is read when its thread's transcript is. Codex's rollouts follow the same
 rule, read on from a saved position (ADR-0005, October 30 amendment).
+
+## Amendment: Claude Code starts when you type, send, or Watcher watches the thread (November 1, 2026, #992)
+
+Zach approved this in the plan for the second performance round: "Claude Code starts when you start typing, send, or
+Watcher watches the thread", with this ADR and ADR-0038 amended.
+
+Putting a Claude thread on screen started its Claude Code CLI, because the decision above starts a session when the
+thread enters the watched set, and a pane, the active thread and a draft are all in it. The reaper never stops a session
+in the watched set, so a CLI behind a pane stayed for as long as the pane was open. Each Claude Code CLI is 104 to 308 MB
+resident on forge (ps, October 31, 2026) and 270 to 295 MB on Windows (#992), so browsing ten saved threads held 1 to
+3 GB (`docs/perf/2026-11-01-claude-start-on-demand.md`).
+
+**A thread on screen is read, not started.** For Claude Code the watched set now decides only what it decides for memory
+and reading: the thread's transcript is read as it comes into view and each second while it is observed (the October 30
+amendment above), and its messages are held. It starts no CLI. A thread's CLI starts on any command for it (a send, an
+answer, an interrupt, a settings change, a compaction, a rewind), on a read made before acting on it (a send's, a
+review's, Watcher's), and when the user starts typing in its composer (ADR-0057's early start). One process is not a
+session and may still run for a thread on screen: a composer restored with skills chosen asks for the skills catalog, and
+Claude Code lists them in a process of its own with no session (`--no-session-persistence`), which exits once it has.
+
+**The live-session set keeps a session running.** The threads Sotto sends to unasked or waits on keep a CLI, as the whole
+watched set did: Watcher's watched threads, the threads a delegation follows, threads with a queued follow-up of the
+user's (a waiting wake-up alone still keeps none, ADR-0061), threads with an outbox entry, and a send's own thread while
+it is sent. `CONTEXT.md` has the term. The coordinator names the set to its host (`keepSessionsLive`) each time it names
+the watched set, just before it, and each layer passes it on the way it passes the watched set, by its own IDs; the
+workspace holds back a thread whose stored records are still on their way, as it holds back its observation. Claude
+Code's adapter starts a CLI for each thread in the set, starts only these at connect, four at a time as before, starts
+only these again after a client update (ADR-0038), and its reaper never stops one of them. Every thread in the set is
+also observed, so its transcript is read as before.
+
+**Other providers are unchanged.** Codex, Grok Build, Devin and the rest do not take the set and start a session for
+every observed thread, as before. A Claude adapter that has not been told a live-session set, such as one a test drives
+directly, keeps the old rule too.
+
+**What this changes for the user.** Opening a Claude thread shows its messages as before and starts nothing. A CLI behind
+a pane, started by typing or a send, stops after thirty idle minutes like any idle session; nothing on screen changes,
+and typing starts it again. The cost is the first send to a thread that was opened and sent to without typing: it pays
+the CLI's start inside the send, 1.0 to 1.5 s on Claude Code 2.1.289 (`docs/perf/2026-10-06-early-start.md`). Typing,
+pasting and dictating into the composer all start the CLI early, because each is an edit of the composer; dictation does
+so when its words land, so a send pressed straight after still waits for most of the start. A next prompt taken with Tab,
+and words that Screenshot to message puts in the composer, are not edits and start nothing early. What the CLI says as
+it starts now comes when the user types or sends rather than when the thread is opened: the user's own Claude Code hooks
+and MCP servers start then, Claude Code's question about compacting an old session it resumes is asked then, and whether
+the client offers manual compaction is learnt then; until it is, the pane offers Compact context, as it always did for a
+thread nobody had opened.
+
+Measured in `docs/perf/2026-11-01-claude-start-on-demand.md` and guarded by `tests/integration/claudeStartOnDemand.test.ts`.

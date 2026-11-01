@@ -379,6 +379,22 @@ describe.each([['main', false], ['the store worker', true]] as const)('with the 
     expect(f.disk().map(item => item.id)).toEqual(['fresh'])
   })
 
+  it('tells the provider a stored thread keeps a live session with its observation, once its records are in', async () => {
+    const f = await stored([record('a', 0)])
+    const host = await f.open()
+    await host.connect()
+    // The coordinator names the live-session set first; a thread it does not observe yet waits for its observation.
+    host.keepSessionsLive([THREAD])
+    expect(f.provider.live).toEqual([])
+    await observe(host, [THREAD])
+    expect(workshop(host).activities?.map(item => item.id)).toEqual(['a'])
+    expect(f.provider.observed).toEqual([THREAD])
+    expect(f.provider.live).toEqual([THREAD])
+    host.keepSessionsLive([])
+    expect(f.provider.live).toEqual([])
+    await f.close(host)
+  })
+
   it('says why when a stored record cannot be read back, and keeps the store as it was', async () => {
     const f = await stored([record('a', 0), record('b', 1)])
     const db = new DatabaseSync(join(f.directory, 'threads.sqlite'))
