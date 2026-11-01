@@ -4,8 +4,9 @@ import os
 #endif
 
 /// Counts and times for the iPhone benchmarks (`apps/ios/Scripts/bench.sh`, `docs/perf/2026-10-31-iphone-benchmarks.md`).
-/// It is off unless the benchmark fixture turns it on at launch, and off, each call is one read and a branch. It never
-/// changes what the app does: it only counts what already happens.
+/// It is off unless the benchmark fixture turns it on at launch. In a build without `DEBUG`, which is every build a user
+/// runs, the calls the views and the Markdown reader make compile to nothing; in a debug build that has not turned it on,
+/// each is one read and a branch. It never changes what the app does: it only counts what already happens.
 public enum BenchProbe {
     /// Set once at launch by the benchmark fixture, before the first view draws, and by the core benchmarks' tests.
     public static var enabled = false
@@ -19,21 +20,35 @@ public enum BenchProbe {
     #endif
 
     /// One evaluation of a view's body.
-    @inline(__always) public static func body(_ name: StaticString) {
+    @inlinable public static func body(_ name: StaticString) {
+        #if DEBUG
         guard enabled else { return }
+        counted(body: name)
+        #endif
+    }
+    /// Adds `amount` to the counter `name`.
+    @inlinable public static func count(_ name: @autoclosure () -> String, by amount: @autoclosure () -> Int = 1) {
+        #if DEBUG
+        guard enabled else { return }
+        add(name(), amount())
+        #endif
+    }
+    /// Runs `work`, and when the probe is on, adds its time to `time.<name>.ns`, its count to `time.<name>.n` and keeps
+    /// its longest in `time.<name>.max`.
+    @inlinable public static func time<T>(_ name: StaticString, _ work: () throws -> T) rethrows -> T {
+        #if DEBUG
+        guard enabled else { return try work() }
+        return try timed(name, work)
+        #else
+        return try work()
+        #endif
+    }
+    @usableFromInline static func counted(body name: StaticString) {
         let key = name.description
         add("body." + key, 1)
         onBody?(key)
     }
-    /// Adds `amount` to the counter `name`.
-    @inline(__always) public static func count(_ name: @autoclosure () -> String, by amount: @autoclosure () -> Int = 1) {
-        guard enabled else { return }
-        add(name(), amount())
-    }
-    /// Runs `work`, and when the probe is on, adds its time to `time.<name>.ns`, its count to `time.<name>.n` and keeps
-    /// its longest in `time.<name>.max`.
-    @inline(__always) public static func time<T>(_ name: StaticString, _ work: () throws -> T) rethrows -> T {
-        guard enabled else { return try work() }
+    @usableFromInline static func timed<T>(_ name: StaticString, _ work: () throws -> T) rethrows -> T {
         #if canImport(os)
         let interval = signposter.beginInterval(name)
         defer { signposter.endInterval(name, interval) }
@@ -60,7 +75,7 @@ public enum BenchProbe {
         lock.lock(); defer { lock.unlock() }
         counts = [:]
     }
-    private static func add(_ name: String, _ amount: Int) {
+    @usableFromInline static func add(_ name: String, _ amount: Int) {
         lock.lock(); defer { lock.unlock() }
         counts[name, default: 0] += amount
     }

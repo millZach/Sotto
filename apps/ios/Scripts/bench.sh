@@ -7,6 +7,9 @@ set -eu
 cd "$(dirname "$0")/.."
 mkdir -p "$1"
 out=$(cd "$1" && pwd)
+# A folder used before keeps nothing from that run: Xcode refuses an existing result bundle, and old reports would be
+# summarized with the new ones.
+rm -rf "$out/app" "$out/bench.xcresult" "$out/summary.json" "$out/summary.md"
 mkdir -p "$out/app"
 
 # One phone for every run, so a branch and main are measured on the same simulated hardware.
@@ -70,13 +73,17 @@ for run in 1 2 3 4 5; do
     SIMCTL_CHILD_SOTTO_BENCH_FILE="$report" xcrun simctl launch "$device_id" com.millzach.sotto.ios \
         --ui-fixture --reset-ui-preferences --bench-threads 300 --bench-turns 200 --bench-chunks 200 --bench-journey all \
         -AppleLanguages '(en)' -AppleLocale en_US >/dev/null
-    finished=no
+    # The app ends on `finished`, or on `failed-<why>` when a phase never got what it waited for.
+    outcome=timed-out
     for _ in $(seq 1 600); do
-        if [ -f "$report" ] && grep -q '"phase":"finished"' "$report"; then finished=yes; break; fi
+        if [ -f "$report" ]; then
+            if grep -q '"phase":"finished"' "$report"; then outcome=finished; break; fi
+            if grep -q '"phase":"failed-' "$report"; then outcome=failed; break; fi
+        fi
         sleep 1
     done
-    echo "Journey $run: finished=$finished"
-    [ "$finished" = yes ] || status=1
+    echo "Journey $run: $outcome"
+    [ "$outcome" = finished ] || status=1
 done
 xcrun simctl terminate "$device_id" com.millzach.sotto.ios >/dev/null 2>&1 || true
 

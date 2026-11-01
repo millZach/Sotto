@@ -63,21 +63,23 @@ on the long thread that cost more than the thread: the first version of these be
 
 ## What the numbers mean
 
-Every number is the median of the five runs. Lower is better for all but `journey.completed`.
+Every number is the median of the five launches or the five journeys; a `core.*` timing is the median of the rounds
+`PhoneBenchTests` times it (7 to 31). Lower is better for all but `journey.completed`, which counts the journeys that
+finished. A journey that ends on `failed-<why>` (the list or the thread never drew) fails the script and is left out.
 
 | Metric | What it is |
 | --- | --- |
 | `launch.xctest.duration_applicationfirstframepresentationresponsive` | XCTest's launch metric: process start to the first responsive frame. |
-| `launch.app.first_list` | Process start to the first frame that shows all 300 threads (launches and journeys). |
+| `launch.app.first_list` | Process start to the first display frame after the frame that shows all 300 threads was committed (launches and journeys). |
 | `launch.bytes/decode/apply.shell_full` | The connect push: its bytes, reading it off the main actor, applying it on the main actor. |
 | `launch.list_rebuild` | Building the list's sections from every computer's threads (`FocusThreads`), summed over the launch. |
 | `<phase>.app.cpu` | CPU time on every thread of the app while the phase lasted. |
-| `<phase>.app.hitches` | Frames that came later than one and a half frame times. |
+| `<phase>.app.hitches` | Frames that came later than one and a half of the display link's frame times (`targetTimestamp - timestamp`), counted from the phase's start. |
 | `<phase>.app.hitch_time_ratio` | Milliseconds of lateness for each second of the phase, as Apple's hitch time ratio counts it. |
 | `<phase>.app.longest_frame` | The longest time between two frames: the longest the screen was stuck. |
 | `<phase>.app.footprint` | The memory the system charged the app as the phase ended (`phys_footprint`, Xcode's memory gauge). |
-| `journey.app.peak_footprint` | The most it charged at any point of the journey. |
-| `open.app.tap_to_drawn` | From the open to the first frame that draws the long thread. |
+| `journey.app.peak_footprint` | The most it charged at any point of the journey, the kernel's high-water mark. |
+| `open.app.tap_to_drawn` | From the open to the first display frame after the frame that draws the long thread was committed. |
 | `open.app.<count>` | What opening it built: message bodies, Markdown blocks, text views, bytes of Markdown parsed. |
 | `stream.wall_per_chunk` | Time per streamed word, including the 50 ms wait after each: 50 ms is the floor. |
 | `stream.cpu_per_chunk` | CPU time per streamed word. |

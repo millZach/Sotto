@@ -2,9 +2,10 @@
 """The iPhone benchmarks' numbers (docs/perf/2026-10-31-iphone-benchmarks.md).
 
   bench-summary.py summarize <folder>         reads what Scripts/bench.sh left there, writes summary.json and summary.md
-  bench-summary.py compare <before> <after>   prints a Markdown table of both folders' summaries, after over before
+  bench-summary.py compare <before> <after>   prints a Markdown table of both folders' summaries, and before over after
 
-Every number is the median over the benchmark's iterations. Lower is better for all of them but journey.completed.
+Every number is the median over the benchmark's iterations: five launches or journeys, or the rounds PhoneBenchTests
+times each core step. Lower is better for all of them but journey.completed, which counts only journeys that finished.
 """
 import json
 import re

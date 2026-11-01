@@ -37,8 +37,10 @@ import SottoCore
     private var cpuAtPhase = 0.0
     private var phases: [String: Any] = [:]
     private var marks: [String: Double] = [:]
-    /// Marks waiting for the body that draws them: the first frame committed after it is the mark.
+    /// Marks waiting for the body that draws them, then for the first display frame after that body's frame was
+    /// committed: that frame is the mark.
     private var waiting: Set<String> = []
+    private var drawing: Set<String> = []
     private var peakFootprint = 0.0
     private var link: CADisplayLink?
     private var motion: Motion?
@@ -103,9 +105,10 @@ import SottoCore
         write()
     }
 
+    /// Ends the journey: `finished`, or `failed-<why>` when a phase never got what it waited for, which the script
+    /// counts as a failed run and the summary leaves out.
     private func finish(_ failure: String?) {
-        if let failure { marks["failed-" + failure] = 0 }
-        next("finished")
+        next(failure.map { "failed-" + $0 } ?? "finished")
         link?.invalidate(); link = nil
         timer?.invalidate(); timer = nil
         write()
@@ -181,11 +184,9 @@ import SottoCore
         }
         guard let drawn else { return }
         waiting.remove(drawn)
-        // The body runs before layout. The next turn of the main run loop comes after the frame it built is committed.
-        DispatchQueue.main.async { [weak self] in
-            self?.mark(drawn)
-            self?.write()
-        }
+        // The body runs before layout and the frame's commit, both in this turn of the main run loop. The display link's
+        // next frame comes after that commit, once the main thread is free: the mark is taken there.
+        drawing.insert(drawn)
     }
 
     /// The current phase's frames, CPU time, memory and what was counted in it.
@@ -209,6 +210,11 @@ import SottoCore
 
     fileprivate func tick(_ link: CADisplayLink) {
         frames.tick(link)
+        if !drawing.isEmpty {
+            drawing.forEach(mark)
+            drawing = []
+            write()
+        }
         if frames.count % 30 == 0 { sampleFootprint() }
         guard let motion else { return }
         if motion.started == 0 { self.motion?.started = link.timestamp }
@@ -220,7 +226,8 @@ import SottoCore
         }
     }
 
-    private func sampleFootprint() { peakFootprint = max(peakFootprint, Self.footprintMB()) }
+    /// The kernel's high-water mark of the footprint, so a peak between two samples still counts.
+    private func sampleFootprint() { peakFootprint = max(peakFootprint, Self.footprintMB(peak: true)) }
 
     private func write() {
         let object: [String: Any] = ["phase": phase, "chunks": chunks, "marks": marks, "phases": phases, "current": summary(),
@@ -238,7 +245,8 @@ import SottoCore
         var started: CFTimeInterval = 0
     }
 
-    /// Frames the display drew while a phase lasted, and the hitches: a frame later than one and a half frame times.
+    /// Frames the display drew while a phase lasted, and the hitches: a frame later than one and a half of the frame
+    /// times the display link is running at (`targetTimestamp - timestamp`, not its fastest possible `duration`).
     /// It counts from when the phase began, not from its first frame, so a main thread blocked the moment a phase
     /// starts (opening the long thread does) is one long late frame rather than time nobody counted.
     private struct Frames {
@@ -247,7 +255,7 @@ import SottoCore
         init(from start: CFTimeInterval) { first = start; last = start }
         mutating func tick(_ link: CADisplayLink) {
             let now = link.timestamp
-            let gap = now - last, expected = link.duration
+            let gap = now - last, expected = link.targetTimestamp - link.timestamp
             if gap > 0 {
                 if expected > 0, gap > expected * 1.5 { hitches += 1; hitchMs += (gap - expected) * 1000; lastHitch = CACurrentMediaTime() }
                 longestMs = max(longestMs, gap * 1000)
@@ -287,14 +295,15 @@ import SottoCore
         return user + system
     }
 
-    /// The memory the system charges this app, as Xcode's memory gauge shows it.
-    nonisolated private static func footprintMB() -> Double {
+    /// The memory the system charges this app, as Xcode's memory gauge shows it, or the most it has charged so far.
+    nonisolated private static func footprintMB(peak: Bool = false) -> Double {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
         let result = withUnsafeMutablePointer(to: &info) {
             $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(mach_task_self_, task_flavor_t(TASK_VM_INFO), $0, &count) }
         }
-        return result == KERN_SUCCESS ? Double(info.phys_footprint) / 1_048_576 : 0
+        guard result == KERN_SUCCESS else { return 0 }
+        return Double(peak ? UInt64(info.ledger_phys_footprint_peak) : info.phys_footprint) / 1_048_576
     }
 }
 #endif
