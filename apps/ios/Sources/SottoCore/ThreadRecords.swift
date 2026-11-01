@@ -31,14 +31,18 @@ public struct ChangedThreadRecords: Decodable, Equatable, Sendable {
 public struct ThreadRecordsCache: Sendable {
     private struct Held: Sendable {
         let revision: Int; let records: [String: ThreadSummary]; let order: [String]; let list: [ThreadSummary]
+        /// `list` held under `revision`: its records by ID, and its order.
+        init(revision: Int, list: [ThreadSummary]) {
+            self.revision = revision; self.list = list; order = list.map(\.id)
+            records = Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        }
     }
     private var held: Held?
     public init() {}
     /// Holds the records a hello or a shell read listed whole, under the revision the host named: the next push is
     /// measured from them. Read with the reply's envelope, in socket order, before any push that follows it.
     public mutating func hold(_ records: HeldThreadRecords) {
-        held = Held(revision: records.revision, records: Dictionary(records.threads.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last }),
-                    order: records.threads.map(\.id), list: records.threads)
+        held = Held(revision: records.revision, list: records.threads)
     }
     /// `shell` with its whole thread list, which this then holds. A shell that carries no changed records, from a host
     /// without the feature, is returned as it came. One measured from records this connection does not hold, or that
@@ -55,8 +59,7 @@ public struct ThreadRecordsCache: Sendable {
     }
     private static func resolve(_ held: Held?, _ wire: ChangedThreadRecords) -> Held? {
         guard let base = wire.base else {
-            return Held(revision: wire.revision, records: Dictionary(wire.changed.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last }),
-                        order: wire.changed.map(\.id), list: wire.changed)
+            return Held(revision: wire.revision, list: wire.changed)
         }
         guard let held, base == held.revision else { return nil }
         let updates = Dictionary(wire.changed.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
@@ -76,7 +79,7 @@ public struct ThreadRecordsCache: Sendable {
         }
         // Every changed record has its place, and every held thread is either still listed or said to have gone.
         guard updates.keys.allSatisfy({ listed.contains($0) }), held.order.allSatisfy({ gone.contains($0) != listed.contains($0) }) else { return nil }
-        return Held(revision: wire.revision, records: Dictionary(list.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last }), order: ids, list: list)
+        return Held(revision: wire.revision, list: list)
     }
 }
 

@@ -126,10 +126,16 @@ final class ModelCatalogTests: XCTestCase {
         let named = try shell(revision: 2, models: nil)
         XCTAssertEqual(try XCTUnwrap(cache.whole(named)).host.models, models)
     }
-    func testAModelNamingAListThatIsNotThereIsNotShown() throws {
+    func testAModelNamingAListThatIsNotThereIsNotShown() async throws {
         let fields = withLists(host(catalog(revision: 2, models: listedModels())), lists: "[]")
         let listed = try JSONDecoder().decode(Shell.self, from: Data(#"{"hostId":"h","host":\#(fields)}"#.utf8))
         XCTAssertNil(ModelCatalogCache().whole(listed))
+        // Nor when no lists came at all: the modes would be lost without a word.
+        let unlisted = host(catalog(revision: 2, models: listedModels()))
+        let named = try JSONDecoder().decode(Shell.self, from: Data(#"{"hostId":"h","host":\#(unlisted)}"#.utf8))
+        XCTAssertNil(ModelCatalogCache().whole(named))
+        let carried = try await reply(#"{"hostId":"h","host":\#(unlisted)}"#)
+        XCTAssertNil(carried)
     }
     func testAReplysCatalogIsHeldWithItsProviderModesPutBack() async throws {
         let fields = withLists(host(catalog(revision: 5, models: listedModels())), lists: "[\(modes)]")
