@@ -59,7 +59,16 @@ struct ThreadsView: View {
     private var unfolded: Bool { duo.sideways || duo == .upright }
     private var inColumns: Bool { unfolded && !typeSize.isAccessibilitySize }
 
+    // Experiment only: the list leaves the tree while a thread is open over it, to measure its share of a streamed word.
     var body: some View {
+        if ProcessInfo.processInfo.environment["SOTTO_BENCH_FILE"] != nil, model.selected != nil, !unfolded {
+            Color.clear
+        } else {
+            page
+        }
+    }
+
+    @ViewBuilder private var page: some View {
         let _ = BenchProbe.body("ThreadsView")
         let groups = model.focusThreads(show: model.show, query: query, opened: model.selected)
         let unsearched = query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected)
