@@ -916,18 +916,17 @@ extension View {
     }
 }
 
-/// The reply box's ground, and its **+**'s, as in Messages: solid, a shade off the room, with a soft shadow under it so it
-/// floats over the conversation, and no edge. Under Glass on iOS 26 and later the system's Liquid Glass instead, which the
-/// **+** answers the touch with; before iOS 26 Glass gets the solid box too, since its frosted glass has an edge.
+/// The reply box's ground: solid, a shade off the room, with a soft shadow under it so it floats over the conversation,
+/// and no edge in any state. Under Glass on iOS 26 and later the system's Liquid Glass instead; before iOS 26 Glass gets
+/// the solid box too, since its frosted glass has an edge.
 struct ComposerSurface<S: InsettableShape>: ViewModifier {
     let shape: S
-    var interactive = false
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoGlass) private var glass
     @Environment(\.colorScheme) private var scheme
     @ViewBuilder func body(content: Content) -> some View {
         if glass != nil, #available(iOS 26, *) {
-            content.glassEffect(.regular.tint(theme.color(.surface).opacity(scheme == .dark ? 0.58 : 0.68)).interactive(interactive), in: shape)
+            content.glassEffect(.regular.tint(theme.color(.surface).opacity(scheme == .dark ? 0.58 : 0.68)), in: shape)
         } else {
             content
                 // The room with a little of the ink over it, so the box is a shade off whatever the theme's room is.
@@ -937,28 +936,34 @@ struct ComposerSurface<S: InsettableShape>: ViewModifier {
     }
 }
 
-/// The reply box's measures, shared by a thread's and Watcher's: 38 points tall with one line, as in Messages.
+/// The reply box's measures, shared by a thread's and Watcher's: a card with the words on top and a row of round buttons
+/// inside it under them, as in Claude's iPhone app (Zach, November 1, 2026).
 enum ComposerMetrics {
-    static let height: CGFloat = 38
-    static let radius: CGFloat = height / 2
-    /// The words' room above and below; with one line of body text the box is at least `height`.
-    static let wordsPadding: CGFloat = 9
-    /// From the box's leading edge to the words.
-    static let wordsInset: CGFloat = 14
+    static let radius: CGFloat = 24
+    /// From the card's leading edge to the words, and above them.
+    static let wordsInset: CGFloat = 16
+    static let wordsTop: CGFloat = 12
     /// Around the photos and files above the words.
     static let attachmentsInset: CGFloat = 6
-    /// Send and Stop inside the box's end: their circle, and its gap to the box's edge.
-    static let button: CGFloat = 30
-    static let buttonInset: CGFloat = 4
-    /// Between Stop and Send: wide enough that each keeps all 44 points of its press area, so a press between them
-    /// neither stops a turn meant to be queued nor queues a reply meant to stop it.
-    static let buttonGap: CGFloat = 44 - button
+    /// The row's round buttons (+, the mic, Send and Stop) and the settings pill: how tall they are drawn.
+    static let button: CGFloat = 34
+    /// From the card's edge to the row.
+    static let rowInset: CGFloat = 8
+    /// Between the row's buttons: wide enough that each keeps all 44 points of its press area, so a press between Stop
+    /// and Send neither stops a turn meant to be queued nor queues a reply meant to stop it.
+    static let gap: CGFloat = 44 - button
 }
 
 extension View {
     /// The reply box's floating ground; see `ComposerSurface`.
-    func composerSurface<S: InsettableShape>(in shape: S, interactive: Bool = false) -> some View {
-        modifier(ComposerSurface(shape: shape, interactive: interactive))
+    func composerSurface<S: InsettableShape>(in shape: S) -> some View {
+        modifier(ComposerSurface(shape: shape))
+    }
+    /// A round button's face in the reply box's row: `fill` in a circle the row's height, pressed across 44 points.
+    func composerDisc<F: ShapeStyle>(_ fill: F) -> some View {
+        frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
+            .background(fill, in: Circle())
+            .pressArea(drawn: ComposerMetrics.button)
     }
     /// The light round the reply box, whose corners are `radius`, at the top effort; see `EffortTraceLight`. Nothing is
     /// drawn while `lit` is false.
