@@ -144,6 +144,9 @@ interface ThreadBase {
   readonly order: readonly string[]
 }
 
+/** Records an answer lists whole, held under `revision` once `commit()` says the answer was delivered. */
+export interface ThreadRecordsSeed { readonly revision: number; readonly commit: () => void }
+
 /** The most records sent over a whole walk's before they are folded into a map of their own, which reads no thread. */
 const MAX_OVERRIDES = 64
 const NO_OVERRIDES: ReadonlyMap<string, AgentThread> = new Map()
@@ -227,6 +230,20 @@ export class ThreadRecordsBroadcast {
 
   /** The next broadcast lists every record: the window holds none it can measure from. */
   reset(): void { this.base = null; this.resets++ }
+
+  /**
+   * `threads`, which an answer lists whole, as the base the next broadcast is measured from once that answer is delivered
+   * (ADR-0028, November 1 amendment): the client holds them under the revision returned, so the broadcast after the answer
+   * carries only what changed since it rather than every record again. Committing voids any earlier send that has not
+   * become the base yet, as `reset()` does: the client read past it. Undefined, leaving everything as it was, when two
+   * records share an ID and cannot be told apart.
+   */
+  seed(threads: readonly AgentThread[]): ThreadRecordsSeed | undefined {
+    const revision = ++this.revision
+    const walked = walk(threads, revision, null)
+    if (!walked.unique) return undefined
+    return { revision, commit: () => { this.resets++; this.base = { revision, host: undefined, records: walked.records, overrides: NO_OVERRIDES, order: walked.order } } }
+  }
   /** The revision of the broadcast the next is measured from, or null when the next lists every record. */
   get baseRevision(): number | null { return this.base?.revision ?? null }
 

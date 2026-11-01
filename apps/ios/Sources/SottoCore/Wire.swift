@@ -194,6 +194,9 @@ public struct HostSnapshot: Decodable, Equatable, Sendable {
     /// of a shell when this connection was already sent that revision whole.
     public let modelsRevision: Int?
     public let capabilities: ProviderCapabilities
+    /// From a host that offers `provider-mode-lists`, each distinct list of provider modes in `models`, which a model names
+    /// by its place here. Nil once a shell leaves `HostConnection`, its lists put back on each model.
+    public var providerModeLists: [[ThreadModel.ProviderMode]]? = nil
 }
 public struct Project: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let title: String; public let workspaceSettledAt: String?

@@ -21,7 +21,7 @@ import { PASTED_CODE_MAX } from './hostProviders'
 import { opencodeHostCallSchema } from './opencodeSignIn'
 import type { HeldProviders } from './heldProviders'
 import { agentActivitySchema, type AgentActivity } from './agentActivity'
-import { agentChangedThreadRecordsSchema, providerIdSchema, type AgentChangedThreadRecords, type ProviderClientUpdate, type ProviderId } from './agents'
+import { agentChangedThreadRecordsSchema, providerIdSchema, type AgentChangedThreadRecords, type AgentProviderMode, type ProviderClientUpdate, type ProviderId } from './agents'
 import { usageLocalClearRequestSchema, usageLocalQuerySchema, usageProviderIdSchema } from './usageDashboard'
 import { HOST_UPDATE_STEPS, type HostUpdateStep } from './hostUpdates'
 import { hostBranchMoveRequestSchema } from './branchMoves'
@@ -354,7 +354,7 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * and each change after as `next-prompt`. It asks its providers only while a desktop wants them. Listed only while its
  * `next-prompt` Owl feature is on, and only to desktops.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'next-prompts', 'watcher-phone-composer'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media', 'next-prompts', 'watcher-phone-composer', 'reply-thread-records', 'provider-mode-lists'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -658,8 +658,22 @@ export type HostClientShell = AgentState & { watcher?: WatcherPhoneState | undef
  * other client it is a `HostClientShell` as v1 has it.
  */
 export type HostWireShell = Omit<HostClientShell, 'host'> & {
-  host: Omit<AgentState['host'], 'models'> & { models?: AgentModel[] | undefined; modelsRevision?: number | undefined }
+  host: Omit<AgentState['host'], 'models'> & {
+    models?: HostWireModel[] | undefined; modelsRevision?: number | undefined
+    /**
+     * To a client that accepts `provider-mode-lists`, each distinct list of provider modes in `models`, once; a model
+     * names its list by its place here rather than carrying it (ADR-0028, November 1 amendment).
+     */
+    providerModeLists?: AgentProviderMode[][] | undefined
+  }
+  /**
+   * On a hello's shell or a `shell` read's answer to a client that accepts `reply-thread-records`: the revision the records
+   * it lists whole are held under, which the next shell push's changed records are measured from.
+   */
+  threadRecordsRevision?: number | undefined
 }
+/** A model as a catalog sends it: to a client that accepts `provider-mode-lists`, its modes named by their place in the list table. */
+export type HostWireModel = AgentModel & { providerModeList?: number | undefined }
 /**
  * `threads` is on a shell push only to a client whose hello accepted `changed-thread-records` (#996): the thread records
  * that changed since the last shell push to that connection, in the shape the window's broadcast has (ADR-0028), with the

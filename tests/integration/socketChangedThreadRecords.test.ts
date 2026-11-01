@@ -85,6 +85,45 @@ describe('changed thread records on shell pushes', () => {
   })
 })
 
+describe('records an answer lists whole (reply-thread-records)', () => {
+  const accepts = ['changed-thread-records', 'reply-thread-records']
+
+  it('measures the first push from the records hello listed, rather than listing every record again', async () => {
+    const seeded = await peer(accepts)
+    const revision = (seeded.hello as unknown as { threadRecordsRevision?: number }).threadRecordsRevision
+    expect(revision).toEqual(expect.any(Number))
+    const workId = change()
+    const carrying = await seeded.pushed(workId)
+    // The first push is measured from hello's records, and no push lists every record again.
+    expect(seeded.shells()[0]!.threads!.base).toBe(revision)
+    for (const push of seeded.shells()) { expect(push.threads!.base).not.toBeNull(); expect(push.state.host.threads).toEqual([]) }
+    expect(carrying.threads!.changed).toHaveLength(1)
+    expect(carriesWork(carrying.threads!.changed[0]!, workId)).toBe(true)
+  })
+
+  it('measures the push after a shell read from the records that read listed', async () => {
+    const seeded = await peer(accepts)
+    await seeded.pushed(change())
+    await seeded.call('read', { op: 'shell' })
+    const answer = seeded.messages.find(message => message.id === 'read') as { result: { threadRecordsRevision?: number; host: { threads: AgentThread[] } } }
+    expect(answer.result.threadRecordsRevision).toEqual(expect.any(Number))
+    expect(answer.result.host.threads.length).toBeGreaterThan(1)
+    const workId = change()
+    const after = await seeded.pushed(workId)
+    expect(after.threads!.base).toBe(answer.result.threadRecordsRevision)
+    expect(after.threads!.changed).toHaveLength(1)
+  })
+
+  it('names no revision to a client that did not accept it, nor to one without changed records', async () => {
+    for (const asked of [['changed-thread-records'], ['reply-thread-records']]) {
+      const client = await peer(asked)
+      expect(client.hello).not.toHaveProperty('threadRecordsRevision')
+      await client.call('read', { op: 'shell' })
+      expect((client.messages.find(message => message.id === 'read') as { result: object }).result).not.toHaveProperty('threadRecordsRevision')
+    }
+  })
+})
+
 describe('the desktop’s client of a paired host', () => {
   async function desktop() {
     const { client } = await fixture.pair('Desktop')

@@ -129,4 +129,49 @@ final class ThreadRecordsTests: XCTestCase {
         print(String(format: "THREAD-RECORDS-READ whole push %ld bytes %.2f ms, changed push %ld bytes %.2f ms (medians of %ld)",
                      wholePush.count, median(wholeTimes), push(records: records(revision: 2, base: 1, changed: [record("thread-7", status: "running")])).count, median(changedTimes), rounds))
     }
+
+    // `reply-thread-records` (ADR-0028's November 1 amendment): a hello or a shell read names the revision of the records
+    // it lists whole, and the push after it carries only what changed since.
+    private func reply(_ result: String) async throws -> HeldThreadRecords? {
+        let frame = try await Wire.readFrame(Data(#"{"v":1,"id":"reply","ok":true,"result":\#(result)}"#.utf8))
+        guard case .reply(_, _, _, let records) = frame else { XCTFail("Expected reply"); return nil }
+        return records
+    }
+    private func listed(_ threads: [String], revision: Int?) -> String {
+        let named = revision.map { #""threadRecordsRevision":\#($0),"# } ?? ""
+        return #"{"hostId":"h",\#(named)"host":{"hostId":"h","name":"Forge","threads":[\#(threads.joined(separator: ","))],"projects":[],"capabilities":{"submit":true,"interrupt":true,"questions":true,"permissions":true,"threads":true}}}"#
+    }
+    func testHelloHoldsTheRecordsItListsSoTheFirstPushCarriesOnlyWhatChanged() async throws {
+        var cache = ThreadRecordsCache()
+        let hello = #"{"hostId":"h","clientId":"phone","capabilities":{"mayAnswer":false},"shell":\#(listed([record("a"), record("b")], revision: 7))}"#
+        let held = try await reply(hello)
+        XCTAssertEqual(held?.revision, 7)
+        XCTAssertEqual(held?.threads.map(\.id), ["a", "b"])
+        cache.hold(try XCTUnwrap(held))
+        let pushed = try await shell(push(records: records(revision: 8, base: 7, changed: [record("b", status: "running")])))
+        let whole = try XCTUnwrap(cache.whole(pushed))
+        XCTAssertEqual(whole.host.threads.map(\.id), ["a", "b"])
+        XCTAssertEqual(whole.host.threads.map(\.status), ["idle", "running"])
+    }
+    func testAShellReadReplacesTheRecordsHeldWithTheOnesItLists() async throws {
+        var cache = ThreadRecordsCache()
+        let first = try await shell(push(records: records(revision: 1, base: nil, changed: [record("a")])))
+        XCTAssertNotNil(cache.whole(first))
+        let read = try await reply(listed([record("a"), record("c")], revision: 4))
+        cache.hold(try XCTUnwrap(read))
+        let pushed = try await shell(push(records: records(revision: 5, base: 4, changed: [])))
+        XCTAssertEqual(try XCTUnwrap(cache.whole(pushed)).host.threads.map(\.id), ["a", "c"])
+        // A push still measured from the records the read replaced is not shown.
+        let stale = try await shell(push(records: records(revision: 6, base: 1, changed: [])))
+        XCTAssertNil(cache.whole(stale))
+    }
+    func testAReplyThatNamesNoRevisionHoldsNothing() async throws {
+        let hello = #"{"hostId":"h","clientId":"phone","capabilities":{"mayAnswer":false},"shell":\#(listed([record("a")], revision: nil))}"#
+        let fromHello = try await reply(hello)
+        XCTAssertNil(fromHello)
+        let fromRead = try await reply(listed([record("a")], revision: nil))
+        XCTAssertNil(fromRead)
+        let fromOther = try await reply(#"{"ok":true}"#)
+        XCTAssertNil(fromOther)
+    }
 }

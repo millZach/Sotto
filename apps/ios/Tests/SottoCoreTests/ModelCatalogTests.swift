@@ -26,7 +26,7 @@ final class ModelCatalogTests: XCTestCase {
     }
     private func reply(_ result: String) async throws -> CarriedCatalog? {
         let frame = try await Wire.readFrame(Data(#"{"v":1,"id":"reply","ok":true,"result":\#(result)}"#.utf8))
-        guard case .reply(let id, _, let catalog) = frame else { XCTFail("Expected reply"); return nil }
+        guard case .reply(let id, _, let catalog, _) = frame else { XCTFail("Expected reply"); return nil }
         XCTAssertEqual(id, "reply")
         return catalog
     }
@@ -99,5 +99,43 @@ final class ModelCatalogTests: XCTestCase {
         cache.hold(pushed)
         XCTAssertEqual(cache.held?.revision, 8)
         XCTAssertEqual(cache.whole(try shell(revision: 8, models: nil))?.host.models?.map(\.id), ["first"])
+    }
+
+    // `provider-mode-lists` (ADR-0028's November 1 amendment): each distinct list of provider modes goes once, and a model
+    // names its list by its place.
+    private let modes = #"[{"id":"mode-ask","name":"Ask","asks":"Before each edit."},{"id":"mode-edit","name":"Edit","allows":"edits"}]"#
+    private func listedModels() -> String {
+        [#"{"id":"devin-a","name":"A","provider":"Devin","providerId":"devin","ready":true,"providerModeList":0}"#,
+         #"{"id":"devin-b","name":"B","provider":"Devin","providerId":"devin","ready":true,"providerModeList":0}"#,
+         first].joined(separator: ",")
+    }
+    private func withLists(_ fields: String, lists: String) -> String {
+        fields.replacingOccurrences(of: #""capabilities":"#, with: #""providerModeLists":\#(lists),"capabilities":"#)
+    }
+    func testAShellPutsEachModelsProviderModesBackFromTheListItNames() throws {
+        let fields = withLists(host(catalog(revision: 2, models: listedModels())), lists: "[\(modes)]")
+        let listed = try JSONDecoder().decode(Shell.self, from: Data(#"{"hostId":"h","host":\#(fields)}"#.utf8))
+        var cache = ModelCatalogCache()
+        let whole = try XCTUnwrap(cache.whole(listed))
+        XCTAssertNil(whole.host.providerModeLists)
+        let models = try XCTUnwrap(whole.host.models)
+        XCTAssertEqual(models.map { $0.providerModes?.map(\.id) }, [["mode-ask", "mode-edit"], ["mode-ask", "mode-edit"], nil])
+        XCTAssertEqual(models.map(\.providerModeList), [nil, nil, nil])
+        // The catalog held for later shells is the one put back.
+        cache.hold(listed)
+        let named = try shell(revision: 2, models: nil)
+        XCTAssertEqual(try XCTUnwrap(cache.whole(named)).host.models, models)
+    }
+    func testAModelNamingAListThatIsNotThereIsNotShown() throws {
+        let fields = withLists(host(catalog(revision: 2, models: listedModels())), lists: "[]")
+        let listed = try JSONDecoder().decode(Shell.self, from: Data(#"{"hostId":"h","host":\#(fields)}"#.utf8))
+        XCTAssertNil(ModelCatalogCache().whole(listed))
+    }
+    func testAReplysCatalogIsHeldWithItsProviderModesPutBack() async throws {
+        let fields = withLists(host(catalog(revision: 5, models: listedModels())), lists: "[\(modes)]")
+        let carried = try await reply(#"{"hostId":"h","host":\#(fields)}"#)
+        XCTAssertEqual(carried?.revision, 5)
+        XCTAssertEqual(carried?.models.map { $0.providerModes?.count }, [2, 2, nil])
+        XCTAssertEqual(carried?.models.compactMap(\.providerModeList), [])
     }
 }

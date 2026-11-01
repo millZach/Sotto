@@ -219,8 +219,10 @@ private final class NoRedirects: NSObject, URLSessionTaskDelegate {
     private func receive(_ frame: IncomingFrame) {
         received += 1
         switch frame {
-        case .reply(let id, let data, let carried):
+        case .reply(let id, let data, let carried, let records):
             if let carried { catalog.hold(carried) }
+            // The records a hello or a shell read listed whole, which the next push is measured from.
+            if let records { threadRecords.hold(records) }
             finish(id: id, result: .success(Received(Reply(data: data, catalog: catalog), sequence: received)))
         case .refusal(let id, let failure): finish(id: id, result: .failure(HostRefusal(failure: failure)))
         case .shell(let shell):

@@ -43,7 +43,7 @@ final class StreamingTests: XCTestCase {
         guard case .delta(let threadID, let update) = delta else { return XCTFail("Expected delta") }
         XCTAssertEqual(threadID, "t"); XCTAssertEqual(snapshot?.applying(update)?.revision, 3)
         XCTAssertEqual(Wire.snapshotHello["afterSeq"], .number(9_007_199_254_740_991))
-        XCTAssertEqual(Wire.snapshotHello["accepts"], .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("changed-thread-records")]))
+        XCTAssertEqual(Wire.snapshotHello["accepts"], .array([.string("detail-delta"), .string("client-liveness"), .string("activity-summaries"), .string("model-catalog-revision"), .string("provider-opencode"), .string("provider-cursor"), .string("changed-thread-records"), .string("reply-thread-records"), .string("provider-mode-lists")]))
     }
     func testInvalidFramesAndUnrequestedPushesAreRefused() async {
         for json in [#"{"v":2,"event":"detail","threadId":"t","detail":null}"#,
@@ -57,9 +57,10 @@ final class StreamingTests: XCTestCase {
         // This revision loses precision if the reply passes through JSONValue's Double.
         let data = Data(#"{"v":1,"id":"detail","ok":true,"result":{"threadId":"t","revision":9007199254740993,"messages":[{"id":"m","role":"assistant","text":"Hello"}]}}"#.utf8)
         let frame = try await Wire.readFrame(data)
-        guard case .reply(let id, let bytes, let catalog) = frame else { return XCTFail("Expected reply") }
+        guard case .reply(let id, let bytes, let catalog, let records) = frame else { return XCTFail("Expected reply") }
         XCTAssertEqual(id, "detail")
         XCTAssertNil(catalog)
+        XCTAssertNil(records)
         XCTAssertEqual(bytes, data)
         XCTAssertEqual(CountedDetail.count, 0)
         let result = try await Wire.readReply(bytes, as: CountedDetail.self)
