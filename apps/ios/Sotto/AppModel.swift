@@ -1229,6 +1229,14 @@ struct HeldDetail {
     let detail: ThreadDetail
 }
 
+/// What a press on the folded Duo's thread rail asks of the thread showing. It lives with the model, which
+/// holds it, so the model's tests compile without the views.
+struct RailAsk: Equatable {
+    enum Action: Equatable { case back, agents }
+    let ref: ThreadRef
+    let action: Action
+}
+
 /// Every paired computer, each with its own connection, session and state. A computer that can't be
 /// reached, or fails, never holds up the others. Everything that names a thread names its computer too.
 @MainActor final class AppModel: ObservableObject {
@@ -1382,6 +1390,12 @@ struct HeldDetail {
     @Published var show = ComputerFilter.all
     /// A thread whose alert was tapped, for the tabs to open. They set it back to nil once it is open.
     @Published var alertOpened: ThreadRef?
+    /// A press on the folded Duo's thread rail, for the thread showing to act on: its page owns Back and its Agents sheet,
+    /// and a delegated thread opened from Agents is pushed by that page, not by the tabs. Set back to nil once taken.
+    @Published var railAsked: RailAsk?
+    /// What the Threads list is searched for now, read once when the Duo unfolds from it. Not published: nothing draws it.
+    var listQuery = ""
+
     /// A computer whose Watcher alert was tapped, for the tabs to open the Watcher tab. Set back to nil once it is open.
     @Published var watcherAlertOpened: String?
     /// The computer whose Watcher was last chosen for the Watcher tab, by its alert or the header's menu.

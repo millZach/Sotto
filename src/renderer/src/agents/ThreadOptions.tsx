@@ -465,7 +465,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
    * seems to want (ADR-0172), and the permissions drawn in `shieldSlot`, before the model. Absent, the options are the
    * chips of ADR-0113.
    */
-  readonly quiet?: { readonly effortScore: number; readonly shieldSlot?: HTMLElement | null | undefined } | undefined
+  readonly quiet?: { readonly effortScore: number; readonly broadWork?: boolean; readonly shieldSlot?: HTMLElement | null | undefined } | undefined
 }): ReactNode {
   const { t } = useLingui()
   const settings = usePendingSettings(thread.id)
@@ -672,7 +672,7 @@ export function ThreadOptions({ thread, state, command, turnNote = true, getDraf
       {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={fixed || modelDisabled}
         pending={settings.pending.effort?.awaiting === 'unconfirmed' || settings.pending.fast?.awaiting === 'unconfirmed'} describedBy={effortDescription}
         speed={speeds.length > 0 ? { value: shownSpeed, name: speedName(shownSpeed, speeds), options: speedOptions(speeds, speedProvider), onChange: changeSpeed, onStep: direction => changeSpeed(nextSpeed(speeds, shownSpeed, direction)) } : undefined}
-        suggestion={suggestedEffortIndex(quiet.effortScore, levels, reasoning, model?.defaultReasoningEffort)}
+        suggestion={suggestedEffortIndex(quiet.effortScore, levels, reasoning, model?.defaultReasoningEffort, quiet.broadWork)}
         onChange={reasoningEffort => {
           press('effort', reasoningEffort, { reasoningEffort }, unpressed.effort)
           orchestrating?.(modelId, reasoningEffort, state.host.models, roleSpeed)

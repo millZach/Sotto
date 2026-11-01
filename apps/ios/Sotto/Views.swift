@@ -31,6 +31,8 @@ struct MainTabs: View {
     @State private var drawer = false
     /// New thread, opened from the Duo's rail.
     @State private var creating = false
+    /// The Duo was last folded, on the Threads list, so unfolding it opens the list's top row (`openTopRow`).
+    @State private var foldedOnList = false
     enum Tab: Hashable { case threads, watcher, computers, settings }
     @Environment(\.horizontalSizeClass) private var width
     @Environment(\.verticalSizeClass) private var height
@@ -80,7 +82,7 @@ struct MainTabs: View {
         // A thread and the keyboard cover the tabs, except on the unfolded Duo held sideways, where the rail stays in its
         // place beside the thread and its sidebar (Zach's pick A on October 30, 2026): with no Back there, it is the way
         // out of a thread, so the keyboard draws over its foot rather than taking it away.
-        let shown = duo.sideways || (!keyboard && covered.isEmpty)
+        let shown = duo.sideways || threadRail(duo) || (!keyboard && covered.isEmpty)
         let sidebar = duo.sideways && threadOpen && !sidebarHidden
         // The bar sits under the pages rather than in their safe area, which a NavigationStack doesn't pass on to its
         // pages: they end above it, as they did above the system's.
@@ -103,10 +105,17 @@ struct MainTabs: View {
         }
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.25), value: sidebar)
         .overlay(alignment: .trailing) {
-            if case .strip(trailing: true, width: let strip) = place { rail(shown, clear: clockClearance(duo), grounded: false).frame(width: strip).offset(x: strip) }
+            if case .strip(trailing: true, width: let strip) = place {
+                Group {
+                    // Folded, an open thread's controls take the strip in place of its bar and the tabs (Zach's pick A).
+                    if threadRail(duo) { FoldedThreadRail(ref: model.selected, clear: duo.clockClearance, back: popThread).equatable() }
+                    else { rail(shown, clear: duo.clockClearance, grounded: false) }
+                }
+                .frame(width: strip).offset(x: strip)
+            }
         }
         .overlay(alignment: .leading) {
-            if case .strip(trailing: false, width: let strip) = place { rail(shown, clear: clockClearance(duo), grounded: false).frame(width: strip).offset(x: -strip) }
+            if case .strip(trailing: false, width: let strip) = place { rail(shown, clear: duo.clockClearance, grounded: false).frame(width: strip).offset(x: -strip) }
         }
         .overlay { if duo == .upright && threadOpen { ThreadDrawer(shown: $drawer, open: openFromSidebar).equatable() } }
         .sheet(isPresented: $creating, onDismiss: { model.newThreadClosed() }) {
@@ -117,7 +126,12 @@ struct MainTabs: View {
             })
         }
         .onChange(of: threadOpen) { _, open in if !open { drawer = false } }
-        .onChange(of: duo) { _, _ in drawer = false }
+        .onChange(of: duo, initial: true) { _, now in
+            drawer = false
+            unfolded(to: now)
+        }
+        .onChange(of: threadPath) { _, path in if case .folded = duo { foldedOnList = path.isEmpty && tab == .threads } }
+        .onChange(of: tab) { _, chosen in if case .folded = duo { foldedOnList = threadPath.isEmpty && chosen == .threads } }
         // Under Glass the backdrop reaches the Duo's strip too, so the rail stands on the same ground.
         .background { if glass != nil { PageGround().ignoresSafeArea() } }
         .environment(\.tabsCovered, $covered)
@@ -165,10 +179,39 @@ struct MainTabs: View {
             Color.clear
         }
     }
-    /// How far down the strip the clock, battery and page dots reach: lower on the cover screen than unfolded, as the
-    /// iPhone Duo simulator draws them (iOS 27.1).
-    private func clockClearance(_ duo: DuoLayout) -> CGFloat {
-        if case .folded = duo { return 156 } else { return 108 }
+    /// Unfolding the Duo from the Threads list and holding it sideways opens the list's top row beside the sidebar, marked
+    /// there, as if it were tapped: Needs you first, then Working now, then Recent, so a question waiting rises as its
+    /// sheet (Zach, TestFlight build 45). Upright keeps the list. The window can pass through other sizes as the Duo
+    /// opens, so the fold is remembered until it lands.
+    private func unfolded(to now: DuoLayout) {
+        switch now {
+        case .folded: foldedOnList = tab == .threads && threadPath.isEmpty
+        case .sideways:
+            if foldedOnList, tab == .threads, threadPath.isEmpty { openTopRow() }
+            foldedOnList = false
+        case .upright: foldedOnList = false
+        case .none: break
+        }
+    }
+    /// The top row of the list as shown, search and all, opened as a press on it opens it: a delegated thread that asks opens
+    /// over the one that delegated. A search that finds nothing opens nothing.
+    private func openTopRow() {
+        let groups = model.focusThreads(show: model.show, query: model.listQuery)
+        guard let row = groups.questions.first ?? groups.working.first ?? groups.recent.first else { return }
+        var routes = [ThreadRoute(ref: row.ref)]
+        let asking = groups.asking(row)
+        if asking.ref != row.ref { routes.append(ThreadRoute(ref: asking.ref)) }
+        threadPath = NavigationPath(routes)
+    }
+    /// Whether the folded Duo's strip holds an open thread's controls rather than the tabs.
+    private func threadRail(_ duo: DuoLayout) -> Bool {
+        if case .folded = duo { return threadOpen } else { return false }
+    }
+    /// Back from the folded thread rail: the thread showing goes back itself, since a delegated thread opened from Agents
+    /// sits on its page rather than on the tab's path. With no thread read yet, the tab's path goes back one.
+    private func popThread() {
+        if let ref = model.selected { model.railAsked = RailAsk(ref: ref, action: .back); return }
+        if tab == .watcher, !watcherPath.isEmpty { watcherPath.removeLast() } else if !threadPath.isEmpty { threadPath.removeLast() }
     }
     /// New thread on the Duo's rail or row, the round button the Threads page heading has on every other iPhone.
     private var newThread: some View {
@@ -422,6 +465,10 @@ enum DuoLayout: Equatable {
     /// Unfolded and held upright: the tabs run along the bottom.
     case upright
     var sideways: Bool { if case .sideways = self { return true } else { return false } }
+    /// How far down the strip New thread, or a thread's Back, sits: under the clock, battery and page dots, lower on the
+    /// cover screen than unfolded. On Zach's Duo the + overlapped the battery at 156 and 108 points (TestFlight build 45),
+    /// so both moved down a step and a half.
+    var clockClearance: CGFloat { if case .folded = self { return 176 } else { return 124 } }
     /// How wide the strip is on each side of the window, where a page that reaches it carries its ground on under it.
     var strip: (leading: CGFloat, trailing: CGFloat) {
         switch self {
@@ -547,7 +594,9 @@ struct ThreadListSections: View, Equatable {
     private func rowView(_ row: HostedThread, _ kind: ThreadListRow.Kind, _ watched: Set<String>, asking: HostedThread? = nil) -> some View {
         let isWatched = watched.contains(row.id)
         let delegated = asking.flatMap { $0.ref == row.ref ? nil : $0 }
-        return ThreadListRow(row: row, kind: kind, asking: delegated, watched: isWatched, chosen: row.ref == chosen,
+        // A delegated thread has no row of its own: the row its delegation is reached from is marked while it shows.
+        let marked = chosen.map { groups.rowID(for: $0) == row.id } ?? false
+        return ThreadListRow(row: row, kind: kind, asking: delegated, watched: isWatched, chosen: marked,
                              canWatch: model.canChangeWatch(row.ref), identifier: identifier,
                              open: { open(row.ref); if let delegated { open(delegated.ref) } },
                              setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })
