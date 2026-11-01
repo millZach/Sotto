@@ -8905,6 +8905,16 @@ msgstr "Ultracode"
 msgid "Ultracode effort"
 msgstr "Ultracode effort"
 
+#. Tooltip on the suggestion to switch the thread to Ultracode, Claude Code’s multi-agent workflow mode. Ultracode is Claude Code’s own name; keep it as it is.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "Ultracode may suit this draft. It runs the work as a team of agents and uses many more tokens."
+msgstr "Ultracode may suit this draft. It runs the work as a team of agents and uses many more tokens."
+
+#. Said to assistive technology when the composer suggests Ultracode, Claude Code’s multi-agent workflow mode. Ultracode is Claude Code’s own name; keep it as it is.
+#: src/renderer/src/agents/SplitChipEffort.tsx
+msgid "Ultracode suggested for this draft. It uses many more tokens."
+msgstr "Ultracode suggested for this draft. It uses many more tokens."
+
 #. Ultrathink is a keyword Claude Code reads in a prompt; keep it as it is.
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Ultrathink is in this prompt"

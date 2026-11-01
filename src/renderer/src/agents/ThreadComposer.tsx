@@ -28,7 +28,7 @@ import { composeReviewMessage, reviewCommentStore, reviewLabel, useReviewComment
 import { composeQuotedMessage, replyQuoteLabel, replyQuoteStore, useReplyQuotes, type ReplyQuote, type ReplyQuoteStore } from './replyQuotes'
 import { useOwlFeature } from '../state/owlFeature'
 import { ScreenshotInput } from './ScreenshotInput'
-import { draftEffortScore } from './effortSuggestion'
+import { draftBroadWork, draftEffortScore } from './effortSuggestion'
 import { attachmentRefusal } from './attachmentWords'
 import { SkillPicker, skillOptionId, useSkillPicker } from './SkillPicker'
 import { deliveryFor, deliveryPending, hasDraftContent, queueAdmissionOpen, queuedRevision, submissionStatus, UNCONFIRMED_SUBMISSION, useScreenshotReadPort, useScreenshotReads, useSubmissions, useThreadComposer, type ComposerDraft, type ThreadComposerSnapshot, type SubmissionMode, type SubmissionStatus, type ThreadDraftStore } from './threadDraftStore'
@@ -182,7 +182,7 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
   const watcherOn = useWatcherEnabled()
   const watchActions = useWatchActions()
   const quietComposer = useOwlFeature('quiet-composer')
-  const { draft, save, saveError, answerState, hasContent, effortScore } = useComposerControls(store, threadId, quietComposer)
+  const { draft, save, saveError, answerState, hasContent, effortScore, broadWork } = useComposerControls(store, threadId, quietComposer)
   const comments = useReviewComments(reviewComments, threadId)
   // Reply quotes are an Owl feature: stable shows no chip and sends none (ADR-0129).
   const quoting = useOwlFeature('reply-quote')
@@ -567,10 +567,10 @@ export function ThreadComposer({ row, state, command, store, onSend, composerId 
           {watcher && !quiet ? <WatcherNewButton state={state} thread={row.thread} noticeSlot={settingsNotices} />
             : !quiet && threadHost ? <span className="thread-host-chip" title={hostTitle}>
             {threadHost.kind === 'local' ? <Laptop size={14} aria-hidden="true" /> : <Server size={14} aria-hidden="true" />}{hostLabel}</span> : null}
-          {continuing !== undefined ? <ContinueOptions thread={row.thread} state={state} choice={continuing} quiet={quiet ? { effortScore, shieldSlot } : undefined} />
+          {continuing !== undefined ? <ContinueOptions thread={row.thread} state={state} choice={continuing} quiet={quiet ? { effortScore, broadWork, shieldSlot } : undefined} />
             : row.thread.nativeSessionStarted === false || capabilities.configureThread || continueOffer !== undefined
             ? <ThreadOptions key={threadId} thread={row.thread} state={state} command={command} turnNote={false} noticeSlot={settingsNotices} watcher={watcher} continueOffer={continueOffer}
-              quiet={quiet ? { effortScore, shieldSlot } : undefined}
+              quiet={quiet ? { effortScore, broadWork, shieldSlot } : undefined}
               {...(editable && !answering ? { getDraftText: () => store.draft(threadId).text, onDraftText: (text: string) => { caretAfterInsert.current = text.length; edit({ text }); field.current?.focus() } } : {})} />
             : <><span className="thread-prompt__model"><ProviderMark provider={row.providerId} name={row.provider} />{row.model?.name ?? row.provider}<small>{answering ? t`Answer this question` : t`Manual prompt`}</small></span>
               {watcher ? inSlot(<WatcherPermissionChip model={row.model} provider={row.provider} inForce={row.thread.runtimeMode} noticeSlot={settingsNotices}
@@ -640,6 +640,8 @@ interface ComposerControls {
   readonly hasUltrathink: boolean
   /** How much thought the draft seems to ask for (`effortSuggestion.ts`), read only by the quiet composer. */
   readonly effortScore: number
+  /** Whether the draft reads like work that splits across agents (`effortSuggestion.ts`), which may suggest Ultracode. */
+  readonly broadWork: boolean
 }
 
 /** Text edits repaint the editor; the surrounding controls observe only the facts they display. */
@@ -652,12 +654,13 @@ function useComposerControls(store: ThreadDraftStore, threadId: string, scoreEff
       const hasUltrathink = /\bultrathink\b/iu.test(draft.text)
       // Read only where the quiet composer is on, so no other composer repaints as the score moves.
       const effortScore = scoreEffort ? draftEffortScore(draft.text) : 0
+      const broadWork = scoreEffort && draftBroadWork(draft.text)
       if (previous && previous.save === save && previous.saveError === saveError
         && previous.answerState === answerState
-        && previous.hasContent === hasContent && previous.hasUltrathink === hasUltrathink && previous.effortScore === effortScore
+        && previous.hasContent === hasContent && previous.hasUltrathink === hasUltrathink && previous.effortScore === effortScore && previous.broadWork === broadWork
         && previous.draft.attachments === draft.attachments && previous.draft.skills === draft.skills
         && previous.draft.files === draft.files && previous.draft.requestId === draft.requestId) return previous
-      return previous = { draft, save, saveError, answerState, hasContent, hasUltrathink, effortScore }
+      return previous = { draft, save, saveError, answerState, hasContent, hasUltrathink, effortScore, broadWork }
     }
   }, [store, threadId, scoreEffort])
   return useSyncExternalStore(store.subscribe, read)

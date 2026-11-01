@@ -5,6 +5,7 @@ import { effortLabel } from './EffortPicker'
 import { moveListboxFocus } from './listboxKeys'
 import { OPTION_CHIP_NAMES } from './optionChipNames'
 import { SPEED_STANDARD } from './pendingSettings'
+import { ULTRACODE } from '../../../shared/ultracode'
 import './quietComposer.css'
 
 /** A speed in the effort list: its id, its name, and what it costs where the provider says. */
@@ -100,6 +101,8 @@ export function SplitChipEffort({ levels, value, disabled, pending = false, desc
   const title = speed ? t({ message: `${label}: ${shown} · ${speed.name}`, comment: 'The effort chip\'s tooltip: {label} is the setting\'s name, {shown} a reasoning effort level such as High, {name} the thread\'s speed such as Fast.' })
     : t({ message: `${label}: ${shown}`, comment: 'A chip\'s tooltip: the setting\'s name, then its value.' })
   const suggested = suggestion === null ? null : effortLabel(levels[suggestion]!)
+  // Ultracode is offered for work that splits across agents; what it costs is said with it (ADR-0148).
+  const teamOffered = suggestion !== null && levels[suggestion] === ULTRACODE
   const bolts = speed === undefined ? null : speed.value === SPEED_STANDARD ? <Zap size={11} strokeWidth={2} aria-hidden="true" data-off="" />
     : <>{speed.value === 'ultrafast' ? <Zap size={11} strokeWidth={0} fill="currentColor" aria-hidden="true" /> : null}<Zap size={11} strokeWidth={0} fill="currentColor" aria-hidden="true" /></>
   return <span className="split-chip-effort" data-speed={speed?.value} data-pending={pending || undefined}
@@ -119,7 +122,8 @@ export function SplitChipEffort({ levels, value, disabled, pending = false, desc
     {/* The offer goes once taken. A pointer goes back to the prompt it was writing; a key stays on the word it set. */}
     {suggested === null ? null : <button key={suggested} type="button" className="split-chip-effort__suggest tt-focusable"
       aria-label={t({ message: `Set effort to ${suggested}, suggested for this draft`, comment: '{suggested} is a reasoning effort level, such as High.' })}
-      title={t({ message: `${suggested} effort may suit this draft`, comment: '{suggested} is a reasoning effort level, such as High.' })}
+      title={teamOffered ? t({ message: 'Ultracode may suit this draft. It runs the work as a team of agents and uses many more tokens.', comment: 'Tooltip on the suggestion to switch the thread to Ultracode, Claude Code’s multi-agent workflow mode. Ultracode is Claude Code’s own name; keep it as it is.' })
+        : t({ message: `${suggested} effort may suit this draft`, comment: '{suggested} is a reasoning effort level, such as High.' })}
       onClick={event => {
         set(suggestion!)
         const prompt = event.detail === 0 ? null : trigger.current?.closest('form')?.querySelector<HTMLElement>('.prompt-editor')
@@ -144,7 +148,8 @@ export function SplitChipEffort({ levels, value, disabled, pending = false, desc
     </div> : null}
     {/* Always present, so assistive technology hears a suggestion when it arrives. */}
     <span className="tt-visually-hidden" role="status">
-      {suggested === null ? '' : t({ message: `${suggested} effort suggested for this draft.`, comment: '{suggested} is a reasoning effort level, such as High.' })}
+      {suggested === null ? '' : teamOffered ? t({ message: 'Ultracode suggested for this draft. It uses many more tokens.', comment: 'Said to assistive technology when the composer suggests Ultracode, Claude Code’s multi-agent workflow mode. Ultracode is Claude Code’s own name; keep it as it is.' })
+        : t({ message: `${suggested} effort suggested for this draft.`, comment: '{suggested} is a reasoning effort level, such as High.' })}
     </span>
   </span>
 }

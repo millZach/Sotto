@@ -197,7 +197,7 @@ export function ContinueStrip({ thread, state, choice, composerId }: {
  * permissions go to their slot before the model.
  */
 export function ContinueOptions({ thread, state, choice, quiet }: { readonly thread: AgentThread; readonly state: AgentState; readonly choice: ContinueChoice
-  readonly quiet?: { readonly effortScore: number; readonly shieldSlot?: HTMLElement | null | undefined } | undefined }): ReactNode {
+  readonly quiet?: { readonly effortScore: number; readonly broadWork?: boolean; readonly shieldSlot?: HTMLElement | null | undefined } | undefined }): ReactNode {
   const { t } = useLingui()
   const models = continueModels(state, thread)
   const unavailable = unavailableProviders(state, thread)
@@ -218,7 +218,7 @@ export function ContinueOptions({ thread, state, choice, quiet }: { readonly thr
         openOnMount={choice.pick === true} note={t`Your first message starts a new thread on the model you pick, with a handover of this one.`}
         onChange={id => continueStore.set(thread.id, continueChoiceFor(state, thread, id, choice))} />
       {quiet ? levels.length > 0 && <SplitChipEffort key={choice.modelId} levels={levels} value={effort} disabled={choice.sending}
-        suggestion={suggestedEffortIndex(quiet.effortScore, levels, effort, model?.defaultReasoningEffort)}
+        suggestion={suggestedEffortIndex(quiet.effortScore, levels, effort, model?.defaultReasoningEffort, quiet.broadWork)}
         onChange={reasoningEffort => continueStore.update(thread.id, { reasoningEffort })} />
         : efforts.length > 0 ? <EffortPicker key={choice.modelId} value={effort} options={efforts} disabled={choice.sending}
         defaultValue={model?.defaultReasoningEffort} modelName={model?.name} ultracodeEffort={ultracodeLevel(state, thread, model)}
