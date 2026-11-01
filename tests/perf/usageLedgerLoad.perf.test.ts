@@ -8,6 +8,7 @@ import { build } from 'esbuild'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { NativeUsage } from '../../src/main/agents/nativeUsage'
 import { sourceAt } from '../fixtures/baselineSource'
+import { connectUsage } from '../fixtures/usageBenchStore'
 import { median, PERF_BENCH, round } from '../fixtures/perfBench'
 
 /**
@@ -18,8 +19,10 @@ import { median, PERF_BENCH, round } from '../fixtures/perfBench'
  * Each run starts from a copy of it in a process of its own (`tests/fixtures/usageLoadBench.ts`) and times `load()`, the
  * heap it leaves behind once collected, and the long thread's first report after it. "before" is the source at BASE;
  * "upgrade" is the working tree on a folder an earlier build left, with no views; "later" is the working tree on the next
- * start, views written. Each is run again with Usage on: a `UsageService` reads every thread's saved rows once Claude
- * connects, and each task it reads them in is timed, the longest of them being the claim with the total and the heap:
+ * start, views written. Each is run again with Usage on: a `UsageService` reads the threads' saved rows once Claude
+ * connects, every thread on BASE and on the first start, and none on the later one, whose start before kept each thread's
+ * mark. The bytes of ledgers read, the tasks Usage reads in and the longest main went without a turn of its event loop are
+ * kept, with the long thread's first report, which now waits for its ledger's read:
  *
  *   SOTTO_PERF_BENCH=1 NODE_OPTIONS=--max-old-space-size=3072 npx vitest run tests/perf/usageLedgerLoad.perf.test.ts --maxWorkers=1 --disable-console-intercept
  *
@@ -31,8 +34,8 @@ const THREADS = 290, REQUESTS = 190, LONG = 10_000
 const exec = promisify(execFile)
 type Label = 'before' | 'upgrade' | 'later'
 type Row = { loadMs: number; loadCpuMs: number; loadHeapMb: number; snapshotTaskMs?: number; visitMs?: number; visitCpuMs?: number; batches?: number
-  medianBatchMs?: number; longestBatchMs?: number; longestTaskMs?: number; secondLongestTaskMs?: number; batchesOver8Ms?: number; visitHeapMb?: number
-  rows?: number; firstReportMs: number; output: number }
+  medianBatchMs?: number; longestTaskMs?: number; visitHeapMb?: number; rows?: number; startLongestMs: number; ledgerBytesRead: number; viewBytesRead: number
+  reportTaskMs: number; reportAppliedMs: number; reportLongestMs: number; output: number }
 
 const report = (index: number) => ({ type: 'assistant', timestamp: new Date(Date.UTC(2026, 8, 1) + index * 60_000).toISOString(),
   message: { id: `msg_${index}`, model: 'claude-opus-5-5', usage: { input_tokens: 1_000, output_tokens: 100, cache_read_input_tokens: 2_000, cache_creation_input_tokens: 0 } } })
@@ -60,13 +63,23 @@ describe.skipIf(!PERF_BENCH)('reading the usage ledgers at start (timing benchma
   afterAll(async () => { if (root) await rm(root, { recursive: true, force: true }) })
 
   /** A copy of the seed as `label`'s start finds it. A copy's files are new, so the seed's views no longer match them. */
-  async function folderFor(label: Label, run: string): Promise<string> {
+  async function folderFor(label: Label, run: string, visit: 'none' | 'visit'): Promise<string> {
     const folder = join(root, run)
     await cp(seed, folder, { recursive: true })
     const directory = join(folder, 'claude-usage')
     if (label === 'upgrade') for (const name of await readdir(directory)) if (name.endsWith('.view.json')) await rm(join(directory, name))
-    // The start before this one, by this build, which read each ledger whole and wrote its view.
-    if (label === 'later') { const earlier = new NativeUsage(folder, 'claude'); await earlier.load(); await earlier.flushed() }
+    if (label === 'later') {
+      // The start before this one, by this build, which read each ledger whole and wrote its view, and with Usage on read
+      // every thread's rows and kept their marks.
+      const earlier = new NativeUsage(folder, 'claude', visit === 'visit'); await earlier.load()
+      if (visit === 'visit') {
+        const usage = connectUsage(earlier, folder, [...Array.from({ length: THREADS }, (_, thread) => `thread-${thread}`), 'long'])
+        usage.publish()
+        while (usage.queued()) await new Promise(resolve => { setImmediate(resolve) })
+        usage.service.close(); await usage.store.written()
+      }
+      await earlier.flushed()
+    }
     return folder
   }
 
@@ -79,7 +92,7 @@ describe.skipIf(!PERF_BENCH)('reading the usage ledgers at start (timing benchma
       const labels: Label[] = ['before', 'upgrade', 'later']
       for (let run = 0; run < 3; run++) {
         for (const label of run % 2 ? [...labels].reverse() : labels) {
-          const folder = await folderFor(label, `${visit}-${label}-${run}`)
+          const folder = await folderFor(label, `${visit}-${label}-${run}`, visit)
           try {
             const { stdout } = await exec(process.execPath, ['--expose-gc', bundles[label === 'before' ? 'before' : 'after']!, folder, String(THREADS), visit],
               { maxBuffer: 1024 * 1024, cwd: process.cwd() })
@@ -93,17 +106,20 @@ describe.skipIf(!PERF_BENCH)('reading the usage ledgers at start (timing benchma
         const most = (field: keyof Row) => samples[0]![field] === undefined ? undefined : round(Math.max(...samples.map(row => row[field] as number)), 1)
         console.log(JSON.stringify({ benchmark: 'usage-ledger-load', baseline: BASE, label, usage: visit === 'visit' ? 'on' : 'off', runs: samples.length,
           loadMs: med('loadMs'), loadCpuMs: med('loadCpuMs'), loadHeapMb: med('loadHeapMb'),
-          // Usage's visit: the snapshot's own task, each later task reading queued threads, and the longest of them all.
+          // Usage's visit: the snapshot's own task, each later task reading queued threads, and the longest of them.
           snapshotTaskMs: med('snapshotTaskMs'), visitMs: med('visitMs'), visitCpuMs: med('visitCpuMs'), batches: med('batches', 0),
-          medianBatchMs: med('medianBatchMs'), longestBatchMs: med('longestBatchMs'), longestTaskMs: med('longestTaskMs'), longestTaskMsWorstRun: most('longestTaskMs'),
-          secondLongestTaskMs: med('secondLongestTaskMs'), secondLongestTaskMsWorstRun: most('secondLongestTaskMs'), batchesOver8Ms: med('batchesOver8Ms', 0),
-          visitHeapMb: med('visitHeapMb'),
-          firstReportMs: med('firstReportMs', 2) }))
+          medianBatchMs: med('medianBatchMs'), longestTaskMs: med('longestTaskMs'), longestTaskMsWorstRun: most('longestTaskMs'), visitHeapMb: med('visitHeapMb'),
+          // The longest main went without a turn of its event loop through the start, and the bytes of requests it parsed.
+          startLongestMs: med('startLongestMs'), startLongestMsWorstRun: most('startLongestMs'), ledgerBytesRead: med('ledgerBytesRead', 0), viewBytesRead: med('viewBytesRead', 0),
+          // The long thread's first report: its own task, until it counted, and the longest main was held meanwhile.
+          reportTaskMs: med('reportTaskMs', 2), reportAppliedMs: med('reportAppliedMs', 2), reportLongestMs: med('reportLongestMs', 2) }))
       }
-      // Every start counts the same tokens, and Usage visits the same rows.
+      // Every start counts the same tokens. Usage saves every row on the source at BASE and on the first start after it;
+      // on the start after that it reads no thread, none having changed.
       const all = Object.values(rows).flat()
       expect(new Set(all.map(row => row.output)).size).toBe(1)
-      expect(new Set(all.map(row => row.rows)).size).toBe(1)
+      expect(new Set([...rows.before, ...rows.upgrade].map(row => row.rows)).size).toBe(1)
+      if (visit === 'visit') expect(rows.later.every(row => row.rows === 0)).toBe(true)
     }
   }, 1_800_000)
 })
