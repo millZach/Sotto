@@ -65,6 +65,20 @@ describe('samePaneWorld (#993)', () => {
   })
 })
 
+describe('samePaneWorld for a part that reads only whether its thread has a message (#993)', () => {
+  const state = threadsStateFixture()
+
+  it('keeps it as it was while its own thread streams, but not once its first message lands or anything else of it changes', () => {
+    expect(samePaneWorld(state, withThread(state, 'visual-gate', streamed), 'visual-gate', { ownStreaming: true })).toBe(true)
+    expect(samePaneWorld(state, withThread(state, 'visual-gate', thread => ({ ...thread, usage: { rateVersions: [], partial: false, updatedAt: '2026-10-31T12:00:00.000Z' } })), 'visual-gate', { ownStreaming: true })).toBe(true)
+    expect(samePaneWorld(state, withThread(state, 'visual-gate', thread => ({ ...thread, status: 'idle' })), 'visual-gate', { ownStreaming: true })).toBe(false)
+    const empty = withThread(state, 'visual-gate', thread => ({ ...thread, messages: [] }))
+    expect(samePaneWorld(empty, withThread(empty, 'visual-gate', thread => ({ ...thread, messages: state.host.threads[0]!.messages })), 'visual-gate', { ownStreaming: true })).toBe(false)
+    // Without the option, its own thread streaming draws it again.
+    expect(samePaneWorld(state, withThread(state, 'visual-gate', streamed), 'visual-gate')).toBe(false)
+  })
+})
+
 describe('relatedThreadIds', () => {
   it('follows delegation both ways, continuations, starts and swarms', () => {
     let state = threadsStateFixture()
