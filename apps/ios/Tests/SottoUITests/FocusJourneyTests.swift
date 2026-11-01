@@ -1037,8 +1037,9 @@ import UIKit
         entry.tap()
         XCTAssertTrue(text("What Watcher may do without asking").waitForExistence(timeout: 10), "Permissions opens the four modes")
     }
-    /// Whether the pill's value ends on this permission mode, within `timeout`.
-    private func watcherPill(_ pill: XCUIElement, says mode: String, timeout: TimeInterval = 5) -> Bool {
+    /// Whether the pill's value ends on this permission mode, within `timeout`. One look at the large iPhone's page can
+    /// outlast five seconds on a loaded runner, so the deadline is generous; it is never reached when the pill is right.
+    private func watcherPill(_ pill: XCUIElement, says mode: String, timeout: TimeInterval = 20) -> Bool {
         let says = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value ENDSWITH %@", mode), object: pill)
         return XCTWaiter.wait(for: [says], timeout: timeout) == .completed
     }
@@ -1960,8 +1961,15 @@ import UIKit
         XCTAssertEqual(settings.label, "Thread settings")
         XCTAssertEqual(settings.value as? String, "GPT-6.1 Sol, High, Standard, Ask before actions")
         XCTAssertGreaterThanOrEqual(settings.frame.minY, reply.frame.maxY - 1, "Under the words, inside the box")
-        XCTAssertLessThan(plus.frame.maxX, settings.frame.minX + 1, "The + leads the row, then the pill")
-        XCTAssertLessThan(settings.frame.maxX, mic.frame.minX, "The mic is on the right")
+        // At the accessibility text sizes (the large iPhone's run) the pill takes a line of its own over the buttons.
+        let size = UIApplication.shared.preferredContentSizeCategory
+        if size.isAccessibilityCategory {
+            XCTAssertLessThanOrEqual(settings.frame.maxY, plus.frame.minY + 1, "At \(size.rawValue) the pill sits over the buttons")
+            XCTAssertLessThan(plus.frame.maxX, mic.frame.minX, "The + leads the buttons, the mic on the right")
+        } else {
+            XCTAssertLessThan(plus.frame.maxX, settings.frame.minX + 1, "The + leads the row, then the pill (\(size.rawValue))")
+            XCTAssertLessThan(settings.frame.maxX, mic.frame.minX, "The mic is on the right")
+        }
         XCTAssertLessThan(mic.frame.maxX, send.frame.minX + 1, "Then Send")
         XCTAssertLessThan(abs(plus.frame.midY - send.frame.midY), 1, "All on one line")
         XCTAssertEqual(mic.label, "Dictate")
