@@ -165,6 +165,7 @@ describe('dictation shortcut router apply', () => {
     h.router.apply({ press: ['Control+Shift+Space', 'Fn+Shift'], hold: [] }, 'strict')
     h.key('down', 'Fn')
     h.key('down', 'Shift')
+    h.key('up', 'Shift')
     expect(h.dispatch).toHaveBeenLastCalledWith({ type: 'toggle' })
     expect(h.showWidget).toHaveBeenCalledOnce()
   })
