@@ -263,7 +263,7 @@ export const openRouterKeyCheckSchema = z.discriminatedUnion('ok', [
   z.object({ ok: z.literal(false), reason: z.enum(['unconfigured', 'unauthorized', 'http', 'network', 'timeout']) }).strict(),
 ])
 
-/** OpenRouter's text models, for the cleanup model picker in Settings → Cleanup (ADR-0122). */
+/** OpenRouter's text models and active presets, for the cleanup model picker in Settings → Cleanup (ADR-0122). */
 export const openRouterModelListSchema = z.discriminatedUnion('ok', [
   /** `complete` is false when the read stopped before OpenRouter's last page. */
   z.object({ ok: z.literal(true), complete: z.boolean(), models: z.array(z.object({ id: z.string().min(1).max(128), name: z.string().max(200) }).strict()).max(5_000) }).strict(),

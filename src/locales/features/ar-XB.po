@@ -3949,6 +3949,10 @@ msgstr ""
 msgid "Provider"
 msgstr ""
 
+#: src/renderer/src/components/CleanupModelFields.tsx
+msgid "Provider and reasoning settings come from this preset."
+msgstr ""
+
 #: src/renderer/src/features/usage/UsageModels.tsx
 msgid "Provider sessions"
 msgstr ""
@@ -4406,7 +4410,7 @@ msgid "Scope"
 msgstr ""
 
 #: src/renderer/src/components/CleanupModelFields.tsx
-msgid "Search models"
+msgid "Search models or paste @preset/…"
 msgstr ""
 
 #: src/renderer/src/features/dictate/Journal.tsx
