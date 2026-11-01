@@ -1161,7 +1161,6 @@ struct DraftFile: Identifiable {
     }
 }
 
-/// What came of asking a thread's computer for a sent file to open.
 /// A video an agent wrote, as this iPhone fetched it to play (ADR-0170, part 4).
 enum AgentVideoOutcome: Equatable {
     case file(URL)
@@ -1170,6 +1169,7 @@ enum AgentVideoOutcome: Equatable {
     case failed
 }
 
+/// What came of asking a thread's computer for a sent file to open.
 enum SentFileOutcome: Equatable {
     case file(name: String, data: Data)
     /// The computer no longer keeps it.
