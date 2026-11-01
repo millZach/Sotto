@@ -52,6 +52,18 @@ export function picturesIn(content: unknown): CapturedPicture[] {
 }
 
 /**
+ * An ACP tool step's pictures (ADR-0170): the handles a step already holds, or those captured from this update's content
+ * when it carries pictures and the step has none yet. A picture arrives whole in one update, so a step captures once and
+ * every later update of the same step, and every replay into a row that has them, hashes nothing again.
+ */
+export function acpToolMedia(capture: MediaCapture | undefined, content: unknown, old: Pick<AgentActivity, 'media'> | undefined): { media?: AgentActivityMedia[] } {
+  if (old?.media?.length || !capture) return {}
+  const pictures = picturesIn(content)
+  const media = pictures.length ? capture(pictures, 'tool') : []
+  return media.length ? { media } : {}
+}
+
+/**
  * The thread media store (ADR-0170): every picture a thread's agent made or looked at, kept once by digest as staged images
  * are (ADR-0031), in its own folder, and in memory alone while Keep local history is off. It keeps the newest
  * `THREAD_MEDIA_KEEP_BYTES`; past that the pictures captured longest ago go first. Its index holds each picture's size and

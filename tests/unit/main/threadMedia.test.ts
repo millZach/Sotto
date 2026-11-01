@@ -5,7 +5,10 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { ClaudeActivity } from '../../../src/main/agents/claudeActivity'
 import { CodexActivityProjection, codexItemSchema } from '../../../src/main/agents/codexActivity'
-import { picturesIn, ThreadMediaStore } from '../../../src/main/agents/threadMedia'
+import { deepseekActivities } from '../../../src/main/agents/deepseekActivity'
+import { devinActivities } from '../../../src/main/agents/devinActivity'
+import { grokActivities } from '../../../src/main/agents/grokActivity'
+import { picturesIn, ThreadMediaStore, type MediaCapture } from '../../../src/main/agents/threadMedia'
 import { agentActivitySignature } from '../../../src/shared/agentThreadDetail'
 import { activitySummary } from '../../../src/shared/hostProtocol'
 import { imageDimensions } from '../../../src/shared/imageDimensions'
@@ -173,6 +176,33 @@ describe('capture where the adapters read a tool result', () => {
     const other: AgentThread = { ...thread, activities: undefined }
     running.item(other, codexItemSchema.parse({ ...item, status: 'inProgress', result: null }), { turnId: 'turn', phase: 'started' })
     expect(other.activities?.[0]?.media).toBeUndefined()
+  })
+})
+
+describe('capture in an ACP tool step', () => {
+  const content = [{ type: 'content', content: { type: 'text', text: 'Took a screenshot.' } }, { type: 'content', content: { type: 'image', data: b64(png()), mimeType: 'image/png' } }]
+  const context = { turnId: 'turn', cwd: '/repo' }
+  const projections: [string, (update: Record<string, unknown>, previous: readonly AgentActivity[], capture?: MediaCapture) => AgentActivity[]][] = [
+    ['Grok Build', (update, previous, capture) => grokActivities(update, context, previous, true, {}, capture)],
+    ['Devin', (update, previous, capture) => devinActivities(update, context, previous, true, capture)],
+    ['DeepSeek Harness', (update, previous, capture) => deepseekActivities(update, context, previous, true, capture)],
+  ]
+
+  it.each(projections)('%s captures a step\'s pictures once, keeps them through later updates, and captures nothing without the feature', async (_name, project) => {
+    const store = new ThreadMediaStore(await folder())
+    await store.load()
+    let captures = 0
+    const capture: MediaCapture = (pictures, source) => { captures += 1; return store.capture(pictures, source) }
+    const started = project({ sessionUpdate: 'tool_call', toolCallId: 'shot', title: 'screenshot', kind: 'other', status: 'in_progress' }, [], capture)
+    expect(started[0]?.media).toBeUndefined()
+    const done = project({ sessionUpdate: 'tool_call_update', toolCallId: 'shot', status: 'completed', content }, started, capture)
+    expect(done[0]?.media).toEqual([expect.objectContaining({ id: 'm0', mimeType: 'image/png', width: 3, height: 2, source: 'tool' })])
+    const again = project({ sessionUpdate: 'tool_call_update', toolCallId: 'shot', status: 'completed', content }, done, capture)
+    expect(captures).toBe(1)
+    expect(again[0]?.media).toEqual(done[0]?.media)
+    // A later update with no pictures of its own keeps the step's.
+    expect(project({ sessionUpdate: 'tool_call_update', toolCallId: 'shot', status: 'completed', title: 'Screenshot' }, again, capture)[0]?.media).toEqual(done[0]?.media)
+    expect(project({ sessionUpdate: 'tool_call_update', toolCallId: 'shot', status: 'completed', content }, started)[0]?.media).toBeUndefined()
   })
 })
 

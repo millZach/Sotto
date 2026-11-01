@@ -1,5 +1,6 @@
 import { MAX_ACTIVITY_TEXT, planSteps, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
+import { acpToolMedia, type MediaCapture } from './threadMedia'
 import { acpThinkingActivities, type AcpThinking } from './thinkingActivity'
 
 type Context = { turnId: string; afterMessageId?: string; cwd: string }
@@ -11,16 +12,17 @@ const DEVIN_THINKING: AcpThinking = { idPrefix: DEVIN_THINKING_ID_PREFIX, settle
 
 /**
  * ACP activity updates are upserts. Partial updates retain the original action and transcript anchor. A thought
- * (`agent_thought_chunk`) streams into a Thinking row that runs until the model moves on to something else.
+ * (`agent_thought_chunk`) streams into a Thinking row that runs until the model moves on to something else. With
+ * `capture`, the thread media store's, given only with the Owl feature `inline-media` on, a tool's pictures become handles (ADR-0170).
  */
-export function devinActivities(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[] = [], live = false): AgentActivity[] {
+export function devinActivities(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[] = [], live = false, capture?: MediaCapture): AgentActivity[] {
   // ACP may name the message a chunk belongs to; without it, chunks that run on in order are one thought.
   const key = typeof update.messageId === 'string' && update.messageId ? `${context.turnId}-${update.messageId.slice(0, 128)}` : undefined
   return acpThinkingActivities(DEVIN_THINKING, update, { turnId: context.turnId, afterMessageId: context.afterMessageId, key }, previous, live,
-    () => devinWork(update, context, previous, live))
+    () => devinWork(update, context, previous, live, capture))
 }
 
-function devinWork(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[], live: boolean): AgentActivity[] {
+function devinWork(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[], live: boolean, capture: MediaCapture | undefined): AgentActivity[] {
   let truncated = false
   const bounded = (text: string): string => {
     if (text.length > MAX_ACTIVITY_TEXT) truncated = true
@@ -55,6 +57,7 @@ function devinWork(update: Record<string, unknown>, context: Context, previous: 
     ...(texts.length ? { output: bounded(texts.join('\n')) } : update.rawOutput !== undefined ? { output: bounded(typeof update.rawOutput === 'string' ? update.rawOutput : JSON.stringify(update.rawOutput)) } : {}),
     ...(Number.isSafeInteger(output?.exitCode ?? output?.exit_code) ? { exitCode: (output?.exitCode ?? output?.exit_code) as number } : {}),
     ...(changes.length ? { changes: changes.slice(0, 200) } : {}),
+    ...acpToolMedia(capture, update.content, old),
     ...(truncated || changes.length > 200 ? { truncated: true } : {}),
   }]
 }

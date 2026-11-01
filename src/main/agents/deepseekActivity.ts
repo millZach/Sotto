@@ -1,5 +1,6 @@
 import { MAX_ACTIVITY_TEXT, type AgentActivity } from '../../shared/agentActivity'
 import { object } from './claudeProtocol'
+import { acpToolMedia, type MediaCapture } from './threadMedia'
 import { acpThinkingActivities, type AcpThinking } from './thinkingActivity'
 
 type Context = { turnId: string; afterMessageId?: string | undefined; cwd: string; key?: string | undefined }
@@ -16,16 +17,17 @@ const DEEPSEEK_THINKING: AcpThinking = {
  * DeepSeek Harness's activity for one update (ADR-0138). Every tool arrives with ACP kind `other` and no
  * locations, so what a row is comes from the tool's own name and arguments: `bash` is a command, the file tools
  * are file changes naming their path (no diff travels on this surface; the thread's own turn snapshot shows what
- * changed), and anything else, MCP tools included, is a tool row. A thought settles when the model moves on.
+ * changed), and anything else, MCP tools included, is a tool row. A thought settles when the model moves on. With
+ * `capture`, the thread media store's, given only with the Owl feature `inline-media` on, a tool's pictures become handles (ADR-0170).
  */
-export function deepseekActivities(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[] = [], live = false): AgentActivity[] {
+export function deepseekActivities(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[] = [], live = false, capture?: MediaCapture): AgentActivity[] {
   return acpThinkingActivities(DEEPSEEK_THINKING, update, { turnId: context.turnId, afterMessageId: context.afterMessageId, key: context.key }, previous, live,
-    () => deepseekWork(update, context, previous, live))
+    () => deepseekWork(update, context, previous, live, capture))
 }
 
 const FILE_TOOLS = new Set(['write', 'edit', 'apply_patch', 'delete', 'move', 'rename'])
 
-function deepseekWork(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[], live: boolean): AgentActivity[] {
+function deepseekWork(update: Record<string, unknown>, context: Context, previous: readonly AgentActivity[], live: boolean, capture: MediaCapture | undefined): AgentActivity[] {
   let truncated = false
   const bounded = (value: string) => { if (value.length > MAX_ACTIVITY_TEXT) truncated = true; return value.slice(0, MAX_ACTIVITY_TEXT) }
   if (!['tool_call', 'tool_call_update'].includes(String(update.sessionUpdate)) || typeof update.toolCallId !== 'string') return []
@@ -53,6 +55,7 @@ function deepseekWork(update: Record<string, unknown>, context: Context, previou
     ...(typeof input?.workdir === 'string' ? { cwd: bounded(input.workdir) } : {}),
     ...(update.rawInput !== undefined && command === undefined ? { text: bounded(JSON.stringify(update.rawInput)) } : {}),
     ...(texts?.length ? { output: bounded(texts.join('\n')) } : {}),
+    ...acpToolMedia(capture, update.content, old),
     ...(path && kind === 'file-change' ? { changes: [{ path: bounded(path), kind: title }] } : {}),
     ...(truncated ? { truncated: true } : {}),
   }]
