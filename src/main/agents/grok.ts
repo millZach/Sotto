@@ -6,6 +6,7 @@ import { scopedThreadServers, type ScopedThreadTools } from './threadToolServer'
 import { existingWorkingDirectory } from './threadWorktrees'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { AdapterThreadChanges, restOf } from './adapterThreadChanges'
+import type { MediaCapture } from './threadMedia'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { NativeUsage, type NativeUsageContext } from './nativeUsage'
 import type { UsageQuotaRead, UsageTokenObservation } from '../../shared/usageDashboard'
@@ -191,6 +192,8 @@ export interface GrokAcpOptions {
   /** How long a running thread's process has to answer a limits read; tests whose answer is held shorten it. */
   liveBillingTimeoutMs?: number
   /** Test-only admission injection; desktop and host production wiring never supplies it. */
+  /** The thread media store's capture (ADR-0170), given only with the Owl feature `inline-media` on: a tool's pictures become handles on its step. */
+  captureMedia?: MediaCapture
 }
 
 /** Grok owns credentials, tools and durable sessions. Only alias/origin metadata belongs to Sotto. */
@@ -1136,7 +1139,7 @@ export class GrokAcpHost implements AgentHost {
           if (['tool_call', 'tool_call_update'].includes(update.sessionUpdate)) delete history.assistant
           // A prompt after a turn with no recorded end follows a turn its process cut off, and that cut off its thought too.
           if (update.sessionUpdate === 'user_message_chunk' && history.lastTurn?.status === 'running') history.activities = cutThinking(history.activities, false)
-          history.activities = mergeAgentActivities(history.activities, grokActivities(update, { turnId: history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: history.messages.at(-1)?.id, cwd: alias.cwd }, history.activities, false, parsed.data._meta))
+          history.activities = mergeAgentActivities(history.activities, grokActivities(update, { turnId: history.messages.filter(message => message.role === 'user').at(-1)?.id ?? 'native-history', afterMessageId: history.messages.at(-1)?.id, cwd: alias.cwd }, history.activities, false, parsed.data._meta, this.options.captureMedia))
           if (entry.method === 'session/update' && content?.type === 'text' && typeof content.text === 'string') {
             if (update.sessionUpdate === 'user_message_chunk') {
               history.statusEvents.add(eventKey(parsed.data, 0))
@@ -1557,7 +1560,7 @@ export class GrokAcpHost implements AgentHost {
       }
       const update = parsed.data.update; const content = object(update.content); const thread = this.thread(id)
       this.usage.grok(id, thread.modelId, parsed.data, this.usageEnabled ? this.usageContext(id, parsed.data, false) : undefined); thread.usage = this.usage.get(id)
-      const activities = grokActivities(update, { turnId: this.log.lastUserMessageId(id) ?? 'native-history', afterMessageId: this.log.lastMessageId(id), cwd: this.aliases[id]!.cwd }, thread.activities, true, parsed.data._meta)
+      const activities = grokActivities(update, { turnId: this.log.lastUserMessageId(id) ?? 'native-history', afterMessageId: this.log.lastMessageId(id), cwd: this.aliases[id]!.cwd }, thread.activities, true, parsed.data._meta, this.options.captureMedia)
       if (activities.length) thread.activities = mergeAgentActivities(thread.activities, activities)
       if (update.sessionUpdate === 'model_changed' && typeof update.model_id === 'string') this.selections.set(parsed.data.sessionId, { model: update.model_id, effort: typeof update.reasoning_effort === 'string' ? update.reasoning_effort : undefined })
       if (update.sessionUpdate === 'user_message_chunk' && content?.type === 'text' && typeof content.text === 'string') {

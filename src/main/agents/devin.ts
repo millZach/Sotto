@@ -13,6 +13,7 @@ import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { ActivitySubscribers, certifyActivityView, cloneActivitySnapshot } from './activitySnapshots'
 import { adapterItemCount, ProviderSnapshotPublisher } from './providerSnapshotPublisher'
 import { AdapterThreadChanges, restOf, ThreadMarkingMap } from './adapterThreadChanges'
+import type { MediaCapture } from './threadMedia'
 import type { ActivityChangesListener, ActivityChangesSubscription } from './threadChanges'
 import { SessionReaper } from './sessionReaper'
 import { existingWorkingDirectory } from './threadWorktrees'
@@ -198,6 +199,8 @@ export interface DevinAcpOptions {
   acceptanceGraceMs?: number
   reaperSweepMs?: number
   sessionIdleMs?: number
+  /** The thread media store's capture (ADR-0170), given only with the Owl feature `inline-media` on: a tool's pictures become handles on its step. */
+  captureMedia?: MediaCapture
 }
 
 /** Devin owns its account and tools. Sotto saves only session/dispatch identities in this adapter. */
@@ -903,7 +906,7 @@ export class DevinAcpHost implements AgentHost {
         const thread = this.thread(id)
         thread.activities = mergeAgentActivities(thread.activities ?? [], devinActivities(update, {
           turnId: active.origin.messageId, afterMessageId: active.origin.messageId, cwd: alias.cwd,
-        }, thread.activities, true))
+        }, thread.activities, true, this.options.captureMedia))
       }
       this.emit(true); return
     }
