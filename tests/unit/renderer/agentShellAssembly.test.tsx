@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { handleOf } from '../../fixtures/stagedImages'
 
 import { useAgentConnection } from '../../../src/renderer/src/agents/AgentContext'
+import { ThreadDraftStore } from '../../../src/renderer/src/agents/threadDraftStore'
 import { requestAnswerStore } from '../../../src/renderer/src/agents/requests/requestAnswers'
 import { SHELL_CACHE_KEY, cacheableShell, readShellCache, writeShellCache } from '../../../src/renderer/src/agents/shellCache'
 import { agentShell, defaultAgentConfiguration, EMPTY_AGENT_HOST, summarizeThread,
@@ -433,19 +434,43 @@ describe('a shell held for its frame', () => {
 })
 
 describe('shell updates while the main window is hidden', () => {
-  it('delivers a saved-draft notice without waiting for a suspended animation frame', async () => {
-    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+  it('holds a state while hidden without waiting for a suspended animation frame, feeds the draft store, and shows it once shown (#993)', async () => {
+    const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
     const frame = vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1)
+    const drafts = vi.spyOn(ThreadDraftStore.prototype, 'receive')
     const initial = fullState([])
     const wire = shellBridge(initial)
     const { result } = renderHook(() => useAgentConnection(wire.bridge))
     await waitFor(() => expect(result.current.state).not.toBeNull())
+    const shown = result.current.state
+    drafts.mockClear()
     act(() => wire.publish({ ...initial, notice: 'Draft saved' }))
-    expect(result.current.state?.notice).toBe('Draft saved')
+    // Nobody sees the window: the state waits, but the draft store hears of it at once.
+    expect(result.current.state).toBe(shown)
+    expect(drafts).toHaveBeenCalledWith(expect.objectContaining({ notice: 'Draft saved' }))
     expect(frame).not.toHaveBeenCalled()
+    act(() => {
+      hidden.mockReturnValue(false)
+      document.dispatchEvent(new Event('visibilitychange'))
+    })
+    expect(result.current.state?.notice).toBe('Draft saved')
   })
 
-  it('flushes a pending shell when hidden and resumes batching when shown', async () => {
+  it('commits while hidden a state that adds a thread, and a command\'s own reply', async () => {
+    vi.spyOn(document, 'hidden', 'get').mockReturnValue(true)
+    const initial = fullState([thread('first', [])])
+    const wire = shellBridge(initial)
+    const { result } = renderHook(() => useAgentConnection(wire.bridge))
+    await waitFor(() => expect(result.current.state).not.toBeNull())
+    // The browser tools watch each thread's tasks from the threads committed, so a new thread does not wait (ADR-0029).
+    act(() => wire.publish(fullState([thread('first', []), thread('second', [])])))
+    await waitFor(() => expect(result.current.state?.host.threads.map(item => item.id)).toEqual(['first', 'second']))
+    vi.mocked(wire.bridge.command).mockResolvedValueOnce(agentShell({ ...fullState([thread('first', []), thread('second', [])]), notice: 'Replied' }))
+    await act(async () => { await result.current.command({ type: 'refresh' }) })
+    expect(result.current.state?.notice).toBe('Replied')
+  })
+
+  it('flushes a pending shell when hidden, holds what arrives while hidden, and resumes batching when shown', async () => {
     const hidden = vi.spyOn(document, 'hidden', 'get').mockReturnValue(false)
     vi.spyOn(window, 'requestAnimationFrame').mockReturnValue(1)
     const cancel = vi.spyOn(window, 'cancelAnimationFrame')
@@ -459,10 +484,11 @@ describe('shell updates while the main window is hidden', () => {
       hidden.mockReturnValue(true)
       document.dispatchEvent(new Event('visibilitychange'))
     })
-    expect(result.current.state?.notice).toBe('pending')
+    // The frame it waited for is let go, and the shell is held with the window hidden.
     expect(cancel).toHaveBeenCalledWith(1)
+    expect(result.current.state?.notice).toBe('')
     act(() => wire.publish({ ...initial, notice: 'hidden' }))
-    expect(result.current.state?.notice).toBe('hidden')
+    expect(result.current.state?.notice).toBe('')
     act(() => {
       hidden.mockReturnValue(false)
       document.dispatchEvent(new Event('visibilitychange'))

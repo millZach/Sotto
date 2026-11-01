@@ -66,7 +66,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     viewed: new Set<string>(), shell: null as AgentState | null, clock: 0, hits: 0, misses: 0,
     pendingShell: null as AgentState | null, frame: 0,
     channel: bridge?.threadDetail !== undefined || bridge?.onThreadDetail !== undefined,
+    /** The threads the last commit held, by ID in order, and whether a state arrived while hidden that is not committed yet. */
+    committedThreads: '', heldWhileHidden: false,
   }), [bridge])
+  /** The draft store the window's commits feed, which a state held while the window is hidden feeds directly. */
+  const draftsRef = useRef<ThreadDraftStore | null>(null)
   const [snapshot, setSnapshot] = useState<{ session: typeof session; state: AgentState } | null>(null)
   // Read when shown, so a change of language rewords it; the provider subscribes to the language for that alone.
   useInterfaceLanguageState()
@@ -128,6 +132,19 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // straight onto the selected thread, with no pane change to declare it viewed.
     if (next.stale !== true && next.activeThreadId !== null) ask.current(next.activeThreadId)
     const assembled = assemble(next)
+    // While the window is hidden nobody sees a commit, and each one drew the window again: about 8 ms for every update of
+    // every thread, all the time Sotto sat in the tray (#993). A broadcast's waits for the window to show, which commits
+    // the newest at once. What must not wait does not: request answers were pruned above, the draft store hears of drafts
+    // directly, a command's own reply (urgent) commits, and so does a state that adds or removes a thread, since the
+    // browser tools watch each thread's tasks from the threads committed (ADR-0029).
+    const threads = assembled.host.threads.map(thread => thread.id).join('\n')
+    if (options.urgent !== true && next.stale !== true && document.hidden && threads === detail.committedThreads) {
+      detail.heldWhileHidden = true
+      draftsRef.current?.receive(visibleWatcherState(assembled, watcherEnabledRef.current))
+      return
+    }
+    detail.heldWhileHidden = false
+    detail.committedThreads = threads
     // React's own update queue, not extra bookkeeping here, keeps this in order: a `useState` setter
     // called from a transition and one called urgently both enqueue on the same fiber, and whichever
     // priority renders first, React replays the whole queue in the order the setters were called
@@ -270,6 +287,7 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     return operation
   }, [bridge, session, receiveState, commitPendingShell, detail, requestDetail])
   const threadDrafts = useMemo(() => new ThreadDraftStore(command), [command])
+  draftsRef.current = threadDrafts
   const state = snapshot?.session === session ? snapshot.state : null
   const error = failure?.session === session ? shownWords(failure.error) : null
   const shownState = useMemo(() => visibleWatcherState(state, watcherEnabled), [state, watcherEnabled])
@@ -298,7 +316,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       detail.pendingShell = next
       detail.frame = requestAnimationFrame(flushPendingShell)
     })
-    const visibilityChanged = (): void => { if (document.hidden) flushPendingShell() }
+    // Hidden, a shell held for its frame commits now; shown, the newest state held while hidden commits at once.
+    const visibilityChanged = (): void => {
+      if (document.hidden) flushPendingShell()
+      else if (active && detail.heldWhileHidden && detail.shell !== null) receive(detail.shell, { urgent: true })
+    }
     document.addEventListener('visibilitychange', visibilityChanged)
     const unsubscribeDetail = bridge?.onThreadDetail?.(next => { if (active) receiveDetail.current(next) })
     // The shell this window saw last time paints the page on the first frame, marked stale and
