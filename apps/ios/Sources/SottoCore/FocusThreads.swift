@@ -13,6 +13,8 @@ public struct FocusThreads {
     /// Each Needs you row that stands for a delegated thread waiting on the user, by the row's ID: that delegated
     /// thread, whose requests the row shows. A row that waits on the user itself is not here.
     public private(set) var waitingIn: [String: HostedThread] = [:]
+    /// The top of each delegated thread's delegation, by row ID, which has the row the list shows in its place.
+    private var tops: [String: String] = [:]
     public let searching: Bool
     /// The thread open on this iPhone. It reads as opened at once, before its computer's next list says so.
     public let opened: ThreadRef?
@@ -32,6 +34,7 @@ public struct FocusThreads {
         self.opened = opened
         let rows = ThreadGroups.merged(computers, show: show)
         let tops = ThreadGroups.delegationTops(rows)
+        self.tops = tops
         // The delegated thread each listed thread stands for in Needs you: a permission ahead of a question, then the
         // most recent, as the desktop's sidebar orders them. Only a computer this iPhone can reach has requests to answer.
         var below: [String: HostedThread] = [:]
@@ -54,6 +57,10 @@ public struct FocusThreads {
             else { recent.append(row) }
         }
     }
+
+    /// The ID of the row that stands for a thread: its own, or for a delegated thread, which has no row of its own, the
+    /// row of the thread its delegation is reached from, whether or not it waits on the user now.
+    public func rowID(for ref: ThreadRef) -> String { tops[ref.id] ?? ref.id }
 
     /// The thread whose requests a Needs you row shows and answers: the delegated thread it stands for, or its own.
     public func asking(_ row: HostedThread) -> HostedThread { waitingIn[row.id] ?? row }
