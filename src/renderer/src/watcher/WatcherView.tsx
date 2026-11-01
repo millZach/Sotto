@@ -292,7 +292,7 @@ function WatcherFirstEntry({ state, room }: { readonly state: AgentState; readon
                 }} />
                 {!quiet && speeds.length > 0 && <SpeedToggle offered={speeds} provider={provider ?? undefined} value={speedValue} disabled={starting} pending={false} onChange={changeSpeed} />}
                 {quiet ? levels.length > 0 && <SplitChipEffort levels={levels} value={reasoning} disabled={starting}
-                  suggestion={suggestedEffortIndex(draftEffortScore(text), levels, reasoning, model.defaultReasoningEffort)}
+                  suggestion={suggestedEffortIndex(draftEffortScore(text), levels, reasoning, state?.configuration.newThreadReasoningEffort || model.defaultReasoningEffort)}
                   speed={speeds.length === 0 ? undefined : { value: speedValue, name: speedName(speedValue, speeds),
                     options: speedOptions(speeds, provider ?? undefined), onChange: changeSpeed,
                     onStep: direction => changeSpeed(nextSpeed(speeds, speedValue, direction)) }}
