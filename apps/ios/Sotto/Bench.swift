@@ -374,6 +374,15 @@ final class BenchSampler: @unchecked Sendable {
         stopped.wait()
         var table: [UInt: Int] = [:]
         var addresses: [[String: Any]] = []
+        /// A stack as indexes into `addresses`, each address described once.
+        func indexed(_ stack: [UInt]) -> [Int] {
+            stack.map { address in
+                if let index = table[address] { return index }
+                table[address] = addresses.count
+                addresses.append(Self.describe(address))
+                return addresses.count - 1
+            }
+        }
         var phases: [[String: Any]] = []
         for name in order {
             guard let counted = stacks[name] else { continue }
@@ -381,12 +390,7 @@ final class BenchSampler: @unchecked Sendable {
             var samples = 0
             for (stack, count) in counted {
                 samples += count
-                rows.append([count, stack.map { address -> Int in
-                    if let index = table[address] { return index }
-                    table[address] = addresses.count
-                    addresses.append(Self.describe(address))
-                    return addresses.count - 1
-                }])
+                rows.append([count, indexed(stack)])
             }
             phases.append(["phase": name, "samples": samples, "stacks": rows])
         }
@@ -396,14 +400,7 @@ final class BenchSampler: @unchecked Sendable {
             for frame in long.filter({ $0.phase == name }).sorted(by: { $0.end - $0.start > $1.end - $1.start }).prefix(60) {
                 var counted: [Int: Int] = [:]
                 for sample in timeline where sample.time > frame.start && sample.time <= frame.end { counted[sample.stack, default: 0] += 1 }
-                let rows: [[Any]] = counted.map { id, count in
-                    [count, stackList[id].map { address -> Int in
-                        if let index = table[address] { return index }
-                        table[address] = addresses.count
-                        addresses.append(Self.describe(address))
-                        return addresses.count - 1
-                    }]
-                }
+                let rows: [[Any]] = counted.map { id, count in [count, indexed(stackList[id])] }
                 longFrames.append(["phase": name, "ms": (frame.end - frame.start) * 1000, "stacks": rows])
             }
         }
