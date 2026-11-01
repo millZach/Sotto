@@ -224,6 +224,7 @@ export function applyAppearance(
   root.style.setProperty('--theme-contrast-base', `${Math.min(contrast, 100)}%`)
   root.style.setProperty('--theme-contrast-boost', `${Math.max(contrast - 100, 0)}%`)
   root.style.setProperty('--theme-contrast-border-boost', `${Math.max(contrast - 100, 0) / 4}%`)
+  root.style.setProperty('--theme-contrast-hint-boost', `${Math.max(contrast - 100, 0) / 2}%`)
   // The effort colourway is an attribute, not a role: tokens.css keys its palette blocks on it (ADR-0019).
   root.dataset.effortColor = isEffortColor(choice.effortColor) ? choice.effortColor : DEFAULT_SETTINGS.effortColor
   if (draft === null) writeCachedAppearance(choice)
