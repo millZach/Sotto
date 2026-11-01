@@ -106,8 +106,8 @@ On `usageStreamWrites.perf.test.ts`, a reply streaming 150 usage frames over a 3
 Every start read every thread's ledger whole, every request each thread ever made, and kept all of them for the whole run,
 although only the threads working that run touch their requests. With Usage on, Usage then read every thread's saved rows
 again when its provider connected, in one task on main, though its store passed over every row it held. For a folder the
-size of the owner's, 291 threads and 9.8 MB of ledgers, that was 192 to 195 ms of main and 18.4 MB of its heap on forge,
-and with Usage on one task of 425 ms more.
+size of the owner's, 291 threads and 9.8 MB of ledgers, that was about 192 ms of main and 18.4 MB of its heap on forge,
+and with Usage on one task of 433 ms more.
 
 - **The view file.** Beside each thread's ledger file is `<hash>.view.json`, holding what the thread shows (its totals,
   latest request, context and duration), the rate table it was priced with, and the size and modification time of the
@@ -119,9 +119,11 @@ and with Usage on one task of 425 ms more.
   table. The first start after this change reads every ledger once; the starts after it read the view files. A copied
   folder, such as a restored backup, has new modification times, so its first start reads every ledger once too.
 - **A report's request waits for its thread's requests.** A report on a thread whose requests are not read yet is held
-  for that thread, in the order reports arrive, while its ledger is read in the background; what it says of the view, a
-  context reading, context window, latest request, duration or compaction, shows in the view at once, so Codex's
-  compaction still keeps a reading that came in while it ran. Once the ledger is read, its requests are checked and
+  for that thread, in the order reports arrive, while its ledger is read in the background; what a Claude or Grok report
+  says of the view, a context reading, context window, latest request or duration, shows in the view at once, as a
+  compaction does. A Codex report does not, since only the requests say whether Codex counted it before; Codex's
+  compaction takes the reading it compares with in the ledger, in the order of the thread's reports, so it still keeps a
+  reading that came in while it ran and clears one that did not. Once the ledger is read, its requests are checked and
   normalised a chunk a task and the held reports applied, in order, as of when each came in. A request counted in an
   earlier run is found and not counted again, so totals and deduplication stay exact. A read that fails keeps the reports
   and is tried again after a short wait, and quitting or reconnecting tries it once more first, so no report is lost to a
@@ -130,7 +132,7 @@ and with Usage on one task of 425 ms more.
 - **Work per report.** Checking and normalising a ledger walks every request, so it runs once for a thread in a run, when
   its requests are first read, a chunk a task and never in a report's task. Every report after that costs what #555's
   running totals made it cost, so the work of a report does not grow with the thread's history; the one read of its ledger
-  in a run does.
+  in a run does, and Usage reading its rows again, also a chunk a task.
 - **Usage reads only the threads that changed.** Each ledger's view carries a revision that every change to one of its
   requests moves on, a corrected model among them. Usage keeps a mark per thread in its own store, beside the history
   cursors: the thread's usage as it was when Usage last read its rows, that revision with its last report time, rate
@@ -138,20 +140,25 @@ and with Usage on one task of 425 ms more.
   the last one after its rows, so a mark commits only once every row its read gave has, and a read that lost a row leaves
   none. When a provider connects, Usage asks for the marks first and passes over every Claude, Codex and Grok thread of a
   connected provider whose usage shows the mark it was last read at, and reads it after all should its usage move on later
-  that run. The first start after this change reads every thread, as before; later starts read only the threads whose
+  that run. A ledger an earlier build wrote has no revision, so it is read at every start until Usage has read it, which
+  gives it one. The first start after this change reads every thread, as before; later starts read only the threads whose
   requests changed since. Muse's and OpenCode's threads are read at every start as before. Marks bump no revision and
   survive Clear. A thread Usage reads is read once, in the background, as a report's is, and visited when that read lands;
   it keeps its requests, being likely to report that run.
 - **Usage reads a few threads per task.** At most three a task, read or passed over on its mark, and no further one once
-  5 ms have passed, so no task of it holds main longer than one thread's rows and a flush of its buffer. A thread queued
-  twice is read once, a failed read is tried again with the next publication, and closing stops the reading. The legacy
-  seed goes with a flush only when no thread is left queued or being read, and a Usage read or Clear waits for them.
+  5 ms have passed; a thread's rows go 500 a task, so no task of it holds main longer than a chunk of rows and a flush of
+  its buffer. A thread queued twice is read once and closing stops the reading. A thread whose rows cannot be read is tried
+  again with the next publication; until it is read Usage says it could not save and Clear refuses. A Usage read or Clear
+  waits for every thread queued, being read or mid-visit, and the legacy seed goes with a flush only when none is left and
+  no thread is unread.
 - **What stays.** What a ledger holds, and when it is written, are as before; so is a reconnect keeping unsaved counts. A
   new price reaches the threads that may hold unpriced requests through a new rate version (`USAGE_RATE_VERSION`), as the
   rate table already requires; a price added without one reaches a thread's totals when its requests are next read.
 
 On `usageLedgerLoad.perf.test.ts`, a later start parsed no ledger where every start parsed 9,823,156 bytes, took 14 ms
-rather than 192 to 195, and kept 0.6 MB of heap rather than 18.4. With Usage on it read no thread, its longest task took
-0.3 ms where the whole visit had been one of 425, and it kept 0.8 MB against 18.7. The long thread's first report takes
-0.5 ms of its own and counts 37 ms later, once its ledger is read; the longest stretch on main meanwhile is 10.6 ms, the
-task its file's JSON is parsed in (`docs/perf/2026-11-01-usage-ledger-lazy-load.md`).
+rather than about 192, and kept 0.6 MB of heap rather than 18.4. With Usage on it read no thread, its longest task took
+0.3 ms where the whole visit had been one of 433, and it kept 0.9 MB against 18.7; the first start after the update reads
+every thread, its longest task 11.2 ms. The long thread's first report takes
+0.5 ms of its own and counts 37 ms later, once its ledger is read; with Usage connected, Usage then reads its 10,002 rows
+again in 35 tasks, the longest 9.5 ms. The longest stretch on main through it all is 10.5 ms, the task the ledger's JSON
+is parsed in (`docs/perf/2026-11-01-usage-ledger-lazy-load.md`).
