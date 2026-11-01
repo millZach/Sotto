@@ -4002,8 +4002,10 @@ export class AgentControl {
     void pending.finally(() => this.titleWrites.delete(pending)).catch(() => undefined)
     return pending
   }
-  /** The thread as this coordinator holds it now, read in place; for a side call's material, never per update. */
-  liveThread(threadId: string): AgentThread | undefined { return this.state.host.threads.find(thread => thread.id === threadId) }
+  /** The threads and projects as this coordinator holds them now, read in place; for a side call's material, never per update. */
+  liveHost(): Pick<AgentHostSnapshot, 'threads' | 'projects'> { return this.state.host }
+  /** The thread as this coordinator holds it now, read in place through the thread index; for a side call's material, never per update. */
+  liveThread(threadId: string): AgentThread | undefined { return this.threadById(threadId) }
   /** A thread's whole history: what the pane holds when that is all of it, else the store's own copy. */
   threadHistory(thread: AgentThread): readonly AgentMessage[] {
     if (thread.messages.length > 0 && thread.earlierAvailable !== true) return thread.messages

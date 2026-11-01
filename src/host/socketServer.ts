@@ -115,7 +115,7 @@ class Refusal extends Error { constructor(readonly code: HostErrorCode, message 
  * `unknownProviders` are the providers whose host feature its hello did not accept (`PROVIDER_HOST_FEATURES`, #1107): it is
  * sent nothing of theirs, and their threads are hidden from it. Until its hello, that is every such provider.
  */
-interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; delegationRelay?: RelayDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
+interface Peer { unknownProviders: HeldProviders; hostUpdate: boolean; delegationViews: boolean; checkQueueViews?: boolean; nextPrompts?: { wanted: boolean } | undefined; delegationRelay?: RelayDesktop | undefined; delegationRemote?: RemoteDesktop | undefined; retiredTerminals: boolean; gone: AbortController; usageHistory: boolean; usageMuseOpenCode: boolean; watcherPhone: boolean; watcherPhoneStop: boolean; watcherPhoneManage: boolean; watcherPhoneSteer: boolean; watcherPhoneMachines: boolean; watcherReads: boolean; desktop: boolean; frames: SocketFrames; client: ClientIdentity; session: string; observed: Set<string>; shown: boolean; held: Map<string, number>; opening: Set<string>; sentAhead: WeakSet<AgentThreadDetail>; inFlight: number; window: number; count: number; pageWindow: number; pages: number; preview: boolean; ready: boolean; afterSeq: number; selectedThreadId: string | null; selectedProjectId: string | null; editingThreadId: string | null; deltas: boolean; messageAliases: boolean; clientUpdates: boolean; clientUpdateNotListed: boolean; activitySummaries: boolean; activityBodies: boolean; catalogRevisions: boolean; catalogSent: number | null; shellSent: string | null; answerReceipts: boolean; answerWatches: Map<string, HostAnswerTarget>
   /** The thread records this connection's shell pushes last carried, for a client that accepted `changed-thread-records` (#996). */
   threadRecords?: ThreadRecordsBroadcast | undefined }
 /**
@@ -309,6 +309,7 @@ export async function startSocketServer(options: SocketServerOptions) {
     // Watcher's stop_thread takes a check out of that queue (#1637), so it goes with the queue.
     && (feature !== 'watcher-check-stop' || service.supportsWatcherCheckQueue === true && service.supportsWatcherControl === true && options.watcherDesktops !== undefined)
     && (feature !== 'answer-check' || service.checkRequestAnswer !== undefined)
+    && (feature !== 'next-prompts' || service.supportsNextPrompts === true)
     && (feature !== 'atomic-send' || service.supportsAtomicSend === true)
     && (feature !== 'draft-revisions' || service.supportsDraftRevisions === true)
     && (feature !== 'client-updates' || options.clientUpdates === true)
@@ -932,6 +933,18 @@ export async function startSocketServer(options: SocketServerOptions) {
       ? { id: entry.id, ...entry.whose ? { whose: entry.whose } : {} } : entry)
     push(peer, { v: 1, event: 'check-queue', checks: shown })
   }
+  /**
+   * The next prompts this host holds (ADR-0173), pushed whole to a desktop that accepted `next-prompts` once it says it
+   * wants them, and each change after that. A thread this peer is not sent is not named to it.
+   */
+  const pushNextPrompts = (peer: Peer): void => {
+    if (!peer.nextPrompts?.wanted || peer.frames.isClosed) return
+    push(peer, { v: 1, event: 'next-prompts', entries: (service.nextPrompts?.() ?? []).filter(entry => !hiddenThread(peer, entry.threadId)) })
+  }
+  const unsubscribeNextPrompts = service.subscribeNextPrompts?.(entry => {
+    if (closing) return
+    for (const peer of peers) if (peer.ready && peer.nextPrompts?.wanted && !peer.frames.isClosed && !hiddenThread(peer, entry.threadId)) push(peer, { v: 1, event: 'next-prompt', entry })
+  })
   const unsubscribeChecks = service.subscribeCheckQueue?.(() => {
     if (closing) return
     for (const peer of peers) if (peer.ready && peer.checkQueueViews) pushChecks(peer)
@@ -1281,6 +1294,8 @@ export async function startSocketServer(options: SocketServerOptions) {
         peer.hostUpdate = (request.accepts?.includes('host-update') ?? false) && offers(peer, 'host-update')
         peer.delegationViews = (request.accepts?.includes('delegation-views') ?? false) && offers(peer, 'delegation-views')
         peer.checkQueueViews = (request.accepts?.includes('check-queue-views') ?? false) && offers(peer, 'check-queue-views')
+        // Accepted here; pushed only once the desktop says it wants them, so a desktop with its switch off costs no side call.
+        peer.nextPrompts = (request.accepts?.includes('next-prompts') ?? false) && offers(peer, 'next-prompts') ? { wanted: peer.nextPrompts?.wanted ?? false } : undefined
         // A desktop that relays this host's delegations to other machines (#1316): asks go to it from now on.
         if ((request.accepts?.includes('delegation-relay') ?? false) && offers(peer, 'delegation-relay') && options.delegationRelay) {
           const relayPeer = peer
@@ -1470,6 +1485,12 @@ export async function startSocketServer(options: SocketServerOptions) {
         if (!offers(peer, 'delegation-views') || !service.delegationBrief) throw new Refusal('invalid_request')
         const brief = await toolRead(() => service.delegationBrief!(request.threadId))
         try { return delegationBriefSchema.parse(brief) } catch { throw new Refusal('unavailable') }
+      }
+      case 'next-prompts-wanted': {
+        // The desktop's own switch (ADR-0173): while no connected desktop wants them, this host asks its providers nothing.
+        if (!peer.nextPrompts) throw new Refusal('invalid_request')
+        peer.nextPrompts.wanted = request.wanted
+        return { wanted: request.wanted }
       }
       case 'desktop-defaults': {
         // A recorded desktop's new-thread default and worker roles (#1310): settings, never a grant. Whether they may be used
@@ -1692,6 +1713,9 @@ export async function startSocketServer(options: SocketServerOptions) {
           if (request.op === 'hello' && peer.checkQueueViews) pushChecks(peer)
           const latestSeq = (response.result as { latestSeq: number }).latestSeq
           peer.afterSeq = peer.afterSeq === Number.MAX_SAFE_INTEGER ? latestSeq : Math.max(peer.afterSeq, latestSeq)
+        } else if (request.op === 'next-prompts-wanted') {
+          // Every next prompt held now follows the answer that turned them on; each change follows it.
+          pushNextPrompts(peer)
         }
       }
       // A restart that went ahead waits for its own answer to be on the way before it stops this host (ADR-0088), whether or
@@ -1847,7 +1871,7 @@ export async function startSocketServer(options: SocketServerOptions) {
   expiry.unref()
   const stopServing = (): void => {
     if (closing) return
-    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
+    closing = true; clearInterval(expiry); unsubscribe(); unsubscribeDetails?.(); unsubscribeDelegations?.(); unsubscribeChecks?.(); unsubscribeNextPrompts?.(); releasePhoneAdmission?.(); shellPublisher.dispose(); detailPublisher.dispose(); waiting.clear()
     if (writingTimer) clearTimeout(writingTimer.timer)
     writingHeld.clear()
     server.removeAllListeners('request')
@@ -1868,6 +1892,8 @@ export async function startSocketServer(options: SocketServerOptions) {
     stopServing,
     /** How many paired clients hold an open socket: the host's measure of a window being in front. */
     peers: (): number => peers.size,
+    /** Whether a connected desktop wants this host's next prompts now (ADR-0173): until one does, no provider is asked for them. */
+    nextPromptsWanted: (): boolean => [...peers].some(peer => peer.ready && peer.nextPrompts?.wanted === true && !peer.frames.isClosed),
     /** The paired clients holding an open socket now, each once. */
     connectedClients: (): string[] => [...new Set([...peers].map(peer => peer.client.clientId))],
     /**
