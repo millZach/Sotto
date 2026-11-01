@@ -408,9 +408,11 @@ private struct ConversationRow: Identifiable {
 private final class TimelineCache {
     private var key: String?
     private var cached: [ConversationRow] = []
-    /// The first row of the latest turns, which the page lays out whole; the rows before it are made as they scroll
-    /// into view. Set with the rows.
-    private(set) var latestTurns = 0
+    /// The index of the first row of the latest turns, which the page lays out whole; the rows before it are made as
+    /// they scroll into view. Set with the rows.
+    private(set) var latestTurnsStart = 0
+    /// That row's identity, so a split held for a selection can be found again in the next revision's rows.
+    private var latestTurnsStartID: String?
     private var dates: [String: Date] = [:]
     /// `held` marks the copy kept on screen while the thread is read again. A fresh copy can carry the same revision, from
     /// a computer whose Sotto restarted, so it is always drawn anew.
@@ -418,7 +420,8 @@ private final class TimelineCache {
         guard let detail else {
             key = nil
             cached = []
-            latestTurns = 0
+            latestTurnsStart = 0
+            latestTurnsStartID = nil
             return []
         }
         let next = detail.threadId + "#" + String(detail.revision) + (held ? "#held" : "")
@@ -428,7 +431,15 @@ private final class TimelineCache {
         cached = BenchProbe.time("timeline.rows") {
             let items = ThreadTimeline.items(messages: detail.messages, activities: detail.activities ?? [],
                                              earlierAvailable: detail.earlierAvailable == true, date: { self.date($0) })
-            self.latestTurns = ThreadTimeline.latestTurnsStart(items)
+            var start = ThreadTimeline.latestTurnsStart(items)
+            // A new turn moves the oldest whole turn into the lazy stack, which makes its rows again. While words in a
+            // reply are selected the split stays where it was, so the selection and its Add to prompt survive (ADR-0129).
+            if !ReplySelection.views.isEmpty, let held = self.latestTurnsStartID,
+               let index = items.firstIndex(where: { $0.id == held }), index < start {
+                start = index
+            }
+            self.latestTurnsStart = start
+            self.latestTurnsStartID = start < items.count ? items[start].id : nil
             return ConversationRow.make(items, date: { self.date($0) })
         }
         return cached
@@ -581,7 +592,7 @@ private struct Conversation: View {
                 // scrolled (#749). The turns before them, from Show earlier messages or a long stay on the thread, are
                 // made as they scroll into view. Laid out whole, every row of a long thread was updated and placed again
                 // for each streamed word, and opening one took seconds (#1702).
-                let split = min(timeline.latestTurns, rows.count)
+                let split = min(timeline.latestTurnsStart, rows.count)
                 if split > 0 {
                     LazyVStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
                         ForEach(rows[..<split]) { row in
@@ -1539,6 +1550,7 @@ private struct ReplyText: UIViewRepresentable {
         // Set only when the words or their look change, so a selection survives the page drawing again.
         let words = InlineStyle.attributed(inline, ink: ink, theme: theme, traits: view.traitCollection)
         if view.attributedText != words { BenchProbe.count("textview.set"); view.attributedText = words }
+        context.coordinator.installed = MeasuredWords.Words(inline: inline, traits: view.traitCollection)
         view.linkTextAttributes = [.foregroundColor: UIColor(theme.color(.accentText))]
         view.tintColor = UIColor(theme.color(.accent))
     }
@@ -1549,17 +1561,17 @@ private struct ReplyText: UIViewRepresentable {
         // Laying words out is the costly part of a text view, and SwiftUI asks for the same size several times while
         // a row is made, and again when a row scrolled away is made again. The same words at the same width measure
         // the same, so each is measured once.
-        let key = MeasuredWords.Key(inline: inline, size: uiView.traitCollection.preferredContentSizeCategory,
-                                    weight: uiView.traitCollection.legibilityWeight, width: bounded ?? -1)
+        let words = MeasuredWords.Words(inline: inline, traits: uiView.traitCollection)
+        let key = MeasuredWords.Key(words: words, width: bounded ?? -1)
         let fitted: CGSize
-        if let known = MeasuredWords.sizes[key] {
+        if let known = MeasuredWords.size(for: key) {
             fitted = known
         } else {
             fitted = BenchProbe.time("textview.measure") {
                 uiView.sizeThatFits(CGSize(width: bounded ?? .greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
             }
-            // A view asked before its first update holds no words yet, and its size is not theirs.
-            if uiView.textStorage.length > 0 || inline.source.isEmpty { MeasuredWords.keep(fitted, for: key) }
+            // Kept only when the view holds these words: asked before its update, it measured what it held before.
+            if context.coordinator.installed == words { MeasuredWords.keep(fitted, for: key) }
         }
         return CGSize(width: bounded ?? ceil(fitted.width), height: fitted.height)
     }
@@ -1571,9 +1583,23 @@ private struct ReplyText: UIViewRepresentable {
         override var accessibilityTraits: UIAccessibilityTraits { get { .staticText } set {} }
     }
 
+    static func dismantleUIView(_ view: UITextView, coordinator: Coordinator) {
+        ReplySelection.views.remove(ObjectIdentifier(view))
+    }
+
     final class Coordinator: NSObject, UITextViewDelegate {
         var box: ReplyQuoteBox
+        /// The words the view holds since its last update, which its measured size is kept for.
+        var installed: MeasuredWords.Words?
         init(box: ReplyQuoteBox) { self.box = box }
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            if textView.selectedRange.length > 0 {
+                ReplySelection.views.insert(ObjectIdentifier(textView))
+            } else {
+                ReplySelection.views.remove(ObjectIdentifier(textView))
+            }
+        }
 
         func textView(_ textView: UITextView, editMenuForTextIn range: NSRange, suggestedActions: [UIMenuElement]) -> UIMenu? {
             // A key chord's narrow spaces are drawing, not words.
@@ -1594,18 +1620,36 @@ private struct ReplyText: UIViewRepresentable {
 /// Reply text views' measured sizes, by everything that sizes their words: the Markdown, the text size and Bold Text
 /// that pick `InlineStyle`'s fonts, and the width they were measured at. Colour, from the theme and the ink, sizes nothing.
 @MainActor private enum MeasuredWords {
-    struct Key: Hashable {
+    struct Words: Equatable, Hashable {
         let inline: MarkdownInline
         let size: UIContentSizeCategory
         let weight: UILegibilityWeight
+        init(inline: MarkdownInline, traits: UITraitCollection) {
+            self.inline = inline
+            size = traits.preferredContentSizeCategory
+            weight = traits.legibilityWeight
+        }
+    }
+    struct Key: Hashable {
+        let words: Words
         let width: CGFloat
     }
-    private(set) static var sizes: [Key: CGSize] = [:]
+    private static var sizes: [Key: CGSize] = [:]
+    private static var bytes = 0
+    static func size(for key: Key) -> CGSize? { sizes[key] }
     static func keep(_ size: CGSize, for key: Key) {
-        // A long stay on many threads stays bounded: the cache starts again rather than growing.
-        if sizes.count >= 4_000 { sizes = [:] }
+        // A reply streaming in is a new entry with every word, so the Markdown the entries hold is what bounds them: the
+        // cache starts again rather than growing past 4,000 entries or 2 MB of Markdown.
+        let cost = key.words.inline.source.utf8.count
+        if sizes.count >= 4_000 || bytes + cost > 2_000_000 { sizes = [:]; bytes = 0 }
         sizes[key] = size
+        bytes += cost
     }
+}
+
+/// The reply text views holding a selection, so the page keeps their rows where they are while words are selected.
+private enum ReplySelection {
+    static var views: Set<ObjectIdentifier> = []
 }
 
 // MARK: - Steps
