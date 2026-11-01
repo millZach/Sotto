@@ -2311,7 +2311,7 @@ private struct ReplyDock: View, Equatable {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .composerSurface(in: shape)
                 // The trace at the top level of the thread's model, and at Max on Claude under Ultracode (ADR-0019).
-                .effortTrace(settings?.atTopEffort == true, in: shape)
+                .effortTrace(settings?.atTopEffort == true, radius: ComposerMetrics.radius)
             }
         }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canInterrupt(ref))

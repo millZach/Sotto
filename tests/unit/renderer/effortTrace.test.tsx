@@ -14,7 +14,7 @@ import { startWindowVisibility } from '../../../src/renderer/src/state/windowVis
 
 /**
  * The composer's trace (ADR-0019, October 26 amendment): a glow travels round the composer while the thread is set to
- * its model's top level, or to Max under a level past it, and nowhere else. It must stay cheap on main: only a
+ * its model's top level, or on Claude to Max under Ultracode, and nowhere else. It must stay cheap on main: only a
  * transform turns, motion stops under reduced motion and in a window nobody can see.
  */
 const levels = (...ids: string[]) => ids.map(id => ({ id, label: id }))
@@ -50,7 +50,8 @@ describe('the effort trace', () => {
     expect(traceMark('max', levels('max'))).toBe('false')
   })
 
-  it('keeps Max lit when a level sits past it, and lights that level too', () => {
+  it('keeps Max lit under Ultracode, and lights Ultracode too, but not Max under another provider\'s level', () => {
+    expect(traceMark('max', levels('low', 'medium', 'high', 'xhigh', 'max', 'ultra'))).toBe('false')
     expect(traceMark('max', levels('low', 'medium', 'high', 'xhigh', 'max', 'ultracode'))).toBe('true')
     expect(traceMark('ultracode', levels('low', 'medium', 'high', 'xhigh', 'max', 'ultracode'))).toBe('true')
     expect(traceMark('xhigh', levels('low', 'medium', 'high', 'xhigh', 'max', 'ultracode'))).toBe('false')

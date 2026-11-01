@@ -3,8 +3,8 @@ import { isTopEffort } from '../../../src/shared/topEffort'
 import { ULTRACODE, withUltracode } from '../../../src/shared/ultracode'
 
 /**
- * When the composer's trace lights (ADR-0019, October 26 amendment): at the top level of the levels the thread's model
- * offers, whatever its provider, and at Max where a level such as Ultracode sits past it. The iPhone keeps the same rule
+ * When the composer's trace lights (ADR-0019, amended October 26 and November 1): at the top level of the levels the
+ * thread's model offers, whatever its provider, and on Claude at Max with Ultracode past it. The iPhone keeps the same rule
  * in `SottoCore` (`EffortWords.isTop`), checked by `ThreadSettingsTests`.
  */
 const claude = withUltracode(['low', 'medium', 'high', 'xhigh', 'max'])
@@ -14,7 +14,8 @@ const providers: Record<string, { readonly levels: readonly string[]; readonly t
   'claude without Ultracode (Watcher)': { levels: ['low', 'medium', 'high', 'xhigh', 'max'], top: ['max'] },
   'claude on a model without Extra high': { levels: withUltracode(['low', 'medium', 'high']), top: ['high'] },
   grok: { levels: ['low', 'medium', 'high'], top: ['high'] },
-  muse: { levels: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'], top: ['max', 'ultra'] },
+  // Max past which another provider offers a level is not that provider's top.
+  muse: { levels: ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'], top: ['ultra'] },
 }
 
 describe('isTopEffort', () => {

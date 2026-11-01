@@ -43,7 +43,7 @@ final class ThreadSettingsTests: XCTestCase {
             ("claude", ["low", "medium", "high", "xhigh", "max", "ultracode"], ["max", "ultracode"]),
             ("claude without Ultracode", ["low", "medium", "high", "xhigh", "max"], ["max"]),
             ("grok", ["low", "medium", "high"], ["high"]),
-            ("muse", ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"], ["max", "ultra"]),
+            ("muse", ["none", "minimal", "low", "medium", "high", "xhigh", "max", "ultra"], ["ultra"]),
         ]
         for (provider, levels, top) in providers {
             for level in levels { XCTAssertEqual(EffortWords.isTop(levels, level: level), top.contains(level), "\(provider) at \(level)") }

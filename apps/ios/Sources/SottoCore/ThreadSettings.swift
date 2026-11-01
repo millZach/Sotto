@@ -185,11 +185,11 @@ public enum EffortWords {
         }
     }
     /// Whether `level` is the top of `levels`, where the reply box's trace lights, as the desktop's composer does
-    /// (`src/shared/topEffort.ts`, ADR-0019): the last level the model offers, whatever its provider, and Max where a level
-    /// such as Ultracode sits past it. A model with one level has no top, so a lone Max is not lit either.
+    /// (`src/shared/topEffort.ts`, ADR-0019): the last level the model offers, whatever its provider, and on Claude Max
+    /// with Ultracode past it. A model with one level has no top, so a lone Max is not lit either.
     public static func isTop(_ levels: [String], level: String) -> Bool {
         guard levels.count > 1, !level.isEmpty else { return false }
-        return levels.last == level || (level == "max" && levels.contains("max"))
+        return levels.last == level || (level == "max" && levels.contains("ultracode"))
     }
     /// One line per level: what it does and what it costs. The top of a longer list gets the top line, whatever its name.
     public static func line(_ id: String, index: Int, count: Int) -> String {

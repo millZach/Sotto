@@ -296,7 +296,7 @@ export function EffortPicker({ value, options, disabled, onChange, onUltrathink,
   // Named apart from the card's own `shown`, which is the option under the thumb rather than the level set.
   const level = value
   const top = choices.length > 1 && choices[choices.length - 1]?.id === level
-  // The composer's trace lights at the top, and at Max where a level such as Ultracode sits past it.
+  // The composer's trace lights at the top, and on Claude at Max with Ultracode past it.
   const trace = isTopEffort(choices.map(option => option.id), level)
   const still = useReducedMotion()
   const arriving = useArrival(top, still)
