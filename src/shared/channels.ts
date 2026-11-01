@@ -4,6 +4,7 @@ export const SETTINGS_RESET = 'sotto:settings:reset' as const
 export const SETTINGS_CHANGED = 'sotto:settings:changed' as const
 
 export const RECOVERY_NOTICE_LIST = 'sotto:recovery-notice:list' as const
+export const PASTE_PERMISSION_NOTICE_DISMISS = 'sotto:recovery-notice:dismiss-paste-permission' as const
 export const RECOVERY_NOTICE = 'sotto:recovery-notice:event' as const
 
 export const HISTORY_LIST = 'sotto:history:list' as const

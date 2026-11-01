@@ -87,7 +87,7 @@ import {
   type WebContentsWillNavigateEventParams,
   type WebContentsWillRedirectEventParams,
 } from 'electron'
-import { spawn } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { appendFile, readFile, realpath, rename, stat, writeFile } from 'node:fs/promises'
 import { homedir, release as osRelease } from 'node:os'
 import { isAbsolute, join } from 'node:path'
@@ -135,6 +135,7 @@ import { createWaylandClipboard } from './output/waylandClipboard'
 import { createWarmPasteAdapter } from './output/pasteHelper'
 import { createHyprlandFocusedApp, createLsappinfoFocusedApp } from './output/focusedApp'
 import { createOsascriptPasteAdapter, type OsascriptPasteEvent } from './output/pasteOsascript'
+import { createPastePermissionRecovery } from './output/pastePermissionRecovery'
 import { createSystemSettingsOpener } from './app/systemSettings'
 import { TranscriptPolishService } from './llm/transcriptPolishService'
 import { LocalTranscriptionService } from './asr/localTranscriptionService'
@@ -1441,6 +1442,12 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     e2eConfiguration === null && profile.pasteRequiresAccessibilityTrust
       ? { isTrusted: (prompt) => systemPreferences.isTrustedAccessibilityClient(prompt) }
       : ALWAYS_TRUSTED_ACCESSIBILITY
+  const accessibilityGate = createAccessibilityGate(accessibilityTrust)
+  const pastePermissionRecovery = createPastePermissionRecovery(recoveryNotices, accessibilityGate, () => new Promise(resolve => {
+    // Read System Events' setting, without pasting, prompting for Accessibility or logging its output.
+    execFile('/usr/bin/osascript', ['-e', 'tell application "System Events" to get UI elements enabled'], { timeout: 5_000 }, error => resolve(error === null))
+  }))
+  app.on('browser-window-focus', () => { void pastePermissionRecovery.check() })
   const output = new OutputService({
     clipboard: e2eState === null
       ? linuxClipboard ?? clipboard
@@ -1452,12 +1459,13 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         setTimeout(resolve, milliseconds)
       }),
     process: createAccessibilityGatedPasteAdapter({
-      gate: createAccessibilityGate(accessibilityTrust),
+      gate: accessibilityGate,
       inner: basePaste,
       onUntrusted: () => recoveryNotices.publish({ code: 'ACCESSIBILITY_PERMISSION_REQUIRED' }),
     }),
     buildPasteInvocation: pasteCommands.oneShot,
     keepWidgetVisibleDuringPaste: platform === 'linux',
+    onPasted: () => pastePermissionRecovery.pasted(),
     ...(platform === 'linux' ? { preparePasteText: sanitizeLinuxPasteText } : {}),
     // The delivered app (ADR-0100). A test run delivers into Sotto's own window.
     readFocusedApp: e2eConfiguration !== null
@@ -2395,6 +2403,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
         },
         recoveryNotices: {
           list: () => recoveryNotices.list(),
+          dismissPastePermission: code => recoveryNotices.clear(code),
         },
         ...(microphoneAccessWhileOn === null ? {} : { microphoneAccess: microphoneAccessWhileOn }),
       })

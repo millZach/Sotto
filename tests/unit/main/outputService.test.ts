@@ -66,6 +66,18 @@ function createHarness(
 
 describe('OutputService', () => {
   it.each([
+    { autoPaste: true, pasted: true, notified: 1 },
+    { autoPaste: true, pasted: false, notified: 0 },
+    { autoPaste: false, pasted: true, notified: 0 },
+  ])('reports paste recovery only after a successful automatic paste: %j', async ({ autoPaste, pasted, notified }) => {
+    const onPasted = vi.fn()
+    const harness = createHarness({ process: { run: () => pasted }, onPasted })
+    await harness.service.deliver('kept words', { autoPaste, pasteDelayMs: 0 })
+    expect(onPasted).toHaveBeenCalledTimes(notified)
+    expect(harness.clipboardText()).toBe('kept words')
+  })
+
+  it.each([
     { autoPaste: false, restoreWidget: false },
     { autoPaste: false, restoreWidget: true },
     { autoPaste: true, restoreWidget: false },
