@@ -3,6 +3,8 @@ import UIKit
 import PhotosUI
 import UniformTypeIdentifiers
 import AVFoundation
+import AVKit
+import ImageIO
 import SottoCore
 
 // MARK: Sent photos
@@ -424,21 +426,43 @@ struct AgentPictures: View {
     let open: (OpenPhotos) -> Void
     private var items: [OpenPhotos.Item] {
         steps.flatMap { step in (step.media ?? []).filter { $0.kind == "image" }.map { picture in
-            OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id), name: step.title)
+            OpenPhotos.Item(key: PhotoPreviews.Key(ref: ref, messageID: step.id, attachmentID: picture.id, activityID: step.id), name: AgentPictures.title(of: step))
         } }
+    }
+    /// The GIFs among the pictures, by their key's ID: each plays in its tile when asked.
+    private var gifs: Set<String> {
+        Set(steps.flatMap { step in (step.media ?? []).filter { $0.mimeType == "image/gif" }.map { step.id + "/" + $0.id } })
+    }
+    /// A step's name: the computer's words, or this iPhone's for the step Sotto makes for a turn's written files.
+    static func title(of step: Activity) -> String {
+        step.id.hasPrefix("sotto-written-")
+            ? String(localized: "Pictures and videos it wrote", comment: "The step that holds the pictures and videos an agent wrote in its folder during a turn.")
+            : step.title
+    }
+    /// A video a step's turn wrote (ADR-0170, part 4), by its step and its handle.
+    private struct WrittenVideo: Identifiable {
+        let step: Activity; let video: Activity.Media
+        var id: String { step.id + "/" + video.id }
+    }
+    /// The videos the steps' turns wrote, each played in its own tile.
+    private var videos: [WrittenVideo] {
+        steps.flatMap { step in (step.media ?? []).filter { $0.kind == "video" }.map { WrittenVideo(step: step, video: $0) } }
     }
     var body: some View {
         let items = self.items
+        let gifs = self.gifs
+        let videos = self.videos
         // A step still making an image shows the owl at the easel in its picture's place.
         let making = steps.filter(\.makingImage)
-        if !items.isEmpty || !making.isEmpty {
+        if !items.isEmpty || !videos.isEmpty || !making.isEmpty {
             LazyVGrid(columns: [GridItem(.flexible(), spacing: Space.s2), GridItem(.flexible(), spacing: Space.s2)], alignment: .leading, spacing: Space.s2) {
                 ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    Button { open(OpenPhotos(ref: ref, id: "pictures-" + (steps.first?.id ?? ""), items: items, index: index)) } label: {
-                        AgentPictureTile(key: item.key)
+                    AgentPictureCell(item: item, gif: gifs.contains(item.id), number: index + 1, count: items.count) {
+                        open(OpenPhotos(ref: ref, id: "pictures-" + (steps.first?.id ?? ""), items: items, index: index))
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text("Open picture \(index + 1) of \(items.count), from \(item.name)", comment: "%1$lld of %2$lld pictures an agent's steps made; %3$@ names the step."))
+                }
+                ForEach(Array(videos.enumerated()), id: \.element.id) { index, item in
+                    AgentVideoTile(ref: ref, step: item.step, video: item.video, number: index + 1, count: videos.count)
                 }
                 ForEach(making) { step in OwlEaselTile(startedAt: step.startedAt) }
             }
@@ -491,19 +515,137 @@ private struct OwlEaselTile: View {
     }
 }
 
+/// One of an agent's pictures in its grid: a press opens the viewer. A GIF (ADR-0170, part 4) shows its first frame still
+/// and has a button of its own that plays it in the tile until it is pressed again or scrolls away.
+private struct AgentPictureCell: View {
+    let item: OpenPhotos.Item
+    let gif: Bool
+    let number: Int
+    let count: Int
+    let open: () -> Void
+    @State private var playing = false
+    var body: some View {
+        ZStack(alignment: .topTrailing) {
+            Button(action: open) { AgentPictureTile(key: item.key, playing: gif && playing) }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text("Open picture \(number) of \(count), from \(item.name)", comment: "%1$lld of %2$lld pictures an agent's steps made; %3$@ names the step."))
+            if gif {
+                Button { playing.toggle() } label: {
+                    Image(systemName: playing ? "pause.circle.fill" : "play.circle.fill").font(.title2).foregroundStyle(Palette.muted)
+                        .padding(Space.s2).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(playing ? Text("Stop GIF \(number)", comment: "%lld is the place of an agent's GIF among the pictures of one run.")
+                                            : Text("Play GIF \(number)", comment: "%lld is the place of an agent's GIF among the pictures of one run."))
+            }
+        }
+        .onDisappear { playing = false }
+    }
+}
+
+/// A GIF's frames at tile size and how long each shows, decoded off the main actor; at most 300 frames, each at most
+/// 480 points on its longer side, so a large GIF stays small in memory. Never changed once made, so it crosses tasks freely.
+private struct GIFFrames: @unchecked Sendable {
+    let images: [CGImage]; let delays: [Double]
+    var duration: Double { delays.reduce(0, +) }
+    init?(data: Data) {
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
+        let count = min(CGImageSourceGetCount(source), 300)
+        let options = [kCGImageSourceCreateThumbnailFromImageAlways: true, kCGImageSourceThumbnailMaxPixelSize: 480, kCGImageSourceCreateThumbnailWithTransform: true] as CFDictionary
+        var images: [CGImage] = [], delays: [Double] = []
+        for index in 0..<count {
+            guard let image = CGImageSourceCreateThumbnailAtIndex(source, index, options) else { continue }
+            let properties = CGImageSourceCopyPropertiesAtIndex(source, index, nil) as? [CFString: Any]
+            let gif = properties?[kCGImagePropertyGIFDictionary] as? [CFString: Any]
+            let delay = (gif?[kCGImagePropertyGIFUnclampedDelayTime] as? Double) ?? (gif?[kCGImagePropertyGIFDelayTime] as? Double) ?? 0.1
+            images.append(image); delays.append(max(0.02, delay))
+        }
+        guard images.count > 1 else { return nil }
+        self.images = images; self.delays = delays
+    }
+    /// The frame showing `seconds` into the loop.
+    func frame(at seconds: Double) -> CGImage {
+        var left = seconds.truncatingRemainder(dividingBy: duration)
+        for (index, delay) in delays.enumerated() { if left < delay { return images[index] }; left -= delay }
+        return images[images.count - 1]
+    }
+}
+
+/// A video an agent wrote (ADR-0170, part 4), in a tile the size of a picture's. It is fetched from its computer only when
+/// it is tapped, plays only then, and pauses the moment it scrolls away. One larger than this iPhone fetches says it
+/// plays on the desktop.
+private struct AgentVideoTile: View {
+    @EnvironmentObject var model: AppModel
+    let ref: ThreadRef
+    let step: Activity
+    let video: Activity.Media
+    let number: Int
+    let count: Int
+    @State private var player: AVPlayer?
+    @State private var progress: Double?
+    @State private var problem: Problem?
+    @State private var shown = false
+    private enum Problem { case tooLarge, unplayable }
+    var body: some View {
+        Rectangle().fill(Palette.raised)
+            .aspectRatio(1.5, contentMode: .fit)
+            .overlay {
+                if let player { VideoPlayer(player: player) }
+                else if let problem {
+                    Text(problem == .tooLarge
+                         ? String(localized: "Too large to play on this iPhone. Play it on the desktop.", comment: "On a tile of a video an agent wrote that is over the size this iPhone fetches.")
+                         : String(localized: "Could not play. The file may have changed or been removed on its computer. Ask the agent to write it again.", comment: "On a tile of a video an agent wrote that could not be fetched or played."))
+                        .font(.footnote).foregroundStyle(Palette.muted).multilineTextAlignment(.center).padding(Space.s2)
+                } else if let progress { ProgressView(value: progress).padding(Space.s3) }
+                else {
+                    Button(action: start) {
+                        Image(systemName: "play.circle.fill").font(.largeTitle).foregroundStyle(Palette.muted)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text("Play video \(number) of \(count), from \(AgentPictures.title(of: step))", comment: "%1$lld of %2$lld videos an agent's steps wrote; %3$@ names the step."))
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .onAppear { shown = true }
+            // Scrolled away, it pauses at once; its fetch, if any, stops asking for parts.
+            .onDisappear { shown = false; player?.pause() }
+    }
+    private func start() {
+        guard AgentVideos.playsHere(sizeBytes: video.sizeBytes ?? 0) else { problem = .tooLarge; return }
+        progress = 0
+        Task {
+            let outcome = await model.agentVideo(ref, activityID: step.id, mediaID: video.id, progress: { progress = $0 }, wanted: { shown })
+            progress = nil
+            guard case .file(let url) = outcome else { problem = .unplayable; return }
+            let made = AVPlayer(url: url)
+            player = made
+            if shown { made.play() }
+        }
+    }
+}
+
 /// One of an agent's pictures as a tile, three by two, filled. It shows a placeholder until its thumbnail arrives, and
 /// says so when the computer no longer keeps it.
 private struct AgentPictureTile: View {
     @EnvironmentObject var model: AppModel
     @EnvironmentObject var previews: PhotoPreviews
     let key: PhotoPreviews.Key
+    /// A GIF asked to play: its whole bytes are fetched and its frames drawn in the tile, from the first.
+    var playing = false
     @State private var image: CGImage?
     @State private var missing = false
+    @State private var frames: GIFFrames?
+    @State private var began = Date()
     var body: some View {
         Rectangle().fill(Palette.raised)
             .aspectRatio(1.5, contentMode: .fit)
             .overlay {
-                if let image { Image(decorative: image, scale: 1).resizable().scaledToFill() }
+                if playing, let frames {
+                    TimelineView(.animation) { context in
+                        Image(decorative: frames.frame(at: context.date.timeIntervalSince(began)), scale: 1).resizable().scaledToFill()
+                    }
+                } else if let image { Image(decorative: image, scale: 1).resizable().scaledToFill() }
                 else if missing { Image(systemName: "photo").font(.title2).foregroundStyle(Palette.muted) }
                 else { ProgressView() }
             }
@@ -518,6 +660,14 @@ private struct AgentPictureTile: View {
                 // A read that ends after the tile left draws nothing into it.
                 guard !Task.isCancelled else { return }
                 image = read; missing = read == nil
+            }
+            .task(id: playing) {
+                guard playing else { frames = nil; return }
+                let data = await model.photoBytes(key.ref, messageID: key.messageID, attachmentID: key.attachmentID, activityID: key.activityID, wanted: { playing })
+                guard !Task.isCancelled, let data else { return }
+                let decoded = await Task.detached { GIFFrames(data: data) }.value
+                guard !Task.isCancelled, playing else { return }
+                began = Date(); frames = decoded
             }
     }
 }

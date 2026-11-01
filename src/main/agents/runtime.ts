@@ -318,6 +318,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
   usage?.start()
   if (options.threadStartsEnabled === true) agentHost.allowThreadStarts()
+  // The pictures and videos each turn writes in its folder (ADR-0170, part 4), only with `inline-media` on.
+  if (threadMedia) agentHost.keepWrittenMedia(threadMedia)
   if (options.crossMachineEnabled === true) agentHost.allowBringBack()
   // A check takes the machine's one check worktree for its repository and installs packages first when they changed (#1312).
   if (options.crossMachineEnabled === true) agentHost.allowCheckWorktrees(options.checkInstaller)

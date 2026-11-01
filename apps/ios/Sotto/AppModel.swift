@@ -1162,6 +1162,14 @@ struct DraftFile: Identifiable {
 }
 
 /// What came of asking a thread's computer for a sent file to open.
+/// A video an agent wrote, as this iPhone fetched it to play (ADR-0170, part 4).
+enum AgentVideoOutcome: Equatable {
+    case file(URL)
+    /// Its computer can no longer read it: the file changed or went since the turn wrote it.
+    case notKept
+    case failed
+}
+
 enum SentFileOutcome: Equatable {
     case file(name: String, data: Data)
     /// The computer no longer keeps it.
@@ -3408,6 +3416,38 @@ struct RailAsk: Equatable {
             return try await connection.call(operation, as: Optional<PhotoPreview>.self)?.dataUrl
         }) else { return nil }
         return await Photos.bytes(fromDataURL: url)
+    }
+    /// A video an agent wrote, from the computer that runs its thread (ADR-0170, part 4): part by part, each waiting its
+    /// turn behind other large requests to that computer and none asked for once nothing `wanted` it, written to a file
+    /// as it comes. The parts must make the video their first one named, its size and digest, or none of it is kept.
+    func agentVideo(_ ref: ThreadRef, activityID: String, mediaID: String, progress: @escaping @MainActor (Double) -> Void,
+                    wanted: @escaping @MainActor () -> Bool) async -> AgentVideoOutcome {
+        guard live[ref.hostID]?.features.contains(AgentVideos.feature) == true else { return .failed }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("agent-videos", isDirectory: true)
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var download: AgentVideoDownload?
+        repeat {
+            let operation = AgentVideos.part(threadID: ref.threadID, activityID: activityID, mediaID: mediaID, part: download?.received ?? 0)
+            let part: AgentVideoPart?
+            do {
+                part = try await largeRequest(on: ref.hostID) { connection -> AgentVideoPart? in
+                    guard wanted() else { throw CancellationError() }
+                    return try await connection.call(operation, as: Optional<AgentVideoPart>.self)
+                }
+            } catch { return .failed }
+            guard let part else { return download == nil ? .notKept : .failed }
+            let before = download
+            // Decoded and written off the main actor: a part is 8 MiB.
+            let next = await Task.detached { () -> AgentVideoDownload? in
+                guard let before else { return AgentVideoDownload(first: part, url: folder.appendingPathComponent(AgentVideos.fileName(digest: part.digest, mimeType: part.mimeType))) }
+                return before.add(part) ? before : nil
+            }.value
+            guard let next else { return .failed }
+            download = next
+            progress(next.progress)
+        } while download?.complete == false
+        guard let download, await Task.detached(operation: { download.finish() }).value else { return .failed }
+        return .file(download.url)
     }
     /// Whether this thread's computer shows its agents' pictures (ADR-0170).
     func showsAgentPictures(_ hostID: String) -> Bool { live[hostID]?.features.contains(Photos.threadMediaFeature) == true }

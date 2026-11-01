@@ -249,6 +249,13 @@
 .thread-media-tiles { margin: 8px 0 14px; }
 .thread-media__placeholder { color: var(--tt-text-muted); opacity: .6; }
 .thread-media__making { position: relative; cursor: default; }
+/* A video an agent wrote, and a GIF's play button (ADR-0170, part 4): played only when pressed. */
+.thread-media { position: relative; }
+.thread-media__video { position: relative; cursor: default; background: var(--tt-surface-sunken); }
+.thread-media__video video { display: block; width: 100%; height: 100%; object-fit: contain; }
+.thread-media__play { position: absolute; top: 50%; left: 50%; display: grid; place-items: center; width: 40px; height: 40px; margin: -20px 0 0 -20px; padding: 0; border: 1px solid var(--tt-border-faint); border-radius: var(--tt-radius-full); background: var(--tt-surface-overlay); color: var(--tt-text); cursor: pointer; }
+.thread-media__play:hover { border-color: var(--tt-hairline); }
+.thread-media__play--corner { top: 8px; left: auto; right: 8px; width: 28px; height: 28px; margin: 0; }
 /* The owl at the easel (ADR-0170): two layers of text the same size, the painting over the easel and the owl. */
 .owl-easel { position: absolute; inset: 0; overflow: hidden; }
 .owl-easel pre { position: absolute; inset: 0; margin: 0; font-family: var(--tt-font-mono); white-space: pre; overflow: hidden; }

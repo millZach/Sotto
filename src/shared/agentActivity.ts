@@ -29,15 +29,32 @@ export const ownServerTurnSchema = z.object({
 })
 export type OwnServerTurn = z.infer<typeof ownServerTurnSchema>
 /**
- * A picture an agent made or looked at, as a record carries it (ADR-0170): a handle to bytes in the thread media store,
- * never the bytes. `id` is the handle's place in its record, which a preview names with the thread and the record.
+ * A picture or video an agent made or looked at, as a record carries it (ADR-0170): a handle, never the bytes and never
+ * a path. A picture's bytes are in the thread media store; a video stays in the file the agent wrote, which the store
+ * remembers by the video's digest on the host alone. `id` is the handle's place in its record, which a preview names
+ * with the thread and the record.
  */
 export const MAX_ACTIVITY_MEDIA = 8
+/**
+ * The step a turn's written pictures and videos hang on (ADR-0170, part 4) is Sotto's own, so its ID says so and each
+ * client shows its title in its own words rather than the English the host wrote.
+ */
+export const WRITTEN_STEP_PREFIX = 'sotto-written-'
+/** The largest video an agent wrote that a tile plays on the desktop (ADR-0170, part 4), read from where it was written. */
+export const AGENT_VIDEO_MAX_BYTES = 200 * 1024 * 1024
+/** The largest the iPhone fetches to play, in parts (`thread-media-part`); a larger one says it plays on the desktop. */
+export const PHONE_VIDEO_MAX_BYTES = 50 * 1024 * 1024
+export const AGENT_VIDEO_MIME_TYPES = ['video/mp4', 'video/webm', 'video/quicktime'] as const
+export type AgentVideoMimeType = typeof AGENT_VIDEO_MIME_TYPES[number]
+/** How much of a video one read hands back (`thread-media-part`): about 11.2 MB of base64, inside one 16 MiB frame. */
+export const AGENT_VIDEO_PART_BYTES = 8 * 1024 * 1024
+/** The most parts a video takes: one of `AGENT_VIDEO_MAX_BYTES` in `AGENT_VIDEO_PART_BYTES` parts. */
+export const AGENT_VIDEO_PARTS_MAX = Math.ceil(AGENT_VIDEO_MAX_BYTES / AGENT_VIDEO_PART_BYTES)
 export const agentActivityMediaSchema = z.object({
   id: z.string().regex(/^m[0-7]$/u),
   digest: z.string().regex(/^[a-f0-9]{64}$/u),
   kind: z.enum(['image', 'video']),
-  mimeType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp']),
+  mimeType: z.enum(['image/png', 'image/jpeg', 'image/gif', 'image/webp', ...AGENT_VIDEO_MIME_TYPES]),
   sizeBytes: z.number().int().min(1),
   width: z.number().int().min(1).max(100_000).optional(), height: z.number().int().min(1).max(100_000).optional(),
   name: z.string().min(1).max(200),
