@@ -2177,18 +2177,8 @@ private struct ThreadSettingsRow: View {
         return opens
     }
 
-    /// One choice in a chip's menu. A toggle, so iOS marks the one in force by its state, which it keeps at the
-    /// accessibility text sizes where it drops a menu item's images; the line is the item's second text, its subtitle.
-    @ViewBuilder private func option(_ name: String, line: String? = nil, chosen: Bool, action: @escaping () -> Void) -> some View {
-        let isOn = Binding(get: { chosen }, set: { if $0 { action() } })
-        if let line {
-            Toggle(isOn: isOn) {
-                Text(verbatim: name)
-                Text(verbatim: line)
-            }
-        } else {
-            Toggle(isOn: isOn) { Text(verbatim: name) }
-        }
+    private func option(_ name: String, line: String? = nil, chosen: Bool, action: @escaping () -> Void) -> some View {
+        SettingOption(name: name, line: line, chosen: chosen, action: action)
     }
 
     private var modelMenu: some View {
@@ -2297,9 +2287,30 @@ private struct ThreadSettingsRow: View {
     }
 }
 
+/// One choice in a setting chip's menu, in a thread's box and in Watcher's. A toggle, so iOS marks the one in force by its
+/// state, which it keeps at the accessibility text sizes where it drops a menu item's images; the line is the item's
+/// second text, its subtitle.
+struct SettingOption: View {
+    let name: String
+    var line: String? = nil
+    let chosen: Bool
+    let action: () -> Void
+    var body: some View {
+        let isOn = Binding(get: { chosen }, set: { if $0 { action() } })
+        if let line {
+            Toggle(isOn: isOn) {
+                Text(verbatim: name)
+                Text(verbatim: line)
+            }
+        } else {
+            Toggle(isOn: isOn) { Text(verbatim: name) }
+        }
+    }
+}
+
 /// A text button in the reply box's second line: its value and a small chevron, no fill at rest (ADR-0113). Drawn 32
 /// points tall and pressed across 44. A change the agent hasn't confirmed draws a dashed edge and a dot, both still.
-private struct SettingChip<Content: View>: View {
+struct SettingChip<Content: View>: View {
     var pending = false
     @ViewBuilder let content: Content
     var body: some View {

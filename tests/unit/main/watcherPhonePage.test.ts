@@ -29,10 +29,16 @@ function page(starts: number, status: 'idle' | 'running' | 'error' = 'idle', spe
   return service.state(false, true, true)
 }
 
+// The page names Watcher's speed for Watcher's box (watcher-phone-composer, October 31, 2026), Standard as null, and
+// nothing else of the desktop's options: a spread of them once broke every phone hello.
 it.each(['fast', 'ultrafast', null] as const)('projects only the phone contract when desktop speed is %s', speed => {
   const state = watcherPhoneStateSchema.parse(page(0, 'idle', speed))
   expect(state.current).toEqual({ target: { hostId: HOST, threadId: 'watcher' }, provider: 'codex', modelId: 'codex:gpt',
-    reasoningEffort: null, runtimeMode: 'auto', status: 'idle', connected: true, steers: false })
+    reasoningEffort: null, runtimeMode: 'auto', status: 'idle', connected: true, steers: false, speed })
+})
+
+it('says Standard as null when the desktop names no speed', () => {
+  expect(watcherPhoneStateSchema.parse(page(0)).current?.speed).toBeNull()
 })
 
 it.each([0, 3, 7])('sends the true count of %i, below the limit an older iPhone reads', starts => {
