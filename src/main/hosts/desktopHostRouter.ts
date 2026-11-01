@@ -18,7 +18,7 @@ import type { WatcherHostControl, WatcherHostRead, WatcherRemoteHosts, WatcherRo
 import { BRING_BACK_INTERFACE_WORDS, bringBackInInterfaceLanguage, hostCannotStageScreenshotsWords, inInterfaceLanguage, threadStartsUnsupportedWords, watcherDisabledWords } from '../../shared/interfaceWords'
 import { randomUUID } from 'node:crypto'
 import { isAgentThreadDetailDelta } from '../../shared/agentThreadDetail'
-import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentHostSnapshot, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
+import { agentCommandSchema, isImageAttachment, defaultNewThreadModelId, defaultThreadModelId, enabledThreadProviders, MAX_DELIVERED_DRAFTS, HOST_DISCONNECTED_BEFORE_FILES, SCREENSHOT_WRONG_TYPE, agentShell, isThreadProviderConnected, nameHostInRefusal, type ProviderId, type AgentThread, type AgentHostSnapshot, type AgentAttachmentContent, type AgentAttachmentContentRequest, type AgentAttachmentHandle, type AgentAttachmentStageRequest, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaWindowRequest, type AgentAttachmentPreviewResult } from '../../shared/agents'
 import { noteThreadsReplaced, threadsReplacedSince } from '../../shared/threadListPatches'
 import { clientThreadId, hostEntityKey, mapHostReferences, parseHostEntityKey, projectClientAgentState, type ClientAgentStateProjection } from '../../shared/clientIdentity'
 import type { QuestionPageTarget } from '../agents/questionPages'
@@ -51,6 +51,8 @@ export interface DesktopHostConnection extends Partial<HostThreadToolReads> {
   refreshRequestAnswer?(decisionId: string, target: HostAnswerTarget): Promise<void>
   detail(threadId: string): AgentThreadDetail | null | Promise<AgentThreadDetail | null>
   preview(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
+  /** One picture an activity record names, read whole from the host that keeps it (ADR-0170). */
+  media?(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult>
   /** Stages on this host, the one that runs the thread (ADR-0031). */
   stage?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   content?(digest: string): Promise<AgentAttachmentContent | null>
@@ -398,6 +400,11 @@ export class DesktopHostRouter {
     threadsDeleted?: (threadIds: readonly string[]) => void
     /** This desktop's Owl answer for attaching any file (ADR-0131), read once at start: with it off, no host is asked to keep a file. */
     attachAnyFile?: boolean
+    /**
+     * This desktop's thumbnail maker for pictures in threads (ADR-0170): a data URL in, the picture at tile size out, or
+     * null when it cannot read it. Present only while `inline-media` is on; without it no picture is read.
+     */
+    mediaThumbnail?: (dataUrl: string) => string | null
     /**
      * This desktop's Owl answer for Restart stopped threads (ADR-0144), read once at start: with it, the window offers
      * Babysit pull request on no host's threads, and refuses a press that reaches it anyway.
@@ -755,6 +762,8 @@ export class DesktopHostRouter {
   }
   /** Every host's shell read afresh and copied, for a caller that must see the state as it is now and may change it. */
   shell(): AgentState { return this.build(connection => connection.service.shell()) }
+  /** Current state for a read-only caller, using the same live views as a command reply. */
+  view(): AgentState { return this.reply() }
   /**
    * A command's answer: every host's state as it is now, the command's own effect included, read in place as a publication
    * is rather than copied (#1760). It may share records with the last publication, and is read, never written into below
@@ -1188,6 +1197,30 @@ export class DesktopHostRouter {
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
     const { connection, id } = this.target(request.threadId)
     return connection.preview({ ...request, threadId: id! })
+  }
+  /** The thumbnails this window asked for most recently, so a tile scrolled back into view is not read again (ADR-0170). */
+  private readonly mediaTiles = new Map<string, string>()
+  /**
+   * One picture a thread's record names (ADR-0170), from the host that runs the thread: whole for the viewer, or at tile
+   * size for a tile. The thumbnail is made here, so the window never decodes a whole picture to draw a tile, and a headless
+   * host needs no image library. The newest 120 are kept; a picture is only ever read when a tile or the viewer asks.
+   */
+  async threadMedia(request: AgentThreadMediaWindowRequest): Promise<AgentThreadMediaResult> {
+    const thumbnail = this.options.mediaThumbnail
+    if (!thumbnail) return null
+    const key = JSON.stringify([request.threadId, request.activityId, request.mediaId])
+    if (request.size === 'tile') {
+      const kept = this.mediaTiles.get(key)
+      if (kept !== undefined) { this.mediaTiles.delete(key); this.mediaTiles.set(key, kept); return { dataUrl: kept } }
+    }
+    const { connection, id } = this.target(request.threadId)
+    const whole = await connection.media?.({ threadId: id!, activityId: request.activityId, mediaId: request.mediaId }) ?? null
+    if (!whole || request.size === 'full') return whole
+    const tile = thumbnail(whole.dataUrl)
+    if (tile === null) return null
+    this.mediaTiles.set(key, tile)
+    if (this.mediaTiles.size > 120) this.mediaTiles.delete(this.mediaTiles.keys().next().value!)
+    return { dataUrl: tile }
   }
   /** An image goes to the host that runs the thread it is for, or the selected host for the coordinator's composer. */
   async stageAttachment(request: AgentAttachmentStageRequest): Promise<AgentAttachmentHandle> {

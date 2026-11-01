@@ -17,7 +17,7 @@ describe('WidgetEntry', () => {
     ['darwin', '⌃+⇧+Space to finish'],
   ] as const)('announces the %s finish binding', (platform, hint) => {
     render(<WidgetEntry bridge={undefined} platform={platform} preview={snapshot({
-      status: 'listening', sessionId: 'hold', startedAt: 0, level: 0.5,
+      status: 'listening', sessionId: 'hold', startedAt: 0, speaking: true,
     })} />)
     expect(screen.getByRole('status')).toHaveTextContent(hint)
     if (platform === 'linux') expect(screen.getByRole('status')).not.toHaveTextContent('Ctrl+Shift+Space')
@@ -48,7 +48,7 @@ describe('WidgetEntry', () => {
     render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
     const graphite = widgetPaletteFor({ lightTheme: 'graphite', darkTheme: 'graphite', customThemes: [] })
     const citrine = widgetPaletteFor({ lightTheme: 'graphite', darkTheme: 'citrine', customThemes: [] })
-    const listening = { status: 'listening', sessionId: 'live', startedAt: Date.now(), level: 0.4, cancellable: true } as const
+    const listening = { status: 'listening', sessionId: 'live', startedAt: Date.now(), speaking: true, cancellable: true } as const
     const root = document.documentElement
 
     emit(snapshot({ ...listening, theme: 'dark', palette: graphite }))
@@ -57,7 +57,7 @@ describe('WidgetEntry', () => {
     expect(screen.getByTestId('widget-glyph').querySelector('svg')).toHaveAttribute('data-tile', themeBrand(graphite.dark, 'dark').tile)
 
     // Same session, next level update carries the newly selected dark half.
-    emit(snapshot({ ...listening, level: 0.5, theme: 'dark', palette: citrine }))
+    emit(snapshot({ ...listening, speaking: true, theme: 'dark', palette: citrine }))
     expect(root.style.getPropertyValue('--theme-accent')).toBe(citrine.dark.accent)
     expect(root.style.getPropertyValue('--theme-surface-raised')).toBe(citrine.dark.surfaceRaised)
     expect(root.style.getPropertyValue('--theme-error-foreground')).toBe(citrine.dark.errorForeground)
@@ -122,7 +122,7 @@ describe('WidgetEntry', () => {
     expect(bridge.onWidgetState).toHaveBeenCalledTimes(2)
     expect(unsubscribe).toHaveBeenCalledTimes(1)
     act(() => listener?.(snapshot({
-      status: 'listening', sessionId: 'live', startedAt: Date.now(), level: 0.4, cancellable: true,
+      status: 'listening', sessionId: 'live', startedAt: Date.now(), speaking: true, cancellable: true,
     })))
     fireEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
     fireEvent.click(screen.getByRole('button', { name: 'Cancel dictation' }))
@@ -167,7 +167,7 @@ describe('WidgetEntry', () => {
     expect(bridge.requestToggle).toHaveBeenCalledTimes(1)
 
     act(() => listener?.(snapshot({
-      status: 'listening', sessionId: 'click', startedAt: Date.now(), level: 0.4,
+      status: 'listening', sessionId: 'click', startedAt: Date.now(), speaking: true,
       cancellable: true,
     })))
     expect(bridge.setPresentation).toHaveBeenLastCalledWith({
@@ -450,7 +450,7 @@ describe('WidgetEntry', () => {
 
     emit(snapshot({
       status: 'listening', sessionId: 'announce', startedAt: Date.now() - 1_000,
-      level: 0.4, cancellable: true,
+      speaking: true, cancellable: true,
     }))
     expect(polite).toHaveTextContent('Listening. Ctrl+Shift+Space to finish')
     expect(assertive).toBeEmptyDOMElement()
@@ -484,7 +484,7 @@ describe('WidgetEntry', () => {
   it('ticks the listening timer without changing the immutable snapshot', () => {
     vi.useFakeTimers()
     vi.setSystemTime(1_000)
-    const state = snapshot({ status: 'listening', sessionId: 'timer', startedAt: 0, level: 0.2 })
+    const state = snapshot({ status: 'listening', sessionId: 'timer', startedAt: 0, speaking: true })
     let listener: ((state: WidgetSnapshot) => void) | null = null
     const bridge: SottoWidgetBridge = {
       platform: 'win32',
@@ -506,7 +506,7 @@ describe('WidgetEntry', () => {
     expect(screen.getByText('00:01')).toBeVisible()
     act(() => vi.advanceTimersByTime(1_000))
     expect(screen.getByText('00:02')).toBeVisible()
-    expect(state).toEqual(expect.objectContaining({ startedAt: 0, level: 0.2 }))
+    expect(state).toEqual(expect.objectContaining({ startedAt: 0, speaking: true }))
   })
 
   it('contains rejected widget command promises without exposing an error', async () => {
@@ -528,7 +528,7 @@ describe('WidgetEntry', () => {
     }
     const { container } = render(<WidgetEntry bridge={bridge} platform="win32" preview={null} />)
     act(() => listener?.(snapshot({
-      status: 'listening', sessionId: 'rejected', startedAt: Date.now(), level: 0.2,
+      status: 'listening', sessionId: 'rejected', startedAt: Date.now(), speaking: true,
       cancellable: true,
     })))
     fireEvent.click(screen.getByRole('button', { name: 'Stop dictation' }))
@@ -547,7 +547,7 @@ it('ignores a stale agent bridge while dictation remains available', () => {
     emit(snapshot({ status: 'idle' }))
     fireEvent.click(screen.getByTestId('widget-sliver'))
     expect(bridge.requestToggle).toHaveBeenCalledOnce()
-    emit(snapshot({ status: 'listening', sessionId: 'dictation', startedAt: 0, level: 0.5, cancellable: true }))
+    emit(snapshot({ status: 'listening', sessionId: 'dictation', startedAt: 0, speaking: true, cancellable: true }))
     expect(screen.getByTestId('listening-bars')).toBeInTheDocument()
     expect(container.querySelector('.widget-agent-actions')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Expand threads' })).not.toBeInTheDocument()

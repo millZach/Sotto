@@ -23,7 +23,7 @@ function listening(): WidgetSnapshot {
     status: 'listening',
     sessionId: 's',
     startedAt: 1,
-    level: 0.5,
+    speaking: true,
     cancellable: true,
   })
 }
@@ -200,7 +200,7 @@ describe('NativeDictationLifecycle theme presentation', () => {
     const harness = presentedHarness()
     await harness.lifecycle.publish(listening())
     expect(harness.delivered().at(-1)?.palette).toEqual(fern)
-    expect(harness.delivered().at(-1)).toMatchObject({ status: 'listening', level: 0.5 })
+    expect(harness.delivered().at(-1)).toMatchObject({ status: 'listening', speaking: true })
   })
 
   it('repaints an active session live when the theme changes, without a new renderer publication', async () => {

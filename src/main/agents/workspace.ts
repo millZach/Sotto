@@ -38,6 +38,8 @@ import { applyEventsToIdentities, applyEventsToMessage, applyEventsToSummary, ap
 import { readHandover, type Handover, type HandoverStore } from './handover'
 import { continuedPromptWords, continuedWordsOnly } from './continueThread'
 import { handoverCounts } from './watcherHandover'
+import { watcherWakeUpShown } from './watcherNews'
+import { firstMessageTitle } from '../../shared/threadTitle'
 import { placeVisuals } from './visualPlacement'
 import { visualFromInput, VISUALS_PER_THREAD_MAX, VISUALS_PER_TURN_MAX, type AgentVisual, type VisualInput } from '../../shared/visuals'
 import { SubagentStore, subagentActivityClassification } from './subagentStore'
@@ -2717,6 +2719,19 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
         thread.subagentSummary = this.subagentSummaries.get(thread.id) ?? EMPTY_SUBAGENT_SUMMARY
       }
       await this.adoptSavedMessages(snapshot)
+      // Older builds named Watcher from its first internal news delivery. Repair only that recorded automatic
+      // title, before any surface sees it; a name the user typed, even the same words, stays theirs.
+      if (!this.storeUnavailable) for (const thread of snapshot.threads.filter(thread => this.visible(thread))) {
+        if ((thread.kind !== 'watcher' && thread.kind !== 'watcher-history') || !thread.titledFromFirstMessage
+          || thread.titleSource === 'user' || thread.titleSource === 'generated') continue
+        // Read the opening alone, not the conversation's growing history.
+        const first = this.withWakeUps(thread.id, this.threadStore.readForwardMessages(thread.id, -1, 1).messages.map(item => item.message))[0]
+        const shown = first && watcherWakeUpShown(first)
+        if (!first || shown === first || firstMessageTitle(first.text) !== thread.title) continue
+        thread.title = shown ? firstMessageTitle(shown.text) ?? 'Watcher' : 'Watcher'
+        if (!shown) delete thread.titledFromFirstMessage
+        this.dirty = true
+      }
       if (!this.storeUnavailable) this.inner.useThreadHistory?.(this)
       await this.inner.initialize?.()
       // The store below is what a provider's own transcript would otherwise be re-read to rebuild.
@@ -3861,7 +3876,7 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     const thread = this.threadById(threadId)
     if (this.storeUnavailable) return thread?.messages ?? []
     if (thread && thread.messages.length > 0 && !thread.earlierAvailable) return thread.messages
-    return this.readWindow(threadId)?.messages ?? thread?.messages ?? []
+    return this.withWakeUps(threadId, this.readWindow(threadId)?.messages ?? thread?.messages ?? [])
   }
   /**
    * Records that a request was answered, and by which client, in the thread's own log (ADR-0016). The

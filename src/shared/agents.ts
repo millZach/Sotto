@@ -267,6 +267,15 @@ export const agentAttachmentPreviewRequestSchema = z.object({ threadId: id, mess
 export type AgentAttachmentPreviewRequest = z.infer<typeof agentAttachmentPreviewRequestSchema>
 export const agentAttachmentPreviewResultSchema = agentAttachmentPreviewDataSchema.nullable()
 export type AgentAttachmentPreviewResult = z.infer<typeof agentAttachmentPreviewResultSchema>
+/** One picture a thread's activity record names (ADR-0170), asked for when its tile comes into view. */
+export const AGENT_THREAD_MEDIA = 'sotto:agents:thread-media'
+export const agentThreadMediaRequestSchema = z.object({ threadId: id, activityId: id, mediaId: z.string().regex(/^m[0-7]$/u) }).strict()
+export type AgentThreadMediaRequest = z.infer<typeof agentThreadMediaRequestSchema>
+/** What a window asks for: the picture whole for the viewer, or a thumbnail at tile size, which main makes. */
+export const agentThreadMediaWindowRequestSchema = agentThreadMediaRequestSchema.extend({ size: z.enum(['tile', 'full']) }).strict()
+export type AgentThreadMediaWindowRequest = z.infer<typeof agentThreadMediaWindowRequestSchema>
+export const agentThreadMediaResultSchema = z.object({ dataUrl: z.string().max(14_000_000).regex(/^data:image\/(png|jpeg|gif|webp);base64,/u) }).strict().nullable()
+export type AgentThreadMediaResult = z.infer<typeof agentThreadMediaResultSchema>
 export const agentAttachmentReferenceSchema = z.object({ id, name: z.string(), mimeType: z.string(), sizeBytes: z.number().int().nonnegative(),
   /** Supplied by Sotto for submitted images; never a filesystem path or a provider URL. */
   preview: agentAttachmentPreviewSchema.optional(),
@@ -1551,6 +1560,8 @@ export interface AgentBridge {
   get(): Promise<AgentState>
   /** The bytes behind one published `preview: { available: true }` marker, or null when nothing is eligible. */
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
+  /** One picture a thread's activity record names, whole or at tile size; null when its host keeps no such picture (ADR-0170). */
+  threadMedia?(request: AgentThreadMediaWindowRequest): Promise<AgentThreadMediaResult>
   /** Stages an image once on the host that runs `threadId` (the selected host when null) and answers with its handle (ADR-0031). */
   stageAttachment?(request: AgentAttachmentStageRequest): Promise<AgentAttachmentHandle>
   /** A staged image's bytes, for a chip this window holds no copy of; null once its host no longer keeps it. */

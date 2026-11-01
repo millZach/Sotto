@@ -26,6 +26,8 @@ export function agentActivitySignature(record: AgentActivity): string {
     (record.changes ?? []).map(change => `${change.path.length}:${change.kind.length}:${size(change.diff)}`).join('~'),
     (record.steps ?? []).map(step => `${step.text.length}:${step.status}`).join('~'),
     (record.agents ?? []).map(agent => `${agent.id}:${agent.status}:${size(agent.message)}`).join('~'),
+    // A picture the step captured (ADR-0170) is named by its digest; a record that gained one is sent again.
+    ...record.media ? [record.media.map(item => item.digest).join('~')] : [],
     // A cut body's kept part can stay the same length as its whole grows, so its whole size is part of what changed.
     ...record.cut ? [`${record.cut.output ?? ''}:${record.cut.text ?? ''}:${(record.cut.diffs ?? []).map(item => `${item.index}=${item.bytes}`).join(',')}`] : [],
     // A turn on one of the user's own servers (ADR-0124) changes its try and its failure while its status stays the same.

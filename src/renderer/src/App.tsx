@@ -27,7 +27,8 @@ import {
 import { useApp, type AppNavigation } from './state/AppContext'
 import { setTerminalPreferences } from './tools/terminalPreferences'
 import { useDictationOn } from './state/dictationFeature'
-import { useOpenThreadsOnNotification } from './state/desktopNotifications'
+import { useOpenNotification } from './state/desktopNotifications'
+import type { NotificationOpening } from '../../shared/desktopNotifications'
 import { useMemoryEnabled } from './state/memoryFeature'
 import { useReleaseTrack } from './state/useReleaseTrack'
 import { releaseTrackName } from '../../shared/releaseTrack'
@@ -36,7 +37,7 @@ import { HostQuestionDialog } from './features/settings/HostQuestionDialog'
 import { ToastRegion, type ToastMessage } from './components/ToastRegion'
 import { OpenSystemSettingsButton } from './components/OpenSystemSettingsButton'
 import { platformCopy } from './platformCopy'
-import type { RecoveryNotice } from '../../shared/recoveryNotice'
+import { isPastePermissionNotice, type PastePermissionNoticeCode, type RecoveryNotice } from '../../shared/recoveryNotice'
 import type { SottoPlatform } from '../../shared/platform'
 import type { SystemSettingsPane } from '../../shared/systemSettings'
 import { AgentProvider } from './agents/AgentContext'
@@ -78,7 +79,8 @@ const recoveryPanes: Partial<Record<RecoveryNotice['code'], SystemSettingsPane>>
   AUTOMATION_PERMISSION_REQUIRED: 'automation',
 }
 
-function recoveryToast(notice: RecoveryNotice, platform: SottoPlatform): ToastMessage {
+function recoveryToast(notice: RecoveryNotice, platform: SottoPlatform, dismiss: (code: PastePermissionNoticeCode) => void): ToastMessage {
+  const code = notice.code
   const text = notice.code === 'OPENROUTER_KEY_UNREADABLE'
     ? platformCopy(platform).openRouterKeyUnreadable
     : i18n._(recoveryMessages[notice.code])
@@ -86,6 +88,7 @@ function recoveryToast(notice: RecoveryNotice, platform: SottoPlatform): ToastMe
   return {
     id: notice.code,
     message: pane === undefined ? text : <>{text} <OpenSystemSettingsButton platform={platform} pane={pane} appearance="toast" /></>,
+    ...(isPastePermissionNotice(code) ? { onDismiss: () => dismiss(code) } : {}),
   }
 }
 
@@ -272,9 +275,12 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
   // Turning dictation off while the Dictate room is open moves to Threads, so the switch lights a tab.
   useEffect(() => { if (!dictationOn && app.navigation === 'home') app.actions.navigate('threads') }, [app.actions, app.navigation, dictationOn])
 
-  // A pressed notification: main brought the window forward and selected the thread; the window shows Threads (ADR-0117).
-  const showThreads = useCallback(() => app.actions.navigate('threads'), [app.actions])
-  useOpenThreadsOnNotification(showThreads)
+  const [notificationNotice, setNotificationNotice] = useState<string | null>(null)
+  const openNotification = useCallback((opening: NotificationOpening) => {
+    setNotificationNotice(opening.notice ?? null)
+    app.actions.navigate(opening.page)
+  }, [app.actions])
+  useOpenNotification(openNotification)
 
   useEffect(() => {
     if (journalSearchRequest > 0 && app.navigation === 'home') document.querySelector<HTMLInputElement>('.journal-search__input')?.focus()
@@ -401,7 +407,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
       </main>
     )
   } else if (!app.settings.onboardingComplete || app.navigation === 'onboarding') {
-    const recoveryToasts: ToastMessage[] = app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform))
+    const recoveryToasts: ToastMessage[] = app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform, app.actions.dismissPastePermissionNotice))
     content = (
       <>
         <Onboarding
@@ -508,6 +514,7 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           speechModelName={chosenSpeechModelName(app.speechModels, app.speechModelChoice)}
           platform={app.platform}
           dictation={app.dictation}
+          level={app.dictationLevel}
           entries={app.history}
           records={app.dictationRecords}
           recovery={app.dictationRecovery}
@@ -572,8 +579,12 @@ export function App({ createMicrophoneTest = () => new WorkletMicrophoneTest(), 
           onNotice={message => setThemeNotice(current => ({ id: `theme-${Number(current?.id.slice(6) ?? 0) + 1}`, message }))}
         />
         <ToastRegion messages={[
-          ...app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform)),
+          ...app.recoveryNotices.map((notice) => recoveryToast(notice, app.platform, app.actions.dismissPastePermissionNotice)),
           ...(themeNotice === null ? [] : [themeNotice]),
+          ...(notificationNotice === null ? [] : [{
+            id: 'notification-open',
+            message: <>{notificationNotice} <button type="button" className="tt-toast__link tt-focusable" onClick={() => setNotificationNotice(null)}><Trans>Dismiss</Trans></button></>,
+          }]),
           ...(settingsNotice === null ? [] : [{
             id: 'settings-save', tone: 'error' as const,
             message: <>{settingsNotice} <button type="button" className="tt-toast__link tt-focusable" aria-label={t`Dismiss dictionary save notice`} onClick={() => setSettingsNotice(null)}><Trans>Dismiss</Trans></button></>,
