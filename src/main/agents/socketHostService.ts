@@ -253,6 +253,8 @@ export class SocketHostService implements HostService {
   private shown = true
   /** The threads the host confirmed this connection observes: `observed` once its observe was answered, and nothing before. */
   private confirmedObserved: ReadonlySet<string> = new Set()
+  /** The observe the host has not answered yet, and the threads it names: each owed thread comes whole before its answer. */
+  private observing: { threadIds: ReadonlySet<string>; done: Promise<void> } | undefined
   private generation = 0
   private opening: AbortController | undefined
   private previewTail: Promise<unknown> = Promise.resolve()
@@ -864,8 +866,24 @@ export class SocketHostService implements HostService {
     this.observed = requested; this.confirmedObserved = new Set(); this.shown = shown
     for (const id of threadIds) this.tooLarge.delete(id)
     // A host from before the seen record refuses a field it does not know, and counts every observed thread as shown.
-    await this.call({ op: 'observe', threadIds, ...(!shown && this.features.includes('failure-seen') ? { shown: false as const } : {}) })
-    if (this.observed === requested) this.confirmedObserved = new Set(requested)
+    const call = this.call({ op: 'observe', threadIds, ...(!shown && this.features.includes('failure-seen') ? { shown: false as const } : {}) })
+    const observing = this.observing = { threadIds: new Set(requested), done: call.then(() => { if (this.observed === requested) this.confirmedObserved = new Set(requested) }) }
+    try { await observing.done } finally { if (this.observing === observing) this.observing = undefined }
+  }
+  /**
+   * A thread's history as the window asks for it (#996). A thread this connection follows is answered from the copy the
+   * host's pushes keep current, and one an unanswered observe names from the copy that observe brings: the host sends
+   * each newly observed thread whole before it answers. Anything else is read from the host. Reading each of them again
+   * cost a whole-thread download as a thread came on screen and as the window caught up on one it already held. The
+   * copy is not made again: the router builds the window's own from it, and the window is sent a serialized one.
+   */
+  async windowDetail(threadId: string): Promise<AgentThreadDetail | null> {
+    if (!this.threadAvailable(threadId)) return null
+    const observing = this.observing
+    if (observing?.threadIds.has(threadId)) await observing.done.catch(() => undefined)
+    const held = this.details.get(threadId)
+    if (held && this.follows(threadId) && !this.resyncing.has(threadId) && this.threadAvailable(threadId)) return held
+    return this.readThreadDetail(threadId)
   }
   get supportsAtomicSend(): boolean { return this.features.includes('atomic-send') }
   get supportsWatcherControl(): boolean { return this.options.watcherEnabled === true && this.features.includes('watcher-control') }
@@ -1251,7 +1269,9 @@ export class SocketHostService implements HostService {
       // A thread this client observes and holds follows in the host's own pushes, which come after this answer on the
       // same socket. Reading it whole as well cost a whole-thread download for every prompt, answer and selection, and
       // each one waited behind whatever the socket was still delivering.
-      if ('threadId' in command && command.threadId && !this.follows(command.threadId)) await this.readThreadDetail(command.threadId)
+      // Selecting changes nothing in a thread's history: the window asks for the history it shows, and the observe that
+      // puts the thread on screen brings it (#996).
+      if ('threadId' in command && command.threadId && command.type !== 'select-thread' && !this.follows(command.threadId)) await this.readThreadDetail(command.threadId)
       if (this.catchesUp) { let page = await this.readEvents(this.latestSeq); while (page.hasMore) page = await this.readEvents(this.latestSeq) }
     } catch (error) {
       if (generation === this.generation) {
