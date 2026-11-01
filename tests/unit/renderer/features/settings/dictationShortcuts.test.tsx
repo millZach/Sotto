@@ -219,27 +219,11 @@ describe('DictationShortcuts', () => {
     expect(await screen.findByRole('status')).toHaveTextContent('Shortcut saved.')
   })
 
-  it('offers Record keys and Fn on its own on macOS, and closes the menu on Escape', async () => {
-    const { onReplaceDictationShortcuts, user } = setup({ platform: 'darwin', owl: true })
-    const add = within(row('Hold to dictate')).getByRole('button', { name: 'Add a hold shortcut' })
-    await user.click(add)
-    expect(add).toHaveAttribute('aria-expanded', 'true')
-    const menu = screen.getByRole('menu', { name: 'Add a shortcut' })
-    expect(within(menu).getByRole('menuitem', { name: 'Record keys…' })).toHaveFocus()
-    await user.keyboard('{ArrowDown}')
-    expect(within(menu).getByRole('menuitem', { name: 'Fn on its own' })).toHaveFocus()
-    await user.keyboard('{Escape}')
+  it('records straight away from Add on macOS too', async () => {
+    const { user } = setup({ platform: 'darwin', owl: true })
+    await user.click(within(row('Hold to dictate')).getByRole('button', { name: 'Add a hold shortcut' }))
     expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    expect(add).toHaveFocus()
-    await user.click(add)
-    await user.click(screen.getByRole('menuitem', { name: 'Fn on its own' }))
-    expect(onReplaceDictationShortcuts).toHaveBeenCalledWith({ press: ['Control+Shift+Space'], hold: ['Fn'] })
-  })
-
-  it('disables Fn on its own when Fn is already in use', async () => {
-    const { user } = setup({ platform: 'darwin', owl: true, hold: ['Fn'] })
-    await user.click(within(row('Press to start and stop')).getByRole('button', { name: 'Add a start-and-stop shortcut' }))
-    expect(screen.getByRole('menuitem', { name: 'Fn is already in use' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Cancel recording' })).toHaveFocus()
   })
 
   it('records straight away from Add on Windows', async () => {
@@ -398,18 +382,6 @@ describe('DictationShortcuts', () => {
     } finally {
       vi.useRealTimers()
     }
-  })
-
-  it('opens the Add menu with ArrowDown and closes it with Escape on the button', async () => {
-    const { user } = setup({ platform: 'darwin', owl: true })
-    const add = within(row('Hold to dictate')).getByRole('button', { name: 'Add a hold shortcut' })
-    add.focus()
-    await user.keyboard('{ArrowDown}')
-    expect(screen.getByRole('menuitem', { name: 'Record keys…' })).toHaveFocus()
-    add.focus()
-    await user.keyboard('{Escape}')
-    expect(screen.queryByRole('menu')).not.toBeInTheDocument()
-    expect(add).toHaveFocus()
   })
 
   it('refuses listener chords when main says no key listener can run', async () => {

@@ -890,10 +890,6 @@ msgid "Add a project in Threads to set its default working copy."
 msgstr "Add a project in Threads to set its default working copy."
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
-msgid "Add a shortcut"
-msgstr "Add a shortcut"
-
-#: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Add a shortcut to start and stop without holding keys."
 msgstr "Add a shortcut to start and stop without holding keys."
 
@@ -2423,14 +2419,6 @@ msgstr "Fix the login test is waiting on you. The other two are working."
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Fixed & elsewhere"
 msgstr "Fixed & elsewhere"
-
-#: src/renderer/src/features/settings/DictationShortcuts.tsx
-msgid "Fn is already in use"
-msgstr "Fn is already in use"
-
-#: src/renderer/src/features/settings/DictationShortcuts.tsx
-msgid "Fn on its own"
-msgstr "Fn on its own"
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Focus the prompt"
@@ -4178,10 +4166,6 @@ msgstr "Recent sessions"
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Reconnecting…"
 msgstr "Reconnecting…"
-
-#: src/renderer/src/features/settings/DictationShortcuts.tsx
-msgid "Record keys…"
-msgstr "Record keys…"
 
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
