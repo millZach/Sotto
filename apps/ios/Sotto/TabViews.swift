@@ -39,6 +39,12 @@ private struct Shelf {
     var grouped: Bool { heldBack > 0 || !older.isEmpty }
 }
 
+/// What Threads' search of the computers' older settled threads depends on: the words, the computer menu, and which
+/// computers can be asked, so connecting one or choosing All computers searches again.
+private struct SettledSearchKey: Hashable {
+    let query: String; let show: ComputerFilter; let sources: [String]
+}
+
 /// The search field's frame, kept outside SwiftUI's state so scrolling doesn't redraw the page.
 private final class FrameBox {
     var frame: CGRect = .zero
@@ -115,8 +121,9 @@ struct ThreadsView: View {
         .onAppear { openForShare(model.shareOpened) }
         // What the list is searched for, so unfolding the Duo opens the top row of the list shown.
         .onChange(of: query, initial: true) { _, typed in model.listQuery = typed }
-        // The search also asks the computers for their older settled threads, a moment after typing stops.
-        .task(id: query) {
+        // The search also asks the computers for their older settled threads, a moment after typing stops, and again when
+        // the computers it can ask change.
+        .task(id: SettledSearchKey(query: query, show: model.show, sources: model.settledSources(show: model.show))) {
             if !query.isEmpty { try? await Task.sleep(nanoseconds: 400_000_000) }
             guard !Task.isCancelled else { return }
             await model.searchSettled(query, show: model.show)
@@ -221,14 +228,11 @@ struct ThreadsView: View {
                                   setWatched: { on in Task { await model.setWatched(row.ref, on, title: row.thread.title) } })
                         .equatable()
                 }
-                if shelf.grouped && !groups.searching && !groups.settled.isEmpty {
-                    ThreadListHeading(title: String(localized: "This week", comment: "The heading over threads settled in the last seven days, on the Settled shelf."), count: groups.settled.count, id: "settled-this-week")
-                }
-                ForEach(groups.settled) { row($0) }
-                if !groups.searching && !shelf.older.isEmpty {
-                    ThreadListHeading(title: String(localized: "Older", comment: "The heading over settled threads read from the computer, settled before this week."), count: shelf.older.count, id: "settled-older")
-                }
-                ForEach(shelf.older) { row($0) }
+                let split = shelfGroups(groups.settled, shelf, groups)
+                if shelf.grouped && !groups.searching && !split.thisWeek.isEmpty { thisWeekHeading(split.thisWeek.count) }
+                ForEach(split.thisWeek) { row($0) }
+                if !groups.searching && !split.older.isEmpty { olderHeading(split.older.count) }
+                ForEach(split.older) { row($0) }
                 olderControls(groups)
             }
         }
@@ -237,7 +241,36 @@ struct ThreadsView: View {
     /// Whether the shelf has anything to show: settled threads here or held back on a computer, or, while Threads is
     /// searched, those that match here or on a computer, or a computer still being asked.
     private func shows(_ shelf: Shelf, settled: [HostedThread], _ groups: FocusThreads) -> Bool {
-        groups.searching ? !settled.isEmpty || !shelf.older.isEmpty || searchingComputers(groups) : !settled.isEmpty || shelf.heldBack > 0
+        groups.searching ? !settled.isEmpty || !shelf.older.isEmpty || searchingComputers(groups) || model.settledSearch.failed
+            : !settled.isEmpty || shelf.heldBack > 0
+    }
+
+    /// A read of older settled threads that failed, with Try again, which reads them again.
+    private func olderFailed(_ retry: @escaping () -> Void) -> some View {
+        VStack(alignment: .leading, spacing: Space.s2) {
+            Text("Older settled threads couldn’t be read. Nothing was lost.").font(.sotto(.small)).foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+            Button("Try again", action: retry)
+                .font(.sotto(.small, .semibold)).frame(minHeight: 44)
+        }
+        .padding(.horizontal, Space.s3).padding(.top, Space.s2)
+    }
+
+    /// The shelf's rows as it shows them. While a computer holds older threads back, This week is what the list carries that
+    /// was settled this week, and Older is the rest of what it carries, such as an older thread open here, with what was
+    /// read from the computers, newest settled first. Otherwise, and while searching, the list's rows then what was found.
+    private func shelfGroups(_ settled: [HostedThread], _ shelf: Shelf, _ groups: FocusThreads) -> (thisWeek: [HostedThread], older: [HostedThread]) {
+        guard shelf.grouped && !groups.searching else { return (settled, shelf.older) }
+        let split = ThreadGroups.thisWeek(settled)
+        return (split.thisWeek, split.older.isEmpty ? shelf.older : ThreadGroups.newestSettledFirst(split.older + shelf.older))
+    }
+
+    /// The shelf's two groups, named only while a computer holds older threads back.
+    private func thisWeekHeading(_ count: Int) -> some View {
+        ThreadListHeading(title: String(localized: "This week", comment: "The heading over threads settled in the last seven days, on the Settled shelf."), count: count, id: "settled-this-week")
+    }
+    private func olderHeading(_ count: Int) -> some View {
+        ThreadListHeading(title: String(localized: "Older", comment: "The heading over settled threads read from the computer, settled before this week."), count: count, id: "settled-older")
     }
 
     /// While Threads is searched, whether a computer is still being asked for its older settled threads.
@@ -252,22 +285,28 @@ struct ThreadsView: View {
             }
             .padding(.horizontal, Space.s3).frame(minHeight: 52)
             .accessibilityElement(children: .combine)
+        } else if groups.searching && model.settledSearch.failed {
+            olderFailed { Task { await model.searchSettled(query, show: model.show) } }
         } else if !groups.searching && model.olderSettledFailed {
-            VStack(alignment: .leading, spacing: Space.s2) {
-                Text("Older settled threads couldn’t be read. Nothing was lost.").font(.sotto(.small)).foregroundStyle(Palette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                Button("Try again") { Task { await model.readOlderSettled(show: model.show) } }
-                    .font(.sotto(.small, .semibold)).frame(minHeight: 44)
-            }
-            .padding(.horizontal, Space.s3).padding(.top, Space.s2)
+            olderFailed { Task { await model.readOlderSettled(show: model.show) } }
+        } else if groups.searching && !model.settledSearch.next.isEmpty {
+            moreButton(first: false) { Task { await model.searchMoreSettled() } }
         } else if !groups.searching && model.moreOlderSettled(show: model.show) {
-            Button { Task { await model.readOlderSettled(show: model.show) } } label: {
-                Text("Show older settled threads").font(.sotto(.small, .semibold)).frame(maxWidth: .infinity, minHeight: 48)
-            }
-            .buttonStyle(PressStyle())
-            .padding(.top, Space.s2)
-            .accessibilityIdentifier("older-settled-threads")
+            moreButton(first: model.olderSettledRows(show: model.show).isEmpty) { Task { await model.readOlderSettled(show: model.show) } }
         }
+    }
+
+    /// Reads older settled threads: the first 30 from each computer, then 30 more on each press.
+    private func moreButton(first: Bool, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Group {
+                if first { Text("Show older settled threads") } else { Text("Show 30 more") }
+            }
+            .font(.sotto(.small, .semibold)).frame(maxWidth: .infinity, minHeight: 48)
+        }
+        .buttonStyle(PressStyle())
+        .padding(.top, Space.s2)
+        .accessibilityIdentifier("older-settled-threads")
     }
 
     private func empty(_ groups: FocusThreads) -> some View {
@@ -318,14 +357,11 @@ struct ThreadsView: View {
                     settledToggle(settled.count + shelf.heldBack)
                 }
                 if settledExpanded || groups.searching {
-                    if shelf.grouped && !groups.searching && !settled.isEmpty {
-                        ThreadListHeading(title: String(localized: "This week", comment: "The heading over threads settled in the last seven days, on the Settled shelf."), count: settled.count, id: "settled-this-week")
-                    }
-                    if !settled.isEmpty { ThreadRowList(rows: settled, unread: unread, watched: watched) }
-                    if !groups.searching && !shelf.older.isEmpty {
-                        ThreadListHeading(title: String(localized: "Older", comment: "The heading over settled threads read from the computer, settled before this week."), count: shelf.older.count, id: "settled-older")
-                    }
-                    if !shelf.older.isEmpty { ThreadRowList(rows: shelf.older, unread: [], watched: watched) }
+                    let split = shelfGroups(settled, shelf, groups)
+                    if shelf.grouped && !groups.searching && !split.thisWeek.isEmpty { thisWeekHeading(split.thisWeek.count) }
+                    if !split.thisWeek.isEmpty { ThreadRowList(rows: split.thisWeek, unread: unread, watched: watched) }
+                    if !groups.searching && !split.older.isEmpty { olderHeading(split.older.count) }
+                    if !split.older.isEmpty { ThreadRowList(rows: split.older, unread: [], watched: watched) }
                     olderControls(groups)
                 }
             }

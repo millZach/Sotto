@@ -40,12 +40,14 @@ public struct OlderSettled: Equatable, Sendable {
     }
 }
 
-/// What Threads' search last asked the computers for among their older settled threads, what each found by computer, and
-/// whether it is still being read.
+/// What Threads' search last asked the computers for among their older settled threads, what each found by computer,
+/// whether it is still being read, whether a computer's read failed, so no match is never mistaken for no answer, and
+/// where each computer's next matches start.
 public struct SettledSearch: Equatable, Sendable {
-    public let query: String; public let found: [String: [ThreadSummary]]; public let reading: Bool
-    public init(query: String = "", found: [String: [ThreadSummary]] = [:], reading: Bool = false) {
-        self.query = query; self.found = found; self.reading = reading
+    public let query: String; public let found: [String: [ThreadSummary]]; public let reading: Bool; public let failed: Bool
+    public let next: [String: String]
+    public init(query: String = "", found: [String: [ThreadSummary]] = [:], reading: Bool = false, failed: Bool = false, next: [String: String] = [:]) {
+        self.query = query; self.found = found; self.reading = reading; self.failed = failed; self.next = next
     }
 }
 
@@ -63,6 +65,23 @@ public extension ThreadGroups {
                              project: projects[thread.projectId]?.title, thread: thread, settled: true)
             }
         }
+        return newestSettledFirst(rows)
+    }
+    /// How long a settled thread stays in a phone's list, as its computer keeps it (`SETTLED_KEPT_MS` on the host).
+    static let settledKept: TimeInterval = 7 * 24 * 60 * 60
+    /// The settled rows a computer's list carries, split into This week and Older by when each was settled: a thread the
+    /// list carries because it is open here, or asks something, can be older. One that names no time counts as this
+    /// week, since its computer listed it.
+    static func thisWeek(_ rows: [HostedThread], now: Date = Date()) -> (thisWeek: [HostedThread], older: [HostedThread]) {
+        var split: (thisWeek: [HostedThread], older: [HostedThread]) = ([], [])
+        for row in rows {
+            if let date = settledDate(row.thread), date < now.addingTimeInterval(-settledKept) { split.older.append(row) }
+            else { split.thisWeek.append(row) }
+        }
+        return split
+    }
+    /// `rows`, newest settled first, keeping their order where they were settled at the same time.
+    static func newestSettledFirst(_ rows: [HostedThread]) -> [HostedThread] {
         let dated = rows.enumerated().map { (row: $0.element, offset: $0.offset, date: settledDate($0.element.thread) ?? .distantPast) }
         return dated.sorted { $0.date != $1.date ? $0.date > $1.date : $0.offset < $1.offset }.map(\.row)
     }

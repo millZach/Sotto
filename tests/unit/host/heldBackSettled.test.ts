@@ -50,4 +50,19 @@ describe('settled threads held back from a phone', () => {
     const moved = threads.filter(item => item.id !== 't2')
     expect(settledPage(moved, projects, { limit: 3, after: first.next! }).threads.map(item => item.id)).toEqual(['t3', 't4', 't5'])
   })
+
+  it('pages through threads in any order, some settled at the same time, as one ordered list', () => {
+    // A fixed shuffle: settled times repeat every 37 threads, so ties fall back to the ID.
+    const threads = Array.from({ length: 200 }, (_, index) => thread(`t${String((index * 73) % 200).padStart(3, '0')}`, { settledAt: ago(10 + ((index * 73) % 37)) }))
+    const expected = [...threads].sort((left, right) => Date.parse(right.settledAt!) - Date.parse(left.settledAt!) || (left.id < right.id ? -1 : 1)).map(item => item.id)
+    const read: string[] = []
+    let after: string | undefined
+    for (let pages = 0; pages < 10; pages++) {
+      const page = settledPage(threads, projects, { limit: 50, after })
+      read.push(...page.threads.map(item => item.id))
+      if (!page.next) break
+      after = page.next
+    }
+    expect(read).toEqual(expected)
+  })
 })

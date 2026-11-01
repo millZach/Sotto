@@ -60,16 +60,30 @@ export function heldBackSettled(threads: readonly AgentThread[], projects: reado
 export function settledPage(held: readonly AgentThread[], projects: readonly AgentProject[], { after, query, limit = SETTLED_PAGE_DEFAULT }: { after?: string | undefined; query?: string | undefined; limit?: number | undefined }): { threads: AgentThread[]; next: string | null } {
   const byProject = new Map(projects.map(project => [project.id, project]))
   const words = query?.trim().toLocaleLowerCase()
-  const ordered = held.map(thread => ({ thread, since: settledSince(thread, byProject.get(thread.projectId)) ?? Number.NEGATIVE_INFINITY }))
-    .filter(({ thread }) => !words || `${thread.title} ${byProject.get(thread.projectId)?.title ?? ''} ${thread.providerId ?? ''}`.toLocaleLowerCase().includes(words))
-    .sort((left, right) => right.since - left.since || (left.thread.id < right.thread.id ? -1 : left.thread.id > right.thread.id ? 1 : 0))
   const cursor = after ? readCursor(after) : undefined
-  const from = cursor ? ordered.findIndex(({ thread, since }) => since < cursor.since || (since === cursor.since && thread.id > cursor.id)) : 0
-  const start = from < 0 ? ordered.length : from
-  const page = ordered.slice(start, start + Math.min(Math.max(1, limit), SETTLED_PAGE_MAX))
-  const last = page.at(-1)
-  return { threads: page.map(({ thread }) => thread), next: last && start + page.length < ordered.length ? writeCursor(last.since, last.thread.id) : null }
+  const size = Math.min(Math.max(1, limit), SETTLED_PAGE_MAX)
+  // One pass keeps the page and the one after it in order, so a read costs the same per thread however many are held back.
+  const best: { thread: AgentThread; since: number }[] = []
+  for (const thread of held) {
+    const since = settledSince(thread, byProject.get(thread.projectId)) ?? Number.NEGATIVE_INFINITY
+    if (cursor && !follows(since, thread.id, cursor)) continue
+    if (words && !`${thread.title} ${byProject.get(thread.projectId)?.title ?? ''} ${thread.providerId ?? ''}`.toLocaleLowerCase().includes(words)) continue
+    if (best.length > size && !precedes(since, thread.id, best[size]!)) continue
+    let at = best.length
+    while (at > 0 && precedes(since, thread.id, best[at - 1]!)) at--
+    best.splice(at, 0, { thread, since })
+    if (best.length > size + 1) best.pop()
+  }
+  const page = best.slice(0, size), last = page.at(-1)
+  return { threads: page.map(({ thread }) => thread), next: last && best.length > size ? writeCursor(last.since, last.thread.id) : null }
 }
+
+/** Whether a thread settled at `since` comes before `other` in the order: newest settled first, then by ID. */
+const precedes = (since: number, id: string, other: { thread: AgentThread; since: number }): boolean =>
+  since > other.since || (since === other.since && id < other.thread.id)
+/** Whether a thread comes after the place `cursor` names. */
+const follows = (since: number, id: string, cursor: { since: number; id: string }): boolean =>
+  since < cursor.since || (since === cursor.since && id > cursor.id)
 
 /** A place in the order: when the thread was settled, and its ID for threads settled at the same time. */
 const writeCursor = (since: number, id: string): string => `${Number.isFinite(since) ? since : '-'}:${id}`

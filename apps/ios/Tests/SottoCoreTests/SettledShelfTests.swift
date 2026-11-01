@@ -59,4 +59,24 @@ final class SettledShelfTests: XCTestCase {
         XCTAssertTrue(rows.allSatisfy(\.settled))
         XCTAssertEqual(ThreadGroups.older([laptop, forge], read: read, show: .only("laptop")).map(\.thread.id), ["old"])
     }
+    func testListedSettledRowsSplitIntoThisWeekAndOlderByWhenEachWasSettled() throws {
+        let now = try XCTUnwrap(Stamp.date("2026-11-01T12:00:00Z"))
+        let threads = try summaries([record("fresh", settledAt: "2026-10-30T12:00:00Z"), record("open-here", settledAt: "2026-09-01T00:00:00Z"),
+                                     record("untimed")])
+        let rows = ThreadGroups.hosted(ComputerThreads(hostID: "laptop", name: "Laptop", status: .online, threads: threads, projects: []))
+        let split = ThreadGroups.thisWeek(rows, now: now)
+        XCTAssertEqual(split.thisWeek.map(\.thread.id), ["fresh", "untimed"])
+        XCTAssertEqual(split.older.map(\.thread.id), ["open-here"])
+    }
+    func testASearchKeepsWhereEachComputersNextMatchesStart() {
+        let search = SettledSearch(query: "billing", found: [:], next: ["laptop": "1:a"])
+        XCTAssertEqual(search.next, ["laptop": "1:a"])
+        XCTAssertTrue(SettledSearch(query: "billing").next.isEmpty)
+    }
+    func testASearchSaysWhenAComputerCouldNotBeRead() {
+        XCTAssertFalse(SettledSearch(query: "billing").failed)
+        let failed = SettledSearch(query: "billing", found: [:], failed: true)
+        XCTAssertTrue(failed.failed)
+        XCTAssertNotEqual(failed, SettledSearch(query: "billing"), "A search that failed never reads as one that found nothing")
+    }
 }
