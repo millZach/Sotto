@@ -1022,11 +1022,25 @@ import UIKit
         XCTAssertEqual(result, .completed, "The owl brings Watcher's state into view (\(seen))")
         return state
     }
-    /// Watcher's permissions, the shield in its box's row where its computer offers no more from here.
-    private func watcherShield() -> XCUIElement {
-        let shield = app.buttons["watcher-permissions"]
-        XCTAssertTrue(shield.waitForExistence(timeout: 10), "Watcher's box carries its permissions")
-        return shield
+    /// Watcher's settings pill in its box's row, whose menu holds Watcher's permissions (ADR-0166, amended November 1, 2026).
+    private func watcherPill() -> XCUIElement {
+        let pill = byID("watcher-settings")
+        XCTAssertTrue(pill.waitForExistence(timeout: 10), "Watcher's box carries its settings pill")
+        return pill
+    }
+    /// Opens what Watcher may do without asking from its pill's menu, and waits for the list.
+    private func openWatcherPermissions(_ pill: XCUIElement) {
+        let entry = menuItem("Permissions")
+        press(pill, until: NSPredicate { _, _ in entry.exists })
+        XCTAssertTrue(entry.waitForExistence(timeout: 5), "The pill's menu offers Permissions")
+        XCTAssertTrue(entry.isEnabled, "Watcher waits between turns, so its permissions can change")
+        entry.tap()
+        XCTAssertTrue(text("What Watcher may do without asking").waitForExistence(timeout: 10), "Permissions opens the four modes")
+    }
+    /// Whether the pill's value ends on this permission mode, within `timeout`.
+    private func watcherPill(_ pill: XCUIElement, says mode: String, timeout: TimeInterval = 5) -> Bool {
+        let says = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value ENDSWITH %@", mode), object: pill)
+        return XCTWaiter.wait(for: [says], timeout: timeout) == .completed
     }
     /// Scrolls Watcher's conversation until `target` sits whole in `watcherBand`, or for one taller than the band, until
     /// its top does. Each drag runs down the page's leading margin (`watcherDragX`), clear of cards, rows and the scroll
@@ -1562,10 +1576,9 @@ import UIKit
     func testAPhoneThatCantAnswerCanOnlyKeepWatcherAskingFirst() {
         launch(Self.watcher)
         openWatcher()
-        let permissions = watcherShield()
-        XCTAssertEqual(permissions.value as? String, "Ask before actions")
-        XCTAssertTrue(permissions.isEnabled, "Watcher waits between turns, so its permissions can change")
-        permissions.tap()
+        let pill = watcherPill()
+        XCTAssertTrue(watcherPill(pill, says: "Ask before actions"), "The pill says Watcher asks first (\(String(describing: pill.value)))")
+        openWatcherPermissions(pill)
         XCTAssertTrue(byID("watcher-permissions-asks-only").waitForExistence(timeout: 5), "The list says why")
         XCTAssertEqual(byID("watcher-permissions-asks-only").label, "This iPhone can’t answer on Laptop, so it can only keep Watcher asking first.")
         // The list runs past half the SE's screen, so the sheet is grown to read every mode in it.
@@ -1583,7 +1596,7 @@ import UIKit
         // Pressing the chosen mode closes the list and changes nothing.
         asking.tap()
         XCTAssertTrue(waitUntilGone(asking))
-        XCTAssertEqual(permissions.value as? String, "Ask before actions")
+        XCTAssertTrue(watcherPill(pill, says: "Ask before actions"))
     }
 
     /// Watched says what watching means, with a card for each watched thread and no count to fill, and Stop all asks
@@ -1631,20 +1644,20 @@ import UIKit
         capture("watcher-stopped-light")
     }
 
-    /// Watcher's permissions are the shield in its box's row where its computer offers no more from here, in this
-    /// iPhone's own words (control A, #1276): the shield opens the four modes, a choice shows at once, and until Watcher's
-    /// provider confirms it the line over the box says what is still in force.
+    /// Watcher's permissions are Permissions in its box's settings pill (ADR-0166, amended November 1, 2026), in this
+    /// iPhone's own words (control A, #1276): it opens the four modes, a choice shows on the pill at once, and until
+    /// Watcher's provider confirms it the line over the box says what is still in force.
     func testWatchersPermissionsChangeFromItsBox() {
         launch(Self.watcher + ["--ui-watcher-can-answer"])
         openWatcher()
         let reply = byID("watcher-reply")
         XCTAssertTrue(reply.waitForExistence(timeout: 5))
-        let permissions = watcherShield()
-        XCTAssertGreaterThanOrEqual(permissions.frame.minY, reply.frame.maxY - 1, "The shield sits under the words, in the box")
-        XCTAssertEqual(permissions.label, "Watcher’s permissions")
-        XCTAssertEqual(permissions.value as? String, "Ask before actions")
+        let pill = watcherPill()
+        XCTAssertGreaterThanOrEqual(pill.frame.minY, reply.frame.maxY - 1, "The pill sits under the words, in the box")
+        XCTAssertEqual(pill.label, "Watcher’s settings")
+        XCTAssertTrue(watcherPill(pill, says: "Ask before actions"), "The pill says Watcher asks first (\(String(describing: pill.value)))")
         capture("watcher-permissions-dark")
-        permissions.tap()
+        openWatcherPermissions(pill)
         XCTAssertTrue(text("What Watcher may do without asking").waitForExistence(timeout: 5))
         let asking = app.buttons["watcher-permission-approval-required"]
         XCTAssertTrue(asking.isSelected, "The mode in force is ticked")
@@ -1657,8 +1670,7 @@ import UIKit
         capture("watcher-permissions-sheet-dark")
         edits.tap()
         XCTAssertTrue(waitUntilGone(edits), "Choosing closes the list")
-        let chosen = XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", "Allow edits"), object: permissions)
-        XCTAssertEqual(XCTWaiter.wait(for: [chosen], timeout: 5), .completed, "The shield says the choice at once")
+        XCTAssertTrue(watcherPill(pill, says: "Allow edits"), "The pill says the choice at once")
         let inForce = byID("watcher-permissions-in-force")
         XCTAssertTrue(inForce.waitForExistence(timeout: 5), "Until Codex confirms it, the line over the box says what is still in force")
         XCTAssertEqual(inForce.label, "Codex stays on Ask before actions until it confirms.")
@@ -1668,15 +1680,15 @@ import UIKit
         // long page took eight seconds or more, so twenty seconds held only three looks, and once ran out with the caption
         // already gone from the screen. A deadline that is never reached costs nothing.
         XCTAssertTrue(waitUntilGone(inForce, timeout: 60), "Once Codex confirms it, nothing more is said")
-        XCTAssertEqual(permissions.value as? String, "Allow edits")
-        // Writing in the box leaves the shield where it is.
+        XCTAssertTrue(watcherPill(pill, says: "Allow edits"))
+        // Writing in the box leaves the pill where it is.
         reply.tap()
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        XCTAssertTrue(permissions.exists, "The shield stays in the box while the box is written in")
+        XCTAssertTrue(pill.exists, "The pill stays in the box while the box is written in")
         dismissKeyboard()
         watcherInLight()
         capture("watcher-permissions-light")
-        watcherShield().tap()
+        openWatcherPermissions(watcherPill())
         let picked = app.buttons["watcher-permission-auto-accept-edits"]
         XCTAssertTrue(picked.waitForExistence(timeout: 5))
         reveal(picked)
@@ -1685,7 +1697,7 @@ import UIKit
         // Pressing the chosen mode closes the list and changes nothing.
         picked.tap()
         XCTAssertTrue(waitUntilGone(picked))
-        XCTAssertEqual(permissions.value as? String, "Allow edits")
+        XCTAssertTrue(watcherPill(pill, says: "Allow edits"))
     }
 
     /// Watcher's box takes a thread box's pill (ADR-0166, amended November 1, 2026): Watcher's model and effort on it, and
