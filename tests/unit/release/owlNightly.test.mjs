@@ -15,6 +15,23 @@ const check = (name, { id = 1, sha = main, status = 'completed', conclusion = 's
 const green = OWL_NIGHTLY_REQUIRED_CHECKS.map((name, index) => check(name, { id: index + 1 }))
 const tonight = { sourceCommit: main, sourceVersion: '0.1.43', tags: [], checkRuns: green, date: '20261102', publish: true }
 
+describe('the nightly\'s decision', () => {
+  it('loads on Node\'s own modules alone, since the decide job installs nothing', async () => {
+    const seen = new Set(), queue = ['scripts/owl-nightly.mjs']
+    while (queue.length > 0) {
+      const file = queue.pop()
+      if (seen.has(file)) continue
+      seen.add(file)
+      const text = await readFile(join(import.meta.dirname, '../../..', file), 'utf8')
+      for (const [, specifier] of text.matchAll(/^import\s[^'"]*['"]([^'"]+)['"]/gmu)) {
+        if (specifier.startsWith('./')) queue.push(`scripts/${specifier.slice(2)}`)
+        else expect(specifier, `${file} imports ${specifier}`).toMatch(/^node:/u)
+      }
+    }
+    expect(seen.has('scripts/release-owl.mjs')).toBe(false)
+  })
+})
+
 describe('the nightly Owl\'s version', () => {
   it('takes the next number for the day across every base, and 1 on a new day', () => {
     const tags = ['v0.1.42-owl.20261031.1', 'v0.1.43-owl.20261031.1', 'v0.1.43-owl.20261031.2', 'v0.1.43-owl.20261101.1', 'v0.1.42']

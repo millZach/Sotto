@@ -10,7 +10,8 @@ import { basename, resolve } from 'node:path'
 import process from 'node:process'
 import { pathToFileURL } from 'node:url'
 import { resolveOwlVersion } from './owl-release.mjs'
-import { prepareOwlRelease } from './release-owl.mjs'
+// release-owl.mjs reads asars and YAML through installed packages, so only assemble loads it: the decide job runs
+// before any npm ci, on Node's own modules.
 import { newestOwlRelease, owlReleaseSource, publishedCheckRuns, publishedReleases, RELEASE_REPOSITORY } from './stable-promotion.mjs'
 
 const root = resolve(import.meta.dirname, '..')
@@ -108,8 +109,9 @@ async function decide() {
 }
 
 /** Verify as release:owl does, then gather every asset, the notes and the checksums in one folder for publishing. */
-export async function assembleOwlRelease({ out, args, prepare = prepareOwlRelease, rootDirectory = root }) {
-  const { publication, files } = await prepare({ rootDirectory, args })
+export async function assembleOwlRelease({ out, args, prepare, rootDirectory = root }) {
+  const prepareRelease = prepare ?? (await import('./release-owl.mjs')).prepareOwlRelease
+  const { publication, files } = await prepareRelease({ rootDirectory, args })
   const folder = resolve(rootDirectory, out)
   await mkdir(folder, { recursive: true })
   const assets = files.map(path => basename(path))
