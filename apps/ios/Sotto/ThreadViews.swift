@@ -404,6 +404,49 @@ private struct ConversationRow: Identifiable {
     }
 }
 
+/// One child of the lazy stack that holds the earlier turns. An agent's reply there is its header and each of its blocks
+/// apart, so a long reply scrolling into view is made a block at a time rather than all in one frame; any other row is
+/// whole. Drawn with the spacing the reply has whole, it looks the same.
+private struct EarlierPiece: Identifiable {
+    enum Kind {
+        case row(ConversationRow)
+        /// The provider's name heading the reply.
+        case who
+        case block(MarkdownBlock, first: Bool)
+    }
+    let id: String
+    let kind: Kind
+    /// The row it is part of, and whether it is that row's last piece, which a line under the row follows.
+    let rowID: String
+    let endsRow: Bool
+    /// The space above it inside its reply; nil for a reply's first piece or a whole row, which have the rows' space.
+    let gap: Gap?
+    enum Gap { case afterWho, betweenBlocks }
+
+    /// `blocks` gives a message's blocks, kept by the caller so a long thread's replies are not read again each revision.
+    static func make(_ rows: ArraySlice<ConversationRow>, blocks: (Message) -> [MarkdownBlock]) -> [EarlierPiece] {
+        var pieces: [EarlierPiece] = []
+        pieces.reserveCapacity(rows.count * 3)
+        for row in rows {
+            guard case .message(let message) = row.item, message.role == "assistant", !message.text.isEmpty,
+                  message.attachments?.isEmpty ?? true else {
+                pieces.append(EarlierPiece(id: row.id, kind: .row(row), rowID: row.id, endsRow: true, gap: nil))
+                continue
+            }
+            let parts = blocks(message)
+            if row.showsWho {
+                pieces.append(EarlierPiece(id: row.id + "#who", kind: .who, rowID: row.id, endsRow: parts.isEmpty, gap: nil))
+            }
+            for (index, block) in parts.enumerated() {
+                let gap: Gap? = index > 0 ? .betweenBlocks : row.showsWho ? .afterWho : nil
+                pieces.append(EarlierPiece(id: row.id + "#\(index)", kind: .block(block, first: index == 0), rowID: row.id,
+                                           endsRow: index == parts.count - 1, gap: gap))
+            }
+        }
+        return pieces
+    }
+}
+
 /// The conversation's rows for the detail on screen, worked out once per revision. Timestamps are read once each.
 private final class TimelineCache {
     private var key: String?
@@ -413,6 +456,11 @@ private final class TimelineCache {
     private(set) var latestTurnsStart = 0
     /// That row's identity, so a split held for a selection can be found again in the next revision's rows.
     private var latestTurnsStartID: String?
+    /// The rows before the latest turns as the lazy stack's children. Set with the rows.
+    private(set) var earlier: [EarlierPiece] = []
+    /// Each earlier reply's blocks, by message, with the words they were read from. Kept here rather than in
+    /// Markdown's own cache, which holds fewer replies than a long thread has and would read them all again each word.
+    private var replyBlocks: [String: (text: String, blocks: [MarkdownBlock])] = [:]
     private var dates: [String: Date] = [:]
     /// `held` marks the copy kept on screen while the thread is read again. A fresh copy can carry the same revision, from
     /// a computer whose Sotto restarted, so it is always drawn anew.
@@ -422,6 +470,8 @@ private final class TimelineCache {
             cached = []
             latestTurnsStart = 0
             latestTurnsStartID = nil
+            earlier = []
+            replyBlocks = [:]
             return []
         }
         let next = detail.threadId + "#" + String(detail.revision) + (held ? "#held" : "")
@@ -442,7 +492,14 @@ private final class TimelineCache {
             self.latestTurnsStartID = start < items.count ? items[start].id : nil
             return ConversationRow.make(items, date: { self.date($0) })
         }
+        earlier = EarlierPiece.make(cached[..<min(latestTurnsStart, cached.count)]) { self.blocks($0) }
         return cached
+    }
+    private func blocks(_ message: Message) -> [MarkdownBlock] {
+        if let kept = replyBlocks[message.id], kept.text == message.text { return kept.blocks }
+        let blocks = SottoCore.Markdown.blocks(message.text)
+        replyBlocks[message.id] = (message.text, blocks)
+        return blocks
     }
     private func date(_ stamp: String) -> Date? {
         if let known = dates[stamp] { return known }
@@ -595,9 +652,9 @@ private struct Conversation: View {
                 let split = min(timeline.latestTurnsStart, rows.count)
                 if split > 0 {
                     LazyVStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
-                        ForEach(rows[..<split]) { row in
-                            entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter,
-                                  scroll: scroll)
+                        ForEach(timeline.earlier) { piece in
+                            earlierPiece(piece, provider: provider, working: working, last: last, moved: moved,
+                                         movedAfter: movedAfter, scroll: scroll)
                         }
                     }
                 }
@@ -619,6 +676,32 @@ private struct Conversation: View {
             }
         }
         .padding(.top, Space.s3)
+    }
+
+    /// A piece of the earlier turns: a whole row, or a reply's header or block with the space it has inside the reply,
+    /// less the rows' space the lazy stack already puts above it.
+    @ViewBuilder private func earlierPiece(_ piece: EarlierPiece, provider: String, working: String?, last: String?,
+                                           moved: ModelMoved?, movedAfter: String?, scroll: ScrollViewProxy) -> some View {
+        switch piece.kind {
+        case .row(let row):
+            entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter, scroll: scroll)
+        case .who:
+            ReplyWho(provider: provider)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let moved, piece.endsRow, piece.rowID == movedAfter { ModelMovedLine(words: moved.words(provider: provider)) }
+        case .block(let block, let first):
+            MarkdownBlockView(block: block, first: first, quotable: true).equatable()
+                .foregroundStyle(Palette.ink)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.top, piece.gap.map { space(above: $0) } ?? 0)
+            if let moved, piece.endsRow, piece.rowID == movedAfter { ModelMovedLine(words: moved.words(provider: provider)) }
+        }
+    }
+
+    /// The space above a reply's piece inside the reply, as `MessageView` and `MarkdownText` space it, less the rows'.
+    private func space(above gap: EarlierPiece.Gap) -> CGFloat {
+        let inside = gap == .afterWho ? Space.s2 : Space.dense(Space.s3, density)
+        return inside - Space.dense(Space.s5, density)
     }
 
     /// A row, and under it the line saying Sotto moved the thread off its model, where that happened.
@@ -1056,17 +1139,7 @@ private struct MessageView: View, Equatable {
     /// The agent's words plain on the canvas, headed by its name when it starts answering.
     private var assistantMessage: some View {
         VStack(alignment: .leading, spacing: Space.s2) {
-            if showsWho {
-                HStack(spacing: Space.s2) {
-                    Text(String(provider.prefix(1)))
-                        .font(.figtree(10, .caption2, .bold))
-                        .foregroundStyle(Palette.accentText)
-                        .frame(width: 18, height: 18)
-                        .background(Palette.accent.opacity(0.22), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .accessibilityHidden(true)
-                    Text(provider).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
-                }
-            }
+            if showsWho { ReplyWho(provider: provider) }
             content(ink: Palette.ink)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1084,6 +1157,22 @@ private struct MessageView: View, Equatable {
                 Label("\(attachment.name) (open on the desktop)", systemImage: attachment.mimeType.map { PhotoLimits.mimeTypes.contains($0) } == false ? "doc" : "photo")
                     .font(.sotto(.small)).foregroundStyle(Palette.muted)
             }
+        }
+    }
+}
+
+/// The provider's initial on its tile and its name, heading an answer.
+private struct ReplyWho: View {
+    let provider: String
+    var body: some View {
+        HStack(spacing: Space.s2) {
+            Text(String(provider.prefix(1)))
+                .font(.figtree(10, .caption2, .bold))
+                .foregroundStyle(Palette.accentText)
+                .frame(width: 18, height: 18)
+                .background(Palette.accent.opacity(0.22), in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .accessibilityHidden(true)
+            Text(provider).font(.sotto(.caption, .semibold)).foregroundStyle(Palette.muted)
         }
     }
 }
