@@ -645,6 +645,7 @@ struct ThreadListSections: View, Equatable {
                 rowView(row, .recent(unread: groups.isUnreadFinish(row)), watched)
             }
         }
+        .benchEnvironment("EnvironmentUnderList")
     }
     /// A Needs you row can stand for a delegated thread that asks (ADR-0081): a press opens the row's thread and then
     /// the one that asks, so its question opens there and Back returns to the thread that delegated it.

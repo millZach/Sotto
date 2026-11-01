@@ -1,7 +1,8 @@
+import SwiftUI
+import SottoCore
 #if DEBUG && os(iOS)
 import Darwin
 import UIKit
-import SottoCore
 
 /// The app's half of the iPhone benchmarks (`Scripts/bench.sh`, `docs/perf/2026-10-31-iphone-benchmarks.md`). It runs
 /// only in the UI fixture with `--bench-threads`, and only when `SOTTO_BENCH_FILE` names its report.
@@ -514,6 +515,31 @@ final class BenchSampler: @unchecked Sendable {
         if let base = info.dli_fbase { result["base"] = String(UInt(bitPattern: base), radix: 16) }
         if let symbol = info.dli_sname { result["symbol"] = String(cString: symbol) }
         return result
+    }
+}
+#endif
+
+extension View {
+    /// Counts, for the benchmarks, each change to the environment that reaches this view, as the body `Environment<name>`:
+    /// any value set anywhere above it, made anew on a redraw rather than kept, has every text below it checked again.
+    /// Outside a benchmark run it adds nothing; in a build without `DEBUG` it is not there.
+    func benchEnvironment(_ name: StaticString) -> some View {
+        #if DEBUG && os(iOS)
+        background { if BenchProbe.enabled { EnvironmentProbe(name: name) } }
+        #else
+        self
+        #endif
+    }
+}
+
+#if DEBUG && os(iOS)
+/// Reads the whole environment, so SwiftUI runs its body again whenever any value in it changes, and counts each run.
+private struct EnvironmentProbe: View {
+    let name: StaticString
+    @Environment(\.self) private var environment
+    var body: some View {
+        let _ = BenchProbe.body(name)
+        Color.clear.accessibilityHidden(true)
     }
 }
 #endif

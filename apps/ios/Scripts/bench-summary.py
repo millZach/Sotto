@@ -23,7 +23,8 @@ PER_CHUNK = ["body.RootView", "body.MainTabs", "body.ThreadsView", "body.ThreadL
              "body.ThreadRow", "body.ThreadView", "body.Conversation", "body.ThreadHero", "body.MessageView", "body.MarkdownText",
              "body.MarkdownBlockView", "body.FoldedRun", "body.StepLine", "body.WorkingLine", "body.ReplyDock", "body.FollowupStack",
              "textview.make", "textview.update", "textview.set", "time.textview.measure.n",
-             "markdown.blocks", "markdown.bytes", "time.timeline.rows.n"]
+             "markdown.blocks", "markdown.bytes", "time.timeline.rows.n",
+             "body.EnvironmentUnderList", "body.EnvironmentUnderThread"]
 # What opening the long thread made and read once.
 ON_OPEN = ["body.MessageView", "body.MarkdownBlockView", "body.FoldedRun", "body.StepLine", "textview.make", "time.textview.measure.n",
            "markdown.blocks", "markdown.bytes"]

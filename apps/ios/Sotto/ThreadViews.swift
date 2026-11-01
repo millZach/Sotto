@@ -496,6 +496,7 @@ private struct Conversation: View {
             ScrollView {
                 page(detail: detail, rows: rows, pending: pending, scroll: proxy).readingWidth()
                     .environment(\.replyQuoteBox, ReplyQuoteBox(key: ref.id) { [model, ref] in model.quoteReply($0, into: ref.id) })
+                    .benchEnvironment("EnvironmentUnderThread")
             }
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
