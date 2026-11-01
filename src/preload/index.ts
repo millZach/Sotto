@@ -65,7 +65,7 @@ import { systemSettingsPaneSchema } from '../shared/systemSettings'
 import { MEMORY_GET, MEMORY_COMMAND, MEMORY_CHANGED, memorySnapshotSchema, memoryCommandSchema, type MemoryBridge } from '../shared/memory'
 import { agentActivitySchema } from '../shared/agentActivity'
 import { AGENT_THREAD_PROMPTS, agentThreadPromptsRequestSchema, agentThreadPromptsSchema } from '../shared/threadPrompts'
-import { AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, AGENT_ACTIVITY_BODY, agentActivityBodyRequestSchema, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema, agentCommandChangedThreadRecordsReceiptSchema } from '../shared/agents'
+import { AGENT_THREAD_MEDIA, agentThreadMediaResultSchema, agentThreadMediaWindowRequestSchema, AGENT_ATTACHMENT_CONTENT, AGENT_ATTACHMENT_PREVIEW, AGENT_ATTACHMENT_STAGE, agentAttachmentContentRequestSchema, agentAttachmentContentResultSchema, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema, agentAttachmentPreviewRequestSchema, agentAttachmentPreviewResultSchema, AGENT_GET, AGENT_COMMAND, AGENT_STATE, AGENT_E2E, AGENT_THREAD_DETAIL, AGENT_THREAD_DETAIL_GET, AGENT_START_HANDOVER, AGENT_ACTIVITY_BODY, agentActivityBodyRequestSchema, agentStartHandoverSchema, agentThreadDetailRequestSchema, agentThreadDetailResultSchema, agentStateSchema, agentCommandSchema, agentCommandReceiptSchema, agentCommandChangedThreadRecordsReceiptSchema } from '../shared/agents'
 
 import {
   APP_HIDE,
@@ -345,6 +345,9 @@ function createAgentBridge(renderer: IpcRendererAdapter): import('../shared/agen
     get: () => invokeParsed(renderer, AGENT_GET, agentStateSchema),
     attachmentPreview: (request: import('../shared/agents').AgentAttachmentPreviewRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_PREVIEW, agentAttachmentPreviewResultSchema, agentAttachmentPreviewRequestSchema.parse(request)),
+    // A tile or the viewer reads one picture a thread's record names (ADR-0170).
+    threadMedia: (request: import('../shared/agents').AgentThreadMediaWindowRequest) =>
+      invokeParsed(renderer, AGENT_THREAD_MEDIA, agentThreadMediaResultSchema, agentThreadMediaWindowRequestSchema.parse(request)),
     // The composer stages a screenshot once and carries its handle; a chip reads its image back (ADR-0031).
     stageAttachment: (request: import('../shared/agents').AgentAttachmentStageRequest) =>
       invokeParsed(renderer, AGENT_ATTACHMENT_STAGE, agentAttachmentHandleSchema, agentAttachmentStageRequestSchema.parse(request)),

@@ -1,3 +1,4 @@
+import type { ThreadMediaStore } from './threadMedia'
 import { catalogWithoutHeld, heldProviderChosenBy } from './heldProviderGate'
 import { firstHeldProvider, heldProviderRefusal, heldProvidersOption, type HeldProviders } from '../../shared/heldProviders'
 import { WatcherMessageDisplay } from './watcherMessageDisplay'
@@ -17,7 +18,7 @@ import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal, isVisualMessage,
-  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
+  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
 import { BABYSITTING_RETIRED, BABYSIT_REFUSALS, type Babysitter } from './babysitting'
@@ -1289,6 +1290,8 @@ export class AgentControl {
     missingAttachment?: string
     /** The Owl answer for attaching any file (ADR-0131), read once at start: the store keeps files that are not images. */
     attachAnyFile?: boolean
+    /** The pictures this host's agents made or looked at (ADR-0170), present only while `inline-media` is on. */
+    threadMedia?: ThreadMediaStore
     /**
      * Which process this coordinator runs in. The headless host (`src/host/index.ts`) connects every provider
      * that is installed and signed in when it starts, except the ones the user turned off, and its refusals point
@@ -1476,6 +1479,7 @@ export class AgentControl {
     // Watcher's news is untold on disk now, so its hidden wake-up may go. Unsaved, it stays, and is read as news waiting.
     if (written && untold.size) { await this.followupStore.dropWatcherNews(news => queuedWakeUpText(news, { tool: false })); this.syncFollowups() }
     await this.attachments.sweep(() => this.ownedAttachments())
+    await this.dependencies.threadMedia?.load().catch(() => undefined)
     this.maintenanceTimer = setInterval(() => {
       const pendingPrivacy = this.privacyCleanupPending
       void (pendingPrivacy ? this.privacyChanged() : this.maintainAttachments()).catch(() => {
@@ -2437,6 +2441,16 @@ export class AgentControl {
     if (!this.dependencies.host.readThreadPullRequest) throw new Error('Pull requests are unavailable on this host.')
     return this.dependencies.host.readThreadPullRequest(request)
   }
+  /**
+   * One picture a thread's record names (ADR-0170), fetched when its tile comes into view rather than pushed with any
+   * state. Read from the record this host holds, so only a picture its own capture kept for that record is answered.
+   */
+  async threadMedia(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult> {
+    const store = this.dependencies.threadMedia
+    if (!store) return null
+    const dataUrl = await store.read(this.threadActivity(request.threadId, request.activityId), request.mediaId)
+    return dataUrl === null ? null : { dataUrl }
+  }
   /** One submitted image, fetched by the window when it draws the tile rather than pushed with every state. */
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
     const dataUrl = await this.attachmentPreviews.preview(this.state.host, request.threadId, request.messageId, request.attachmentId)
@@ -2536,6 +2550,8 @@ export class AgentControl {
     await this.attachmentPreviews.maintain()
     if (this.attachmentPreviews.contentCleanupBlocked()) return
     await this.attachments.sweep(() => this.ownedAttachments(), undefined, previewed)
+    // The pictures agents made go with history (ADR-0170): all at once when it is turned off, oldest first past their limit.
+    await (historyOff ? this.dependencies.threadMedia?.clear() : this.dependencies.threadMedia?.sweep())
   }
   /**
    * A staged image as the adapter receives it: the handle, and its bytes read from the store only when asked. Point at

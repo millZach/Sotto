@@ -477,6 +477,8 @@ private struct Conversation: View {
             FoldedRun(runID: steps.first?.id ?? row.id, steps: steps, seconds: row.seconds, working: working,
                       open: openRuns.contains(row.id), last: last) { toggleRun(row.id, scroll) }
                 .equatable()
+            // The run's pictures stay in view whether it is open or folded (ADR-0170).
+            if model.showsAgentPictures(ref.hostID) { AgentPictures(ref: ref, steps: steps) { viewing = $0 } }
         }
     }
 

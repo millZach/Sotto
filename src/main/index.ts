@@ -1,3 +1,5 @@
+import { mediaThumbnailMaker } from './agents/mediaThumbnail'
+import { ThreadMediaStore } from './agents/threadMedia'
 import { t } from '@lingui/core/macro'
 import { cleanSettingsHistory } from './settings/privacyCleanup'
 import { RetiredChatHistory } from './settings/retiredChats'
@@ -1003,12 +1005,16 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const windowInFront = (): boolean => BrowserWindow.getAllWindows().some(window => showing(window)
     && (window.isFocused() || (windowBlurredAt !== 0 && Date.now() - windowBlurredAt < 45_000)))
   const windowShowing = (): boolean => BrowserWindow.getAllWindows().some(showing)
+  // Pictures in threads (ADR-0170): one store, which the runtime's providers and the native e2e fixtures' capture into.
+  const threadMedia = owlFeatures['inline-media'] ? new ThreadMediaStore(userDataPath, { historyEnabled: () => agentHistoryEnabled }) : undefined
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
     delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
     attachAnyFile: owlFeatures['attach-any-file'],
+    inlineMedia: owlFeatures['inline-media'],
+    ...threadMedia ? { threadMedia } : {},
     // Clearing settled threads (ADR-0140): Owl's answer, read once here. The log names the event and a count or a reason's code.
     clearThreadsEnabled: owlFeatures['clear-threads'], clearLog: (event, detail) => { console.error(`[Sotto] ${event} ${detail}`) },
     ...(ownServers ? { ownServers: () => ownServers.list() } : {}),
@@ -1062,9 +1068,9 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     } } : {}),
     ...(nativeFixtureRoot ? { providers: {
       claude: new ClaudeStreamJsonHost({ userDataPath, executable: nativeFixtureExecutable!,
-        args: [join(__dirname, '../../tests/fixtures/fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home'), limitStops: owlFeatures['restart-stopped-threads'] }),
+        args: [join(__dirname, '../../tests/fixtures/fakeClaudeThread.mjs'), join(nativeFixtureRoot, 'claude')], claudeHome: join(nativeFixtureRoot, 'claude', 'home'), limitStops: owlFeatures['restart-stopped-threads'], ...threadMedia ? { captureMedia: threadMedia.capture } : {} }),
       codex: new CodexAppServerHost({ userDataPath, executable: nativeFixtureExecutable!,
-        args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home'), limitStops: owlFeatures['restart-stopped-threads'] }),
+        args: [join(__dirname, '../../tests/fixtures/fakeCodexAppServer.mjs'), join(nativeFixtureRoot, 'codex')], codexHome: join(nativeFixtureRoot, 'codex', 'home'), limitStops: owlFeatures['restart-stopped-threads'], ...threadMedia ? { captureMedia: threadMedia.capture } : {} }),
       grok: new E2EAgentHost(), devin: new E2EAgentHost(), opencode: new E2EAgentHost(), cursor: new E2EAgentHost(),
     } } : {}),
     ...(e2eConfiguration === null ? {} : { reasoner: e2eAgentReasoner }),
@@ -1093,6 +1099,8 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
     ...crossMachineEnabled && 'delegation' in localRuntime && localRuntime.delegation ? { stopsLeft: (threadId: string) => localRuntime.delegation?.stopsLeft(threadId) } : {},
     ...cascadedSettles ? { cascadedSettles } : {},
     attachAnyFile: owlFeatures['attach-any-file'],
+    // Pictures in threads (ADR-0170): their tile thumbnails are made here, on this desktop, for every host's threads.
+    ...owlFeatures['inline-media'] ? { mediaThumbnail: mediaThumbnailMaker(url => nativeImage.createFromDataURL(url)) } : {},
     bindRequestDraftDecision: (target, decisionId, answers) => requestDrafts.bindDecision(target, decisionId, answers),
     // A paired host's deleted thread takes the answer drafts this computer kept for it (ADR-0140).
     threadsDeleted: threadIds => { void requestDrafts.forgetThreads(new Set(threadIds)).catch(() => undefined) },
@@ -1131,7 +1139,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
       () => owlFeatures['worker-swarms'] ? { workerCeiling: workingCopySettings.workerCeiling, workerMachineCeilings: workingCopySettings.workerMachineCeilings } : undefined) : undefined
   if (startupSettings.localHostEnabled) hostRouter.add({
     hostId: agentControl.hostId()!, name: 'This computer', kind: 'local', service: hostService,
-    detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request),
+    detail: id => agentControl.threadDetail(id), preview: request => agentControl.attachmentPreview(request), media: request => agentControl.threadMedia(request),
     stage: image => agentControl.stageAttachment(image), content: digest => agentControl.attachmentContent(digest),
     gitRefs: request => agentControl.gitRefs(request), gitChangedFiles: request => agentControl.gitChangedFiles(request), gitPullRequest: request => agentControl.gitPullRequest(request),
     offersBabysitting: () => hostService.supportsBabysitting === true,

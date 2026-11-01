@@ -372,7 +372,15 @@ public struct Activity: Decodable, Identifiable, Equatable, Sendable {
     public let startedAt: String?; public let changes: [Change]?
     /// The message this step came after, when the host says. Hosts that send activity summaries leave it out.
     public let afterMessageId: String?
+    /// The pictures this step made or looked at (ADR-0170): handles only. A tile reads one's bytes with `thread-media`
+    /// when it shows, from a computer that lists that feature.
+    public var media: [Media]? = nil
     public struct Change: Decodable, Equatable, Sendable { public let path: String; public let kind: String }
+    /// One picture's handle: its place in the step, its type, and its size when the computer read it.
+    public struct Media: Decodable, Identifiable, Equatable, Sendable {
+        public let id: String; public let kind: String; public let mimeType: String
+        public let width: Int?; public let height: Int?; public let name: String; public let source: String
+    }
     /// The line under the title: the command it ran, or the files it changed.
     public var subject: String? {
         if let command, !command.isEmpty { return command }

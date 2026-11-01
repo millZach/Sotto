@@ -3,7 +3,7 @@ import { delegationRelayAskSchema, delegationRelayNewsSchema, delegationRemoteAs
 import { z } from 'zod'
 import { watcherPhoneStateSchema, watcherPhoneSendSchema, watcherPhonePreviewSchema, watcherPhoneRemoveFollowupSchema, watcherPhoneAnswerSchema, watcherPhoneStopOutcomeSchema, watcherPhoneManageOutcomeSchema, type WatcherPhoneManageOutcome, watcherPhoneSetPermissionSchema, watcherPhoneWatchSchema, type WatcherPhoneStopOutcome, type WatcherPhoneState } from './watcherPhone'
 import { watcherHostControlSchema, watcherHostReadSchema, watcherHostProjectionSchema } from './watcherHost'
-import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_FILE_BYTES, agentMimeTypeSchema, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
+import { AGENT_IMAGE_MIME_TYPES, AGENT_MAX_FILE_BYTES, agentMimeTypeSchema, agentAttachmentDimensionsSchema, agentAttachmentPreviewRequestSchema, agentThreadMediaRequestSchema, attachmentDigestSchema, agentConfigurationSchema, agentCommandSchema, agentHostSnapshotSchema, agentStateSchema, agentThreadDetailDeltaSchema, agentThreadDetailResultSchema, type AgentMessage, type AgentModel, type AgentState, type AgentThreadDetail, type AgentThreadDetailDelta } from './agents'
 import { threadEventSchema, type StoredThreadEvent } from './threadEvents'
 import { gitRefsRequestSchema } from './gitRefs'
 import { gitChangedFilesRequestSchema } from './gitChangedFiles'
@@ -340,8 +340,10 @@ export const protocolAgentStateSchema = z.preprocess(value => {
  * since the last shell push written to that connection, with the state's own `host.threads` empty (#996, ADR-0028's
  * October 30 amendment). Hello, a `shell` read and a command's answer still carry every record; a `shell` read makes the
  * next push list every record. Every listener lists it, to desktops and phones alike.
+ * `thread-media`: the host keeps the pictures its agents made or looked at and answers `thread-media` for a handle an
+ * activity record carries (ADR-0170). Listed only while its `inline-media` Owl feature is on.
  */
-export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'thread-move-source', 'thread-move-keep', 'changed-thread-records'] as const
+export const HOST_FEATURES = ['client-liveness', 'message-aliases', 'detail-delta', 'git-refs', 'git-changed-files', 'git-pull-request', 'attachment-staging', 'host-folders', 'provider-sign-in', 'client-updates', 'activity-summaries', 'model-catalog-revision', 'thread-files', 'thread-changes', 'subagents', 'answer-receipts', 'answer-check', 'atomic-send', 'draft-revisions', 'background-refresh', 'pull-request-babysit', 'watcher-control', 'watcher-reads', 'usage-dashboard', 'watcher-phone', 'watcher-phone-stop-all', 'watcher-phone-manage', 'watcher-standing-watch', 'usage-history', 'watcher-work-settled', 'watcher-outcomes', 'host-facts', 'watcher-muse', 'thread-starts', 'host-update', 'provider-opencode', 'opencode-sign-in', 'activity-bodies', 'failure-seen', 'watcher-phone-steer', 'usage-muse-opencode', 'client-update-outcomes', 'pull-request-view', 'agents-view', 'provider-cursor', 'watcher-cursor', 'usage-background-refresh', 'client-update-not-listed', 'thread-prompts', 'file-staging', 'watcher-phone-photos', 'attachment-files', 'project-origins', 'watcher-phone-machines', 'host-delegation', 'thread-delete', 'delegation-views', 'branch-moves', 'bring-changes-back', 'delegation-relay', 'watcher-check-queue', 'watcher-check-stop', 'check-queue-views', 'project-setup', 'delegation-relay-send', 'delegation-remote', 'delegation-branch-starts', 'watcher-phone-files', 'pull-request-confirmation', 'watcher-new-owner', 'thread-move', 'worker-swarms', 'thread-move-source', 'thread-move-keep', 'changed-thread-records', 'thread-media'] as const
 export type HostFeature = typeof HOST_FEATURES[number]
 /**
  * The features a headless host's tailnet listener offers only to a client the launch script recorded as a desktop
@@ -391,6 +393,8 @@ export function activitySummary(record: AgentActivity): AgentActivity {
     ...(record.durationMs !== undefined ? { durationMs: record.durationMs } : {}),
     ...(record.startedAt !== undefined ? { startedAt: record.startedAt } : {}),
     ...(record.changes !== undefined ? { changes: record.changes.map(change => ({ path: change.path, kind: change.kind })) } : {}),
+    // A picture's handle is small and says nothing of its content; the bytes are read with `thread-media` (ADR-0170).
+    ...(record.media !== undefined ? { media: record.media } : {}),
   }
 }
 /** A message without the visual Sotto drew for it (ADR-0056): its text, the visual's words, stands in. */
@@ -537,6 +541,8 @@ export const hostRequestSchema = z.discriminatedUnion('op', [
   z.object({ ...base, op: z.literal('observe'), threadIds: z.array(id).max(100), shown: z.literal(false).optional() }).strict(),
   z.object({ ...base, op: z.literal('command'), command: protocolAgentCommandSchema }).strict(),
   z.object({ ...base, op: z.literal('preview'), request: agentAttachmentPreviewRequestSchema }).strict(),
+  /** One picture an activity record names, for a client that accepts `thread-media` (ADR-0170): its bytes as a data URL. */
+  z.object({ ...base, op: z.literal('thread-media'), request: agentThreadMediaRequestSchema }).strict(),
   z.object({ ...base, op: z.literal('receipt'), commandId: id, answer: hostAnswerTargetSchema.optional() }).strict(),
   z.object({ ...base, op: z.literal('check-answer'), answer: hostAnswerTargetSchema }).strict(),
   /** The branches a thread's folder offers, for the picker; read on request, never pushed (ADR-0027). */

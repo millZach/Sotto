@@ -1,3 +1,4 @@
+import type { MediaCapture } from './threadMedia'
 import { preserveLegacyAliases } from './legacyAliases'
 import type { BrowserAgentTools } from './browserAgentServer'
 import { scopedThreadServers, type ScopedThreadTools, type ThreadMcpServer } from './threadToolServer'
@@ -228,6 +229,8 @@ function toolAllowance(servers: readonly { server: Pick<ThreadMcpServer, 'name'>
 }
 export interface ClaudeStreamJsonHostOptions {
   usageEnabled?: boolean
+  /** Keeps a tool result's pictures and answers their handles (ADR-0170); absent while `inline-media` is off. */
+  captureMedia?: MediaCapture
   /** Restart stopped threads (ADR-0144), the Owl answer read once at start: a turn stopped at a usage limit says so on its `lastTurn`. */
   limitStops?: boolean
   /** Test-only admission override. Production wiring never supplies it. */
@@ -2363,7 +2366,7 @@ export class ClaudeStreamJsonHost implements AgentHost {
   private projectActivity(id: string, frame: ClaudeFrame, live = false, turnEnd?: AgentActivity['status']): void {
     const thread = this.ensureActivityHistory(id)!
     let projector = this.activity.get(id)
-    if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch)); this.activity.set(id, projector) }
+    if (!projector) { projector = new ClaudeActivity(activityId => this.history?.activity?.(id, activityId, this.aliases[id]?.historyEpoch), this.options.captureMedia); this.activity.set(id, projector) }
     const watcherTurn = live && this.runtimes.get(id)?.watcher && thread.lastTurn?.status === 'running' ? thread.lastTurn.messageId : undefined
     const turnId = watcherTurn ?? this.lastUserMessageId(id) ?? 'native-history'
     const previous = thread.activities ?? []

@@ -8,6 +8,19 @@ final class PhotoTests: XCTestCase {
                     dimensions: ImageDimensions(original: ImageSize(width: 4032, height: 3024), sent: ImageSize(width: 2576, height: 1932)))
     }
 
+    func testAStepCarriesItsPicturesByHandleAndATileAsksForOneByIt() throws {
+        let step = try decode(Activity.self, #"{"id":"claude-tool-shot","sequence":3,"kind":"tool","status":"completed","title":"Screenshot","media":[{"id":"m0","digest":"\#(String(repeating: "a", count: 64))","kind":"image","mimeType":"image/png","sizeBytes":480000,"width":1280,"height":800,"name":"picture-1.png","source":"tool"}]}"#)
+        XCTAssertEqual(step.media?.map(\.id), ["m0"])
+        XCTAssertEqual(step.media?.first?.width, 1280)
+        // A step from a computer that keeps no pictures decodes as before.
+        XCTAssertNil(try decode(Activity.self, #"{"id":"s","sequence":0,"kind":"tool","status":"completed","title":"Read"}"#).media)
+        let request = Photos.threadMedia(threadID: "t", activityID: "claude-tool-shot", mediaID: "m0")
+        XCTAssertEqual(request["op"], .string("thread-media"))
+        XCTAssertEqual(request["request"]?["activityId"], .string("claude-tool-shot"))
+        XCTAssertEqual(request["request"]?["mediaId"], .string("m0"))
+        XCTAssertEqual(request["request"]?["digest"], .null, "A tile names a handle, never the content")
+    }
+
     func testAReplyCarriesItsStagedPhotosByHandleAndNeedsNoWords() throws {
         let command = try Commands.prompt(threadID: "t", text: "", draftID: UUID().uuidString, images: [handle("one"), handle("two")])
         guard case .array(let images) = command["attachments"] else { return XCTFail("The reply carries no photos") }

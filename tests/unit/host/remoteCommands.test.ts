@@ -120,6 +120,8 @@ describe('remote command allow-list', () => {
       'stage-file-part',
       // A sent file's bytes by its message, for the iPhone's Quick Look: a read, as `preview` is.
       'attachment-file',
+      // One picture an agent's step carries, by its handle (ADR-0170): a read on the preview guard, as `preview` is.
+      'thread-media',
       // A host's own OpenCode signed in to model sources for the desktop that asks (#1107): the same trust as a sign-in.
       ...REMOTE_OPENCODE_SIGN_IN_OPERATIONS,
       // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0078).
