@@ -1,0 +1,451 @@
+<!doctype html>
+<!--
+  PROTOTYPE, throwaway. The iPhone's reply box in the shape of Claude's iOS composer.
+  Three variants of where the thread's settings live, switchable with ?variant=A|B|C and the bar at the bottom:
+    A  One menu: the pill opens one menu with model, effort, speed and permissions.
+    B  Pill, bolt and shield: the pill opens model and effort; speed and permissions keep their own buttons.
+    C  Sheet: the pill opens a sheet, as Claude's does.
+  Everything else (card, + , mic, round Send) is the same in all three.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Sotto iPhone composer, prototype</title>
+<style>
+@font-face { font-family: Figtree; src: url("Figtree.ttf"), url("../../apps/ios/Sotto/Resources/Figtree.ttf"); font-weight: 400; }
+@font-face { font-family: Figtree; src: url("Figtree-SemiBold.ttf"), url("../../apps/ios/Sotto/Resources/Figtree-SemiBold.ttf"); font-weight: 500 600; }
+@font-face { font-family: Figtree; src: url("Figtree-Bold.ttf"), url("../../apps/ios/Sotto/Resources/Figtree-Bold.ttf"); font-weight: 700; }
+* { box-sizing: border-box; }
+html, body { margin: 0; background: #0b0c0f; color: #e8eaee; font-family: Figtree, -apple-system, system-ui, sans-serif; -webkit-text-size-adjust: 100%; }
+button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+
+/* ---------- page chrome (not part of the design) ---------- */
+.controls { padding: 14px 12px 6px; display: flex; flex-direction: column; gap: 8px; max-width: 980px; margin: 0 auto; }
+.controls h1 { font-size: 17px; margin: 0 0 2px; font-weight: 600; }
+.controls p { margin: 0; font-size: 13px; color: #a0a5ae; line-height: 1.4; }
+.group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.group > span { font-size: 12px; color: #8a8f98; width: 64px; }
+.chip { font-size: 13px; padding: 7px 11px; border-radius: 999px; background: #1b1d22; color: #c9ccd2; }
+.chip[aria-pressed="true"] { background: #e8eaee; color: #0b0c0f; font-weight: 600; }
+#stage { overflow-x: auto; padding: 8px 0 24px; }
+#scaler { margin: 0 auto; transform-origin: top left; }
+.notes { max-width: 760px; margin: 0 auto; padding: 0 14px 60px; font-size: 14px; line-height: 1.5; color: #c9ccd2; }
+.notes h2 { font-size: 15px; margin: 18px 0 6px; color: #fff; }
+.notes ul { padding-left: 18px; margin: 4px 0; }
+.switcher { position: sticky; top: max(6px, env(safe-area-inset-top)); margin: 6px auto 0; width: max-content; display: flex; align-items: center; gap: 4px; background: #ffd84a; color: #111; border-radius: 999px; padding: 4px; box-shadow: 0 8px 28px rgba(0,0,0,.5); z-index: 100; font-weight: 700; font-size: 14px; white-space: nowrap; }
+.switcher button { width: 40px; height: 40px; border-radius: 50%; font-size: 20px; color: #111; }
+.switcher .label { padding: 0 6px; }
+
+/* ---------- device ---------- */
+.device { position: relative; overflow: hidden; border-radius: 46px; background: var(--canvas); color: var(--ink); box-shadow: 0 0 0 10px #000, 0 0 0 11px #2a2c31, 0 30px 80px rgba(0,0,0,.6); }
+.device.duo { border-radius: 30px; }
+.device .room { position: absolute; inset: 0; }
+.device.glass .room { background: linear-gradient(160deg, var(--bd1), var(--bd2) 55%, var(--bd3)); }
+.device.glass .room::after { content: ""; position: absolute; inset: 0; background: var(--roomTint); }
+.statusbar { position: absolute; top: 0; left: 0; right: 0; height: 50px; display: flex; justify-content: space-between; align-items: center; padding: 14px 34px 0; font-weight: 600; font-size: 16px; z-index: 30; }
+.duo .statusbar { height: 34px; padding: 6px 26px 0; font-size: 14px; }
+.battery { display: inline-flex; gap: 6px; align-items: center; }
+.battery i { display: inline-block; width: 25px; height: 12px; border-radius: 4px; background: var(--ink); opacity: .9; }
+.homebar { position: absolute; bottom: 8px; left: 50%; width: 134px; height: 5px; border-radius: 3px; background: var(--ink); transform: translateX(-50%); z-index: 40; opacity: .9; }
+
+/* thread page */
+.page { position: absolute; top: 0; bottom: 0; display: flex; flex-direction: column; }
+.topbar { height: 50px; margin-top: 50px; display: flex; align-items: center; gap: 6px; padding: 0 8px; position: relative; z-index: 5; }
+.duo .topbar { margin-top: 34px; }
+.topbar .t { flex: 1; text-align: center; font-weight: 600; font-size: 15px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.icon-btn { width: 44px; height: 44px; display: grid; place-items: center; color: var(--ink); }
+.icon-btn svg { width: 20px; height: 20px; }
+.scroll { flex: 1; overflow: hidden; padding: 6px 16px 0; position: relative; }
+.inner { max-width: 680px; margin: 0 auto; }
+.hero h3 { font-size: 22px; margin: 6px 0 4px; font-weight: 700; }
+.hero .meta { font-size: 13px; color: var(--muted); display: flex; gap: 6px; flex-wrap: wrap; }
+.hero .meta span { background: var(--fillSoft); border-radius: 8px; padding: 3px 8px; }
+.msg-user { align-self: flex-end; margin: 18px 0 14px auto; max-width: 82%; background: var(--message); border-radius: 18px; padding: 10px 14px; font-size: 15.5px; line-height: 1.4; width: fit-content; }
+.msg-agent { font-size: 15.5px; line-height: 1.5; margin-bottom: 14px; }
+.msg-agent p { margin: 0 0 10px; }
+.step { font-size: 13.5px; color: var(--muted); margin: 0 0 12px; display: flex; gap: 6px; align-items: center; }
+.step b { color: var(--ink); font-weight: 500; }
+code { font-family: ui-monospace, Menlo, monospace; font-size: 13px; background: var(--fillSoft); padding: 1px 5px; border-radius: 5px; }
+.empty-hint { margin-top: 60px; text-align: center; color: var(--muted); font-size: 14px; }
+.wcard { background: var(--raised); border-radius: 20px; padding: 14px 16px; margin: 0 0 12px; font-size: 14.5px; line-height: 1.45; }
+.wcard .h { font-size: 12px; color: var(--muted); margin-bottom: 4px; font-weight: 600; }
+
+/* ---------- the composer (the thing being judged) ---------- */
+.dock { position: absolute; left: 0; right: 0; padding: 8px 12px; z-index: 20; }
+.dock .inner { max-width: 680px; }
+.card { border-radius: 26px; background: var(--box); box-shadow: 0 4px 18px var(--shadow); padding: 4px 0 0; transition: background .2s; }
+.device.glass .card { background: var(--glassFill); -webkit-backdrop-filter: blur(22px) saturate(1.7); backdrop-filter: blur(22px) saturate(1.7); box-shadow: 0 6px 24px var(--shadow); background-image: linear-gradient(180deg, var(--sheen), transparent 40%); }
+.attach { display: flex; gap: 6px; padding: 6px 8px 0; }
+.attach .ph { width: 64px; height: 64px; border-radius: 14px; background: linear-gradient(135deg, #6f8fb3, #c58b6a); }
+.words { padding: 10px 16px 4px; font-size: 15.5px; line-height: 1.4; min-height: 30px; max-height: 6.4em; overflow: hidden; white-space: pre-wrap; }
+.words.ph { color: var(--placeholder); }
+.words .caret { display: inline-block; width: 2px; height: 1.15em; background: var(--accent); vertical-align: text-bottom; margin-left: 1px; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+.row { display: flex; align-items: center; gap: 8px; padding: 6px 8px 8px; min-height: 48px; }
+.spacer { flex: 1; min-width: 0; }
+.round { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--fillSoft); color: var(--ink); flex: none; position: relative; }
+.round::after { content: ""; position: absolute; inset: -5px; } /* 44-pt press area */
+.round svg { width: 18px; height: 18px; }
+.round.send { background: var(--accent); color: var(--onAccent); }
+.round.send.off { background: var(--fillSoft); color: var(--muted); }
+.round.stop { background: var(--ink); color: var(--canvas); }
+.round.stop i { width: 12px; height: 12px; border-radius: 3px; background: currentColor; }
+.round.mic.on { background: var(--accent); color: var(--onAccent); }
+.pill { height: 34px; border-radius: 17px; background: var(--fillSoft); display: inline-flex; align-items: center; gap: 6px; padding: 0 11px 0 10px; font-size: 13.5px; font-weight: 600; min-width: 0; flex: 0 1 auto; white-space: nowrap; }
+.pill .txt { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.pill .dim { color: var(--muted); font-weight: 500; }
+.pill .chev { width: 10px; height: 10px; color: var(--muted); flex: none; }
+.pill .mark { width: 14px; height: 14px; background: var(--ink); -webkit-mask: var(--markUrl) center/contain no-repeat; mask: var(--markUrl) center/contain no-repeat; flex: none; }
+.pill .flag { width: 13px; height: 13px; flex: none; }
+.tiny { width: 34px; height: 34px; display: grid; place-items: center; color: var(--muted); flex: none; position: relative; }
+.tiny svg { width: 16px; height: 16px; }
+.tiny.lit { color: var(--accentText); }
+.tiny.warn { color: var(--warningText); }
+.wave { display: flex; align-items: center; gap: 3px; height: 34px; padding: 0 6px; flex: 1; }
+.wave i { width: 3px; height: 6px; border-radius: 2px; background: var(--accent); animation: wv 0.9s ease-in-out infinite both; }
+@keyframes wv { 0%,100% { height: 6px; } 50% { height: 22px; } }
+.wave span { font-size: 13.5px; color: var(--muted); margin-left: 8px; white-space: nowrap; }
+.above { font-size: 12px; color: var(--muted); padding: 0 12px 8px; }
+
+/* ---------- menus and sheet ---------- */
+.scrim { position: absolute; inset: 0; z-index: 50; }
+.menu { position: absolute; z-index: 51; width: 250px; border-radius: 14px; background: var(--menu); -webkit-backdrop-filter: blur(30px); backdrop-filter: blur(30px); box-shadow: 0 10px 40px rgba(0,0,0,.45); overflow: hidden; font-size: 15px; }
+.menu .sec { font-size: 12px; color: var(--muted); padding: 9px 14px 5px; }
+.menu .it { display: flex; align-items: center; gap: 10px; padding: 10px 14px; width: 100%; text-align: left; }
+.menu .it + .it, .menu .sec + .it { box-shadow: inset 0 0.5px 0 var(--sep); }
+.menu .it .ck { width: 16px; color: var(--ink); }
+.menu .it .sub { display: block; font-size: 12px; color: var(--muted); }
+.menu .it .grow { flex: 1; }
+.menu .it svg { width: 17px; height: 17px; }
+.menu .gap { height: 7px; background: var(--sep); }
+.sheet { position: absolute; left: 0; right: 0; bottom: 0; z-index: 51; background: var(--sheet); border-radius: 26px 26px 0 0; padding: 8px 18px 34px; box-shadow: 0 -10px 40px rgba(0,0,0,.4); max-height: 82%; overflow: auto; }
+.duo .sheet { left: 50%; width: 520px; transform: translateX(-50%); bottom: 0; }
+.sheet .grab { width: 36px; height: 5px; border-radius: 3px; background: var(--sep); margin: 0 auto 10px; }
+.sheet h4 { font-size: 13px; color: var(--muted); margin: 14px 0 6px; font-weight: 600; }
+.sheet .opt { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 11px 14px; background: var(--raised); }
+.sheet .opt:first-of-type { border-radius: 14px 14px 0 0; }
+.sheet .list { border-radius: 14px; overflow: hidden; }
+.sheet .list .opt + .opt { box-shadow: inset 0 0.5px 0 var(--sep); }
+.sheet .opt .grow { flex: 1; font-size: 15px; }
+.sheet .opt .sub { display: block; font-size: 12.5px; color: var(--muted); }
+.seg { display: flex; background: var(--raised); border-radius: 11px; padding: 3px; }
+.seg button { flex: 1; padding: 8px 0; border-radius: 9px; font-size: 14px; color: var(--muted); }
+.seg button.on { background: var(--fillStrong); color: var(--ink); font-weight: 600; }
+.sheet .done { margin-top: 16px; width: 100%; padding: 13px; border-radius: 14px; background: var(--fillSoft); font-weight: 600; }
+
+/* keyboard */
+.kb { position: absolute; left: 0; right: 0; bottom: 0; z-index: 25; background: var(--kb); padding: 8px 4px 40px; display: flex; flex-direction: column; gap: 10px; }
+.kb .r { display: flex; gap: 6px; justify-content: center; }
+.kb .k { height: 42px; flex: 0 1 34px; border-radius: 6px; background: var(--key); box-shadow: 0 1px 0 rgba(0,0,0,.35); }
+.duo .kb .k { flex-basis: 70px; height: 46px; }
+.kb .k.w { flex-basis: 180px; } .duo .kb .k.w { flex-basis: 380px; }
+
+/* Duo rail and sidebar */
+.rail { position: absolute; right: 0; top: 0; bottom: 0; width: 84px; display: flex; flex-direction: column; align-items: center; z-index: 10; }
+.rail .new { margin-top: 124px; }
+.rail .tabs { margin-top: auto; margin-bottom: auto; display: flex; flex-direction: column; gap: 18px; color: var(--muted); }
+.rail .tabs svg { width: 24px; height: 24px; }
+.rail .tabs .on { color: var(--accent); }
+.side { position: absolute; left: 0; top: 0; bottom: 0; width: 280px; padding: 46px 10px 0; z-index: 6; }
+.device.glass .side { background: transparent; }
+.side h5 { font-size: 12px; color: var(--muted); margin: 14px 10px 6px; font-weight: 600; }
+.side .tr { padding: 9px 10px; border-radius: 12px; font-size: 14px; display: flex; gap: 8px; align-items: center; }
+.side .tr.on { background: var(--fillSoft); }
+.side .tr .l { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+.side .tr .l.w { background: var(--accent); }
+.side .tr .l.n { background: var(--warning); }
+.side .tr .tt { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toast { position: absolute; left: 50%; top: 110px; transform: translateX(-50%); z-index: 60; background: var(--menu); -webkit-backdrop-filter: blur(20px); backdrop-filter: blur(20px); padding: 10px 14px; border-radius: 14px; font-size: 13.5px; width: max-content; max-width: 86%; box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+</style>
+</head>
+<body>
+<div class="controls">
+  <h1>Sotto iPhone composer, in Claude's shape</h1>
+  <p>Throwaway prototype. Press the pill, the +, the mic and Send. The yellow bar switches A, B and C, which differ only in where speed and permissions live.</p>
+  <div class="group" data-k="device"><span>Device</span></div>
+  <div class="group" data-k="screen"><span>Screen</span></div>
+  <div class="group" data-k="box"><span>Box</span></div>
+  <div class="group" data-k="glass"><span>Glass</span></div>
+  <div class="group" data-k="scheme"><span>Look</span></div>
+  <div class="group" data-k="keyboard"><span>Keyboard</span></div>
+  <div class="group" data-k="fit"><span>Size</span></div>
+</div>
+<nav class="switcher"><button id="prev" aria-label="Previous variant">‹</button><span class="label" id="vlabel"></span><button id="next" aria-label="Next variant">›</button></nav>
+<main id="stage"><div id="scaler"></div></main>
+<section class="notes" id="notes"></section>
+
+<script>
+const VARIANTS = { A: "One menu", B: "Pill, bolt and shield", C: "Sheet, as in Claude" };
+const OPTS = {
+  device: [["iphone", "iPhone"], ["duo", "Duo unfolded"]],
+  screen: [["thread", "Thread"], ["new", "New thread"], ["watcher", "Watcher"]],
+  box: [["empty", "Empty"], ["typed", "Typed"], ["working", "Working"], ["workingTyped", "Working + typed"], ["photo", "With a photo"]],
+  glass: [["off", "Off"], ["on", "On"]],
+  scheme: [["dark", "Dark"], ["light", "Light"]],
+  keyboard: [["down", "Down"], ["up", "Up"]],
+  fit: [["fit", "Fit screen"], ["actual", "Actual size"]],
+};
+const q = new URLSearchParams(location.search);
+const S = { variant: VARIANTS[q.get("variant")] ? q.get("variant") : "A", device: "iphone", screen: "thread", box: "empty", glass: "off", scheme: "dark", keyboard: "down", fit: "fit",
+  open: null, sub: null, listening: false, dictated: "", toast: "",
+  thread: { provider: "claude", model: "Opus 5.5", effort: "High", speed: "Standard", perm: "Ask first" },
+  watcher: { provider: "codex", model: "GPT-6.1 Sol", effort: "Extra high", speed: "Standard", perm: "Ask first" } };
+for (const k of Object.keys(OPTS)) if (q.get(k) && OPTS[k].some(o => o[0] === q.get(k))) S[k] = q.get(k);
+
+const MODELS = { claude: [["Opus 5.5", "Most capable"], ["Sonnet 5.5", "Fast and capable"], ["Haiku 5.5", "Fastest"]],
+                 codex: [["GPT-6.1 Sol", "Deepest reasoning"], ["GPT-6.1 Terra", "Balanced"], ["GPT-6.1 Luna", "Fastest"]] };
+const EFFORTS = { claude: ["Low", "Medium", "High", "Max"], codex: ["Low", "Medium", "High", "Extra high"] };
+const SPEEDS = ["Standard", "Fast"];
+const PERMS = [["Ask first", "Asks before it edits files or runs commands"], ["Edit without asking", "Edits files in the project; asks before commands"], ["Full access", "Acts without asking"]];
+
+const PALETTES = {
+  sotto: { dark: { canvas: "#040507", ink: "#f9fafd", muted: "#a0a5ae", placeholder: "#94979e", accent: "#47b8a9", onAccent: "#070f0e", accentText: "#6bc3b6", raised: "#111316", message: "#14171e", warning: "#fe9a00", warningText: "#ffc184" },
+           light: { canvas: "#f9f8f5", ink: "#221d17", muted: "#68625b", placeholder: "#6f6961", accent: "#007d74", onAccent: "#fdfcf9", accentText: "#1e665e", raised: "#f2f0ec", message: "#ebe7df", warning: "#fe9a00", warningText: "#835622" } },
+  glass: { dark: { canvas: "#111418", ink: "#f9fafc", muted: "#ccd1d9", placeholder: "#c5cbd2", accent: "#69caff", onAccent: "#071727", accentText: "#84d2ff", raised: "rgba(49,54,60,.5)", message: "#202e3e", warning: "#fe9a00", warningText: "#ffc183",
+                   bd1: "#131e37", bd2: "#1b0e2d", bd3: "#001f24", roomTint: "rgba(12,16,21,.76)" },
+           light: { canvas: "#f0f2f6", ink: "#101419", muted: "#43484f", placeholder: "#484e55", accent: "#0064b5", onAccent: "#fcfcfc", accentText: "#0f518f", raised: "rgba(255,255,255,.62)", message: "#dae6f3", warning: "#fe9a00", warningText: "#785128",
+                   bd1: "#cbe1f8", bd2: "#ebe4fa", bd3: "#d1f3f4", roomTint: "rgba(244,247,251,.80)" } },
+};
+
+const I = {
+  plus: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M10 4v12M4 10h12"/></svg>',
+  mic: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><rect x="7" y="2.5" width="6" height="10" rx="3"/><path d="M4.5 9.5a5.5 5.5 0 0 0 11 0M10 15v2.5"/></svg>',
+  up: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10 16V4.5M5 9l5-5 5 5"/></svg>',
+  queue: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h8M3 10h8M3 14h5M15 11v6M12 14h6"/></svg>',
+  steer: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 17v-6a3 3 0 0 1 3-3h8M12 4l4 4-4 4"/></svg>',
+  chev: '<svg class="chev" viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3.5l3 3 3-3"/></svg>',
+  right: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 5l5 5-5 5"/></svg>',
+  back: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12.5 4l-6 6 6 6"/></svg>',
+  bolt: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M11 2L4 11.5h5L8 18l7-9.5h-5z"/></svg>',
+  boltF: '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M11 2L4 11.5h5L8 18l7-9.5h-5z"/></svg>',
+  shield: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M10 2.5l6 2.3v4.6c0 4-2.6 6.7-6 8.1-3.4-1.4-6-4.1-6-8.1V4.8z"/></svg>',
+  shieldH: '<svg viewBox="0 0 20 20" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"><path d="M10 2.5l6 2.3v4.6c0 4-2.6 6.7-6 8.1-3.4-1.4-6-4.1-6-8.1V4.8z" fill="none"/><path d="M10 2.5v15c-3.4-1.4-6-4.1-6-8.1V4.8z" fill="currentColor" stroke="none"/></svg>',
+  shieldF: '<svg viewBox="0 0 20 20" fill="currentColor"><path d="M10 2.5l6 2.3v4.6c0 4-2.6 6.7-6 8.1-3.4-1.4-6-4.1-6-8.1V4.8z"/></svg>',
+  dots: '<svg viewBox="0 0 20 20" fill="currentColor"><circle cx="4.5" cy="10" r="1.7"/><circle cx="10" cy="10" r="1.7"/><circle cx="15.5" cy="10" r="1.7"/></svg>',
+  pencil: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3.5H5A1.5 1.5 0 0 0 3.5 5v10A1.5 1.5 0 0 0 5 16.5h10a1.5 1.5 0 0 0 1.5-1.5v-4"/><path d="M14.5 3l2.5 2.5-7 7H7.5V10z"/></svg>',
+  photo: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="2.5" y="4" width="15" height="12" rx="2"/><circle cx="7" cy="8.5" r="1.4"/><path d="M3 14l4.5-4 3.5 3 2.5-2 4 3.5"/></svg>',
+  camera: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M3 7h3l1.5-2h5L14 7h3v9H3z"/><circle cx="10" cy="11.5" r="2.8"/></svg>',
+  folder: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="M2.5 5.5h5l1.5 2h8.5v8.5h-15z"/></svg>',
+  check: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 8.5l3 3 7-7"/></svg>',
+  owl: '<svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 6l2-3 4 2 4-2 2 3v6a6 6 0 0 1-12 0z"/><circle cx="7.5" cy="9" r="1.6"/><circle cx="12.5" cy="9" r="1.6"/></svg>',
+  list: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"><path d="M8 6h12M8 12h12M8 18h12"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/></svg>',
+  pc: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8"/></svg>',
+  gear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9"><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.3 5.3l2.1 2.1M16.6 16.6l2.1 2.1M5.3 18.7l2.1-2.1M16.6 7.4l2.1-2.1"/></svg>',
+};
+
+const MARKS = {"claude": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI1NiAyNTciPjxwYXRoIGZpbGw9IiMwMDAwMDAiIGQ9Ik0gNTAuMjI4IDE3MC4zMjEgTCAxMDAuNTg1IDE0Mi4wNjQgTCAxMDEuNDI4IDEzOS42MDEgTCAxMDAuNTg1IDEzOC4yNCBMIDk4LjEyMyAxMzguMjQgTCA4OS42OTcgMTM3LjcyMiBMIDYwLjkyMiAxMzYuOTQ0IEwgMzUuOTcgMTM1LjkwNyBMIDExLjc5NSAxMzQuNjExIEwgNS43MDMgMTMzLjMxNCBMIDAgMTI1Ljc5NiBMIDAuNTgzIDEyMi4wMzcgTCA1LjcwMyAxMTguNjAzIEwgMTMuMDI3IDExOS4yNTEgTCAyOS4yMjkgMTIwLjM1MiBMIDUzLjUzMyAxMjIuMDM3IEwgNzEuMTYyIDEyMy4wNzQgTCA5Ny4yOCAxMjUuNzk2IEwgMTAxLjQyOCAxMjUuNzk2IEwgMTAyLjAxMSAxMjQuMTExIEwgMTAwLjU4NSAxMjMuMDc0IEwgOTkuNDg0IDEyMi4wMzcgTCA3NC4zMzcgMTA0Ljk5MiBMIDQ3LjExNyA4Ni45NzUgTCAzMi44NTkgNzYuNjA1IEwgMjUuMTQ2IDcxLjM1NSBMIDIxLjI1OCA2Ni40MyBMIDE5LjU3MyA1NS42NzIgTCAyNi41NzMgNDcuOTU5IEwgMzUuOTcgNDguNjA4IEwgMzguMzY4IDQ5LjI1NiBMIDQ3Ljg5NSA1Ni41NzkgTCA2OC4yNDUgNzIuMzI5IEwgOTQuODE3IDkxLjkgTCA5OC43MDYgOTUuMTQgTCAxMDAuMjYxIDk0LjAzOCBMIDEwMC40NTYgOTMuMjYxIEwgOTguNzA2IDkwLjM0NCBMIDg0LjI1MyA2NC4yMjYgTCA2OC44MjggMzcuNjU0IEwgNjEuOTU4IDI2LjYzNiBMIDYwLjE0NCAyMC4wMjYgQyA1OS40OTYgMTcuMzAzIDU5LjA0MiAxNS4wMzUgNTkuMDQyIDEyLjI0OCBMIDY3LjAxNCAxLjQyNSBMIDcxLjQyIDAgTCA4Mi4wNSAxLjQyNiBMIDg2LjUyMiA1LjMxNCBMIDkzLjEzMiAyMC40MTUgTCAxMDMuODI2IDQ0LjIwMSBMIDEyMC40MTcgNzYuNTQxIEwgMTI1LjI3OCA4Ni4xMzMgTCAxMjcuODcgOTUuMDEyIEwgMTI4Ljg0MyA5Ny43MzQgTCAxMzAuNTI4IDk3LjczNCBMIDEzMC41MjggOTYuMTc4IEwgMTMxLjg4OCA3Ny45NjcgTCAxMzQuNDE2IDU1LjYwNyBMIDEzNi44NzkgMjYuODMxIEwgMTM3LjcyMiAxOC43MzEgTCAxNDEuNzQgOS4wMDkgTCAxNDkuNzExIDMuNzU5IEwgMTU1LjkzMyA2Ljc0IEwgMTYxLjA1MyAxNC4wNjQgTCAxNjAuMzQgMTguNzk0IEwgMTU3LjI5NCAzOC41NjIgTCAxNTEuMzMyIDY5LjU0MiBMIDE0Ny40NDMgOTAuMjgxIEwgMTQ5LjcxMSA5MC4yODEgTCAxNTIuMzA0IDg3LjY4OCBMIDE2Mi44MDMgNzMuNzU0IEwgMTgwLjQzMSA1MS43MTggTCAxODguMjA5IDQyLjk2OSBMIDE5Ny4yODIgMzMuMzEyIEwgMjAzLjExNSAyOC43MTEgTCAyMTQuMTMzIDI4LjcxMSBMIDIyMi4yMzMgNDAuNzY2IEwgMjE4LjYwNSA1My4yMDkgTCAyMDcuMjYzIDY3LjU5NyBMIDE5Ny44NjUgNzkuNzgxIEwgMTg0LjM4NSA5Ny45MjggTCAxNzUuOTU5IDExMi40NDYgTCAxNzYuNzM3IDExMy42MTIgTCAxNzguNzQ3IDExMy40MTggTCAyMDkuMjA3IDEwNi45MzcgTCAyMjUuNjY5IDEwMy45NTUgTCAyNDUuMzA2IDEwMC41ODUgTCAyNTQuMTg2IDEwNC43MzMgTCAyNTUuMTU3IDEwOC45NDYgTCAyNTEuNjU3IDExNy41NjYgTCAyMzAuNjU5IDEyMi43NSBMIDIwNi4wMzEgMTI3LjY3NiBMIDE2OS4zNDkgMTM2LjM2MSBMIDE2OC44OTUgMTM2LjY4NSBMIDE2OS40MTQgMTM3LjMzMyBMIDE4NS45NCAxMzguODg4IEwgMTkzLjAwNSAxMzkuMjc3IEwgMjEwLjMwOSAxMzkuMjc3IEwgMjQyLjUxOSAxNDEuNjc1IEwgMjUwLjk0NSAxNDcuMjQ5IEwgMjU2IDE1NC4wNTQgTCAyNTUuMTU3IDE1OS4yMzggTCAyNDIuMTk1IDE2NS44NDkgTCAyMjQuNjk3IDE2MS43MDEgTCAxODMuODY3IDE1MS45OCBMIDE2OS44NjcgMTQ4LjQ4IEwgMTY3LjkyMyAxNDguNDggTCAxNjcuOTIzIDE0OS42NDcgTCAxNzkuNTg5IDE2MS4wNTMgTCAyMDAuOTc2IDE4MC4zNjcgTCAyMjcuNzQzIDIwNS4yNTQgTCAyMjkuMTAzIDIxMS40MTEgTCAyMjUuNjY5IDIxNi4yNzEgTCAyMjIuMDM5IDIxNS43NTMgTCAxOTguNTEzIDE5OC4wNiBMIDE4OS40NCAxOTAuMDg4IEwgMTY4Ljg5NSAxNzIuNzg0IEwgMTY3LjUzNSAxNzIuNzg0IEwgMTY3LjUzNSAxNzQuNTk4IEwgMTcyLjI2NSAxODEuNTMzIEwgMTk3LjI4MiAyMTkuMTIzIEwgMTk4LjU3OCAyMzAuNjU5IEwgMTk2Ljc2NCAyMzQuNDE5IEwgMTkwLjI4MyAyMzYuNjg3IEwgMTgzLjE1MyAyMzUuMzkgTCAxNjguNTA2IDIxNC44NDYgTCAxNTMuNDA2IDE5MS43MDggTCAxNDEuMjIxIDE3MC45NjkgTCAxMzkuNzMxIDE3MS44MTIgTCAxMzIuNTM3IDI0OS4yNiBMIDEyOS4xNjcgMjUzLjIxMyBMIDEyMS4zODkgMjU2LjE5NCBMIDExNC45MDkgMjUxLjI2OSBMIDExMS40NzMgMjQzLjI5NyBMIDExNC45MDggMjI3LjU0OCBMIDExOS4wNTYgMjA3LjAwNCBMIDEyMi40MjYgMTkwLjY3MSBMIDEyNS40NzIgMTcwLjM4NiBMIDEyNy4yODcgMTYzLjY0NiBMIDEyNy4xNTcgMTYzLjE5MiBMIDEyNS42NjcgMTYzLjM4NiBMIDExMC4zNzIgMTg0LjM4NSBMIDg3LjEwNSAyMTUuODE4IEwgNjguNjk5IDIzNS41MiBMIDY0LjI5MiAyMzcuMjcgTCA1Ni42NDQgMjMzLjMxNiBMIDU3LjM1NyAyMjYuMjUyIEwgNjEuNjM0IDIxOS45NjYgTCA4Ny4xMDQgMTg3LjU2MSBMIDEwMi40NjQgMTY3LjQ2OSBMIDExMi4zODEgMTU1Ljg2OSBMIDExMi4zMTYgMTU0LjE4MyBMIDExMS43MzMgMTU0LjE4MyBMIDQ0LjA3IDE5OC4xMjUgTCAzMi4wMTUgMTk5LjY4IEwgMjYuODMgMTk0LjgyIEwgMjcuNDc4IDE4Ni44NDggTCAyOS45NDEgMTg0LjI1NSBMIDUwLjI5MSAxNzAuMjU2IEwgNTAuMjI3IDE3MC4zMjEgWiIvPjwvc3ZnPg0K", "codex": "data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyNCIgaGVpZ2h0PSIyNCIgdmlld0JveD0iMCAwIDI1NiAyNjAiPjxwYXRoIGZpbGw9IiMwMDAwMDAiIGQ9Ik0gMjM5LjE4NCAxMDYuMjAzIEMgMjQ1LjA1NDUgODguNTI0NCAyNDMuMDIyNiA2OS4xNzM2IDIzMy42MDggNTMuMSBDIDIxOS40NTIgMjguNDU5IDE5MSAxNS43ODQgMTYzLjIxMyAyMS43NCBDIDE0Ny41NTQyIDQuMzIyMSAxMjMuNzk1NCAtMy40MjM0IDEwMC44Nzk3IDEuNDE4OSBDIDc3Ljk2NCA2LjI2MTIgNTkuMzY5NyAyMi45NTYzIDUyLjA5NiA0NS4yMiBDIDMzLjg0MzUgNDguOTYyOCAxOC4wODk3IDYwLjM5MDkgOC44NjYgNzYuNTggQyAtNS40NDQgMTAxLjE4MiAtMi4xOTUgMTMyLjIxNCAxNi44OTkgMTUzLjMyIEMgMTEuMDA2NyAxNzAuOTkwMyAxMy4wMjAyIDE5MC4zNDMyIDIyLjQyNCAyMDYuNDIyIEMgMzYuNTk4IDIzMS4wNzIgNjUuMDY4IDI0My43NDYgOTIuODcgMjM3Ljc4MiBDIDEwNS4yMzYgMjUxLjcwNjkgMTIzLjAwMTIgMjU5LjYzIDE0MS42MjQgMjU5LjUyNiBDIDE3MC4xMDUgMjU5LjU1MSAxOTUuMzM4IDI0MS4xNjUgMjA0LjAzOCAyMTQuMDQ1IEMgMjIyLjI4NzQgMjEwLjI5NTcgMjM4LjAzODUgMTk4Ljg2OTMgMjQ3LjI2NyAxODIuNjg1IEMgMjYxLjQwNCAxNTguMTI3IDI1OC4xNDIgMTI3LjI2MiAyMzkuMTg0IDEwNi4yMDIgWiBNIDE0MS42MjQgMjQyLjU0MSBDIDEzMC4yNTU2IDI0Mi41NTkxIDExOS4yNDM2IDIzOC41NzQ1IDExMC41MTkgMjMxLjI4NiBMIDExMi4wNTQgMjMwLjQxNiBMIDE2My43MjQgMjAwLjU5MSBDIDE2Ni4zNDA0IDE5OS4wNTY3IDE2Ny45NTQ0IDE5Ni4yNTcgMTY3Ljk3MSAxOTMuMjI0IEwgMTY3Ljk3MSAxMjAuMzc0IEwgMTg5LjgxNiAxMzMuMDEgQyAxOTAuMDM0IDEzMy4xMjEgMTkwLjE4NiAxMzMuMzMgMTkwLjIyNSAxMzMuNTczIEwgMTkwLjIyNSAxOTMuOTQgQyAxOTAuMTY5IDIyMC43NTggMTY4LjQ0MiAyNDIuNDg1IDE0MS42MjQgMjQyLjU0MSBaIE0gMzcuMTU4IDE5Ny45MzEgQyAzMS40NTY3IDE4OC4wODY1IDI5LjQwOTcgMTc2LjU0NjggMzEuMzc3IDE2NS4zNDIgTCAzMi45MTEgMTY2LjI2MyBMIDg0LjYzMyAxOTYuMDg5IEMgODcuMjM4OSAxOTcuNjE4MiA5MC40NjgxIDE5Ny42MTgyIDkzLjA3NCAxOTYuMDg5IEwgMTU2LjI1NSAxNTkuNjY0IEwgMTU2LjI1NSAxODQuODg1IEMgMTU2LjI0MzEgMTg1LjE0OTYgMTU2LjExMTMgMTg1LjM5NDQgMTU1Ljg5NyAxODUuNTUgTCAxMDMuNTYyIDIxNS43MzQgQyA4MC4zMDUgMjI5LjEzMiA1MC41OTIgMjIxLjE2NSAzNy4xNTggMTk3LjkzMSBaIE0gMjMuNTQ5IDg1LjM4IEMgMjkuMjg5OSA3NS40NzIyIDM4LjM1MTMgNjcuOTE1MiA0OS4xMjkgNjQuMDQ3IEwgNDkuMTI5IDEyNS40MzcgQyA0OS4wODkzIDEyOC40NTggNTAuNjk2NyAxMzEuMjYxMiA1My4zMjQgMTMyLjc1MyBMIDExNi4xOTggMTY5LjAyNSBMIDk0LjM1MyAxODEuNjYxIEMgOTQuMTEzMSAxODEuNzg4MSA5My44MjU5IDE4MS43ODgxIDkzLjU4NiAxODEuNjYxIEwgNDEuMzUzIDE1MS41MyBDIDE4LjE0MiAxMzguMDc2IDEwLjE4MiAxMDguMzg2IDIzLjU0OSA4NS4xMjUgTCAyMy41NDkgODUuMzgxIFogTSAyMDMuMDE1IDEyNy4wNzUgTCAxMzkuOTM1IDkwLjQ0NSBMIDE2MS43MyA3Ny44NiBDIDE2MS45NzAxIDc3LjczMjUgMTYyLjI1NzkgNzcuNzMyNSAxNjIuNDk4IDc3Ljg2IEwgMjE0LjczMSAxMDguMDQ0IEMgMjMxLjAzMzkgMTE3LjQ1MDggMjQwLjQzOTQgMTM1LjQyNTQgMjM4Ljg3MzUgMTU0LjE4MjQgQyAyMzcuMzA3NiAxNzIuOTM5MyAyMjUuMDUyIDE4OS4xMDU2IDIwNy40MTUgMTk1LjY3OSBMIDIwNy40MTUgMTM0LjI4OCBDIDIwNy4zMjMgMTMxLjI3NiAyMDUuNjUxIDEyOC41MzUyIDIwMy4wMTUgMTI3LjA3NSBaIE0gMjI0Ljc1NyA5NC4zODUgTCAyMjMuMjIyIDkzLjQ2MyBMIDE3MS42MDMgNjMuMzgyIEMgMTY4Ljk4MTMgNjEuODQzNyAxNjUuNzMyNyA2MS44NDM3IDE2My4xMTEgNjMuMzgyIEwgOTkuOTggOTkuODA4IEwgOTkuOTggNzQuNTg3IEMgOTkuOTUyNiA3NC4zMjU4IDEwMC4wNzA1IDc0LjA3MDYgMTAwLjI4NyA3My45MjIgTCAxNTIuNTIgNDMuNzg5IEMgMTY4Ljg2MjIgMzQuMzc0NiAxODkuMTczMSAzNS4yNTMyIDIwNC42NDEzIDQ2LjA0MzYgQyAyMjAuMTA5NSA1Ni44MzQgMjI3Ljk0NzkgNzUuNTkyMSAyMjQuNzU2IDk0LjE4IEwgMjI0Ljc1NiA5NC4zODUgWiBNIDg4LjA2MSAxMzkuMDk3IEwgNjYuMjE2IDEyNi41MTIgQyA2NS45OTUgMTI2LjM3ODMgNjUuODQ0NyAxMjYuMTUzNCA2NS44MDYgMTI1Ljg5OCBMIDY1LjgwNiA2NS42ODUgQyA2NS44MzA3IDQ2LjgyODQgNzYuNzQ5NCAyOS42ODQzIDkzLjgyNjYgMjEuNjg3OSBDIDExMC45MDM3IDEzLjY5MTYgMTMxLjA2MzcgMTYuMjgzMyAxNDUuNTYzIDI4LjMzOSBMIDE0NC4wMjggMjkuMjA5IEwgOTIuMzU4IDU5LjAzNCBDIDg5Ljc0MiA2MC41Njg2IDg4LjEyODQgNjMuMzY4MiA4OC4xMTIgNjYuNDAxIEwgODguMDYxIDEzOS4wOTggWiBNIDk5LjkyOSAxMTMuNTE3IEwgMTI4LjA2NyA5Ny4zIEwgMTU2LjI1NSAxMTMuNTE4IEwgMTU2LjI1NSAxNDUuOTUyIEwgMTI4LjE2OSAxNjIuMTcgTCA5OS45ODEgMTQ1Ljk1MiBMIDk5LjkyOSAxMTMuNTE4IFoiLz48L3N2Zz4NCg=="};
+const TYPED = "Move the + so it clears the battery on the cover screen, then rerun the Duo journey and send me the captures.";
+function who() { return S.screen === "watcher" ? S.watcher : S.thread; }
+function working() { return S.box === "working" || S.box === "workingTyped"; }
+function words() { if (S.listening || S.dictated) return S.dictated; return (S.box === "typed" || S.box === "workingTyped") ? TYPED : ""; }
+function written() { return words().trim() !== "" || S.box === "photo"; }
+
+function speedIcon(s) { return s.speed === "Fast" ? I.boltF : I.bolt; }
+function permIcon(s) { return s.perm === "Full access" ? I.shieldF : s.perm === "Edit without asking" ? I.shieldH : I.shield; }
+
+function pill(s) {
+  // A and C carry speed and permissions inside the pill when they are not the default, so nothing is hidden.
+  const flags = S.variant !== "B"
+    ? (s.speed === "Fast" ? `<span class="flag" style="color:var(--accentText)">${I.boltF}</span>` : "") +
+      (s.perm !== "Ask first" ? `<span class="flag" style="color:${s.perm === "Full access" ? "var(--warningText)" : "var(--accentText)"}">${permIcon(s)}</span>` : "")
+    : "";
+  return `<button class="pill" data-act="pill" aria-label="Model and effort: ${s.model} ${s.effort}">
+    <span class="mark" style="--markUrl:url('${MARKS[s.provider]}')"></span>
+    <span class="txt">${s.model} <span class="dim">${s.effort}</span></span>${flags}${I.chev}</button>`;
+}
+
+function composer() {
+  const s = who(), w = words(), isW = S.screen === "watcher";
+  const ph = isW ? (working() ? "Ask Watcher while it works" : "Ask Watcher") : (working() ? "Reply while it works" : "Reply to this thread");
+  const caret = S.listening ? '<span class="caret"></span>' : "";
+  let right = "";
+  if (S.listening) {
+    right = `<button class="round mic on" data-act="mic" aria-label="Stop dictating">${I.mic}</button>`;
+  } else {
+    right += `<button class="round mic" data-act="mic" aria-label="Dictate">${I.mic}</button>`;
+    if (working() && !written()) right += `<button class="round stop" data-act="stop" aria-label="Stop this turn"><i></i></button>`;
+    else {
+      if (working()) right += `<button class="round stop" data-act="stop" aria-label="Stop this turn"><i></i></button>`;
+      const glyph = working() ? (isW ? I.steer : I.queue) : I.up;
+      right += `<button class="round send ${written() ? "" : "off"}" data-act="send" aria-label="Send">${glyph}</button>`;
+    }
+  }
+  const left = S.listening
+    ? `<div class="wave">${[0, .15, .3, .1, .25, .05, .2].map(d => `<i style="animation-delay:${d}s"></i>`).join("")}<span>Listening on this iPhone</span></div>`
+    : `<button class="round" data-act="plus" aria-label="Attach photos or files">${I.plus}</button>${pill(s)}` +
+      (S.variant === "B" ? `<button class="tiny ${s.speed === "Fast" ? "lit" : ""}" data-act="speed" aria-label="Speed">${speedIcon(s)}</button><button class="tiny ${s.perm === "Full access" ? "warn" : s.perm !== "Ask first" ? "lit" : ""}" data-act="perm" aria-label="Permissions">${permIcon(s)}</button>` : "") +
+      `<span class="spacer"></span>` +
+      (S.variant === "B" && isW ? `<button class="tiny" data-act="newWatcher" aria-label="New Watcher">${I.pencil}</button>` : "");
+  return `<div class="card">
+      ${S.box === "photo" ? '<div class="attach"><div class="ph"></div></div>' : ""}
+      <div class="words ${w ? "" : "ph"}">${w ? esc(w) + caret : (S.listening ? caret : ph)}</div>
+      <div class="row">${left}${right}</div>
+    </div>`;
+}
+function esc(t) { return t.replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+
+function threadBody() {
+  if (S.screen === "new") return `<div class="hero"><h3>New thread</h3><div class="meta"><span>Sotto</span><span>main</span><span>Laptop</span></div></div>
+    <div class="empty-hint">Your first message starts it.</div>`;
+  return `<div class="hero"><h3>Clear the Duo's + of the battery</h3><div class="meta"><span>Sotto</span><span>fix/duo-plus-battery</span><span>PR #1990</span></div></div>
+    <div class="msg-user">The + on the cover screen sits on top of the battery. Can you move it down?</div>
+    <div class="msg-agent"><p>It sits 108 points down the strip, which is where the clock and battery end on your Duo. I moved it to 124 points unfolded and 176 on the cover screen.</p></div>
+    <div class="step">Edited <b>Views.swift</b> +12 −4</div>
+    <div class="step">Ran <b>FocusJourneyTests</b> · passed</div>
+    <div class="msg-agent"><p>Both captures now show the + clear of the battery and the signal bars. The rail's tabs stay centred under it.</p>
+    <p>Want me to open the pull request, or check the folded Duo held sideways first?</p></div>`;
+}
+function watcherBody() {
+  return `<div class="hero"><h3>Watcher</h3><div class="meta"><span>Laptop</span><span>Watching 3 threads</span></div></div>
+    <div class="wcard" style="margin-top:16px"><div class="h">Needs you</div>Clear the Duo's + of the battery asks whether to open its pull request.</div>
+    <div class="msg-user">What's left before the 5.2 release?</div>
+    <div class="msg-agent"><p>Two pull requests wait on Gates (Windows): the Duo's + and the composer's placeholder. The release check passes once both merge.</p></div>
+    <div class="step">Read <b>3 threads</b></div>`;
+}
+
+function menuFor() {
+  const s = who(), isW = S.screen === "watcher";
+  const it = (label, chosen, act, sub, icon) => `<button class="it" data-act="${act}"><span class="ck">${chosen ? I.check : ""}</span><span class="grow">${label}${sub ? `<span class="sub">${sub}</span>` : ""}</span>${icon || ""}</button>`;
+  if (S.open === "plus") return `<div class="sec">Add</div>${it("Photo library", false, "close", "", I.photo)}${it("Camera", false, "close", "", I.camera)}<div class="gap"></div>${it("Files", false, "close", "", I.folder)}`;
+  const models = MODELS[s.provider].map(([m]) => it(m, m === s.model, "set:model:" + m)).join("") + it("Legacy", false, "close", "", I.right);
+  const efforts = EFFORTS[s.provider].map(e => it(e, e === s.effort, "set:effort:" + e)).join("");
+  const speeds = SPEEDS.map(e => it(e, e === s.speed, "set:speed:" + e, e === "Fast" ? "Uses more of your plan" : "")).join("");
+  const perms = PERMS.map(([p, d]) => it(p, p === s.perm, "set:perm:" + p, d)).join("");
+  if (S.open === "perm") return `<div class="sec">Permissions</div>${perms}`;
+  if (S.variant === "B") return `<div class="sec">${s.provider === "claude" ? "Claude" : "Codex"}</div>${models}<div class="gap"></div><div class="sec">Effort</div>${efforts}`;
+  // A: one menu. Models inline, the rest as submenus showing their value.
+  if (S.sub === "effort") return `<button class="it" data-act="sub:"><span class="ck">${I.back}</span><span class="grow"><b>Effort</b></span></button>${efforts}`;
+  if (S.sub === "speed") return `<button class="it" data-act="sub:"><span class="ck">${I.back}</span><span class="grow"><b>Speed</b></span></button>${speeds}`;
+  if (S.sub === "perm") return `<button class="it" data-act="sub:"><span class="ck">${I.back}</span><span class="grow"><b>Permissions</b></span></button>${perms}`;
+  return `<div class="sec">${s.provider === "claude" ? "Claude" : "Codex"}</div>${models}<div class="gap"></div>
+    ${it("Effort", false, "sub:effort", s.effort, I.right)}${it("Speed", false, "sub:speed", s.speed, I.right)}${it("Permissions", false, "sub:perm", s.perm, I.right)}
+    ${isW ? `<div class="gap"></div>${it("New Watcher", false, "newWatcher", "Starts a new Watcher with a handover", I.pencil)}` : ""}`;
+}
+
+function sheet() {
+  const s = who(), isW = S.screen === "watcher";
+  const opt = (label, sub, chosen, act) => `<button class="opt" data-act="${act}"><span class="grow">${label}${sub ? `<span class="sub">${sub}</span>` : ""}</span><span style="width:18px;color:var(--accent)">${chosen ? I.check : ""}</span></button>`;
+  const seg = (list, cur, key) => `<div class="seg">${list.map(e => `<button class="${e === cur ? "on" : ""}" data-act="set:${key}:${e}">${e}</button>`).join("")}</div>`;
+  return `<div class="grab"></div>
+    <h4>Model</h4><div class="list">${MODELS[s.provider].map(([m, d]) => opt(m, d, m === s.model, "set:model:" + m)).join("")}${opt("Legacy models", "", false, "close")}</div>
+    <h4>Effort</h4>${seg(EFFORTS[s.provider], s.effort, "effort")}
+    <h4>Speed</h4>${seg(SPEEDS, s.speed, "speed")}
+    <h4>Permissions</h4><div class="list">${PERMS.map(([p, d]) => opt(p, d, p === s.perm, "set:perm:" + p)).join("")}</div>
+    ${isW ? `<button class="done" data-act="newWatcher">New Watcher</button>` : ""}
+    <button class="done" data-act="close">Done</button>`;
+}
+
+function render() {
+  const pal = PALETTES[S.glass === "on" ? "glass" : "sotto"][S.scheme];
+  const dark = S.scheme === "dark", duo = S.device === "duo";
+  const W = duo ? 951 : 393, H = duo ? 669 : 852;
+  const kbH = S.keyboard === "up" ? (duo ? 300 : 291) : 0;
+  const vars = Object.entries(pal).map(([k, v]) => `--${k}:${v}`).join(";") +
+    `;--fillSoft:${dark ? "rgba(255,255,255,.09)" : "rgba(0,0,0,.06)"};--fillStrong:${dark ? "rgba(255,255,255,.16)" : "#fff"}` +
+    `;--box:color-mix(in srgb, ${pal.ink} ${dark ? 8 : 5.5}%, ${pal.canvas});--shadow:${dark ? "rgba(0,0,0,.4)" : "rgba(0,0,0,.14)"}` +
+    `;--glassFill:${dark ? "rgba(27,30,35,.58)" : "rgba(249,250,252,.68)"};--sheen:${dark ? "rgba(255,255,255,.07)" : "rgba(255,255,255,.6)"}` +
+    `;--menu:${dark ? "rgba(37,39,44,.92)" : "rgba(250,250,250,.94)"};--sep:${dark ? "rgba(255,255,255,.12)" : "rgba(0,0,0,.1)"}` +
+    `;--sheet:${dark ? "#1c1d21" : "#f2f2f5"};--kb:${dark ? "#2b2c30" : "#d1d4da"};--key:${dark ? "#4a4b50" : "#fff"}`;
+
+  const sideW = duo && S.screen !== "watcher" ? 280 : 0, railW = duo ? 84 : 0;
+  const body = S.screen === "watcher" ? watcherBody() : threadBody();
+  const above = S.screen === "watcher" && working() ? '<div class="above">Watcher is reading 3 threads</div>' : "";
+  const dockBottom = kbH ? kbH : (duo ? 8 : 26);
+  const sidebar = sideW ? `<div class="side"><h5>Needs you</h5><div class="tr ${S.screen === "thread" ? "on" : ""}"><i class="l n"></i><span class="tt">Clear the Duo's + of the battery</span></div>
+      <h5>Working now</h5><div class="tr"><i class="l w"></i><span class="tt">Measure scroll frames on the iPhone</span></div><div class="tr"><i class="l w"></i><span class="tt">Release 5.2 notes</span></div>
+      <h5>Recent</h5><div class="tr ${S.screen === "new" ? "on" : ""}"><i class="l"></i><span class="tt">New thread</span></div><div class="tr"><i class="l"></i><span class="tt">Placeholder readability</span></div><div class="tr"><i class="l"></i><span class="tt">Watcher composer on the Duo</span></div></div>` : "";
+  const rail = duo ? `<div class="rail"><button class="round new" aria-label="New thread">${I.plus}</button><div class="tabs"><span class="${S.screen !== "watcher" ? "on" : ""}">${I.list}</span><span class="${S.screen === "watcher" ? "on" : ""}">${I.owl}</span><span>${I.pc}</span><span>${I.gear}</span></div></div>` : "";
+  const top = S.screen === "watcher"
+    ? `<div class="topbar"><span class="icon-btn"></span><div class="t">Watcher</div><span class="icon-btn">${I.dots}</span></div>`
+    : `<div class="topbar"><span class="icon-btn">${I.back}</span><div class="t">${S.screen === "new" ? "New thread" : "Clear the Duo's + of the battery"}</div><span class="icon-btn">${I.owl}</span><span class="icon-btn">${I.dots}</span></div>`;
+  let overlay = "";
+  if (S.open) {
+    overlay = `<div class="scrim" data-act="close"></div>`;
+    if (S.variant === "C" && S.open === "pill") overlay += `<div class="sheet">${sheet()}</div>`;
+    else {
+      const x = S.open === "plus" ? 20 : (S.open === "perm" ? 120 : 60);
+      overlay += `<div class="menu" style="left:${sideW + x + (duo ? Math.max(0, (W - sideW - railW - 680) / 2) : 0)}px;bottom:${dockBottom + 70}px">${menuFor()}</div>`;
+    }
+  }
+  const html = `<div class="device ${duo ? "duo" : ""} ${S.glass === "on" ? "glass" : ""}" style="width:${W}px;height:${H}px;${vars}">
+    <div class="room"></div>
+    <div class="statusbar"><span>9:41</span><span class="battery">5G <i></i></span></div>
+    ${sidebar}${rail}
+    <div class="page" style="left:${sideW}px;right:${railW}px">
+      ${top}
+      <div class="scroll"><div class="inner">${body}</div></div>
+    </div>
+    <div class="dock" style="left:${sideW}px;right:${railW}px;bottom:${dockBottom}px"><div class="inner">${above}${composer()}</div></div>
+    ${kbH ? `<div class="kb" style="left:${sideW}px;right:${railW}px;height:${kbH}px">${[10, 9, 7].map(n => `<div class="r">${Array(n).fill('<i class="k"></i>').join("")}</div>`).join("")}<div class="r"><i class="k"></i><i class="k"></i><i class="k w"></i><i class="k"></i></div></div>` : ""}
+    ${duo ? "" : '<div class="homebar"></div>'}
+    ${overlay}
+    ${S.toast ? `<div class="toast">${S.toast}</div>` : ""}
+  </div>`;
+  const sc = document.getElementById("scaler");
+  sc.innerHTML = html;
+  const avail = Math.min(document.documentElement.clientWidth, 1100) - 30;
+  const scale = S.fit === "fit" ? Math.min(1, avail / (W + 22)) : 1;
+  sc.style.width = (W + 22) * scale + "px"; sc.style.height = (H + 22) * scale + "px";
+  sc.firstElementChild.style.transform = `translate(11px,11px) scale(${scale})`; sc.firstElementChild.style.transformOrigin = "top left";
+  sc.style.transform = "";
+
+  for (const g of document.querySelectorAll(".group")) {
+    const k = g.dataset.k;
+    g.innerHTML = `<span>${g.firstElementChild.textContent}</span>` + OPTS[k].map(([v, l]) => `<button class="chip" aria-pressed="${S[k] === v}" data-set="${k}:${v}">${l}</button>`).join("");
+  }
+  document.getElementById("vlabel").textContent = `${S.variant} — ${VARIANTS[S.variant]}`;
+  document.getElementById("notes").innerHTML = notes();
+  const u = new URL(location); u.searchParams.set("variant", S.variant); for (const k of Object.keys(OPTS)) u.searchParams.set(k, S[k]); if (u.href !== location.href) history.replaceState(null, "", u);
+}
+
+function notes() {
+  const v = {
+    A: "<b>A — One menu.</b> The pill is the only settings control. It opens one menu: the provider's latest models, then Effort, Speed and Permissions as submenus that show their value. When the thread is on Fast or may act without asking, a small bolt or shield appears inside the pill. In Watcher's box, New Watcher is the menu's last item.",
+    B: "<b>B — Pill, bolt and shield.</b> The pill opens model and effort. The bolt and shield stay as small buttons after it, as on today's second line: the bolt steps the speed on a press, the shield opens permissions. In Watcher's box New Watcher becomes a pencil before the mic. A long model and effort, such as Watcher's \"GPT-6.1 Sol Extra high\", gets cut short on a 393-point iPhone.",
+    C: "<b>C — Sheet, as in Claude.</b> The pill opens a sheet: models with a line each, effort and speed as segmented choices, permissions with what each allows. The bolt or shield appears in the pill as in A. In Watcher's box the sheet ends with New Watcher.",
+  }[S.variant];
+  return `<h2>This variant</h2><p>${v}</p>
+  <h2>The same in every variant</h2><ul>
+    <li>One card holding the words, with the buttons on a row inside it. No border or outline in any state. Solid a shade off the room with a soft shadow, or Liquid Glass when Glass is on (here a blur stands in for it). It floats over the conversation as it does today.</li>
+    <li>Left: the round + (Photo library, Camera, Files), then the pill with the model and, dimmer, the effort.</li>
+    <li>Right: the round mic, then Send, always there: the accent with an up arrow once there's something to send, dim while the box is empty. While a turn runs, Stop takes Send's place until you type; then Stop and Send sit side by side, and Send queues (or steers, for Watcher).</li>
+    <li>Photos and files wait inside the card above the words, as now. Notices about settings still sit above the card.</li>
+  </ul>
+  <h2>The mic</h2><p>The iPhone app has no dictation of its own today. You dictate with the keyboard's mic key, and iOS gives apps no way to press that key for you. Pressing the mic here shows what on-device dictation with Apple's speech recogniser could look like: it listens, the words appear, and a second press stops it. The card asks what you want it to do.</p>`;
+}
+
+const DICT = "Check the folded Duo held sideways too, then open the pull request.";
+let dictTimer = null;
+document.addEventListener("click", e => {
+  const set = e.target.closest("[data-set]");
+  if (set) { const [k, v] = set.dataset.set.split(":"); S[k] = v; S.open = null; S.sub = null; S.listening = false; S.dictated = ""; S.toast = ""; render(); return; }
+  const b = e.target.closest("[data-act]"); if (!b) return;
+  const a = b.dataset.act, s = who();
+  S.toast = "";
+  if (a === "close") { S.open = null; S.sub = null; }
+  else if (a === "pill") { S.open = "pill"; S.sub = null; }
+  else if (a === "plus") S.open = "plus";
+  else if (a === "perm") S.open = "perm";
+  else if (a === "speed") s.speed = s.speed === "Fast" ? "Standard" : "Fast";
+  else if (a.startsWith("sub:")) S.sub = a.slice(4) || null;
+  else if (a.startsWith("set:")) { const [, k, v] = a.split(":"); s[k] = v; if (S.variant !== "C") { S.open = null; S.sub = null; } }
+  else if (a === "newWatcher") { S.open = null; S.toast = "Would start a new Watcher with a handover of this one."; }
+  else if (a === "stop") S.toast = "Would stop this turn.";
+  else if (a === "send") { if (written()) { S.toast = working() ? (S.screen === "watcher" ? "Would steer into Watcher's turn." : "Would queue for after this turn.") : "Would send."; S.box = "empty"; S.dictated = ""; } }
+  else if (a === "mic") {
+    if (S.listening) { S.listening = false; clearInterval(dictTimer); if (!S.dictated) S.dictated = DICT; }
+    else { S.listening = true; S.dictated = ""; let i = 0; const target = DICT.split(" "); clearInterval(dictTimer);
+      dictTimer = setInterval(() => { if (!S.listening || i >= target.length) { clearInterval(dictTimer); return; } S.dictated = target.slice(0, ++i).join(" "); const el = document.querySelector(".words"); if (el) { el.classList.remove("ph"); el.innerHTML = esc(S.dictated) + '<span class="caret"></span>'; } }, 260); }
+  }
+  render();
+});
+function cycle(d) { const ks = Object.keys(VARIANTS); S.variant = ks[(ks.indexOf(S.variant) + d + ks.length) % ks.length]; S.open = null; S.sub = null; render(); }
+document.getElementById("prev").onclick = () => cycle(-1);
+document.getElementById("next").onclick = () => cycle(1);
+document.addEventListener("keydown", e => { if (e.target.closest("input,textarea,[contenteditable]")) return; if (e.key === "ArrowLeft") cycle(-1); if (e.key === "ArrowRight") cycle(1); if (e.key === "Escape") { S.open = null; render(); } });
+addEventListener("resize", render);
+render();
+</script>
+</body>
+</html>
