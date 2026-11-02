@@ -1,0 +1,13 @@
+{
+  "$schema": "https://www.unpkg.com/wrangler/config-schema.json",
+  "name": "sotto-product-events",
+  "main": "src/worker.ts",
+  "compatibility_date": "2026-10-20",
+  // Request logs would hold addresses, so neither Cloudflare's logs nor Logpush are on (ADR-0179).
+  "observability": { "enabled": false },
+  "logpush": false,
+  "workers_dev": true,
+  "preview_urls": false,
+  "d1_databases": [{ "binding": "EVENTS", "database_name": "sotto-product-events", "database_id": "00000000-0000-0000-0000-000000000000" }],
+  "triggers": { "crons": ["17 3 * * *"] }
+}

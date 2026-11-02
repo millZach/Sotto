@@ -44,6 +44,7 @@ describe('product event schemas', () => {
 
   it('refuses an event it does not know', () => {
     expect(parseProductEvent('dictation.finished' as ProductEventName, { words: 1 })).toBeNull()
+    expect(parseProductEvent('constructor' as ProductEventName, {})).toBeNull()
   })
 
   it('names a model only when it is on the public list', () => {
