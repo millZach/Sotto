@@ -35,6 +35,7 @@ import { ThreadBranchNotice, useSettleThread } from './ThreadWorkingCopy'
 import { useDeleteThread } from './DeleteThread'
 import type { ThreadRow } from './threadFacts'
 import { ThreadTranscript } from './ThreadTranscript'
+import { ReplyAttachContext, useReplyAttachSlot } from './replyAttach'
 import { ThreadWebLinks } from '../tools/webLinks'
 import { RunCommands } from '../tools/runCommand'
 import { ThreadBabysitting, ThreadMonitor, ThreadHeld, ThreadWaitingCommand, ThreadWorking, useHeldAction } from './ThreadMonitor'
@@ -407,6 +408,8 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
   ]
   // Delete thread… (ADR-0140; Owl only): a settled thread's last item, after its own rule, since it cannot be taken back.
   const { items: removal, dialog: deleteDialog } = useDeleteThread(row, state, command, { ownPane })
+  // A picture marked up in this pane goes into this pane's reply box (ADR-0170, part 5).
+  const replySlot = useReplyAttachSlot()
   const focusAnswerComposer = (): void => { document.getElementById(promptId)?.focus() }
   const title = thread.title, provider = row.provider
   const paneChrome = chrome ?? NO_CHROME
@@ -427,7 +430,7 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     event.preventDefault()
     focusAnswerComposer()
   }
-  return <>
+  return <ReplyAttachContext.Provider value={replySlot}>
     {/* The header says the pane has its own Terminal drawer, for the drawer's keys to find it (paneTerminalShortcut.ts). */}
     {ownPane ? watcherHeader : <header className="thread-workspace__head" data-terminal-drawer={terminal || undefined}>
       {/* The title, project and folder; while panes stand side by side it is the handle that moves the pane (ADR-0163).
@@ -511,5 +514,5 @@ export function ThreadPane({ row, state, command, store, focused, promptId, erro
     {/* Under a greeting, the room below the composer matches the room above, so the two sit in the middle. */}
     <div className="thread-pane__balance" data-room-backdrop="" aria-hidden="true" />
     {drawer}
-  </>
+  </ReplyAttachContext.Provider>
 }
