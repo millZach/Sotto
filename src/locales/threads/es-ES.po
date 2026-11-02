@@ -3368,6 +3368,13 @@ msgstr ""
 msgid "Couldn’t get this thinking from {host}. Nothing is lost: it is still there."
 msgstr ""
 
+#. The Council page: one question put to several models (ADR-0177).
+#. The tag on a prompt a Council of models sent to one of its threads (ADR-0177).
+#: src/renderer/src/agents/SidebarFrame.tsx
+#: src/renderer/src/agents/ThreadTranscript.tsx
+msgid "Council"
+msgstr ""
+
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "Create and checkout a ref before pushing or opening a pull request."
 msgstr ""

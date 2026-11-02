@@ -12,6 +12,8 @@ export interface HostQuitHandles {
   mediaTools?: AsyncClose
   pullRequestTools?: AsyncClose
   delegationTools?: AsyncClose
+  /** The Council (ADR-0177), the desktop's own: it lets go of the coordinator before the runtime closes. */
+  council?: { close(): void }
   providerJobs?: { close(): void }
   hostUpdates?: { dispose(): void }
   hostBoot?: { dispose(): void }
@@ -52,6 +54,7 @@ export function registerHostQuitDrain(app: Parameters<typeof registerQuitDrain>[
     handles.hostUpdates?.dispose()
     handles.hostBoot?.dispose()
     handles.hostPhones?.close()
+    handles.council?.close()
     const results = await Promise.allSettled([
       handles.desktopHosts?.close(), closeLocal(),
       handles.hostSetupTools?.close(), handles.visualTools?.close(), handles.mediaTools?.close(), handles.pullRequestTools?.close(), handles.delegationTools?.close(),

@@ -2590,6 +2590,16 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     }
   }
   /**
+   * A message Sotto sends a thread that is not the user's, such as a Council's prompt (ADR-0177), recorded as Sotto's
+   * before the provider hears it, the way a wake-up is: every client shows it as Sotto's from its first echo, after a
+   * restart and after its history is read again, never as the user's.
+   */
+  async recordSottoMessage(threadId: string, messageId: string): Promise<void> {
+    await this.initialize()
+    await this.recordWakeUp(threadId, messageId)
+    this.publish()
+  }
+  /**
    * Records a wake-up's message ID on its thread's record, and in the thread store, before the provider hears the
    * prompt, so the message is Sotto's from its first echo, after a restart and after its history is read again
    * (ADR-0061 decision 8). A store that refuses it costs only the mark on a wake-up older than the record's newest thousand.
@@ -3946,6 +3956,15 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
       if (accepted.get(identity.threadId)?.delete(identity.messageId)) result.push({ threadId: identity.threadId, messageId: identity.messageId })
     }
     return result
+  }
+  /**
+   * One thread's whole record of its work, its tool calls among it, whatever the thread holds now: what the Council names
+   * of the origin thread's tool calls (ADR-0177). Read without holding the records; empty for a hidden thread.
+   */
+  threadActivities(threadId: string): readonly AgentActivity[] {
+    if (!this.threadVisible(threadId)) return []
+    if (this.storeUnavailable) return this.threadById(threadId)?.activities ?? []
+    try { return this.threadStore.readActivities(threadId, { keep: false }) } catch { return this.threadById(threadId)?.activities ?? [] }
   }
   /** One thread's whole history, whatever window is loaded: the store is the record, not the pane. */
   threadMessages(threadId: string): readonly AgentMessage[] {

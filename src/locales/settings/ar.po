@@ -1939,6 +1939,20 @@ msgstr ""
 msgid "Could not sign in"
 msgstr ""
 
+#. A Settings page, named in its rail and its heading: who sits on a Council of models. Other messages name it as "Settings > Council".
+#: src/renderer/src/features/settings/settingsPages.ts
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Council"
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Council layout"
+msgstr ""
+
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Council panel"
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "CPU {cpu}"
 msgstr ""
@@ -2279,6 +2293,10 @@ msgstr ""
 msgid "Enter a whole number between 10 and 100000."
 msgstr ""
 
+#: src/renderer/src/features/settings/CouncilSettings.tsx
+msgid "Enter a whole number of minutes from {min} to {max}. Nothing was changed."
+msgstr ""
+
 #: src/renderer/src/features/settings/WorkerMachineSettings.tsx
 msgid "Enter a whole number, 1 or more, or leave it empty. Nothing was changed."
 msgstr ""
@@ -2533,6 +2551,11 @@ msgstr ""
 msgid "Global — the one set that works outside Sotto. Changed in Settings › Dictation."
 msgstr ""
 
+#. A Council chamber layout: tiered seats round an altar, the chair at the back.
+#: src/renderer/src/features/settings/CouncilSettings.tsx
+msgid "Half circle"
+msgstr ""
+
 #. A place Watcher’s night scene can be set in
 #: src/renderer/src/features/settings/themes/WatcherSceneChoice.tsx
 msgid "Harbour"
@@ -2658,6 +2681,10 @@ msgstr ""
 msgid "How fast you type, in words per minute ({slowest} to {fastest}). The Dictate room counts the time dictation saves you against it."
 msgstr ""
 
+#: src/renderer/src/features/settings/CouncilSettings.tsx
+msgid "How long a stage waits for a thread before its row offers Retry, Use another model and Go on without it. Nothing is left out on its own."
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "How long the success message stays up, in milliseconds (500 to 5000)."
 msgstr ""
@@ -2680,6 +2707,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "How Sotto connects to {name} could not be changed. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/features/settings/CouncilSettings.tsx
+msgid "How the Council’s chamber is laid out"
 msgstr ""
 
 #: src/renderer/src/features/settings/PhonesSettings.tsx
@@ -2966,6 +2997,10 @@ msgstr "تم حفظ اللغة."
 msgid "Last selected"
 msgstr ""
 
+#: src/renderer/src/features/settings/CouncilSettings.tsx
+msgid "Layout"
+msgstr ""
+
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Leave a commit message empty and the thread's own model writes it from the staged diff, recent commits and AGENTS.md. Off, it reads “Update project files”."
 msgstr ""
@@ -3054,6 +3089,11 @@ msgstr ""
 msgid "load unknown"
 msgstr ""
 
+#. A Council chamber layout: the panelists in a row behind a table, the chair at its centre.
+#: src/renderer/src/features/settings/CouncilSettings.tsx
+msgid "Long table"
+msgstr ""
+
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Looking for models…"
 msgstr ""
@@ -3138,6 +3178,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/ThemeEditor.tsx
 msgid "Minimize the theme editor"
+msgstr ""
+
+#: src/renderer/src/features/settings/CouncilSettings.tsx
+msgid "Minutes"
 msgstr ""
 
 #: src/renderer/src/features/settings/CloudIphoneSettings.tsx
@@ -3850,6 +3894,10 @@ msgstr ""
 msgid "Pairing this computer…"
 msgstr ""
 
+#: src/renderer/src/features/settings/CouncilSettings.tsx
+msgid "Panel"
+msgstr ""
+
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Panes"
 msgstr ""
@@ -3986,6 +4034,10 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostDialog.tsx
 msgid "Port <0>(optional)</0>"
+msgstr ""
+
+#: src/renderer/src/features/settings/CouncilSettings.tsx
+msgid "Preparing the panel…"
 msgstr ""
 
 #: src/renderer/src/features/settings/WorkerRolesSettings.tsx
@@ -4371,6 +4423,10 @@ msgstr ""
 msgid "Reset Orchestrating to its defaults"
 msgstr ""
 
+#: src/renderer/src/features/settings/CouncilSettings.tsx
+msgid "Reset seats to Sotto’s choice"
+msgstr ""
+
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Reset settings"
@@ -4438,6 +4494,11 @@ msgstr ""
 
 #: src/renderer/src/features/settings/themes/AppearancePreview.tsx
 msgid "Room the preview shows"
+msgstr ""
+
+#. A Council chamber layout: seen from a little above, the chair at the far side.
+#: src/renderer/src/features/settings/CouncilSettings.tsx
+msgid "Round table"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
@@ -4953,6 +5014,10 @@ msgstr ""
 msgid "Sotto does this"
 msgstr ""
 
+#: src/renderer/src/features/settings/CouncilSettings.tsx
+msgid "Sotto fills an empty seat with the strongest model of each connected provider in turn, and the chair with one more. Each panelist’s effort is used for its answer, review and crux check, and the chair’s for its framing and verdict."
+msgstr ""
+
 #: src/renderer/src/features/settings/HostProviderSignIn.tsx
 msgid "Sotto hands the code to {name} on {hostName} and keeps nothing."
 msgstr ""
@@ -5183,6 +5248,11 @@ msgstr ""
 #. A diff layout: removed lines above added ones
 #: src/renderer/src/features/settings/GitSettings.tsx
 msgid "Stacked"
+msgstr ""
+
+#: src/renderer/src/features/settings/CouncilSettings.tsx
+#: src/renderer/src/features/settings/settingsPages.ts
+msgid "Stage deadline"
 msgstr ""
 
 #. The model offers no faster speed
@@ -6808,6 +6878,10 @@ msgstr ""
 #: src/renderer/src/features/settings/settingsPages.ts
 #: src/renderer/src/features/settings/SettingsView.tsx
 msgid "Whitespace formatting"
+msgstr ""
+
+#: src/renderer/src/features/settings/SettingsView.tsx
+msgid "Who sits on a Council, how its chamber is laid out, and how long a stage waits"
 msgstr ""
 
 #: src/renderer/src/features/settings/HostPhonesDialog.tsx
