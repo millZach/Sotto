@@ -246,6 +246,7 @@ struct MainTabs: View {
             // Watcher's tab (1B), only for a computer that runs Watcher and shows it to this iPhone.
             if let hostID = model.watcherHostID {
                 NavigationStack(path: $watcherPath) { WatcherView(hostID: hostID).threadDestination() }
+                    .environment(\.pageTop, tops[.watcher, default: 0])
                     .toolbar(.hidden, for: .tabBar)
                     .tag(Tab.watcher)
             }
