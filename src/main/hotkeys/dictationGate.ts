@@ -38,12 +38,14 @@ export function createDictationGate(inner: GlobalShortcutAdapter, initiallyOn: b
     shortcuts,
     listener(listener) {
       let tokens: readonly string[] = []
-      rewatch.push(() => listener.watch(on ? tokens : []))
+      let chords: readonly string[] = []
+      rewatch.push(() => listener.watch(on ? tokens : [], on ? chords : []))
       return {
         ...listener,
-        watch(next) {
+        watch(next, nextChords = []) {
           tokens = next
-          listener.watch(on ? next : [])
+          chords = nextChords
+          listener.watch(on ? next : [], on ? nextChords : [])
         },
         // Settings hides the shortcut rows while off; a recording asked for then starts no helper.
         record(recording) { listener.record(on && recording) },

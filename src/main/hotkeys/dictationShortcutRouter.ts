@@ -161,7 +161,7 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
   })
 
   const watchMatcher = (): void => {
-    if (!suspended) listener.watch(matcher.watchedTokens())
+    if (!suspended) listener.watch(matcher.watchedTokens(), matcher.keyChords())
   }
 
   // 'unsupported' means the listener cannot run here (no helper), never just "not macOS".
@@ -329,7 +329,7 @@ export function createDictationShortcutRouter(deps: DictationShortcutRouterDepen
         }
       }, { canStart: deps.canStart })
       if (recording === null) watchMatcher()
-      else listener.watch(matcher.watchedTokens())
+      else listener.watch(matcher.watchedTokens(), matcher.keyChords())
       return { ok: true }
     },
 
