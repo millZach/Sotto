@@ -35,7 +35,29 @@ public struct WatcherPhoneState: Decodable, Equatable, Sendable {
     public let newWatcher: String?
     public let handoverOffered: Bool?
     public let replaced: Bool?
+    /// Watcher's model, effort or speed chosen while it worked, which its next turn starts on (`watcher-phone-settings-later`).
+    /// Nil when nothing waits, and from an older computer.
+    public let nextTurnOptions: NextTurnOptions?
     public struct DraftDelivery: Decodable, Equatable, Sendable { public let draftId: String; public let status: String }
+    /// A choice kept for Watcher's next turn: the model, its effort (nil for the model's default) and its speed, which
+    /// stays Watcher's own unless the choice names one (`speedChosen`); a named nil speed is Standard.
+    public struct NextTurnOptions: Decodable, Equatable, Sendable {
+        public let modelId: String
+        public let reasoningEffort: String?
+        public let speedChosen: Bool
+        public let speed: String?
+        public init(modelId: String, reasoningEffort: String?, speedChosen: Bool = false, speed: String? = nil) {
+            self.modelId = modelId; self.reasoningEffort = reasoningEffort; self.speedChosen = speedChosen; self.speed = speed
+        }
+        private enum CodingKeys: String, CodingKey { case modelId, reasoningEffort, speed }
+        public init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            modelId = try container.decode(String.self, forKey: .modelId)
+            reasoningEffort = try container.decodeIfPresent(String.self, forKey: .reasoningEffort)
+            speedChosen = container.contains(.speed)
+            speed = try container.decodeIfPresent(String.self, forKey: .speed)
+        }
+    }
     /// One follow-up waiting for Watcher: its queue item, the draft it went with, its words, and `queued`, `dispatching`,
     /// `uncertain`, `failed` or `paused`.
     public struct Followup: Decodable, Equatable, Identifiable, Sendable {
@@ -197,6 +219,9 @@ public enum WatcherWire {
     /// Watcher's box takes the thread box's line (October 31, 2026): its model, effort and speed, another provider's model
     /// starting a new Watcher; New Watcher; Stop on Watcher's own turn; and the handover of the last Watcher.
     public static let composerFeature = "watcher-phone-composer"
+    /// The computer keeps a change to Watcher's model, effort or speed made while Watcher works for its next turn, and its
+    /// page says what waits (`nextTurnOptions`), rather than refusing it until Watcher rests (November 1, 2026).
+    public static let settingsLaterFeature = "watcher-phone-settings-later"
     /// Views opt in to management only when they can present the controls and recover mutation receipts. Steering rides
     /// with it: its Remove recovers its outcome from the same receipt. So does the machines line (#1032), which reads only.
     public static var managementHello: [String: JSONValue] {

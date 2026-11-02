@@ -109,6 +109,8 @@ A Linux unit job in CI is its own ticket. It needs its own changed-area filter, 
 
 **October 12, 2026 amendment (#870).** Six Linux shards now run the unit and integration suite whenever Changed areas asks for the full Windows suite, and on every push to `main`. The first shard also typechecks on Linux. The real-sshd tripwire belongs to the dedicated host journey; the release verifier already supports Linux. **Linux result** reports failure unless Changed areas succeeded and every shard passed, or documents-only changes skipped the shards. It is informational until the owner decides to require it. Linux desktop journeys and captures stay on forge ([CI](../ci.md)).
 
+**November 1, 2026 amendment.** Pull requests no longer run the Linux shards; pushes to `main` and the weekly run still do. Each pull request run started twelve test shards, and Windows shards waited for runners in more than half of recent runs. A Linux break now shows on `main` after the merge rather than on the pull request ([CI](../ci.md)).
+
 **Omarchy integration lives in `apps/omarchy/`.** That covers the Hyprland bindings and the `sotto` launcher (#858), the shell plugin (#850), the theme template (#840), the PKGBUILD and `.desktop` file (#841), and an install script in the style of Omarchy's `omarchy-install-ai-*`. Nothing there is loaded by the app; it is configuration Omarchy reads.
 
 ## Consequences

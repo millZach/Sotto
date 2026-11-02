@@ -48,7 +48,10 @@
 .account-row__heading span { display: block; margin-top: 2px; color: var(--tt-text-muted); font-size: var(--tt-type-small); }
 .account-row__control { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 8px; min-width: 0; border: 0; padding: 0; margin: 0; }
 .account-row__note { grid-column: 1 / -1; margin: -4px 0 0; color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
-.agent-saved-field > [role='alert'] { color: var(--tt-error); grid-column: 1 / -1; font-size: var(--tt-type-small); }
+/* Default projects directory: the chosen folder written out under the computer's name, wrapped rather than cut. */
+.projects-directory__path { display: block; margin-top: 6px; color: var(--tt-text-2); font-family: var(--tt-font-mono); font-size: var(--tt-type-caption); overflow-wrap: anywhere; }
+.projects-directory__path--none { color: var(--tt-text-muted); font-family: inherit; }
+.projects-directory__error { color: var(--tt-error); font-size: var(--tt-type-small); }
 .help-view { width: min(100%, 800px); margin: 0 auto; padding: 28px 40px 48px; }
 .help-view > h1 { margin: 0 0 24px; font-size: var(--tt-type-title); font-weight: 500; letter-spacing: -.9px; }
 .help-grid { display: flex; flex-direction: column; gap: 42px; }

@@ -163,7 +163,7 @@ import {
 import { settingsSchema } from '../shared/settings'
 import { pastePermissionNoticeCodeSchema, recoveryNoticeEventSchema, recoveryNoticesSchema } from '../shared/recoveryNotice'
 import {
-  E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentSchema, e2eBrowserAgentResultSchema, E2E_HOST_SETUP_TOOL_CHANNEL, e2eHostSetupToolSchema, E2E_VISUAL_TOOL_CHANNEL, e2eVisualToolSchema, E2E_DELEGATION_TOOL_CHANNEL, e2eDelegationToolSchema,
+  E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentSchema, e2eBrowserAgentResultSchema, E2E_HOST_SETUP_TOOL_CHANNEL, e2eHostSetupToolSchema, E2E_VISUAL_TOOL_CHANNEL, e2eVisualToolSchema, E2E_MEDIA_TOOL_CHANNEL, E2E_DELEGATION_TOOL_CHANNEL, e2eDelegationToolSchema,
   E2E_SNAPSHOT_CHANNEL,
   E2E_TRIGGER_SHORTCUT_CHANNEL,
   e2eScenarioSchema,
@@ -830,6 +830,7 @@ export function exposeE2EBridge(
     browserAgent: (request: Parameters<NonNullable<SottoE2EBridge['browserAgent']>>[0]) => invokeParsed(renderer, E2E_BROWSER_AGENT_CHANNEL, e2eBrowserAgentResultSchema, e2eBrowserAgentSchema.parse(request)),
     hostSetupTool: (request: Parameters<NonNullable<SottoE2EBridge['hostSetupTool']>>[0]) => invokeParsed(renderer, E2E_HOST_SETUP_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eHostSetupToolSchema.parse(request)),
     visualTool: (request: Parameters<NonNullable<SottoE2EBridge['visualTool']>>[0]) => invokeParsed(renderer, E2E_VISUAL_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eVisualToolSchema.parse(request)),
+    mediaTool: (request: Parameters<NonNullable<SottoE2EBridge['mediaTool']>>[0]) => invokeParsed(renderer, E2E_MEDIA_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eVisualToolSchema.parse(request)),
     delegationTool: (request: Parameters<NonNullable<SottoE2EBridge['delegationTool']>>[0]) => invokeParsed(renderer, E2E_DELEGATION_TOOL_CHANNEL, e2eBrowserAgentResultSchema, e2eDelegationToolSchema.parse(request)),
     agentEvent: async (event: Parameters<NonNullable<SottoE2EBridge['agentEvent']>>[0]) => {
       const key = parseHostEntityKey(event.threadId)

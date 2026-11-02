@@ -76,6 +76,8 @@ final class WatcherModelTests: XCTestCase {
         var followups: [(String, String, String, String)] = []
         /// Whether a handover of the last Watcher is offered to this one, from a computer that takes Watcher's box.
         var handover = false
+        /// The choice the computer keeps for Watcher's next turn, as its page's `nextTurnOptions` JSON.
+        var nextTurn: String?
     }
     private static let workerRequest = #"{"id":"q1","kind":"question","text":"Which account?","options":[{"id":"a","label":"A fresh account"},{"id":"b","label":"The seeded user"}]}"#
     private static let ownRequest = #"{"id":"p1","kind":"permission","text":"Wants to run gh pr checks 845.","options":[]}"#
@@ -108,6 +110,7 @@ final class WatcherModelTests: XCTestCase {
             extra += #","followups":[\#(rows.joined(separator: ","))]"#
         }
         if spec.handover { extra += #","handoverOffered":true,"replaced":true"# }
+        if let next = spec.nextTurn { extra += #","nextTurnOptions":\#(next)"# }
         if !spec.changed.isEmpty {
             let files = spec.changed.map { #""\#($0)""# }.joined(separator: ",")
             let reason = spec.reason.map { #""\#($0)""# } ?? "null"
@@ -1311,6 +1314,33 @@ final class WatcherModelTests: XCTestCase {
         XCTAssertEqual(JSONValue.object(try XCTUnwrap(calls("watcher-phone-send").last).operation)["request"]["handover"], .bool(true))
         await model.dismissWatcherHandover(laptop)
         XCTAssertEqual(try calls("watcher-phone-dismiss-handover").count, 1)
+        model.phase(.background)
+    }
+
+    /// Watcher is busy nearly all the time, since news starts a turn every minute or two (November 1, 2026). A computer that
+    /// keeps a change for Watcher's next turn takes the box's model, effort and speed while Watcher works, a card of its own
+    /// waits or a message to it is on its way, and the chips show what waits until Watcher starts on it.
+    @MainActor func testWatchersBoxChangesWatcherWhileItWorksOnAComputerThatKeepsTheChoiceForItsNextTurn() async throws {
+        catalog = #"[{"id":"m","name":"GPT-6.1 Sol","provider":"Codex","providerId":"codex","ready":true,"reasoningEfforts":["low","high"],"defaultReasoningEffort":"high","speeds":[{"id":"fast","name":"Fast"}]}]"#
+        defer { catalog = "" }
+        let busy = Spec(status: "running", ownCard: true, deliveries: ["dddddddd-0000-4000-8000-000000000001": "submitting"])
+        let model = try await fixture(features: Self.manageFeatures + ["watcher-phone-composer", "watcher-phone-settings-later"], spec: busy)
+        await until { model.canStopWatcherTurn(laptop) }
+        XCTAssertNil(model.watcherSettingsHeld(laptop), "Watcher's work holds nothing back")
+        XCTAssertFalse(model.canChangeWatcherPermission(laptop), "Its permissions still wait for it")
+        var kept = busy
+        kept.observedAt = "2026-10-11T09:01:00.000Z"; kept.nextTurn = #"{"modelId":"m","reasoningEffort":"low"}"#
+        let keptPage = page(kept)
+        manage({ _, _ in try self.ok(keptPage) }, read: { keptPage })
+        await model.chooseWatcherSetting(.effort, "low", on: laptop)
+        let opened = try calls("watcher-phone-open")
+        XCTAssertEqual(opened.count, 1)
+        XCTAssertEqual(JSONValue.object(opened[0].operation)["request"]["reasoningEffort"], .string("low"))
+        // The chips show the kept choice until Watcher starts on it, and a later press goes with it.
+        XCTAssertEqual(model.watcherSettingValues(laptop), ThreadSettingValues(model: "m", effort: "low", permissions: "", speed: "standard"))
+        await model.chooseWatcherSetting(.speed, "fast", on: laptop)
+        let speed = JSONValue.object(try XCTUnwrap(calls("watcher-phone-open").last).operation)["request"]
+        XCTAssertEqual(speed["speed"], .string("fast")); XCTAssertEqual(speed["reasoningEffort"], .string("low"))
         model.phase(.background)
     }
 

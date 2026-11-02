@@ -890,10 +890,6 @@ msgid "Add a project in Threads to set its default working copy."
 msgstr ""
 
 #: src/renderer/src/features/settings/DictationShortcuts.tsx
-msgid "Add a shortcut"
-msgstr ""
-
-#: src/renderer/src/features/settings/DictationShortcuts.tsx
 msgid "Add a shortcut to start and stop without holding keys."
 msgstr ""
 
@@ -2422,14 +2418,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
 msgid "Fixed & elsewhere"
-msgstr ""
-
-#: src/renderer/src/features/settings/DictationShortcuts.tsx
-msgid "Fn is already in use"
-msgstr ""
-
-#: src/renderer/src/features/settings/DictationShortcuts.tsx
-msgid "Fn on its own"
 msgstr ""
 
 #: src/renderer/src/features/settings/ThreadShortcutsSettings.tsx
@@ -4177,10 +4165,6 @@ msgstr ""
 
 #: src/renderer/src/features/settings/HostsSettings.tsx
 msgid "Reconnecting…"
-msgstr ""
-
-#: src/renderer/src/features/settings/DictationShortcuts.tsx
-msgid "Record keys…"
 msgstr ""
 
 #: src/renderer/src/features/settings/settingsPages.ts

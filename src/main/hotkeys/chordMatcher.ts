@@ -45,8 +45,9 @@ interface ChordState {
   readonly tokens: readonly string[]
   readonly modifiers: ReadonlySet<string>
   readonly key: string | null
-  // inert: a cancelled or skipped hold, or a fired press, waiting for its tokens to go up.
-  phase: 'idle' | 'started' | 'inert'
+  // armed: a press of modifiers alone, held down, that fires on release unless another key joins it.
+  // inert: a cancelled or skipped hold, or a fired or overtaken press, waiting for its tokens to go up.
+  phase: 'idle' | 'armed' | 'started' | 'inert'
 }
 
 function parseChord(chord: string): { tokens: string[]; modifiers: Set<string>; key: string | null } {
@@ -86,11 +87,12 @@ export function createChordMatcher(
       if (state.phase === 'started' && state.role === 'hold' && state.key === null) {
         state.phase = 'inert'
         emit({ id: state.id, role: state.role, type: 'cancel' })
-      }
+      } else if (state.phase === 'armed') state.phase = 'inert'
     }
     for (const state of states) {
       if (state.phase !== 'idle' || !activates(state, token)) continue
-      if (state.role === 'press') {
+      if (state.role === 'press' && state.key === null) state.phase = 'armed'
+      else if (state.role === 'press') {
         state.phase = 'inert'
         emit({ id: state.id, role: state.role, type: 'toggle' })
       } else if (options.canStart()) {
@@ -105,9 +107,10 @@ export function createChordMatcher(
   const up = (token: string): void => {
     for (const state of states) {
       if (!state.tokens.includes(token)) continue
-      if (state.phase === 'started') {
+      if (state.phase === 'started' || state.phase === 'armed') {
+        const type = state.phase === 'started' ? 'stop' : 'toggle'
         state.phase = 'idle'
-        emit({ id: state.id, role: state.role, type: 'stop' })
+        emit({ id: state.id, role: state.role, type })
       } else if (state.phase === 'inert' && (state.role === 'press' || state.tokens.every((t) => !held.has(t)))) {
         state.phase = 'idle'
       }

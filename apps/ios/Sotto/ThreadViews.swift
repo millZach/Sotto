@@ -362,6 +362,8 @@ private final class FollowBox {
     var missedFollow = false
     /// Counts requests to follow, so requests made in the same moment scroll once.
     var followRequests = 0
+    /// Where the end sits within the page itself, which only what the page holds moves; scrolling moves `sentinel` alone.
+    var endInPage: CGFloat = 0
     func settle() { atBottom = sentinel <= dockTop + Self.slack }
 }
 
@@ -381,7 +383,7 @@ private struct ModelMovedLine: View {
     }
 }
 
-private struct ConversationRow: Identifiable {
+private struct ConversationRow: Identifiable, Equatable {
     let item: TimelineItem
     /// The provider's name heads an answer that doesn't follow another answer.
     let showsWho: Bool
@@ -452,6 +454,36 @@ private final class TimelineCache {
     }
 }
 
+/// Everything besides their rows that the turns before the latest are drawn from.
+private struct OlderTurnsInputs: Equatable {
+    let ref: ThreadRef
+    let provider: String
+    let working: String?
+    let last: String?
+    let movedAfter: String?
+    let movedWords: String?
+    let openRuns: Set<String>
+    let showsPictures: Bool
+    let opensFiles: Bool
+    let spacing: CGFloat
+}
+
+/// The turns before the latest, made as they scroll into view. They are drawn again only when they or what they are
+/// drawn from change, not for each word streamed into the latest turn: given its rows again, the lazy stack guessed
+/// the heights of the rows it hadn't made afresh each time, the page's height swung by tens of thousands of points
+/// under a reply, and a reader at the end was thrown far above it and back.
+private struct OlderTurns<Row: View>: View, Equatable {
+    let rows: ArraySlice<ConversationRow>
+    let inputs: OlderTurnsInputs
+    @ViewBuilder let row: (ConversationRow) -> Row
+    static func == (a: Self, b: Self) -> Bool { a.inputs == b.inputs && a.rows == b.rows }
+    var body: some View {
+        LazyVStack(alignment: .leading, spacing: inputs.spacing) {
+            ForEach(rows) { row($0) }
+        }
+    }
+}
+
 /// What, when it changes at the end of the conversation, the page follows if the user is reading at the bottom.
 private struct Tail: Equatable {
     let revision: Int?
@@ -484,6 +516,11 @@ private struct Conversation: View {
     @Environment(\.sottoDensity) private var density
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private static let end = "thread-end"
+    private static let pageSpace = "thread-page"
+    #if DEBUG
+    /// The simulator journeys that pass `--ui-end-probe` read where the conversation's end sits from `EndProbe`.
+    private static let probesEnd = ProcessInfo.processInfo.arguments.contains("--ui-end-probe")
+    #endif
 
     var body: some View {
         let _ = BenchProbe.body("Conversation")
@@ -510,6 +547,9 @@ private struct Conversation: View {
                 if follow.atBottom { toBottom(proxy) }
             }
             .background(barReader)
+            #if DEBUG
+            .overlay(alignment: .topLeading) { if Self.probesEnd { EndProbe(follow: follow) } }
+            #endif
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 // It floats, as the desktop's composer does: the conversation runs on under it with no ground behind
                 // the box, and the inset still lets the last message scroll clear of it (Zach, October 31, 2026).
@@ -522,7 +562,7 @@ private struct Conversation: View {
                 if follow.atBottom { toBottom(proxy) }
             }
         }
-        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0) }
+        .fullScreenCover(item: $viewing) { PhotoViewer(opened: $0, box: .thread(ref)) }
         .confirmationDialog("Stop waiting for confirmation?", isPresented: Binding(get: { dismissMarker != nil }, set: { if !$0 { dismissMarker = nil } }), titleVisibility: .visible) {
             Button("I checked the thread") { if let item = dismissMarker { model.acknowledgeUnknown(item.id) }; dismissMarker = nil }
             Button("Cancel", role: .cancel) { dismissMarker = nil }
@@ -545,11 +585,12 @@ private struct Conversation: View {
                        titleMoved: { bottom in follow.titleBottom = bottom; refreshBar() })
                 .equatable()
             entries(thread: thread, state: state, detail: detail, rows: rows, pending: pending, scroll: scroll)
-            Color.clear.frame(height: 1).id(Self.end).background(sentinelReader)
+            Color.clear.frame(height: 1).id(Self.end).background(sentinelReader(scroll))
         }
         .frame(maxWidth: .infinity, minHeight: max(0, visible - Space.s4), alignment: .topLeading)
         .padding(.horizontal, Space.s4)
         .padding(.bottom, Space.s4)
+        .coordinateSpace(.named(Self.pageSpace))
         .background(alignment: .top) {
             // Reaches up under the bar, so at rest the wash meets the top edge; it scrolls away with the title.
             Wash(warm: state.waitsOnYou, tone: washTone(state), height: 720).offset(y: -200)
@@ -595,12 +636,16 @@ private struct Conversation: View {
                 // for each streamed word, and opening one took seconds (#1702).
                 let split = min(timeline.latestTurnsStart, rows.count)
                 if split > 0 {
-                    LazyVStack(alignment: .leading, spacing: Space.dense(Space.s5, density)) {
-                        ForEach(rows[..<split]) { row in
-                            entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter,
-                                  scroll: scroll)
-                        }
+                    let inputs = OlderTurnsInputs(ref: ref, provider: provider, working: working, last: last,
+                                                  movedAfter: movedAfter, movedWords: moved?.words(provider: provider),
+                                                  openRuns: openRuns, showsPictures: model.showsAgentPictures(ref.hostID),
+                                                  opensFiles: model.opensSentFiles(ref.hostID),
+                                                  spacing: Space.dense(Space.s5, density))
+                    OlderTurns(rows: rows[..<split], inputs: inputs) { row in
+                        entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter,
+                              scroll: scroll)
                     }
+                    .equatable()
                 }
                 ForEach(rows[split...]) { row in
                     entry(row, provider: provider, working: working, last: last, moved: moved, movedAfter: movedAfter, scroll: scroll)
@@ -674,11 +719,31 @@ private struct Conversation: View {
     }
 
     /// The end of the conversation.
-    private var sentinelReader: some View {
+    private func sentinelReader(_ scroll: ScrollViewProxy) -> some View {
         GeometryReader { proxy in
             Color.clear
-                .onAppear { follow.sentinel = proxy.frame(in: .global).maxY; follow.settle() }
-                .onChange(of: proxy.frame(in: .global).maxY) { _, value in follow.sentinel = value; follow.settle() }
+                .onAppear { endMoved(proxy.frame(in: .global).maxY, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll) }
+                .onChange(of: proxy.frame(in: .global).maxY) { _, value in
+                    endMoved(value, inPage: proxy.frame(in: .named(Self.pageSpace)).maxY, scroll)
+                }
+        }
+    }
+
+    /// An end pushed away from a reader at it by what the page holds is followed: something above it grew, a photo taking
+    /// its own shape or a picture's tile being made, and the reader never left. Taken for the reader leaving, it once
+    /// stranded them short of the end, where the page stopped following (November 1, 2026). An end that moved only on
+    /// the screen moved because the page scrolled, by the user's hand or the status bar, and decides where they stand.
+    /// Any growth that slips the end under the reply box is followed, even less than the slack: a photo a little taller
+    /// than its placeholder would otherwise leave the end's last lines covered with nothing to bring them back.
+    private func endMoved(_ end: CGFloat, inPage: CGFloat, _ scroll: ScrollViewProxy) {
+        let wasAtBottom = follow.atBottom
+        let grew = abs(inPage - follow.endInPage) > 0.5
+        follow.sentinel = end
+        follow.endInPage = inPage
+        if wasAtBottom, grew, end > follow.dockTop + 1 {
+            toBottom(scroll)
+        } else {
+            follow.settle()
         }
     }
 
@@ -736,6 +801,24 @@ private struct Conversation: View {
         }
     }
 }
+
+#if DEBUG
+/// The conversation's end, the reply box's top and the bar's bottom, in points from the top of the screen, as one label
+/// the simulator journeys read: in a long page an element's accessibility frame can lag its layout by thousands of
+/// points. It reads the page's place ten times a second and holds no state of the page's, so the page draws as it would
+/// without it. Drawn all but invisibly, so it stays in the accessibility tree.
+private struct EndProbe: View {
+    let follow: FollowBox
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 0.1)) { _ in
+            let words = [follow.sentinel, min(follow.dockTop, 99_999), follow.barBottom].map { String(Int($0.rounded())) }
+                .joined(separator: " ")
+            Text(verbatim: words).font(.system(size: 2)).opacity(0.02).allowsHitTesting(false)
+                .accessibilityIdentifier("thread-end-probe").accessibilityLabel(Text(verbatim: words))
+        }
+    }
+}
+#endif
 
 extension View {
     /// Says whether the user is moving the page: dragging it or letting a flick run out. A finger that rests or taps is
@@ -2199,6 +2282,8 @@ private struct ReplyDock: View, Equatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var sent = 0
     @State private var stopped = 0
+    /// Watched for which box listens, which changes only as dictation starts and stops.
+    @ObservedObject private var dictation = Dictation.shared
 
     var body: some View {
         let _ = BenchProbe.body("ReplyDock")
@@ -2270,51 +2355,48 @@ private struct ReplyDock: View, Equatable {
     }
 
     private var replyField: some View {
-        let shape = RoundedRectangle(cornerRadius: ComposerMetrics.radius, style: .continuous)
         let placeholder = model.thread(ref)?.status == "running" ? String(localized: "Reply while it works") : String(localized: "Reply to this thread")
         let settings = model.threadSettings(ref)
-        // As in Messages: the + on its own beside a slim box, which grows without it. Photos wait inside the box across
-        // its width, above the words, files under them as pills, and Send and Stop sit inside its end. The thread's model,
-        // effort, speed and permissions are the box's second line (ADR-0166), and what they still wait on sits above it.
+        let listening = dictation.key == ref.id
+        // As in Claude's iPhone app (Zach's pick A, November 1, 2026): photos and files wait inside the card above the
+        // words, and the row under them holds the +, the thread's settings as one pill (ADR-0166), the mic and Send.
+        // What the settings still wait on sits above the card.
         return VStack(alignment: .leading, spacing: Space.s2) {
             if let settings { ThreadSettingsLines(ref: ref, panel: settings) }
-            HStack(alignment: .bottom, spacing: Space.s2) {
-                AttachPhotosButton(box: .thread(ref))
-                VStack(alignment: .leading, spacing: 0) {
-                    DraftAttachments(box: .thread(ref))
-                    HStack(alignment: .bottom, spacing: Space.s1) {
-                        TextField("Reply", text: draft, prompt: Text(placeholder).foregroundStyle(Palette.placeholder), axis: .vertical)
-                            .font(.sotto(.body))
-                            .foregroundStyle(Palette.ink)
-                            .lineLimit(1...6)
-                            .focused($focused)
-                            // Words added from a reply put the caret after them, here (ADR-0129).
-                            .onChange(of: draftStore.focus) { _, focus in if focus?.key == ref.id { focused = true } }
-                            .padding(.vertical, ComposerMetrics.wordsPadding)
-                            .accessibilityLabel("Reply to this thread")
-                            .accessibilityIdentifier("thread-reply")
-                            .pasteAttaches(to: .thread(ref))
-                            .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == ref.id { model.focusRequest = nil; focused = true } }
-                            // Locked while the reply's photos are staged, so nothing typed now joins it.
-                            .disabled(model.preparingSends.contains(ref.id))
-                        trailingButtons.padding(.bottom, ComposerMetrics.buttonInset)
-                    }
-                    .padding(.leading, ComposerMetrics.wordsInset)
-                    .padding(.trailing, ComposerMetrics.buttonInset)
-                    .frame(minHeight: ComposerMetrics.height)
-                    if let settings {
-                        ThreadSettingsRow(ref: ref, panel: settings)
-                            .padding(.leading, ComposerMetrics.wordsInset - Space.s2)
-                            .padding(.trailing, ComposerMetrics.buttonInset)
-                            .padding(.bottom, 2)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .composerSurface(in: shape)
+            ComposerCard {
+                DraftAttachments(box: .thread(ref))
+            } words: {
+                words(placeholder)
+            } plus: {
+                if listening { ListeningLine() } else { AttachPhotosButton(box: .thread(ref)) }
+            } pill: {
+                if let settings, !listening { ThreadSettingsPill(ref: ref, panel: settings) }
+            } trailing: {
+                trailingButtons()
             }
+            // The trace round the card at the top level of the thread's model, and at Max on Claude under Ultracode
+            // (ADR-0019).
+            .effortTrace(settings?.atTopEffort == true, radius: ComposerMetrics.radius)
         }
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: model.canInterrupt(ref))
         .animation(reduceMotion ? nil : .spring(response: 0.3, dampingFraction: 0.85), value: written)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: listening)
+    }
+
+    private func words(_ placeholder: String) -> some View {
+        TextField("Reply", text: draft, prompt: Text(placeholder).foregroundStyle(Palette.placeholder), axis: .vertical)
+            .font(.sotto(.body))
+            .foregroundStyle(Palette.ink)
+            .lineLimit(1...6)
+            .focused($focused)
+            // Words added from a reply put the caret after them, here (ADR-0129).
+            .onChange(of: draftStore.focus) { _, focus in if focus?.key == ref.id { focused = true } }
+            .accessibilityLabel("Reply to this thread")
+            .accessibilityIdentifier("thread-reply")
+            .pasteAttaches(to: .thread(ref))
+            .onChange(of: model.focusRequest, initial: true) { if model.focusRequest == ref.id { model.focusRequest = nil; focused = true } }
+            // Locked while the reply's photos are staged, so nothing typed now joins it, and while the mic writes in it.
+            .disabled(model.preparingSends.contains(ref.id) || dictation.key == ref.id)
     }
 
     /// Whether the box holds something to send: words, photos or files.
@@ -2323,12 +2405,18 @@ private struct ReplyDock: View, Equatable {
             || !model.files(ref).isEmpty
     }
 
-    /// Stop while the turn can be stopped. Send once the box holds something, as in Messages; while the turn runs it
-    /// queues for after the turn, beside Stop.
-    @ViewBuilder private var trailingButtons: some View {
-        HStack(alignment: .bottom, spacing: ComposerMetrics.buttonGap) {
-            if model.canInterrupt(ref) { stopButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
-            if written || model.preparingSends.contains(ref.id) { sendButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
+    /// The mic, then Send, which is always there: the accent once the box holds something, dim while it's empty. While
+    /// the turn can be stopped, Stop takes Send's place until something is written; then Stop and Send sit side by side,
+    /// and Send queues for after the turn. Sending while the mic listens stops it. The mic waits while a send's photos are
+    /// made ready.
+    @ViewBuilder private func trailingButtons() -> some View {
+        let interrupts = model.canInterrupt(ref)
+        let preparing = model.preparingSends.contains(ref.id)
+        let ready = written || preparing
+        HStack(spacing: ComposerMetrics.gap) {
+            DictateButton(key: ref.id, words: draft).disabled(preparing)
+            if interrupts { stopButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
+            if ready || !interrupts { sendButton.transition(.scale(scale: 0.6).combined(with: .opacity)) }
         }
     }
 
@@ -2338,9 +2426,7 @@ private struct ReplyDock: View, Equatable {
             RoundedRectangle(cornerRadius: 3, style: .continuous)
                 .frame(width: 12, height: 12)
                 .foregroundStyle(Palette.canvas)
-                .frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
-                .background(Palette.ink, in: Circle())
-                .pressArea(drawn: ComposerMetrics.button)
+                .composerDisc(Palette.ink)
         }
         .buttonStyle(PressStyle())
         .sensoryFeedback(.impact(weight: .medium), trigger: stopped)
@@ -2352,15 +2438,13 @@ private struct ReplyDock: View, Equatable {
         let preparing = model.preparingSends.contains(ref.id)
         let canSend = model.canSendReply(ref)
         let queues = model.queuesReply(ref)
-        return Button { sent += 1; Task { await model.send(ref) } } label: {
+        return Button { sent += 1; dictation.cancel(ref.id); Task { await model.send(ref) } } label: {
             Group {
                 if preparing { ProgressView().controlSize(.small).tint(Palette.onAccent) }
-                else { Image(systemName: queues ? "text.badge.plus" : "arrow.up").font(.system(size: 14, weight: .bold)) }
+                else { Image(systemName: queues ? "text.badge.plus" : "arrow.up").font(.system(size: 15, weight: .bold)) }
             }
-            .frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
             .foregroundStyle(canSend || preparing ? Palette.onAccent : Palette.muted)
-            .background(canSend || preparing ? Palette.accent : Palette.fillSoft, in: Circle())
-            .pressArea(drawn: ComposerMetrics.button)
+            .composerDisc(canSend || preparing ? AnyShapeStyle(Palette.accent) : AnyShapeStyle(Palette.fillSoft))
         }
         .buttonStyle(PressStyle())
         .animation(reduceMotion ? nil : .easeInOut(duration: 0.15), value: canSend)
@@ -2368,166 +2452,113 @@ private struct ReplyDock: View, Equatable {
         .sensoryFeedback(.impact(flexibility: .soft), trigger: sent)
         .disabled(!canSend)
         .accessibilityLabel(queues ? (preparing ? String(localized: "Queuing reply") : String(localized: "Queue for after this turn")) : (preparing ? String(localized: "Sending reply") : String(localized: "Send reply")))
+        .accessibilityIdentifier("thread-send")
     }
 }
 
-/// The thread's model, effort, speed and permissions as the reply box's second line (ADR-0166, pick B): text buttons in
-/// the desktop's order (ADR-0113), side by side with the shield right after the bolt (Zach, October 31, 2026), each
-/// opening its own menu, and the bolt stepping through the speeds on a press. They
-/// are held still, their hint saying why, while the agent would refuse a change: during a turn, while the thread waits
-/// on the user, and while a permission change goes unconfirmed.
-private struct ThreadSettingsRow: View {
+/// The thread's model, effort, speed and permissions as one pill in the reply box's row (ADR-0166, amended November 1,
+/// 2026: Zach's picks A and C). It shows the model with its provider's logo and the effort dimmer after it, and opens the
+/// settings sheet: the model in use, the models starred on this iPhone that the thread's provider offers, the provider
+/// closed until pressed, then Effort, Speed and Permissions, each a row saying what it is set to. What the agent would
+/// refuse is held as the chips were: the whole pill during a turn, while the thread waits on the user and while a
+/// permission change goes unconfirmed, its hint saying why; the model and effort alone where the provider changes only a
+/// started thread's permissions.
+private struct ThreadSettingsPill: View {
     @EnvironmentObject var model: AppModel
     let ref: ThreadRef
     let panel: ThreadSettingsPanel
-    @Environment(\.dynamicTypeSize) private var typeSize
     @State private var picks = 0
+    @State private var open = false
 
     var body: some View {
-        Group {
-            if typeSize.isAccessibilitySize {
-                VStack(alignment: .leading, spacing: 0) {
-                    modelMenu
-                    HStack(spacing: 0) { effortMenu; speedButton; permissionMenu; Spacer(minLength: 0) }
-                }
-            } else {
-                HStack(spacing: 0) { modelMenu; effortMenu; speedButton; permissionMenu; Spacer(minLength: 0) }
-            }
+        let pressable = ThreadSettingKind.allCases.contains { panel.pressable($0) }
+        let speedName = panel.speeds.isEmpty ? nil : ThreadSettings.speedName(panel.speed, offered: panel.speeds)
+        Button { open = true } label: {
+            ComposerPill(providerID: panel.providerID, model: panel.model?.name ?? "", effort: effortName, speed: panel.speed,
+                         shield: panel.permission == "full-access" ? .full : panel.permissionGrants ? .grants : .asks,
+                         pending: panel.permissionPending)
         }
+        .buttonStyle(PressStyle())
+        .disabled(!pressable)
+        .opacity(pressable ? 1 : 0.55)
         .sensoryFeedback(.selection, trigger: picks)
-        .accessibilityElement(children: .contain)
+        .accessibilityLabel(String(localized: "Thread settings"))
+        .accessibilityValue([panel.model?.name, effortName, speedName, panel.permissionName].compactMap { $0 }.joined(separator: ", "))
+        .accessibilityHint(panel.fixed?.hint ?? String(localized: "Opens this thread’s model, effort, speed and permissions"))
         .accessibilityIdentifier("thread-settings")
+        .sheet(isPresented: $open) { sheet }
     }
 
-    /// Chooses a value for the thread, with the light tap a choice makes.
+    private var sheet: some View {
+        ComposerSettingsSheet(title: String(localized: "Thread settings"), current: panel.model,
+                              groups: [ModelGroup(id: panel.providerID ?? panel.provider, name: panel.provider, models: panel.models)],
+                              modelsEnabled: panel.pressable(.model), choose: { choose(.model, $0.id) }) {
+            if panel.modelFixed {
+                Text("\(panel.provider) changes only a started thread’s permissions.", comment: "%@ is the agent's name, such as Devin.")
+            }
+        } foot: {
+            EmptyView()
+        } settings: {
+            effortRow
+            speedRow
+            permissionRow
+        }
+    }
+
+    private var effortName: String? {
+        guard !panel.efforts.isEmpty else { return nil }
+        return panel.effort.isEmpty ? String(localized: "Default effort") : EffortWords.name(panel.effort)
+    }
+
+    /// Chooses a value for the thread, with the light tap a choice makes, and puts the sheet away.
     private func choose(_ kind: ThreadSettingKind, _ value: String) {
         picks += 1
+        open = false
         model.chooseSetting(kind, value, in: ref)
-    }
-    /// What a press does, or while the chip is held, why and until when.
-    private func hint(_ kind: ThreadSettingKind, opens: String) -> String {
-        if let fixed = panel.fixed { return fixed.hint }
-        if panel.modelFixed && (kind == .model || kind == .effort) {
-            return String(localized: "\(panel.provider) changes only a started thread’s permissions.", comment: "%@ is the agent's name, such as Devin.")
-        }
-        return opens
     }
 
     private func option(_ name: String, line: String? = nil, chosen: Bool, action: @escaping () -> Void) -> some View {
         SettingOption(name: name, line: line, chosen: chosen, action: action)
     }
 
-    private var modelMenu: some View {
-        Menu {
-            let lineup = ModelLineup.split(panel.models)
-            Section(panel.provider) {
-                ForEach(lineup.latest) { item in
-                    option(item.name, chosen: item.id == panel.model?.id) { choose(.model, item.id) }
-                }
-                // Older models of each line wait in a closed submenu (ADR-0171).
-                if !lineup.legacy.isEmpty {
-                    Menu("Legacy") {
-                        ForEach(lineup.legacy) { item in
-                            option(item.name, chosen: item.id == panel.model?.id) { choose(.model, item.id) }
-                        }
-                    }
-                }
-            }
-        } label: {
-            SettingChip {
-                ProviderLogo(providerID: panel.providerID)
-                Text(verbatim: panel.model?.name ?? "").foregroundStyle(Palette.ink).lineLimit(1)
-            }
-        }
-        .disabled(!panel.pressable(.model))
-        .opacity(panel.pressable(.model) ? 1 : 0.55)
-        .accessibilityLabel(String(localized: "Model", comment: "The field for the model a new thread uses."))
-        .accessibilityValue(panel.model?.name ?? "")
-        .accessibilityHint(hint(.model, opens: String(localized: "Opens this thread’s models")))
-        .accessibilityIdentifier("thread-settings-model")
-    }
-
-    @ViewBuilder private var effortMenu: some View {
-        if !panel.efforts.isEmpty {
-            let shown = panel.effort.isEmpty ? String(localized: "Default effort") : EffortWords.name(panel.effort)
+    @ViewBuilder private var effortRow: some View {
+        if let effortName {
             Menu {
-                Section(String(localized: "Effort", comment: "The field for how hard a new thread's model reasons.")) {
-                    ForEach(Array(panel.efforts.enumerated()), id: \.element) { index, level in
-                        option(EffortWords.name(level), line: EffortWords.line(level, index: index, count: panel.efforts.count), chosen: level == panel.effort) {
-                            choose(.effort, level)
-                        }
+                ForEach(Array(panel.efforts.enumerated()), id: \.element) { index, level in
+                    option(EffortWords.name(level), line: EffortWords.line(level, index: index, count: panel.efforts.count), chosen: level == panel.effort) {
+                        choose(.effort, level)
                     }
                 }
             } label: {
-                SettingChip { Text(verbatim: shown).lineLimit(1) }
+                SettingRow(name: Text("Effort", comment: "The field for how hard a new thread's model reasons."), value: effortName)
             }
             .disabled(!panel.pressable(.effort))
-            .opacity(panel.pressable(.effort) ? 1 : 0.55)
-            .accessibilityLabel(String(localized: "Effort", comment: "The field for how hard a new thread's model reasons."))
-            .accessibilityValue(shown)
-            .accessibilityHint(hint(.effort, opens: String(localized: "Opens the effort levels this model offers")))
-            .accessibilityIdentifier("thread-settings-effort")
         }
     }
 
-    /// One press steps the speed: an outline at Standard, one bolt at Fast, two at Ultra fast. Told by shape, not colour.
-    @ViewBuilder private var speedButton: some View {
+    @ViewBuilder private var speedRow: some View {
         if !panel.speeds.isEmpty {
-            let next = ThreadSettings.nextSpeed(panel.speeds, after: panel.speed)
-            let nextName = ThreadSettings.speedName(next, offered: panel.speeds)
-            let cost = panel.speeds.first { $0.id == next }.map { ThreadSettings.speedCost($0, providerID: panel.providerID) }
-            Button { choose(.speed, next) } label: {
-                HStack(spacing: -3) {
-                    Image(systemName: panel.speed == ThreadSettings.standard ? "bolt" : "bolt.fill")
-                    if panel.speed == "ultrafast" { Image(systemName: "bolt.fill") }
-                }
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(panel.speed == ThreadSettings.standard ? Palette.muted : Palette.accentText)
-                .frame(minWidth: 36, minHeight: 44)
-                .contentShape(Rectangle())
-                .padding(.vertical, -6)
-            }
-            .buttonStyle(PressStyle())
-            .disabled(!panel.pressable(.speed))
-            .opacity(panel.pressable(.speed) ? 1 : 0.55)
-            .accessibilityLabel(String(localized: "Speed", comment: "The thread setting for how fast its agent answers."))
-            .accessibilityValue(ThreadSettings.speedName(panel.speed, offered: panel.speeds))
-            .accessibilityHint(hint(.speed, opens: cost.map { String(localized: "Changes to \(nextName). \($0)", comment: "The first %@ is a speed, such as Fast; the second says what it costs.") }
-                ?? String(localized: "Changes to \(nextName).", comment: "%@ is a speed, such as Standard.")))
-            .accessibilityIdentifier("thread-settings-speed")
+            SpeedMenu(speeds: panel.speeds, speed: panel.speed, providerID: panel.providerID) { choose(.speed, $0) }
+                .disabled(!panel.pressable(.speed))
         }
     }
 
-    /// Permissions are their shield, as in the desktop's narrow composer: an outline while the thread asks, half filled
-    /// while it may act without asking, filled for Full access. Its name and value are read out.
-    @ViewBuilder private var permissionMenu: some View {
+    @ViewBuilder private var permissionRow: some View {
         if !panel.permissions.isEmpty {
-            let full = panel.permission == "full-access"
             Menu {
-                Section(String(localized: "Permissions", comment: "The field for the permission mode a new thread starts in.")) {
-                    ForEach(panel.permissions) { mode in
-                        option(mode.name, line: mode.asks ?? ThreadSettingWords.permissionLine(mode.id, provider: panel.provider), chosen: mode.id == panel.permission) {
-                            choose(.permissions, mode.id)
-                        }
-                        .disabled(!panel.mayChoose(mode))
+                ForEach(panel.permissions) { mode in
+                    option(mode.name, line: mode.asks ?? ThreadSettingWords.permissionLine(mode.id, provider: panel.provider), chosen: mode.id == panel.permission) {
+                        choose(.permissions, mode.id)
                     }
+                    .disabled(!panel.mayChoose(mode))
                 }
                 if !panel.mayAnswer {
                     Text("This iPhone can’t answer on \(model.name(ref.hostID)), so it can only keep this thread asking first.", comment: "%@ is the computer's name.")
                 }
             } label: {
-                SettingChip(pending: panel.permissionPending) {
-                    Image(systemName: full ? "shield.fill" : panel.permissionGrants ? "shield.lefthalf.filled" : "shield")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(full ? Palette.warningText : panel.permissionGrants ? Palette.accentText : Palette.muted)
-                }
+                SettingRow(name: Text("Permissions", comment: "The field for the permission mode a new thread starts in."), value: panel.permissionName ?? "")
             }
             .disabled(!panel.pressable(.permissions))
-            .opacity(panel.pressable(.permissions) ? 1 : 0.55)
-            .accessibilityLabel(String(localized: "Thread permissions"))
-            .accessibilityValue(panel.permissionName ?? "")
-            .accessibilityHint(hint(.permissions, opens: String(localized: "Opens what this thread may do without asking")))
-            .accessibilityIdentifier("thread-settings-permissions")
         }
     }
 }
@@ -2553,8 +2584,9 @@ struct SettingOption: View {
     }
 }
 
-/// A text button in the reply box's second line: its value and a small chevron, no fill at rest (ADR-0113). Drawn 32
-/// points tall and pressed across 44. A change the agent hasn't confirmed draws a dashed edge and a dot, both still.
+/// A text button in the reply box's row, where Watcher's box offers only its permissions: its value and a small chevron,
+/// no fill at rest (ADR-0113). Drawn 32 points tall and pressed across 44. A change the agent hasn't confirmed draws a
+/// still dot; nothing in the box draws an edge.
 struct SettingChip<Content: View>: View {
     var pending = false
     @ViewBuilder let content: Content
@@ -2568,12 +2600,6 @@ struct SettingChip<Content: View>: View {
         .foregroundStyle(Palette.muted)
         .padding(.horizontal, Space.s2)
         .frame(minHeight: 32)
-        .overlay {
-            if pending {
-                RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .strokeBorder(Palette.warning, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-            }
-        }
         .frame(minHeight: 44)
         .contentShape(Rectangle())
         .padding(.vertical, -6)

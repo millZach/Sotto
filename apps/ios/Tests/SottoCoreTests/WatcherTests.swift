@@ -60,6 +60,9 @@ final class WatcherTests: XCTestCase {
         // Ultracode is never Watcher's.
         let claude = try decode([ThreadModel].self, #"[{"id":"opus","name":"Opus 5.5","provider":"Claude Code","providerId":"claude","ready":true,"reasoningEfforts":["high","max","ultracode"]}]"#)
         XCTAssertEqual(WatcherSettings.efforts(claude.first), ["high", "max"])
+        // Watcher's box lights at Max, its top on Claude, since Ultracode is never Watcher's.
+        XCTAssertTrue(WatcherSettings.atTopEffort(ThreadSettingValues(model: "opus", effort: "max", permissions: "", speed: "standard"), catalog: claude))
+        XCTAssertFalse(WatcherSettings.atTopEffort(ThreadSettingValues(model: "opus", effort: "high", permissions: "", speed: "standard"), catalog: claude))
         // Another provider's model starts a new Watcher there, through the same open.
         XCTAssertTrue(WatcherSettings.replaces("opus", current: current, catalog: catalog))
         XCTAssertFalse(WatcherSettings.replaces("astra", current: current, catalog: catalog))
@@ -73,6 +76,35 @@ final class WatcherTests: XCTestCase {
         XCTAssertEqual(WatcherWire.dismissHandover(target: target)["op"], .string("watcher-phone-dismiss-handover"))
         XCTAssertEqual(JSONValue.object(WatcherWire.send(target: target, clientID: "phone", draftID: "draft", text: "Go on", handover: true))["request"]["handover"], .bool(true))
         XCTAssertEqual(JSONValue.object(WatcherWire.send(target: target, clientID: "phone", draftID: "draft", text: "Go on"))["request"]["handover"], .null)
+    }
+    /// Watcher's model, effort or speed chosen while it works (November 1, 2026): the computer keeps it for Watcher's next
+    /// turn, the chips show it, and a later press goes with it.
+    func testAChoiceKeptForWatchersNextTurnShowsOnTheChipsAndALaterPressGoesWithIt() throws {
+        XCTAssertNil(try decode(WatcherPhoneState.self, state).nextTurnOptions, "An older computer keeps nothing")
+        let kept = try decode(WatcherPhoneState.self, String(state.dropLast()) + #", "nextTurnOptions":{"modelId":"astra","reasoningEffort":null}}"#)
+        let next = try XCTUnwrap(kept.nextTurnOptions)
+        XCTAssertEqual(next, WatcherPhoneState.NextTurnOptions(modelId: "astra", reasoningEffort: nil))
+        let standard = try decode(WatcherPhoneState.NextTurnOptions.self, #"{"modelId":"model","reasoningEffort":"low","speed":null}"#)
+        XCTAssertTrue(standard.speedChosen, "A named null speed is Standard, not Watcher's own")
+        let catalog = try decode([ThreadModel].self, #"[{"id":"model","name":"GPT-6.1 Sol","provider":"Codex","providerId":"codex","ready":true,"reasoningEfforts":["low","high"],"defaultReasoningEffort":"high","speeds":[{"id":"fast","name":"Fast"}]},{"id":"astra","name":"GPT-6 Astra","provider":"Codex","providerId":"codex","ready":true,"reasoningEfforts":["low","medium"],"defaultReasoningEffort":"medium"}]"#)
+        let current = try XCTUnwrap(kept.current)
+        // The chips show the kept model on its own default effort, and Watcher's speed, which the choice leaves alone.
+        XCTAssertEqual(WatcherSettings.values(current, next: next, catalog: catalog), ThreadSettingValues(model: "astra", effort: "medium", permissions: "", speed: "standard"))
+        XCTAssertEqual(WatcherSettings.values(current, next: standard, catalog: catalog), ThreadSettingValues(model: "model", effort: "low", permissions: "", speed: "standard"))
+        // An effort press goes with the kept model, not back to the one Watcher runs on.
+        let effort = JSONValue.object(try XCTUnwrap(WatcherSettings.press(.effort, value: "low", current: current, next: next, catalog: catalog)))
+        XCTAssertEqual(effort["request"]["modelId"], .string("astra"))
+        XCTAssertEqual(effort["request"]["reasoningEffort"], .string("low"))
+        XCTAssertNil(WatcherSettings.press(.model, value: "astra", current: current, next: next, catalog: catalog), "The kept model again sends nothing")
+        // Going back to the model Watcher runs on is a change, which puts the kept choice away.
+        XCTAssertEqual(JSONValue.object(try XCTUnwrap(WatcherSettings.press(.model, value: "model", current: current, next: next, catalog: catalog)))["request"]["modelId"], .string("model"))
+    }
+    func testABusyWatcherHoldsItsChipsOnlyOnAComputerThatCannotKeepTheChoice() {
+        XCTAssertEqual(WatcherWire.settingsLaterFeature, "watcher-phone-settings-later")
+        XCTAssertNil(WatcherSettings.busyHold(keptForNextTurn: true, working: true, messageOnItsWay: true))
+        XCTAssertEqual(WatcherSettings.busyHold(keptForNextTurn: false, working: true, messageOnItsWay: true), .working)
+        XCTAssertEqual(WatcherSettings.busyHold(keptForNextTurn: false, working: false, messageOnItsWay: true), .messageOnItsWay)
+        XCTAssertNil(WatcherSettings.busyHold(keptForNextTurn: false, working: false, messageOnItsWay: false))
     }
     func testReceiptOutcomeStaysOptionalForOlderComputers() throws {
         let old = try decode(WatcherPhoneState.self, state)

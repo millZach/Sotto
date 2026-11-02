@@ -117,6 +117,18 @@ describe('createChordMatcher', () => {
     expect(events).toEqual(['press-fn-d:toggle', 'press-fn-d:toggle', 'press-fn-d:toggle'])
   })
 
+  it('fires a press of modifiers alone on release, unless a longer chord took it', () => {
+    const pressFn: MatcherChord = { id: 'press-fn', chord: 'Fn', role: 'press' }
+    const pressFnSpace: MatcherChord = { id: 'press-fn-space', chord: 'Fn+Space', role: 'press' }
+    const { events, play } = setup([pressFn, pressFnSpace])
+    play('down Fn')
+    expect(events).toEqual([])
+    play('up Fn')
+    expect(events).toEqual(['press-fn:toggle'])
+    play('down Fn', 'down Space', 'up Space', 'up Fn')
+    expect(events).toEqual(['press-fn:toggle', 'press-fn-space:toggle'])
+  })
+
   it('cancels on reset only a hold it started', () => {
     const skipped = setup([holdFn], false)
     skipped.play('down Fn')

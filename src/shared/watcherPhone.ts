@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { agentAttachmentHandlesSchema, agentMessageSchema, agentRequestSchema, agentQuestionAnswersSchema, providerIdSchema, agentRuntimeModeSchema, agentSpeedSchema } from './agents'
 import { watcherRefusalSchema, watcherThreadTargetSchema, watcherPhoneOriginSchema, watcherOwnChangeSchema, watcherStandingWatchSchema, watcherOutcomeSchema, watcherProviderSchema, WATCHER_MACHINES_MAX } from './watcher'
 export { watcherPhoneOriginSchema } from './watcher'
-import { watcherStopAllPreviewSchema } from './watcherRoom'
+import { watcherNextTurnOptionsSchema, watcherStopAllPreviewSchema } from './watcherRoom'
 
 /** How many takeover lines a phone's page carries, the newest, as it carries the newest five hundred receipts. */
 export const WATCHER_PHONE_TAKEOVERS_MAX = 500
@@ -43,6 +43,12 @@ export const WATCHER_PHONE_FILES_FEATURE = 'watcher-phone-files' as const
  * `watcher-phone-manage`, whose receipts its changes keep.
  */
 export const WATCHER_PHONE_COMPOSER_FEATURE = 'watcher-phone-composer' as const
+/**
+ * Watcher's model, effort or speed can change while it works (November 1, 2026): `watcher-phone-open` on Watcher's own
+ * provider is kept for its next turn instead of refused, and the page says what waits (`nextTurnOptions`). A phone holds
+ * those chips while Watcher works only on a computer without it.
+ */
+export const WATCHER_PHONE_SETTINGS_LATER_FEATURE = 'watcher-phone-settings-later' as const
 /** How many of the user's follow-ups waiting for Watcher a phone's page carries, the first in line. */
 export const WATCHER_PHONE_FOLLOWUPS_MAX = 50
 export const watcherPhoneSetPermissionSchema = z.object({ runtimeMode: agentRuntimeModeSchema }).strict()
@@ -135,6 +141,11 @@ export const watcherPhoneStateSchema = z.object({ hostId: z.uuid(),
   newWatcher: z.enum(['available', 'busy', 'empty']).optional(),
   handoverOffered: z.boolean().optional(),
   replaced: z.boolean().optional(),
+  /**
+   * Watcher's model, effort or speed chosen while it worked, which its next turn starts on, as the room says it. Sent from
+   * computers that list WATCHER_PHONE_SETTINGS_LATER_FEATURE; older phones ignore it.
+   */
+  nextTurnOptions: watcherNextTurnOptionsSchema.optional(),
 }).strict()
 export const watcherPhoneResultSchema = z.union([z.object({ status: z.literal('ok'), state: watcherPhoneStateSchema }).strict(), watcherRefusalSchema])
 export const watcherPhoneManageOutcomeSchema = z.union([z.object({ status: z.literal('ok') }).strict(), watcherRefusalSchema])

@@ -328,3 +328,34 @@ describe('what a broadcast read in part keeps, and when it must walk whole (#925
     expect(notes.patchedEncodes).toBe(1)
   })
 })
+
+describe('records an answer lists whole (ADR-0028, November 1 amendment)', () => {
+  it('measures the next broadcast from the records seeded, once the answer that listed them is delivered', () => {
+    const encoder = new ThreadRecordsBroadcast()
+    const listed = [record('a', 'A'), record('b', 'B')]
+    const seed = encoder.seed(listed)!
+    // Until the answer is delivered, nothing moves: the next broadcast would still list every record.
+    expect(encoder.baseRevision).toBeNull()
+    seed.commit()
+    expect(encoder.baseRevision).toBe(seed.revision)
+    const changed = { ...listed[1]!, title: 'B+' }
+    expect(encoder.encode([listed[0]!, changed]).payload).toEqual({ revision: seed.revision + 1, base: seed.revision, changed: [changed] })
+  })
+
+  it('voids a send that had not become the base when the answer was delivered', () => {
+    const encoder = new ThreadRecordsBroadcast()
+    const listed = [record('a', 'A')]
+    const before = encoder.encode([record('a', 'old')])
+    const seed = encoder.seed(listed)!
+    seed.commit()
+    // The client read past that send: it holds the answer's records.
+    before.commit()
+    expect(encoder.baseRevision).toBe(seed.revision)
+  })
+
+  it('seeds nothing from records that share an ID', () => {
+    const encoder = new ThreadRecordsBroadcast()
+    expect(encoder.seed([record('a', 'A'), record('a', 'again')])).toBeUndefined()
+    expect(encoder.baseRevision).toBeNull()
+  })
+})

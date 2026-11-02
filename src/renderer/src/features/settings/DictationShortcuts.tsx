@@ -1,4 +1,4 @@
-import React, { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from 'react'
+import React, { useEffect, useId, useRef, useState, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import type { MessageDescriptor } from '@lingui/core'
 import { msg } from '@lingui/core/macro'
@@ -79,7 +79,6 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
   const recorder = useChordRecorder(platform, owl && !linux)
   const [target, setTarget] = useState<Slot | null>(null)
   const [message, setMessage] = useState<RowMessage | null>(null)
-  const [menuRole, setMenuRole] = useState<ShortcutRole | null>(null)
   const [permission, setPermission] = useState<KeyListenerPermission | null>(null)
   const [focusKeys, setFocusKeys] = useState<readonly string[] | null>(null)
   const rootRef = useRef<HTMLDivElement>(null)
@@ -156,7 +155,6 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
   }
 
   const record = async (slot: Slot): Promise<void> => {
-    setMenuRole(null)
     setMessage(null)
     setTarget(slot)
     // A newer recording (a click with no pointerdown, as screen readers send) outlives this one's cancel.
@@ -169,13 +167,6 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
     const saved = chord !== null && chord !== 'unsupported-key' && chord !== 'taken-press' && chord !== 'taken-hold' && await commit(slot, chord)
     const self = `${slot.role}-${slot.index ?? 'add'}`
     setFocusKeys(slot.index === null && saved ? [`${slot.role}-${set[slot.role].length}`, self, `${slot.role}-0`] : [self, `${slot.role}-0`])
-  }
-
-  const addFn = async (role: ShortcutRole): Promise<void> => {
-    setMenuRole(null)
-    setMessage(null)
-    await commit({ role, index: null }, 'Fn')
-    setFocusKeys([`${role}-add`, `${role}-0`])
   }
 
   const promotable = (index: number): boolean => index > 0 && !chordNeedsListener(set.press[index] ?? '', 'press')
@@ -197,23 +188,6 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
     setFocusKeys([`${role}-${Math.max(0, index - 1)}`, `${role}-add`, `${role}-0`])
   }
 
-  const fnInUse = all.some((chord) => sameChord(chord, 'Fn', platform))
-
-  const menuKeys = (event: KeyboardEvent<HTMLDivElement>, role: ShortcutRole): void => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      event.stopPropagation()
-      setMenuRole(null)
-      setFocusKeys([`${role}-add`])
-      return
-    }
-    if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return
-    event.preventDefault()
-    const items = [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)')]
-    const at = items.indexOf(document.activeElement as HTMLButtonElement)
-    items[(at + (event.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus()
-  }
-
   const recordingBox = (role: ShortcutRole): ReactNode => (
     <span className="dictation-shortcuts__recording">
       {recorder.held.length === 0
@@ -230,46 +204,7 @@ export function DictationShortcuts({ settings, platform, onReplaceHotkey, onRepl
   const addControl = (role: ShortcutRole): ReactNode => {
     if (!owl || locked || set[role].length >= MAX_SHORTCUTS_PER_ROLE) return null
     if (target?.role === role && target.index === null) return recordingBox(role)
-    if (!darwin) {
-      return <button type="button" className="dictation-shortcuts__add tt-focusable" aria-label={addLabel(role)} data-focus-key={`${role}-add`} onClick={() => void record({ role, index: null })}>{add}</button>
-    }
-    const open = menuRole === role
-    return (
-      <span
-        className="dictation-shortcuts__menu-anchor"
-        onBlur={(event) => { if (open && !event.currentTarget.contains(event.relatedTarget as Node | null)) setMenuRole(null) }}
-      >
-        <button
-          type="button"
-          className="dictation-shortcuts__add tt-focusable"
-          aria-label={addLabel(role)}
-          data-focus-key={`${role}-add`}
-          aria-haspopup="menu"
-          aria-expanded={open}
-          aria-controls={open ? `${id}-${role}-menu` : undefined}
-          onClick={() => setMenuRole(open ? null : role)}
-          onKeyDown={(event) => {
-            if (event.key === 'Escape' && open) {
-              event.preventDefault()
-              event.stopPropagation()
-              setMenuRole(null)
-            } else if (event.key === 'ArrowDown') {
-              event.preventDefault()
-              if (open) document.getElementById(`${id}-${role}-menu`)?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
-              else setMenuRole(role)
-            }
-          }}
-        >{add}</button>
-        {open ? (
-          <div className="dictation-shortcuts__menu" role="menu" id={`${id}-${role}-menu`} aria-label={t`Add a shortcut`} onKeyDown={(event) => menuKeys(event, role)}>
-            <button type="button" role="menuitem" className="tt-focusable" autoFocus onClick={() => void record({ role, index: null })}>{t`Record keys…`}</button>
-            <button type="button" role="menuitem" className="tt-focusable" disabled={fnInUse} onClick={() => void addFn(role)}>
-              {fnInUse ? t`Fn is already in use` : t`Fn on its own`}
-            </button>
-          </div>
-        ) : null}
-      </span>
-    )
+    return <button type="button" className="dictation-shortcuts__add tt-focusable" aria-label={addLabel(role)} data-focus-key={`${role}-add`} onClick={() => void record({ role, index: null })}>{add}</button>
   }
 
   const row = (role: ShortcutRole): ReactNode => {

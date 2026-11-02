@@ -9,6 +9,16 @@ Zach asked on October 31, 2026 for pictures and videos in threads and in Watcher
 - **An Owl feature first** (`inline-media`, ADR-0072).
 - **All four sources:** Sotto's browser and cloud iPhone screenshots, Codex's and Cursor's generated images, pictures inside tool results, and image and video files an agent writes.
 
+## Request-only, November 1, 2026
+
+Zach changed the plan's priority on November 1: "only embed images or videos if requested ... User requests it then it happens, not the models doing it for everything." A prototype with a link needs no picture. So before part 5 lands:
+
+- Sotto stops capturing on its own: no tiles from tool-result pictures, screenshots, viewed images or written files (parts 1, 3 and 4's sources). Images the user asked to be generated still show, with the owl at the easel.
+- An agent shows a picture or video only through `sotto_media`'s `show_in_thread`, which its instructions say to call only when the user asked in this conversation. The tiles, the viewer, video playback and every performance rule below stay for what is shown.
+- `inline-media` was meant to go off on both of Zach's computers until this lands, but installed builds have no switch for an Owl feature (`src/main/runningVersion.ts`), so it could not be turned off.
+
+ADR-0170's request-only amendment records the decisions. Parts 5 and 6 follow on top of it.
+
 ## The rule that comes first
 
 Zach: Sotto is "performing better than ever" and must not slow down. So:
@@ -23,11 +33,11 @@ Zach: Sotto is "performing better than ever" and must not slow down. So:
 
 Each one ships desktop and iPhone together, behind `inline-media`.
 
-1. **Pictures from tool results.** The foundation: the thread media store, `media` handles on activity records, tiles in threads and Watcher, the viewer, lazy loading, the benchmark and its guard, and the iPhone's tiles and viewer. First source: image content in a tool result. That covers Sotto's browser and the cloud iPhone for every provider, Claude Code reading a picture, and any MCP picture, on Claude Code and Codex.
+1. **Pictures from tool results.** (Since request-only, a tool result's picture is not shown on its own; the foundation stays.) The foundation: the thread media store, `media` handles on activity records, tiles in threads and Watcher, the viewer, lazy loading, the benchmark and its guard, and the iPhone's tiles and viewer. First source: image content in a tool result. That covers Sotto's browser and the cloud iPhone for every provider, Claude Code reading a picture, and any MCP picture, on Claude Code and Codex.
 2. **Generated images.** Codex's `imageGeneration` and Cursor's `generate_image`, with the owl at the easel while they run, on desktop and iPhone. The benchmark adds the scene: frames drawn off screen, in view and after the picture lands, and React commits while it plays.
-3. **Tool-result pictures on the other providers.** Grok Build, Devin and DeepSeek Harness (ACP image content) first (#1979). Then Codex `view_image`, Codex Computer Use and Cursor's tool results, because `view_image` names a file on disk and reads it the way part 2 reads a saved image. `tests/perf/toolPictureCapture.perf.test.ts` times an update of each, with and without a picture, and counts that a repeated update hashes nothing.
-4. **Image and video files an agent writes.** Found through the turn's changed files; videos and GIFs play inline, never autoplaying.
-5. **Mark up.** Arrow, circle, box, pen and note over any picture, desktop and iPhone, with the Duo's pen drawing and a finger moving the picture. Add to reply stages the marked copy as an attachment; the original stays.
+3. **Tool-result pictures on the other providers.** (Since request-only, not shown on their own.) Grok Build, Devin and DeepSeek Harness (ACP image content) first (#1979). Then Codex `view_image`, Codex Computer Use and Cursor's tool results, because `view_image` names a file on disk and reads it the way part 2 reads a saved image. `tests/perf/toolPictureCapture.perf.test.ts` times an update of each, with and without a picture, and counts that a repeated update hashes nothing.
+4. **Image and video files an agent writes.** (Superseded by request-only: written files are no longer looked for, and an agent shows one through `show_in_thread`.) Found through the turn's changed files; videos and GIFs play inline, never autoplaying. Zach's picks on November 1: git-ignored folders count too (never `node_modules`), and a video plays from the file it was written to, up to 200 MiB on the desktop and 50 MiB on the iPhone, rather than being copied (ADR-0170 decisions 12 to 15). `tests/perf/writtenMediaTurnEnd.perf.test.ts` timed the listing at a turn's end until request-only removed it.
+5. **Mark up.** Arrow, circle, box, pen and note over any picture, desktop and iPhone, with the Duo's pen drawing and a finger moving the picture. Add to reply stages the marked copy as an attachment; the original stays. Under request-only, the copy appears only as the user's own image in a reply they send. Built as the prototype's Mark up view (ADR-0170 decisions 16 to 18): the viewer's **Mark up**, in a thread pane only, with the inks taken from the theme's error and warning colours at full strength. `tests/perf/markupEditor.perf.test.tsx` counts what opening a picture, opening the editor and drawing a pen line of 200 moves over 20 marks cost, and `tests/e2e/inline-media-markup.spec.ts` times Add to reply in the built app.
 6. **Callouts.** A Sotto thread tool lets an agent place numbered boxes with notes on a picture it showed. They are drawn on its tile and listed beside it in the viewer and the editor.
 
 Android is not in this plan; its follow-up is #1955.

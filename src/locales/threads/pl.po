@@ -89,6 +89,10 @@ msgstr ""
 msgid "{after, plural, one {Could not add {name}, so it and the # after it were not attached. {next}} other {Could not add {name}, so it and the # after it were not attached. {next}}}"
 msgstr ""
 
+#: src/renderer/src/agents/ScreenshotInput.tsx
+msgid "{AGENT_MAX_ATTACHMENTS, plural, one {Attach up to # screenshot at a time.} other {Attach up to # screenshots at a time.}}"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "{agent} is working. Write a follow-up to queue it."
 msgstr ""
@@ -1662,6 +1666,14 @@ msgstr ""
 msgid "Add to prompt"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Add to reply"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Add to reply ({modKey}+Enter)"
+msgstr ""
+
 #. Ultrathink is a keyword Claude Code reads in a prompt; keep it as it is.
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Add Ultrathink to prompt"
@@ -1702,6 +1714,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "Adding screenshots..."
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Adding the marked copy…"
 msgstr ""
 
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
@@ -1773,6 +1789,10 @@ msgstr ""
 #. {existingTitle} is a project's title.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "Already the project {existingTitle}"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Amber ink"
 msgstr ""
 
 #: src/renderer/src/agents/EmptyWorkspace.tsx
@@ -1886,6 +1906,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadPanes.tsx
 msgid "Arrange in a single row"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Arrow"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
@@ -2046,6 +2070,10 @@ msgstr ""
 msgid "being babysat"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Box"
+msgstr ""
+
 #. Read before a Git branch's name.
 #: src/renderer/src/agents/ThreadGreeting.tsx
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
@@ -2126,10 +2154,15 @@ msgstr ""
 #: src/renderer/src/agents/ForkFromHere.tsx
 #: src/renderer/src/agents/GitActionButton.tsx
 #: src/renderer/src/agents/HostUpdates.tsx
+#: src/renderer/src/agents/MarkupEditor.tsx
 #: src/renderer/src/agents/OpenCodeModelSources.tsx
 #: src/renderer/src/agents/OwnModelServers.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Cancel"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Cancel (Esc)"
 msgstr ""
 
 #. {sourceName} is a model source, such as Anthropic.
@@ -2186,6 +2219,20 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadGreeting.tsx
 msgid "Change project, now {projectTitle}"
+msgstr ""
+
+#. {computerName} is the name of a saved host.
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Change the default projects directory on {computerName}"
+msgstr ""
+
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Change the default projects directory on this computer"
+msgstr ""
+
+#. Opens the folder browser to choose another default projects directory.
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Change…"
 msgstr ""
 
 #. A lockfile the update changed
@@ -2376,6 +2423,15 @@ msgstr ""
 msgid "Choose or create a thread to review this draft."
 msgstr ""
 
+#. {computerName} is the name of a saved host.
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Choose the default projects directory on {computerName}"
+msgstr ""
+
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Choose the default projects directory on this computer"
+msgstr ""
+
 #: src/renderer/src/agents/ProviderModelList.tsx
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Choose what new threads start with in Settings > Threads."
@@ -2385,9 +2441,23 @@ msgstr ""
 msgid "Choose workspace"
 msgstr ""
 
+#. Opens the folder browser to choose the default projects directory.
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Choose…"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Circle"
+msgstr ""
+
 #. A tip under a working Claude thread.
 #: src/renderer/src/agents/tips.tsx
 msgid "Claude reads <0>CLAUDE.md</0> at the start of every session. Ask it to add a rule there instead of repeating yourself."
+msgstr ""
+
+#. Empties the default projects directory.
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Clear"
 msgstr ""
 
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
@@ -2404,6 +2474,15 @@ msgstr ""
 
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Clear search"
+msgstr ""
+
+#. {computerName} is the name of a saved host.
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Clear the default projects directory on {computerName}"
+msgstr ""
+
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Clear the default projects directory on this computer"
 msgstr ""
 
 #. A step in the browser line; starts lowercase.
@@ -3058,6 +3137,10 @@ msgstr ""
 msgid "could not look at the screen"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Could not make the marked copy. Nothing was added, and your marks are still here. Try again."
+msgstr ""
+
 #. {failedHost} is a web site's host name or an email address.
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Could not open {failedHost}."
@@ -3094,6 +3177,10 @@ msgstr ""
 
 #: src/renderer/src/agents/addProject.ts
 msgid "Could not open the project. Nothing was changed. Try again."
+msgstr ""
+
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Could not play. The file may have changed or been removed on its computer. Ask the agent to write it again."
 msgstr ""
 
 #. A step in the browser line; starts lowercase. {key} is a key's name, such as Enter.
@@ -3135,8 +3222,8 @@ msgstr ""
 msgid "Could not record the starting branch. Your choice is retained."
 msgstr ""
 
-#: src/renderer/src/agents/AgentAccountSettings.tsx
-msgid "Could not save. Check the value and try again."
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Could not save the folder. Nothing was changed. Try again."
 msgstr ""
 
 #. A step in the browser line; starts lowercase.
@@ -3409,11 +3496,11 @@ msgid "Default projects directory"
 msgstr ""
 
 #. {computerName} is the name of a saved host.
-#: src/renderer/src/agents/AgentAccountSettings.tsx
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
 msgid "Default projects directory on {computerName}"
 msgstr ""
 
-#: src/renderer/src/agents/AgentAccountSettings.tsx
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
 msgid "Default projects directory on this computer"
 msgstr ""
 
@@ -3675,6 +3762,10 @@ msgstr ""
 msgid "Drag or use arrow keys to move · Scroll or +/− to zoom · 0 to fit"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Drag to draw. Press where a note goes, then type. A, O, B, P and T pick a tool. On the picture, Enter starts a mark at the cross, the arrow keys move it, and Enter ends it. Escape cancels."
+msgstr ""
+
 #: src/renderer/src/agents/AttachmentViewer.tsx
 msgid "Drag to move · Scroll or +/− to zoom · 0 to fit · ← → for the next image"
 msgstr ""
@@ -3685,6 +3776,10 @@ msgstr ""
 
 #: src/renderer/src/agents/SidebarFrame.tsx
 msgid "Drag to resize. Use arrow keys when focused. Double-click to reset."
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Draw on the picture first. Nothing was added."
 msgstr ""
 
 #. A diagram is being drawn.
@@ -4390,6 +4485,10 @@ msgstr ""
 msgid "Initialize Git"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Ink"
+msgstr ""
+
 #. {from} is the version the host runs now.
 #: src/renderer/src/agents/HostUpdates.tsx
 msgid "Install beside {from}"
@@ -4838,6 +4937,29 @@ msgstr ""
 msgid "Manual prompt"
 msgstr ""
 
+#: src/renderer/src/agents/AttachmentViewer.tsx
+msgid "Mark up"
+msgstr ""
+
+#: src/renderer/src/agents/AttachmentViewer.tsx
+msgid "Mark up (M)"
+msgstr ""
+
+#. {name} is the file name of a picture.
+#. placeholder {0}: image.name
+#: src/renderer/src/agents/AttachmentViewer.tsx
+msgid "Mark up {0}"
+msgstr ""
+
+#. {name} is the file name of a picture.
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Mark up {name}"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Mark-up tools"
+msgstr ""
+
 #. A reasoning effort level, the highest some models offer.
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Max"
@@ -5244,6 +5366,10 @@ msgstr ""
 msgid "No files match “{filter}”."
 msgstr ""
 
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "No folder chosen"
+msgstr ""
+
 #: src/renderer/src/agents/bringChangesBack.logic.ts
 msgid "No folder has {target} checked out, so only the branch moved."
 msgstr ""
@@ -5346,6 +5472,10 @@ msgstr ""
 msgid "None yet. Add a model server you run to use its models in OpenCode threads."
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "None yet. Draw on the picture."
+msgstr ""
+
 #: src/renderer/src/agents/MessageContent.tsx
 msgid "Not a web link: {href}"
 msgstr ""
@@ -5434,6 +5564,16 @@ msgstr ""
 
 #: src/renderer/src/agents/ProvidersSettings.tsx
 msgid "Not signed in"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Note"
+msgstr ""
+
+#. A note the user wrote on a picture, with its words.
+#. placeholder {0}: mark.text
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Note: {0}"
 msgstr ""
 
 #: src/renderer/src/agents/ownServerWords.ts
@@ -5690,7 +5830,7 @@ msgid "Open picture"
 msgstr ""
 
 #. {number} of {count} pictures in a turn; {title} names the step that made it.
-#. placeholder {0}: shown.record.title
+#. placeholder {0}: stepTitle(t, shown.record)
 #: src/renderer/src/agents/ThreadMediaTiles.tsx
 msgid "Open picture {number} of {count}, from {0}"
 msgstr ""
@@ -5981,6 +6121,14 @@ msgstr ""
 msgid "Paused when last read"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Pen"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Pen line"
+msgstr ""
+
 #: src/renderer/src/agents/ThreadTranscript.tsx
 msgid "Pending message"
 msgstr ""
@@ -6010,6 +6158,15 @@ msgstr ""
 msgid "Picking one starts a new thread there with a handover of this one. This thread stays as it is."
 msgstr ""
 
+#. {name} is the file name of a picture.
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Picture to mark up: {name}"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Plain ink"
+msgstr ""
+
 #. The heading of a card that shows a plan Cursor made and waits for the user to accept.
 #: src/renderer/src/agents/requests/AgentRequestCard.tsx
 msgid "Plan"
@@ -6031,6 +6188,16 @@ msgstr ""
 #. What the Ultracode effort level does.
 #: src/renderer/src/agents/EffortPicker.tsx
 msgid "Plans the work and runs it as a team of agents. Uses many more tokens."
+msgstr ""
+
+#. {number} is the place of an agent's GIF among the pictures of one turn.
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Play GIF {number}"
+msgstr ""
+
+#. {number} is the place of an agent's video among the pictures and videos of one turn.
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Play video {number}"
 msgstr ""
 
 #: src/renderer/src/agents/threadGreeting.logic.ts
@@ -6417,6 +6584,18 @@ msgstr ""
 msgid "Recovered work"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Red ink"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Redo"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Redo ({modKey}+Shift+Z)"
+msgstr ""
+
 #: src/renderer/src/agents/FilePicker.tsx
 #: src/renderer/src/agents/SkillPicker.tsx
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
@@ -6479,6 +6658,7 @@ msgstr ""
 msgid "Remote host"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
 #: src/renderer/src/agents/OwnModelServers.tsx
 msgid "Remove"
 msgstr ""
@@ -6488,6 +6668,11 @@ msgstr ""
 #: src/renderer/src/agents/OwnModelServers.tsx
 #: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "Remove {name}"
+msgstr ""
+
+#. {words} names a mark, such as "Arrow" or "Note: the button".
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Remove {words}"
 msgstr ""
 
 #: src/renderer/src/agents/ThreadWorkingCopy.tsx
@@ -6882,6 +7067,8 @@ msgstr ""
 msgid "Saved model servers"
 msgstr ""
 
+#. The Use this folder button while the chosen folder is saved.
+#: src/renderer/src/agents/FolderBrowserDialog.tsx
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Saving…"
 msgstr ""
@@ -7426,6 +7613,10 @@ msgstr ""
 msgid "Sotto could not confirm the delete. If the thread is still listed, nothing was deleted."
 msgstr ""
 
+#: src/renderer/src/agents/ProjectsDirectoryRow.tsx
+msgid "Sotto could not confirm the folder was saved. Check the folder shown in Settings, then try again if it has not changed."
+msgstr ""
+
 #: src/renderer/src/agents/ThreadFollowups.tsx
 msgid "Sotto could not confirm the new order. Check the queue before changing it again."
 msgstr ""
@@ -7899,6 +8090,11 @@ msgstr ""
 msgid "Stop babysitting #{number}"
 msgstr ""
 
+#. {number} is the place of an agent's GIF among the pictures of one turn.
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Stop GIF {number}"
+msgstr ""
+
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
 #. An action or turn that was stopped.
@@ -8237,6 +8433,10 @@ msgstr ""
 msgid "The machine or system it asked for could not take it: none was connected, it had no copy of this project, or it was not This computer, where delegated threads start for now. {nothing}"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "The marked copy goes into your reply. The picture in the thread stays as it was."
+msgstr ""
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "The model it asked for was not ready on this computer, or Sotto could not save the delegation. {nothing}"
 msgstr ""
@@ -8321,6 +8521,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ProviderUpgradeNotice.tsx
 msgid "The recovery record retention period has ended."
+msgstr ""
+
+#: src/renderer/src/agents/ScreenshotInput.tsx
+msgid "The reply box is still adding what came before. Nothing was added. Try again in a moment."
 msgstr ""
 
 #: src/renderer/src/agents/CheckReply.tsx
@@ -8520,6 +8724,11 @@ msgstr ""
 msgid "This folder has uncommitted changes. They move with the switch to {sent}, and Git refuses the switch if they would conflict."
 msgstr ""
 
+#. {place} is "this computer" or a saved host's name.
+#: src/renderer/src/agents/FolderBrowserDialog.tsx
+msgid "This folder is new. Sotto makes it on {place} when a new project first goes in it."
+msgstr ""
+
 #. {place} is "this computer" or a saved host's name. "Use this folder" is the button's name.
 #: src/renderer/src/agents/FolderBrowserDialog.tsx
 msgid "This folder is new. Sotto makes it on {place} when you press Use this folder."
@@ -8546,6 +8755,10 @@ msgid "This image is no longer available to copy."
 msgstr ""
 
 #: src/renderer/src/agents/AttachmentViewer.tsx
+msgid "This image is no longer available to mark up."
+msgstr ""
+
+#: src/renderer/src/agents/AttachmentViewer.tsx
 msgid "This image is no longer available to show."
 msgstr ""
 
@@ -8564,6 +8777,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ScreenshotInput.tsx
 msgid "This model does not support screenshots. Choose a model with image support."
+msgstr ""
+
+#: src/renderer/src/agents/AttachmentViewer.tsx
+msgid "This pane has no reply box to take a marked copy."
 msgstr ""
 
 #: src/renderer/src/agents/threadDraftStore.ts
@@ -8612,6 +8829,10 @@ msgstr ""
 msgid "This thread has no working folder, so files cannot be attached. Remove them, then send again. Your draft is saved."
 msgstr ""
 
+#: src/renderer/src/agents/ScreenshotInput.tsx
+msgid "This thread is archived, so its reply box takes no pictures. Nothing was added. Restore the thread to reply."
+msgstr ""
+
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "This thread is archived."
 msgstr ""
@@ -8646,6 +8867,10 @@ msgstr ""
 msgid "This thread stays with {stayingWith}."
 msgstr ""
 
+#: src/renderer/src/agents/ScreenshotInput.tsx
+msgid "This thread waits for your answer, so a marked copy can't go into its reply yet. Answer it first."
+msgstr ""
+
 #: src/renderer/src/agents/delegationWords.ts
 msgid "This thread was started by a delegated thread, and delegation goes two levels deep, so it cannot delegate. {nothing}"
 msgstr ""
@@ -8657,6 +8882,10 @@ msgstr ""
 
 #: src/renderer/src/agents/branchToolbar.logic.ts
 msgid "This thread will work in a worktree that is on its own branch. Switch branches there after the first send."
+msgstr ""
+
+#: src/renderer/src/agents/ScreenshotInput.tsx
+msgid "This thread's model does not read images, so a marked copy can't go into its reply. Choose a model with image support."
 msgstr ""
 
 #: src/renderer/src/agents/ContinueThread.tsx
@@ -8888,6 +9117,10 @@ msgstr ""
 msgid "Type a name for the folder."
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Type a note"
+msgstr ""
+
 #. 128K means 128 times 1,024 tokens; keep 131072 and 128K as they are.
 #: src/renderer/src/agents/ownServerWords.ts
 msgid "Type a number of tokens from {min} to {max}, such as 131072 or 128K."
@@ -8967,8 +9200,13 @@ msgstr ""
 msgid "Unconfirmed answer"
 msgstr ""
 
+#: src/renderer/src/agents/MarkupEditor.tsx
 #: src/renderer/src/agents/SettleToast.tsx
 msgid "Undo"
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Undo ({modKey}+Z)"
 msgstr ""
 
 #: src/renderer/src/agents/SettleToast.tsx
@@ -9252,6 +9490,17 @@ msgstr ""
 msgid "Verify"
 msgstr ""
 
+#. {number} is the place of an agent's video among the pictures and videos of one turn.
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Video {number}"
+msgstr ""
+
+#. {number} of {count} pictures and videos in a turn; {title} names the step that wrote it.
+#. placeholder {0}: stepTitle(t, shown.record)
+#: src/renderer/src/agents/ThreadMediaTiles.tsx
+msgid "Video {number} of {count}, from {0}"
+msgstr ""
+
 #: src/renderer/src/agents/gitActionButton.logic.ts
 msgid "View PR"
 msgstr ""
@@ -9411,6 +9660,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ThreadComposer.tsx
 msgid "Watcher message"
+msgstr ""
+
+#: src/renderer/src/agents/ThreadOptions.tsx
+msgid "Watcher starts its next turn on this choice."
 msgstr ""
 
 #: src/renderer/src/agents/ThreadOptions.tsx
@@ -9742,6 +9995,10 @@ msgstr ""
 
 #: src/renderer/src/agents/ownServerTurnWords.ts
 msgid "Your last message and the thread before it are more than the model takes at once. Nothing in the thread was lost. OpenCode threads can’t be compacted in Sotto, so pick a model with more context and try again, or start a new thread."
+msgstr ""
+
+#: src/renderer/src/agents/MarkupEditor.tsx
+msgid "Your marks"
 msgstr ""
 
 #: src/renderer/src/agents/OwnModelServers.tsx

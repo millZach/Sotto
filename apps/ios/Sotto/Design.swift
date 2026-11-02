@@ -916,18 +916,17 @@ extension View {
     }
 }
 
-/// The reply box's ground, and its **+**'s, as in Messages: solid, a shade off the room, with a soft shadow under it so it
-/// floats over the conversation, and no edge. Under Glass on iOS 26 and later the system's Liquid Glass instead, which the
-/// **+** answers the touch with; before iOS 26 Glass gets the solid box too, since its frosted glass has an edge.
+/// The reply box's ground: solid, a shade off the room, with a soft shadow under it so it floats over the conversation,
+/// and no edge in any state. Under Glass on iOS 26 and later the system's Liquid Glass instead; before iOS 26 Glass gets
+/// the solid box too, since its frosted glass has an edge.
 struct ComposerSurface<S: InsettableShape>: ViewModifier {
     let shape: S
-    var interactive = false
     @Environment(\.sottoTheme) private var theme
     @Environment(\.sottoGlass) private var glass
     @Environment(\.colorScheme) private var scheme
     @ViewBuilder func body(content: Content) -> some View {
         if glass != nil, #available(iOS 26, *) {
-            content.glassEffect(.regular.tint(theme.color(.surface).opacity(scheme == .dark ? 0.58 : 0.68)).interactive(interactive), in: shape)
+            content.glassEffect(.regular.tint(theme.color(.surface).opacity(scheme == .dark ? 0.58 : 0.68)), in: shape)
         } else {
             content
                 // The room with a little of the ink over it, so the box is a shade off whatever the theme's room is.
@@ -937,32 +936,172 @@ struct ComposerSurface<S: InsettableShape>: ViewModifier {
     }
 }
 
-/// The reply box's measures, shared by a thread's and Watcher's: 38 points tall with one line, as in Messages.
+/// The reply box's measures, shared by a thread's and Watcher's: a card with the words on top and a row of round buttons
+/// inside it under them, as in Claude's iPhone app (Zach, November 1, 2026).
 enum ComposerMetrics {
-    static let height: CGFloat = 38
-    static let radius: CGFloat = height / 2
-    /// The words' room above and below; with one line of body text the box is at least `height`.
-    static let wordsPadding: CGFloat = 9
-    /// From the box's leading edge to the words.
-    static let wordsInset: CGFloat = 14
+    static let radius: CGFloat = 24
+    /// From the card's leading edge to the words, and above them.
+    static let wordsInset: CGFloat = 16
+    static let wordsTop: CGFloat = 12
     /// Around the photos and files above the words.
     static let attachmentsInset: CGFloat = 6
-    /// Send and Stop inside the box's end: their circle, and its gap to the box's edge.
-    static let button: CGFloat = 30
-    static let buttonInset: CGFloat = 4
-    /// Between Stop and Send: wide enough that each keeps all 44 points of its press area, so a press between them
-    /// neither stops a turn meant to be queued nor queues a reply meant to stop it.
-    static let buttonGap: CGFloat = 44 - button
+    /// The row's round buttons (+, the mic, Send and Stop) and the settings pill: how tall they are drawn.
+    static let button: CGFloat = 34
+    /// From the card's edge to the row.
+    static let rowInset: CGFloat = 8
+    /// Between the row's buttons: wide enough that each keeps all 44 points of its press area, so a press between Stop
+    /// and Send neither stops a turn meant to be queued nor queues a reply meant to stop it.
+    static let gap: CGFloat = 44 - button
 }
 
 extension View {
     /// The reply box's floating ground; see `ComposerSurface`.
-    func composerSurface<S: InsettableShape>(in shape: S, interactive: Bool = false) -> some View {
-        modifier(ComposerSurface(shape: shape, interactive: interactive))
+    func composerSurface<S: InsettableShape>(in shape: S) -> some View {
+        modifier(ComposerSurface(shape: shape))
+    }
+    /// A round button's face in the reply box's row: `fill` in a circle the row's height, pressed across 44 points.
+    func composerDisc<F: ShapeStyle>(_ fill: F) -> some View {
+        frame(width: ComposerMetrics.button, height: ComposerMetrics.button)
+            .background(fill, in: Circle())
+            .pressArea(drawn: ComposerMetrics.button)
+    }
+    /// The light round the reply box, whose corners are `radius`, at the top effort; see `EffortTraceLight`. Nothing is
+    /// drawn while `lit` is false.
+    func effortTrace(_ lit: Bool, radius: CGFloat) -> some View {
+        background { if lit { EffortTraceLight(radius: radius, halo: true) } }
+            .overlay { if lit { EffortTraceLight(radius: radius, halo: false) } }
     }
     /// A round button drawn smaller than 44 points that still takes a press across 44, without taking more room.
     func pressArea(drawn size: CGFloat) -> some View {
         frame(width: 44, height: 44).contentShape(Circle()).padding(-(44 - size) / 2)
+    }
+}
+
+/// The light that travels round the reply box while its thread, or Watcher, is at the top effort, as round the desktop's
+/// composer (ADR-0019, amended October 26 and November 1; `effortTrace.css`): a thin bright head on the box's edge, and a
+/// soft halo behind the box that spills onto the room, one lap every nine seconds. The iPhone has no colourway setting, so
+/// it wears the desktop's default, Ember, from the theme's warning role. The halo is a glow, so it follows the Glow slider
+/// and is not drawn at 0 (ADR-0051); the head is a line and stays. The lap runs in Core Animation (`TraceLoopView`), and
+/// stops under Reduce Motion, in the `--ui-still` journeys and while the app is not in front, resting past the top-left
+/// corner.
+struct EffortTraceLight: View {
+    let radius: CGFloat
+    /// The halo, drawn behind the box so the box covers its inner half; otherwise the head on the edge.
+    let halo: Bool
+    @Environment(\.sottoTheme) private var theme
+    @Environment(\.sottoGlow) private var glow
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.scenePhase) private var phase
+    var body: some View {
+        if halo && !glow.shows {
+            EmptyView()
+        } else {
+            let warning = theme.rgb(.warning)
+            TraceLayers(radius: radius, halo: halo, color: warning, tip: halo ? warning : warning.mixed(with: theme.rgb(.ink), 0.4),
+                        strength: halo ? CGFloat(glow.alpha(0.55)) : 1, reach: halo ? CGFloat(glow.radius(9)) : 0,
+                        running: !reduceMotion && !DebugFlags.still && phase == .active)
+                .allowsHitTesting(false)
+                .accessibilityHidden(true)
+        }
+    }
+}
+
+/// The trace's layers for SwiftUI.
+private struct TraceLayers: UIViewRepresentable {
+    let radius: CGFloat
+    let halo: Bool
+    let color: ThemeRGB
+    let tip: ThemeRGB
+    let strength: CGFloat
+    let reach: CGFloat
+    let running: Bool
+    func makeUIView(context: Context) -> TraceLoopView { TraceLoopView(frame: .zero) }
+    func updateUIView(_ view: TraceLoopView, context: Context) {
+        view.paint(radius: radius, halo: halo, color: color, tip: tip, strength: strength, reach: reach)
+        view.running = running
+    }
+}
+
+/// One of the trace's two lights as layers: a conic gradient, a long faint tail and a bright head, on a square that turns
+/// inside a layer that stretches it to the box's shape, so the light keeps an even pace along the long edges. The head is
+/// masked to a 1.5 point band on the box's edge; the halo to the soft shadow of a thin ring round it, whose explicit path
+/// Core Animation draws without an offscreen pass. Only the square's turn loops.
+final class TraceLoopView: LoopingView {
+    private let stretch = CALayer()
+    private let light = CAGradientLayer()
+    private let band = CAShapeLayer()
+    /// Where the head rests, in radians: past the top-left corner, as on the desktop.
+    private static let rest = -CGFloat.pi * 2 / 3
+    private var painted: (CGFloat, Bool, ThemeRGB, ThemeRGB, CGFloat, CGFloat)?
+    private var radius: CGFloat = 0
+    private var halo = false
+    private var reach: CGFloat = 0
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        // The halo spills past the box on purpose.
+        clipsToBounds = false
+        stage.clipsToBounds = false
+        light.type = .conic
+        light.startPoint = CGPoint(x: 0.5, y: 0.5)
+        light.endPoint = CGPoint(x: 1, y: 0.5)
+        light.transform = CATransform3DMakeRotation(Self.rest, 0, 0, 1)
+        stretch.addSublayer(light)
+        stage.layer.addSublayer(stretch)
+        stage.layer.mask = band
+    }
+    required init?(coder: NSCoder) { fatalError("TraceLoopView is made in code") }
+    func paint(radius: CGFloat, halo: Bool, color: ThemeRGB, tip: ThemeRGB, strength: CGFloat, reach: CGFloat) {
+        // A layer given its colours again, even the same ones, is drawn again; the view around it redraws far more often.
+        if let painted, painted == (radius, halo, color, tip, strength, reach) { return }
+        painted = (radius, halo, color, tip, strength, reach)
+        self.radius = radius
+        self.halo = halo
+        self.reach = reach
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        light.colors = [color.uiColor(0), color.uiColor(0), color.uiColor(0.35), color.uiColor(1), tip.uiColor(1), color.uiColor(0)].map(\.cgColor)
+        light.locations = [0, 0.7, 0.84, halo ? 0.93 : 0.95, 0.97, 1].map { NSNumber(value: $0) }
+        stage.alpha = strength
+        CATransaction.commit()
+        setNeedsLayout()
+    }
+    override func layoutStage() {
+        let side = max(bounds.height, 1)
+        // The halo's square reaches far enough past the box for its soft edge; the head's only needs the box's corners.
+        let cover = side * (halo ? 2.5 : 1.5)
+        stretch.frame = bounds
+        stretch.sublayerTransform = CATransform3DMakeScale(bounds.width / side, 1, 1)
+        light.bounds = CGRect(x: 0, y: 0, width: cover, height: cover)
+        light.position = CGPoint(x: bounds.midX, y: bounds.midY)
+        band.frame = bounds
+        let edge = UIBezierPath(roundedRect: bounds, cornerRadius: radius)
+        if halo {
+            band.path = nil
+            band.fillColor = nil
+            band.shadowColor = UIColor.black.cgColor
+            band.shadowOpacity = 1
+            band.shadowOffset = .zero
+            band.shadowRadius = reach
+            band.shadowPath = edge.cgPath.copy(strokingWithWidth: 2, lineCap: .butt, lineJoin: .round, miterLimit: 10)
+        } else {
+            edge.append(UIBezierPath(roundedRect: bounds.insetBy(dx: 1.5, dy: 1.5), cornerRadius: max(0, radius - 1.5)))
+            band.path = edge.cgPath
+            band.fillRule = .evenOdd
+            band.fillColor = UIColor.black.cgColor
+            band.shadowOpacity = 0
+            band.shadowPath = nil
+        }
+    }
+    override var loopLayer: CALayer { light }
+    override func makeLoops() -> [String: CAAnimation] {
+        let turn = CABasicAnimation(keyPath: "transform.rotation.z")
+        turn.fromValue = NSNumber(value: Double(Self.rest))
+        turn.toValue = NSNumber(value: Double(Self.rest + 2 * .pi))
+        turn.duration = 9
+        turn.repeatCount = .infinity
+        turn.timingFunction = CAMediaTimingFunction(name: .linear)
+        turn.isRemovedOnCompletion = false
+        return ["turn": turn]
     }
 }
 

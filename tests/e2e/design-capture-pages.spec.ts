@@ -181,7 +181,7 @@ test.describe('authoritative design-review captures', () => {
           : page.locator(group)
         await expect(section).toHaveCount(1)
         if (state === 'agents') {
-          await expect(section.getByLabel('Default projects directory', { exact: true })).toBeVisible()
+          await expect(section.getByRole('button', { name: /^(Choose|Change) the default projects directory on this computer$/ })).toBeVisible()
           await capturePage(page, 'settings-agents.png', { category: 'settings', state })
           continue
         }

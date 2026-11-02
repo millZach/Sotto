@@ -162,7 +162,10 @@ public struct Shell: Decodable, Equatable, Sendable {
     /// connection only the ones that changed (`changed-thread-records`). Always nil once a shell leaves `HostConnection`,
     /// which puts the whole list back (`ThreadRecordsCache`).
     public var threadRecords: ChangedThreadRecords? = nil
-    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher, unconfirmedSettings }
+    /// How many settled threads the computer's list leaves out, from a host that sends this phone only threads that are
+    /// not settled (`settled-threads-on-request`): the Settled shelf reads them with `settled-threads`. Nil from any other.
+    public let settledHeldBack: Int?
+    private enum Keys: String, CodingKey { case hostId, host, deliveries, deliveredDrafts, globalLaneBusy, busyThreadIds, error, clientCapabilities, configuration, followups, followupReceipts, watcher, unconfirmedSettings, settledHeldBack }
     public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: Keys.self)
         hostId = try c.decodeIfPresent(String.self, forKey: .hostId)
@@ -178,6 +181,7 @@ public struct Shell: Decodable, Equatable, Sendable {
         followupReceipts = try c.decodeIfPresent([DeliveryReceipt].self, forKey: .followupReceipts)
         watcher = c.tolerant(WatcherPhoneState.self, .watcher)
         unconfirmedSettings = c.tolerant(ThreadList<UnconfirmedSetting>.self, .unconfirmedSettings)
+        settledHeldBack = try c.decodeIfPresent(Int.self, forKey: .settledHeldBack)
     }
     public func validate(hostID: String) throws {
         guard hostId == hostID, host.hostId == hostID,
@@ -194,6 +198,9 @@ public struct HostSnapshot: Decodable, Equatable, Sendable {
     /// of a shell when this connection was already sent that revision whole.
     public let modelsRevision: Int?
     public let capabilities: ProviderCapabilities
+    /// From a host that offers `provider-mode-lists`, each distinct list of provider modes in `models`, which a model names
+    /// by its place here. Nil once a shell leaves `HostConnection`, its lists put back on each model.
+    public var providerModeLists: [[ThreadModel.ProviderMode]]? = nil
 }
 public struct Project: Decodable, Identifiable, Equatable, Sendable {
     public let id: String; public let title: String; public let workspaceSettledAt: String?
@@ -403,6 +410,8 @@ public struct Activity: Decodable, Identifiable, Equatable, Sendable {
     public struct Media: Decodable, Identifiable, Equatable, Sendable {
         public let id: String; public let kind: String; public let mimeType: String
         public let width: Int?; public let height: Int?; public let name: String; public let source: String
+        /// Its size in bytes; a video's decides whether this iPhone fetches it to play (`AgentVideos.playsHere`).
+        public let sizeBytes: Int?
     }
     /// The line under the title: the command it ran, or the files it changed.
     public var subject: String? {

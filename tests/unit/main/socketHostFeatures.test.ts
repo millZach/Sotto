@@ -248,15 +248,19 @@ describe('a remote thread behind a backlog', () => {
     await client.observe(['followed', 'unheld'])
     ;(client as unknown as Transport).cacheDetail('followed', { threadId: 'followed', revision: 4, messages: [] })
     call.mockClear()
-    await client.command({ type: 'select-thread', threadId: 'followed' })
+    await client.command({ type: 'interrupt', threadId: 'followed' })
     expect(call.mock.calls.map(([operation]) => operation.op)).toEqual(['command'])
-    await client.command({ type: 'select-thread', threadId: 'unheld' })
+    await client.command({ type: 'interrupt', threadId: 'unheld' })
     expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'unheld' })
     // An observation the host never confirmed keeps nothing current, so the thread is read whole again.
     call.mockImplementationOnce(async () => { throw new Error('Wait for the pending host request to finish.') })
     await expect(client.observe(['followed'])).rejects.toThrow('Wait for the pending host request')
-    await client.command({ type: 'select-thread', threadId: 'followed' })
+    await client.command({ type: 'interrupt', threadId: 'followed' })
     expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'followed' })
+    // Selecting changes nothing in a thread's history: the window's own ask and the observe that shows it bring it (#996).
+    call.mockClear()
+    await client.command({ type: 'select-thread', threadId: 'unheld' })
+    expect(call.mock.calls.map(([operation]) => operation.op)).toEqual(['command'])
   })
 
   it('reads a thread whole after a command when a delta missed it and the read that followed failed', async () => {
@@ -273,10 +277,18 @@ describe('a remote thread behind a backlog', () => {
     await vi.waitFor(() => expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'followed' }))
     await Promise.resolve()
     call.mockClear()
-    await client.command({ type: 'select-thread', threadId: 'followed' })
+    await client.command({ type: 'interrupt', threadId: 'followed' })
     expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'followed' })
     expect(client.threadDetail('followed')?.revision).toBe(9)
     // Current again, the next command reads nothing more.
+    call.mockClear()
+    await client.command({ type: 'interrupt', threadId: 'followed' })
+    expect(call.mock.calls.map(([operation]) => operation.op)).toEqual(['command'])
+    // A selection reads a thread held behind again, and nothing for one current.
+    const behind = transport as unknown as { behind: Set<string> }
+    behind.behind.add('followed'); call.mockClear()
+    await client.command({ type: 'select-thread', threadId: 'followed' })
+    expect(call).toHaveBeenLastCalledWith({ op: 'detail', threadId: 'followed' })
     call.mockClear()
     await client.command({ type: 'select-thread', threadId: 'followed' })
     expect(call.mock.calls.map(([operation]) => operation.op)).toEqual(['command'])

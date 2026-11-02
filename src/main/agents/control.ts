@@ -7,7 +7,8 @@ import { CheckoutHeldRefusal, CheckoutSendRefusal, type CheckoutPendingWork } fr
 import type { ShortTextPurpose, ShortTextFailureReason } from '../llm/shortTextWriter'
 import type { AgentSkillReference } from '../../shared/agentSkills'
 import type { AgentFileReference } from '../../shared/agentFiles'
-import type { AgentActivity } from '../../shared/agentActivity'
+import { AGENT_VIDEO_PART_BYTES, type AgentActivity, type AgentActivityMedia, type AgentVideoMimeType } from '../../shared/agentActivity'
+import { readVideo } from './shownMedia'
 import { immutableActivities, immutableUpdates, isImmutableActivity, isImmutableActivities, isImmutableModels, subscribeActivitySnapshots } from './activitySnapshots'
 import { FollowupStore, followupDigest, isWaitingWakeUp, UNKNOWN_TURN, WATCHER_STOP_PAUSE, type MovedPrompt, type QueuedFollowup } from './followups'
 import { createHash, randomUUID } from 'node:crypto'
@@ -18,7 +19,7 @@ import { z } from 'zod'
 import {
   agentConfigurationSchema, agentAttachmentHandlesSchema, agentAttachmentHandleSchema, agentAttachmentSchema, attachmentDigestSchema, AGENT_MAX_ATTACHMENTS, agentThreadOptionsSchema, agentThreadDraftSchema, agentDeliverySchema,
   providerUpgradeSchema, defaultAgentConfiguration, PROVIDER_REJECTED_ACTION, PROVIDER_RESULT_UNCONFIRMED, PROJECT_FOLDER_MISSING, THREAD_SETTINGS_UNRECONCILED, EMPTY_AGENT_HOST, PROVIDER_LABELS, providerConnectionNotice, isSubscriptionReasoning, agentDeliveryReceiptsSchema, MAX_DELIVERED_DRAFTS, enabledThreadProviders, selectInstalledProviders, capabilitiesForThread, isThreadProviderConnected, providerIdSchema, threadSummaryOf, summarizeThread, lastUserMessageIdOf, noProviderRefusal, isVisualMessage,
-  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
+  type AgentThreadOptions, type AgentMessage, type AgentRequest, type AgentThreadDetail, type AgentThreadDetailDelta, type AgentThreadDetailUpdate, type ProviderId, type AgentModel, type AgentRuntimeMode, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentAttachmentContent, type AgentAttachmentPreviewRequest, type AgentAttachmentPreviewResult, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentCommand, type AgentConfiguration, type AgentDelivery, type AgentFollowup, type AgentThreadDraft, type AgentHostSnapshot, type AgentProject, type AgentState, type AgentThread, type AgentThreadSummary, type ProviderClientUpdate, type SubscriptionProvider,
 } from '../../shared/agents'
 import type { BabysitNews } from './babysitNews'
 import { BABYSITTING_RETIRED, BABYSIT_REFUSALS, type Babysitter } from './babysitting'
@@ -1893,6 +1894,29 @@ export class AgentControl {
     return null
   }
   /**
+   * Whether a model, effort or speed change could go to this thread now with nothing of its own ahead of it: no turn, no
+   * request, a connected provider, and no send on its way or unconfirmed. Unlike `pendingThreadWorkReason`, what only
+   * waits in the queue does not count, so Watcher's choice kept for its next turn goes ahead of it (watcher.ts). A prompt
+   * the user set aside holds nothing, as for a model change from the room (#1325).
+   */
+  threadSettingsCanGo(threadId: string): boolean {
+    const thread = this.threadById(threadId)
+    if (!thread || isThreadTurnRunning(thread) || this.waitsOnRequest(thread) || !isThreadProviderConnected(this.state.host, thread) || isThreadClosed(thread)) return false
+    if (this.pumping.has(threadId) || this.threadPrompts.has(threadId)) return false
+    if (this.outbox.some(item => item.threadId === threadId && !holdsNothingBack(item))) return false
+    if (this.followupStore.peek().items.some(item => item.threadId === threadId && (item.status === 'dispatching' || item.status === 'uncertain'))) return false
+    return !(this.state.deliveries ?? []).some(item => item.threadId === threadId && item.setAside !== true && ['queued', 'submitting', 'uncertain'].includes(item.status))
+  }
+  /**
+   * Whether a model, effort or speed change to this thread has no result yet: main keeps it, and asks the provider for it
+   * again before the thread's next turn (#1192).
+   */
+  settingsUnconfirmed(threadId: string): boolean {
+    return this.outbox.some(item => item.threadId === threadId && item.type === 'configure-thread' && holdsNothingBack(item) && !this.settingsDispatching.has(item.id))
+  }
+  /** Lets Watcher's queue go on once the choice it waited for has gone (watcher.ts). */
+  resumeWatcherQueue(): void { this.pumpFollowups() }
+  /**
    * Where one thread's files are, from the live state. Files, Git changes, the terminal and the browser
    * ask this several times per listing and every couple of seconds per watched workspace; answering from
    * `get()` copied every loaded history to read six fields. The binding is a new object of strings.
@@ -2459,6 +2483,28 @@ export class AgentControl {
     if (!store) return null
     const dataUrl = await store.read(this.threadActivity(request.threadId, request.activityId), request.mediaId)
     return dataUrl === null ? null : { dataUrl }
+  }
+  /**
+   * One part of a video a thread's record names (ADR-0170, part 4), its bytes read from the file the handle names while
+   * that is still the file: for a client to put together, or the desktop's player to play from. Null otherwise.
+   */
+  async threadMediaVideo(request: AgentThreadMediaPartRequest): Promise<{ readonly handle: AgentActivityMedia; readonly parts: number; readonly bytes: Buffer } | null> {
+    const store = this.dependencies.threadMedia
+    if (!store) return null
+    const handle = this.threadActivity(request.threadId, request.activityId)?.media?.find(item => item.id === request.mediaId)
+    const file = handle?.kind === 'video' ? store.videoFile(handle.digest, handle.sizeBytes) : undefined
+    if (!handle || !file) return null
+    const parts = Math.ceil(handle.sizeBytes / AGENT_VIDEO_PART_BYTES)
+    if (request.part >= parts) return null
+    const bytes = await readVideo(file, request.part * AGENT_VIDEO_PART_BYTES, AGENT_VIDEO_PART_BYTES)
+    return bytes ? { handle, parts, bytes } : null
+  }
+  /** `threadMediaVideo` as a client reads it over a socket: the part in base64, with what the whole video is. */
+  async threadMediaPart(request: AgentThreadMediaPartRequest): Promise<AgentThreadMediaPart> {
+    const found = await this.threadMediaVideo(request)
+    if (!found) return null
+    const { handle, parts, bytes } = found
+    return { name: handle.name, mimeType: handle.mimeType as AgentVideoMimeType, sizeBytes: handle.sizeBytes, digest: handle.digest, part: request.part, parts, data: bytes.toString('base64') }
   }
   /** One submitted image, fetched by the window when it draws the tile rather than pushed with every state. */
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> {
@@ -4645,6 +4691,8 @@ export class AgentControl {
       if (!this.threadAvailable(threadId) || this.moveFences.has(threadId)) continue
       // A queued follow-up waits on a prompt of its own thread, as before, not on the thread's other work.
       if (this.pumping.has(threadId) || this.threadPrompts.has(threadId)) continue
+      // Watcher's model, effort or speed kept for its next turn goes before anything queued for it (watcher.ts).
+      if (this.watcherHooks?.holdsQueue?.(threadId)) continue
       const thread = this.state.host.threads.find(t => t.id === threadId)
       // A delegation's news waits whole while delegation is off, as on a stable run after an Owl one (ADR-0072), and
       // holds nothing back: news folded with it is set apart from it first, and the queue goes on past it (ADR-0081).
@@ -5435,6 +5483,14 @@ export class AgentControl {
           validateThreadOptions(this.state.host, command, thread.modelId)
           this.guardThreadPermission(client, command, resolveModel(this.state.host.models, command.modelId ?? thread.modelId))
         }
+        // Watcher's model, effort or speed chosen from its chips while it works waits for its next turn instead of being
+        // refused (watcher.ts). Watcher's own setup, which takes that choice, has an origin and goes on as any change.
+        if (!origin && command.runtimeMode === undefined && command.providerMode === undefined && this.watcherHooks?.keepForNextTurnFromChip?.(command, wanted => {
+          const thread = this.thread(command.threadId)
+          if (thread.providerId && resolveModel(this.state.host.models, wanted.modelId)?.providerId !== thread.providerId) throw new Error('Choose a model from this thread provider. Existing sessions cannot move between providers.')
+          validateThreadOptions(this.state.host, { modelId: wanted.modelId, ...wanted.reasoningEffort ? { reasoningEffort: wanted.reasoningEffort } : {},
+            ...wanted.speed !== undefined ? { speed: wanted.speed } : {} }, thread.modelId)
+        })) return
         validate()
         // The thread interface exposes two distinct commands. Each has its own durable identity;
         // a partial or uncertain save cannot be mistaken for an atomic update.

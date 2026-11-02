@@ -7,7 +7,7 @@ import { watcherResultForHostV1, type WatcherIdentity } from '../../shared/watch
 import type { WatcherService } from './watcher'
 import type { WatcherPhoneService } from './watcherPhone'
 
-import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentAttachmentPreviewResult, type AgentProject } from '../../shared/agents'
+import { HOST_CANNOT_STAGE_SCREENSHOTS, type ProviderId, type AgentAttachmentContent, type AgentAttachmentHandle, type AgentAttachmentUpload, type AgentCommand, type AgentState, type AgentThread, type AgentThreadDetail, type AgentThreadDetailUpdate, type AgentAttachmentPreviewRequest, type AgentThreadMediaRequest, type AgentThreadMediaResult, type AgentThreadMediaPartRequest, type AgentThreadMediaPart, type AgentAttachmentPreviewResult, type AgentProject } from '../../shared/agents'
 import type { StoredThreadEvent } from '../../shared/threadEvents'
 import type { GitRefsPage, GitRefsRequest } from '../../shared/gitRefs'
 import type { GitChangedFiles, GitChangedFilesRequest } from '../../shared/gitChangedFiles'
@@ -271,6 +271,8 @@ export interface HostService {
   attachmentPreview?(request: AgentAttachmentPreviewRequest): AgentAttachmentPreviewResult | Promise<AgentAttachmentPreviewResult>
   /** One picture an activity record names (ADR-0170); null when the host keeps no such picture for that record. */
   threadMedia?(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult>
+  /** One part of a video an activity record names (ADR-0170, part 4); null when it is no longer the file its handle names. */
+  threadMediaPart?(request: AgentThreadMediaPartRequest): Promise<AgentThreadMediaPart>
   /** One part of a sent attached file a message carries, for the iPhone's Quick Look (ADR-0131); null for anything else. */
   attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   /** Keeps an image's bytes on this host once and answers with the handle a draft carries instead (ADR-0031). */
@@ -364,6 +366,7 @@ export interface LocalHostControl {
   questionPageOpened?(token: string): void
   attachmentPreview?(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult>
   threadMedia?(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult>
+  threadMediaPart?(request: AgentThreadMediaPartRequest): Promise<AgentThreadMediaPart>
   attachmentFile?(request: HostAttachmentFileRequest): Promise<HostAttachmentFile>
   stageAttachment?(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle>
   attachmentContent?(digest: string): Promise<AgentAttachmentContent | null>
@@ -587,6 +590,7 @@ export class LocalHostService implements HostService {
   questionPageOpened(token: string): void { this.control.questionPageOpened?.(token) }
   async attachmentPreview(request: AgentAttachmentPreviewRequest): Promise<AgentAttachmentPreviewResult> { return await this.control.attachmentPreview?.(request) ?? null }
   async threadMedia(request: AgentThreadMediaRequest): Promise<AgentThreadMediaResult> { return this.options.threadMedia === true ? await this.control.threadMedia?.(request) ?? null : null }
+  async threadMediaPart(request: AgentThreadMediaPartRequest): Promise<AgentThreadMediaPart> { return this.options.threadMedia === true ? await this.control.threadMediaPart?.(request) ?? null : null }
   get supportsThreadMedia(): boolean { return this.options.threadMedia === true }
   async attachmentFile(request: HostAttachmentFileRequest): Promise<HostAttachmentFile> { return await this.control.attachmentFile?.(request) ?? null }
   stageAttachment(image: AgentAttachmentUpload): Promise<AgentAttachmentHandle> {

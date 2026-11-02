@@ -33,4 +33,9 @@ describe('work that splits across agents (ADR-0172 decision 5)', () => {
     expect(suggestedEffortIndex(1, CODEX, 'medium', 'medium', true)).toBe(CODEX.indexOf('high'))
     expect(suggestedEffortIndex(1, CLAUDE, 'medium', 'medium', false)).toBe(CLAUDE.indexOf('high'))
   })
+
+  it('does not climb again after each press when the model names no default', () => {
+    expect(suggestedEffortIndex(1, CLAUDE, 'medium', undefined)).toBe(CLAUDE.indexOf('high'))
+    expect(suggestedEffortIndex(1, CLAUDE, 'high', undefined)).toBeNull()
+  })
 })

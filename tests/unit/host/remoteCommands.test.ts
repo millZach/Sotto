@@ -122,6 +122,8 @@ describe('remote command allow-list', () => {
       'attachment-file',
       // One picture an agent's step carries, by its handle (ADR-0170): a read on the preview guard, as `preview` is.
       'thread-media',
+      // One part of a video an agent wrote, by its handle (ADR-0170, part 4): a read on the same guard, as `thread-media` is.
+      'thread-media-part',
       // A host's own OpenCode signed in to model sources for the desktop that asks (#1107): the same trust as a sign-in.
       ...REMOTE_OPENCODE_SIGN_IN_OPERATIONS,
       // Numeric Usage reads grant nothing; Clear requires the client's current remote-answer policy (ADR-0078).
@@ -186,7 +188,10 @@ describe('remote command allow-list', () => {
       'pull-request-confirmation',
       // Whether a desktop that accepted next-prompts wants them now (ADR-0173): the user's switch, which only decides whether
       // the host asks its providers for suggestions. It answers nothing and grants nothing.
-      'next-prompts-wanted']
+      'next-prompts-wanted',
+      // The settled threads a phone's list leaves out, a page at a time (ADR-0028, November 1 amendment): a read of the
+      // same thread records `shell` carries, with the same trust.
+      'settled-threads']
     const ops = (hostRequestSchema.options as unknown as { shape: { op: { value: string } } }[]).map(option => option.shape.op.value)
     expect(ops.sort()).toEqual([...decided].sort())
   })

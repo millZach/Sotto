@@ -243,12 +243,11 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
       if (!failures.length) return Promise.resolve(null)
       request = { ...request, failures }
     }
-    // Telling main which panes are open is also this window's own record of whose history it needs.
-    if (request.type === 'observe-threads') {
-      detail.viewed = new Set(request.threadIds)
-      for (const threadId of request.threadIds) requestDetail(threadId)
-    }
-    if (request.type === 'select-thread') requestDetail(request.threadId)
+    // Telling main which panes are open is also this window's own record of whose history it needs. The history is asked
+    // for once the command is on its way, so main is already observing a remote thread when the ask reaches it and answers
+    // from the copy the observation brings rather than reading the thread from its host again (#996).
+    if (request.type === 'observe-threads') detail.viewed = new Set(request.threadIds)
+    const asks = request.type === 'observe-threads' ? request.threadIds : request.type === 'select-thread' ? [request.threadId] : []
     const run = async (): Promise<AgentState | null> => {
       if (bridge === undefined || !session.current) return null
       const version = session.observed
@@ -288,9 +287,10 @@ export function useAgentConnection(bridge: AgentBridge | undefined): AgentConnec
     // their execution still shares main's global lane, so older saves cannot land after a Send.
     const threadCommand = THREAD_SCOPED_COMMAND_TYPES.has(request.type) || LANELESS_THREAD_COMMAND_TYPES.has(request.type)
     // Dismiss all is the window's record of what the user has seen, as telling main which panes are open is.
-    if (threadCommand || composerOperation || request.type === 'observe-threads' || request.type === 'dismiss-failures' || providerOperation) return run()
-    const operation = session.tail.then(run)
-    session.tail = operation
+    let operation: Promise<AgentState | null>
+    if (threadCommand || composerOperation || request.type === 'observe-threads' || request.type === 'dismiss-failures' || providerOperation) operation = run()
+    else { operation = session.tail.then(run); session.tail = operation }
+    for (const threadId of asks) requestDetail(threadId)
     return operation
   }, [bridge, session, receiveState, commitPendingShell, detail, requestDetail])
   const threadDrafts = useMemo(() => new ThreadDraftStore(command), [command])

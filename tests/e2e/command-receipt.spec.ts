@@ -150,14 +150,16 @@ test('drafts save, settings stay and a model can be picked after a reconnect, wi
     // 2. Change a setting and see the card keep it once its receipt has come back.
     await openPage(page, 'Settings')
     await page.getByRole('tablist', { name: 'Settings sections' }).getByRole('tab', { name: 'Threads', exact: true }).click()
-    const directory = page.locator('#settings-agents').getByLabel('Default projects directory', { exact: true })
+    // The projects folder is chosen in a folder browser, so the card's own change here is Clear.
+    const projects = page.locator('#settings-agents')
     const chosen = 'D:\\Receipt projects'
+    await page.evaluate(async path => { await window.sotto!.agents!.command({ type: 'configure', patch: { projectsDirectory: path } }) }, chosen)
+    await expect(projects.getByText(chosen, { exact: true })).toBeVisible()
     const beforeSetting = await settled(page, traffic)
-    await directory.fill(chosen)
-    await directory.press('Tab')
+    await projects.getByRole('button', { name: 'Clear the default projects directory on this computer', exact: true }).click()
     await settled(page, traffic, seen => answered(seen, 'configure') > answered(beforeSetting, 'configure'))
-    expect((await agentState(page)).configuration.projectsDirectory).toBe(chosen)
-    await expect(directory).toHaveValue(chosen)
+    expect((await agentState(page)).configuration.projectsDirectory).toBe('')
+    await expect(projects.getByText('No folder chosen', { exact: true })).toBeVisible()
     await page.screenshot({ path: `${ARTIFACTS}/setting-kept.png`, animations: 'disabled' })
 
     // 3. Pick a model after the provider reconnects. The disconnect goes straight to main; the reconnect is the

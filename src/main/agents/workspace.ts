@@ -13,6 +13,8 @@ import { ThreadChangesPublisher, ThreadMap, inPlacingOrder, orderBetween, thread
 import type { BrowserAgentTools } from './browserAgentServer'
 import type { ScopedThreadTools } from './threadToolServer'
 import { createHash, randomUUID } from 'node:crypto'
+import { shownMedia, type ShownMediaStore, type ShownRefusal } from './shownMedia'
+import { SHOWN_STEP_PREFIX } from '../../shared/agentActivity'
 import { isDeepStrictEqual } from 'node:util'
 import { cloneHostSnapshot } from './cloneHostSnapshot'
 import { sameSnapshot } from './sameSnapshot'
@@ -197,6 +199,11 @@ const ACTIVITY_READ_ERROR = 'Thread activity could not be read. Saved activity r
  * What became of a visual an agent asked to draw (ADR-0056): kept and shown, with where it went, or why nothing was drawn.
  * `anchor` is who wrote the message it sits under: the agent's own words, the user's message, or nothing yet.
  */
+/** What showing pictures in a thread came to (ADR-0170, request-only): how many were shown, and each file refused with why. */
+export type ShownMediaResult =
+  | { readonly shown: true; readonly count: number; readonly refused: readonly { readonly path: string; readonly reason: ShownRefusal }[] }
+  | { readonly shown: false; readonly reason: 'unknown-thread' }
+  | { readonly shown: false; readonly reason: 'nothing-shown'; readonly refused: readonly { readonly path: string; readonly reason: ShownRefusal }[] }
 export type VisualAddition =
   | { readonly added: true; readonly visual: AgentVisual; readonly anchor: 'assistant' | 'user' | 'none' }
   | { readonly added: false; readonly reason: 'unknown-thread' | 'history-unavailable' | 'turn-limit' | 'thread-limit' }
@@ -1463,6 +1470,59 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
     })
   }
   allowBringBack(): void { this.bringBackAllowed = true }
+  /**
+   * Keeps the pictures and videos an agent shows when the user asks (ADR-0170, request-only amendment): given once, at
+   * start, only with the Owl feature `inline-media` on. Absent, no thread is offered `sotto_media`.
+   */
+  private shownMediaStore: ShownMediaStore | undefined
+  keepShownMedia(store: ShownMediaStore): void { this.shownMediaStore = store }
+  /** Whether an agent in this thread is offered `sotto_media`: a thread this host holds, on a provider that takes Sotto's tools. */
+  admitsShownMedia(threadId: string): boolean {
+    if (!this.shownMediaStore) return false
+    const thread = this.threadById(threadId)
+    return thread !== undefined && this.visible(thread) && threadTakesSottoTools(thread)
+  }
+  /**
+   * Shows the pictures and videos an agent named in its thread (ADR-0170, request-only): each file is kept by handle, and
+   * the call becomes a step of its own, titled in the agent's words, placed with the turn under way: after its newest
+   * record, or after the user's newest message. Nothing is shown when no file is a picture or video Sotto shows.
+   */
+  async showMedia(threadId: string, input: { readonly paths: readonly string[]; readonly title: string }): Promise<ShownMediaResult> {
+    const store = this.shownMediaStore
+    if (!store || !this.admitsShownMedia(threadId)) return { shown: false, reason: 'unknown-thread' }
+    const thread = this.threadById(threadId)!
+    let folder: string | undefined
+    try { folder = this.threadFolder(thread) } catch { folder = undefined }
+    const found = await shownMedia(folder, input.paths, store)
+    if (!found.media.length) return { shown: false, reason: 'nothing-shown', refused: found.refused }
+    // What the provider said before the call is committed first, so the newest message read below is the turn's own.
+    await this.settled(threadId, true)
+    const current = this.threadById(threadId)
+    if (!current || !this.visible(current)) return { shown: false, reason: 'unknown-thread' }
+    this.holdActivities(current)
+    // With the user's newest message's turn: beside its newest record when it has one, else after that message. The
+    // newest message is read from the thread's history, since a thread no window observes holds few messages in memory.
+    let stored: { readonly userMessageId: string | null } = { userMessageId: null }
+    try { stored = this.threadStore.newestMessages(threadId) } catch { /* the window's messages answer instead */ }
+    const sent = (id: string | undefined): string | undefined => {
+      if (!id) return undefined
+      try { return this.threadStore.message(threadId, id)?.createdAt ?? current.messages.find(message => message.id === id)?.createdAt } catch { return current.messages.find(message => message.id === id)?.createdAt }
+    }
+    // The window's newest user message wins when it is newer than the history's, as one not yet written is.
+    const live = current.messages.findLast(message => message.role === 'user')
+    const userMessageId = live && (!stored.userMessageId || (sent(stored.userMessageId) ?? '') < live.createdAt) ? live.id : stored.userMessageId ?? undefined
+    const last = current.activities?.at(-1), userAt = sent(userMessageId), lastAt = sent(last?.afterMessageId)
+    // A record of an earlier turn, before this turn's first one exists, is not this turn's.
+    const inTurn = last !== undefined && (last.turnId === userMessageId || last.afterMessageId === userMessageId || (lastAt !== undefined && userAt !== undefined && lastAt >= userAt))
+    const turnId = inTurn ? last.turnId : userMessageId ?? 'shown'
+    const afterMessageId = inTurn ? last.afterMessageId : userMessageId
+    const record: AgentActivity = { id: `${SHOWN_STEP_PREFIX}${randomUUID()}`, turnId, ...afterMessageId ? { afterMessageId } : {},
+      sequence: 0, kind: 'tool', status: 'completed', title: input.title, completedAt: new Date().toISOString(), media: found.media }
+    this.touched(current).activities = immutableActivities(mergeAgentActivities(current.activities, [record]))
+    this.dirty = true
+    this.publish()
+    return { shown: true, count: found.media.length, refused: found.refused }
+  }
   /**
    * How a check installs packages first, present only while Work across machines is on (#1312, ADR-0072): main turns it on
    * once, at start. Absent, a check's new worktree is made as any new worktree is.

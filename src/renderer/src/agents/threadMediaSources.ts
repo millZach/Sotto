@@ -14,6 +14,11 @@ let requests = 0
 
 /** How many reads of pictures this window has made since it started, for the inline media benchmark. */
 export function threadMediaRequests(): number { return requests }
+let videoLoads = 0
+/** How many times a video tile has given its player a source since the window started, for the same benchmark. */
+export function threadVideoLoads(): number { return videoLoads }
+/** A video tile gave its player a source: it came near, and the player reads the video's first frame. */
+export function countVideoLoad(): void { videoLoads += 1 }
 
 function request(origin: ThreadMediaOrigin, size: 'tile' | 'full'): Promise<Read> {
   const cache = kept[size]
@@ -51,25 +56,42 @@ export function useThreadMediaSource(origin: ThreadMediaOrigin | undefined, size
   return { source: current?.source === 'failed' ? null : current?.source ?? null, awaiting: key !== null && current === null, failed: current?.source === 'failed' }
 }
 
-/**
- * Each scroller's one observer, shared by all its tiles and the viewer's strip: a tile is near when it is within a screen and a half of what is in
- * view, and only a near tile holds its picture (ADR-0170). A tile scrolled further away lets go of it.
- */
-const observers = new WeakMap<Element, { observer: IntersectionObserver; listeners: Map<Element, (near: boolean) => void> }>()
-export function watchNear(element: Element, listener: (near: boolean) => void): () => void {
+/** Each scroller's observers, one per margin, shared by every tile in it: what each target's listener is told. */
+const observers = new WeakMap<Element, Map<string, { observer: IntersectionObserver; listeners: Map<Element, (inside: boolean) => void> }>>()
+/** Tells `listener` whether `element` is within `margin` of its scroller's view, through that scroller's one observer for it. */
+function watchWithin(element: Element, listener: (inside: boolean) => void, margin: string | undefined): () => void {
   const root = element.closest('.thread-workspace__transcript')
-  if (typeof IntersectionObserver === 'undefined') { listener(true); return () => undefined }
   const key = root ?? document.documentElement
-  let entry = observers.get(key)
+  const byMargin = observers.get(key) ?? new Map()
+  observers.set(key, byMargin)
+  let entry = byMargin.get(margin ?? '')
   if (!entry) {
-    const listeners = new Map<Element, (near: boolean) => void>()
+    const listeners = new Map<Element, (inside: boolean) => void>()
     const observer = new IntersectionObserver(changes => { for (const change of changes) listeners.get(change.target)?.(change.isIntersecting) },
-      { root, rootMargin: '150% 0px' })
+      margin === undefined ? { root } : { root, rootMargin: margin })
     entry = { observer, listeners }
-    observers.set(key, entry)
+    byMargin.set(margin ?? '', entry)
   }
   const held = entry
   held.listeners.set(element, listener)
   held.observer.observe(element)
   return () => { held.observer.unobserve(element); held.listeners.delete(element) }
+}
+
+/**
+ * Whether a tile is near: within a screen and a half of what is in view, where only a near tile holds its picture
+ * (ADR-0170). A tile scrolled further away lets go of it. Without an observer, everything is near.
+ */
+export function watchNear(element: Element, listener: (near: boolean) => void): () => void {
+  if (typeof IntersectionObserver === 'undefined') { listener(true); return () => undefined }
+  return watchWithin(element, listener, '150% 0px')
+}
+
+/**
+ * Whether an element is on screen at all, for a video or GIF that plays only there: it pauses the moment it leaves
+ * (ADR-0170). Without an observer it is never told it left.
+ */
+export function watchOnScreen(element: Element, listener: (shown: boolean) => void): () => void {
+  if (typeof IntersectionObserver === 'undefined') return () => undefined
+  return watchWithin(element, listener, undefined)
 }

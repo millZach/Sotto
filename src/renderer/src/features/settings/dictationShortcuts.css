@@ -51,8 +51,7 @@
 .dictation-shortcuts__prompt { color: var(--tt-text-muted); font-size: var(--tt-type-caption); }
 
 .dictation-shortcuts__icon,
-.dictation-shortcuts__add,
-.dictation-shortcuts__menu > button {
+.dictation-shortcuts__add {
   border: 0;
   border-radius: var(--tt-radius-sm);
   background: transparent;
@@ -64,25 +63,7 @@
 .dictation-shortcuts__icon { display: inline-grid; place-items: center; width: 24px; height: 24px; min-height: 24px; padding: 0; }
 .dictation-shortcuts__add { min-height: 28px; padding: 0 8px; }
 .dictation-shortcuts__icon:hover,
-.dictation-shortcuts__add:hover,
-.dictation-shortcuts__menu > button:hover:not(:disabled) { background: var(--tt-surface-sunken); color: var(--tt-text); }
-
-.dictation-shortcuts__menu-anchor { position: relative; }
-.dictation-shortcuts__menu {
-  position: absolute;
-  z-index: 5;
-  top: calc(100% + 4px);
-  right: 0;
-  display: grid;
-  min-width: 180px;
-  border: 1px solid var(--tt-hairline);
-  border-radius: var(--tt-radius-md);
-  background: var(--tt-surface);
-  box-shadow: var(--tt-shadow-sm);
-  padding: 4px;
-}
-.dictation-shortcuts__menu > button { padding: 6px 10px; text-align: left; color: var(--tt-text); font-size: var(--tt-type-small); }
-.dictation-shortcuts__menu > button:disabled { color: var(--tt-text-muted); cursor: default; }
+.dictation-shortcuts__add:hover { background: var(--tt-surface-sunken); color: var(--tt-text); }
 
 .dictation-shortcuts__message {
   grid-area: message;
@@ -102,7 +83,6 @@
 @media (max-width: 980px) {
   .dictation-shortcuts__row { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'text' 'controls' 'message'; gap: 6px; }
   .dictation-shortcuts__controls { justify-content: flex-start; }
-  .dictation-shortcuts__menu { right: auto; left: 0; }
 }
 
 @media (prefers-reduced-motion: reduce) {
