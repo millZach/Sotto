@@ -130110,193 +130110,194 @@
         }
       }
     },
-    "Upright, they run along the bottom." : {
+    "Upright, they stand down the right edge." : {
+      "comment" : "Under the iPhone Duo's sideways tabs setting: held upright, the tabs stand in a column down the right edge of the screen.",
       "extractionState" : "manual",
       "localizations" : {
         "ar" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "عموديًا، تكون في الأسفل."
+            "value" : "في الوضع الرأسي، تقف على طول الحافة اليمنى."
           }
         },
         "bn" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "খাড়া ধরলে সেগুলো নিচে থাকে।"
+            "value" : "খাড়া অবস্থায় এগুলো ডান প্রান্ত বরাবর থাকে।"
           }
         },
         "cs" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Na výšku jsou dole."
+            "value" : "Na výšku stojí podél pravého okraje."
           }
         },
         "da" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "På højkant ligger de nederst."
+            "value" : "Lodret står de langs højre kant."
           }
         },
         "de" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Im Hochformat liegen sie unten."
+            "value" : "Hochkant stehen sie am rechten Rand."
           }
         },
         "el" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Κάθετα βρίσκονται στο κάτω μέρος."
+            "value" : "Σε κατακόρυφη θέση, βρίσκονται στη δεξιά άκρη."
           }
         },
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Upright, they run along the bottom."
+            "value" : "Upright, they stand down the right edge."
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En vertical, van en la parte inferior."
+            "value" : "En vertical, quedan en el borde derecho."
           }
         },
         "es-419" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En vertical, van en la parte inferior."
+            "value" : "En vertical, quedan en el borde derecho."
           }
         },
         "es-MX" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "En vertical, van en la parte inferior."
+            "value" : "En vertical, quedan en el borde derecho."
           }
         },
         "fi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pystyasennossa ne ovat alareunassa."
+            "value" : "Pystyasennossa ne ovat oikeassa reunassa."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "À la verticale, ils sont en bas."
+            "value" : "À la verticale, ils se placent le long du bord droit."
           }
         },
         "hi" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "सीधा रखने पर वे नीचे रहते हैं।"
+            "value" : "सीधा पकड़ने पर ये दाएँ किनारे पर रहते हैं।"
           }
         },
         "hu" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Álló helyzetben alul vannak."
+            "value" : "Állítva a jobb szélen állnak."
           }
         },
         "it" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "In verticale stanno in basso."
+            "value" : "In verticale, stanno lungo il bordo destro."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "縦向きでは下に並びます。"
+            "value" : "縦向きでは右端に並びます。"
           }
         },
         "mr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "उभा धरल्यावर ते तळाशी असतात."
+            "value" : "उभे धरल्यावर ते उजव्या कडेला असतात."
           }
         },
         "nb" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stående ligger de nederst."
+            "value" : "Stående står de langs høyre kant."
           }
         },
         "nl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Rechtop staan ze onderaan."
+            "value" : "Rechtop staan ze langs de rechterrand."
           }
         },
         "pl" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "W pionie są na dole."
+            "value" : "W pionie stoją wzdłuż prawej krawędzi."
           }
         },
         "pt-BR" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Na vertical, ficam embaixo."
+            "value" : "Na vertical, ficam na borda direita."
           }
         },
         "pt-PT" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Na vertical, ficam em baixo."
+            "value" : "Na vertical, ficam junto ao rebordo direito."
           }
         },
         "ro" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Pe verticală stau jos."
+            "value" : "În poziție verticală, stau de-a lungul marginii din dreapta."
           }
         },
         "sv" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Stående ligger de längst ned."
+            "value" : "Upprätt står de längs högerkanten."
           }
         },
         "ta" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "நேராகப் பிடிக்கும்போது அவை கீழே இருக்கும்."
+            "value" : "நேராகப் பிடிக்கும்போது அவை வலது ஓரத்தில் இருக்கும்."
           }
         },
         "te" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "నిలువుగా పట్టినప్పుడు అవి కింద ఉంటాయి."
+            "value" : "నిలువుగా పట్టుకున్నప్పుడు అవి కుడి అంచు వెంట ఉంటాయి."
           }
         },
         "tr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Dikeyken altta durur."
+            "value" : "Dik tutulduğunda sağ kenar boyunca durur."
           }
         },
         "uk" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Вертикально вони внизу."
+            "value" : "Вертикально вони стоять уздовж правого краю."
           }
         },
         "ur" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "عمودی پکڑنے پر یہ نیچے رہتے ہیں۔"
+            "value" : "سیدھا پکڑنے پر یہ دائیں کنارے پر رہتے ہیں۔"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "竖握时，标签位于底部。"
+            "value" : "竖握时，它们位于右侧边缘。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "直握時，標籤位於底部。"
+            "value" : "直向握持時，它們位於右側邊緣。"
           }
         }
       }

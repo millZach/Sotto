@@ -291,7 +291,7 @@ private struct DuoTabsPanel: View {
             Segmented(name: String(localized: "Tabs when unfolded sideways", comment: "Settings panel heading, on the iPhone Duo only: where the tabs stand when it is unfolded and held sideways."),
                       choices: DuoTabsSide.allCases, selection: current,
                       title: { $0.title }, identifier: { "setting-duo-tabs-\($0.rawValue)" }) { side = $0.rawValue }
-            PanelHint(text: String(localized: "Upright, they run along the bottom.", comment: "Under the iPhone Duo's sideways tabs setting: held upright, the tabs run along the bottom of the screen."))
+            PanelHint(text: String(localized: "Upright, they stand down the right edge.", comment: "Under the iPhone Duo's sideways tabs setting: held upright, the tabs stand in a column down the right edge of the screen."))
         }
         .lookRow()
     }
