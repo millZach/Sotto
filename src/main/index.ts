@@ -20,6 +20,8 @@ import { DelegationToolServer } from './agents/delegationTools'
 import { DesktopDefaultsPush, followDesktopDefaults, type DesktopDefaultsEvent } from './hosts/desktopDefaults'
 import { registerDelegationIpc } from './agents/delegationIpc'
 import { registerCouncilIpc } from './council/councilIpc'
+import { CouncilService } from './council/councilService'
+import { BranchBundles } from './agents/branchBundles'
 import { registerCheckQueueIpc } from './agents/checkQueueIpc'
 import { registerContinueIpc } from './agents/continueThreadIpc'
 import { moveTargetsOf } from './agents/threadMoves'
@@ -1022,7 +1024,7 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   const fixtureCaptures = threadMedia ? requestedCaptures(threadMedia) : {}
   const localRuntime = startupSettings.localHostEnabled ? await createAgentRuntime({
     directory: userDataPath, credentials, watcherEnabled, heldProviders, usageEnabled, resumeAfterRestart: owlFeatures['resume-after-restart'], restartStoppedThreads: owlFeatures['restart-stopped-threads'], streamingPublishCost: owlFeatures['streaming-publish-cost'],
-    delegationEnabled, councilEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
+    delegationEnabled, workerRolesEnabled, workerSwarmsEnabled: owlFeatures['worker-swarms'], continueEnabled, threadStartsEnabled, ...(keepMainCurrentEnabled ? { keepMainCurrent: { log: logOperational } } : {}), pullRequestViewEnabled: owlFeatures['iphone-pull-request-view'], agentsViewEnabled, crossMachineEnabled,
     // A check's snapshot time, as this computer writes a time in the interface language (#1312, Zach, October 27).
     clockTime: interfaceClockTime,
     attachAnyFile: owlFeatures['attach-any-file'],
@@ -1228,7 +1230,14 @@ const cloudDictationEnabled = owlFeatures['cloud-dictation']
   if (pullRequestTools) quitHandles.pullRequestTools = pullRequestTools
   // Let a thread delegate work to threads it starts (ADR-0081): an Owl feature, so stable offers no server and keeps its records.
   const delegationService = 'delegation' in localRuntime ? localRuntime.delegation : undefined
-  const councilService = 'council' in localRuntime ? localRuntime.council : undefined
+  // The Council (ADR-0177): this computer's own, built here rather than in the runtime a headless host shares, so the host
+  // bundles none of it. Its snapshots are taken by the check's own snapshot code, with the runtime's bundles where they
+  // exist, so one data folder keeps one staging folder for them. Stable and a desktop without its local host build none.
+  const councilService = councilEnabled && startupSettings.localHostEnabled ? new CouncilService({ directory: userDataPath, control: agentControl, host: agentHost,
+    historyEnabled: () => agentHistoryEnabled, stageDeadline: () => workingCopySettings.councilStageDeadline,
+    bundles: ('branchBundles' in localRuntime ? localRuntime.branchBundles : undefined)
+      ?? new BranchBundles({ stagingDirectory: join(userDataPath, 'council-staging'), recordsPath: join(userDataPath, 'council-staging', 'records.json') }) }) : undefined
+  if (councilService) { await councilService.recover(); quitHandles.council = councilService }
   // Continue a thread on another provider (ADR-0089): an Owl feature, so stable builds no service and registers no bridge.
   const continueService = 'continuation' in localRuntime ? localRuntime.continuation : undefined
   const delegationTools = delegationService ? new DelegationToolServer(delegationService, { roles: workerRolesEnabled, machines: crossMachineEnabled && watcherEnabled, swarms: owlFeatures['worker-swarms'] }) : undefined

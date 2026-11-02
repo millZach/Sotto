@@ -36,7 +36,6 @@ import { WatcherService } from './watcher'
 import { WatcherPhoneService } from './watcherPhone'
 import { WatcherToolServer } from './watcherTools'
 import { DelegationService } from './delegation'
-import { CouncilService } from '../council/councilService'
 import { homedir, hostname } from 'node:os'
 import { CheckQueue } from './checkQueue'
 import { WorkerAdmission } from './workerAdmission'
@@ -111,8 +110,6 @@ export interface AgentRuntimeOptions {
   streamingPublishCost?: boolean
   /** The Owl list's answer for delegation between threads (ADR-0081), read once by the process owner. Absent fails closed. */
   delegationEnabled?: boolean
-  /** The Owl list's answer for the Council (ADR-0177), read once by the process owner. Absent fails closed; only the desktop has one. */
-  councilEnabled?: boolean
   /** The Owl list's answer for worker roles (#1041), read once by the process owner. Absent fails closed. */
   workerRolesEnabled?: boolean
   workerSwarmsEnabled?: boolean
@@ -695,11 +692,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   // is compacted too, while Watcher rests.
   const idleCompaction = new IdleCompaction({ control: agentControl, enabled: () => options.settings().compactIdleThreads,
     ...watcher ? { watcherAtRest: (threadId: string) => watcher.restsForIdleCompaction(threadId) } : {} })
-  // The Council (ADR-0177): this computer's own, only on the desktop. Its snapshots are taken by the check's own snapshot
-  // code, with the runtime's bundles where they exist, so one data folder keeps one staging folder for them.
-  const council = options.councilEnabled === true && options.runsAs !== 'headless-host' ? new CouncilService({ directory, control: agentControl, host: agentHost,
-    historyEnabled: options.historyEnabled, stageDeadline: () => options.settings().councilStageDeadline,
-    bundles: branchBundles ?? new BranchBundles({ stagingDirectory: join(directory, 'council-staging'), recordsPath: join(directory, 'council-staging', 'records.json') }) }) : undefined
   let closingWatcherTools: Promise<void> | undefined
   let watcherStopped = false
   const stopWatcher = (): void => {
@@ -709,7 +701,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     idleCompaction.stop()
     watcher?.close()
     delegation?.close()
-    council?.close()
     delegationRelay?.close()
     delegationRemote?.close()
     continuation?.close()
@@ -791,7 +782,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     idleCompaction.stop()
     watcher?.close()
     delegation?.close()
-    council?.close()
     continuation?.close()
     const closingWatcherTools = watcherTools?.close()
     void babysitter?.close()
@@ -805,7 +795,6 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   }
   if (watcher) await watcher.recover()
   if (delegation) await delegation.recover()
-  if (council) await council.recover()
   const delegationRecord = delegation
   const hostService = new LocalHostService({ control: agentControl, events: agentHost, tools: toolReads, babysitting: babysitter !== undefined, facts: machineFacts,
     // A headless host pushes its threads' next prompts to the desktops that want them (ADR-0173).
@@ -862,5 +851,5 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     signedOut: async () => { await agentControl.command({ type: 'disconnect', provider: 'cursor' }) },
   }) : undefined
   idleCompaction.start()
-  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, council, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
+  return { agentHost, agentControl, threadRegistry, turns, hostService, usage, shortTextWriter, nextPrompts, worktreeCleanup, babysitter, mainCheckout, watcher, watcherTools, delegation, delegationRelay, delegationRemote, continuation, threadMoves, workerRoles, opencodeSignIn, ownServersOpenCode, ownServersDeepSeek, cursorSignIn, branchMoves, branchBundles, checks, workerAdmission, prepareForShutdown, close }
 }
