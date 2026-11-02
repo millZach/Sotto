@@ -97,6 +97,7 @@ done
 for run in 1 2; do
     journey "$out/look/look-$run.json" 300 look
     echo "Look $run: $outcome"
+    [ "$outcome" = finished ] || status=1
 done
 xcrun simctl terminate "$device_id" com.millzach.sotto.ios >/dev/null 2>&1 || true
 

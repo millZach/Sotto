@@ -667,9 +667,10 @@ struct ThreadListSections: View, Equatable {
                              setWatched: { on in setWatched(row, on) })
             .equatable()
     }
-    /// It draws from these alone: the rows' threads, which section each is in, who asks, what Watcher can do with each,
-    /// the chosen one and its identifiers. The closures never change what it draws. A list held from one moment is the
-    /// same list, so two of the same hold are equal without reading their rows.
+    /// It draws from these alone: the rows' threads, which section each is in, who asks and what they wait on, what
+    /// Watcher can do with each, the chosen one and its identifiers. It watches no model, so `drawn` must name everything
+    /// a row shows, or a row keeps old words. The closures never change what it draws. A list held from one moment is
+    /// the same list, so two of the same hold are equal without reading their rows.
     static func == (lhs: ThreadListSections, rhs: ThreadListSections) -> Bool {
         if let held = lhs.held, held == rhs.held { return true }
         return lhs.identifier == rhs.identifier && lhs.chosen == rhs.chosen && lhs.watch == rhs.watch && drawn(lhs.groups) == drawn(rhs.groups)
@@ -678,9 +679,12 @@ struct ThreadListSections: View, Equatable {
         func rows(_ section: String, _ rows: [HostedThread]) -> [String] {
             rows.map { row in
                 let thread = row.thread
-                return [section, row.id, thread.title, thread.status, "\(thread.requests.count)", thread.providerId ?? "", row.project ?? "",
-                        row.computer, "\(row.status)", thread.summary?.runningTurnStartedAt ?? "", thread.summary?.lastMessageAt ?? "",
-                        groups.asking(row).id, "\(groups.isUnreadFinish(row))", "\(row.failed)"].joined(separator: "|")
+                let asking = groups.asking(row)
+                return [section, row.id, thread.title, thread.status, ThreadState(thread).rawValue, "\(thread.requests.count)",
+                        thread.providerId ?? "", row.project ?? "", row.computer, "\(row.status)",
+                        thread.summary?.runningTurnStartedAt ?? "", thread.summary?.lastMessageAt ?? "",
+                        asking.id, asking.thread.title, ThreadState(asking.thread).rawValue,
+                        "\(groups.isUnreadFinish(row))", "\(row.failed)"].joined(separator: "|")
             }
         }
         return rows("needs", groups.questions) + rows("working", groups.working) + rows("recent", groups.recent)

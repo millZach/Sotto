@@ -125,11 +125,12 @@ def app_metrics(folder):
     put("stream.textview_measure_per_chunk", [ns_ms(c, "time.textview.measure.ns") / chunks if "time.textview.measure.ns" in c else 0 for c in counts["stream"]], "ms")
     put("stream.timeline_rows_per_chunk", [ns_ms(c, "time.timeline.rows.ns") / chunks if "time.timeline.rows.ns" in c else 0 for c in counts["stream"]], "ms")
 
-    # The page's hold, in the journeys that went back to it; the worst journey, since one old row is one too many.
-    went_back = [i for i, p in enumerate(phases["back"]) if p and not p.get("noBack")]
-    for key in PAGE:
-        values = [sum(counts[name][i].get(key, 0) for name in PHASES) for i in went_back]
-        if any(sum(counts[name][i].get("page.shown", 0) for name in PHASES) for i in went_back):
+    # The page's hold, in the journeys whose page came back into sight in their back phase; the worst journey, since one
+    # old row is one too many.
+    went_back = [i for i, p in enumerate(phases["back"]) if p and counts["back"][i].get("page.shown", 0)]
+    if went_back:
+        for key in PAGE:
+            values = [sum(counts[name][i].get(key, 0) for name in PHASES) for i in went_back]
             rows[f"journey.{key}"] = {"value": max(values), "unit": "count", "n": len(values)}
     return rows
 
@@ -208,7 +209,8 @@ def budget(folder):
 
 def look(before, after):
     """Each distance's photo from two launches of each build. A distance whose two base photos differ is not compared,
-    as something there changes from launch to launch; otherwise the change's photos must be the base's, byte for byte."""
+    as something there changes from launch to launch; otherwise both of the change's photos must be the base's, byte for
+    byte."""
     old, new = Path(before) / "look", Path(after) / "look"
     distances = sorted({p.name.split("-")[2] for p in old.glob("look-1-*.png")}, key=lambda d: int(d.split(".")[0]))
     if not distances:
@@ -218,15 +220,15 @@ def look(before, after):
     print("| ---: | --- | --- | --- |")
     differs = []
     for name in distances:
-        a1, a2, b1, b2 = (folder / f"look-{run}-{name}" for folder in (old, new) for run in (1, 2))
-        if not all(p.exists() for p in (a1, a2, b1, b2)):
+        base1, base2, change1, change2 = (folder / f"look-{run}-{name}" for folder in (old, new) for run in (1, 2))
+        if not all(p.exists() for p in (base1, base2, change1, change2)):
             differs.append(name)
-            print(f"| {name[:-4]} pt | {'–' if not a1.exists() or not a2.exists() else 'taken'} | missing | not compared |")
+            print(f"| {name[:-4]} pt | {'–' if not base1.exists() or not base2.exists() else 'taken'} | missing | not compared |")
             continue
-        base_same, change_same = a1.read_bytes() == a2.read_bytes(), b1.read_bytes() == b2.read_bytes()
+        base_same, change_same = base1.read_bytes() == base2.read_bytes(), change1.read_bytes() == change2.read_bytes()
         if not base_same:
             verdict = "not compared: the base differs between launches"
-        elif b1.read_bytes() == a1.read_bytes() or b2.read_bytes() == a1.read_bytes():
+        elif change1.read_bytes() == base1.read_bytes() and change2.read_bytes() == base1.read_bytes():
             verdict = "the same"
         else:
             verdict = "different"

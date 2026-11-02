@@ -88,8 +88,9 @@ struct ThreadsView: View {
 
     var body: some View {
         let _ = BenchProbe.body("ThreadsView")
-        let groups = held?.groups ?? model.focusThreads(show: model.show, query: query, opened: model.selected)
-        let unsearched = held?.unsearched ?? (query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected))
+        let shown = held.map { (groups: $0.groups, unsearched: $0.unsearched) } ?? lists()
+        let groups = shown.groups
+        let unsearched = shown.unsearched
         let _ = BenchPage.drawn(held: held != nil)
         SheetPage(warm: unsearched.requestCount > 0) {
             VStack(alignment: .leading, spacing: 0) {
@@ -145,11 +146,16 @@ struct ThreadsView: View {
         }
     }
 
+    /// The list as it stands, searched for what is typed, and unsearched.
+    private func lists() -> (groups: FocusThreads, unsearched: FocusThreads) {
+        let groups = model.focusThreads(show: model.show, query: query, opened: model.selected)
+        return (groups, query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected))
+    }
+
     /// Holds the list as it stands, as the page goes out of sight.
     private func hold() {
         BenchPage.holding()
-        let groups = model.focusThreads(show: model.show, query: query, opened: model.selected)
-        let unsearched = query.isEmpty ? groups : model.focusThreads(show: model.show, opened: model.selected)
+        let (groups, unsearched) = lists()
         held = HeldList(groups: groups, unsearched: unsearched, watch: model.listWatch(groups))
     }
 

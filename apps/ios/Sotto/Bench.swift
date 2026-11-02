@@ -100,15 +100,12 @@ import UIKit
         await quiet()
 
         // Back to the list, as Back and a swipe back go: the Threads page comes into sight again under the thread and lets
-        // go of the list it held while the reply streamed (`ThreadsView.held`). A journey that can't go back still counts
-        // for the phases before; its `back` has no counts.
+        // go of the list it held while the reply streamed (`ThreadsView.held`). A journey that can't go back, or whose page
+        // never comes back drawn as it stands, fails: its stale-frame count would say nothing.
         next("back")
-        if let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil {
-            _ = await until({ self.pageInWindow && !self.pageHeld })
-            await quiet()
-        } else {
-            phaseNotes["noBack"] = 1
-        }
+        guard let navigation = Self.threadNavigation(), navigation.popViewController(animated: true) != nil else { return finish("no-back") }
+        guard await until({ self.pageInWindow && !self.pageHeld }) else { return finish("no-list-back") }
+        await quiet()
         finish(nil)
     }
 
