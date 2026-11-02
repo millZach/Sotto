@@ -1751,19 +1751,37 @@ export class WorkspaceHost implements AgentHost, BabysitStore {
    * Brings a link a thread has up to date with the state GitHub just gave Sotto through a read of its own, as the branch's
    * Git read or babysitting makes (#1147). Otherwise a link keeps the state it had when the user last opened it, and lists
    * a pull request merged long ago as open. Merged is final, so no read moves a merged link. Callers hold the thread's lane.
+   * The branch's own pull request on the record follows an ending too (#2019): a thread with no link to it holds it there
+   * alone, and with no one looking at the thread no Git read comes to say it merged.
    */
   private followPullRequestState(threadId: string, url: string, state: GitPullRequestLink['state']): boolean {
-    const link = this.threadById(threadId)?.pullRequests?.find(item => pullRequestKey(item.url) === pullRequestKey(url))
-    if (!link || link.state === state || link.state === 'merged') return false
-    return this.linkPullRequestRecord(threadId, { ...link, state }, link.source) !== null
+    const thread = this.threadById(threadId), key = pullRequestKey(url)
+    let moved = false
+    if (thread && this.branchPullRequestEnds(thread, key, state)) {
+      const worktree = thread.worktree!, git = worktree.git!
+      this.touched(thread).worktree = { ...worktree, git: { ...git, pullRequest: { ...git.pullRequest!, state } } }
+      this.dirty = true
+      this.publishSoon()
+      if (state === 'merged') this.pullRequestMerged(url)
+      moved = true
+    }
+    const link = thread?.pullRequests?.find(item => pullRequestKey(item.url) === key)
+    if (!link || link.state === state || link.state === 'merged') return moved
+    return this.linkPullRequestRecord(threadId, { ...link, state }, link.source) !== null || moved
+  }
+  /** Whether a read saying `state` of the pull request `key` ends the thread's branch's own. Only an ending moves it: an open read leaves it to the Git read. */
+  private branchPullRequestEnds(thread: AgentThread, key: string | null, state: GitPullRequestLink['state']): boolean {
+    const branch = thread.worktree?.git?.pullRequest
+    return state !== 'open' && branch !== null && branch !== undefined && branch.state !== state && branch.state !== 'merged' && pullRequestKey(branch.url) === key
   }
   /** A pull request read Sotto made outside a thread's own Pull request surface, such as babysitting's (#1147). */
   notePullRequestState(read: PullRequestObservation): void {
     if (read.availability !== 'available' || read.state === undefined || this.stopping) return
     const key = pullRequestKey(read.url), state = read.state
+    if (state !== 'open') this.gitStatus?.notePullRequestEnded?.(read.url, state)
     for (const thread of this.state.snapshot.threads) {
       const link = thread.pullRequests?.find(item => pullRequestKey(item.url) === key)
-      if (!link || link.state === state || link.state === 'merged') continue
+      if ((!link || link.state === state || link.state === 'merged') && !this.branchPullRequestEnds(thread, key, state)) continue
       void this.onLane(thread.id, async () => { if (this.followPullRequestState(thread.id, read.url, state)) await this.saveLinks() }).catch(() => undefined)
     }
   }
