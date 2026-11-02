@@ -18,6 +18,18 @@ export type MediaCapture = (pictures: readonly CapturedPicture[], source: AgentA
  */
 export type MediaFileCapture = (path: string, source: AgentActivityMedia['source']) => Promise<AgentActivityMedia[]>
 
+/**
+ * The captures a provider's projection is given (ADR-0170, request-only amendment of November 1, 2026): only an image the
+ * agent generated, which the user asked for. A tool result's picture, a picture Codex viewed and a file the agent wrote
+ * are not kept or shown; an agent shows a picture or video through `sotto_media` when the user asks to see one.
+ */
+export function requestedCaptures(store: Pick<ThreadMediaStore, 'capture' | 'captureFile'>): { captureMedia: MediaCapture; captureMediaFile: MediaFileCapture } {
+  return {
+    captureMedia: (pictures, source) => source === 'generated' ? store.capture(pictures, source) : [],
+    captureMediaFile: async (path, source) => source === 'generated' ? store.captureFile(path, source) : [],
+  }
+}
+
 /** How much the thread media store keeps on disk before its oldest pictures go (ADR-0170). */
 export const THREAD_MEDIA_KEEP_BYTES = 1024 * 1024 * 1024
 /** The same while Keep local history is off, when the pictures are held in memory. */

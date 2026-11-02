@@ -1,4 +1,4 @@
-import { ThreadMediaStore } from './threadMedia'
+import { requestedCaptures, ThreadMediaStore } from './threadMedia'
 import { join } from 'node:path'
 import type { AgentThread, ProviderId } from '../../shared/agents'
 import type { ThreadClearKeptReason } from '../../shared/threadClear'
@@ -279,7 +279,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
   const adapter = (id: ProviderId, build: () => NativeHost): NativeHost => held.has(id) ? new HeldProviderHost(id) : build()
   // Pictures in threads (ADR-0170): one store for this runtime, built only with the Owl feature on.
   const threadMedia = options.host ? undefined : options.threadMedia ?? (options.inlineMedia === true ? new ThreadMediaStore(directory, { historyEnabled: options.historyEnabled }) : undefined)
-  const captureMedia = threadMedia ? { captureMedia: threadMedia.capture, captureMediaFile: threadMedia.captureFile } : {}
+  // Only images the user asked an agent to generate are captured on their own; anything else is shown through `sotto_media`.
+  const captureMedia = threadMedia ? requestedCaptures(threadMedia) : {}
   const providers: Partial<Record<ProviderId, NativeHost>> = options.host ? {} : {
     codex: adapter('codex', () => options.providers?.codex ?? new CodexAppServerHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.codexLog ? { logEvent: options.codexLog } : {}) })),
     claude: adapter('claude', () => options.providers?.claude ?? new ClaudeStreamJsonHost({ userDataPath: directory, usageEnabled: options.usageEnabled === true, ...limitStops, ...captureMedia, ...(options.claudeHistoryModulePath ? { historyModulePath: options.claudeHistoryModulePath } : {}),
@@ -318,8 +319,8 @@ export async function createAgentRuntime(options: AgentRuntimeOptions) {
     acceptedPromptIdentities: identities => agentHost.recordedUserMessages(identities) }) : undefined
   usage?.start()
   if (options.threadStartsEnabled === true) agentHost.allowThreadStarts()
-  // The pictures and videos each turn writes in its folder (ADR-0170, part 4), only with `inline-media` on.
-  if (threadMedia) agentHost.keepWrittenMedia(threadMedia)
+  // The pictures and videos an agent shows when the user asks (ADR-0170, request-only), only with `inline-media` on.
+  if (threadMedia) agentHost.keepShownMedia(threadMedia)
   if (options.crossMachineEnabled === true) agentHost.allowBringBack()
   // A check takes the machine's one check worktree for its repository and installs packages first when they changed (#1312).
   if (options.crossMachineEnabled === true) agentHost.allowCheckWorktrees(options.checkInstaller)

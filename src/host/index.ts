@@ -37,6 +37,7 @@ import { HostRemoteCallers } from '../main/agents/delegationRemoteHost'
 import { BranchBundles } from '../main/agents/branchBundles'
 import { foldersOf } from '../main/agents/branchMoves'
 import { DelegationToolServer } from '../main/agents/delegationTools'
+import { MediaToolServer } from '../main/agents/mediaTools'
 import type { ScopedThreadTools } from '../main/agents/threadToolServer'
 
 export interface HeadlessHostOptions {
@@ -218,11 +219,16 @@ async function startHostRuntime(options: HeadlessHostOptions) {
       worktreeCleanup: { pullRequestMerged: githubPullRequestMerged, pullRequestState: githubPullRequestState, log: event => options.log?.(event) },
       claudeSettingsLog: event => options.log?.(event),
     })
-    // Sotto's tool servers for this host's own threads (#1310), on this machine's loopback with this host's own tokens. Only
-    // `sotto_delegate` so far; `sotto_visual` and `sotto_pull_requests` join this list, each as its own change. The browser
+    // Sotto's tool servers for this host's own threads (#1310), on this machine's loopback with this host's own tokens:
+    // `sotto_delegate`, and `sotto_media` with inline media on (ADR-0170, request-only), since this host keeps its own
+    // threads' pictures. `sotto_visual` and `sotto_pull_requests` join this list, each as its own change. The browser
     // stays the desktop's.
-    const threadTools: (ScopedThreadTools & { close(): Promise<void> })[] = runtime.delegation && crossMachineEnabled
-      ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine', relay: delegationRelay !== undefined, swarms: workerSwarmsEnabled })] : []
+    const agentHost = runtime.agentHost
+    const threadTools: (ScopedThreadTools & { close(): Promise<void> })[] = [
+      ...(runtime.delegation && crossMachineEnabled
+        ? [new DelegationToolServer(runtime.delegation, { roles: owlFeatures['worker-roles'], machines: true, place: 'this-machine', relay: delegationRelay !== undefined, swarms: workerSwarmsEnabled })] : []),
+      ...(owlFeatures['inline-media'] ? [new MediaToolServer({ admits: threadId => agentHost.admitsShownMedia(threadId), show: (threadId, input) => agentHost.showMedia(threadId, input) })] : []),
+    ]
     if (threadTools.length) runtime.agentHost.useThreadTools(threadTools)
     // A provider signed in from a paired client's browser is connected here for that client (ADR-0037).
     const signIns = new ProviderSignIns({ ...(options.signInCommand ? { command: options.signInCommand } : {}), cursorConfigDirectory: join(directory, 'cursor', 'config'),

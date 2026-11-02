@@ -2,14 +2,14 @@
 /**
  * What a tool step's pictures cost the Codex and Cursor projections on Electron main, per update (ADR-0170, plan part 3).
  *
- * Every update of a running tool passes through its provider's projection while a thread works. With the Owl feature
- * `inline-media` on, a Codex Computer Use call, a Codex `view_image` and a Cursor tool may carry a picture, which is hashed
- * once and kept by handle. This times one update of each, with words alone and with a picture, the feature off and on,
- * and counts the work that must not repeat: a repeated update hashes nothing, and a `view_image` file is read once.
+ * Every update of a running tool passes through its provider's projection while a thread works. A Codex Computer Use
+ * call, a Codex `view_image` and a Cursor tool may carry a picture. Since the request-only amendment (November 1, 2026)
+ * the projections are given `requestedCaptures`, as the runtime gives them, so none of these pictures is hashed, read or
+ * kept: an agent shows a picture through `sotto_media` when the user asks. This times one update of each, with words
+ * alone and with a picture, the feature off and on, and counts what reached the store: nothing.
  *
- * The same file runs on a checkout without these sources (the "before"): there a `view_image` is no step and Cursor's
- * projection takes no capture, so only the words-only and feature-off rows compare, and those must not get slower. The
- * microseconds print every run and are asserted only under SOTTO_PERF_ASSERT=1; the counts are asserted always.
+ * Before the amendment the same updates kept the screenshot (one hash) and read the viewed file once. The microseconds
+ * print every run and are asserted only under SOTTO_PERF_ASSERT=1; the counts are asserted always.
  *
  *   npx vitest run tests/perf/toolPictureCapture.perf.test.ts --maxWorkers=1 --disable-console-intercept
  */
@@ -19,7 +19,7 @@ import { join } from 'node:path'
 import { afterAll, describe, expect, it } from 'vitest'
 import { CodexActivityProjection, codexItemSchema } from '../../src/main/agents/codexActivity'
 import { cursorActivities } from '../../src/main/agents/cursorActivity'
-import { ThreadMediaStore, type MediaCapture, type MediaFileCapture } from '../../src/main/agents/threadMedia'
+import { requestedCaptures, ThreadMediaStore, type MediaCapture, type MediaFileCapture } from '../../src/main/agents/threadMedia'
 import type { AgentActivity } from '../../src/shared/agentActivity'
 import type { AgentThread } from '../../src/shared/agents'
 import { pngHeader } from '../fixtures/stagedImages'
@@ -62,7 +62,7 @@ const thread = (): AgentThread => ({ id: 't', projectId: 'p', title: 'T', modelI
 const round = (value: number): string => value.toFixed(2)
 
 describe('tool pictures per update (ADR-0170)', () => {
-  it('Codex: a Computer Use call and a view_image hash and read once, and an update costs about what it did', async () => {
+  it('Codex: a Computer Use call and a view_image keep nothing, and an update costs about what it did', async () => {
     const media = await store()
     const capture = counted<MediaCapture>(media.capture)
     const path = join(folders[0]!, 'viewed.png'); await writeFile(path, SCREENSHOT)
@@ -76,7 +76,8 @@ describe('tool pictures per update (ADR-0170)', () => {
       return perUpdate(() => projection.item(conversation, codexItemSchema.parse(item), context))
     }
     const off = new CodexActivityProjection(() => 1_000)
-    const on = new CodexActivityProjection(() => 1_000, capture.work, captureFile.work)
+    const given = requestedCaptures({ capture: capture.work, captureFile: captureFile.work })
+    const on = new CodexActivityProjection(() => 1_000, given.captureMedia, given.captureMediaFile)
     const result = {
       wordsOff: timed(off, words), shotOff: timed(off, shot), viewOff: timed(off, viewed),
       wordsOn: timed(on, words), shotOn: timed(on, shot), viewOn: timed(on, viewed),
@@ -84,14 +85,14 @@ describe('tool pictures per update (ADR-0170)', () => {
     await media.idle()
     console.info(`[perf] Codex per update, µs (off / on): Computer Use words ${round(result.wordsOff)} / ${round(result.wordsOn)}, `
       + `Computer Use screenshot ${round(result.shotOff)} / ${round(result.shotOn)}, view_image ${round(result.viewOff)} / ${round(result.viewOn)}; `
-      + `captures ${capture.calls()}, file reads ${captureFile.calls()}`)
-    // The screenshot was hashed on its first update only, and the viewed file read once, however many updates followed.
-    expect(capture.calls()).toBe(1)
-    expect(captureFile.calls()).toBeLessThanOrEqual(1)
+      + `kept ${capture.calls()}, file reads ${captureFile.calls()}`)
+    // Neither the screenshot nor the viewed file reached the store, however many updates came.
+    expect(capture.calls()).toBe(0)
+    expect(captureFile.calls()).toBe(0)
     if (process.env.SOTTO_PERF_ASSERT === '1') for (const value of Object.values(result)) expect(value).toBeLessThan(BUDGET_US)
   })
 
-  it('Cursor: a tool\'s picture is hashed once, repeated updates hash nothing, and an update costs about what it did', async () => {
+  it('Cursor: a tool\'s picture is kept by no update, and an update costs about what it did', async () => {
     const media = await store()
     const capture = counted<MediaCapture>(media.capture)
     const place = { turnId: 'turn', cwd: '/repo', key: 'shot' }
@@ -102,12 +103,12 @@ describe('tool pictures per update (ADR-0170)', () => {
       // Each update projects against the rows the last one made, as the adapter's thread holds them.
       return perUpdate(() => { rows = cursorActivities(update, place, rows, true, work) })
     }
-    const result = { wordsOff: timed(words), shotOff: timed(shot), wordsOn: timed(words, capture.work), shotOn: timed(shot, capture.work) }
+    const given = requestedCaptures({ capture: capture.work, captureFile: async () => [] }).captureMedia
+    const result = { wordsOff: timed(words), shotOff: timed(shot), wordsOn: timed(words, given), shotOn: timed(shot, given) }
     await media.idle()
     console.info(`[perf] Cursor per update, µs (off / on): words ${round(result.wordsOff)} / ${round(result.wordsOn)}, `
-      + `screenshot ${round(result.shotOff)} / ${round(result.shotOn)}; captures ${capture.calls()}`)
-    // Hashed on its first update only. A replay into the step hashing nothing is `acpPictures.test.ts`'s, through the adapter.
-    expect(capture.calls()).toBe(1)
+      + `screenshot ${round(result.shotOff)} / ${round(result.shotOn)}; kept ${capture.calls()}`)
+    expect(capture.calls()).toBe(0)
     if (process.env.SOTTO_PERF_ASSERT === '1') for (const value of Object.values(result)) expect(value).toBeLessThan(BUDGET_US)
   })
 })

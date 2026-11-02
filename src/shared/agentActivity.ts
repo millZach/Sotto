@@ -36,10 +36,13 @@ export type OwnServerTurn = z.infer<typeof ownServerTurnSchema>
  */
 export const MAX_ACTIVITY_MEDIA = 8
 /**
- * The step a turn's written pictures and videos hang on (ADR-0170, part 4) is Sotto's own, so its ID says so and each
+ * The step a turn's written pictures and videos hung on (ADR-0170, part 4, kept for the records made before the request-only
+ * amendment of November 1, 2026) is Sotto's own, so its ID says so and each
  * client shows its title in its own words rather than the English the host wrote.
  */
 export const WRITTEN_STEP_PREFIX = 'sotto-written-'
+/** The ID every step an agent showed pictures or videos in through `sotto_media` starts with (ADR-0170, request-only); titled in the agent's words. */
+export const SHOWN_STEP_PREFIX = 'sotto-shown-'
 /** The largest video an agent wrote that a tile plays on the desktop (ADR-0170, part 4), read from where it was written. */
 export const AGENT_VIDEO_MAX_BYTES = 200 * 1024 * 1024
 /** The largest the iPhone fetches to play, in parts (`thread-media-part`); a larger one says it plays on the desktop. */
