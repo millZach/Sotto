@@ -2,6 +2,7 @@ import { PROVIDER_LABELS, type AgentThread } from '../../../../shared/agents'
 import { COUNCIL_CHAIR, COUNCIL_STAGES, type CouncilRow, type CouncilSeatInForce, type CouncilStage, type CouncilThreadState, type CouncilTurnStage,
   type CouncilView } from '../../../../shared/council'
 import { reviewAssignments } from '../../../../shared/councilFlow'
+import { IDLE_CHECK_MS, MOVING_MS } from '../../watcher/nightScene'
 import type { ProviderId } from '../../../../shared/providerIds'
 import { isThreadTurnRunning } from '../../../../shared/threadActivity'
 import { activityLabel } from '../../agents/threadActivityView'
@@ -72,6 +73,8 @@ export interface ChamberScene {
   readonly reviews: ReadonlyMap<string, readonly string[]>
   /** The chair's verdict scroll: its words, and whether it is finished and held up rather than being written. */
   readonly verdict: { readonly text: string; readonly finished: boolean } | null
+  /** The Council is done: its last scene holds still, the chair holding up the verdict and the panelists listening. */
+  readonly finished: boolean
 }
 
 /** What a seat's thread is doing now, read once per update from its own state. */
@@ -159,7 +162,7 @@ export function askScene(seats: { readonly panelists: readonly (CouncilSeatInFor
   })
   const letters = 'ABCDE'
   return { id: null, stage: null, panelists: seats.panelists.map((inForce, place) => seat(inForce, letters[place] ?? String(place + 1), place)),
-    chair: seat(seats.chair, COUNCIL_CHAIR, seats.panelists.length), answered: [], reviews: new Map(), verdict: null }
+    chair: seat(seats.chair, COUNCIL_CHAIR, seats.panelists.length), answered: [], reviews: new Map(), verdict: null, finished: false }
 }
 
 const STAGE_RANK = new Map<CouncilStage, number>(COUNCIL_STAGES.map((stage, rank) => [stage, rank]))
@@ -180,10 +183,10 @@ function working(stage: CouncilTurnStage, facts: ThreadFacts, reads: readonly st
 }
 
 /**
- * The live Council's chamber: each figure follows its seat's newest row in the current round and its thread's own state.
- * `facts` reads a thread by its Sotto thread ID.
+ * A Council's chamber: each figure follows its seat's newest row in the current round and its thread's own state. A
+ * finished Council keeps its last scene, still. `facts` reads a thread by its Sotto thread ID.
  */
-export function liveScene(council: CouncilView, facts: (thread: string) => ThreadFacts): ChamberScene {
+export function councilScene(council: CouncilView, facts: (thread: string) => ThreadFacts): ChamberScene {
   const round = council.rounds.at(-1)!
   // Rows come in stage order, so the last one of a seat is its newest.
   const newest = new Map<string, CouncilRow>()
@@ -226,7 +229,25 @@ export function liveScene(council: CouncilView, facts: (thread: string) => Threa
   }
   const chair: ChamberSeat = { key: COUNCIL_CHAIR, chair: true, provider: seat?.provider ? PROVIDER_LABELS[seat.provider] : '', model: seat?.modelName ?? '',
     look: lookOf(seat?.provider, panel.length), thread: seat?.thread ?? null, act, speech, scrolls: [], answered: false, changed: false, state: row?.state ?? null, stage: row?.stage ?? null }
-  return { id: `${council.id}:${round.index}`, stage: round.stage, panelists, chair, answered, reviews, verdict }
+  return { id: `${council.id}:${round.index}`, stage: round.stage, panelists, chair, answered, reviews, verdict, finished: council.status === 'done' }
+}
+
+/** The acts in which a figure moves on its own. */
+const BUSY: ReadonlySet<ChamberAct> = new Set<ChamberAct>(['think', 'write', 'read', 'speak', 'ask', 'present'])
+
+/** Whether a figure moves on its own now. Nobody does in a finished Council's last scene. */
+export function sceneBusy(scene: ChamberScene): boolean {
+  return !scene.finished && (BUSY.has(scene.chair.act) || scene.panelists.some(seat => BUSY.has(seat.act)))
+}
+
+/**
+ * How long until the chamber draws again, or null to draw nothing until something changes: about 30 frames a second
+ * while a figure is busy or something is on its way, 8 while only the fire flickers and the idle glance about, and
+ * nothing with motion reduced once everything has arrived.
+ */
+export function chamberPace(still: boolean, moving: boolean, busy: boolean): number | null {
+  if (still) return moving ? MOVING_MS : null
+  return moving || busy ? MOVING_MS : IDLE_CHECK_MS
 }
 
 /** One scroll in the air, from a seat's place at the table to another's, `delay` seconds after the stage changed. */

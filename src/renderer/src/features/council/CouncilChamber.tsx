@@ -6,18 +6,15 @@ import { useOptionalAgents } from '../../agents/AgentContext'
 import { useOptionalApp } from '../../state/AppContext'
 import { useReducedMotion } from '../../state/reducedMotion'
 import { toRgb } from '../../watcher/canvasColor'
-import { frameDue, frameSleep, IDLE_CHECK_MS, MOVING_MS, sceneInk } from '../../watcher/nightScene'
+import { frameDue, frameSleep, sceneInk } from '../../watcher/nightScene'
 import { surfaceOf } from '../../watcher/WatcherNightScene'
 import { watchResolution } from '../../watcher/watchResolution'
 import { figureBox } from './chamberLayout'
 import { ChamberPainter, type ChamberFlightNow, type SeatWords } from './chamberPainter'
-import { askScene, flightsBetween, liveScene, threadFacts, type ChamberScene, type ChamberSeat } from './chamberScene'
+import { askScene, chamberPace, councilScene, flightsBetween, sceneBusy, threadFacts, type ChamberScene, type ChamberSeat } from './chamberScene'
 
 /** A figure's button over the canvas, in the chamber's box. */
 interface FigureBox { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
-
-/** The acts in which a figure moves on its own, so the chamber draws about 30 frames a second while one is in them. */
-const BUSY = new Set(['think', 'write', 'read', 'speak', 'ask', 'present'])
 
 /** What the chamber says of each seat: its plate, its bubble, and its button's name. */
 function useChamberWords(): {
@@ -83,16 +80,17 @@ function useChamberWords(): {
  * The Council's chamber (ADR-0177 decision 6): the panelists as a Roman council in ASCII, drawn as Watcher's night scene
  * is, in the theme's text and accent inks and lit by its lamps and braziers, in the layout Settings → Council chooses.
  * With a live Council each figure follows its own thread: its pose, its bubble and the scrolls passing between seats come
- * from the record and the thread's state. With none it shows the seats the Ask form would start, sitting idle and
+ * from the record and the thread's state. A finished Council keeps its last scene, still: the chair holding up the
+ * verdict and the panelists listening. With neither it shows the seats the Ask form would start, sitting idle and
  * glancing about. A press on a figure opens its thread; the canvas is hidden from assistive technology, since the record
  * beside it is the deliberation's accessible form.
  *
  * It draws about 30 frames a second while a figure is busy or something is on its way, checks 8 times a second while
- * the room only flickers and glances, draws nothing at all with motion reduced until something changes, and nothing
- * while the window is hidden.
+ * the room only flickers and glances, or a finished Council's fire only flickers, draws nothing at all with motion
+ * reduced until something changes, and nothing while the window is hidden.
  */
 export function CouncilChamber({ council, askSeats, layout }: {
-  /** The live Council, or null for the Ask view. */
+  /** The Council shown, live or finished, or null for the Ask view. */
   readonly council: CouncilRecord | null
   /** The seats the Ask form would start, for the Ask view. */
   readonly askSeats: { readonly panelists: readonly (CouncilSeatInForce | undefined)[]; readonly chair: CouncilSeatInForce | undefined }
@@ -104,8 +102,10 @@ export function CouncilChamber({ council, askSeats, layout }: {
   const reduced = useReducedMotion()
   const threads = agents?.state?.host.threads
   const command = agents?.command
-  // The live Council's threads, by ID: only theirs are looked up, once per update, and their histories asked for.
-  const wanted = useMemo(() => council?.seats.map(seat => seat.thread) ?? [], [council])
+  // A live Council's threads, by ID: only theirs are looked up, once per update, and their histories asked for. A finished
+  // Council's threads have nothing more to show.
+  const working = council?.status === 'working' || council?.status === 'waiting'
+  const wanted = useMemo(() => working ? council!.seats.map(seat => seat.thread) : [], [council, working])
   const wantedKey = wanted.join('\n')
   useEffect(() => {
     if (command === undefined || wanted.length === 0) return
@@ -120,7 +120,7 @@ export function CouncilChamber({ council, askSeats, layout }: {
     for (const thread of threads) if (ids.has(thread.id)) found.set(thread.id, thread)
     return found
   }, [threads, wanted])
-  const scene = useMemo<ChamberScene>(() => council ? liveScene(council, thread => threadFacts(held.get(thread))) : askScene(askSeats), [council, held, askSeats])
+  const scene = useMemo<ChamberScene>(() => council ? councilScene(council, thread => threadFacts(held.get(thread))) : askScene(askSeats), [council, held, askSeats])
   const live = council !== null
   const seatWords = useMemo(() => new Map([...scene.panelists, scene.chair].map(seat => [seat.key, words.seat(seat, live)] as const)), [scene, live, words])
   const verdictText = scene.verdict?.text || words.verdict
@@ -130,7 +130,7 @@ export function CouncilChamber({ council, askSeats, layout }: {
   const probe = useRef<HTMLElement>(null)
   const [boxes, setBoxes] = useState<ReadonlyMap<string, FigureBox> | null>(null)
   /** What the running loop reads, kept current without restarting it. */
-  const busy = [...scene.panelists, scene.chair].some(seat => BUSY.has(seat.act))
+  const busy = sceneBusy(scene)
   const latest = useRef({ scene, seatWords, verdictText, reduced, layout, busy })
   latest.current = { scene, seatWords, verdictText, reduced, layout, busy }
   const wakeRef = useRef<() => void>(() => undefined)
@@ -194,7 +194,7 @@ export function CouncilChamber({ council, askSeats, layout }: {
       kept.flights = kept.flights.filter(flight => still ? false : t - flight.t0 < 1.7)
       const dt = Math.min(0.1, Math.max(0, t - lastDrawn)); lastDrawn = t
       const moving = painter.draw({ t, dt, still, scene: shown, words: said, flights: kept.flights, verdictSince: kept.verdictSince, finishedSince: kept.finishedSince, verdictText: text })
-      delay = still ? (moving ? MOVING_MS : null) : moving || busy ? MOVING_MS : IDLE_CHECK_MS
+      delay = chamberPace(still, moving, busy)
       schedule()
     }
     const wake = (): void => {

@@ -15,14 +15,19 @@ import { CouncilSeats, type CouncilPanel } from './CouncilSeats'
 import { useCouncils } from './useCouncils'
 import './council.css'
 
-/** The Council being worked now, the newest if several are: the chamber shows it, and the Ask view when there is none. */
-export function liveCouncil(councils: readonly CouncilRecord[] | null): CouncilRecord | null {
-  let live: CouncilRecord | null = null
+/**
+ * The Council the chamber shows: the one being worked now, the newest if several are; with none, the newest Council
+ * when it is finished, holding its last scene until the user starts a new question in the Ask form (`drafting`) or
+ * another Council starts; otherwise none, for the Ask view. A stopped or settled newest Council gives the Ask view.
+ */
+export function chamberCouncil(councils: readonly CouncilRecord[] | null, drafting: boolean): CouncilRecord | null {
+  let live: CouncilRecord | null = null, newest: CouncilRecord | null = null
   for (const council of councils ?? []) {
+    if (newest === null || council.createdAt > newest.createdAt) newest = council
     if (council.status !== 'working' && council.status !== 'waiting') continue
     if (live === null || council.createdAt > live.createdAt) live = council
   }
-  return live
+  return live ?? (!drafting && newest?.status === 'done' ? newest : null)
 }
 
 /**
@@ -41,6 +46,7 @@ export function CouncilView({ bridge = window.sotto?.council }: { readonly bridg
   const catalog = useMemo(() => state ? newThreadDefaultsCatalog(state) : [], [state])
   // The Ask form's seats, starting from Settings → Council; the chamber seats a figure for each.
   const [panel, setPanel] = useState<CouncilPanel | null>(null)
+  const [question, setQuestion] = useState('')
   const seatsPanel: CouncilPanel = panel ?? { panelists: settings?.councilPanelists ?? [null, null, null], chair: settings?.councilChair ?? null }
   const seats = useSeatsInForce(seatsPanel, catalog)
   const layout = settings?.councilLayout ?? DEFAULT_COUNCIL_LAYOUT
@@ -56,9 +62,9 @@ export function CouncilView({ bridge = window.sotto?.council }: { readonly bridg
         onChoose={value => void app.actions.updateSettings({ councilLayout: value })} /> : null}
     </header>
     <div className="council-body">
-      <CouncilChamber council={liveCouncil(councils)} askSeats={seats} layout={layout} />
+      <CouncilChamber council={chamberCouncil(councils, question.trim() !== '' || panel !== null)} askSeats={seats} layout={layout} />
       <div className="council-scroll"><div className="council-page">
-        {bridge ? <AskForm bridge={bridge} panel={seatsPanel} onPanel={setPanel} /> : null}
+        {bridge ? <AskForm bridge={bridge} panel={seatsPanel} onPanel={setPanel} question={question} onQuestion={setQuestion} /> : null}
         {failed ? <p className="council-notice tt-paragraph" role="status">{t`Sotto could not read the Councils. Nothing was changed. Open the page again.`}</p> : null}
         <div className="council-list">{(councils ?? []).map(council => <CouncilEntry key={council.id} council={council} bridge={bridge!} />)}</div>
       </div></div>
@@ -79,7 +85,8 @@ function askable(thread: AgentThread, localHostId: string | undefined): boolean 
     && thread.delegatedBy === undefined && !isThreadClosed(thread)
 }
 
-function AskForm({ bridge, panel: seatsPanel, onPanel: setPanel }: { readonly bridge: CouncilBridge; readonly panel: CouncilPanel; readonly onPanel: (panel: CouncilPanel | null) => void }): ReactNode {
+function AskForm({ bridge, panel: seatsPanel, onPanel: setPanel, question, onQuestion: setQuestion }: { readonly bridge: CouncilBridge; readonly panel: CouncilPanel
+  readonly onPanel: (panel: CouncilPanel | null) => void; readonly question: string; readonly onQuestion: (question: string) => void }): ReactNode {
   const { t, i18n } = useLingui()
   const app = useOptionalApp()
   const agents = useOptionalAgents()
@@ -91,7 +98,6 @@ function AskForm({ bridge, panel: seatsPanel, onPanel: setPanel }: { readonly br
   const threads = useMemo(() => (state?.host.threads ?? []).filter(thread => askable(thread, local))
     .sort((left, right) => (right.updatedAt ?? '').localeCompare(left.updatedAt ?? '')), [state, local])
   const [origin, setOrigin] = useState<string>('')
-  const [question, setQuestion] = useState('')
   const [estimate, setEstimate] = useState<CouncilEstimate | null>(null)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)

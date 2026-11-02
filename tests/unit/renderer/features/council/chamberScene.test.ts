@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { askScene, flightsBetween, liveScene, spoken, threadFacts, type ThreadFacts } from '../../../../../src/renderer/src/features/council/chamberScene'
+import { askScene, chamberPace, councilScene, flightsBetween, sceneBusy, spoken, threadFacts, type ThreadFacts } from '../../../../../src/renderer/src/features/council/chamberScene'
 import type { AgentActivity } from '../../../../../src/shared/agentActivity'
 import { agentThread } from '../../../../fixtures/agentState'
 import { councilFixture, row } from './chamberFixtures'
@@ -48,7 +48,7 @@ describe('what a thread is doing', () => {
 describe('each figure’s pose follows its own thread', () => {
   it('thinks with what it reads, writes with its own words, and raises a hand when it waits on the user', () => {
     const council = councilFixture({ stage: 'answers', rows: [row('A', 'answer', 'working'), row('B', 'answer', 'working'), row('C', 'answer', 'waiting')] })
-    const scene = liveScene(council, facts({ 'thread-a': { running: true, activity: 'Read src/main/threadStore.ts' }, 'thread-b': { running: true, words: 'Now. 0.2 makes it bigger.' } }))
+    const scene = councilScene(council, facts({ 'thread-a': { running: true, activity: 'Read src/main/threadStore.ts' }, 'thread-b': { running: true, words: 'Now. 0.2 makes it bigger.' } }))
     const [a, b, c] = scene.panelists
     expect(a).toMatchObject({ act: 'think', speech: { kind: 'activity', text: 'Read src/main/threadStore.ts' } })
     expect(b).toMatchObject({ act: 'write', speech: { kind: 'words', text: 'Now. 0.2 makes it bigger.' } })
@@ -59,7 +59,7 @@ describe('each figure’s pose follows its own thread', () => {
   it('holds the scrolls of the answers it reads, by letter, then stands to give its review; one finished listens', () => {
     const done = [row('A', 'answer', 'done'), row('B', 'answer', 'done'), row('C', 'answer', 'done')]
     const council = councilFixture({ stage: 'reviews', rows: [...done, row('A', 'review', 'working'), row('B', 'review', 'working'), row('C', 'review', 'done', { changed: true })] })
-    const scene = liveScene(council, facts({ 'thread-b': { running: true, words: 'A is the careful plan.' } }))
+    const scene = councilScene(council, facts({ 'thread-b': { running: true, words: 'A is the careful plan.' } }))
     const [a, b, c] = scene.panelists
     expect(a).toMatchObject({ act: 'read', scrolls: ['B', 'C'], speech: { kind: 'answers', letters: ['B', 'C'] } })
     expect(b).toMatchObject({ act: 'speak', speech: { kind: 'words', text: 'A is the careful plan.' } })
@@ -69,23 +69,38 @@ describe('each figure’s pose follows its own thread', () => {
 
   it('has the chair read everything, write the verdict on its scroll, then hold it up through the fairness check', () => {
     const answers = [row('A', 'answer', 'done'), row('B', 'answer', 'done'), row('C', 'answer', 'done')]
-    const reading = liveScene(councilFixture({ stage: 'verdict', rows: [...answers, row('chair', 'verdict', 'working')] }), facts({ 'thread-chair': { running: true } }))
+    const reading = councilScene(councilFixture({ stage: 'verdict', rows: [...answers, row('chair', 'verdict', 'working')] }), facts({ 'thread-chair': { running: true } }))
     expect(reading.chair).toMatchObject({ act: 'read', speech: { kind: 'everything' } })
     expect(reading.verdict).toBeNull()
-    const writing = liveScene(councilFixture({ stage: 'verdict', rows: [...answers, row('chair', 'verdict', 'working')] }), facts({ 'thread-chair': { running: true, words: 'Wait until 0.2 ships.' } }))
+    const writing = councilScene(councilFixture({ stage: 'verdict', rows: [...answers, row('chair', 'verdict', 'working')] }), facts({ 'thread-chair': { running: true, words: 'Wait until 0.2 ships.' } }))
     expect(writing.chair.act).toBe('write')
     expect(writing.verdict).toEqual({ text: 'Wait until 0.2 ships.', finished: false })
     const verdict = { text: '## Recommendation\nWait until **0.2** ships.', counts: { answered: 3, partial: false, rankings: [], findings: [], supports: [], favourites: [], changed: ['B'] }, fairnessDone: false, objections: [] }
-    const held = liveScene(councilFixture({ stage: 'fairness', verdict, rows: [...answers, row('chair', 'verdict', 'done'), row('A', 'fairness', 'working')] }), facts({}))
+    const held = councilScene(councilFixture({ stage: 'fairness', verdict, rows: [...answers, row('chair', 'verdict', 'done'), row('A', 'fairness', 'working')] }), facts({}))
     expect(held.chair.act).toBe('present')
     expect(held.verdict).toEqual({ text: 'Wait until 0.2 ships.', finished: true })
     expect(held.panelists[0]).toMatchObject({ act: 'read', speech: { kind: 'verdict' } })
     expect(held.panelists[1]!.changed).toBe(true)
   })
 
+  it('holds a finished Council’s last scene still: the chair holding up the verdict, the panelists listening', () => {
+    const verdict = { text: 'Wait until 0.2 ships.', counts: { answered: 3, partial: false, rankings: [], findings: [], supports: [], favourites: [], changed: [] }, fairnessDone: true, objections: [] }
+    const rows = [...['A', 'B', 'C'].flatMap(letter => [row(letter, 'answer', 'done'), row(letter, 'review', 'done'), row(letter, 'fairness', 'done')]), row('chair', 'verdict', 'done')]
+    const finished = councilScene(councilFixture({ stage: 'done', verdict, rows }, { status: 'done' }), facts({}))
+    expect(finished.finished).toBe(true)
+    expect(finished.chair.act).toBe('present')
+    expect(finished.verdict).toEqual({ text: 'Wait until 0.2 ships.', finished: true })
+    expect(finished.panelists.map(seat => seat.act)).toEqual(['done', 'done', 'done'])
+    expect(sceneBusy(finished)).toBe(false)
+    // While the fairness check runs the same pose is busy, so the chamber keeps drawing.
+    const checking = councilScene(councilFixture({ stage: 'fairness', verdict: { ...verdict, fairnessDone: false }, rows }), facts({}))
+    expect(checking.finished).toBe(false)
+    expect(sceneBusy(checking)).toBe(true)
+  })
+
   it('reads the conversation in parts first, and sits out once left out', () => {
     const council = councilFixture({ stage: 'framing', leftOut: ['C'], rows: [row('A', 'history', 'working'), row('chair', 'framing', 'working'), row('C', 'history', 'failed')] })
-    const scene = liveScene(council, facts({ 'thread-chair': { running: true } }))
+    const scene = councilScene(council, facts({ 'thread-chair': { running: true } }))
     expect(scene.panelists[0]).toMatchObject({ act: 'think', speech: { kind: 'conversation' } })
     expect(scene.panelists[1]).toMatchObject({ act: 'done', state: null })
     expect(scene.panelists[2]).toMatchObject({ act: 'done', state: 'failed' })
@@ -106,7 +121,7 @@ describe('scrolls fly between seats when the stage changes', () => {
   const answers = [row('A', 'answer', 'done'), row('B', 'answer', 'done'), row('C', 'answer', 'done')]
 
   it('sends each answer to every panelist who reads it as review starts, by letter', () => {
-    const scene = liveScene(councilFixture({ stage: 'reviews', rows: answers }), facts({}))
+    const scene = councilScene(councilFixture({ stage: 'reviews', rows: answers }), facts({}))
     const flights = flightsBetween('answers', scene)
     expect(flights.map(flight => `${flight.from}>${flight.to}`).sort()).toEqual(['A>B', 'A>C', 'B>A', 'B>C', 'C>A', 'C>B'])
     expect(flights.every(flight => flight.label === flight.from && flight.delay >= 0)).toBe(true)
@@ -115,16 +130,29 @@ describe('scrolls fly between seats when the stage changes', () => {
   it('with five panelists sends each reader only the two answers it reviews', () => {
     const seats = ['A', 'B', 'C', 'D', 'E'].map((seat, k) => ({ seat, role: 'panelist' as const, modelId: `m${k}`, modelName: `M${k}`, effort: null, thread: `t${k}`, remote: false }))
     const council = councilFixture({ stage: 'reviews', rows: seats.map(seat => row(seat.seat, 'answer', 'done')) }, { seats: [...seats, { seat: 'chair', role: 'chair', modelId: 'c', modelName: 'C', effort: null, thread: 'tc', remote: false }] })
-    const flights = flightsBetween('answers', liveScene(council, facts({})))
+    const flights = flightsBetween('answers', councilScene(council, facts({})))
     expect(flights).toHaveLength(10)
     expect(flights.filter(flight => flight.to === 'A').map(flight => flight.from)).toEqual(['B', 'C'])
   })
 
   it('gathers every answer to the chair for the verdict, and sends nothing on a reframe or a repeat', () => {
-    const scene = liveScene(councilFixture({ stage: 'verdict', rows: answers }), facts({}))
+    const scene = councilScene(councilFixture({ stage: 'verdict', rows: answers }), facts({}))
     expect(flightsBetween('reviews', scene).map(flight => `${flight.from}>${flight.to}`)).toEqual(['A>chair', 'B>chair', 'C>chair'])
     expect(flightsBetween('verdict', scene)).toEqual([])
     expect(flightsBetween(null, scene)).toEqual([])
-    expect(flightsBetween('reviews', liveScene(councilFixture({ stage: 'answers', rows: answers }), facts({})))).toEqual([])
+    expect(flightsBetween('reviews', councilScene(councilFixture({ stage: 'answers', rows: answers }), facts({})))).toEqual([])
+  })
+})
+
+describe('how often the chamber draws', () => {
+  it('draws about 30 frames a second while a figure is busy or something is on its way, 8 while only the fire flickers', () => {
+    expect(chamberPace(false, false, true)).toBe(33)
+    expect(chamberPace(false, true, false)).toBe(33)
+    expect(chamberPace(false, false, false)).toBe(125)
+  })
+
+  it('draws nothing with motion reduced once everything has arrived', () => {
+    expect(chamberPace(true, false, true)).toBeNull()
+    expect(chamberPace(true, true, false)).toBe(33)
   })
 })

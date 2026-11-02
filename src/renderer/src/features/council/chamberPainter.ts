@@ -406,7 +406,8 @@ export class ChamberPainter {
     let moving = false
     for (const key of POSE_KEYS) {
       const gap = target[key] - pose[key]
-      pose[key] += gap * u
+      // Within a hair it lands exactly, so a still figure never shifts a cell later as a vanishing remainder rounds.
+      pose[key] = Math.abs(gap) < 0.002 ? target[key] : pose[key] + gap * u
       if (Math.abs(gap) > SETTLED) moving = true
     }
     return moving
@@ -530,6 +531,8 @@ export class ChamberPainter {
     const g = this.geometry, ink = this.ink
     if (g === null || ink === null) return false
     const { t, still, scene } = frame
+    // A finished Council's tableau holds still; only its fire keeps flickering.
+    const posed = still || scene.finished
     const W = g.width, H = g.height
     for (const c of [this.b, this.a, this.l]) { c.setTransform(SX / CW, 0, 0, SY / CH, 0, 0); c.globalAlpha = 1; c.globalCompositeOperation = 'source-over' }
     this.b.fillStyle = gray(0.05); this.b.fillRect(0, 0, W, H)
@@ -539,7 +542,7 @@ export class ChamberPainter {
     this.taken.length = 0
     // The art behind, with the beams breathing and motes drifting down them.
     this.art.code.set(this.staticArt.code); this.art.strength.set(this.staticArt.strength); this.art.accent.set(this.staticArt.accent)
-    if (!still) {
+    if (!posed) {
       for (let i = 0; i < this.beamCells.length; i++) {
         const k = this.beamCells[i]!, r = Math.floor(k / this.cols)
         this.art.strength[k] = 0.05 + 0.035 * Math.sin(t * 0.6 + r * 0.25 + (k % this.cols) * 0.02)
@@ -570,7 +573,7 @@ export class ChamberPainter {
         if (d < best) { best = d; near = other }
       }
       if (near) gaze = clamp((near.figure.x - item.figure.x) / 120, -1, 1)
-      const target = this.target(act === 'listen' ? 'done' : act, t, item.seed, gaze, still)
+      const target = this.target(act === 'listen' ? 'done' : act, t, item.seed, gaze, posed)
       if (item.figure.turn && !near && RESTING.has(act) && act !== 'idle') target.turn = item.figure.turn
       if (item.figure.back) target.turn = 0
       if (this.ease(item.pose, target, frame.dt, still)) moving = true
@@ -580,22 +583,22 @@ export class ChamberPainter {
     // Back to front.
     if (g.layout === 'long-table') {
       const chair = placed.find(item => item.figure.chair)
-      if (chair) this.figure(chair, t, still, writeU(chair.seat))
-      for (const item of placed) if (!item.figure.chair) this.figure(item, t, still, writeU(item.seat))
+      if (chair) this.figure(chair, t, posed, writeU(chair.seat))
+      for (const item of placed) if (!item.figure.chair) this.figure(item, t, posed, writeU(item.seat))
       const span = this.longTable(t, still), kr = this.row(g.tableY + 20)
       for (let c = this.col(span.L) + 1; c < this.col(span.R) - 1; c++) { this.grid.put(c, kr, '╔═╗ '[c % 4]!, 0.42); this.grid.put(c, kr + 1, '╝ ╚═'[c % 4]!, 0.42) }
     } else if (g.layout === 'half-circle') {
       for (const item of [...placed].sort((p, q) => q.figure.depth - p.figure.depth)) {
-        this.figure(item, t, still, writeU(item.seat))
+        this.figure(item, t, posed, writeU(item.seat))
         const f = item.figure, w = 86 * f.s, h = 22 * f.s
         const grad = this.b.createLinearGradient(0, f.y, 0, f.y + h); grad.addColorStop(0, gray(0.62)); grad.addColorStop(1, gray(0.36))
         this.b.fillStyle = grad; this.b.fillRect(f.x - w / 2, f.y, w, h); this.b.fillStyle = gray(0.82); this.b.fillRect(f.x - w / 2, f.y, w, 2)
         this.b.fillStyle = gray(0.2); this.b.fillRect(f.x - w / 2, f.y + h, w, 30 * f.s)
       }
     } else {
-      for (const item of placed.filter(item => !item.figure.back).sort((p, q) => p.figure.y - q.figure.y)) this.figure(item, t, still, writeU(item.seat))
+      for (const item of placed.filter(item => !item.figure.back).sort((p, q) => p.figure.y - q.figure.y)) this.figure(item, t, posed, writeU(item.seat))
       this.roundTable(t, still)
-      for (const item of placed) if (item.figure.back) this.figure(item, t, still, writeU(item.seat))
+      for (const item of placed) if (item.figure.back) this.figure(item, t, posed, writeU(item.seat))
     }
 
     // Each answer's scroll on the table, until the chair gathers them.

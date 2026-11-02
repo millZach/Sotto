@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { useOptionalAgents } from '../../../../../src/renderer/src/agents/AgentContext'
 import { CouncilChamber } from '../../../../../src/renderer/src/features/council/CouncilChamber'
-import { CouncilView, liveCouncil } from '../../../../../src/renderer/src/features/council/CouncilView'
+import { chamberCouncil, CouncilView } from '../../../../../src/renderer/src/features/council/CouncilView'
 import { useOptionalApp, type AppContextValue } from '../../../../../src/renderer/src/state/AppContext'
 import type { AgentCommand, AgentState, AgentThread } from '../../../../../src/shared/agents'
 import { DEFAULT_SETTINGS } from '../../../../../src/shared/settings'
@@ -76,12 +76,26 @@ describe('the chamber’s figures', () => {
     expect(command).not.toHaveBeenCalled()
   })
 
-  it('shows the Council being worked, the newest of them, and the Ask view once none is', () => {
+  it('shows the Council being worked, the newest of them, else the newest finished one until a new question is started', () => {
     const older = councilFixture({}, { id: '22222222-2222-4222-8222-222222222222', createdAt: '2026-11-01T10:00:00.000Z', status: 'waiting' })
     const newer = councilFixture({}, { createdAt: '2026-11-02T10:00:00.000Z' })
-    expect(liveCouncil([older, newer])).toBe(newer)
-    expect(liveCouncil([{ ...newer, status: 'done' }, { ...older, status: 'settled' }])).toBeNull()
-    expect(liveCouncil(null)).toBeNull()
+    expect(chamberCouncil([older, newer], false)).toBe(newer)
+    // Another Council at work takes the chamber from a finished one, whatever the Ask form holds.
+    expect(chamberCouncil([older, { ...newer, status: 'done' }], true)).toBe(older)
+    const done = { ...newer, status: 'done' as const }
+    expect(chamberCouncil([done, { ...older, status: 'settled' }], false)).toBe(done)
+    expect(chamberCouncil([done, { ...older, status: 'settled' }], true)).toBeNull()
+    // A stopped or settled newest Council gives the Ask view, never an older finished one.
+    expect(chamberCouncil([{ ...newer, status: 'stopped' }, { ...older, status: 'done' }], false)).toBeNull()
+    expect(chamberCouncil([{ ...newer, status: 'settled' }, { ...older, status: 'done' }], false)).toBeNull()
+    expect(chamberCouncil(null, false)).toBeNull()
+  })
+
+  it('keeps a finished Council’s figures to open, and asks for none of their histories', () => {
+    const { command } = provide()
+    render(<CouncilChamber council={councilFixture({ stage: 'done', rows: [row('A', 'answer', 'done')] }, { status: 'done' })} askSeats={noSeats} layout="long-table" />)
+    expect(screen.getByRole('button', { name: 'Chair, Wonder Full, holding up the verdict. Open its thread' })).toBeInTheDocument()
+    expect(command).not.toHaveBeenCalled()
   })
 })
 
